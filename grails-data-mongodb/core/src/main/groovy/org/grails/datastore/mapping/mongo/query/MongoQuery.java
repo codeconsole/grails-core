@@ -474,6 +474,16 @@ public class MongoQuery extends BsonQuery implements QueryArgumentsAware {
 
 
         AggregateIterable<Document> aggregatedResults = collection.aggregate(aggregationPipeline);
+
+        if (queryArguments != null && queryArguments.containsKey("maxTimeMS")) {
+            Object maxTime = queryArguments.get("maxTimeMS");
+            if (maxTime instanceof Number) {
+                aggregatedResults.maxTime(((Number) maxTime).longValue(), java.util.concurrent.TimeUnit.MILLISECONDS);
+            } else if (maxTime instanceof String) {
+                aggregatedResults.maxTime(Long.parseLong((String) maxTime), java.util.concurrent.TimeUnit.MILLISECONDS);
+            }
+        }
+
         aggregatedResults = (AggregateIterable<Document>) setHint(aggregatedResults);
         final MongoCursor<Document> aggregateCursor = aggregatedResults.iterator();
 
@@ -551,20 +561,30 @@ public class MongoQuery extends BsonQuery implements QueryArgumentsAware {
 
     protected FindIterable<Document> executeQueryAndApplyPagination(com.mongodb.client.MongoCollection<Document> collection, Document query) {
         Object readConcernObject = queryArguments.get(READ_CONCERN_ARGUMENT);
-        if(readConcernObject instanceof ReadConcern) {
+        if (readConcernObject instanceof ReadConcern) {
             collection = collection.withReadConcern(
                 (ReadConcern) readConcernObject
             );
         }
 
         final FindIterable<Document> iterable = collection.find(query);
+
+        if (queryArguments != null && queryArguments.containsKey("maxTimeMS")) {
+            Object maxTime = queryArguments.get("maxTimeMS");
+            if (maxTime instanceof Number) {
+                iterable.maxTime(((Number) maxTime).longValue(), java.util.concurrent.TimeUnit.MILLISECONDS);
+            } else if (maxTime instanceof String) {
+                iterable.maxTime(Long.parseLong((String) maxTime), java.util.concurrent.TimeUnit.MILLISECONDS);
+            }
+        }
+
         if (offset > 0) {
             iterable.skip(offset);
         }
         if (max > -1) {
             iterable.limit(max);
         }
-        if(uniqueResult) {
+        if (uniqueResult) {
             iterable.limit(1);
         }
 
