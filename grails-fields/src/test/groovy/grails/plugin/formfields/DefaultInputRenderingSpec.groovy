@@ -321,9 +321,9 @@ class DefaultInputRenderingSpec extends AbstractFormFieldsTagLibSpec  implements
 		LocalDateTime | false
 	}
 
-	def "select for a #type.simpleName property has a precision of 'day'"() {
+	def "select for a LocalDate property has a precision of 'day'"() {
 		given:
-		def model = [type: type, property: "prop", constraints: null, persistentProperty: basicProperty]
+		def model = [type: LocalDate, property: "prop", constraints: null, persistentProperty: basicProperty]
 
 		when:
 		def output = tagLib.renderDefaultInput(model)
@@ -334,12 +334,10 @@ class DefaultInputRenderingSpec extends AbstractFormFieldsTagLibSpec  implements
 		output.contains('select name="prop_day"')
 		!output.contains('select name="prop_hour"')
 		!output.contains('select name="prop_minute"')
-
-		where:
-		type << [Date, Calendar, java.sql.Date, LocalDate]
+		!output.contains('select name="prop_second"')
 	}
 
-	def "select for a Time property has a precision of 'minute'"() {
+	def "select for a #type.simpleName property has a precision of 'second'"() {
 		given:
 		def model = [type: type, property: "prop", constraints: null, persistentProperty: basicProperty]
 
@@ -352,9 +350,26 @@ class DefaultInputRenderingSpec extends AbstractFormFieldsTagLibSpec  implements
 		output.contains('select name="prop_day"')
 		output.contains('select name="prop_hour"')
 		output.contains('select name="prop_minute"')
+		output.contains('select name="prop_second"')
 
 		where:
-		type << [java.sql.Time, LocalDateTime]
+		type << [Date, Calendar, java.sql.Date, LocalDateTime]
+	}
+
+	def "select for a Time property has a precision of 'minute'"() {
+		given:
+		def model = [type: java.sql.Time, property: "prop", constraints: null, persistentProperty: basicProperty]
+
+		when:
+		def output = tagLib.renderDefaultInput(model)
+
+		then:
+		output.contains('select name="prop_year"')
+		output.contains('select name="prop_month"')
+		output.contains('select name="prop_day"')
+		output.contains('select name="prop_hour"')
+		output.contains('select name="prop_minute"')
+		!output.contains('select name="prop_second"')
 	}
 
 	def "select with Locale,TZ,currency for #{required ? 'a required' : 'an optional'} #type.simpleName property #{required ? 'does not have' : 'has'} a no-selection option"() {

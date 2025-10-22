@@ -766,7 +766,16 @@ class FormFieldsTagLib {
     }
 
     CharSequence renderDateTimeInput(Map model, Map attrs) {
-        attrs.precision = model.type in [java.sql.Time, LocalDateTime] ? 'minute' : 'day'
+        // LocalDate should only show day precision (no time)
+        // java.sql.Time should show time but not seconds
+        // All other datetime types should show second precision
+        if (model.type == LocalDate) {
+            attrs.precision = 'day'
+        } else if (model.type == java.sql.Time) {
+            attrs.precision = 'minute'
+        } else {
+            attrs.precision = 'second'
+        }
         if (!model.required) {
             attrs.noSelection = ['': '']
             attrs.default = 'none'
@@ -961,6 +970,7 @@ class FormFieldsTagLib {
                 break
             case Calendar:
             case Date:
+            case java.sql.Timestamp:
             case LocalDateTime:
             case java.sql.Timestamp:
             case Instant:

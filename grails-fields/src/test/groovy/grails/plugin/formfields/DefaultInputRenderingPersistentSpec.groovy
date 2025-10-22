@@ -276,7 +276,7 @@ class DefaultInputRenderingPersistentSpec extends AbstractFormFieldsTagLibSpec i
 		java.sql.Time | false
 	}
 
-	def "select for a #type.simpleName property has a precision of 'day'"() {
+	def "select for a #type.simpleName property has a precision of 'second'"() {
 		given:
 		def model = [type: type, property: "prop", constraints: null, persistentProperty: basicProperty]
 
@@ -287,8 +287,9 @@ class DefaultInputRenderingPersistentSpec extends AbstractFormFieldsTagLibSpec i
 		output.contains('select name="prop_year"')
 		output.contains('select name="prop_month"')
 		output.contains('select name="prop_day"')
-		!output.contains('select name="prop_hour"')
-		!output.contains('select name="prop_minute"')
+		output.contains('select name="prop_hour"')
+		output.contains('select name="prop_minute"')
+		output.contains('select name="prop_second"')
 
 		where:
 		type << [Date, Calendar, java.sql.Date]
