@@ -26,13 +26,15 @@ import com.mongodb.MongoClientSettings
  * {@link MongoClientSettings.Builder} used to construct the underlying
  * {@link com.mongodb.client.MongoClient} before it is created.
  *
- * <p>Any beans of this type found in the application context are applied, in order,
- * to the builder for every connection source created by the factory (the default
- * connection source and any additional named ones). This is the supported extension
- * point for settings that cannot be expressed through {@code grails.mongodb.*}
- * configuration — for example registering a driver
- * {@link com.mongodb.event.CommandListener} for metrics/tracing, tuning the connection
- * pool, or configuring read/write concerns programmatically.</p>
+ * <p>When the datastore is bootstrapped by Grails/Spring and builds its own
+ * {@link com.mongodb.client.MongoClient}, every bean of this type in the application
+ * context is autowired into the {@link MongoConnectionSourceFactory} and applied, in
+ * order, to the builder for every connection source it creates (the default connection
+ * source and any additional named ones). This is the supported extension point for
+ * settings that cannot be expressed through {@code grails.mongodb.*} configuration —
+ * for example registering a driver {@link com.mongodb.event.CommandListener} for
+ * metrics/tracing, tuning the connection pool, or configuring read/write concerns
+ * programmatically.</p>
  *
  * <pre class="code">
  * &#64;Bean
@@ -40,6 +42,14 @@ import com.mongodb.MongoClientSettings
  *     return { builder -> builder.addCommandListener(new MongoMetricsCommandListener(registry)) }
  * }
  * </pre>
+ *
+ * <p><strong>Scope.</strong> Customizers are only consulted when the factory itself
+ * builds the client. They do <em>not</em> apply if you supply your own {@code mongo}
+ * {@link com.mongodb.client.MongoClient} bean (that client is already fully built —
+ * there is nothing left to customize), nor when you construct {@link org.grails.datastore.mapping.mongo.MongoDatastore}
+ * programmatically with a default factory. For the programmatic case, set
+ * {@link MongoConnectionSourceFactory#getClientSettingsCustomizers() clientSettingsCustomizers}
+ * on a factory instance and pass that factory to the {@code MongoDatastore} constructor.</p>
  *
  * <p>Mirrors the semantics of Spring Boot's
  * {@code MongoClientSettingsBuilderCustomizer}.</p>

@@ -29,6 +29,9 @@ import org.grails.datastore.mapping.core.connections.ConnectionSourcesInitialize
 import org.grails.datastore.mapping.mongo.connections.MongoClientSettingsBuilderCustomizer
 import org.grails.datastore.mapping.mongo.connections.MongoConnectionSourceFactory
 import org.grails.datastore.mapping.mongo.connections.MongoConnectionSourceSettings
+import org.springframework.beans.factory.annotation.AutowiredAnnotationBeanPostProcessor
+import org.springframework.beans.factory.support.DefaultListableBeanFactory
+import org.springframework.beans.factory.support.RootBeanDefinition
 import spock.lang.Specification
 
 /**
@@ -107,6 +110,49 @@ class MongoConnectionSourceFactorySpec extends Specification {
 
         cleanup:
         sources?.close()
+    }
+
+    void "test a customizer is applied to every connection source, default and named"() {
+        given: "a customizer that records each builder it customizes"
+        List<MongoClientSettings.Builder> customized = []
+        MongoClientSettingsBuilderCustomizer customizer = { MongoClientSettings.Builder builder -> customized << builder }
+
+        when: "the factory builds a default connection source plus an additional named one"
+        MongoConnectionSourceFactory factory = new MongoConnectionSourceFactory(clientSettingsCustomizers: [customizer])
+        ConnectionSources<MongoClient, MongoConnectionSourceSettings> sources = ConnectionSourcesInitializer.create(factory, DatastoreUtils.createPropertyResolver(
+                (MongoSettings.SETTING_URL): "mongodb://localhost/myDb",
+                (MongoSettings.SETTING_CONNECTIONS): [
+                        another: [url: "mongodb://localhost/anotherDb"]
+                ]
+        ))
+
+        then: "the customizer ran once per connection source, not just the default"
+        sources.allConnectionSources.size() == 2
+        customized.size() == 2
+
+        cleanup:
+        sources?.close()
+    }
+
+    void "test customizers are autowired by type when the factory is a Spring bean"() {
+        given: "a bean factory with a customizer singleton and the factory registered for @Autowired processing"
+        MongoClientSettingsBuilderCustomizer customizer = { MongoClientSettings.Builder builder -> }
+        DefaultListableBeanFactory beanFactory = new DefaultListableBeanFactory()
+        AutowiredAnnotationBeanPostProcessor bpp = new AutowiredAnnotationBeanPostProcessor()
+        bpp.setBeanFactory(beanFactory)
+        beanFactory.addBeanPostProcessor(bpp)
+        beanFactory.registerSingleton('myCustomizer', customizer)
+        beanFactory.registerBeanDefinition('mongoConnectionSourceFactory', new RootBeanDefinition(MongoConnectionSourceFactory))
+
+        when: "the factory bean is created"
+        MongoConnectionSourceFactory factory = beanFactory.getBean(MongoConnectionSourceFactory)
+
+        then: "the @Autowired(required=false) clientSettingsCustomizers field was populated from the context"
+        factory.clientSettingsCustomizers.size() == 1
+        factory.clientSettingsCustomizers.contains(customizer)
+
+        cleanup:
+        beanFactory.destroySingletons()
     }
 
     void "test multiple MongoClientSettingsBuilderCustomizers are applied in registration order"() {
