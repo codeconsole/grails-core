@@ -64,10 +64,11 @@ class MongoConnectionSourceFactory extends AbstractConnectionSourceFactory<Mongo
     List<Codec> codecs = []
 
     /**
-     * Optional customizers applied to the {@link MongoClientSettings.Builder} of the
-     * default connection source before the {@link MongoClient} is created. This is the
-     * supported hook for settings that have no {@code grails.mongodb.*} equivalent — e.g.
-     * registering a driver {@link com.mongodb.event.CommandListener} for metrics/tracing.
+     * Optional customizers applied to the {@link MongoClientSettings.Builder} of every
+     * connection source this factory creates, before the {@link MongoClient} is created.
+     * This is the supported hook for settings that have no {@code grails.mongodb.*}
+     * equivalent — e.g. registering a driver {@link com.mongodb.event.CommandListener}
+     * for metrics/tracing.
      */
     @Autowired(required = false)
     List<MongoClientSettingsBuilderCustomizer> clientSettingsCustomizers = []

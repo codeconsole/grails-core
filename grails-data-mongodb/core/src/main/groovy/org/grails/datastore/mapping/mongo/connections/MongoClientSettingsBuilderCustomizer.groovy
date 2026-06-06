@@ -27,7 +27,8 @@ import com.mongodb.MongoClientSettings
  * {@link com.mongodb.client.MongoClient} before it is created.
  *
  * <p>Any beans of this type found in the application context are applied, in order,
- * to the builder for the default connection source. This is the supported extension
+ * to the builder for every connection source created by the factory (the default
+ * connection source and any additional named ones). This is the supported extension
  * point for settings that cannot be expressed through {@code grails.mongodb.*}
  * configuration — for example registering a driver
  * {@link com.mongodb.event.CommandListener} for metrics/tracing, tuning the connection
