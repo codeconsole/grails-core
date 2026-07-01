@@ -115,7 +115,7 @@
         {
             "name": "grails.exceptionresolver.params.exclude",
             "type": "java.util.List<java.lang.String>",
-            "description": "List of parameter names to mask (replace with [*****]) in exception stack traces, typically used for password and creditCard.",
+            "description": "List of parameter names to mask (replace with [*****]) in exception stack traces, typically used for password and creditCard. Parameter names are matched case-insensitively.",
             "defaultValue": []
         },
         {
