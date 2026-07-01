@@ -44,6 +44,8 @@ import static java.nio.file.StandardCopyOption.REPLACE_EXISTING;
  */
 public class GrailsUpdater {
 
+    private static final int MAX_REDIRECTS = 5;
+
     private final GrailsWrapperHome grailsWrapperHome;
     private final GrailsVersion preferredVersion;
     private GrailsVersion updatedVersion;
@@ -329,17 +331,62 @@ public class GrailsUpdater {
         }
     }
 
-    private static HttpURLConnection createHttpURLConnection(String mavenMetadataFileUrl) throws IOException {
-        final URL url;
+    static HttpURLConnection createHttpURLConnection(String mavenMetadataFileUrl) throws IOException {
+        URI uri = createSecureRemoteUri(mavenMetadataFileUrl);
+        for (int redirectCount = 0; redirectCount <= MAX_REDIRECTS; redirectCount++) {
+            URL url = uri.toURL();
+            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestProperty("User-Agent", "Apache-Maven/3.9.6");
+            conn.setInstanceFollowRedirects(false);
+
+            int responseCode = conn.getResponseCode();
+            if (!isRedirect(responseCode)) {
+                return conn;
+            }
+
+            String location = conn.getHeaderField("Location");
+            conn.disconnect();
+            uri = resolveSecureRedirectUrl(uri, location);
+        }
+
+        throw new IOException("Too many redirects while downloading Grails wrapper artifact: " + mavenMetadataFileUrl);
+    }
+
+    static URL createSecureRemoteUrl(String mavenMetadataFileUrl) throws IOException {
+        return createSecureRemoteUri(mavenMetadataFileUrl).toURL();
+    }
+
+    private static URI createSecureRemoteUri(String mavenMetadataFileUrl) throws IOException {
         try {
-            url = new URI(mavenMetadataFileUrl).toURL();
+            URI uri = new URI(mavenMetadataFileUrl);
+            validateHttpsUri(uri);
+            return uri;
         } catch (URISyntaxException | IllegalArgumentException e) {
             throw new IOException("Invalid Maven metadata URL: " + mavenMetadataFileUrl, e);
         }
-        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-        conn.setRequestProperty("User-Agent", "Apache-Maven/3.9.6");
-        conn.setInstanceFollowRedirects(true);
-        return conn;
+    }
+
+    static URI resolveSecureRedirectUrl(URI currentUri, String location) throws IOException {
+        if (location == null || location.isBlank()) {
+            throw new IOException("Redirect response is missing a Location header for Grails wrapper artifact: " + currentUri);
+        }
+        URI redirectUri = currentUri.resolve(location);
+        validateHttpsUri(redirectUri);
+        return redirectUri;
+    }
+
+    private static boolean isRedirect(int responseCode) {
+        return responseCode == HttpURLConnection.HTTP_MOVED_PERM ||
+            responseCode == HttpURLConnection.HTTP_MOVED_TEMP ||
+            responseCode == HttpURLConnection.HTTP_SEE_OTHER ||
+            responseCode == 307 ||
+            responseCode == 308;
+    }
+
+    private static void validateHttpsUri(URI uri) throws IOException {
+        if (!"https".equalsIgnoreCase(uri.getScheme())) {
+            throw new IOException("Grails wrapper remote repository URLs must use HTTPS: " + uri);
+        }
     }
 
     private static SAXParser createSAXParser() throws ParserConfigurationException, SAXException {
