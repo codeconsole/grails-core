@@ -16,26 +16,15 @@
  *  specific language governing permissions and limitations
  *  under the License.
  */
-package testphases
+package testphases.pages
 
-import testphases.pages.GreetingPage
+import geb.Page
 
-import grails.plugin.geb.ContainerGebSpec
-import grails.testing.mixin.integration.Integration
+class GreetingPage extends Page {
 
-import geb.waiting.WaitTimeoutException
-import spock.lang.Retry
-
-@Integration
-@Retry(count = 2, delay = 1000, exceptions = [WaitTimeoutException])
-class GreetingControllerFunctionalSpec extends ContainerGebSpec {
-
-    void "test greeting controller renders response"() {
-        when: 'navigating to the greeting controller'
-        to GreetingPage
-
-        then: 'the page renders the greeting message'
-        greeting.contains('Hello')
+    static url = 'greeting/index'
+    static at = { waitFor { greeting.contains('Hello') } }
+    static content = {
+        greeting { $('body').text() }
     }
-
 }
