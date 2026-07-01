@@ -23,11 +23,7 @@ import testphases.pages.GreetingPage
 import grails.plugin.geb.ContainerGebSpec
 import grails.testing.mixin.integration.Integration
 
-import geb.waiting.WaitTimeoutException
-import spock.lang.Retry
-
 @Integration
-@Retry(count = 2, delay = 1000, exceptions = [WaitTimeoutException])
 class GreetingControllerFunctionalSpec extends ContainerGebSpec {
 
     void "test greeting controller renders response"() {
