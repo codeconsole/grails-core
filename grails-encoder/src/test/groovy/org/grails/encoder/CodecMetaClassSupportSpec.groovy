@@ -171,6 +171,25 @@ class CodecMetaClassSupportSpec extends Specification {
             CodecMetaClassSupport.metaMethodRegistrationCount == 8L
     }
 
+    void 'cached codec registration remains idempotent after unrelated factory churn'() {
+        given:
+            CodecMetaClassSupport support = new CodecMetaClassSupport()
+            List<ExpandoMetaClass> targetMetaClasses = [GrailsMetaClassUtils.getExpandoMetaClass(CodecMetaClassSupportSpecTarget)]
+            BenchmarkCodecFactory originalCodecFactory = new BenchmarkCodecFactory()
+
+        when:
+            support.configureCodecMethods(originalCodecFactory, true, targetMetaClasses)
+            (1..1500).each {
+                support.configureCodecMethods(new EncoderOnlyCodecFactory(), true, targetMetaClasses)
+            }
+            long afterUnrelatedFactoryChurnCount = CodecMetaClassSupport.metaMethodRegistrationCount
+            support.configureCodecMethods(originalCodecFactory, true, targetMetaClasses)
+
+        then:
+            CodecMetaClassSupport.metaMethodRegistrationCount == afterUnrelatedFactoryChurnCount
+            InvokerHelper.invokeMethod(new CodecMetaClassSupportSpecTarget('a&b'), 'encodeAsBenchmark', null) == 'a&amp;b'
+    }
+
     void 'non-cached codec registration keeps development reload behavior'() {
         given:
             CodecMetaClassSupport support = new CodecMetaClassSupport()
@@ -192,7 +211,7 @@ class CodecMetaClassSupportSpec extends Specification {
     private static Set registeredMetaMethodKeys() {
         def field = CodecMetaClassSupport.getDeclaredField('REGISTERED_META_METHODS')
         field.accessible = true
-        (Set) field.get(null)
+        ((Map) field.get(null)).keySet()
     }
 
     private static int metaMethodRegistrationKeyCount() {
@@ -201,9 +220,7 @@ class CodecMetaClassSupportSpec extends Specification {
 
     private static void clearRegisteredCodecFactoryReferences() {
         registeredMetaMethodKeys().each { Object key ->
-            def field = key.getClass().getDeclaredField('codecFactoryReference')
-            field.accessible = true
-            ((WeakReference) field.get(key)).clear()
+            ((WeakReference) key).clear()
         }
     }
 
@@ -234,6 +251,21 @@ class CodecMetaClassSupportSpec extends Specification {
         @Override
         Decoder getDecoder() {
             decoder
+        }
+    }
+
+    private static class EncoderOnlyCodecFactory implements CodecFactory {
+
+        private final BenchmarkEncoder encoder = new BenchmarkEncoder()
+
+        @Override
+        Encoder getEncoder() {
+            encoder
+        }
+
+        @Override
+        Decoder getDecoder() {
+            null
         }
     }
 
