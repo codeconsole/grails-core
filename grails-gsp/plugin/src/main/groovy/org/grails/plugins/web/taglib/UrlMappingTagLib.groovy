@@ -80,6 +80,7 @@ class UrlMappingTagLib implements TagLibrary {
                 id: attrs.id as String,
                 params: attrs.params as Map)
 
+            mapping.namespaceSpecified = attrs.containsKey(LinkGenerator.ATTRIBUTE_NAMESPACE)
             String namespace = linkGenerator.resolveNamespace(attrs.controller as String, attrs.plugin as String, attrs)
             if (namespace != null) {
                 mapping.namespace = namespace
