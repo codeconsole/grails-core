@@ -257,20 +257,7 @@ class DefaultLinkGenerator implements LinkGenerator, PluginManagerAware {
                     params.put(ATTRIBUTE_ID, id)
                 }
                 def pluginName = attrs.get(UrlMapping.PLUGIN)?.toString()
-                // An explicit namespace attribute always wins so that a blank one (namespace="" or
-                // namespace: null) can opt out and target a non-namespaced controller. A blank value is
-                // normalised to null because reverse mappings key non-namespaced controllers on null.
-                // Only when no namespace was supplied do we infer one for the target controller.
-                String namespace
-                if (attrs.containsKey(UrlMapping.NAMESPACE)) {
-                    namespace = attrs.get(UrlMapping.NAMESPACE)?.toString()
-                    if (namespace != null && namespace.trim().isEmpty()) {
-                        namespace = null
-                    }
-                }
-                else {
-                    namespace = getDefaultNamespace(controller, pluginName)
-                }
+                String namespace = resolveNamespace(controller, pluginName, attrs)
                 UrlCreator mapping = urlMappingsHolder.getReverseMappingNoDefault(controller, action, namespace, pluginName, httpMethod, params)
                 if (mapping == null && isDefaultAction) {
                     mapping = urlMappingsHolder.getReverseMappingNoDefault(controller, null, namespace, pluginName, httpMethod, params)

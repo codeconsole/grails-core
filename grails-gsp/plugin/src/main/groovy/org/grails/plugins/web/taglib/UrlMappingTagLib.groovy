@@ -80,20 +80,9 @@ class UrlMappingTagLib implements TagLibrary {
                 id: attrs.id as String,
                 params: attrs.params as Map)
 
-            // Honor an explicit namespace so a blank one (namespace="" or namespace: null) opts out to
-            // the non-namespaced controller; otherwise infer the namespace for the target controller so
-            // g:include stays consistent with link generation.
-            if (attrs.containsKey('namespace')) {
-                String explicitNamespace = attrs.namespace as String
-                if (explicitNamespace?.trim()) {
-                    mapping.namespace = explicitNamespace
-                }
-            }
-            else if (attrs.controller) {
-                String inferredNamespace = linkGenerator.getDefaultNamespace(attrs.controller as String, attrs.plugin as String)
-                if (inferredNamespace != null) {
-                    mapping.namespace = inferredNamespace
-                }
+            String namespace = linkGenerator.resolveNamespace(attrs.controller as String, attrs.plugin as String, attrs)
+            if (namespace != null) {
+                mapping.namespace = namespace
             }
             if (attrs.plugin != null) {
                 mapping.pluginName = attrs.plugin as String

@@ -128,6 +128,24 @@ class LinkGeneratorNamespaceInferenceSpec extends Specification {
         generator.link(controller: 'book', action: 'index', namespace: 'frontend') == '/bar/frontend/book/index'
     }
 
+    @Unroll
+    def "resolveNamespace returns #expected for attrs #attrs"() {
+        given:
+        bindRequest('page', 'admin')
+        def generator = createGenerator()
+
+        expect:
+        generator.resolveNamespace('book', null, attrs) == expected
+
+        where:
+        attrs                   || expected
+        [:]                     || 'admin'
+        [namespace: 'frontend'] || 'frontend'
+        [namespace: '']         || null
+        [namespace: '   ']      || null
+        [namespace: null]       || null
+    }
+
     def "an explicit null namespace opts out of inference and targets the root controller"() {
         given:
         bindRequest('page', 'admin')

@@ -198,6 +198,33 @@ public interface LinkGenerator {
     }
 
     /**
+     * Resolves the namespace to pass to reverse URL mapping when a caller may have supplied an
+     * explicit {@code namespace} attribute.
+     *
+     * <p>An explicit namespace always wins, including an explicit {@code null} or blank value. Blank
+     * values are normalised to {@code null} because reverse mappings key non-namespaced controllers on
+     * {@code null}. Only when the attribute is absent is {@link #getDefaultNamespace(String, String)}
+     * consulted.</p>
+     *
+     * @param controller The logical name of the target controller
+     * @param pluginName The name of the plugin providing the target controller, or {@code null}
+     * @param attrs The attributes that may contain {@link #ATTRIBUTE_NAMESPACE}
+     * @return The explicit or inferred namespace, or {@code null} for the default namespace
+     */
+    @SuppressWarnings("rawtypes")
+    default String resolveNamespace(String controller, String pluginName, Map attrs) {
+        if (attrs != null && attrs.containsKey(ATTRIBUTE_NAMESPACE)) {
+            Object namespace = attrs.get(ATTRIBUTE_NAMESPACE);
+            if (namespace == null) {
+                return null;
+            }
+            String namespaceValue = namespace.toString();
+            return namespaceValue.trim().isEmpty() ? null : namespaceValue;
+        }
+        return getDefaultNamespace(controller, pluginName);
+    }
+
+    /**
      * Obtains the context path from which this link generator is operating.
      *
      * @return The base context path
