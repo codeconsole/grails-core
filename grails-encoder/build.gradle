@@ -64,11 +64,9 @@ apply {
     from rootProject.layout.projectDirectory.file('gradle/test-config.gradle')
 }
 
-tasks.register('codecMetaClassBenchmark', JavaExec) {
-    group = 'verification'
-    description = 'Runs the codec metaclass registration benchmark for Grails issue 15374.'
-    classpath = sourceSets.test.runtimeClasspath
-    mainClass = 'org.grails.encoder.CodecMetaClassBenchmark'
+tasks.withType(Test).configureEach {
     systemProperties System.properties.findAll { key, value -> key.toString().startsWith('grails.codec.benchmark.') }
-    dependsOn testClasses
+    if (Boolean.getBoolean('grails.codec.benchmark.enabled')) {
+        testLogging.showStandardStreams = true
+    }
 }

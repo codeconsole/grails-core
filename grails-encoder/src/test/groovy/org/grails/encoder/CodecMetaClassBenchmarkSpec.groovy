@@ -20,22 +20,34 @@ package org.grails.encoder
 
 import java.util.concurrent.atomic.AtomicInteger
 
+import groovy.lang.MetaClassRegistryChangeEventListener
 import groovy.transform.CompileStatic
 import groovy.transform.TypeCheckingMode
-import groovy.lang.MetaClassRegistryChangeEventListener
 import org.codehaus.groovy.runtime.InvokerHelper
 
 import grails.util.GrailsMetaClassUtils
+import spock.lang.IgnoreIf
+import spock.lang.Specification
 
-@CompileStatic
-class CodecMetaClassBenchmark {
+@IgnoreIf({ !Boolean.getBoolean('grails.codec.benchmark.enabled') })
+class CodecMetaClassBenchmarkSpec extends Specification {
 
     private static final int REGISTRATION_ITERATIONS = Integer.getInteger('grails.codec.benchmark.registrationIterations', 10_000)
     private static final int ENCODE_ITERATIONS = Integer.getInteger('grails.codec.benchmark.encodeIterations', 1_000_000)
     private static final int ENCODE_WARMUP_ITERATIONS = Integer.getInteger('grails.codec.benchmark.encodeWarmupIterations', 100_000)
     private static final boolean NEW_FACTORY_EACH_REGISTRATION = Boolean.getBoolean('grails.codec.benchmark.newFactoryEachRegistration')
 
+    void 'benchmark codec metaclass registration'() {
+        expect:
+            runBenchmark()
+    }
+
     static void main(String[] args) {
+        runBenchmark()
+    }
+
+    @CompileStatic
+    private static boolean runBenchmark() {
         GroovySystem.metaClassRegistry.removeMetaClass(CodecBenchmarkTarget)
         CodecMetaClassSupport support = new CodecMetaClassSupport()
         BenchmarkCodecFactory codecFactory = new BenchmarkCodecFactory()
@@ -73,6 +85,7 @@ class CodecMetaClassBenchmark {
             println "encodeNanos=${encodeNanos}"
             println "encodeNanosPerOp=${encodeNanos / ENCODE_ITERATIONS}"
             println "lastEncoded=${encoded}"
+            true
         } finally {
             GroovySystem.metaClassRegistry.removeMetaClassRegistryChangeEventListener(listener)
             GroovySystem.metaClassRegistry.removeMetaClass(CodecBenchmarkTarget)
