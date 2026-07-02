@@ -109,8 +109,7 @@
         {
             "name": "grails.exceptionresolver.logRequestParameters",
             "type": "java.lang.Boolean",
-            "description": "Whether to log request parameters in exception stack traces.",
-            "defaultValue": true
+            "description": "Whether to log request parameters in exception stack traces. Defaults to true in development and false otherwise."
         },
         {
             "name": "grails.exceptionresolver.params.exclude",
