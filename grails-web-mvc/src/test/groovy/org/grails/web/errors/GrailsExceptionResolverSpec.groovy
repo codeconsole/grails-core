@@ -248,7 +248,7 @@ class GrailsExceptionResolverSpec extends Specification {
         given:
             def config = Mock(Config)
             config.getProperty('grails.exceptionresolver.logRequestParameters', Boolean, _) >> true
-            config.getProperty('grails.exceptionresolver.params.exclude', List, _) >> ['password', 'token']
+            config.getProperty('grails.exceptionresolver.params.exclude', List, _) >> [null, 'password', 'token']
             config.getProperty('grails.exceptionresolver.logAuditor', Boolean, false) >> false
             config.getProperty('grails.exceptionresolver.logRemoteAddr', Boolean, false) >> false
             config.getProperty('grails.exceptionresolver.logFullStackTraceOnFilter', Boolean, true) >> false

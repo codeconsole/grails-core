@@ -335,7 +335,7 @@ public class GrailsExceptionResolver extends SimpleMappingExceptionResolver impl
             return false;
         }
         for (String excludedParameterName : excludedParameterNames) {
-            if (parameterName.equalsIgnoreCase(excludedParameterName)) {
+            if (excludedParameterName != null && parameterName.equalsIgnoreCase(excludedParameterName)) {
                 return true;
             }
         }
