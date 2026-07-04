@@ -64,7 +64,9 @@ dependencies {
     compileOnly 'org.springframework.boot:spring-boot'
     compileOnly 'org.springframework.boot:spring-boot-loader-tools'
     compileOnly 'org.springframework:spring-web'
-    api 'org.springframework.boot:spring-boot-cli'
+    api('org.springframework.boot:spring-boot-cli') {
+        exclude group: 'jline', module: 'jline'
+    }
     // Must be 'implementation' (not 'compileOnly') so the servlet API is included in the shadow JAR.
     // grails-web-common registers HttpServletRequestExtension as a Groovy extension module, which is
     // auto-discovered when GroovyScriptCommandFactory compiles custom scripts in src/main/scripts/.
