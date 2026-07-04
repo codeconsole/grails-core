@@ -1375,13 +1375,14 @@ Custom plugins should register their own beans from their own `doWithSpring()` i
 | Use Groovy's `groovy.json.JsonBuilder` or `groovy.json.StreamingJsonBuilder` for JSON builder code.
 
 | `grails-core`
-| `GrailsApplicationPostProcessor` and `DefaultGrailsPluginManager` constructor signatures require `PluginDiscovery`
-| Update custom bootstrapping code or subclasses to pass the plugin-discovery dependency.
+| `GrailsApplicationPostProcessor`, `ProfilingGrailsApplicationPostProcessor`, and `DefaultGrailsPluginManager` plugin-discovery wiring changed
+| Update custom bootstrapping code or subclasses that construct `GrailsApplicationPostProcessor` or `DefaultGrailsPluginManager` directly to pass the plugin-discovery dependency.
+`ProfilingGrailsApplicationPostProcessor` keeps its `GrailsApplicationLifeCycle`, `ApplicationContext`, and `Class...` constructor shape, but the application context must expose the `grailsPluginDiscovery` bean.
 This was introduced during the Grails 7.1 plugin-loading changes and remains required in Grails 8.
 
 | `grails-core`
 | `grails.plugins.PluginFilter`, `IncludingPluginFilter`, `ExcludingPluginFilter`, `NoOpPluginFilter`, and related filter types
-| Import the replacements from `org.apache.grails.core.plugins.filters.*`.
+| Import replacement types from the `org.apache.grails.core.plugins.filters` package, such as `PluginFilter`, `IncludingPluginFilter`, `ExcludingPluginFilter`, and `NoOpPluginFilter`.
 
 | `grails-core`
 | Legacy mixin transform APIs such as `grails.util.Mixin`, `MixinTargetAware`, and `MixinTransformation`
@@ -1400,9 +1401,9 @@ This was introduced during the Grails 7.1 plugin-loading changes and remains req
 | Code that imported the auto-configuration method should use the current `validateableConstraintsEvaluator(...)` bean path and the datastore constraint evaluator APIs.
 
 | `grails-fields`
-| `BeanPropertyAccessor.getBeanClass()`, its setter, and `PropertyPathAccessor.getBeanClass()`
+| `BeanPropertyAccessor.getBeanClass()`, its setter, `PropertyPathAccessor.getBeanClass()`, `FormFieldsTagLib.input(...)`, and direct `render*` helper methods
 | Use the `beanType` property exposed by the accessors.
-Custom field renderers should go through the documented tags and templates instead of calling private `render*` helpers directly.
+Custom field renderers should go through the documented `f:field`, `f:widget`, and `f:displayWidget` tags and templates instead of calling private render helpers directly.
 
 | `grails-gradle-plugins`
 | `ApplicationContextCommandTask`, `ApplicationContextScriptTask`, `ProfileCompilerTask`, and `GrailsRunTask` are abstract; `GrailsGradlePlugin.createBuildPropertiesTask(...)` no longer returns a task value; several `IntegrationTestGradlePlugin` constants were removed
