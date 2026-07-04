@@ -37,8 +37,41 @@ class GrailsDependencyVersionsSpec extends Specification {
 
     private URI writePom(String filename, String content) {
         Path pomFile = tempDir.resolve(filename)
-        Files.writeString(pomFile, content)
+        Files.writeString(pomFile, withModelCoordinates(filename, content))
         return pomFile.toUri()
+    }
+
+    private String withModelCoordinates(String filename, String content) {
+        if (content.contains('<modelVersion>')) {
+            return content
+        }
+        String artifactId = filename - '.pom'
+        String groupId = groupIdFor(artifactId)
+        content.replaceFirst('<project>', """\
+            <project>
+                <modelVersion>4.0.0</modelVersion>
+                <groupId>${groupId}</groupId>
+                <artifactId>${artifactId}</artifactId>
+                <version>1.0.0</version>""")
+    }
+
+    private String groupIdFor(String artifactId) {
+        switch (artifactId) {
+            case 'spring-boot-dependencies':
+                return 'org.springframework.boot'
+            case 'junit-bom':
+                return 'org.junit'
+            default:
+                return 'org.apache.grails'
+        }
+    }
+
+    private Throwable rootCause(Throwable throwable) {
+        Throwable current = throwable
+        while (current.cause) {
+            current = current.cause
+        }
+        current
     }
 
     def "addDependencyManagement parses direct dependencies from a BOM POM"() {
@@ -423,10 +456,12 @@ class GrailsDependencyVersionsSpec extends Specification {
         String grailsGroovyVersion = '1.0.0'
         String springBootGroovyVersion = '2.0.0'
         String springBootVersion = '3.0.0'
+        String springFrameworkVersion = '4.0.0'
         String springBootBomXml = """\
             <project>
                 <properties>
                     <groovy.version>${springBootGroovyVersion}</groovy.version>
+                    <spring-framework.version>${springFrameworkVersion}</spring-framework.version>
                 </properties>
                 <dependencyManagement>
                     <dependencies>
@@ -474,6 +509,9 @@ class GrailsDependencyVersionsSpec extends Specification {
         and: "versionProperties keeps the Grails-declared groovy.version (first-writer-wins)"
         versions.versionProperties['groovy.version'] == grailsGroovyVersion
         versions.versionProperties['groovy.version'] != springBootGroovyVersion
+
+        and: "versionProperties includes properties declared only by imported BOMs"
+        versions.versionProperties['spring-framework.version'] == springFrameworkVersion
     }
 
     def "addDependencyManagement fails when an imported BOM cannot be resolved"() {
@@ -516,63 +554,7 @@ class GrailsDependencyVersionsSpec extends Specification {
         and: "The failure is surfaced instead of silently dropping managed versions"
         def e = thrown(IllegalStateException)
         e.message == 'Failed to resolve imported BOM org.apache.grails:grails-missing-bom:1.0.0'
-        e.cause.message == 'Not found'
+        rootCause(e).message == 'Not found'
     }
 
-    def "addDependencyManagement without grapeEngine skips imported BOMs without error"() {
-        given: "A BOM with an import and a mock grape engine"
-        String bootstrapVersion = '1.0.0'
-        String coreVersion = '2.0.0'
-        String baseBomVersion = '3.0.0'
-        String simpleBomXml = """\
-            <project>
-                <dependencyManagement>
-                    <dependencies>
-                        <dependency>
-                            <groupId>org.apache.grails</groupId>
-                            <artifactId>grails-bootstrap</artifactId>
-                            <version>${bootstrapVersion}</version>
-                        </dependency>
-                    </dependencies>
-                </dependencyManagement>
-            </project>
-        """
-        URI simpleBomUri = writePom('simple-bom.pom', simpleBomXml)
-        GrapeEngine grape = Mock(GrapeEngine)
-        grape.resolve(null, _) >> [simpleBomUri]
-
-        and: "A GrailsDependencyVersions instance with grapeEngine then set to null"
-        def versions = new GrailsDependencyVersions(grape, [group: 'org.apache.grails', module: 'grails-bom', version: bootstrapVersion, type: 'pom'])
-        versions.@grapeEngine = null
-
-        and: "A POM with a Grails BOM import"
-        String parentBomXml = """\
-            <project>
-                <dependencyManagement>
-                    <dependencies>
-                        <dependency>
-                            <groupId>org.apache.grails</groupId>
-                            <artifactId>grails-base-bom</artifactId>
-                            <version>${baseBomVersion}</version>
-                            <type>pom</type>
-                            <scope>import</scope>
-                        </dependency>
-                        <dependency>
-                            <groupId>org.apache.grails</groupId>
-                            <artifactId>grails-core</artifactId>
-                            <version>${coreVersion}</version>
-                        </dependency>
-                    </dependencies>
-                </dependencyManagement>
-            </project>
-        """
-
-        when: "addDependencyManagement is called with null grapeEngine"
-        def pom = new groovy.xml.XmlSlurper().parseText(parentBomXml)
-        versions.addDependencyManagement(pom)
-
-        then: "No exception is thrown and direct dependencies are resolved"
-        noExceptionThrown()
-        versions.find('org.apache.grails', 'grails-core') != null
-    }
 }

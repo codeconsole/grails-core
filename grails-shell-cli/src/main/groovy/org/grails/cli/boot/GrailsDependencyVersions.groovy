@@ -20,10 +20,20 @@ package org.grails.cli.boot
 
 import groovy.grape.Grape
 import groovy.grape.GrapeEngine
-import groovy.transform.CompileDynamic
 import groovy.transform.CompileStatic
-import groovy.xml.XmlSlurper
-import groovy.xml.slurpersupport.GPathResult
+
+import org.apache.maven.model.Dependency as MavenDependency
+import org.apache.maven.model.Model
+import org.apache.maven.model.Parent
+import org.apache.maven.model.Repository
+import org.apache.maven.model.building.DefaultModelBuilder
+import org.apache.maven.model.building.DefaultModelBuilderFactory
+import org.apache.maven.model.building.DefaultModelBuildingRequest
+import org.apache.maven.model.building.ModelSource
+import org.apache.maven.model.building.UrlModelSource
+import org.apache.maven.model.resolution.InvalidRepositoryException
+import org.apache.maven.model.resolution.ModelResolver
+import org.apache.maven.model.resolution.UnresolvableModelException
 
 import grails.util.Environment
 import org.grails.cli.compiler.dependencies.Dependency
@@ -42,7 +52,6 @@ class GrailsDependencyVersions implements DependencyManagement {
     protected Map<String, String> artifactToGroupAndArtifact = [:]
     protected List<Dependency> dependencies = []
     protected Map<String, String> versionProperties = [:]
-    private final Set<String> resolvedBoms = [] as Set<String>
     private GrapeEngine grapeEngine
 
     GrailsDependencyVersions() {
@@ -59,14 +68,17 @@ class GrailsDependencyVersions implements DependencyManagement {
 
     GrailsDependencyVersions(GrapeEngine grape, Map bomCoords) {
         this.grapeEngine = grape
-        if (!bomCoords.containsKey('transitive')) {
-            bomCoords.put('transitive', false)
+        Map<String, Object> coordinates = new LinkedHashMap<>(bomCoords)
+        if (!coordinates.containsKey('transitive')) {
+            coordinates.put('transitive', false)
         }
-        def results = grape.resolve(null, bomCoords)
+        def results = grape.resolve(null, coordinates)
+        DefaultModelBuilder modelBuilder = new DefaultModelBuilderFactory().newInstance()
+        GrapeModelResolver modelResolver = new GrapeModelResolver(grapeEngine)
 
         for (URI u in results) {
-            def pom = new XmlSlurper().parseText(u.toURL().text)
-            addDependencyManagement(pom)
+            addDependencyManagement(buildModel(modelBuilder, new UrlModelSource(u.toURL()), modelResolver, u.toString()))
+            addImportedModelProperties(modelBuilder, modelResolver)
         }
     }
 
@@ -84,107 +96,67 @@ class GrailsDependencyVersions implements DependencyManagement {
         grape
     }
 
-    @CompileDynamic
-    void addDependencyManagement(GPathResult pom) {
-        // Capture this POM's <properties> in a local map so that ${...} version references are
-        // resolved against the POM that declared them, and so recursing into an imported BOM
-        // cannot clobber the property table mid-iteration. Merge into the shared map with
-        // first-writer-wins precedence so Grails' own versions win over imported BOM versions.
-        Map<String, String> localProperties = pom.properties.'*'.collectEntries { [(it.name()): it.text()] }
-        localProperties.each { String key, String value -> versionProperties.putIfAbsent(key, value) }
-
-        List<Map<String, String>> grailsImports = []
-        List<Map<String, String>> thirdPartyImports = []
-
-        pom.dependencyManagement.dependencies.dependency.each { dep ->
-            String groupId = dep.groupId.text()
-            String artifactId = dep.artifactId.text()
-            String version = versionLookup(dep.version.text(), localProperties)
-            String scope = dep.scope.text()
-            String type = dep.type.text()
-
-            if (scope == 'import' && type == 'pom') {
-                // Defer all imported BOMs (Grails BOMs such as grails-base-bom AND third-party BOMs
-                // such as spring-boot-dependencies). They are resolved after this POM's direct
-                // constraints so the importing BOM's versions take precedence.
-                Map<String, String> coords = [group: groupId, module: artifactId, version: version]
-                if (groupId == 'org.apache.grails') {
-                    grailsImports << coords
-                } else {
-                    thirdPartyImports << coords
-                }
-            } else if (scope != 'import' && version && !version.startsWith('${')) {
-                // Skip deps whose version property did not resolve: versionLookup returns null for
-                // an unresolved ${...} reference, which is the meaningful guard here. The
-                // startsWith('${') check is nearly dead - it only catches a malformed reference
-                // with no closing brace, which versionLookup leaves untouched.
-                addDependency(groupId, artifactId, version)
-            }
-        }
-
-        // Resolve Grails BOM imports before third-party ones so that Grails-managed versions
-        // (e.g. an intentionally pinned Groovy) win over the versions a third-party BOM declares.
-        // Precedence among the third-party imports themselves is only POM declaration order and is
-        // otherwise undefined; the conflict-prone artifacts (Groovy, Spock) stay correct solely
-        // because they are declared as direct constraints above, which first-writer-wins applies
-        // before any import is followed. Do not move such a pin into a BOM import without
-        // restoring an equivalent direct constraint, or it may silently regress.
-        for (Map<String, String> coords : (grailsImports + thirdPartyImports)) {
-            resolveImportedBom(coords['group'], coords['module'], coords['version'])
-        }
-    }
-
-    @CompileDynamic
-    private void resolveImportedBom(String groupId, String artifactId, String version) {
-        if (grapeEngine == null || !version) {
-            return
-        }
-        // Cycle / duplicate-import protection: spring-boot-dependencies is imported by both
-        // grails-bom and grails-base-bom, so the same BOM can be reached more than once.
-        if (!resolvedBoms.add("$groupId:$artifactId:$version".toString())) {
-            return
-        }
+    private Model buildModel(DefaultModelBuilder modelBuilder, ModelSource modelSource, GrapeModelResolver modelResolver, String description) {
         try {
-            def results = grapeEngine.resolve(null, [group: groupId, module: artifactId, version: version, type: 'pom', transitive: false])
-            for (URI u in results) {
-                def importedPom = new XmlSlurper().parseText(u.toURL().text)
-                addDependencyManagement(importedPom)
-            }
+            DefaultModelBuildingRequest request = new DefaultModelBuildingRequest()
+            request.setModelResolver(modelResolver)
+            request.setModelSource(modelSource)
+            request.setSystemProperties(System.getProperties())
+            return modelBuilder.build(request).effectiveModel
         } catch (Exception e) {
-            String coordinates = "${groupId}:${artifactId}:${version}".toString()
-            throw new IllegalStateException("Failed to resolve imported BOM ${coordinates}".toString(), e)
+            String importResolutionMessage = findImportResolutionMessage(e)
+            if (importResolutionMessage) {
+                throw new IllegalStateException(importResolutionMessage, e)
+            }
+            throw new IllegalStateException("Failed to build model for '${description}'. Is it a valid Maven bom?".toString(), e)
         }
     }
 
-    /**
-     * Handles properties version lookup in grails-bom
-     *
-     *   <properties>
-     *    <ant.version>1.10.15</ant.version>
-     *   </properties>
-     *
-     *   <dependencyManagement>
-     *    <dependencies>
-     *     <dependency>
-     *      <groupId>org.apache.ant</groupId>
-     *      <artifactId>ant</artifactId>
-     *      <version>${ant.version}</version>
-     *     </dependency>
-     *    </dependencies>
-     *   </dependencyManagement>
-     *
-     * @param version
-     *            either the version or the version to lookup
-     *
-     * @return the version with lookup from properties when required
-     */
-    String versionLookup(String version) {
-        versionLookup(version, versionProperties)
+    void addDependencyManagement(Model model) {
+        addVersionProperties(model.properties)
+        model.dependencyManagement?.dependencies?.each { MavenDependency dependency ->
+            addDependency(dependency.groupId, dependency.artifactId, dependency.version)
+        }
     }
 
-    String versionLookup(String version, Map<String, String> properties) {
-        version?.startsWith('${') && version?.endsWith('}') ?
-                properties[version[2..-2]] : version
+    private void addImportedModelProperties(DefaultModelBuilder modelBuilder, GrapeModelResolver modelResolver) {
+        int index = 0
+        while (index < modelResolver.modelSourceEntries.size()) {
+            Map.Entry<String, ModelSource> modelSourceEntry = modelResolver.modelSourceEntries[index]
+            addVersionProperties(buildModel(modelBuilder, modelSourceEntry.value, modelResolver, modelSourceEntry.key).properties)
+            index++
+        }
+    }
+
+    private void addVersionProperties(Properties properties) {
+        properties.each { key, value ->
+            versionProperties.putIfAbsent(key.toString(), value.toString())
+        }
+    }
+
+    private static String findImportResolutionMessage(Throwable failure) {
+        Throwable current = failure
+        while (current) {
+            String message = extractImportResolutionMessage(current.message)
+            if (message) {
+                return message
+            }
+            current = current.cause
+        }
+        return null
+    }
+
+    private static String extractImportResolutionMessage(String message) {
+        if (!message) {
+            return null
+        }
+        String prefix = 'Failed to resolve imported BOM '
+        int start = message.indexOf(prefix)
+        if (start < 0) {
+            return null
+        }
+        int end = message.indexOf(' @', start)
+        message.substring(start, end < 0 ? message.length() : end).trim()
     }
 
     protected void addDependency(String group, String artifactId, String version) {
@@ -229,5 +201,66 @@ class GrailsDependencyVersions implements DependencyManagement {
 
     Iterator<Dependency> iterator() {
         return groupAndArtifactToDependency.values().iterator()
+    }
+
+    private static class GrapeModelResolver implements ModelResolver {
+
+        private final GrapeEngine grapeEngine
+        private final Map<String, ModelSource> modelSources
+
+        GrapeModelResolver(GrapeEngine grapeEngine) {
+            this(grapeEngine, new LinkedHashMap<String, ModelSource>())
+        }
+
+        private GrapeModelResolver(GrapeEngine grapeEngine, Map<String, ModelSource> modelSources) {
+            this.grapeEngine = grapeEngine
+            this.modelSources = modelSources
+        }
+
+        @Override
+        ModelSource resolveModel(Parent parent) throws UnresolvableModelException {
+            return resolveModel(parent.groupId, parent.artifactId, parent.version)
+        }
+
+        @Override
+        ModelSource resolveModel(MavenDependency dependency) throws UnresolvableModelException {
+            return resolveModel(dependency.groupId, dependency.artifactId, dependency.version)
+        }
+
+        @Override
+        ModelSource resolveModel(String groupId, String artifactId, String version) throws UnresolvableModelException {
+            String coordinates = "${groupId}:${artifactId}:${version}".toString()
+            ModelSource modelSource = modelSources[coordinates]
+            if (modelSource) {
+                return modelSource
+            }
+            Map<String, Object> dependency = [group: groupId, module: artifactId, version: version, type: 'pom', transitive: false]
+            try {
+                URI uri = grapeEngine.resolve(null, dependency)[0]
+                modelSource = new UrlModelSource(uri.toURL())
+                modelSources[coordinates] = modelSource
+                return modelSource
+            } catch (Exception e) {
+                throw new IllegalStateException("Failed to resolve imported BOM ${coordinates}".toString(), e)
+            }
+        }
+
+        @Override
+        void addRepository(Repository repository) throws InvalidRepositoryException {
+        }
+
+        @Override
+        void addRepository(Repository repository, boolean replace) throws InvalidRepositoryException {
+        }
+
+        @Override
+        ModelResolver newCopy() {
+            return new GrapeModelResolver(grapeEngine, modelSources)
+        }
+
+        List<Map.Entry<String, ModelSource>> getModelSourceEntries() {
+            new ArrayList<Map.Entry<String, ModelSource>>(modelSources.entrySet())
+        }
+
     }
 }
