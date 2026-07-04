@@ -43,23 +43,14 @@ import org.apache.commons.logging.LogFactory;
 import org.springframework.beans.factory.config.BeanDefinition;
 import org.springframework.beans.factory.config.RuntimeBeanReference;
 import org.springframework.beans.factory.parsing.BeanDefinitionParsingException;
-import org.springframework.beans.factory.parsing.EmptyReaderEventListener;
-import org.springframework.beans.factory.parsing.FailFastProblemReporter;
 import org.springframework.beans.factory.parsing.Location;
-import org.springframework.beans.factory.parsing.NullSourceExtractor;
 import org.springframework.beans.factory.parsing.Problem;
 import org.springframework.beans.factory.support.AbstractBeanDefinition;
 import org.springframework.beans.factory.support.BeanDefinitionRegistry;
 import org.springframework.beans.factory.support.ManagedList;
 import org.springframework.beans.factory.support.ManagedMap;
-import org.springframework.beans.factory.support.SimpleBeanDefinitionRegistry;
-import org.springframework.beans.factory.xml.BeanDefinitionParserDelegate;
-import org.springframework.beans.factory.xml.DefaultNamespaceHandlerResolver;
 import org.springframework.beans.factory.xml.NamespaceHandler;
 import org.springframework.beans.factory.xml.NamespaceHandlerResolver;
-import org.springframework.beans.factory.xml.ParserContext;
-import org.springframework.beans.factory.xml.XmlBeanDefinitionReader;
-import org.springframework.beans.factory.xml.XmlReaderContext;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.support.GenericApplicationContext;
 import org.springframework.core.io.ByteArrayResource;
@@ -121,13 +112,11 @@ public class BeanBuilder extends GroovyObjectSupport {
     private ApplicationContext parentCtx;
     private Map<String, Object> binding = Collections.emptyMap();
     private ClassLoader classLoader = null;
-    private NamespaceHandlerResolver namespaceHandlerResolver;
     private Map<String, NamespaceHandler> namespaceHandlers = new HashMap<>();
-    private XmlBeanDefinitionReader xmlBeanDefinitionReader;
     private Map<String, String> namespaces = new HashMap<>();
     private Resource beanBuildResource = new ByteArrayResource(new byte[0]);
-    private XmlReaderContext readerContext;
     private ResourcePatternResolver resourcePatternResolver = new PathMatchingResourcePatternResolver();
+    private BeanBuilderXmlSupport xmlSupport;
 
     public BeanBuilder() {
         this(null, null);
@@ -158,24 +147,22 @@ public class BeanBuilder extends GroovyObjectSupport {
     }
 
     protected void initializeSpringConfig() {
-        xmlBeanDefinitionReader = new XmlBeanDefinitionReader((GenericApplicationContext) springConfig.getUnrefreshedApplicationContext());
-        initializeBeanBuilderForClassLoader(classLoader);
+        xmlSupport = null;
     }
 
     public void setClassLoader(ClassLoader classLoader) {
         this.classLoader = classLoader == null ? getClass().getClassLoader() : classLoader;
-        initializeBeanBuilderForClassLoader(classLoader);
+        if (xmlSupport != null) {
+            xmlSupport.setClassLoader(this.classLoader);
+        }
     }
 
     protected void initializeBeanBuilderForClassLoader(ClassLoader classLoader) {
-        xmlBeanDefinitionReader.setBeanClassLoader(classLoader);
-        namespaceHandlerResolver = new DefaultNamespaceHandlerResolver(this.classLoader);
-        readerContext = new XmlReaderContext(beanBuildResource, new FailFastProblemReporter(), new EmptyReaderEventListener(),
-                new NullSourceExtractor(), xmlBeanDefinitionReader, namespaceHandlerResolver);
+        getXmlSupport().setClassLoader(classLoader);
     }
 
     public void setNamespaceHandlerResolver(NamespaceHandlerResolver namespaceHandlerResolver) {
-        this.namespaceHandlerResolver = namespaceHandlerResolver;
+        getXmlSupport().setNamespaceHandlerResolver(namespaceHandlerResolver);
     }
 
     protected RuntimeSpringConfiguration createRuntimeSpringConfiguration(ApplicationContext parent, ClassLoader cl) {
@@ -207,9 +194,7 @@ public class BeanBuilder extends GroovyObjectSupport {
             loadBeans(resource);
         }
         else if (resource.getFilename().endsWith(".xml")) {
-            SimpleBeanDefinitionRegistry beanRegistry = new SimpleBeanDefinitionRegistry();
-            XmlBeanDefinitionReader beanReader = new XmlBeanDefinitionReader(beanRegistry);
-            beanReader.loadBeanDefinitions(resource);
+            BeanDefinitionRegistry beanRegistry = getXmlSupport().loadBeanDefinitions(resource);
             String[] beanNames = beanRegistry.getBeanDefinitionNames();
             for (String beanName : beanNames) {
                 springConfig.addBeanDefinition(beanName, beanRegistry.getBeanDefinition(beanName));
@@ -223,7 +208,6 @@ public class BeanBuilder extends GroovyObjectSupport {
      * @param definition The definition
      */
     public void xmlns(Map<String, String> definition) {
-        Assert.notNull(namespaceHandlerResolver, "You cannot define a Spring namespace without a [namespaceHandlerResolver] set");
         if (definition.isEmpty()) {
             return;
         }
@@ -234,11 +218,11 @@ public class BeanBuilder extends GroovyObjectSupport {
 
             Assert.notNull(uri, "Namespace definition cannot supply a null URI");
 
-            final NamespaceHandler namespaceHandler = namespaceHandlerResolver.resolve(uri);
+            final NamespaceHandler namespaceHandler = getXmlSupport().resolveNamespaceHandler(uri);
             if (namespaceHandler == null) {
                 throw new BeanDefinitionParsingException(
                       new Problem("No namespace handler found for URI: " + uri,
-                            new Location(readerContext.getResource())));
+                            new Location(getXmlSupport().getReaderContext(beanBuildResource).getResource())));
             }
             namespaceHandlers.put(namespace, namespaceHandler);
             namespaces.put(namespace, uri);
@@ -952,8 +936,7 @@ public class BeanBuilder extends GroovyObjectSupport {
 
     protected DynamicElementReader createDynamicElementReader(String namespace, final boolean decorator) {
         NamespaceHandler handler = namespaceHandlers.get(namespace);
-        ParserContext parserContext = new ParserContext(readerContext, new BeanDefinitionParserDelegate(readerContext));
-        final DynamicElementReader dynamicElementReader = new DynamicElementReader(namespace, namespaces, handler, parserContext) {
+        final DynamicElementReader dynamicElementReader = new DynamicElementReader(namespace, namespaces, handler, getXmlSupport().createParserContext(beanBuildResource)) {
             @Override
             protected void afterInvocation() {
                 if (!decorator) {
@@ -971,6 +954,13 @@ public class BeanBuilder extends GroovyObjectSupport {
         }
         dynamicElementReader.setBeanDecorator(decorator);
         return dynamicElementReader;
+    }
+
+    private BeanBuilderXmlSupport getXmlSupport() {
+        if (xmlSupport == null) {
+            xmlSupport = new BeanBuilderXmlSupport(springConfig, classLoader);
+        }
+        return xmlSupport;
     }
 
     /**
