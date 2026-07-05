@@ -72,9 +72,9 @@ export GRADLE_OPTS="-Xms2G -Xmx5G"
 | Skill | Path | Use For |
 |-------|------|---------|
 | **grails-developer** | `.agents/skills/grails-developer/SKILL.md` | Current Grails apps, GORM, controllers, views |
-| **groovy-developer** | `.agents/skills/groovy-developer/SKILL.md` | Groovy 4 syntax, closures, DSLs, Spock |
+| **groovy-developer** | `.agents/skills/groovy-developer/SKILL.md` | Groovy 5 syntax, closures, DSLs, Spock |
 | **grails-8-upgrade** | `.agents/skills/grails-8-upgrade/SKILL.md` | Upgrading Grails applications from 7.x to 8 |
-| **java-developer** | `.agents/skills/java-developer/SKILL.md` | Java 17 features, Groovy interop |
+| **java-developer** | `.agents/skills/java-developer/SKILL.md` | Java 21 features, Groovy interop |
 | **hibernate-developer** | `.agents/skills/hibernate-developer/SKILL.md` | Hibernate 7 mapping, binders, generators |
 | **violation-fixer** | `.agents/skills/violation-fixer/SKILL.md` | Fix style/analysis violations (CodeNarc, Checkstyle, PMD, SpotBugs) |
 | **test-fixer** | `.agents/skills/test-fixer/SKILL.md` | Aggregate and fix test failures |
@@ -84,11 +84,11 @@ export GRADLE_OPTS="-Xms2G -Xmx5G"
 | Component | Version |
 |-----------|---------|
 | JDK | 21+ (baseline 21) |
-| Groovy | 4.0.x |
-| Spring Boot | 4.0.x |
+| Groovy | 5.0.x |
+| Spring Boot | 4.1.x |
 | Spring Framework | 7.0.x |
-| Spock | 2.4-groovy-4.0 |
-| Gradle | 8.14.x |
+| Spock | 2.4-groovy-5.0 |
+| Gradle | 9.6.x |
 | Jakarta EE | 10 |
 
 ## Project Structure
@@ -280,8 +280,8 @@ and known non-findings — before reporting issues.
 ## Resources
 
 - **Grails Guide**: https://grails.apache.org/docs/latest/guide/single.html
-- **Groovy 4 Docs**: https://docs.groovy-lang.org/docs/groovy-4.0.30/html/documentation/
-- **Spock 2.3 Docs**: https://spockframework.org/spock/docs/2.3/all_in_one.html
+- **Groovy 5 Docs**: https://docs.groovy-lang.org/docs/groovy-5.0.7/html/documentation/
+- **Spock 2.4 Docs**: https://spockframework.org/spock/docs/2.4/all_in_one.html
 - **GORM Docs**: https://grails.apache.org/docs/latest/grails-data/
 - **Issues**: https://github.com/apache/grails-core/issues
 - **Slack**: https://grails.slack.com
