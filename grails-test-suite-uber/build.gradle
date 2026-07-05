@@ -108,6 +108,7 @@ def testSkippingProperties = [
         'onlyFunctionalTests',
         'onlyHibernate5Tests',
         'onlyHibernate7Tests',
+        'onlySpringSecurityTests',
         'onlyMongodbTests',
         'skipCoreTests',
         'skipTests',
