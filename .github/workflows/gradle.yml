@@ -260,7 +260,6 @@ jobs:
           --continue
           --rerun-tasks
           --stacktrace
-          -PgebAtCheckWaiting
           -PonlyFunctionalTests
           -PskipCodeStyle
           -PskipHibernate5Tests
@@ -298,7 +297,6 @@ jobs:
           --continue
           --rerun-tasks
           --stacktrace
-          -PgebAtCheckWaiting
           -PonlySpringSecurityTests
           -PskipCodeStyle
   securityConfig:
@@ -339,7 +337,6 @@ jobs:
           --rerun-tasks
           --stacktrace
           -DTESTCONFIG=${{ matrix.test-config }}
-          -PgebAtCheckWaiting
           -PskipCodeStyle
   redis:
     name: "Redis Tests"
