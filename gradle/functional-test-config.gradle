@@ -62,8 +62,8 @@ tasks.withType(Test).configureEach { Test task ->
     boolean isHibernate5 = project.name.startsWith('grails-test-examples-hibernate5')
     boolean isHibernate7 = project.name.startsWith('grails-test-examples-hibernate7')
     boolean isMongo = project.name.startsWith('grails-test-examples-mongodb')
-    boolean isSpringSecurity = !project.name.startsWith('grails-test-examples-spring-security')
-    boolean isRedis = !project.name.startsWith('grails-test-examples-redis')
+    boolean isSpringSecurity = project.name.startsWith('grails-test-examples-spring-security')
+    boolean isRedis = project.name.startsWith('grails-test-examples-redis')
 
     // Honor DO_NOT_CACHE_TESTS=1 so developers can repeatedly invoke the same test command
     // without --rerun-tasks (and without recompiling everything else).
