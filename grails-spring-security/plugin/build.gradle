@@ -39,6 +39,7 @@ dependencies {
 
 	implementation platform(project(':grails-bom'))
 
+	api project(':grails-spring-security-compat')
 	api project(':grails-async') // AsyncGrailsWebRequest is used in public API
 	api project(':grails-mimetypes')
 	api project(':grails-datastore-core') // API because used in templates
@@ -69,7 +70,8 @@ dependencies {
 	implementation 'org.springframework.security:spring-security-crypto'
 
 	compileOnly 'jakarta.servlet:jakarta.servlet-api' // Provided
-	compileOnly 'jline:jline' // for shell commands
+	compileOnly 'org.jline:jline' // for shell commands
+	compileOnly 'org.fusesource.jansi:jansi' // required for Groovy static type checking of groovysh (Ansi) references
 	compileOnly project(':grails-core') // Provided as this is a Grails Plugin
 	compileOnly 'org.apache.groovy:groovy' // Compile-time annotations
 	compileOnly 'org.slf4j:slf4j-nop' // Prevents warnings about missing slf4j implementation during compilation

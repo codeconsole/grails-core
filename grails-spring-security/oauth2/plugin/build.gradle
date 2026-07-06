@@ -63,9 +63,10 @@ dependencies {
 		// impl: UrlValidator
 	}
 	implementation 'org.apache.commons:commons-lang3' // StringUtils, ExceptionUtils
-	implementation 'jline:jline', {
+	implementation 'org.jline:jline', {
 		// comp: ConsoleReader
 	}
+	compileOnly 'org.fusesource.jansi:jansi' // required for Groovy static type checking of groovysh (Ansi) references
 	implementation project(':grails-datamapping-core'), {
 		// impl: @Transactional(runtime)
 	}
