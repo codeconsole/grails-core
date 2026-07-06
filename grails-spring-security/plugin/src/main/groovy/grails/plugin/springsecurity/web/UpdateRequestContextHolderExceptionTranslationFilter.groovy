@@ -79,6 +79,7 @@ class DelegatingGrailsWebRequest extends GrailsWebRequest {
 
     DelegatingGrailsWebRequest(HttpServletRequest request, HttpServletResponse response, GrailsWebRequest current) {
         super(request, response, current.attributes)
+        this.current = current
     }
 }
 
@@ -91,5 +92,6 @@ class DelegatingAsyncGrailsWebRequest extends AsyncGrailsWebRequest {
 
     DelegatingAsyncGrailsWebRequest(HttpServletRequest request, HttpServletResponse response, AsyncGrailsWebRequest current) {
         super(request, response, current.attributes)
+        this.current = current
     }
 }
