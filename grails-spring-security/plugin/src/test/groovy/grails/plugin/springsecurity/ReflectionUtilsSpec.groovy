@@ -152,8 +152,8 @@ class ReflectionUtilsSpec extends AbstractUnitSpec {
         ReflectionUtils.getGrailsServerURL() == null
     }
 
-    void 'findFilterNames works with multiple boolean representations of settings'() {
-        when:
+    void 'findFilterNames coerces boolean settings without throwing (including null values)'() {
+        when: 'settings are supplied as booleans, strings, or null (e.g. a key absent from config)'
         ConfigObject config = [
                 'filterChain.filterNames' : 'dummy',
                 'secureChannel.definition': secureChannelValue,
@@ -165,7 +165,7 @@ class ReflectionUtilsSpec extends AbstractUnitSpec {
         ] as ConfigObject
         ReflectionUtils.findFilterChainNames(config)
 
-        then:
+        then: 'no exception is thrown - Groovy 5 rejects `null as boolean`, so null must coerce to false'
         noExceptionThrown()
 
         where:
@@ -173,6 +173,26 @@ class ReflectionUtilsSpec extends AbstractUnitSpec {
         true               | false               | false     | false           | true           | false
         'true'             | 'false'             | 'false'   | 'false'         | 'true'         | 'false'
         true               | 'false'             | null      | null            | 'true'         | null
+        null               | null                | null      | null            | null           | null
+    }
+
+    void "findFilterNames includes the x509 filter only when useX509 coerces to true (value=#x509Value)"() {
+        given: 'a config that does not list filter names explicitly, so the boolean flags drive the chain'
+        ConfigObject config = ['useX509': x509Value] as ConfigObject
+
+        when:
+        SortedMap<Integer, String> names = ReflectionUtils.findFilterChainNames(config)
+
+        then: 'x509ProcessingFilter is present only when the flag is truthy; null coerces to false without throwing'
+        names.containsValue('x509ProcessingFilter') == x509Enabled
+
+        where:
+        x509Value || x509Enabled
+        true      || true
+        false     || false
+        'true'    || true
+        null      || false
+        ''        || false
     }
 
     void 'get intercept url map with empty httpMethod config'() {
