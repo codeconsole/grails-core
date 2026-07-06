@@ -41,4 +41,9 @@ class Report {
 		this.name = name
 		this.number = number
 	}
+
+	static constraints = {
+		name nullable: false
+		number nullable: false
+	}
 }
