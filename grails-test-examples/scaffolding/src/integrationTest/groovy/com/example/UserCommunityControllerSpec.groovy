@@ -30,7 +30,6 @@ class UserCommunityControllerSpec extends ContainerGebSpec {
 
     void setup() {
         clearCookiesQuietly()
-        to(LoginPage).login()
     }
 
     void cleanup() {
@@ -42,10 +41,12 @@ class UserCommunityControllerSpec extends ContainerGebSpec {
     }
 
     void "User list"() {
-        when:
-        def page = to(CommunityUserListPage)
+        when: 'an unauthenticated user requests the community user list and signs in when prompted'
+        via(CommunityUserListPage)
+        at(LoginPage).login()
 
-        then:
+        then: 'the saved request redirects to the community user list'
+        def page = at(CommunityUserListPage)
         !page.scaffoldTable
     }
 }
