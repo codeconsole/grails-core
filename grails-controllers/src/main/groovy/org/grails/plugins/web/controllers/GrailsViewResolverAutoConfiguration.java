@@ -31,6 +31,8 @@ import org.springframework.context.annotation.ImportBeanDefinitionRegistrar;
 import org.springframework.core.env.Environment;
 import org.springframework.core.type.AnnotationMetadata;
 
+import grails.config.Settings;
+
 /**
  * Without the auto-injected {@code @EnableWebMvc}, Spring Boot's
  * {@link WebMvcAutoConfiguration} is active and contributes a {@code defaultViewResolver}
@@ -53,7 +55,7 @@ import org.springframework.core.type.AnnotationMetadata;
 @Import(GrailsViewResolverAutoConfiguration.RemoveDefaultViewResolverRegistrar.class)
 public class GrailsViewResolverAutoConfiguration {
 
-    static final String REMOVE_PROPERTY = "grails.web.removeDefaultViewResolverBean";
+    static final String REMOVE_PROPERTY = Settings.WEB_REMOVE_DEFAULT_VIEW_RESOLVER_BEAN;
     static final String LEGACY_REMOVE_PROPERTY = "spring.gsp.removeDefaultViewResolverBean";
 
     static class RemoveDefaultViewResolverRegistrar implements ImportBeanDefinitionRegistrar, EnvironmentAware {
