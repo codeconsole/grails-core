@@ -22,10 +22,12 @@ import com.example.pages.LoginPage
 import com.example.pages.LogoutPage
 import com.example.pages.UserListPage
 
+import grails.plugin.geb.ContainerGebConfiguration
 import grails.plugin.geb.ContainerGebSpec
 import grails.testing.mixin.integration.Integration
 
 @Integration
+@ContainerGebConfiguration(reporting = true)
 class UserControllerSpec extends ContainerGebSpec {
 
     void setup() {
