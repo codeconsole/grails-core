@@ -33,10 +33,10 @@ abstract class SearchPage extends LifecyclePage {
 	}
 
 	boolean assertNoResults() {
-		driver.pageSource.with {
-			assert contains('No results')
-			assert !contains('Showing')
-		}
+		// the results area is re-rendered via AJAX after the search submits,
+		// so retry until the DOM settles instead of reading it once
+		waitFor { driver.pageSource.contains('No results') }
+		assert !driver.pageSource.contains('Showing')
 		true
 	}
 

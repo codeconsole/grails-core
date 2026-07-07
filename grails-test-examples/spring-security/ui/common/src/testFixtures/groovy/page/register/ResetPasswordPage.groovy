@@ -40,15 +40,21 @@ class ResetPasswordPage extends LifecyclePage {
     }
 
     def <T extends LifecyclePage> T enterNewPassword(Form formData, Class<T> expectedPageType) {
-        formData.applyTo(this)
-        submitBtn.click()
+        // a validation failure re-renders this same page, so the at-check on the
+        // previous call can pass against the outgoing document; retry until the
+        // form inputs of the freshly rendered page are actually interactable
+        waitFor {
+            formData.applyTo(this)
+            true
+        }
+        clickAndWaitForNavigation(submitBtn)
         T page = browser.at(expectedPageType)
         waitFor { page.loaded }
         page
     }
 
     def <T extends LifecyclePage> T submitResetPassword(Class<T> expectedPageType) {
-        submitBtn.click()
+        clickAndWaitForNavigation(submitBtn)
         T page = browser.at(expectedPageType)
         waitFor { page.loaded }
         page
