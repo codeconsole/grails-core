@@ -16,28 +16,41 @@
  *  specific language governing permissions and limitations
  *  under the License.
  */
+package org.grails.web.taglib.nsinference.admin
 
-class UrlMappings {
+import grails.artefact.Artefact
 
-    static mappings = {
-        "/$controller/$action?/$id?(.$format)?"{
-            constraints {
-                // apply constraints here
-            }
-        }
+@Artefact('Controller')
+class AuthorController {
+    static namespace = 'admin'
 
-        "/admin/$controller/$action?/$id?(.$format)?"{
-            namespace = "admin"
-        }
+    def index() {
+        render 'admin author index'
+    }
 
-        // Exercises URL paths that dispatch to controllers with static namespace declarations. Link
-        // generation inference is based on controller namespace metadata; request-time mapping
-        // conditions such as headers still require explicit namespace selection when ambiguous.
-        "/frontend/$controller/$action?/$id?(.$format)?"{
-            namespace = "frontend"
-        }
+    def list() {
+        render 'admin author list'
+    }
+}
 
-        "/"(view:"/index")
-        "500"(view:'/error')
+@Artefact('Controller')
+class BookController {
+    static namespace = 'admin'
+
+    def index() {
+        render 'admin book index'
+    }
+
+    def list() {
+        render 'admin book list'
+    }
+}
+
+@Artefact('Controller')
+class ReportController {
+    static namespace = 'admin'
+
+    def index() {
+        render 'admin report index'
     }
 }

@@ -17,27 +17,15 @@
  *  under the License.
  */
 
-class UrlMappings {
+package namespaces
 
-    static mappings = {
-        "/$controller/$action?/$id?(.$format)?"{
-            constraints {
-                // apply constraints here
-            }
-        }
+class AppLinkTagLib {
 
-        "/admin/$controller/$action?/$id?(.$format)?"{
-            namespace = "admin"
-        }
+    static namespace = "app"
+    static defaultEncodeAs = [taglib: "none"]
 
-        // Exercises URL paths that dispatch to controllers with static namespace declarations. Link
-        // generation inference is based on controller namespace metadata; request-time mapping
-        // conditions such as headers still require explicit namespace selection when ambiguous.
-        "/frontend/$controller/$action?/$id?(.$format)?"{
-            namespace = "frontend"
-        }
-
-        "/"(view:"/index")
-        "500"(view:'/error')
+    def bookLink = { attrs ->
+        String elementId = attrs.id ?: "appBookLink"
+        out << "<a id=\"${elementId}\" href=\"${g.createLink(controller: 'book', action: 'index')}\">Custom Book Link</a>"
     }
 }

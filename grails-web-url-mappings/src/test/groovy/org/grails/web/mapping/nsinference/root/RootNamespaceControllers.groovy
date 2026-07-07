@@ -16,28 +16,25 @@
  *  specific language governing permissions and limitations
  *  under the License.
  */
+package org.grails.web.mapping.nsinference.root
 
-class UrlMappings {
+import grails.artefact.Artefact
 
-    static mappings = {
-        "/$controller/$action?/$id?(.$format)?"{
-            constraints {
-                // apply constraints here
-            }
-        }
+/**
+ * A non-namespaced (root) controller whose logical name {@code author} also exists in the
+ * {@code admin} namespace, used to exercise the ambiguous root-plus-namespaced resolution case.
+ */
+@Artefact('Controller')
+class AuthorController {
+    def index() {}
+    def list() {}
+}
 
-        "/admin/$controller/$action?/$id?(.$format)?"{
-            namespace = "admin"
-        }
-
-        // Exercises URL paths that dispatch to controllers with static namespace declarations. Link
-        // generation inference is based on controller namespace metadata; request-time mapping
-        // conditions such as headers still require explicit namespace selection when ambiguous.
-        "/frontend/$controller/$action?/$id?(.$format)?"{
-            namespace = "frontend"
-        }
-
-        "/"(view:"/index")
-        "500"(view:'/error')
-    }
+/**
+ * A non-namespaced (root) controller whose logical name {@code home} exists only at the root,
+ * used to exercise the root-only resolution case.
+ */
+@Artefact('Controller')
+class HomeController {
+    def index() {}
 }

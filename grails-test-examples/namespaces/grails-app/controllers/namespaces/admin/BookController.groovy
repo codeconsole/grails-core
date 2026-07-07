@@ -17,27 +17,29 @@
  *  under the License.
  */
 
-class UrlMappings {
+package namespaces.admin
 
-    static mappings = {
-        "/$controller/$action?/$id?(.$format)?"{
-            constraints {
-                // apply constraints here
-            }
-        }
+class BookController {
 
-        "/admin/$controller/$action?/$id?(.$format)?"{
-            namespace = "admin"
-        }
+    static namespace = "admin"
 
-        // Exercises URL paths that dispatch to controllers with static namespace declarations. Link
-        // generation inference is based on controller namespace metadata; request-time mapping
-        // conditions such as headers still require explicit namespace selection when ambiguous.
-        "/frontend/$controller/$action?/$id?(.$format)?"{
-            namespace = "frontend"
-        }
+    def index() {
+        render view: "/book/index", model: [pageTitle: "Admin Book"]
+    }
 
-        "/"(view:"/index")
-        "500"(view:'/error')
+    def list() {
+        render view: "/book/index", model: [pageTitle: "Admin Book List"]
+    }
+
+    def save() {
+        render "Admin Book Save"
+    }
+
+    def alternateSave() {
+        render "Admin Book Alternate Save"
+    }
+
+    def included() {
+        render "Admin Book Include"
     }
 }
