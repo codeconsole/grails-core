@@ -293,6 +293,7 @@ ext {
                 'liquibase.version'          : '4.27.0',
                 'hibernate.version'          : '5.6.15.Final',
                 'protobuf.version'           : '4.30.2',
+                'asm.version'                : '9.10.1',
                 'spock.version'              : '2.4-groovy-5.0',
         ]
         combinedVersions += customBomVersions
@@ -335,6 +336,8 @@ ext {
                 'liquibase-core'        : "org.liquibase:liquibase-core:${combinedVersions['liquibase.version']}",
                 'liquibase-hibernate'   : "org.liquibase.ext:liquibase-hibernate5:${combinedVersions['liquibase-hibernate.version']}",
                 'protobuf-java'        : "com.google.protobuf:protobuf-java:${combinedVersions['protobuf.version']}",
+                'asm'                  : "org.ow2.asm:asm:${combinedVersions['asm.version']}",
+                'asm-util'             : "org.ow2.asm:asm-util:${combinedVersions['asm.version']}",
                 'spock-core'           : "org.spockframework:spock-core:${combinedVersions['spock.version']}",
                 'spock-spring'         : "org.spockframework:spock-spring:${combinedVersions['spock.version']}",
         ]
@@ -358,6 +361,7 @@ ext {
                 'liquibase.version'             : '4.27.0',
                 'mockito-inline.version'        : '5.2.0',
                 'protobuf.version'              : '4.30.2',
+                'asm.version'                   : '9.10.1',
                 'spock.version'                 : '2.4-groovy-5.0',
         ]
         combinedVersions += customBomVersions
@@ -407,6 +411,8 @@ ext {
                 'liquibase-test-harness': "org.liquibase:liquibase-test-harness:${combinedVersions['liquibase-test-harness.version']}",
                 'mockito-inline'        : "org.mockito:mockito-inline:${combinedVersions['mockito-inline.version']}",
                 'protobuf-java'        : "com.google.protobuf:protobuf-java:${combinedVersions['protobuf.version']}",
+                'asm'                  : "org.ow2.asm:asm:${combinedVersions['asm.version']}",
+                'asm-util'             : "org.ow2.asm:asm-util:${combinedVersions['asm.version']}",
                 'spock-core'           : "org.spockframework:spock-core:${combinedVersions['spock.version']}",
                 'spock-spring'         : "org.spockframework:spock-spring:${combinedVersions['spock.version']}",
         ]
