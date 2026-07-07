@@ -18,6 +18,8 @@
  */
 package grails.boot.config
 
+import org.springframework.beans.factory.BeanRegistrar
+import org.springframework.beans.factory.BeanRegistry
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.context.annotation.AnnotationConfigApplicationContext
 import org.springframework.context.annotation.Bean
@@ -25,6 +27,7 @@ import org.springframework.context.annotation.Configuration
 
 import grails.core.GrailsApplication
 import grails.plugins.GrailsPluginManager
+import grails.plugins.Plugin
 import grails.util.Environment
 import grails.util.Holders
 import org.apache.grails.core.plugins.DefaultPluginDiscovery
@@ -97,6 +100,54 @@ class EarlyPluginRegistrationOrderingSpec extends Specification {
             ctx.close()
     }
 
+    void 'a plugin beanRegistrar bean registered early makes a @ConditionalOnMissingBean auto-config bean defer'() {
+        given: 'a context whose configuration would, by itself, register a conditional myResolver'
+            def ctx = new AnnotationConfigApplicationContext()
+            ctx.register(EarlyOrderingAutoConfigLikeConfig)
+
+        and: 'a plugin exposing a BeanRegistrar promoted through plugin discovery'
+            registerDiscovery(ctx, EarlyOrderingRegistrarGrailsPlugin)
+            new GrailsPluginLifecycleInitializer().initialize(ctx)
+
+        when: 'the context refreshes'
+            ctx.refresh()
+
+        then: 'the registrar (plugin) bean is the one named myResolver and the conditional default backed off'
+            ctx.getBean('myResolver') instanceof EarlyOrderingPluginResolver
+            ctx.getBeansOfType(EarlyOrderingBootDefaultResolver).isEmpty()
+
+        cleanup:
+            ctx.close()
+            Holders.clear()
+            Environment.setInitializing(false)
+    }
+
+    void 'plugin beanRegistrar and doWithSpring can coexist on one plugin'() {
+        given:
+            def ctx = new AnnotationConfigApplicationContext()
+            registerDiscovery(ctx, EarlyOrderingDualGrailsPlugin)
+            new GrailsPluginLifecycleInitializer().initialize(ctx)
+
+        when:
+            ctx.refresh()
+
+        then: 'both the DSL bean and the registrar bean are present'
+            ctx.getBean('dualDslBean') instanceof EarlyOrderingPluginResolver
+            ctx.getBean('dualRegistrarBean') instanceof EarlyOrderingPluginResolver
+
+        cleanup:
+            ctx.close()
+            Holders.clear()
+            Environment.setInitializing(false)
+    }
+
+    private static void registerDiscovery(AnnotationConfigApplicationContext ctx, Class<?> pluginClass) {
+        def discovery = new DefaultPluginDiscovery([pluginClass] as Class<?>[])
+        discovery.loadPluginsFromClasspath = false
+        discovery.init(ctx.environment)
+        ctx.beanFactory.registerSingleton(PluginDiscovery.BEAN_NAME, discovery)
+    }
+
     private static Class<?> getEarlyOrderingPluginClass() {
         new GroovyClassLoader(EarlyPluginRegistrationOrderingSpec.classLoader).parseClass('''
 class EarlyOrderingGrailsPlugin {
@@ -124,4 +175,47 @@ class EarlyOrderingBootDefaultResolver {
 }
 
 class EarlyOrderingPluginResolver {
+}
+
+class EarlyOrderingRegistrarGrailsPlugin extends Plugin {
+
+    def version = '1.0'
+
+    @Override
+    BeanRegistrar beanRegistrar() {
+        new EarlyOrderingResolverRegistrar()
+    }
+}
+
+class EarlyOrderingResolverRegistrar implements BeanRegistrar {
+
+    @Override
+    void register(BeanRegistry registry, org.springframework.core.env.Environment environment) {
+        registry.registerBean('myResolver', EarlyOrderingPluginResolver)
+    }
+}
+
+class EarlyOrderingDualGrailsPlugin extends Plugin {
+
+    def version = '1.0'
+
+    @Override
+    Closure doWithSpring() {
+        { ->
+            dualDslBean(EarlyOrderingPluginResolver)
+        }
+    }
+
+    @Override
+    BeanRegistrar beanRegistrar() {
+        new EarlyOrderingDualRegistrar()
+    }
+}
+
+class EarlyOrderingDualRegistrar implements BeanRegistrar {
+
+    @Override
+    void register(BeanRegistry registry, org.springframework.core.env.Environment environment) {
+        registry.registerBean('dualRegistrarBean', EarlyOrderingPluginResolver)
+    }
 }

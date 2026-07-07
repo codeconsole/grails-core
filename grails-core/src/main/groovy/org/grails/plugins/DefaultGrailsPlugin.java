@@ -42,6 +42,7 @@ import org.apache.commons.logging.LogFactory;
 import org.springframework.beans.BeanWrapper;
 import org.springframework.beans.BeanWrapperImpl;
 import org.springframework.beans.BeansException;
+import org.springframework.beans.factory.BeanRegistrar;
 import org.springframework.beans.factory.config.BeanFactoryPostProcessor;
 import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
 import org.springframework.context.ApplicationContext;
@@ -55,6 +56,7 @@ import org.springframework.core.type.filter.TypeFilter;
 
 import grails.core.ArtefactHandler;
 import grails.core.GrailsApplication;
+import grails.core.GrailsApplicationLifeCycle;
 import grails.core.support.GrailsApplicationAware;
 import grails.core.support.ParentApplicationContextAware;
 import grails.plugins.GrailsPlugin;
@@ -414,6 +416,14 @@ public class DefaultGrailsPlugin extends AbstractGrailsPlugin implements ParentA
             bb.invokeMethod("beans", new Object[]{c});
         }
 
+    }
+
+    @Override
+    public BeanRegistrar getBeanRegistrar() {
+        if (plugin instanceof GrailsApplicationLifeCycle) {
+            return ((GrailsApplicationLifeCycle) plugin).beanRegistrar();
+        }
+        return null;
     }
 
     @Override

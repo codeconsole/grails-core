@@ -1346,3 +1346,70 @@ grails:
                         - Presto
                         - Trident
 ----
+
+==== 31. Plugin Beans Now Register Before Spring Boot Auto-Configuration
+
+In Grails 7 and earlier, the beans a plugin contributed through `doWithSpring` were registered *after* Spring Boot had processed its auto-configurations.
+A plugin that wanted to replace a Boot-provided bean therefore had to rely on bean-definition overriding, and Boot beans guarded by `@ConditionalOnMissingBean` never saw the plugin's bean in time to back off.
+
+In Grails 8 the plugin lifecycle is unified and retimed: plugin bean definitions — both `doWithSpring` and the new `beanRegistrar()` hook — are drained into the bean definition registry *before* Spring Boot expands its auto-configurations. The practical effects are:
+
+* **Plugin beans win `@ConditionalOnMissingBean` races.** When a plugin registers a bean, a Boot auto-configuration bean of the same name or type that is guarded by `@ConditionalOnMissingBean` now backs off in favor of the plugin's bean. Plugins no longer need to override or remove Boot's defaults after the fact.
+* **A single plugin manager and `GrailsApplication`.** The plugin manager and the `grailsApplication` are built exactly once, early in the context lifecycle, and reused for the rest of startup. Plugins are instantiated once; `Holders.grailsApplication` is available earlier than before.
+* **Artefact discovery happens earlier.** Controllers, services, domain classes and other artefacts are discovered before plugin beans are registered, because core plugins iterate the application's artefacts while defining beans. The set of discovered artefacts is unchanged — only the timing moved.
+* **Side-effectful `doWithSpring` closures still run once**, just earlier. Closures that read `grailsApplication.config` continue to work; the configuration is fully loaded (including plugin-contributed configuration) before any bean-definition code runs.
+
+**The bean builder DSL is deprecated.** `doWithSpring()` on `GrailsApplicationLifeCycle` and `grails.plugins.Plugin` is deprecated as of Grails 8 — it continues to work, but the recommended way to register beans is the new `beanRegistrar()` hook, which returns a Spring Framework `org.springframework.beans.factory.BeanRegistrar`.
+
+Before (deprecated bean builder DSL):
+
+[source,groovy]
+----
+import grails.plugins.Plugin
+
+class MyGrailsPlugin extends Plugin {
+
+    @Override
+    Closure doWithSpring() {
+        { ->
+            myService(MyServiceImpl) {
+                timeout = config.getProperty('myPlugin.timeout', Integer, 30)
+            }
+        }
+    }
+}
+----
+
+After (Spring `BeanRegistrar`):
+
+[source,groovy]
+----
+import grails.plugins.Plugin
+import org.springframework.beans.factory.BeanRegistrar
+import org.springframework.beans.factory.BeanRegistry
+import org.springframework.core.env.Environment
+
+class MyGrailsPlugin extends Plugin {
+
+    @Override
+    BeanRegistrar beanRegistrar() {
+        new MyPluginBeanRegistrar()
+    }
+}
+
+class MyPluginBeanRegistrar implements BeanRegistrar {
+
+    @Override
+    void register(BeanRegistry registry, Environment environment) {
+        registry.registerBean('myService', MyServiceImpl) { spec ->
+            spec.supplier { context ->
+                new MyServiceImpl(timeout: environment.getProperty('myPlugin.timeout', Integer, 30))
+            }
+        }
+    }
+}
+----
+
+Both hooks may be used on the same plugin during migration; when a registrar and the DSL register a bean under the same name, the registrar's definition wins.
+
+**Most applications and plugins need no action.** Behavior only changes where a plugin bean and a conditional Boot bean competed for the same name or type — the plugin bean now wins, which is almost always the intended outcome.

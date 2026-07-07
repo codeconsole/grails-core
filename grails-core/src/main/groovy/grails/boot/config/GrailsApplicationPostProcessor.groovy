@@ -24,10 +24,12 @@ import groovy.util.logging.Slf4j
 
 import org.springframework.beans.BeansException
 import org.springframework.beans.factory.BeanFactory
+import org.springframework.beans.factory.BeanRegistrar
 import org.springframework.beans.factory.config.ConfigurableBeanFactory
 import org.springframework.beans.factory.config.ConfigurableListableBeanFactory
 import org.springframework.beans.factory.support.BeanDefinitionRegistry
 import org.springframework.beans.factory.support.BeanDefinitionRegistryPostProcessor
+import org.springframework.beans.factory.support.BeanRegistryAdapter
 import org.springframework.context.ApplicationContext
 import org.springframework.context.ApplicationContextAware
 import org.springframework.context.ApplicationListener
@@ -280,6 +282,16 @@ class GrailsApplicationPostProcessor implements BeanDefinitionRegistryPostProces
         }
 
         springConfig.registerBeansWithRegistry(registry)
+
+        if (lifeCycle) {
+            // the application's BeanRegistrar drains at the same point as its doWithSpring closure,
+            // after the DSL flush so registrar beans win any name conflicts with the deprecated DSL
+            BeanRegistrar registrar = lifeCycle.beanRegistrar()
+            if (registrar != null) {
+                new BeanRegistryAdapter(registry, applicationContext, applicationContext.environment, registrar.getClass())
+                        .register(registrar)
+            }
+        }
     }
 
     @Override

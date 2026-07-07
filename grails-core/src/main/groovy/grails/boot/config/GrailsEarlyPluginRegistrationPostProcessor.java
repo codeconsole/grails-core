@@ -25,9 +25,11 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.springframework.beans.BeansException;
+import org.springframework.beans.factory.BeanRegistrar;
 import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
 import org.springframework.beans.factory.support.BeanDefinitionRegistry;
 import org.springframework.beans.factory.support.BeanDefinitionRegistryPostProcessor;
+import org.springframework.beans.factory.support.BeanRegistryAdapter;
 import org.springframework.context.ApplicationListener;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.context.event.ContextRefreshedEvent;
@@ -41,6 +43,7 @@ import grails.core.DefaultGrailsApplication;
 import grails.core.GrailsApplication;
 import grails.core.GrailsApplicationClass;
 import grails.plugins.DefaultGrailsPluginManager;
+import grails.plugins.GrailsPlugin;
 import grails.plugins.GrailsPluginManager;
 import grails.util.Environment;
 import grails.util.Holders;
@@ -136,6 +139,7 @@ public class GrailsEarlyPluginRegistrationPostProcessor
         RuntimeSpringConfiguration springConfig = new DefaultRuntimeSpringConfiguration();
         pluginManager.doRuntimeConfiguration(springConfig);
         springConfig.registerBeansWithRegistry(registry);
+        applyBeanRegistrars(pluginManager, registry);
 
         ConfigurableListableBeanFactory beanFactory = applicationContext.getBeanFactory();
         beanFactory.registerSingleton(GrailsApplication.APPLICATION_ID, grailsApplication);
@@ -147,6 +151,27 @@ public class GrailsEarlyPluginRegistrationPostProcessor
         // present in every context that runs this phase — reset here as well so the flag (a system
         // property) does not leak once the context is up.
         applicationContext.addApplicationListener(this);
+    }
+
+    /**
+     * Applies the {@link BeanRegistrar} exposed by each enabled plugin through
+     * {@link grails.core.GrailsApplicationLifeCycle#beanRegistrar()}, in plugin order, using the
+     * same adapter Spring uses for {@code GenericApplicationContext.register(BeanRegistrar...)}.
+     * Runs after the {@code doWithSpring} drain so registrar beans win any name conflicts with the
+     * deprecated DSL.
+     */
+    private void applyBeanRegistrars(DefaultGrailsPluginManager pluginManager, BeanDefinitionRegistry registry) {
+        String[] activeProfiles = applicationContext.getEnvironment().getActiveProfiles();
+        for (GrailsPlugin plugin : pluginManager.getAllPlugins()) {
+            if (!plugin.supportsCurrentScopeAndEnvironment() || !plugin.isEnabled(activeProfiles)) {
+                continue;
+            }
+            BeanRegistrar registrar = plugin.getBeanRegistrar();
+            if (registrar != null) {
+                new BeanRegistryAdapter(registry, applicationContext.getBeanFactory(),
+                        applicationContext.getEnvironment(), registrar.getClass()).register(registrar);
+            }
+        }
     }
 
     private void registerApplicationArtefacts(DefaultGrailsApplication grailsApplication, BeanDefinitionRegistry registry) {
