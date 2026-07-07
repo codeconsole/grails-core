@@ -40,11 +40,6 @@ jobs:
         with:
           java-version: 17
           distribution: liberica
-      - name: "🗄️ Cache local Maven repository"
-        uses: actions/cache@v4
-        with:
-          path: ~/.m2/repository
-          key: cache-local-maven-${{ github.sha }}
       - name: "📥 Checkout Grails Core to fetch Gradle Plugin versions it uses"
         uses: actions/checkout@v6
         with:
@@ -65,6 +60,7 @@ jobs:
       - name: "🐘 Setup Gradle"
         uses: gradle/actions/setup-gradle@4d9f0ba0025fe599b4ebab900eb7f3a1d93ef4c2 # v5.0.0
         with:
+          cache-disabled: true # this workflow rebuilds Groovy each run; a Gradle home cache is not useful here
           develocity-access-key: ${{ secrets.DEVELOCITY_ACCESS_KEY  }}
       - name: "🔍 Setup TestLens"
         uses: testlens-app/setup-testlens@v1
@@ -123,6 +119,13 @@ jobs:
         run: |
           cd groovy
           ./gradlew pTML -x groovydoc -x javadoc -x javadocAll -x groovydocAll -x asciidoc -x docGDK
+      - name: "📤 Share locally built Groovy artifacts with the build_grails job"
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: local-groovy-maven-repo
+          path: ~/.m2/repository/org/apache/groovy/
+          if-no-files-found: 'error'
+          retention-days: 1
 
   build_grails:
     needs: [build_groovy]
@@ -148,14 +151,15 @@ jobs:
       - name: "🐘 Setup Gradle"
         uses: gradle/actions/setup-gradle@4d9f0ba0025fe599b4ebab900eb7f3a1d93ef4c2 # v5.0.0
         with:
+          cache-disabled: true # this workflow rebuilds Groovy each run; a Gradle home cache is not useful here
           develocity-access-key: ${{ secrets.DEVELOCITY_ACCESS_KEY  }}
       - name: "🔍 Setup TestLens"
         uses: testlens-app/setup-testlens@v1
-      - name: "🗄️ Restore local Maven repository from cache"
-        uses: actions/cache@v4
+      - name: "📥 Fetch the locally built Groovy artifacts"
+        uses: actions/download-artifact@v7.0.0
         with:
-          path: ~/.m2/repository
-          key: cache-local-maven-${{ github.sha }}
+          name: local-groovy-maven-repo
+          path: ~/.m2/repository/org/apache/groovy
       - name: 'Swap Groovy Version'
         run: |
           sed -i "/['\"]groovy\.version['\"][[:space:]]*:/c\'groovy.version':'${{ needs.build_groovy.outputs.groovyVersion }}'," dependencies.gradle
