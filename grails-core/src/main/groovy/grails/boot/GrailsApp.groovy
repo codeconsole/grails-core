@@ -34,6 +34,7 @@ import org.springframework.context.ConfigurableApplicationContext
 import org.springframework.core.env.ConfigurableEnvironment
 import org.springframework.core.io.ResourceLoader
 
+import grails.boot.config.GrailsEarlyPluginRegistrationPostProcessor
 import grails.compiler.ast.ClassInjector
 import grails.config.Settings
 import grails.core.GrailsApplication
@@ -139,6 +140,22 @@ class GrailsApp extends SpringApplication {
         String pidFilePath = System.getProperty(CLI_PID_FILE_PROPERTY)
         if (pidFilePath) {
             addListeners(new ApplicationPidFileWriter(pidFilePath))
+        }
+    }
+
+    /**
+     * Stashes the application source classes as a well-known singleton so that
+     * {@code GrailsEarlyPluginRegistrationPostProcessor} can perform artefact discovery before
+     * Spring Boot auto-configuration is processed. Runs before the context initializers are
+     * applied, so the singleton is available by the time the early registration phase executes.
+     */
+    @Override
+    protected void postProcessApplicationContext(ConfigurableApplicationContext applicationContext) {
+        super.postProcessApplicationContext(applicationContext)
+        Class<?>[] sourceClasses = getAllSources().findAll { it instanceof Class } as Class<?>[]
+        if (sourceClasses.length > 0) {
+            applicationContext.beanFactory.registerSingleton(
+                    GrailsEarlyPluginRegistrationPostProcessor.APPLICATION_SOURCE_CLASSES_BEAN_NAME, sourceClasses)
         }
     }
 

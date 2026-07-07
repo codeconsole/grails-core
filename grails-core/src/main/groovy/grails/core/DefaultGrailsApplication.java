@@ -220,6 +220,18 @@ public class DefaultGrailsApplication extends AbstractGrailsApplication implemen
     }
 
     /**
+     * Sets the application class. Used to adopt the application class when this instance was
+     * constructed before the {@link GrailsApplicationClass} was available, e.g. during early
+     * plugin registration ahead of Spring Boot auto-configuration.
+     *
+     * @param applicationClass The application class
+     * @since 8.0
+     */
+    public void setApplicationClass(GrailsApplicationClass applicationClass) {
+        this.applicationClass = applicationClass;
+    }
+
+    /**
      * Initialises the default set of ArtefactHandler instances.
      *
      * @see grails.core.ArtefactHandler

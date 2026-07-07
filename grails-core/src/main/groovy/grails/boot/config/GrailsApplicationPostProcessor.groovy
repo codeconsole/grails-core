@@ -78,6 +78,7 @@ class GrailsApplicationPostProcessor implements BeanDefinitionRegistryPostProces
     final GrailsApplicationClass applicationClass
     final Class[] classes
     protected final GrailsPluginManager pluginManager
+    protected final boolean earlyPluginRegistrationRan
     protected ApplicationContext applicationContext
     boolean loadExternalBeans = true
     boolean reloadingEnabled = RELOADING_ENABLED
@@ -91,11 +92,34 @@ class GrailsApplicationPostProcessor implements BeanDefinitionRegistryPostProces
             this.applicationClass = null
         }
         this.classes = classes != null ? classes : [] as Class[]
-        grailsApplication = applicationClass != null ? new DefaultGrailsApplication(applicationClass) : new DefaultGrailsApplication()
+        this.earlyPluginRegistrationRan = hasEarlyPluginRegistrationRun(applicationContext)
+        if (earlyPluginRegistrationRan) {
+            grailsApplication = applicationContext.getBean(GrailsApplication.APPLICATION_ID, GrailsApplication)
+            if (applicationClass != null && grailsApplication instanceof DefaultGrailsApplication) {
+                ((DefaultGrailsApplication) grailsApplication).setApplicationClass(applicationClass)
+            }
+        }
+        else {
+            grailsApplication = applicationClass != null ? new DefaultGrailsApplication(applicationClass) : new DefaultGrailsApplication()
+        }
         pluginManager = applicationContext?.getBeanNamesForType(GrailsPluginManager) ? applicationContext.getBean(GrailsPluginManager) : new DefaultGrailsPluginManager(grailsApplication, pluginDiscovery)
         if (applicationContext != null) {
             setApplicationContext(applicationContext)
         }
+    }
+
+    /**
+     * Determines whether {@link GrailsEarlyPluginRegistrationPostProcessor} already built the
+     * {@code grailsApplication} and {@code pluginManager} singletons and drained the plugin
+     * runtime configuration for this context. Checked on the local bean factory only, so a
+     * parent context's early phase never short-circuits a child context's lifecycle.
+     */
+    private static boolean hasEarlyPluginRegistrationRun(ApplicationContext applicationContext) {
+        if (applicationContext instanceof ConfigurableApplicationContext) {
+            return ((ConfigurableApplicationContext) applicationContext).beanFactory
+                    .containsSingleton(GrailsEarlyPluginRegistrationPostProcessor.EARLY_REGISTRATION_COMPLETE_BEAN_NAME)
+        }
+        return false
     }
 
     /**
@@ -122,11 +146,31 @@ class GrailsApplicationPostProcessor implements BeanDefinitionRegistryPostProces
         Environment.setInitializing(true)
         grailsApplication.applicationContext = applicationContext
         grailsApplication.mainContext = applicationContext
-        pluginManager.loadPlugins()
-        pluginManager.applicationContext = applicationContext
+        if (!earlyPluginRegistrationRan) {
+            pluginManager.loadPlugins()
+            pluginManager.applicationContext = applicationContext
+        }
         loadApplicationConfig()
         customizeGrailsApplication(grailsApplication)
-        performGrailsInitializationSequence()
+        if (earlyPluginRegistrationRan) {
+            registerRemainingApplicationClasses()
+        }
+        else {
+            performGrailsInitializationSequence()
+        }
+    }
+
+    /**
+     * When the early plugin registration phase already performed artefact discovery, only the
+     * application classes it could not resolve (e.g. a customized {@code classes()} implementation)
+     * still need to be registered.
+     */
+    private void registerRemainingApplicationClasses() {
+        for (cls in classes) {
+            if (!grailsApplication.isArtefact(cls)) {
+                grailsApplication.addArtefact(cls)
+            }
+        }
     }
 
     protected void customizeGrailsApplication(GrailsApplication grailsApplication) {
@@ -194,8 +238,11 @@ class GrailsApplicationPostProcessor implements BeanDefinitionRegistryPostProces
         def application = grailsApplication
         Holders.setGrailsApplication(application)
 
-        // first register plugin beans
-        pluginManager.doRuntimeConfiguration(springConfig)
+        if (!earlyPluginRegistrationRan) {
+            // first register plugin beans; when the early phase ran they were
+            // already drained into the registry ahead of auto-configuration
+            pluginManager.doRuntimeConfiguration(springConfig)
+        }
 
         if (loadExternalBeans) {
             // now allow overriding via application
@@ -240,11 +287,21 @@ class GrailsApplicationPostProcessor implements BeanDefinitionRegistryPostProces
         BeanFactory parentBeanFactory = beanFactory.getParentBeanFactory()
         if (parentBeanFactory instanceof ConfigurableBeanFactory) {
             ConfigurableBeanFactory configurableBeanFactory = parentBeanFactory
-            configurableBeanFactory.registerSingleton(GrailsApplication.APPLICATION_ID, grailsApplication)
-            configurableBeanFactory.registerSingleton(GrailsPluginManager.BEAN_NAME, pluginManager)
+            registerSingletonIfAbsent(configurableBeanFactory, GrailsApplication.APPLICATION_ID, grailsApplication)
+            registerSingletonIfAbsent(configurableBeanFactory, GrailsPluginManager.BEAN_NAME, pluginManager)
         } else {
-            beanFactory.registerSingleton(GrailsApplication.APPLICATION_ID, grailsApplication)
-            beanFactory.registerSingleton(GrailsPluginManager.BEAN_NAME, pluginManager)
+            registerSingletonIfAbsent(beanFactory, GrailsApplication.APPLICATION_ID, grailsApplication)
+            registerSingletonIfAbsent(beanFactory, GrailsPluginManager.BEAN_NAME, pluginManager)
+        }
+    }
+
+    /**
+     * The early plugin registration phase may have already promoted these singletons;
+     * {@code registerSingleton} throws {@code IllegalStateException} on double registration.
+     */
+    private static void registerSingletonIfAbsent(ConfigurableBeanFactory beanFactory, String beanName, Object singleton) {
+        if (!beanFactory.containsSingleton(beanName)) {
+            beanFactory.registerSingleton(beanName, singleton)
         }
     }
 
