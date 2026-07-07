@@ -28,12 +28,13 @@ abstract class EditPage extends LifecyclePage {
 	}
 
 	def <T extends LifecyclePage> T submitDelete(Class<T> expectedPageType) {
+		def oldElement = submitBtn.firstElement()
 		js.exec('document.forms.deleteForm.submit()')
+		waitForStale(oldElement)
 		waitForPage(expectedPageType)
 	}
 
 	<T extends LifecyclePage> T submitEdit(Class<T> expectedPageType) {
-		submitBtn.click()
-		waitForPage(expectedPageType)
+		clickAndWaitForPage(submitBtn, expectedPageType)
 	}
 }
