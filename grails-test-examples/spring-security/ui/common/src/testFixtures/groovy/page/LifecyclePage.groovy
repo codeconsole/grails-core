@@ -19,6 +19,7 @@
 package page
 
 import org.openqa.selenium.StaleElementReferenceException
+import org.openqa.selenium.WebElement
 
 import geb.Page
 import geb.navigator.Navigator
@@ -51,8 +52,12 @@ class LifecyclePage extends Page {
      * {@code browser.at()} would otherwise pass against the outgoing document.
      */
     protected void clickAndWaitForNavigation(Navigator button) {
-        def oldElement = button.firstElement()
+        WebElement oldElement = button.firstElement()
         button.click()
+        waitForStale(oldElement)
+    }
+
+    protected void waitForStale(WebElement oldElement) {
         waitFor {
             try {
                 oldElement.enabled
@@ -62,5 +67,10 @@ class LifecyclePage extends Page {
                 true
             }
         }
+    }
+
+    protected <T extends LifecyclePage> T clickAndWaitForPage(Navigator button, Class<T> expectedPageType) {
+        clickAndWaitForNavigation(button)
+        waitForPage(expectedPageType)
     }
 }

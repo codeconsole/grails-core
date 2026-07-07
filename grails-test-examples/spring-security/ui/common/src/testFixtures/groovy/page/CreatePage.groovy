@@ -32,7 +32,6 @@ abstract class CreatePage extends LifecyclePage {
 	}
 
 	<T extends LifecyclePage> T submitCreate(Class<T> expectedPageType) {
-		submitBtn.click()
-		waitForPage(expectedPageType)
+		clickAndWaitForPage(submitBtn, expectedPageType)
 	}
 }

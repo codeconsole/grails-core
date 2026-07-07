@@ -33,9 +33,6 @@ class ForgotPasswordPage extends LifecyclePage {
 
 	def <T extends LifecyclePage> T submitForgotPassword(String username = null, Class<T> expectedPageType) {
 		if (username != null) this.username.text = username
-		submitBtn.click()
-		T page = browser.at(expectedPageType)
-		waitFor { page.loaded }
-		page
+		clickAndWaitForPage(submitBtn, expectedPageType)
 	}
 }

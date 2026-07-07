@@ -36,9 +36,6 @@ class SecurityQuestionsPage extends LifecyclePage {
 	def <T extends LifecyclePage> T  submitAnswer(String answer1, String answer2, Class<T> expectedPageType) {
 		if (answer1) question1.text = answer1
 		if (answer2) question2.text = answer2
-		submitBtn.click()
-		T page = browser.at(expectedPageType)
-		waitFor { page.loaded }
-		page
+		clickAndWaitForPage(submitBtn, expectedPageType)
 	}
 }

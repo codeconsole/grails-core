@@ -47,17 +47,11 @@ class ResetPasswordPage extends LifecyclePage {
             formData.applyTo(this)
             true
         }
-        clickAndWaitForNavigation(submitBtn)
-        T page = browser.at(expectedPageType)
-        waitFor { page.loaded }
-        page
+        clickAndWaitForPage(submitBtn, expectedPageType)
     }
 
     def <T extends LifecyclePage> T submitResetPassword(Class<T> expectedPageType) {
-        clickAndWaitForNavigation(submitBtn)
-        T page = browser.at(expectedPageType)
-        waitFor { page.loaded }
-        page
+        clickAndWaitForPage(submitBtn, expectedPageType)
     }
 
     @Immutable
