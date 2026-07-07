@@ -115,6 +115,7 @@ def isolatedTestPatterns = [
 def testSkippingProperties = [
         'onlyFunctionalTests',
         'onlyHibernate5Tests',
+        'onlySpringSecurityTests',
         'onlyMongodbTests',
         'skipCoreTests',
         'skipTests',
