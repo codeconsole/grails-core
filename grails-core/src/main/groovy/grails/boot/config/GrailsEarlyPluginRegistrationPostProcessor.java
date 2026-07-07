@@ -19,6 +19,7 @@
 package grails.boot.config;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 
 import org.slf4j.Logger;
@@ -181,10 +182,37 @@ public class GrailsEarlyPluginRegistrationPostProcessor
             return;
         }
         for (Class<?> source : sources) {
-            for (Class<?> applicationClass : ApplicationClassScanner.scanApplicationClasses(source)) {
-                grailsApplication.addArtefact(applicationClass);
+            if (!GrailsApplicationClass.class.isAssignableFrom(source)) {
+                // non-application sources (plain configuration classes) never contribute artefacts
+                continue;
+            }
+            for (Object applicationClass : scanApplicationSource(source)) {
+                grailsApplication.addArtefact((Class<?>) applicationClass);
             }
         }
+    }
+
+    /**
+     * Resolves the classes that constitute the application for the given source class using the
+     * same code path {@code GrailsApplicationPostProcessor} relies on: {@code classes()} invoked
+     * on a {@link GrailsAutoConfiguration} instance. This matters because the Grails compiler
+     * injects a {@code packageNames()} override into the application class listing every project
+     * package, so scanning only the application class's own package would miss artefacts living
+     * in other packages. The instance created here is used solely to compute the scan; the
+     * lifecycle bean the application interacts with is still created by Spring later.
+     */
+    private Collection<Class> scanApplicationSource(Class<?> source) {
+        if (GrailsAutoConfiguration.class.isAssignableFrom(source)) {
+            try {
+                GrailsAutoConfiguration application = (GrailsAutoConfiguration) source.getDeclaredConstructor().newInstance();
+                application.setApplicationContext(applicationContext);
+                return application.classes();
+            } catch (Throwable e) {
+                LOG.warn("Unable to resolve application classes from [{}], falling back to package scan: {}",
+                        source.getName(), e.toString());
+            }
+        }
+        return ApplicationClassScanner.scanApplicationClasses(source);
     }
 
     /**
