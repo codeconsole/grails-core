@@ -100,7 +100,7 @@ fi
 echo "✅ Shell App dependencies resolved"
 
 echo "Checking forge command"
-./grailsw -t forge create-app -x -g mongodb ForgeApp
+./grailsw -t forge create-app -x -g mongodb -f gradle-settings-file ForgeApp
 echo "✅ Generated Forge App"
 
 echo "Verifying Forge App dependencies resolve ..."

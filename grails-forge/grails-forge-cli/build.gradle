@@ -34,6 +34,9 @@ plugins {
 version = projectVersion
 group = 'org.apache.grails.forge'
 
+// provides gradleBomDependencyVersions, the version source of truth shared with the grails-core build
+apply from: rootProject.layout.projectDirectory.file('../dependencies.gradle')
+
 sourceSets {
     main {
         rocker {
@@ -81,6 +84,16 @@ dependencies {
     annotationProcessor 'io.micronaut:micronaut-inject-java'
 
     implementation project(':grails-forge-core')
+    implementation("org.apache.grails.bootstrap:grails-bootstrap:$projectVersion") {
+        exclude group: 'org.apache.grails', module: 'grails-bom'
+        exclude group: 'org.apache.groovy'
+    }
+    constraints {
+        // grails-gradle-model declares a version-less asm dependency whose version comes from
+        // grails-gradle-bom; that platform does not reach this build, so pin the same version here
+        implementation "org.ow2.asm:asm:${gradleBomDependencyVersions['asm.version']}"
+    }
+    compileOnly 'org.codehaus.groovy:groovy'
     implementation "com.fizzed:rocker-runtime:$rockerVersion"
     implementation "info.picocli:picocli:$picocliVersion"
     implementation "info.picocli:picocli-shell-jline3:$picocliVersion"
