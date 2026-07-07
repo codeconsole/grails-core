@@ -28,6 +28,14 @@ plugins {
 
 apply plugin: 'org.apache.grails.gradle.grails-gsp'
 
+// Unlike the other example apps (which resolve via the Gradle-native grails-bom platform), this app applies
+// io.spring.dependency-management, which force-applies spring-boot-dependencies' managed versions and so
+// overrides the grails-bom platform constraints. Re-assert the security-patched versions here, sourcing the
+// numbers from dependencies.gradle so it stays the single source of truth.
+apply from: rootProject.layout.projectDirectory.file('dependencies.gradle')
+ext['logback.version'] = bomDependencyVersions['logback.version']
+ext['jackson-bom.version'] = bomDependencyVersions['jackson.version']
+
 jar {
     processResources.exclude('**/*.gsp')
 }

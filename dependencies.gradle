@@ -81,7 +81,12 @@ ext {
             'groovy.version'                : '4.0.32',
             'guava.version'                 : '33.6.0-jre',
             'h2.version'                    : '2.4.240',
-            'jackson.version'               : '2.21.4',
+            // Security: overrides spring-boot-dependencies (5.3.6). 5.4.3 fixes CVE-2026-54399 (httpcore5) and CVE-2026-54428 (httpcore5-h2).
+            'httpcore5.version'             : '5.4.3',
+            // Security: 2.21.5 fixes CVE-2026-14683/14684/14685/14686 and CVE-2026-54515 flagged against 2.21.4.
+            'jackson.version'               : '2.21.5',
+            // Security: overrides spring-boot-dependencies (1.5.34). 1.5.37 fixes CVE-2026-13006 flagged against logback-core.
+            'logback.version'               : '1.5.37',
             'jquery.version'                : '3.7.1',
             'hibernate-groovy-proxy.version': '1.1',
             'jakarta-servlet-api.version'   : '6.1.0',
@@ -156,7 +161,13 @@ ext {
             'groovy-yaml'                 : "org.apache.groovy:groovy-yaml:${bomDependencyVersions['groovy.version']}",
             // end - restate the groovy-bom here because the spring dependency management
             'guava'                       : "com.google.guava:guava:${bomDependencyVersions['guava.version']}",
+            // Security override of spring-boot-dependencies - see httpcore5.version
+            'httpcore5'                   : "org.apache.httpcomponents.core5:httpcore5:${bomDependencyVersions['httpcore5.version']}",
+            'httpcore5-h2'                : "org.apache.httpcomponents.core5:httpcore5-h2:${bomDependencyVersions['httpcore5.version']}",
             'jquery'                      : "org.webjars.npm:jquery:${bomDependencyVersions['jquery.version']}",
+            // Security override of spring-boot-dependencies - see logback.version
+            'logback-classic'            : "ch.qos.logback:logback-classic:${bomDependencyVersions['logback.version']}",
+            'logback-core'               : "ch.qos.logback:logback-core:${bomDependencyVersions['logback.version']}",
             // start - boot & selenium conflict, so pin the version we want (newest)
             'jakarta-servlet-api'         : "jakarta.servlet:jakarta.servlet-api:${bomDependencyVersions['jakarta-servlet-api.version']}",
             'jakarta-validation-api'      : "jakarta.validation:jakarta.validation-api:${bomDependencyVersions['jakarta-validation-api.version']}",
