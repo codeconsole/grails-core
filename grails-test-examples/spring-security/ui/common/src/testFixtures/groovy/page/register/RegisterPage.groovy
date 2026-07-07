@@ -38,10 +38,7 @@ class RegisterPage extends LifecyclePage {
 
 	def <T extends LifecyclePage> T submitRegister(Form formData = null, Class<T> expectedPageType) {
 		formData?.applyTo(this)
-		submitBtn.click()
-		T page = browser.at(expectedPageType)
-		waitFor { page.loaded }
-		page
+		clickAndWaitForPage(submitBtn, expectedPageType)
 	}
 
 	@Immutable

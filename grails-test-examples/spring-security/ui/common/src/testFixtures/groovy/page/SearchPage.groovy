@@ -59,7 +59,6 @@ abstract class SearchPage extends LifecyclePage {
 	}
 
 	<T extends SearchPage> T submit(Class<T> expectedPageType) {
-		submitBtn.click()
-		waitForPage(expectedPageType)
+		clickAndWaitForPage(submitBtn, expectedPageType)
 	}
 }
