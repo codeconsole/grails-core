@@ -78,10 +78,10 @@ import org.grails.datastore.mapping.core.connections.ConnectionSource;
 import org.grails.datastore.mapping.model.PersistentEntity;
 import org.grails.orm.hibernate.EventListenerIntegrator;
 import org.grails.orm.hibernate.GrailsSessionContext;
-import org.grails.orm.hibernate.proxy.GrailsBytecodeProvider;
 import org.grails.orm.hibernate.HibernateEventListeners;
 import org.grails.orm.hibernate.MetadataIntegrator;
 import org.grails.orm.hibernate.access.TraitPropertyAccessStrategy;
+import org.grails.orm.hibernate.proxy.GrailsBytecodeProvider;
 
 /**
  * A Configuration that uses a MappingContext to configure Hibernate
