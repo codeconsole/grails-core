@@ -1358,6 +1358,7 @@ In Grails 8 the plugin lifecycle is unified and retimed: plugin bean definitions
 * **A single plugin manager and `GrailsApplication`.** The plugin manager and the `grailsApplication` are built exactly once, early in the context lifecycle, and reused for the rest of startup. Plugins are instantiated once; `Holders.grailsApplication` is available earlier than before.
 * **Artefact discovery happens earlier.** Controllers, services, domain classes and other artefacts are discovered before plugin beans are registered, because core plugins iterate the application's artefacts while defining beans. The set of discovered artefacts is unchanged — only the timing moved.
 * **Side-effectful `doWithSpring` closures still run once**, just earlier. Closures that read `grailsApplication.config` continue to work; the configuration is fully loaded (including plugin-contributed configuration) before any bean-definition code runs.
+* **Plugins that inspect the bean definition registry see a pre-auto-configuration registry.** A `doWithSpring` closure that checks for the presence of a bean definition (for example `dispatcherServlet` as a "web application" signal) now runs before Spring Boot has registered its auto-configured beans, so such a check returns `false` where it previously returned `true`. Plugin code should test a registration-order-independent signal instead — for example whether the application context is a web application context.
 
 **The bean builder DSL is deprecated.** `doWithSpring()` on `GrailsApplicationLifeCycle` and `grails.plugins.Plugin` is deprecated as of Grails 8 — it continues to work, but the recommended way to register beans is the new `beanRegistrar()` hook, which returns a Spring Framework `org.springframework.beans.factory.BeanRegistrar`.
 
@@ -1411,5 +1412,7 @@ class MyPluginBeanRegistrar implements BeanRegistrar {
 ----
 
 Both hooks may be used on the same plugin during migration; when a registrar and the DSL register a bean under the same name, the registrar's definition wins.
+
+**Bean-definition overriding edge case.** Grails defaults `spring.main.allow-bean-definition-overriding` to `true`, and under that default nothing changes: an application bean (from the application class, `resources.groovy` or `resources.xml`) that uses the same name as a plugin bean still replaces the plugin's bean. However, because plugin beans now register earlier and application beans register in a separate, later step, an application that explicitly sets `spring.main.allow-bean-definition-overriding` to `false` will see a `BeanDefinitionOverrideException` for an application bean that shadows a plugin bean — in previous releases the two definitions were merged before a single registry write, so the shadowing was silent even with overriding disabled.
 
 **Most applications and plugins need no action.** Behavior only changes where a plugin bean and a conditional Boot bean competed for the same name or type — the plugin bean now wins, which is almost always the intended outcome.

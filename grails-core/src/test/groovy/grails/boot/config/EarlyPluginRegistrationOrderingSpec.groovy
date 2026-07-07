@@ -141,6 +141,25 @@ class EarlyPluginRegistrationOrderingSpec extends Specification {
             Environment.setInitializing(false)
     }
 
+    void 'an application doWithSpring bean still overrides a plugin bean of the same name under the default settings'() {
+        given: 'a plugin registering overrideProbe and an application registering a different bean under the same name'
+            def ctx = new AnnotationConfigApplicationContext()
+            registerDiscovery(ctx, EarlyOrderingOverrideGrailsPlugin)
+            new GrailsPluginLifecycleInitializer().initialize(ctx)
+            ctx.register(EarlyOrderingOverrideApplication)
+
+        when:
+            ctx.refresh()
+
+        then: 'the application bean wins, replacing the plugin bean registered in the early phase'
+            ctx.getBean('overrideProbe') instanceof EarlyOrderingAppResolver
+
+        cleanup:
+            ctx.close()
+            Holders.clear()
+            Environment.setInitializing(false)
+    }
+
     private static void registerDiscovery(AnnotationConfigApplicationContext ctx, Class<?> pluginClass) {
         def discovery = new DefaultPluginDiscovery([pluginClass] as Class<?>[])
         discovery.loadPluginsFromClasspath = false
@@ -217,5 +236,30 @@ class EarlyOrderingDualRegistrar implements BeanRegistrar {
     @Override
     void register(BeanRegistry registry, org.springframework.core.env.Environment environment) {
         registry.registerBean('dualRegistrarBean', EarlyOrderingPluginResolver)
+    }
+}
+
+class EarlyOrderingAppResolver {
+}
+
+class EarlyOrderingOverrideGrailsPlugin extends Plugin {
+
+    def version = '1.0'
+
+    @Override
+    Closure doWithSpring() {
+        { ->
+            overrideProbe(EarlyOrderingPluginResolver)
+        }
+    }
+}
+
+class EarlyOrderingOverrideApplication extends GrailsAutoConfiguration {
+
+    @Override
+    Closure doWithSpring() {
+        { ->
+            overrideProbe(EarlyOrderingAppResolver)
+        }
     }
 }

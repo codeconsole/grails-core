@@ -33,4 +33,14 @@ Brief summary/description of the plugin.
 
     def loadAfter = ['springSecurityCore']
 
+    // Exercises the retimed plugin lifecycle end-to-end (see app3 PluginBeansBeforeAutoConfigurationSpec):
+    // doWithSpring beans register ahead of auto-configuration through real plugin discovery, so the
+    // app's @ConditionalOnMissingBean default for this name must defer.
+    @Override
+    Closure doWithSpring() {
+        { ->
+            earlyPluginProbe(String, 'from-plugin-doWithSpring')
+        }
+    }
+
 }
