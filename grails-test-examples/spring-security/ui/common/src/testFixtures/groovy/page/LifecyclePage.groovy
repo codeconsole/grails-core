@@ -18,7 +18,11 @@
  */
 package page
 
+import org.openqa.selenium.StaleElementReferenceException
+import org.openqa.selenium.WebElement
+
 import geb.Page
+import geb.navigator.Navigator
 
 class LifecyclePage extends Page {
 
@@ -39,5 +43,34 @@ class LifecyclePage extends Page {
         T page = browser.at(expectedPageType)
         waitFor { page.loaded }
         page
+    }
+
+    /**
+     * Clicks a button that triggers navigation and waits for the new document to
+     * replace the current one. Required when navigating to a page with the same
+     * at-check (e.g. a validation failure re-rendering the same page), where
+     * {@code browser.at()} would otherwise pass against the outgoing document.
+     */
+    protected void clickAndWaitForNavigation(Navigator button) {
+        WebElement oldElement = button.firstElement()
+        button.click()
+        waitForStale(oldElement)
+    }
+
+    protected void waitForStale(WebElement oldElement) {
+        waitFor {
+            try {
+                oldElement.enabled
+                false
+            }
+            catch (StaleElementReferenceException ignored) {
+                true
+            }
+        }
+    }
+
+    protected <T extends LifecyclePage> T clickAndWaitForPage(Navigator button, Class<T> expectedPageType) {
+        clickAndWaitForNavigation(button)
+        waitForPage(expectedPageType)
     }
 }
