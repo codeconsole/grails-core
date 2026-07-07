@@ -24,7 +24,7 @@ import grails.gorm.transactions.Rollback
 import grails.test.hibernate.HibernateSpec
 
 /**
- * Tests Proxy with hibernate-groovy-proxy
+ * Tests that GORM's Groovy-aware entity proxies stay uninitialized for id and metaClass access
  */
 
 class ProxySpec extends HibernateSpec {
