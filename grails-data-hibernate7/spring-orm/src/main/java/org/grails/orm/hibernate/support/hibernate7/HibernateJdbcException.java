@@ -19,9 +19,9 @@ package org.grails.orm.hibernate.support.hibernate7;
 import java.sql.SQLException;
 
 import org.hibernate.JDBCException;
+import org.jspecify.annotations.Nullable;
 
 import org.springframework.dao.UncategorizedDataAccessException;
-import org.springframework.lang.Nullable;
 
 /**
  * Hibernate-specific subclass of UncategorizedDataAccessException,
@@ -36,7 +36,7 @@ public class HibernateJdbcException extends UncategorizedDataAccessException {
 
     public HibernateJdbcException(JDBCException ex) {
         super("JDBC exception on Hibernate data access: SQLException for SQL [" + ex.getSQL() + "]; SQL state [" +
-            ex.getSQLState() + "]; error code [" + ex.getErrorCode() + "]; " + ex.getMessage(), ex);
+                ex.getSQLState() + "]; error code [" + ex.getErrorCode() + "]; " + ex.getMessage(), ex);
     }
 
     /**

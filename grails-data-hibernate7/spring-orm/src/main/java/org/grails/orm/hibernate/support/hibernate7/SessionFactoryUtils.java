@@ -53,6 +53,7 @@ import org.hibernate.exception.JDBCConnectionException;
 import org.hibernate.exception.LockAcquisitionException;
 import org.hibernate.exception.SQLGrammarException;
 import org.hibernate.service.UnknownServiceException;
+import org.jspecify.annotations.Nullable;
 
 import org.springframework.dao.CannotAcquireLockException;
 import org.springframework.dao.DataAccessException;
@@ -64,7 +65,6 @@ import org.springframework.dao.InvalidDataAccessApiUsageException;
 import org.springframework.dao.InvalidDataAccessResourceUsageException;
 import org.springframework.dao.PessimisticLockingFailureException;
 import org.springframework.jdbc.datasource.DataSourceUtils;
-import org.springframework.lang.Nullable;
 import org.springframework.util.ClassUtils;
 import org.springframework.util.ReflectionUtils;
 
@@ -89,7 +89,7 @@ public abstract class SessionFactoryUtils {
      * @see DataSourceUtils#CONNECTION_SYNCHRONIZATION_ORDER
      */
     public static final int SESSION_SYNCHRONIZATION_ORDER =
-        DataSourceUtils.CONNECTION_SYNCHRONIZATION_ORDER - 100;
+            DataSourceUtils.CONNECTION_SYNCHRONIZATION_ORDER - 100;
 
     static final Log logger = LogFactory.getLog(SessionFactoryUtils.class);
 
@@ -105,14 +105,17 @@ public abstract class SessionFactoryUtils {
     static void flush(Session session, boolean synch) throws DataAccessException {
         if (synch) {
             logger.debug("Flushing Hibernate Session on transaction synchronization");
-        } else {
+        }
+        else {
             logger.debug("Flushing Hibernate Session on explicit request");
         }
         try {
             session.flush();
-        } catch (HibernateException ex) {
+        }
+        catch (HibernateException ex) {
             throw convertHibernateAccessException(ex);
-        } catch (PersistenceException ex) {
+        }
+        catch (PersistenceException ex) {
             if (ex.getCause() instanceof HibernateException hibernateException) {
                 throw convertHibernateAccessException(hibernateException);
             }
@@ -133,7 +136,8 @@ public abstract class SessionFactoryUtils {
                 if (session.isOpen()) {
                     session.close();
                 }
-            } catch (Throwable ex) {
+            }
+            catch (Throwable ex) {
                 logger.error("Failed to release Hibernate Session", ex);
             }
         }
@@ -163,7 +167,8 @@ public abstract class SessionFactoryUtils {
                 if (cp != null) {
                     return cp.unwrap(DataSource.class);
                 }
-            } catch (UnknownServiceException ex) {
+            }
+            catch (UnknownServiceException ex) {
                 if (logger.isDebugEnabled()) {
                     logger.debug("No ConnectionProvider found - cannot determine DataSource for SessionFactory: " + ex);
                 }
@@ -198,7 +203,7 @@ public abstract class SessionFactoryUtils {
         }
         if (ex instanceof ConstraintViolationException hibJdbcEx) {
             return new DataIntegrityViolationException(ex.getMessage() + "; SQL [" + hibJdbcEx.getSQL() +
-                "]; constraint [" + hibJdbcEx.getConstraintName() + "]", ex);
+                    "]; constraint [" + hibJdbcEx.getConstraintName() + "]", ex);
         }
         if (ex instanceof DataException hibJdbcEx) {
             return new DataIntegrityViolationException(ex.getMessage() + "; SQL [" + hibJdbcEx.getSQL() + "]", ex);

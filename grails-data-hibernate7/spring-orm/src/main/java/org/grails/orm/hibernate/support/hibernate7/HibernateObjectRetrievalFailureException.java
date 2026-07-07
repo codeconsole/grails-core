@@ -19,8 +19,8 @@ package org.grails.orm.hibernate.support.hibernate7;
 import org.hibernate.HibernateException;
 import org.hibernate.UnresolvableObjectException;
 import org.hibernate.WrongClassException;
+import org.jspecify.annotations.Nullable;
 
-import org.springframework.lang.Nullable;
 import org.springframework.orm.ObjectRetrievalFailureException;
 import org.springframework.util.ReflectionUtils;
 
@@ -49,7 +49,8 @@ public class HibernateObjectRetrievalFailureException extends ObjectRetrievalFai
             // getIdentifier declares Serializable return value on 5.x but Object on 6.x
             // -> not binary compatible, let's invoke it reflectively for the time being
             return ReflectionUtils.invokeMethod(hibEx.getClass().getMethod("getIdentifier"), hibEx);
-        } catch (NoSuchMethodException ex) {
+        }
+        catch (NoSuchMethodException ex) {
             return null;
         }
     }

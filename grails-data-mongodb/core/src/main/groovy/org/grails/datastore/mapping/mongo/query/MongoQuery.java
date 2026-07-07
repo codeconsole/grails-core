@@ -482,20 +482,20 @@ public class MongoQuery extends BsonQuery implements QueryArgumentsAware {
         com.mongodb.client.MongoCollection<Document> collection = mongoSession.getCollection(entity);
 
         final List<Projection> projectionList = projections().getProjectionList();
-        if (uniqueResult && projectionList.isEmpty()) {
+        boolean hasOnlyDistinct = projectionList.size() == 1 && (projectionList.get(0) instanceof DistinctProjection);
+        if (uniqueResult && (projectionList.isEmpty() || hasOnlyDistinct)) {
             if (isCodecPersister) {
-                collection = collection
+                collection = (com.mongodb.client.MongoCollection<Document>) (com.mongodb.client.MongoCollection) collection
                         .withDocumentClass(entity.getJavaClass());
             }
             final Object dbObject;
             if (criteria.isEmpty()) {
-                FindIterable<Document> cursor = collection
-                        .find(createQueryObject(entity));
+                FindIterable<Document> cursor = mongoSession.find(collection, createQueryObject(entity));
 
                 dbObject = ((FindIterable<Document>) setHint(cursor)).limit(1)
                         .first();
             } else {
-                FindIterable<Document> cursor = collection.find(getMongoQuery());
+                FindIterable<Document> cursor = mongoSession.find(collection, getMongoQuery());
 
                 dbObject = ((FindIterable<Document>) setHint(cursor)).limit(1)
                         .first();
@@ -519,9 +519,9 @@ public class MongoQuery extends BsonQuery implements QueryArgumentsAware {
         MongoCursor<Document> cursor;
         Document query = createQueryObject(entity);
 
-        if (projectionList.isEmpty()) {
+        if (projectionList.isEmpty() || hasOnlyDistinct) {
             if (isCodecPersister) {
-                collection = collection
+                collection = (com.mongodb.client.MongoCollection<Document>) (com.mongodb.client.MongoCollection) collection
                         .withDocumentClass(entity.getJavaClass())
                         .withCodecRegistry(mongoSession.getDatastore().getCodecRegistry());
             }
@@ -536,7 +536,7 @@ public class MongoQuery extends BsonQuery implements QueryArgumentsAware {
         List<ProjectedProperty> projectedKeys = aggregatePipeline.getProjectedKeys();
         List projectedResults = new ArrayList();
 
-        AggregateIterable<Document> aggregatedResults = collection.aggregate(aggregationPipeline);
+        AggregateIterable<Document> aggregatedResults = mongoSession.aggregate(collection, aggregationPipeline);
         aggregatedResults = (AggregateIterable<Document>) setHint(aggregatedResults);
         final MongoCursor<Document> aggregateCursor = aggregatedResults.iterator();
 
@@ -619,11 +619,11 @@ public class MongoQuery extends BsonQuery implements QueryArgumentsAware {
             );
         }
 
-        final FindIterable<Document> iterable = collection.find(query);
-        if (offset > 0) {
+        final FindIterable<Document> iterable = mongoSession.find(collection, query);
+        if (offset != null && offset > 0) {
             iterable.skip(offset);
         }
-        if (max > -1) {
+        if (max != null && max > -1) {
             iterable.limit(max);
         }
         if (uniqueResult) {
@@ -1398,8 +1398,8 @@ public class MongoQuery extends BsonQuery implements QueryArgumentsAware {
         private boolean isCodecPersister;
 
         @SuppressWarnings("unchecked")
-        public MongoResultList(MongoCursor cursor, int offset, EntityPersister mongoEntityPersister) {
-            super(offset, cursor);
+        public MongoResultList(MongoCursor cursor, Integer offset, EntityPersister mongoEntityPersister) {
+            super(offset == null ? 0 : offset, cursor);
             this.cursor = cursor;
             this.mongoEntityPersister = mongoEntityPersister;
             this.isCodecPersister = mongoEntityPersister instanceof MongoCodecEntityPersister;
@@ -1508,26 +1508,6 @@ public class MongoQuery extends BsonQuery implements QueryArgumentsAware {
                 aggregationPipeline.add(new Document(MATCH_OPERATOR, query));
             }
 
-            List<Order> orderBy = mongoQuery.getOrderBy();
-            if (!orderBy.isEmpty()) {
-                Document sortBy = new Document();
-                Document sort = new Document(SORT_OPERATOR, sortBy);
-                for (Order order : orderBy) {
-                    sortBy.put(order.getProperty(), order.getDirection() == Order.Direction.ASC ? 1 : -1);
-                }
-
-                aggregationPipeline.add(sort);
-            }
-
-            int max = mongoQuery.max;
-            if (max > 0) {
-                aggregationPipeline.add(new Document("$limit", max));
-            }
-            int offset = mongoQuery.offset;
-            if (offset > 0) {
-                aggregationPipeline.add(new Document("$skip", offset));
-            }
-
             projectedKeys = new ArrayList<>();
             singleResult = true;
 
@@ -1585,6 +1565,36 @@ public class MongoQuery extends BsonQuery implements QueryArgumentsAware {
             if (additionalGroupBy != null) {
                 aggregationPipeline.add(additionalGroupBy);
             }
+
+            List<Order> orderBy = mongoQuery.getOrderBy();
+            if (!orderBy.isEmpty()) {
+                Document sortBy = new Document();
+                for (Order order : orderBy) {
+                    String prop = order.getProperty();
+                    String sortKey = prop;
+                    for (ProjectedProperty pp : projectedKeys) {
+                        if (pp.property != null && pp.property.getName().equals(prop)) {
+                            sortKey = pp.projectionKey;
+                            if (sortKey.startsWith("id.")) {
+                                sortKey = MongoEntityPersister.MONGO_ID_FIELD + "." + sortKey.substring(3);
+                            }
+                            break;
+                        }
+                    }
+                    sortBy.put(sortKey, order.getDirection() == Order.Direction.ASC ? 1 : -1);
+                }
+                aggregationPipeline.add(new Document(SORT_OPERATOR, sortBy));
+            }
+
+            int max = mongoQuery.max != null ? mongoQuery.max : -1;
+            if (max > 0) {
+                aggregationPipeline.add(new Document("$limit", max));
+            }
+            int offset = mongoQuery.offset != null ? mongoQuery.offset : 0;
+            if (offset > 0) {
+                aggregationPipeline.add(new Document("$skip", offset));
+            }
+
             return this;
         }
     }

@@ -21,8 +21,8 @@ import java.util.concurrent.Callable;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.hibernate.SessionFactory;
+import org.jspecify.annotations.Nullable;
 
-import org.springframework.lang.Nullable;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.context.request.NativeWebRequest;
 import org.springframework.web.context.request.async.CallableProcessingInterceptor;
@@ -99,6 +99,7 @@ class AsyncRequestInterceptor implements CallableProcessingInterceptor, Deferred
             SessionFactoryUtils.closeSession(this.sessionHolder.getSession());
         }
     }
+
 
     // Implementation of DeferredResultProcessingInterceptor methods
 

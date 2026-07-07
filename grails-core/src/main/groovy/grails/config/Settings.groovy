@@ -51,6 +51,20 @@ interface Settings {
     String SPRING_TRANSACTION_MANAGEMENT = 'grails.spring.transactionManagement.proxies'
 
     /**
+     * Whether the application context allows a bean definition to override another registered under the
+     * same name. Maps to the Spring Boot {@code spring.main.allow-bean-definition-overriding} property;
+     * Grails defaults it to {@code true} (Spring Boot defaults it to {@code false}).
+     */
+    String SPRING_MAIN_ALLOW_BEAN_DEFINITION_OVERRIDING = 'spring.main.allow-bean-definition-overriding'
+
+    /**
+     * Whether the application context allows circular references between beans. Maps to the Spring Boot
+     * {@code spring.main.allow-circular-references} property; Grails defaults it to {@code true}
+     * (Spring Boot defaults it to {@code false}).
+     */
+    String SPRING_MAIN_ALLOW_CIRCULAR_REFERENCES = 'spring.main.allow-circular-references'
+
+    /**
      * Which plugins to include in the plugin manager
      */
     String PLUGIN_INCLUDES = 'grails.plugin.includes'
@@ -169,6 +183,12 @@ interface Settings {
      * The configured mime types
      */
     String MIME_TYPES = 'grails.mime.types'
+    /**
+     * Whether a configured {@code grails.mime.types} map is merged over the built-in defaults
+     * (adding any extension it does not declare) rather than replacing them. Defaults to {@code false},
+     * preserving the historical behaviour where a declared map fully replaces the defaults.
+     */
+    String MIME_TYPES_MERGE_DEFAULTS = 'grails.mime.mergeDefaults'
     /**
      * Whether to use the accept header for content negotiation
      */

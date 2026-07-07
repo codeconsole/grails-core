@@ -20,11 +20,11 @@ import jakarta.persistence.PersistenceException;
 
 import org.hibernate.HibernateException;
 import org.hibernate.JDBCException;
+import org.jspecify.annotations.Nullable;
 
 import org.springframework.dao.DataAccessException;
 import org.springframework.dao.support.PersistenceExceptionTranslator;
 import org.springframework.jdbc.support.SQLExceptionTranslator;
-import org.springframework.lang.Nullable;
 import org.springframework.orm.jpa.EntityManagerFactoryUtils;
 
 /**
@@ -91,7 +91,7 @@ public class HibernateExceptionTranslator implements PersistenceExceptionTransla
     protected DataAccessException convertHibernateAccessException(HibernateException ex) {
         if (this.jdbcExceptionTranslator != null && ex instanceof JDBCException jdbcEx) {
             DataAccessException dae = this.jdbcExceptionTranslator.translate(
-                "Hibernate operation: " + jdbcEx.getMessage(), jdbcEx.getSQL(), jdbcEx.getSQLException());
+                    "Hibernate operation: " + jdbcEx.getMessage(), jdbcEx.getSQL(), jdbcEx.getSQLException());
             if (dae != null) {
                 return dae;
             }
