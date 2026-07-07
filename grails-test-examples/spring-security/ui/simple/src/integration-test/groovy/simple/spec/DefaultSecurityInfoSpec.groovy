@@ -38,8 +38,10 @@ class DefaultSecurityInfoSpec extends SecurityUISpec {
 		with(pageSource) {
 			contains('adh.ajaxErrorPage')
 			contains('/login/ajaxDenied')
-			contains('Showing 1 to 10 of ')
 		}
+
+		and: 'the DataTables info line is rendered by deferred JavaScript'
+		waitFor { pageSource.contains('Showing 1 to 10 of ') }
 	}
 
 	void testMappings() {
