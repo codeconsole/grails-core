@@ -1382,7 +1382,7 @@ grails:
 ----
 
 NOTE: In GSP applications the GSP view resolver continues to be installed as the primary `viewResolver`, controlled as before by `spring.gsp.replaceViewResolverBean`.
-The previous `spring.gsp.removeDefaultViewResolverBean` property has been removed; `defaultViewResolver` removal is now handled centrally for all Grails servlet web applications by the `grails.web.removeDefaultViewResolverBean` property above.
+The earlier `spring.gsp.removeDefaultViewResolverBean` property (from when this removal lived in the GSP module) is still honoured for backward compatibility but is **deprecated** — `defaultViewResolver` removal is now handled centrally for all Grails servlet web applications by the `grails.web.removeDefaultViewResolverBean` property above, which takes precedence. Setting the old name logs a deprecation warning at startup.
 
 ===== 31.2 GrailsWebRequest binding
 
@@ -1391,4 +1391,4 @@ Downstream code that expects a `GrailsWebRequest` would then fail with a `ClassC
 
 Grails 8 registers its request-binding filter as a `RequestContextFilter` bean so that Boot's filter backs off and the `GrailsWebRequest` remains bound for the whole request.
 This is handled internally and requires no configuration changes.
-Applications that defined their own `GrailsWebRequestFilter` bean continue to override the Grails-provided one.
+Applications that defined their own `GrailsWebRequestFilter` bean, or their own `grailsWebRequestFilter` filter-registration bean, continue to override the Grails-provided ones.

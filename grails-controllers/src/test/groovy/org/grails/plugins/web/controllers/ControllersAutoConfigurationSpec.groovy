@@ -89,4 +89,48 @@ class ControllersAutoConfigurationSpec extends Specification {
                     assert context.getBeanNamesForType(GrailsWebRequestFilter).length == 1
                 }
     }
+
+    void 'a user-defined grailsWebRequestFilter registration bean makes the auto-configured one back off'() {
+        given: 'a GrailsApplication, required by the controllers auto-config'
+        GrailsApplication grailsApplication = Mock(GrailsApplication) {
+            getClassLoader() >> getClass().classLoader
+        }
+        Supplier<GrailsApplication> grailsApplicationSupplier = () -> grailsApplication
+
+        and: 'a user-defined registration bean under the auto-configured bean name'
+        FilterRegistrationBean<GrailsWebRequestFilter> userRegistration = new FilterRegistrationBean<>()
+        Supplier<FilterRegistrationBean> userRegistrationSupplier = () -> userRegistration
+
+        expect: 'the user bean wins and the auto-configuration does not register a second one'
+        new WebApplicationContextRunner()
+                .withBean(GrailsApplication, grailsApplicationSupplier)
+                .withBean('grailsWebRequestFilter', FilterRegistrationBean, userRegistrationSupplier)
+                .withConfiguration(AutoConfigurations.of(ControllersAutoConfiguration, WebMvcAutoConfiguration))
+                .run { context ->
+                    assert context.getBean('grailsWebRequestFilter').is(userRegistration)
+                }
+    }
+
+    void 'a user-defined GrailsWebMvcConfigurer bean makes the auto-configured webMvcConfig back off'() {
+        given: 'a GrailsApplication, required by the controllers auto-config'
+        GrailsApplication grailsApplication = Mock(GrailsApplication) {
+            getClassLoader() >> getClass().classLoader
+        }
+        Supplier<GrailsApplication> grailsApplicationSupplier = () -> grailsApplication
+
+        and: 'a user-defined web MVC configurer'
+        def userConfigurer = new ControllersAutoConfiguration.GrailsWebMvcConfigurer(0, false, '/custom/**')
+        Supplier<ControllersAutoConfiguration.GrailsWebMvcConfigurer> userConfigurerSupplier = () -> userConfigurer
+
+        expect: 'the user bean wins and only one GrailsWebMvcConfigurer exists'
+        new WebApplicationContextRunner()
+                .withBean(GrailsApplication, grailsApplicationSupplier)
+                .withBean(ControllersAutoConfiguration.GrailsWebMvcConfigurer, userConfigurerSupplier)
+                .withConfiguration(AutoConfigurations.of(ControllersAutoConfiguration, WebMvcAutoConfiguration))
+                .run { context ->
+                    def names = context.getBeanNamesForType(ControllersAutoConfiguration.GrailsWebMvcConfigurer)
+                    assert names.length == 1
+                    assert context.getBean(names[0]).is(userConfigurer)
+                }
+    }
 }
