@@ -1392,3 +1392,15 @@ Downstream code that expects a `GrailsWebRequest` would then fail with a `ClassC
 Grails 8 registers its request-binding filter as a `RequestContextFilter` bean so that Boot's filter backs off and the `GrailsWebRequest` remains bound for the whole request.
 This is handled internally and requires no configuration changes.
 Applications that defined their own `GrailsWebRequestFilter` bean, or their own `grailsWebRequestFilter` filter-registration bean, continue to override the Grails-provided ones.
+
+==== 32. More Framework Beans Are Cleanly Overridable
+
+Several Grails framework beans that were previously registered unconditionally are now guarded with `@ConditionalOnMissingBean`, so an application- or plugin-defined bean of the same name (or type) takes precedence cleanly instead of relying on bean-definition overriding:
+
+* i18n: `localeResolver`, `localeChangeInterceptor` and `messageSource`
+* URL mappings: `grailsCorsFilter`, `urlMappingsErrorPageCustomizer` and `urlMappingsInfoHandlerAdapter`
+
+**No action is required.**
+The framework beans still register by default; this only changes what happens when you define your own.
+Previously, defining one of these beans produced a bean-definition override (with a startup warning, or a failure when `spring.main.allow-bean-definition-overriding` is `false`).
+Now the framework bean simply backs off.
