@@ -30,6 +30,7 @@ import org.springframework.boot.autoconfigure.AutoConfigurations
 import org.springframework.boot.autoconfigure.context.PropertyPlaceholderAutoConfiguration
 import org.springframework.boot.test.context.runner.WebApplicationContextRunner
 import org.springframework.context.MessageSource
+import org.springframework.context.support.GenericApplicationContext
 import org.springframework.context.support.StaticMessageSource
 import org.springframework.web.servlet.LocaleResolver
 import org.springframework.web.servlet.i18n.FixedLocaleResolver
@@ -93,6 +94,27 @@ class I18nAutoConfigurationSpec extends Specification {
                     assert context.getBean('localeChangeInterceptor').is(userInterceptor)
                     assert context.getBeanNamesForType(LocaleChangeInterceptor).length == 1
                 }
+    }
+
+    void 'beans in a parent context do not suppress the Grails i18n beans'() {
+        given: 'a parent context that already has i18n beans (SearchStrategy.CURRENT contract)'
+        GenericApplicationContext parent = new GenericApplicationContext()
+        parent.beanFactory.registerSingleton('messageSource', new StaticMessageSource())
+        parent.beanFactory.registerSingleton('localeResolver', new FixedLocaleResolver(Locale.CANADA))
+        parent.beanFactory.registerSingleton('localeChangeInterceptor', new LocaleChangeInterceptor())
+        parent.refresh()
+
+        expect: 'the child context still registers its own Grails i18n beans'
+        contextRunner()
+                .withParent(parent)
+                .run { context ->
+                    assert context.getBeanNamesForType(PluginAwareResourceBundleMessageSource).length == 1
+                    assert context.getBean('localeResolver') instanceof SessionLocaleResolver
+                    assert context.getBean(LocaleChangeInterceptor) instanceof ParamsAwareLocaleChangeInterceptor
+                }
+
+        cleanup:
+        parent.close()
     }
 
     void 'a user-defined messageSource bean makes the Grails messageSource back off'() {

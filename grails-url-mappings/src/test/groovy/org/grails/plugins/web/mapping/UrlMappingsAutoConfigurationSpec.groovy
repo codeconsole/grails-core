@@ -29,6 +29,8 @@ import grails.web.mapping.cors.GrailsCorsFilter
 import org.springframework.boot.autoconfigure.AutoConfigurations
 import org.springframework.boot.autoconfigure.context.PropertyPlaceholderAutoConfiguration
 import org.springframework.boot.test.context.runner.WebApplicationContextRunner
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource
+import org.springframework.web.filter.CorsFilter
 
 import org.grails.web.mapping.mvc.UrlMappingsInfoHandlerAdapter
 import org.grails.web.mapping.servlet.UrlMappingsErrorPageCustomizer
@@ -75,6 +77,22 @@ class UrlMappingsAutoConfigurationSpec extends Specification {
                 .withBean(GrailsCorsFilter, userCorsFilterSupplier)
                 .run { context ->
                     def names = context.getBeanNamesForType(GrailsCorsFilter)
+                    assert names.length == 1
+                    assert context.getBean(names[0]).is(userCorsFilter)
+                }
+    }
+
+    void 'a user-defined plain CorsFilter bean also makes the auto-configured GrailsCorsFilter back off'() {
+        given: 'CORS handling replaced with a plain Spring CorsFilter'
+        CorsFilter userCorsFilter = new CorsFilter(new UrlBasedCorsConfigurationSource())
+        Supplier<CorsFilter> userCorsFilterSupplier = () -> userCorsFilter
+
+        expect: 'only one CORS filter exists and it is the user one'
+        contextRunner()
+                .withBean(CorsFilter, userCorsFilterSupplier)
+                .run { context ->
+                    assert context.getBeanNamesForType(GrailsCorsFilter).length == 0
+                    def names = context.getBeanNamesForType(CorsFilter)
                     assert names.length == 1
                     assert context.getBean(names[0]).is(userCorsFilter)
                 }

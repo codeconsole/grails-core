@@ -1395,7 +1395,7 @@ Applications that defined their own `GrailsWebRequestFilter` bean, or their own 
 
 ==== 32. More Framework Beans Are Cleanly Overridable
 
-Several Grails framework beans that were previously registered unconditionally are now guarded with `@ConditionalOnMissingBean`, so an application- or plugin-defined bean of the same name (or type) takes precedence cleanly instead of relying on bean-definition overriding:
+Several Grails framework beans that were previously registered unconditionally are now guarded with `@ConditionalOnMissingBean`, so a bean of the same name (or type) defined in an application configuration class (a `@Bean` method) takes precedence cleanly instead of relying on bean-definition overriding:
 
 * i18n: `localeResolver`, `localeChangeInterceptor` and `messageSource`
 * URL mappings: `grailsCorsFilter`, `urlMappingsErrorPageCustomizer` and `urlMappingsInfoHandlerAdapter`
@@ -1404,3 +1404,6 @@ Several Grails framework beans that were previously registered unconditionally a
 The framework beans still register by default; this only changes what happens when you define your own.
 Previously, defining one of these beans produced a bean-definition override (with a startup warning, or a failure when `spring.main.allow-bean-definition-overriding` is `false`).
 Now the framework bean simply backs off.
+
+NOTE: The back-off applies to beans that are registered before auto-configuration conditions are evaluated — `@Bean` methods in application configuration classes.
+Beans contributed later, through a plugin's `doWithSpring` or the application's `resources.groovy`, continue to take effect through bean-definition overriding, exactly as in previous releases.
