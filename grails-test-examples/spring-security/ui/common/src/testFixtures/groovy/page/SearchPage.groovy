@@ -50,7 +50,11 @@ abstract class SearchPage extends LifecyclePage {
 	}
 
 	boolean assertResults(int start, int end, int total) {
-		assert searchSummary == "Showing $start through $end out of $total."
+		// the results summary is re-rendered via AJAX after the search submits,
+		// so retry until the DOM settles instead of reading it once
+		waitFor {
+			searchSummary == "Showing $start through $end out of $total."
+		}
 		true
 	}
 
