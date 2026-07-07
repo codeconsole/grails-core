@@ -20,10 +20,10 @@
 package com.example
 
 import grails.core.support.proxy.ProxyHandler
+import grails.gorm.transactions.Rollback
 import grails.plugins.redis.RedisService
 import grails.testing.mixin.integration.Integration
 import org.springframework.beans.factory.annotation.Autowired
-import org.springframework.test.annotation.Rollback
 import spock.lang.Specification
 
 import static grails.plugins.redis.RedisService.KEY_DOES_NOT_EXIST
