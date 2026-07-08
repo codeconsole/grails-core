@@ -40,11 +40,6 @@ jobs:
         with:
           java-version: 17
           distribution: liberica
-      - name: "🗄️ Cache local Maven repository"
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
-        with:
-          path: ~/.m2/repository
-          key: cache-local-maven-${{ github.sha }}
       - name: "📥 Checkout Grails Core to fetch Gradle Plugin versions it uses"
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -65,7 +60,7 @@ jobs:
       - name: "🐘 Setup Gradle"
         uses: gradle/actions/setup-gradle@50e97c2cd7a37755bbfafc9c5b7cafaece252f6e # v6.1.0
         with:
-          cache-provider: basic # 'basic' uses the MIT-licensed, open-source cache provider; the default 'enhanced' provider (v6+) is proprietary (Gradle commercial Terms of Use)
+          cache-disabled: true # this workflow rebuilds Groovy each run; a Gradle home cache is not useful here
           develocity-access-key: ${{ secrets.DEVELOCITY_ACCESS_KEY  }}
       - name: "🔍 Setup TestLens"
         uses: testlens-app/setup-testlens@d96a555133c275a00949d2cc77b70fe9a4242ebf # v1.9.2
@@ -124,6 +119,13 @@ jobs:
         run: |
           cd groovy
           ./gradlew pTML -x groovydoc -x javadoc -x javadocAll -x groovydocAll -x asciidoc -x docGDK
+      - name: "📤 Share locally built Groovy artifacts with the build_grails job"
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: local-groovy-maven-repo
+          path: ~/.m2/repository/org/apache/groovy/
+          if-no-files-found: 'error'
+          retention-days: 1
 
   build_grails:
     needs: [build_groovy]
@@ -149,15 +151,15 @@ jobs:
       - name: "🐘 Setup Gradle"
         uses: gradle/actions/setup-gradle@50e97c2cd7a37755bbfafc9c5b7cafaece252f6e # v6.1.0
         with:
-          cache-provider: basic # 'basic' uses the MIT-licensed, open-source cache provider; the default 'enhanced' provider (v6+) is proprietary (Gradle commercial Terms of Use)
+          cache-disabled: true # this workflow rebuilds Groovy each run; a Gradle home cache is not useful here
           develocity-access-key: ${{ secrets.DEVELOCITY_ACCESS_KEY  }}
       - name: "🔍 Setup TestLens"
         uses: testlens-app/setup-testlens@d96a555133c275a00949d2cc77b70fe9a4242ebf # v1.9.2
-      - name: "🗄️ Restore local Maven repository from cache"
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+      - name: "📥 Fetch the locally built Groovy artifacts"
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          path: ~/.m2/repository
-          key: cache-local-maven-${{ github.sha }}
+          name: local-groovy-maven-repo
+          path: ~/.m2/repository/org/apache/groovy
       - name: 'Swap Groovy Version'
         run: |
           sed -i "/['\"]groovy\.version['\"][[:space:]]*:/c\'groovy.version':'${{ needs.build_groovy.outputs.groovyVersion }}'," dependencies.gradle
