@@ -82,7 +82,7 @@ class MiscSpec extends AbstractHyphenatedSecuritySpec {
 		$("#switchUserFormSubmitButton").click()
 
 		then:
-		pageSource.contains('Available Controllers:')
+		waitFor { pageSource.contains('Available Controllers:') }
 
 		// verify logged in as testuser
 
@@ -121,7 +121,7 @@ class MiscSpec extends AbstractHyphenatedSecuritySpec {
 		$("#exitUserFormSubmitButton").click()
 
 		then:
-		pageSource.contains('Available Controllers:')
+		waitFor { pageSource.contains('Available Controllers:') }
 
 		// verify logged in as admin
 		when:
