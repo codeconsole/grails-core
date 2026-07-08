@@ -162,7 +162,7 @@ class User1FunctionalSpec extends AbstractSecuritySpec {
 		grantPage.grantButton.click()
 
 		then:
-		pageSource.contains('Access Denied')
+		waitFor { pageSource.contains('Access Denied') }
 	}
 
 	void 'edit report 20'() {
@@ -178,6 +178,6 @@ class User1FunctionalSpec extends AbstractSecuritySpec {
 		editPage.updateButton.click()
 
 		then:
-		pageSource.contains('Access Denied')
+		waitFor { pageSource.contains('Access Denied') }
 	}
 }

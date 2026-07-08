@@ -89,7 +89,7 @@ class User2FunctionalSpec extends AbstractSecuritySpec {
 		grantPage.grantButton.click()
 
 		then:
-		pageSource.contains('Access Denied')
+		waitFor { pageSource.contains('Access Denied') }
 	}
 
 	void 'edit report 5'() {
