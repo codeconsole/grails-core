@@ -140,9 +140,9 @@ class ControllersAutoConfigurationSpec extends Specification {
                 }
     }
 
-    // Assembles the servlet filter chain exactly as Boot does at container start and counts how many
-    // registrations wrap a GrailsWebRequestFilter — including any raw filter bean Boot auto-adapts on
-    // "/*" — so the specs assert on the real chain rather than mere bean presence in the context.
+    // Reconstructs the servlet filter chain the way Boot assembles it at container start, so the specs
+    // assert on the real chain — including any raw filter bean Boot auto-adapts onto "/*" — rather than
+    // mere bean presence in the context.
     private static int grailsWebRequestFilterRegistrations(ConfigurableApplicationContext context) {
         new ServletContextInitializerBeans(context.beanFactory).count { initializer ->
             initializer instanceof AbstractFilterRegistrationBean &&
