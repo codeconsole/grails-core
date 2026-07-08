@@ -94,6 +94,11 @@ class GrailsGspSpec extends ApplicationContextSpec implements CommandOutputFixtu
         layout.contains('data-bs-theme-value="light"')
         layout.contains('data-bs-theme-value="dark"')
         layout.contains('data-bs-theme-value="auto"')
+
+        and: "the plugins table header does not force a fixed light background (stays theme-adaptive)"
+        final String index = output["grails-app/views/index.gsp"]
+        !index.contains('table-light')
+        index.contains('<thead class="small">')
     }
 
     @Unroll

@@ -279,7 +279,7 @@
 
                         <div class="table-responsive">
                             <table class="table table-sm table-striped table-hover" data-sortable="true">
-                                <thead class="table-light small">
+                                <thead class="small">
                                 <tr>
                                     <th scope="col"
                                         class="text-body-secondary ps-0 fw-semibold sortable"
