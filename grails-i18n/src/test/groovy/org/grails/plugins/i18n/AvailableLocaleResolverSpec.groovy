@@ -41,6 +41,32 @@ class AvailableLocaleResolverSpec extends Specification {
         locales.contains(Locale.forLanguageTag('pt-BR'))
     }
 
+    void 'plugin-namespaced bundles are discovered only when plugin bundles are included'() {
+        given: 'a plugin ships spring-security-core_zu.properties (a locale no messages bundle has)'
+        Locale zulu = Locale.forLanguageTag('zu')
+
+        expect: 'a host-only scan does not see the plugin-namespaced locale'
+        !new AvailableLocaleResolver(getClass().classLoader, Locale.forLanguageTag('en'), false)
+                .availableLocales.contains(zulu)
+
+        when: 'plugin bundles are included'
+        List<Locale> locales = new AvailableLocaleResolver(getClass().classLoader,
+                Locale.forLanguageTag('en'), true).availableLocales
+
+        then: 'the plugin locale is discovered, alongside the host messages locales'
+        locales.contains(zulu)
+        locales.contains(Locale.forLanguageTag('es'))
+    }
+
+    void 'non-i18n properties files on the classpath are ignored'() {
+        given:
+        List<String> isoLanguages = Locale.getISOLanguages() as List
+
+        expect: 'application.properties / logback.properties etc. never contribute a bogus locale'
+        new AvailableLocaleResolver(getClass().classLoader, Locale.forLanguageTag('en'), true)
+                .availableLocales.every { it.language in isoLanguages }
+    }
+
     void 'sorts the discovered locales by their display name in their own language'() {
         given:
         List<Locale> expectedKnown = [

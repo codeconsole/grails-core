@@ -90,19 +90,28 @@ public class I18nAutoConfiguration {
     }
 
     /**
-     * Discovers the locales the application is translated into (from {@code messages_*.properties}
+     * Discovers the locales the application is translated into (from {@code <basename>_<locale>.properties}
      * bundles on the classpath) so that a language selector can list only real translations rather
      * than every JVM locale. Published to the servlet context by {@link I18nGrailsPlugin} and
      * consumed by the {@code g:localeSelect available="true"} tag.
      *
+     * <p>By default every {@code *.properties} bundle on the classpath is considered, so locales
+     * contributed by plugins &mdash; whose bundles are namespaced (e.g.
+     * {@code spring-security-core_*.properties}) &mdash; are included alongside the application's own.
+     * Set {@code grails.i18n.availableLocales.includePlugins=false} to restrict discovery to the
+     * application's own {@code messages_*.properties} bundles.
+     *
      * @param defaultLocale the base {@code messages.properties} locale, always included
      * ({@code grails.i18n.default.locale}, defaults to {@code en})
+     * @param includePlugins whether to also scan plugin-contributed message bundles
+     * ({@code grails.i18n.availableLocales.includePlugins}, defaults to {@code true})
      */
     @Bean
     @ConditionalOnMissingBean(AvailableLocaleResolver.class)
     public AvailableLocaleResolver availableLocaleResolver(GrailsApplication grailsApplication,
-            @Value("${grails.i18n.default.locale:en}") String defaultLocale) {
+            @Value("${grails.i18n.default.locale:en}") String defaultLocale,
+            @Value("${grails.i18n.availableLocales.includePlugins:true}") boolean includePlugins) {
         return new AvailableLocaleResolver(grailsApplication.getClassLoader(),
-                Locale.forLanguageTag(defaultLocale.replace('_', '-')));
+                Locale.forLanguageTag(defaultLocale.replace('_', '-')), includePlugins);
     }
 }

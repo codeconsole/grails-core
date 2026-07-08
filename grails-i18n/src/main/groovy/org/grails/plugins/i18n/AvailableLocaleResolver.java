@@ -20,8 +20,10 @@ package org.grails.plugins.i18n;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -36,7 +38,7 @@ import org.springframework.core.io.support.ResourcePatternResolver;
 
 /**
  * Discovers the locales an application is actually translated into by scanning the
- * classpath for {@code messages_*.properties} resource bundles.
+ * classpath for {@code <basename>_<locale>.properties} resource bundles.
  *
  * <p>Unlike {@link java.util.Locale#getAvailableLocales()} (which returns every locale
  * the JVM knows about), this returns only the locales that have a matching message
@@ -44,32 +46,56 @@ import org.springframework.core.io.support.ResourcePatternResolver;
  * selector. The result is sorted by each locale's display name in its own language and
  * cached; {@link #clearCache()} forces a re-scan (used when bundles change in development).
  *
+ * <p>By default only the application's own {@code messages_*.properties} bundles are
+ * scanned. When {@code includePluginBundles} is enabled, every {@code *.properties}
+ * bundle on the classpath is considered, so locales contributed by plugins &mdash; whose
+ * bundles are namespaced (e.g. {@code spring-security-core_fr.properties}) &mdash; are
+ * included too. Candidate suffixes are validated against {@link Locale#getISOLanguages()}
+ * so non-i18n properties files (e.g. {@code application.properties}) are ignored. See
+ * {@code grails.i18n.availableLocales.includePlugins}.
+ *
  * @since 8.0.0
  */
 public class AvailableLocaleResolver {
 
     private static final Logger log = LoggerFactory.getLogger(AvailableLocaleResolver.class);
 
-    private static final String MESSAGES_PREFIX = "messages_";
+    /** The base name of an application's own message bundles ({@code messages.properties}). */
+    public static final String DEFAULT_BASE_NAME = "messages";
 
     private static final String PROPERTIES_SUFFIX = ".properties";
 
-    private static final String LOCATION_PATTERN = "classpath*:" + MESSAGES_PREFIX + "*" + PROPERTIES_SUFFIX;
+    private static final Set<String> ISO_LANGUAGES = new HashSet<>(Arrays.asList(Locale.getISOLanguages()));
 
     private final ResourcePatternResolver resourcePatternResolver;
 
     private final Locale defaultLocale;
 
+    private final boolean includePluginBundles;
+
     private volatile List<Locale> cachedLocales;
 
     /**
+     * Scans only the application's own {@code messages_*.properties} bundles.
+     *
      * @param classLoader the class loader whose classpath is scanned for message bundles
      * @param defaultLocale the locale of the base {@code messages.properties} bundle,
      * always included in the result (may be {@code null} to include none)
      */
     public AvailableLocaleResolver(ClassLoader classLoader, Locale defaultLocale) {
+        this(classLoader, defaultLocale, false);
+    }
+
+    /**
+     * @param classLoader the class loader whose classpath is scanned for message bundles
+     * @param defaultLocale the locale of the base bundle, always included (may be {@code null})
+     * @param includePluginBundles whether to also consider plugin-contributed bundles (every
+     * {@code *.properties} on the classpath) rather than only the application's {@code messages}
+     */
+    public AvailableLocaleResolver(ClassLoader classLoader, Locale defaultLocale, boolean includePluginBundles) {
         this.resourcePatternResolver = new PathMatchingResourcePatternResolver(classLoader);
         this.defaultLocale = defaultLocale;
+        this.includePluginBundles = includePluginBundles;
     }
 
     /**
@@ -102,29 +128,46 @@ public class AvailableLocaleResolver {
         if (this.defaultLocale != null && !this.defaultLocale.getLanguage().isEmpty()) {
             locales.add(this.defaultLocale);
         }
+        String pattern = "classpath*:" + DEFAULT_BASE_NAME + "_*" + PROPERTIES_SUFFIX;
+        if (this.includePluginBundles) {
+            pattern = "classpath*:*" + PROPERTIES_SUFFIX;
+        }
         try {
-            for (Resource resource : this.resourcePatternResolver.getResources(LOCATION_PATTERN)) {
-                String filename = resource.getFilename();
-                if (filename == null || !filename.startsWith(MESSAGES_PREFIX) || !filename.endsWith(PROPERTIES_SUFFIX)) {
-                    continue;
-                }
-                String code = filename.substring(MESSAGES_PREFIX.length(), filename.length() - PROPERTIES_SUFFIX.length());
-                if (code.isEmpty()) {
-                    continue;
-                }
-                Locale locale = Locale.forLanguageTag(code.replace('_', '-'));
-                if (!locale.getLanguage().isEmpty()) {
+            for (Resource resource : this.resourcePatternResolver.getResources(pattern)) {
+                Locale locale = localeFromBundleFilename(resource.getFilename());
+                if (locale != null) {
                     locales.add(locale);
                 }
             }
         }
         catch (IOException ex) {
-            log.warn("Unable to resolve available locales from '{}*{}' message bundles: {}",
-                    MESSAGES_PREFIX, PROPERTIES_SUFFIX, ex.getMessage());
+            log.warn("Unable to resolve available locales from message bundles: {}", ex.getMessage());
         }
         List<Locale> sorted = new ArrayList<>(locales);
         sorted.sort(Comparator.comparing((Locale locale) -> locale.getDisplayName(locale)));
         return Collections.unmodifiableList(sorted);
+    }
+
+    /**
+     * Extracts the locale a bundle filename encodes, or {@code null} if it is not a locale-specific
+     * message bundle. The base name ends at the first underscore (matching Grails' own message-source
+     * convention, where plugin base names use hyphens), and the suffix must be a recognised language.
+     */
+    private static Locale localeFromBundleFilename(String filename) {
+        if (filename == null || !filename.endsWith(PROPERTIES_SUFFIX)) {
+            return null;
+        }
+        String base = filename.substring(0, filename.length() - PROPERTIES_SUFFIX.length());
+        int underscore = base.indexOf('_');
+        if (underscore < 0) {
+            return null;
+        }
+        String code = base.substring(underscore + 1);
+        if (code.isEmpty()) {
+            return null;
+        }
+        Locale locale = Locale.forLanguageTag(code.replace('_', '-'));
+        return ISO_LANGUAGES.contains(locale.getLanguage()) ? locale : null;
     }
 
 }
