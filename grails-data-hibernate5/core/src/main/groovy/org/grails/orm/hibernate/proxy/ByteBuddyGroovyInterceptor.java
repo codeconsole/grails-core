@@ -36,6 +36,8 @@ public class ByteBuddyGroovyInterceptor extends ByteBuddyInterceptor {
     private static final String GET_ID_METHOD = "getId";
     private static final String GET_IDENTIFIER_METHOD = "getIdentifier";
 
+    private final boolean lazyToString;
+
     @SuppressWarnings({ "unchecked", "rawtypes" })
     public ByteBuddyGroovyInterceptor(
             String entityName,
@@ -46,7 +48,8 @@ public class ByteBuddyGroovyInterceptor extends ByteBuddyInterceptor {
             Method setIdentifierMethod,
             CompositeType componentIdType,
             SharedSessionContractImplementor session,
-            boolean overridesEquals) {
+            boolean overridesEquals,
+            boolean lazyToString) {
         super(
                 entityName,
                 (Class) persistentClass,
@@ -57,6 +60,7 @@ public class ByteBuddyGroovyInterceptor extends ByteBuddyInterceptor {
                 componentIdType,
                 session,
                 overridesEquals);
+        this.lazyToString = lazyToString;
     }
 
     @Override
@@ -72,7 +76,7 @@ public class ByteBuddyGroovyInterceptor extends ByteBuddyInterceptor {
 
         if (isUninitialized()) {
             GroovyProxyInterceptorLogic.InterceptorState state = new GroovyProxyInterceptorLogic.InterceptorState(
-                    getEntityName(), persistentClass, getIdentifier());
+                    getEntityName(), persistentClass, getIdentifier(), lazyToString);
             Object result = GroovyProxyInterceptorLogic.handleUninitialized(state, methodName, args);
             if (result != GroovyProxyInterceptorLogic.INVOKE_IMPLEMENTATION) { // NOPMD: sentinel comparison
                 return result;

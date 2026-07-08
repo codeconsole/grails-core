@@ -151,6 +151,25 @@ needs the identifier must use id/ident()/getIdentifier() instead of unwrapping"
         !proxyHandler.isInitialized(team.club)
     }
 
+    void "toString initializes the proxy and delegates to the entity implementation by default"() {
+        when:"load proxy"
+        Team team = createATeam()
+        def clubId = team.club.id
+        manager.session.clear()
+        Club club = Club.load(clubId)
+
+        then:"the proxy starts uninitialized"
+        proxyHandler.isProxy(club)
+        !proxyHandler.isInitialized(club)
+
+        when:"toString is called"
+        String value = club.toString()
+
+        then:"the entity's own toString runs, which requires initialization"
+        value == "DOOM Club"
+        proxyHandler.isInitialized(club)
+    }
+
     void "isDirty should not intialize the association proxy"() {
         when:"load instance"
         Team team = createATeam()

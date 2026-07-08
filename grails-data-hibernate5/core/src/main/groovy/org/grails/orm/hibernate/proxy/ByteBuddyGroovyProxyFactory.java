@@ -54,10 +54,16 @@ public class ByteBuddyGroovyProxyFactory extends ByteBuddyProxyFactory {
     private transient CompositeType componentIdType;
     private boolean overridesEquals;
     private Class<?> proxyClass;
+    private final boolean lazyToString;
 
     public ByteBuddyGroovyProxyFactory(ByteBuddyProxyHelper byteBuddyProxyHelper) {
+        this(byteBuddyProxyHelper, false);
+    }
+
+    public ByteBuddyGroovyProxyFactory(ByteBuddyProxyHelper byteBuddyProxyHelper, boolean lazyToString) {
         super(byteBuddyProxyHelper);
         this.byteBuddyProxyHelper = byteBuddyProxyHelper;
+        this.lazyToString = lazyToString;
     }
 
     @Override
@@ -96,7 +102,8 @@ public class ByteBuddyGroovyProxyFactory extends ByteBuddyProxyFactory {
                     setIdentifierMethod,
                     componentIdType,
                     session,
-                    overridesEquals);
+                    overridesEquals,
+                    lazyToString);
 
             final HibernateProxy hibernateProxy =
                     (HibernateProxy) proxyClass.getDeclaredConstructor().newInstance();
