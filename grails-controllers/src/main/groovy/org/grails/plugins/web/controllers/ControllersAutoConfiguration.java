@@ -115,8 +115,12 @@ public class ControllersAutoConfiguration {
     // WebMvcAutoConfiguration is active and would otherwise register an OrderedRequestContextFilter
     // (order -105) that rebinds a plain ServletRequestAttributes between GrailsWebRequestFilter (-150)
     // and the Spring Security chain (-100), causing a GrailsWebRequest ClassCastException downstream.
+    // Also gated on the "grailsWebRequestFilter" registration bean name: when an application overrides
+    // only that registration bean, this raw filter backs off with it. Otherwise it would linger in the
+    // context unwrapped and Boot's adaptable-beans machinery would auto-register it on "/*" at
+    // Ordered.LOWEST_PRECEDENCE, running a second, mis-ordered copy alongside the replacement filter.
     @Bean
-    @ConditionalOnMissingBean(GrailsWebRequestFilter.class)
+    @ConditionalOnMissingBean(value = GrailsWebRequestFilter.class, name = "grailsWebRequestFilter")
     public GrailsWebRequestFilter grailsWebRequest(ApplicationContext applicationContext) {
         GrailsWebRequestFilter grailsWebRequestFilter = new GrailsWebRequestFilter();
         grailsWebRequestFilter.setApplicationContext(applicationContext);
