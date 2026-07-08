@@ -30,6 +30,10 @@ import spock.lang.Specification
  * auto-configuration; {@code Application} defines a
  * {@code @ConditionalOnMissingBean(name='earlyPluginProbe')} default. The plugin's bean must win.
  *
+ * <p>The {@code loadafter} plugin also registers {@code registrarProbe} through the new
+ * {@code beanRegistrar()} API (a closure coerced to a Spring {@code BeanRegistrar}), which the
+ * matching {@code @ConditionalOnMissingBean} default must likewise defer to.
+ *
  * <p>The strict ordering proof (the conditional default is never even created) is covered at unit
  * level by {@code EarlyPluginRegistrationOrderingSpec} in grails-core, including its control case.
  */
@@ -42,5 +46,10 @@ class PluginBeansBeforeAutoConfigurationSpec extends Specification {
     void "a plugin doWithSpring bean wins over the app's @ConditionalOnMissingBean default"() {
         expect: 'the plugin registered the probe ahead of auto-config, so the conditional default deferred to it'
         applicationContext.getBean('earlyPluginProbe') == 'from-plugin-doWithSpring'
+    }
+
+    void "a plugin beanRegistrar bean wins over the app's @ConditionalOnMissingBean default"() {
+        expect: 'the plugin registrar registered the probe ahead of auto-config, so the conditional default deferred to it'
+        applicationContext.getBean('registrarProbe') == 'from-plugin-beanRegistrar'
     }
 }

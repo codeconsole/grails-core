@@ -23,7 +23,7 @@ Grails provides a number of hooks to leverage the different parts of the system 
 ==== Hooking into the Grails Spring configuration
 
 
-The recommended way to register beans from a plugin is to override the `beanRegistrar` method from the link:{api}grails/plugins/Plugin.html[Plugin] class and return a Spring Framework {springapi}org/springframework/beans/factory/BeanRegistrar.html[BeanRegistrar]:
+The recommended way to register beans from a plugin is to override the `beanRegistrar` method from the link:{api}grails/plugins/Plugin.html[Plugin] class and return a Spring Framework {springapi}org/springframework/beans/factory/BeanRegistrar.html[BeanRegistrar]. `BeanRegistrar` is a functional interface, so a closure coerced with `as BeanRegistrar` is all that is required — no separate class:
 
 [source,groovy]
 ----
@@ -41,30 +41,24 @@ class I18nGrailsPlugin extends Plugin {
 
     @Override
     BeanRegistrar beanRegistrar() {
-        new I18nBeanRegistrar()
-    }
-}
-
-class I18nBeanRegistrar implements BeanRegistrar {
-
-    @Override
-    void register(BeanRegistry registry, Environment environment) {
-        registry.registerBean('messageSource', ReloadableResourceBundleMessageSource) { spec ->
-            spec.supplier { context ->
-                def messageSource = new ReloadableResourceBundleMessageSource()
-                messageSource.basename = 'WEB-INF/grails-app/i18n/messages'
-                messageSource
+        { BeanRegistry registry, Environment environment ->
+            registry.registerBean('messageSource', ReloadableResourceBundleMessageSource) { spec ->
+                spec.supplier { context ->
+                    new ReloadableResourceBundleMessageSource(basename: 'WEB-INF/grails-app/i18n/messages')
+                }
             }
-        }
-        registry.registerBean('localeChangeInterceptor', LocaleChangeInterceptor) { spec ->
-            spec.supplier { context ->
-                new LocaleChangeInterceptor(paramName: 'lang')
+            registry.registerBean('localeChangeInterceptor', LocaleChangeInterceptor) { spec ->
+                spec.supplier { context ->
+                    new LocaleChangeInterceptor(paramName: 'lang')
+                }
             }
-        }
-        registry.registerBean('localeResolver', CookieLocaleResolver)
+            registry.registerBean('localeResolver', CookieLocaleResolver)
+        } as BeanRegistrar
     }
 }
 ----
+
+For more involved or reusable registration you can instead implement `BeanRegistrar` as its own class and return an instance of it from `beanRegistrar()`.
 
 Plugin beans are registered before Spring Boot processes its auto-configurations, so a bean registered here takes precedence over any Spring Boot default guarded by `@ConditionalOnMissingBean` — there is no need to override or remove Boot's beans afterwards.
 

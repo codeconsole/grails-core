@@ -141,6 +141,24 @@ class EarlyPluginRegistrationOrderingSpec extends Specification {
             Environment.setInitializing(false)
     }
 
+    void 'a plugin beanRegistrar defined as a coerced closure registers its bean'() {
+        given: 'a plugin whose beanRegistrar() is a closure coerced to BeanRegistrar (no separate class)'
+            def ctx = new AnnotationConfigApplicationContext()
+            registerDiscovery(ctx, EarlyOrderingClosureRegistrarGrailsPlugin)
+            new GrailsPluginLifecycleInitializer().initialize(ctx)
+
+        when:
+            ctx.refresh()
+
+        then: 'the bean registered by the closure-coerced registrar is present'
+            ctx.getBean('closureRegistrarBean') instanceof EarlyOrderingPluginResolver
+
+        cleanup:
+            ctx.close()
+            Holders.clear()
+            Environment.setInitializing(false)
+    }
+
     void 'an application doWithSpring bean still overrides a plugin bean of the same name under the default settings'() {
         given: 'a plugin registering overrideProbe and an application registering a different bean under the same name'
             def ctx = new AnnotationConfigApplicationContext()
@@ -236,6 +254,18 @@ class EarlyOrderingDualRegistrar implements BeanRegistrar {
     @Override
     void register(BeanRegistry registry, org.springframework.core.env.Environment environment) {
         registry.registerBean('dualRegistrarBean', EarlyOrderingPluginResolver)
+    }
+}
+
+class EarlyOrderingClosureRegistrarGrailsPlugin extends Plugin {
+
+    def version = '1.0'
+
+    @Override
+    BeanRegistrar beanRegistrar() {
+        { BeanRegistry registry, org.springframework.core.env.Environment environment ->
+            registry.registerBean('closureRegistrarBean', EarlyOrderingPluginResolver)
+        } as BeanRegistrar
     }
 }
 

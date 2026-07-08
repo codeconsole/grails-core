@@ -35,4 +35,10 @@ class Application extends GrailsAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean(name = 'earlyPluginProbe')
     String earlyPluginProbe() { 'from-conditional-default' }
+
+    // Default for the probe the loadafter plugin registers via beanRegistrar(). Registrar beans also
+    // register ahead of auto-configuration, so this @ConditionalOnMissingBean default must defer to it.
+    @Bean
+    @ConditionalOnMissingBean(name = 'registrarProbe')
+    String registrarProbe() { 'from-conditional-default' }
 }

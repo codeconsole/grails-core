@@ -20,6 +20,9 @@
 package loadafter
 
 import grails.plugins.*
+import org.springframework.beans.factory.BeanRegistrar
+import org.springframework.beans.factory.BeanRegistry
+import org.springframework.core.env.Environment
 
 class LoadafterGrailsPlugin extends Plugin {
 
@@ -41,6 +44,18 @@ Brief summary/description of the plugin.
         { ->
             earlyPluginProbe(String, 'from-plugin-doWithSpring')
         }
+    }
+
+    // Exercises the new beanRegistrar() API end-to-end using the concise closure-coercion form.
+    // Registrar beans also register ahead of auto-configuration, so the app's @ConditionalOnMissingBean
+    // default for this name must defer — PluginBeansBeforeAutoConfigurationSpec asserts the plugin's value wins.
+    @Override
+    BeanRegistrar beanRegistrar() {
+        { BeanRegistry registry, Environment environment ->
+            registry.registerBean('registrarProbe', String) { spec ->
+                spec.supplier { context -> 'from-plugin-beanRegistrar' }
+            }
+        } as BeanRegistrar
     }
 
 }

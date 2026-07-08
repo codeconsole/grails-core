@@ -220,14 +220,19 @@ public class DefaultGrailsApplication extends AbstractGrailsApplication implemen
     }
 
     /**
-     * Sets the application class. Used to adopt the application class when this instance was
-     * constructed before the {@link GrailsApplicationClass} was available, e.g. during early
-     * plugin registration ahead of Spring Boot auto-configuration.
+     * Sets the application class. May be set once — to adopt the application class when this
+     * instance was constructed before the {@link GrailsApplicationClass} was known, e.g. during
+     * early plugin registration ahead of Spring Boot auto-configuration — and cannot afterwards be
+     * reassigned to a different application class.
      *
      * @param applicationClass The application class
+     * @throws IllegalStateException if a different application class has already been set
      * @since 8.0
      */
     public void setApplicationClass(GrailsApplicationClass applicationClass) {
+        if (this.applicationClass != null && this.applicationClass != applicationClass) {
+            throw new IllegalStateException("The application class has already been set and cannot be changed");
+        }
         this.applicationClass = applicationClass;
     }
 

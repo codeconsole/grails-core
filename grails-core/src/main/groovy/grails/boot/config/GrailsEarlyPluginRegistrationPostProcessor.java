@@ -31,6 +31,7 @@ import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
 import org.springframework.beans.factory.support.BeanDefinitionRegistry;
 import org.springframework.beans.factory.support.BeanDefinitionRegistryPostProcessor;
 import org.springframework.beans.factory.support.BeanRegistryAdapter;
+import org.springframework.beans.factory.support.DefaultSingletonBeanRegistry;
 import org.springframework.context.ApplicationListener;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.context.event.ContextRefreshedEvent;
@@ -119,39 +120,52 @@ public class GrailsEarlyPluginRegistrationPostProcessor
             return;
         }
 
+        // The initializing flag is a system property, so a leak on failure poisons every subsequent
+        // context in the same JVM (test forks especially). Reset it if anything below throws; the
+        // success path leaves it set and resets on refresh via the listener added at the end.
         Environment.setInitializing(true);
+        try {
+            DefaultGrailsApplication grailsApplication = new DefaultGrailsApplication();
+            grailsApplication.setConfig(buildConfig());
+            grailsApplication.setApplicationContext(applicationContext);
+            grailsApplication.setMainContext(applicationContext);
 
-        DefaultGrailsApplication grailsApplication = new DefaultGrailsApplication();
-        grailsApplication.setConfig(buildConfig());
-        grailsApplication.setApplicationContext(applicationContext);
-        grailsApplication.setMainContext(applicationContext);
+            DefaultGrailsPluginManager pluginManager = new DefaultGrailsPluginManager(grailsApplication, pluginDiscovery);
+            pluginManager.loadPlugins();
+            pluginManager.setApplicationContext(applicationContext);
 
-        DefaultGrailsPluginManager pluginManager = new DefaultGrailsPluginManager(grailsApplication, pluginDiscovery);
-        pluginManager.loadPlugins();
-        pluginManager.setApplicationContext(applicationContext);
+            pluginManager.doArtefactConfiguration();
+            grailsApplication.initialise();
+            // register plugin provided classes first, this gives the opportunity
+            // for application classes to override those provided by a plugin
+            pluginManager.registerProvidedArtefacts(grailsApplication);
+            registerApplicationArtefacts(grailsApplication, registry);
+            // the source-classes stash has been consumed; drop it so it does not linger as an
+            // autowire-by-type candidate for the life of the context
+            if (applicationContext.getBeanFactory() instanceof DefaultSingletonBeanRegistry singletonRegistry) {
+                singletonRegistry.destroySingleton(APPLICATION_SOURCE_CLASSES_BEAN_NAME);
+            }
 
-        pluginManager.doArtefactConfiguration();
-        grailsApplication.initialise();
-        // register plugin provided classes first, this gives the opportunity
-        // for application classes to override those provided by a plugin
-        pluginManager.registerProvidedArtefacts(grailsApplication);
-        registerApplicationArtefacts(grailsApplication, registry);
+            RuntimeSpringConfiguration springConfig = new DefaultRuntimeSpringConfiguration();
+            pluginManager.doRuntimeConfiguration(springConfig);
+            springConfig.registerBeansWithRegistry(registry);
+            applyBeanRegistrars(pluginManager, registry);
 
-        RuntimeSpringConfiguration springConfig = new DefaultRuntimeSpringConfiguration();
-        pluginManager.doRuntimeConfiguration(springConfig);
-        springConfig.registerBeansWithRegistry(registry);
-        applyBeanRegistrars(pluginManager, registry);
+            ConfigurableListableBeanFactory beanFactory = applicationContext.getBeanFactory();
+            beanFactory.registerSingleton(GrailsApplication.APPLICATION_ID, grailsApplication);
+            beanFactory.registerSingleton(GrailsPluginManager.BEAN_NAME, pluginManager);
+            beanFactory.registerSingleton(EARLY_REGISTRATION_COMPLETE_BEAN_NAME, Boolean.TRUE);
+            Holders.setGrailsApplication(grailsApplication);
 
-        ConfigurableListableBeanFactory beanFactory = applicationContext.getBeanFactory();
-        beanFactory.registerSingleton(GrailsApplication.APPLICATION_ID, grailsApplication);
-        beanFactory.registerSingleton(GrailsPluginManager.BEAN_NAME, pluginManager);
-        beanFactory.registerSingleton(EARLY_REGISTRATION_COMPLETE_BEAN_NAME, Boolean.TRUE);
-        Holders.setGrailsApplication(grailsApplication);
-
-        // GrailsApplicationPostProcessor resets the initializing flag on refresh, but it is not
-        // present in every context that runs this phase — reset here as well so the flag (a system
-        // property) does not leak once the context is up.
-        applicationContext.addApplicationListener(this);
+            // GrailsApplicationPostProcessor resets the initializing flag on refresh, but it is not
+            // present in every context that runs this phase — reset here as well so the flag does not
+            // leak once the context is up.
+            applicationContext.addApplicationListener(this);
+        }
+        catch (RuntimeException | Error e) {
+            Environment.setInitializing(false);
+            throw e;
+        }
     }
 
     /**
@@ -207,39 +221,48 @@ public class GrailsEarlyPluginRegistrationPostProcessor
                 GrailsAutoConfiguration application = (GrailsAutoConfiguration) source.getDeclaredConstructor().newInstance();
                 application.setApplicationContext(applicationContext);
                 return application.classes();
-            } catch (Throwable e) {
+            } catch (Exception | LinkageError e) {
                 LOG.warn("Unable to resolve application classes from [{}], falling back to package scan: {}",
                         source.getName(), e.toString());
             }
         }
-        return ApplicationClassScanner.scanApplicationClasses(source);
+        return ApplicationArtefactScanner.scanApplicationClasses(source);
     }
 
     /**
      * Resolves the application source classes to scan for artefacts, preferring the singleton
-     * stashed by {@link grails.boot.GrailsApp}. When the application was started through a plain
-     * {@code SpringApplication} no stash exists, but the primary sources are already registered as
-     * bean definitions by the time this phase runs, so any {@link GrailsApplicationClass} among
-     * them is recovered from the registry instead.
+     * stashed by {@link grails.boot.GrailsApp}. When the stash yields no {@link GrailsApplicationClass}
+     * — no stash exists (a plain {@code SpringApplication}), or the application class was supplied as
+     * a {@code String} source alongside other {@code Class} sources — any {@link GrailsApplicationClass}
+     * is additionally recovered from the registry, where the primary sources are already registered
+     * as bean definitions by the time this phase runs.
      */
     private Class<?>[] resolveApplicationSourceClasses(BeanDefinitionRegistry registry) {
-        Object stashedSources = applicationContext.getBeanFactory().getSingleton(APPLICATION_SOURCE_CLASSES_BEAN_NAME);
-        if (stashedSources instanceof Class<?>[] sources) {
-            return sources;
-        }
         List<Class<?>> sources = new ArrayList<>();
-        for (String beanDefinitionName : registry.getBeanDefinitionNames()) {
-            String beanClassName = registry.getBeanDefinition(beanDefinitionName).getBeanClassName();
-            if (beanClassName == null) {
-                continue;
-            }
-            try {
-                Class<?> beanClass = ClassUtils.forName(beanClassName, applicationContext.getClassLoader());
-                if (GrailsApplicationClass.class.isAssignableFrom(beanClass)) {
-                    sources.add(beanClass);
+        boolean haveApplicationClass = false;
+        Object stashedSources = applicationContext.getBeanFactory().getSingleton(APPLICATION_SOURCE_CLASSES_BEAN_NAME);
+        if (stashedSources instanceof Class<?>[] stashed) {
+            for (Class<?> source : stashed) {
+                sources.add(source);
+                if (GrailsApplicationClass.class.isAssignableFrom(source)) {
+                    haveApplicationClass = true;
                 }
-            } catch (ClassNotFoundException | LinkageError ignored) {
-                // not resolvable here — cannot be an application class
+            }
+        }
+        if (!haveApplicationClass) {
+            for (String beanDefinitionName : registry.getBeanDefinitionNames()) {
+                String beanClassName = registry.getBeanDefinition(beanDefinitionName).getBeanClassName();
+                if (beanClassName == null) {
+                    continue;
+                }
+                try {
+                    Class<?> beanClass = ClassUtils.forName(beanClassName, applicationContext.getClassLoader());
+                    if (GrailsApplicationClass.class.isAssignableFrom(beanClass) && !sources.contains(beanClass)) {
+                        sources.add(beanClass);
+                    }
+                } catch (ClassNotFoundException | LinkageError ignored) {
+                    // not resolvable here — cannot be an application class
+                }
             }
         }
         return sources.toArray(new Class<?>[0]);

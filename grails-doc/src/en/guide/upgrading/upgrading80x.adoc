@@ -1422,6 +1422,7 @@ In Grails 8 the plugin lifecycle is unified and retimed: plugin bean definitions
 * **A single plugin manager and `GrailsApplication`.** The plugin manager and the `grailsApplication` are built exactly once, early in the context lifecycle, and reused for the rest of startup. Plugins are instantiated once; `Holders.grailsApplication` is available earlier than before.
 * **Artefact discovery happens earlier.** Controllers, services, domain classes and other artefacts are discovered before plugin beans are registered, because core plugins iterate the application's artefacts while defining beans. The set of discovered artefacts is unchanged — only the timing moved.
 * **Side-effectful `doWithSpring` closures still run once**, just earlier. Closures that read `grailsApplication.config` continue to work; the configuration is fully loaded (including plugin-contributed configuration) before any bean-definition code runs.
+* **The application class is instantiated a second time during early artefact discovery.** A throwaway instance is created solely to compute the application's class scan; the real lifecycle bean is still created by Spring. An application-class constructor with side effects therefore runs twice per boot, so keep application-class constructors free of side effects.
 * **Plugins that inspect the bean definition registry see a pre-auto-configuration registry.** A `doWithSpring` closure that checks for the presence of a bean definition (for example `dispatcherServlet` as a "web application" signal) now runs before Spring Boot has registered its auto-configured beans, so such a check returns `false` where it previously returned `true`. Plugin code should test a registration-order-independent signal instead — for example whether the application context is a web application context.
 * **The `annotationHandlerMapping` and `annotationHandlerAdapter` beans were removed.** These duplicated the request-mapping infrastructure that Spring's own MVC configuration already provides and were never consulted at runtime, but with plugin beans now registering first the bare duplicate adapter started shadowing Spring's fully configured one. `@Controller` annotated beans continue to be handled by Spring Boot's standard MVC infrastructure.
 
@@ -1446,7 +1447,7 @@ class MyGrailsPlugin extends Plugin {
 }
 ----
 
-After (Spring `BeanRegistrar`):
+After (Spring `BeanRegistrar`). `BeanRegistrar` is a functional interface, so a closure coerced with `as BeanRegistrar` is all that is required — a separate class is optional and only worth it for more involved or reusable registration:
 
 [source,groovy]
 ----
@@ -1459,19 +1460,13 @@ class MyGrailsPlugin extends Plugin {
 
     @Override
     BeanRegistrar beanRegistrar() {
-        new MyPluginBeanRegistrar()
-    }
-}
-
-class MyPluginBeanRegistrar implements BeanRegistrar {
-
-    @Override
-    void register(BeanRegistry registry, Environment environment) {
-        registry.registerBean('myService', MyServiceImpl) { spec ->
-            spec.supplier { context ->
-                new MyServiceImpl(timeout: environment.getProperty('myPlugin.timeout', Integer, 30))
+        { BeanRegistry registry, Environment environment ->
+            registry.registerBean('myService', MyServiceImpl) { spec ->
+                spec.supplier { context ->
+                    new MyServiceImpl(timeout: environment.getProperty('myPlugin.timeout', Integer, 30))
+                }
             }
-        }
+        } as BeanRegistrar
     }
 }
 ----

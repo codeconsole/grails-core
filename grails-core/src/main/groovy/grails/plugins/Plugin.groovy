@@ -106,8 +106,9 @@ abstract class Plugin implements GrailsApplicationLifeCycle, GrailsApplicationAw
      * Sub classes should override to provide implementations
      *
      * @return A closure that defines beans to be executed by Spring
-     * @deprecated since 8.0 in favour of {@link #beanRegistrar()}. The bean builder DSL continues
-     * to work, but {@link #beanRegistrar()} is the modern, Spring-native replacement.
+     * @deprecated since 8.0 in favour of {@link #beanRegistrar()}. The underlying bean builder DSL
+     * remains available but is no longer actively supported and will not receive fixes for new
+     * issues — you are strongly urged to migrate to {@link #beanRegistrar()}.
      */
     @Deprecated(since = '8.0')
     @Override

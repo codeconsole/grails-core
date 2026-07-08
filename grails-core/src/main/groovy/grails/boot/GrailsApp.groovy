@@ -152,10 +152,28 @@ class GrailsApp extends SpringApplication {
     @Override
     protected void postProcessApplicationContext(ConfigurableApplicationContext applicationContext) {
         super.postProcessApplicationContext(applicationContext)
-        Class<?>[] sourceClasses = getAllSources().findAll { it instanceof Class } as Class<?>[]
-        if (sourceClasses.length > 0) {
+        ClassLoader loader = getClassLoader() ?: Thread.currentThread().contextClassLoader
+        List<Class<?>> sourceClasses = []
+        for (Object source in getAllSources()) {
+            if (source instanceof Class) {
+                sourceClasses.add((Class<?>) source)
+            }
+            else if (source instanceof String) {
+                try {
+                    // sources may be supplied as class names (spring.main.sources); resolve them so a
+                    // String-specified application class is still available for early artefact discovery
+                    sourceClasses.add(Class.forName((String) source, false, loader))
+                }
+                catch (ClassNotFoundException | LinkageError ignored) {
+                    // a String source that is not a resolvable class (e.g. a resource location) is not
+                    // an application class, so there is nothing to stash for it
+                }
+            }
+        }
+        if (!sourceClasses.isEmpty()) {
             applicationContext.beanFactory.registerSingleton(
-                    GrailsEarlyPluginRegistrationPostProcessor.APPLICATION_SOURCE_CLASSES_BEAN_NAME, sourceClasses)
+                    GrailsEarlyPluginRegistrationPostProcessor.APPLICATION_SOURCE_CLASSES_BEAN_NAME,
+                    sourceClasses.toArray(new Class<?>[0]))
         }
     }
 

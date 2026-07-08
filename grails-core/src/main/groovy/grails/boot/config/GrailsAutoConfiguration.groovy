@@ -80,12 +80,12 @@ class GrailsAutoConfiguration implements GrailsApplicationClass, ApplicationCont
      */
     Collection<Class> classes() {
         if (limitScanningToApplication()) {
-            return ApplicationClassScanner.scanApplicationClasses(getClass(), packageNames())
+            return ApplicationArtefactScanner.scanApplicationClasses(getClass(), packageNames())
         }
 
         Collection<Class> classes = new HashSet()
         classes.addAll(new ClassPathScanner().scan(new PathMatchingResourcePatternResolver(applicationContext), packageNames()))
-        classes.addAll(ApplicationClassScanner.loadTransformedClasses(getClass().classLoader))
+        classes.addAll(ApplicationArtefactScanner.loadTransformedClasses(getClass().classLoader))
         return classes
     }
 

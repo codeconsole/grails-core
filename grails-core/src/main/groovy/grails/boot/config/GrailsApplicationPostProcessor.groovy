@@ -50,6 +50,7 @@ import grails.core.GrailsApplication
 import grails.core.GrailsApplicationClass
 import grails.core.GrailsApplicationLifeCycle
 import grails.plugins.DefaultGrailsPluginManager
+import grails.plugins.GrailsPlugin
 import grails.plugins.GrailsPluginManager
 import grails.spring.BeanBuilder
 import grails.util.Environment
@@ -168,8 +169,9 @@ class GrailsApplicationPostProcessor implements BeanDefinitionRegistryPostProces
      * still need to be registered.
      */
     private void registerRemainingApplicationClasses() {
+        Set<String> registeredClassNames = grailsApplication.allArtefacts*.name as Set<String>
         for (cls in classes) {
-            if (!grailsApplication.isArtefact(cls)) {
+            if (!registeredClassNames.contains(cls.name)) {
                 grailsApplication.addArtefact(cls)
             }
         }
@@ -283,10 +285,36 @@ class GrailsApplicationPostProcessor implements BeanDefinitionRegistryPostProces
 
         springConfig.registerBeansWithRegistry(registry)
 
+        if (!earlyPluginRegistrationRan) {
+            // the early phase applies plugin registrars itself; on the fallback path (contexts not
+            // booted through GrailsApp) apply them here so a plugin's beanRegistrar() behaves the same
+            applyPluginBeanRegistrars(registry)
+        }
+
         if (lifeCycle) {
             // the application's BeanRegistrar drains at the same point as its doWithSpring closure,
             // after the DSL flush so registrar beans win any name conflicts with the deprecated DSL
             BeanRegistrar registrar = lifeCycle.beanRegistrar()
+            if (registrar != null) {
+                new BeanRegistryAdapter(registry, applicationContext, applicationContext.environment, registrar.getClass())
+                        .register(registrar)
+            }
+        }
+    }
+
+    /**
+     * Applies each enabled plugin's {@link BeanRegistrar} on the fallback path where the early
+     * plugin registration phase did not run, mirroring that phase so a plugin's {@code beanRegistrar()}
+     * is honoured in every context rather than only those booted through {@code GrailsApp}. Runs after
+     * the DSL flush so registrar beans win name conflicts with the deprecated {@code doWithSpring} DSL.
+     */
+    private void applyPluginBeanRegistrars(BeanDefinitionRegistry registry) {
+        String[] activeProfiles = applicationContext.environment.activeProfiles
+        for (GrailsPlugin plugin in pluginManager.allPlugins) {
+            if (!plugin.supportsCurrentScopeAndEnvironment() || !plugin.isEnabled(activeProfiles)) {
+                continue
+            }
+            BeanRegistrar registrar = plugin.beanRegistrar
             if (registrar != null) {
                 new BeanRegistryAdapter(registry, applicationContext, applicationContext.environment, registrar.getClass())
                         .register(registrar)

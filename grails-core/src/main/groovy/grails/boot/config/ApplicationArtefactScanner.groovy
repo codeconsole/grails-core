@@ -24,7 +24,7 @@ import grails.boot.config.tools.ClassPathScanner
 import org.grails.compiler.injection.AbstractGrailsArtefactTransformer
 
 /**
- * Discovers the classes that constitute a Grails application by scanning the classpath relative
+ * Discovers the artefact classes that make up a Grails application by scanning the classpath relative
  * to an application class. This is the single implementation of the default scanning performed by
  * {@link GrailsAutoConfiguration#classes()}, also used by
  * {@link GrailsEarlyPluginRegistrationPostProcessor} to perform artefact discovery before Spring
@@ -33,9 +33,9 @@ import org.grails.compiler.injection.AbstractGrailsArtefactTransformer
  * @since 8.0
  */
 @CompileStatic
-final class ApplicationClassScanner {
+final class ApplicationArtefactScanner {
 
-    private ApplicationClassScanner() {
+    private ApplicationArtefactScanner() {
     }
 
     /**
