@@ -19,6 +19,7 @@
 package org.grails.orm.hibernate.proxy;
 
 import java.io.Serial;
+import java.io.Serializable;
 import java.lang.reflect.Method;
 import java.util.Set;
 
@@ -26,6 +27,7 @@ import org.hibernate.HibernateException;
 import org.hibernate.engine.spi.SharedSessionContractImplementor;
 import org.hibernate.internal.util.ReflectHelper;
 import org.hibernate.proxy.HibernateProxy;
+import org.hibernate.proxy.ProxyConfiguration;
 import org.hibernate.proxy.pojo.bytebuddy.ByteBuddyProxyFactory;
 import org.hibernate.proxy.pojo.bytebuddy.ByteBuddyProxyHelper;
 import org.hibernate.type.CompositeType;
@@ -34,9 +36,9 @@ import static org.hibernate.internal.util.collections.ArrayHelper.EMPTY_CLASS_AR
 
 /**
  * A ProxyFactory implementation for ByteBuddy that uses {@link ByteBuddyGroovyInterceptor}.
+ * Mirrors the Hibernate 7 implementation in grails-data-hibernate7.
  *
- * @author Graeme Rocher
- * @since 7.0
+ * @since 8.0
  */
 public class ByteBuddyGroovyProxyFactory extends ByteBuddyProxyFactory {
 
@@ -65,32 +67,31 @@ public class ByteBuddyGroovyProxyFactory extends ByteBuddyProxyFactory {
     }
 
     @Override
+    @SuppressWarnings({ "unchecked", "rawtypes" })
     public void postInstantiate(
             String entityName,
-            Class<?> persistentClass,
-            Set<Class<?>> interfaces,
+            Class persistentClass,
+            Set<Class> interfaces,
             Method getIdentifierMethod,
             Method setIdentifierMethod,
             CompositeType componentIdType)
             throws HibernateException {
         this.entityName = entityName;
         this.persistentClass = persistentClass;
-        this.interfaces = interfaces == null ? EMPTY_CLASS_ARRAY : interfaces.toArray(EMPTY_CLASS_ARRAY);
+        this.interfaces = interfaces == null ? EMPTY_CLASS_ARRAY : (Class<?>[]) interfaces.toArray(EMPTY_CLASS_ARRAY);
         this.getIdentifierMethod = getIdentifierMethod;
         this.setIdentifierMethod = setIdentifierMethod;
         this.componentIdType = componentIdType;
         this.overridesEquals = ReflectHelper.overridesEquals(persistentClass);
 
-        // Build the proxy class using the helper
         this.proxyClass = byteBuddyProxyHelper.buildProxy(persistentClass, this.interfaces);
 
-        // DO NOT call super.postInstantiate(entityName, ...)
-        // because it will try to initialize the standard Hibernate ProxyFactory fields
-        // which might conflict with your custom getProxy() logic.
+        // do NOT call super.postInstantiate: the stock factory keeps private state for its own
+        // getProxy(), which is fully replaced here
     }
 
     @Override
-    public HibernateProxy getProxy(Object id, SharedSessionContractImplementor session) throws HibernateException {
+    public HibernateProxy getProxy(Serializable id, SharedSessionContractImplementor session) throws HibernateException {
         try {
             final ByteBuddyGroovyInterceptor interceptor = new ByteBuddyGroovyInterceptor(
                     entityName,
@@ -104,14 +105,11 @@ public class ByteBuddyGroovyProxyFactory extends ByteBuddyProxyFactory {
                     overridesEquals,
                     lazyToString);
 
-            // 1. Create the instance
             final HibernateProxy hibernateProxy =
                     (HibernateProxy) proxyClass.getDeclaredConstructor().newInstance();
 
-            // 2. Cast to ProxyConfiguration to set the custom interceptor
-            // Hibernate 7 proxies implement ProxyConfiguration
-            if (hibernateProxy instanceof org.hibernate.proxy.ProxyConfiguration instance) {
-                instance.$$_hibernate_set_interceptor(interceptor);
+            if (hibernateProxy instanceof ProxyConfiguration) {
+                ((ProxyConfiguration) hibernateProxy).$$_hibernate_set_interceptor(interceptor);
             }
 
             return hibernateProxy;

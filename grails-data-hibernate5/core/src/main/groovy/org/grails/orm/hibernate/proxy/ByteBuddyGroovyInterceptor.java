@@ -18,6 +18,7 @@
  */
 package org.grails.orm.hibernate.proxy;
 
+import java.io.Serializable;
 import java.lang.reflect.Method;
 
 import org.hibernate.engine.spi.SharedSessionContractImplementor;
@@ -26,24 +27,23 @@ import org.hibernate.type.CompositeType;
 
 /**
  * A ByteBuddy interceptor that avoids initializing the proxy for Groovy-specific methods.
+ * Mirrors the Hibernate 7 implementation in grails-data-hibernate7.
  *
- * @author Graeme Rocher
- * @since 7.0
+ * @since 8.0
  */
 public class ByteBuddyGroovyInterceptor extends ByteBuddyInterceptor {
 
     private static final String GET_ID_METHOD = "getId";
     private static final String GET_IDENTIFIER_METHOD = "getIdentifier";
 
-    protected final Method getIdentifierMethod;
-
     private final boolean lazyToString;
 
+    @SuppressWarnings({ "unchecked", "rawtypes" })
     public ByteBuddyGroovyInterceptor(
             String entityName,
             Class<?> persistentClass,
             Class<?>[] interfaces,
-            Object id,
+            Serializable id,
             Method getIdentifierMethod,
             Method setIdentifierMethod,
             CompositeType componentIdType,
@@ -52,15 +52,14 @@ public class ByteBuddyGroovyInterceptor extends ByteBuddyInterceptor {
             boolean lazyToString) {
         super(
                 entityName,
-                persistentClass,
-                interfaces,
+                (Class) persistentClass,
+                (Class[]) interfaces,
                 id,
                 getIdentifierMethod,
                 setIdentifierMethod,
                 componentIdType,
                 session,
                 overridesEquals);
-        this.getIdentifierMethod = getIdentifierMethod;
         this.lazyToString = lazyToString;
     }
 
@@ -68,23 +67,22 @@ public class ByteBuddyGroovyInterceptor extends ByteBuddyInterceptor {
     public Object intercept(Object proxy, Method method, Object[] args) throws Throwable {
         String methodName = method.getName();
 
-        // Check these BEFORE calling this.invoke() to avoid premature initialization in Hibernate 7
+        // Answer identifier access from the LazyInitializer so it never initializes the proxy
         if ((getIdentifierMethod != null && methodName.equals(getIdentifierMethod.getName())) ||
                 GET_ID_METHOD.equals(methodName) ||
                 GET_IDENTIFIER_METHOD.equals(methodName)) {
             return getIdentifier();
         }
 
-        GroovyProxyInterceptorLogic.InterceptorState state = new GroovyProxyInterceptorLogic.InterceptorState(
-                getEntityName(), getPersistentClass(), getIdentifier(), lazyToString);
-
         if (isUninitialized()) {
+            GroovyProxyInterceptorLogic.InterceptorState state = new GroovyProxyInterceptorLogic.InterceptorState(
+                    getEntityName(), persistentClass, getIdentifier(), lazyToString);
             Object result = GroovyProxyInterceptorLogic.handleUninitialized(state, methodName, args);
             if (result != GroovyProxyInterceptorLogic.INVOKE_IMPLEMENTATION) { // NOPMD: sentinel comparison
                 return result;
             }
         }
 
-        return this.invoke(method, args, proxy);
+        return super.intercept(proxy, method, args);
     }
 }

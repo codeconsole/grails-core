@@ -26,10 +26,11 @@ import org.hibernate.engine.spi.SessionFactoryImplementor;
 import org.hibernate.proxy.ProxyFactory;
 
 /**
- * A {@link ProxyFactoryFactory} implementation for Hibernate 7 that provides Groovy-aware proxies.
+ * A {@link ProxyFactoryFactory} implementation for Hibernate 5 that provides Groovy-aware
+ * entity proxies. Basic (non-entity) proxies are delegated to the stock implementation.
+ * Mirrors the Hibernate 7 implementation in grails-data-hibernate7.
  *
- * @author Graeme Rocher
- * @since 7.0
+ * @since 8.0
  */
 public class GrailsProxyFactoryFactory implements ProxyFactoryFactory, java.io.Serializable {
 
@@ -37,14 +38,16 @@ public class GrailsProxyFactoryFactory implements ProxyFactoryFactory, java.io.S
     private static final long serialVersionUID = 1L;
 
     private final GrailsBytecodeProvider grailsBytecodeProvider;
+    private final transient ProxyFactoryFactory basicProxyDelegate;
 
-    public GrailsProxyFactoryFactory(GrailsBytecodeProvider grailsBytecodeProvider) {
+    public GrailsProxyFactoryFactory(GrailsBytecodeProvider grailsBytecodeProvider, ProxyFactoryFactory basicProxyDelegate) {
         this.grailsBytecodeProvider = grailsBytecodeProvider;
+        this.basicProxyDelegate = basicProxyDelegate;
     }
 
     @Override
     public ProxyFactory buildProxyFactory(SessionFactoryImplementor sessionFactory) {
-        return new ByteBuddyGroovyProxyFactory(grailsBytecodeProvider.getProxyHelper(),
+        return new ByteBuddyGroovyProxyFactory(grailsBytecodeProvider.getByteBuddyProxyHelper(),
                 isLazyToString(sessionFactory));
     }
 
@@ -54,7 +57,14 @@ public class GrailsProxyFactoryFactory implements ProxyFactoryFactory, java.io.S
     }
 
     @Override
+    @SuppressWarnings("rawtypes")
+    public BasicProxyFactory buildBasicProxyFactory(Class superClass, Class[] interfaces) {
+        return basicProxyDelegate.buildBasicProxyFactory(superClass, interfaces);
+    }
+
+    @Override
+    @SuppressWarnings("rawtypes")
     public BasicProxyFactory buildBasicProxyFactory(Class superClassOrInterface) {
-        return null;
+        return basicProxyDelegate.buildBasicProxyFactory(superClassOrInterface);
     }
 }
