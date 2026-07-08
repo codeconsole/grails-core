@@ -1,0 +1,89 @@
+/*
+ *  Licensed to the Apache Software Foundation (ASF) under one
+ *  or more contributor license agreements.  See the NOTICE file
+ *  distributed with this work for additional information
+ *  regarding copyright ownership.  The ASF licenses this file
+ *  to you under the Apache License, Version 2.0 (the
+ *  "License"); you may not use this file except in compliance
+ *  with the License.  You may obtain a copy of the License at
+ *
+ *    https://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing,
+ *  software distributed under the License is distributed on an
+ *  "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ *  KIND, either express or implied.  See the License for the
+ *  specific language governing permissions and limitations
+ *  under the License.
+ */
+package org.grails.plugins.i18n
+
+import spock.lang.Specification
+
+/**
+ * Tests {@link AvailableLocaleResolver} against the {@code messages_*.properties} bundles on the
+ * test classpath ({@code src/test/resources}: es, fr, pt_BR, plus the base {@code messages.properties}).
+ */
+class AvailableLocaleResolverSpec extends Specification {
+
+    private AvailableLocaleResolver newResolver(Locale defaultLocale = Locale.forLanguageTag('en')) {
+        new AvailableLocaleResolver(getClass().classLoader, defaultLocale)
+    }
+
+    void 'discovers the locales that have a messages bundle plus the default locale'() {
+        when:
+        List<Locale> locales = newResolver().availableLocales
+
+        then:
+        locales.contains(Locale.forLanguageTag('en'))
+        locales.contains(Locale.forLanguageTag('es'))
+        locales.contains(Locale.forLanguageTag('fr'))
+        locales.contains(Locale.forLanguageTag('pt-BR'))
+    }
+
+    void 'sorts the discovered locales by their display name in their own language'() {
+        given:
+        List<Locale> expectedKnown = [
+                Locale.forLanguageTag('en'),
+                Locale.forLanguageTag('es'),
+                Locale.forLanguageTag('fr'),
+                Locale.forLanguageTag('pt-BR')
+        ].sort { it.getDisplayName(it) }
+
+        when: 'the discovered list is narrowed to the bundles this test controls'
+        List<Locale> actualKnown = newResolver().availableLocales.findAll { it in expectedKnown }
+
+        then: 'their relative order matches a display-name sort'
+        actualKnown == expectedKnown
+    }
+
+    void 'always includes the configured default locale even without a matching bundle'() {
+        expect:
+        newResolver(Locale.forLanguageTag('de')).availableLocales.contains(Locale.forLanguageTag('de'))
+    }
+
+    void 'returns an unmodifiable list'() {
+        when:
+        newResolver().availableLocales.add(Locale.forLanguageTag('zz'))
+
+        then:
+        thrown(UnsupportedOperationException)
+    }
+
+    void 'caches the computed list until the cache is cleared'() {
+        given:
+        AvailableLocaleResolver resolver = newResolver()
+
+        expect: 'the same instance is returned while cached'
+        resolver.availableLocales.is(resolver.availableLocales)
+
+        when: 'the cache is cleared'
+        List<Locale> before = resolver.availableLocales
+        resolver.clearCache()
+        List<Locale> after = resolver.availableLocales
+
+        then: 'a freshly computed list is returned with equal contents'
+        !before.is(after)
+        before == after
+    }
+}

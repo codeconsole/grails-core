@@ -24,6 +24,7 @@ import groovy.util.logging.Slf4j
 
 import org.springframework.context.support.ReloadableResourceBundleMessageSource
 import org.springframework.core.io.FileSystemResource
+import org.springframework.web.context.WebApplicationContext
 
 import grails.plugins.Plugin
 import grails.util.BuildSettings
@@ -41,6 +42,30 @@ class I18nGrailsPlugin extends Plugin {
     String baseDir = 'grails-app/i18n'
     String version = GrailsUtil.getGrailsVersion()
     String watchedResources = "file:./${baseDir}/**/*.properties".toString()
+
+    /**
+     * Publishes the discovered available locales to the servlet context so that views and the
+     * {@code g:localeSelect available="true"} tag can render a language selector. Reading a servlet
+     * context attribute keeps consumers decoupled from this module.
+     */
+    static final String AVAILABLE_LOCALES_ATTRIBUTE = 'availableLocales'
+
+    @Override
+    void doWithApplicationContext() {
+        publishAvailableLocales()
+    }
+
+    private void publishAvailableLocales() {
+        def ctx = applicationContext
+        if (!(ctx instanceof WebApplicationContext)) {
+            return
+        }
+        def servletContext = ((WebApplicationContext) ctx).servletContext
+        if (servletContext != null && ctx.containsBean('availableLocaleResolver')) {
+            AvailableLocaleResolver resolver = ctx.getBean('availableLocaleResolver', AvailableLocaleResolver)
+            servletContext.setAttribute(AVAILABLE_LOCALES_ATTRIBUTE, resolver.availableLocales)
+        }
+    }
 
     @Override
     void onChange(Map<String, Object> event) {
@@ -92,6 +117,12 @@ class I18nGrailsPlugin extends Plugin {
         def messageSource = ctx.getBean('messageSource')
         if (messageSource instanceof ReloadableResourceBundleMessageSource) {
             messageSource.clearCache()
+        }
+
+        // A bundle may have been added/removed, so re-scan and re-publish the available locales.
+        if (ctx.containsBean('availableLocaleResolver')) {
+            ctx.getBean('availableLocaleResolver', AvailableLocaleResolver).clearCache()
+            publishAvailableLocales()
         }
     }
 

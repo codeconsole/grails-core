@@ -26,6 +26,17 @@ By default, the user locale is detected from the incoming `Accept-Language` head
 
 Grails will automatically switch the user's locale and subsequent requests will use the switched locale.
 
+To offer a language selector, the i18n plugin discovers the locales your application is actually translated into by scanning the classpath for `messages_&#42;.properties` bundles (plus the default locale, configurable via `grails.i18n.default.locale`). This list is exposed as the `AvailableLocaleResolver` bean and published to the servlet context under the `availableLocales` attribute. The `<g:localeSelect available="true"/>` tag renders a `<select>` limited to those locales, and you can iterate the list directly in a view to build your own switcher:
+
+[source,xml]
+----
+<g:each in="${application.getAttribute('availableLocales')}" var="locale">
+    <a href="?lang=${locale.toLanguageTag()}">${locale.getDisplayName(locale)}</a>
+</g:each>
+----
+
+Applications created with `grails create-app` include a ready-made language dropdown in the default layout that uses exactly this mechanism.
+
 By default, Grails uses {springapi}org/springframework/web/servlet/i18n/SessionLocaleResolver.html[SessionLocaleResolver] as the `localeResolver` bean.
 
 You can change the default locale easily: 

@@ -19,6 +19,8 @@
 
 package org.grails.plugins.i18n;
 
+import java.util.Locale;
+
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -85,5 +87,22 @@ public class I18nAutoConfiguration {
             messageSource.setFileCacheSeconds(fileCacheSeconds);
         }
         return messageSource;
+    }
+
+    /**
+     * Discovers the locales the application is translated into (from {@code messages_*.properties}
+     * bundles on the classpath) so that a language selector can list only real translations rather
+     * than every JVM locale. Published to the servlet context by {@link I18nGrailsPlugin} and
+     * consumed by the {@code g:localeSelect available="true"} tag.
+     *
+     * @param defaultLocale the base {@code messages.properties} locale, always included
+     * ({@code grails.i18n.default.locale}, defaults to {@code en})
+     */
+    @Bean
+    @ConditionalOnMissingBean(AvailableLocaleResolver.class)
+    public AvailableLocaleResolver availableLocaleResolver(GrailsApplication grailsApplication,
+            @Value("${grails.i18n.default.locale:en}") String defaultLocale) {
+        return new AvailableLocaleResolver(grailsApplication.getClassLoader(),
+                Locale.forLanguageTag(defaultLocale.replace('_', '-')));
     }
 }
