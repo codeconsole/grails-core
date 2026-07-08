@@ -18,8 +18,10 @@
  */
 package simple.spec
 
-import com.dumbster.smtp.SimpleSmtpServer
-import com.dumbster.smtp.SmtpMessage
+import com.icegreen.greenmail.util.GreenMail
+import com.icegreen.greenmail.util.GreenMailUtil
+import com.icegreen.greenmail.util.ServerSetup
+import jakarta.mail.internet.MimeMessage
 import page.HomePage
 import page.register.ForgotPasswordPage
 import page.register.RegisterPage
@@ -113,20 +115,18 @@ class RegisterSpec extends SecurityUISpec {
 
 		then:
 		pageSource.contains('Your account registration email was sent - check your mail!')
-		smtpServer.receivedEmailSize == 1
+		smtpServer.waitForIncomingEmail(1)
 
 		when:
 		def smtpMessage = fetchCurrentEmail(smtpServer)
 
 		then:
-		with(smtpMessage) {
-			getHeaderValue('Subject') == 'New Account'
-			body.contains("Hi $un")
-		}
+		smtpMessage.subject == 'New Account'
+		GreenMailUtil.getBody(smtpMessage).contains("Hi $un")
 
 		when:
 		def verificationCodePattern = ~/^[a-f0-9]{32}$/
-		def code = findCode(smtpMessage.body, 'verifyRegistration')
+		def code = findCode(GreenMailUtil.getBody(smtpMessage), 'verifyRegistration')
 
 		then:
 		code ==~ verificationCodePattern
@@ -150,19 +150,17 @@ class RegisterSpec extends SecurityUISpec {
 
 		then:
 		pageSource.contains('Your password reset email was sent - check your mail!')
-		smtpServer.receivedEmailSize == 2
+		smtpServer.waitForIncomingEmail(2)
 
 		when:
 		smtpMessage = fetchCurrentEmail(smtpServer)
 
 		then:
-		smtpMessage.with {
-			getHeaderValue('Subject') == 'Password Reset'
-			body.contains("Hi $un")
-		}
+		smtpMessage.subject == 'Password Reset'
+		GreenMailUtil.getBody(smtpMessage).contains("Hi $un")
 
 		when:
-		code = findCode(smtpMessage.body, 'resetPassword')
+		code = findCode(GreenMailUtil.getBody(smtpMessage), 'resetPassword')
 		via(ResetPasswordPage, '123')
 
 		then:
@@ -243,13 +241,8 @@ class RegisterSpec extends SecurityUISpec {
 		smtpServer.stop()
 	}
 
-	private static SmtpMessage fetchCurrentEmail(SimpleSmtpServer smtpServer) {
-		def received = smtpServer.receivedEmail
-		def email = null
-		while (received.hasNext()) {
-			email = received.next()
-		}
-		return email as SmtpMessage
+	private static MimeMessage fetchCurrentEmail(GreenMail smtpServer) {
+		smtpServer.receivedMessages.last()
 	}
 
 	private static String findCode(String body, String action) {
@@ -259,19 +252,10 @@ class RegisterSpec extends SecurityUISpec {
 		matcher.group(1)
 	}
 
-	private SimpleSmtpServer startSmtpServer() {
-		int port = 1025
-		while (true) {
-			try {
-				new ServerSocket(port).close()
-				break
-			}
-			catch (IOException ignored) {
-				port++
-				assert port < 2000, 'cannot find open port'
-			}
-		}
-		def smtpServer = SimpleSmtpServer.start(port)
+	private GreenMail startSmtpServer() {
+		def smtpServer = new GreenMail(ServerSetup.SMTP.dynamicPort())
+		smtpServer.start()
+		int port = smtpServer.smtp.port
 		go("testData/updateMailSenderPort?port=$port")
 		assert pageSource.contains("OK: $port")
 		smtpServer
