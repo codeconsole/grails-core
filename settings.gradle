@@ -237,6 +237,7 @@ include(
         'grails-testing-support-dbcleanup-h2',
         'grails-testing-support-dbcleanup-postgresql',
         'grails-testing-support-http-client',
+        'grails-testing-support-latency',
         'grails-testing-support-mongodb',
         'grails-testing-support-redis',
         'grails-testing-support-views-gson',
@@ -541,6 +542,7 @@ include(
         'grails-test-examples-issue-698-domain-save-npe',
         'grails-test-examples-issue-views-182',
         'grails-test-examples-jetty',
+        'grails-test-examples-latency',
         'grails-test-examples-namespaces',
         'grails-test-examples-plugins-exploded',
         'grails-test-examples-plugins-issue11005',
@@ -594,6 +596,7 @@ project(':grails-test-examples-views-functional-tests-plugin').projectDir = file
 project(':grails-test-examples-test-phases').projectDir = file('grails-test-examples/test-phases')
 project(':grails-test-examples-spring-dependency-management').projectDir = file('grails-test-examples/spring-dependency-management')
 project(':grails-test-examples-jetty').projectDir = file('grails-test-examples/jetty')
+project(':grails-test-examples-latency').projectDir = file('grails-test-examples/latency')
 
 includeBuild('./grails-gradle') {
     name = 'grails-gradle'

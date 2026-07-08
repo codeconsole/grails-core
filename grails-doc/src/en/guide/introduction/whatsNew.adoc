@@ -105,6 +105,15 @@ Integration tests that implement `HttpClientSupport` can now use `httpPostForm(.
 request bodies. The helper URL-encodes form fields using UTF-8, and repeated values in a `Collection` or array are encoded as
 repeated keys in insertion order.
 
+==== Latency Testing Support
+
+The new `grails-testing-support-latency` module injects artificial latency into the application under test, so that
+requests randomly take longer. Slower responses widen the window in which timing bugs occur, turning intermittently
+flaky functional tests — assertions that race a navigation, missing waits, ordering assumptions — into deterministic
+failures. The module is inert until `grails.testing.latency.enabled` is set to `true`, and the delay range, the
+fraction of requests affected, and the url patterns are all configurable. See the
+xref:testing/functionalTesting[Functional Testing] section for details.
+
 ==== GORM for MongoDB: TTL, Text, and Reconciled Indexes
 
 GORM for MongoDB can now declare a https://www.mongodb.com/docs/manual/core/index-ttl/[TTL index] directly in the mapping DSL.
