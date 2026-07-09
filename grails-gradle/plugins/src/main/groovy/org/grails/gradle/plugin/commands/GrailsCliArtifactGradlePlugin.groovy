@@ -152,22 +152,15 @@ abstract class GrailsCliArtifactGradlePlugin implements Plugin<Project> {
             configureDependencyMapping(project, details, cliRuntimeClasspath)
         }
 
-        // the plugin's tests exercise the cli classes through their public API
-        SourceSet testSourceSet = sourceSets.findByName('test')
-        if (testSourceSet != null) {
-            testSourceSet.compileClasspath += cliSourceSet.output
-            testSourceSet.runtimeClasspath += cliSourceSet.output
-            project.configurations.named('testImplementation').configure { Configuration it ->
-                it.extendsFrom(project.configurations.getByName('cliApi'), project.configurations.getByName('cliImplementation'))
-            }
-        }
-        SourceSet integrationTestSourceSet = sourceSets.findByName('integrationTest')
-        if (integrationTestSourceSet != null) {
-            integrationTestSourceSet.compileClasspath += cliSourceSet.output
-            integrationTestSourceSet.runtimeClasspath += cliSourceSet.output
-            project.configurations.named('integrationTestImplementation').configure { Configuration it ->
-                it.extendsFrom(project.configurations.getByName('cliApi'), project.configurations.getByName('cliImplementation'))
-            }
+        // the plugin's tests exercise the cli classes through their public API: the cli output
+        // and the cli dependency buckets flow into the test configurations (dependency-based, so
+        // the wiring is immune to when test tasks snapshot their source set classpaths)
+        for (String testConfiguration : ['testImplementation', 'integrationTestImplementation']) {
+            project.configurations.matching { Configuration it -> it.name == testConfiguration }
+                    .configureEach { Configuration it ->
+                        project.dependencies.add(it.name, cliSourceSet.output)
+                        it.extendsFrom(project.configurations.getByName('cliApi'), project.configurations.getByName('cliImplementation'))
+                    }
         }
 
         project.tasks.named(cliSourceSet.jarTaskName, Jar).configure { Jar jar ->
