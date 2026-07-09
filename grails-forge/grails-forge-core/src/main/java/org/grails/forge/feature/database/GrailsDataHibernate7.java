@@ -53,12 +53,12 @@ public class GrailsDataHibernate7 extends GormFeature implements DatabaseDriverC
 
     @Override
     public String getTitle() {
-        return "GORM for Hibernate 7";
+        return "Grails Data for Hibernate 7";
     }
 
     @Override
     public String getDescription() {
-        return "Configure GORM for using Hibernate 7.";
+        return "Configure Grails Data for using Hibernate 7.";
     }
 
     @Override

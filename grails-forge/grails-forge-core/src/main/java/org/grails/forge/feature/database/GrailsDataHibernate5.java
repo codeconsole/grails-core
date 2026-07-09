@@ -55,12 +55,12 @@ public class GrailsDataHibernate5 extends GormFeature implements DatabaseDriverC
 
     @Override
     public String getTitle() {
-        return "GORM for Hibernate 5";
+        return "Grails Data for Hibernate 5";
     }
 
     @Override
     public String getDescription() {
-        return "Configure GORM for using Hibernate 5.";
+        return "Configure Grails Data for using Hibernate 5.";
     }
 
     @Override
@@ -124,7 +124,7 @@ public class GrailsDataHibernate5 extends GormFeature implements DatabaseDriverC
     @Override
     public boolean shouldApply(ApplicationType applicationType, Options options, Set<Feature> selectedFeatures) {
         return selectedFeatures.stream().anyMatch(f -> f instanceof GrailsDataHibernate5)
-                || (options.getGormImpl() == GormImpl.HIBERNATE
+                || (options.getGormImpl() == GormImpl.HIBERNATE5
                         && selectedFeatures.stream().noneMatch(GrailsDataHibernate7.class::isInstance));
     }
 }

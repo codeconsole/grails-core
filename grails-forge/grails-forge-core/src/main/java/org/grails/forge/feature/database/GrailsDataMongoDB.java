@@ -47,12 +47,12 @@ public class GrailsDataMongoDB extends GormOneOfFeature {
 
     @Override
     public String getTitle() {
-        return "GORM for MongoDB";
+        return "Grails Data for MongoDB";
     }
 
     @Override
     public String getDescription() {
-        return "Configure GORM for using MongoDB.";
+        return "Configure Grails Data for using MongoDB.";
     }
 
     @Override

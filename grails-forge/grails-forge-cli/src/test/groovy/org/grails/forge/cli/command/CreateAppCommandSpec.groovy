@@ -64,7 +64,72 @@ class CreateAppCommandSpec extends CommandSpec implements CommandFixture {
 
         then:
         noExceptionThrown()
-        baos.toString().contains("Invalid GORM implementation selection: xyz")
+        baos.toString().contains("Invalid Grails Data implementation selection: xyz")
+    }
+
+    void "test creating a project with the data switch"() {
+        given:
+        ByteArrayOutputStream out = new ByteArrayOutputStream()
+        System.setOut(new PrintStream(out))
+
+        when:
+        PicocliRunner.run(CreateAppCommand, ctx, "dataswitch", "--data", "hibernate7")
+
+        then:
+        noExceptionThrown()
+        out.toString().contains("Application created")
+    }
+
+    void "test creating a project with the -d short alias"() {
+        given:
+        ByteArrayOutputStream out = new ByteArrayOutputStream()
+        System.setOut(new PrintStream(out))
+
+        when:
+        PicocliRunner.run(CreateAppCommand, ctx, "dshort", "-d", "hibernate7")
+
+        then:
+        noExceptionThrown()
+        out.toString().contains("Application created")
+    }
+
+    void "test creating a project with the legacy -g short alias"() {
+        given:
+        ByteArrayOutputStream out = new ByteArrayOutputStream()
+        System.setOut(new PrintStream(out))
+
+        when:
+        PicocliRunner.run(CreateAppCommand, ctx, "gshort", "-g", "hibernate5")
+
+        then:
+        noExceptionThrown()
+        out.toString().contains("Application created")
+    }
+
+    void "test creating a project with the legacy hibernate gorm value"() {
+        given:
+        ByteArrayOutputStream out = new ByteArrayOutputStream()
+        System.setOut(new PrintStream(out))
+
+        when:
+        PicocliRunner.run(CreateAppCommand, ctx, "legacygorm", "--gorm", "hibernate")
+
+        then:
+        noExceptionThrown()
+        out.toString().contains("Application created")
+    }
+
+    void "test creating a project with the hibernate5 gorm value"() {
+        given:
+        ByteArrayOutputStream out = new ByteArrayOutputStream()
+        System.setOut(new PrintStream(out))
+
+        when:
+        PicocliRunner.run(CreateAppCommand, ctx, "hib5gorm", "--gorm", "hibernate5")
+
+        then:
+        noExceptionThrown()
+        out.toString().contains("Application created")
     }
 
     void "community and preview features are labelled as such"() {

@@ -75,9 +75,9 @@ Creates an application
                           grails-console, views-markup, asset-pipeline-grails, views-json,
                           gorm-neo4j, asciidoctor, grails-web-console,
                           logbackGroovy, mongo-sync, shade, geb, properties
-  -g, --gorm=GORM Implementation
-                        Which GORM Implementation to configure. Possible values: hibernate,
-                          mongodb, neo4j.
+  -d, --data, -g, --gorm=Grails Data Implementation
+                        Which Grails Data implementation to configure (-g, --gorm are legacy
+                          aliases). Possible values: hibernate5, hibernate7, mongodb.
   -h, --help            Show this help message and exit.
   -i, --inplace         Create a service using the current directory
       --jdk, --java-version=<javaVersion>

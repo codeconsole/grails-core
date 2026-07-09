@@ -167,7 +167,7 @@ class GrailsDataHibernate7Spec extends ApplicationContextSpec implements Command
 
         then:
         IllegalArgumentException e = thrown()
-        e.message.contains('Only one GORM for Hibernate implementation can be selected')
+        e.message.contains('Only one Grails Data for Hibernate implementation can be selected')
     }
 
     void "test config"() {

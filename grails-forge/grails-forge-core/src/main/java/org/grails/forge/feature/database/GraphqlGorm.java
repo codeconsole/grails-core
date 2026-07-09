@@ -52,12 +52,12 @@ public class GraphqlGorm implements Feature {
 
     @Override
     public String getTitle() {
-        return "GORM for GraphQL";
+        return "Grails Data for GraphQL";
     }
 
     @Override
     public String getDescription() {
-        return "Generates a GraphQL schema based on entities in GORM.";
+        return "Generates a GraphQL schema based on entities in Grails Data.";
     }
 
     @Override

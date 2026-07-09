@@ -16,24 +16,23 @@
  *  specific language governing permissions and limitations
  *  under the License.
  */
-package org.grails.forge.cli.command;
+package org.grails.forge.options;
 
-import io.micronaut.core.annotation.Introspected;
-import org.grails.forge.options.GormImpl;
-import picocli.CommandLine;
+import java.util.Optional;
 
-@Introspected
-public class GormImplConverter implements CommandLine.ITypeConverter<GormImpl> {
+import io.micronaut.core.convert.ConversionContext;
+import io.micronaut.core.convert.TypeConverter;
+import jakarta.inject.Singleton;
+
+/**
+ * Converts user-supplied selection values (including the legacy {@code hibernate}
+ * value) to {@link GormImpl} for HTTP parameter binding.
+ */
+@Singleton
+public class GormImplTypeConverter implements TypeConverter<CharSequence, GormImpl> {
 
     @Override
-    public GormImpl convert(String value) throws Exception {
-        if (value == null) {
-            return GormImpl.DEFAULT_OPTION;
-        }
-        GormImpl impl = GormImpl.parse(value);
-        if (impl != null) {
-            return impl;
-        }
-        throw new CommandLine.TypeConversionException("Invalid Grails Data implementation selection: " + value);
+    public Optional<GormImpl> convert(CharSequence object, Class<GormImpl> targetType, ConversionContext context) {
+        return Optional.ofNullable(GormImpl.parse(object.toString()));
     }
 }
