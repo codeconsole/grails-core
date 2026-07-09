@@ -42,10 +42,6 @@ class CodecMetaClassBenchmarkSpec extends Specification {
             runBenchmark()
     }
 
-    static void main(String[] args) {
-        runBenchmark()
-    }
-
     @CompileStatic
     private static boolean runBenchmark() {
         GroovySystem.metaClassRegistry.removeMetaClass(CodecBenchmarkTarget)
@@ -79,7 +75,6 @@ class CodecMetaClassBenchmarkSpec extends Specification {
             println "registrationNanos=${registrationNanos}"
             println "registrationNanosPerOp=${registrationNanos / REGISTRATION_ITERATIONS}"
             println "metaClassChangeEvents=${changeEvents.get()}"
-            println "codecMetaMethodRegistrations=${codecMetaMethodRegistrations()}"
             println "encodeAsBenchmarkMetaMethods=${countEncodeAsBenchmarkMetaMethods(targetMetaClasses)}"
             println "encodeIterations=${ENCODE_ITERATIONS}"
             println "encodeNanos=${encodeNanos}"
@@ -95,15 +90,6 @@ class CodecMetaClassBenchmarkSpec extends Specification {
     @CompileStatic(TypeCheckingMode.SKIP)
     private static Object encode(CodecBenchmarkTarget target) {
         InvokerHelper.invokeMethod(target, 'encodeAsBenchmark', null)
-    }
-
-    @CompileStatic(TypeCheckingMode.SKIP)
-    private static long codecMetaMethodRegistrations() {
-        try {
-            CodecMetaClassSupport.getMetaMethodRegistrationCount()
-        } catch (MissingMethodException ignored) {
-            -1L
-        }
     }
 
     @CompileStatic(TypeCheckingMode.SKIP)

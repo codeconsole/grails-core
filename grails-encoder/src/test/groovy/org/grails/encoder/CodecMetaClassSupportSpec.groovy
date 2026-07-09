@@ -18,7 +18,6 @@
  */
 package org.grails.encoder
 
-import java.lang.ref.WeakReference
 import java.util.concurrent.Callable
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.ExecutorService
@@ -33,13 +32,8 @@ import spock.lang.Specification
 
 class CodecMetaClassSupportSpec extends Specification {
 
-    void setup() {
-        CodecMetaClassSupport.clearMetaMethodRegistrationState()
-    }
-
     void cleanup() {
         GroovySystem.metaClassRegistry.removeMetaClass(CodecMetaClassSupportSpecTarget)
-        CodecMetaClassSupport.clearMetaMethodRegistrationState()
     }
 
     void 'cached codec registration is idempotent for the same codec factory'() {
@@ -49,19 +43,15 @@ class CodecMetaClassSupportSpec extends Specification {
             List<ExpandoMetaClass> targetMetaClasses = [GrailsMetaClassUtils.getExpandoMetaClass(CodecMetaClassSupportSpecTarget)]
 
         when:
-            long baselineRegistrationCount = CodecMetaClassSupport.metaMethodRegistrationCount
             support.configureCodecMethods(codecFactory, true, targetMetaClasses)
-            long firstRegistrationCount = CodecMetaClassSupport.metaMethodRegistrationCount
             Object firstResult = InvokerHelper.invokeMethod(new CodecMetaClassSupportSpecTarget('a&b'), 'encodeAsBenchmark', null)
+            codecFactory.encoder = new BenchmarkEncoder('|')
             support.configureCodecMethods(codecFactory, true, targetMetaClasses)
-            long secondRegistrationCount = CodecMetaClassSupport.metaMethodRegistrationCount
             Object secondResult = InvokerHelper.invokeMethod(new CodecMetaClassSupportSpecTarget('a&b'), 'encodeAsBenchmark', null)
 
         then:
             firstResult == 'a&amp;b'
             secondResult == 'a&amp;b'
-            firstRegistrationCount > baselineRegistrationCount
-            secondRegistrationCount == firstRegistrationCount
     }
 
     void 'cached codec registration is idempotent for decoder and aliases'() {
@@ -72,19 +62,15 @@ class CodecMetaClassSupportSpec extends Specification {
 
         when:
             support.configureCodecMethods(codecFactory, true, targetMetaClasses)
-            long firstRegistrationCount = CodecMetaClassSupport.metaMethodRegistrationCount
             Object encodedAlias = InvokerHelper.invokeMethod(new CodecMetaClassSupportSpecTarget('a&b'), 'encodeAsBench', null)
             Object decoded = InvokerHelper.invokeMethod(new CodecMetaClassSupportSpecTarget('a&amp;b'), 'decodeBenchmark', null)
             Object decodedAlias = InvokerHelper.invokeMethod(new CodecMetaClassSupportSpecTarget('a&amp;b'), 'decodeBench', null)
             support.configureCodecMethods(codecFactory, true, targetMetaClasses)
-            long secondRegistrationCount = CodecMetaClassSupport.metaMethodRegistrationCount
 
         then:
             encodedAlias == 'a&amp;b'
             decoded == 'a&b'
             decodedAlias == 'a&b'
-            firstRegistrationCount == 4L
-            secondRegistrationCount == firstRegistrationCount
     }
 
     void 'cached codec registration is atomic for concurrent same factory registration'() {
@@ -107,7 +93,8 @@ class CodecMetaClassSupportSpec extends Specification {
             futures*.get(10L, TimeUnit.SECONDS)
 
         then:
-            CodecMetaClassSupport.metaMethodRegistrationCount == 4L
+            InvokerHelper.invokeMethod(new CodecMetaClassSupportSpecTarget('a&b'), 'encodeAsBenchmark', null) == 'a&amp;b'
+            InvokerHelper.invokeMethod(new CodecMetaClassSupportSpecTarget('a&amp;b'), 'decodeBenchmark', null) == 'a&b'
 
         cleanup:
             executor.shutdownNow()
@@ -119,20 +106,15 @@ class CodecMetaClassSupportSpec extends Specification {
             BenchmarkCodecFactory codecFactory = new BenchmarkCodecFactory()
 
         when:
-            long baselineRegistrationCount = CodecMetaClassSupport.metaMethodRegistrationCount
             support.configureCodecMethods(codecFactory, true, [GrailsMetaClassUtils.getExpandoMetaClass(CodecMetaClassSupportSpecTarget)])
-            long firstRegistrationCount = CodecMetaClassSupport.metaMethodRegistrationCount
             Object firstResult = InvokerHelper.invokeMethod(new CodecMetaClassSupportSpecTarget('a&b'), 'encodeAsBenchmark', null)
             GroovySystem.metaClassRegistry.removeMetaClass(CodecMetaClassSupportSpecTarget)
             support.configureCodecMethods(codecFactory, true, [GrailsMetaClassUtils.getExpandoMetaClass(CodecMetaClassSupportSpecTarget)])
-            long secondRegistrationCount = CodecMetaClassSupport.metaMethodRegistrationCount
             Object secondResult = InvokerHelper.invokeMethod(new CodecMetaClassSupportSpecTarget('a&b'), 'encodeAsBenchmark', null)
 
         then:
             firstResult == 'a&amp;b'
             secondResult == 'a&amp;b'
-            firstRegistrationCount > baselineRegistrationCount
-            secondRegistrationCount > firstRegistrationCount
     }
 
     void 'cached codec registration keeps distinct codec factories isolated'() {
@@ -141,37 +123,17 @@ class CodecMetaClassSupportSpec extends Specification {
             List<ExpandoMetaClass> targetMetaClasses = [GrailsMetaClassUtils.getExpandoMetaClass(CodecMetaClassSupportSpecTarget)]
 
         when:
-            long baselineRegistrationCount = CodecMetaClassSupport.metaMethodRegistrationCount
-            support.configureCodecMethods(new BenchmarkCodecFactory(), true, targetMetaClasses)
-            long firstRegistrationCount = CodecMetaClassSupport.metaMethodRegistrationCount
+            support.configureCodecMethods(new BenchmarkCodecFactory('&amp;'), true, targetMetaClasses)
             Object firstResult = InvokerHelper.invokeMethod(new CodecMetaClassSupportSpecTarget('a&b'), 'encodeAsBenchmark', null)
-            support.configureCodecMethods(new BenchmarkCodecFactory(), true, targetMetaClasses)
-            long secondRegistrationCount = CodecMetaClassSupport.metaMethodRegistrationCount
+            support.configureCodecMethods(new BenchmarkCodecFactory('|'), true, targetMetaClasses)
             Object secondResult = InvokerHelper.invokeMethod(new CodecMetaClassSupportSpecTarget('a&b'), 'encodeAsBenchmark', null)
 
         then:
             firstResult == 'a&amp;b'
-            secondResult == 'a&amp;b'
-            firstRegistrationCount > baselineRegistrationCount
-            secondRegistrationCount > firstRegistrationCount
+            secondResult == 'a|b'
     }
 
-    void 'cached codec registration prunes stale factory registration keys'() {
-        given:
-            CodecMetaClassSupport support = new CodecMetaClassSupport()
-            List<ExpandoMetaClass> targetMetaClasses = [GrailsMetaClassUtils.getExpandoMetaClass(CodecMetaClassSupportSpecTarget)]
-
-        when:
-            support.configureCodecMethods(new BenchmarkCodecFactory(), true, targetMetaClasses)
-            clearRegisteredCodecFactoryReferences()
-            support.configureCodecMethods(new BenchmarkCodecFactory(), true, targetMetaClasses)
-
-        then:
-            metaMethodRegistrationKeyCount() == 4
-            CodecMetaClassSupport.metaMethodRegistrationCount == 8L
-    }
-
-    void 'cached codec registration remains idempotent after unrelated factory churn'() {
+    void 'cached codec registration remains correct after unrelated factory churn'() {
         given:
             CodecMetaClassSupport support = new CodecMetaClassSupport()
             List<ExpandoMetaClass> targetMetaClasses = [GrailsMetaClassUtils.getExpandoMetaClass(CodecMetaClassSupportSpecTarget)]
@@ -182,11 +144,9 @@ class CodecMetaClassSupportSpec extends Specification {
             (1..1500).each {
                 support.configureCodecMethods(new EncoderOnlyCodecFactory(), true, targetMetaClasses)
             }
-            long afterUnrelatedFactoryChurnCount = CodecMetaClassSupport.metaMethodRegistrationCount
             support.configureCodecMethods(originalCodecFactory, true, targetMetaClasses)
 
         then:
-            CodecMetaClassSupport.metaMethodRegistrationCount == afterUnrelatedFactoryChurnCount
             InvokerHelper.invokeMethod(new CodecMetaClassSupportSpecTarget('a&b'), 'encodeAsBenchmark', null) == 'a&amp;b'
     }
 
@@ -197,31 +157,15 @@ class CodecMetaClassSupportSpec extends Specification {
             List<ExpandoMetaClass> targetMetaClasses = [GrailsMetaClassUtils.getExpandoMetaClass(CodecMetaClassSupportSpecTarget)]
 
         when:
-            long baselineRegistrationCount = CodecMetaClassSupport.metaMethodRegistrationCount
             support.configureCodecMethods(codecFactory, false, targetMetaClasses)
-            long firstRegistrationCount = CodecMetaClassSupport.metaMethodRegistrationCount
+            Object firstResult = InvokerHelper.invokeMethod(new CodecMetaClassSupportSpecTarget('a&b'), 'encodeAsBenchmark', null)
+            codecFactory.encoder = new BenchmarkEncoder('|')
             support.configureCodecMethods(codecFactory, false, targetMetaClasses)
-            long secondRegistrationCount = CodecMetaClassSupport.metaMethodRegistrationCount
+            Object secondResult = InvokerHelper.invokeMethod(new CodecMetaClassSupportSpecTarget('a&b'), 'encodeAsBenchmark', null)
 
         then:
-            firstRegistrationCount > baselineRegistrationCount
-            secondRegistrationCount > firstRegistrationCount
-    }
-
-    private static Set registeredMetaMethodKeys() {
-        def field = CodecMetaClassSupport.getDeclaredField('REGISTERED_META_METHODS')
-        field.accessible = true
-        ((Map) field.get(null)).keySet()
-    }
-
-    private static int metaMethodRegistrationKeyCount() {
-        CodecMetaClassSupport.metaMethodRegistrationKeyCount
-    }
-
-    private static void clearRegisteredCodecFactoryReferences() {
-        registeredMetaMethodKeys().each { Object key ->
-            ((WeakReference) key).clear()
-        }
+            firstResult == 'a&amp;b'
+            secondResult == 'a|b'
     }
 
     private static class CodecMetaClassSupportSpecTarget {
@@ -240,8 +184,12 @@ class CodecMetaClassSupportSpec extends Specification {
 
     private static class BenchmarkCodecFactory implements CodecFactory {
 
-        private final BenchmarkEncoder encoder = new BenchmarkEncoder()
+        private BenchmarkEncoder encoder
         private final BenchmarkDecoder decoder = new BenchmarkDecoder()
+
+        BenchmarkCodecFactory(String ampersandReplacement = '&amp;') {
+            this.encoder = new BenchmarkEncoder(ampersandReplacement)
+        }
 
         @Override
         Encoder getEncoder() {
@@ -272,6 +220,11 @@ class CodecMetaClassSupportSpec extends Specification {
     private static class BenchmarkEncoder implements Encoder {
 
         private final CodecIdentifier codecIdentifier = new DefaultCodecIdentifier('Benchmark', 'Bench')
+        private final String ampersandReplacement
+
+        BenchmarkEncoder(String ampersandReplacement = '&amp;') {
+            this.ampersandReplacement = ampersandReplacement
+        }
 
         @Override
         CodecIdentifier getCodecIdentifier() {
@@ -280,7 +233,7 @@ class CodecMetaClassSupportSpec extends Specification {
 
         @Override
         Object encode(Object o) {
-            o?.toString()?.replace('&', '&amp;')
+            o?.toString()?.replace('&', ampersandReplacement)
         }
 
         @Override
