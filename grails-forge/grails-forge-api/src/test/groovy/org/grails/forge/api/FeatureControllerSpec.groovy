@@ -21,7 +21,9 @@ package org.grails.forge.api
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import io.micronaut.http.HttpRequest
+import io.micronaut.http.HttpStatus
 import io.micronaut.http.client.HttpClient
+import io.micronaut.http.client.exceptions.HttpClientResponseException
 import io.micronaut.http.client.annotation.Client
 import io.micronaut.test.extensions.spock.annotation.MicronautTest
 import jakarta.inject.Inject
@@ -173,9 +175,8 @@ class FeatureControllerSpec extends Specification {
 
     void "test feature filter - invalid option as query parameter"() {
         when:
-        String response = httpClient.toBlocking().withCloseable { client ->
-            client.exchange(HttpRequest.GET('/application-types/' + ApplicationType.WEB.name + '/features?javaVersion=invalid'), String.class).body()
-        }
+        String response = httpClient.toBlocking()
+                .exchange(HttpRequest.GET('/application-types/' + ApplicationType.WEB.name + '/features?javaVersion=invalid'), String.class).body()
 
         then:
         response
@@ -185,5 +186,28 @@ class FeatureControllerSpec extends Specification {
         def map = mapper.readValue(response, Map)
 
         map.features.collect { it -> it.name }.find { it == 'gorm-mongodb'}
+    }
+
+    void "test feature filter - Grails Data implementation as query parameter"() {
+        when: 'a valid Grails Data implementation is accepted'
+        String response = httpClient.toBlocking()
+                .exchange(HttpRequest.GET('/application-types/' + ApplicationType.WEB.name + '/features?gorm=hibernate7'), String.class).body()
+
+        then:
+        response
+
+        when: 'the legacy hibernate value is accepted'
+        response = httpClient.toBlocking()
+                .exchange(HttpRequest.GET('/application-types/' + ApplicationType.WEB.name + '/features?gorm=hibernate'), String.class).body()
+
+        then:
+        response
+
+        when: 'an invalid value falls back to the default like other filter options'
+        response = httpClient.toBlocking()
+                .exchange(HttpRequest.GET('/application-types/' + ApplicationType.WEB.name + '/features?gorm=invalid'), String.class).body()
+
+        then:
+        response
     }
 }
