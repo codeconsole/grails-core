@@ -56,7 +56,7 @@ dependencies {
     }
 
     // TODO: Clarify and clean up dependencies
-    implementation platform(project(':grails-bom'))
+    implementation platform(project(':grails-hibernate5-bom'))
 
     api "org.springframework.boot:spring-boot"
     api "org.springframework:spring-orm"
