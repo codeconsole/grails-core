@@ -20,10 +20,12 @@ package grails.spring
 
 import org.grails.spring.DefaultRuntimeSpringConfiguration
 import org.junit.jupiter.api.Test
+import org.springframework.beans.factory.parsing.BeanDefinitionParsingException
 import org.springframework.context.ApplicationContext
 import org.springframework.core.io.ByteArrayResource
 
 import static org.junit.jupiter.api.Assertions.assertEquals
+import static org.junit.jupiter.api.Assertions.assertThrows
 import static org.junit.jupiter.api.Assertions.assertTrue
 
 class BeanBuilderTests {
@@ -83,6 +85,25 @@ class BeanBuilderTests {
         }
 
         assertEquals ['one', 'two'], beanBuilder.createApplicationContext().getBean('letters')
+    }
+
+    @Test
+    void testUnknownNamespaceDoesNotInitializeXmlReaderForErrorLocation() {
+        def springConfig = new DefaultRuntimeSpringConfiguration() {
+            @Override
+            ApplicationContext getUnrefreshedApplicationContext() {
+                throw new AssertionError('XML reader should not be initialized when namespace handler is missing')
+            }
+        }
+        def beanBuilder = new BeanBuilder(null, springConfig, getClass().classLoader)
+
+        def exception = assertThrows(BeanDefinitionParsingException) {
+            beanBuilder.beans {
+                xmlns missing: 'https://example.invalid/schema/missing'
+            }
+        }
+
+        assertTrue exception.message.contains('No namespace handler found for URI')
     }
 
     static class Bean1 {

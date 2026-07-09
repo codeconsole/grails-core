@@ -222,7 +222,7 @@ public class BeanBuilder extends GroovyObjectSupport {
             if (namespaceHandler == null) {
                 throw new BeanDefinitionParsingException(
                       new Problem("No namespace handler found for URI: " + uri,
-                            new Location(getXmlSupport().getReaderContext(beanBuildResource).getResource())));
+                            new Location(beanBuildResource)));
             }
             namespaceHandlers.put(namespace, namespaceHandler);
             namespaces.put(namespace, uri);
