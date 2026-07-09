@@ -1401,7 +1401,7 @@ Applications that defined their own `GrailsWebRequestFilter` bean, or their own 
 Because Boot's `WebMvcAutoConfiguration` is now active, a handful of its features that `@EnableWebMvc` previously suppressed take effect for Grails servlet web applications.
 None require action for a typical application, but they are behavioral differences worth knowing about when you upgrade:
 
-* **Form-content filter for `PUT` / `PATCH` / `DELETE`.** Boot registers `OrderedFormContentFilter`, enabled by default via `spring.mvc.formcontent.filter.enabled`. Form-encoded bodies sent with `PUT`, `PATCH` or `DELETE` are now parsed into request parameters. An application that reads those bodies itself can turn the filter off:
+* **Form-content filter for `PUT` / `PATCH` / `DELETE`.** Boot registers `OrderedFormContentFilter`, enabled by default via `spring.mvc.formcontent.filter.enabled`. It parses `application/x-www-form-urlencoded` bodies of `PUT`, `PATCH` and `DELETE` requests so their fields are visible through the standard `request.getParameter(...)` API. Grails already exposed `PUT` and `PATCH` form fields through `params`, so for controller code the newly parsed method is effectively `DELETE`; turning the filter off reverts `DELETE` bodies to being unparsed while `PUT` and `PATCH` continue to work. An application that reads those bodies itself can disable it:
 +
 [source,yaml]
 .application.yml
