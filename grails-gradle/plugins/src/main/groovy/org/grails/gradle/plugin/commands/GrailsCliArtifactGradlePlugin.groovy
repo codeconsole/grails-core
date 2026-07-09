@@ -18,7 +18,6 @@
  */
 package org.grails.gradle.plugin.commands
 
-import groovy.transform.CompileDynamic
 import groovy.transform.CompileStatic
 
 import org.gradle.api.GradleException
@@ -141,7 +140,7 @@ abstract class GrailsCliArtifactGradlePlugin implements Plugin<Project> {
                 return
             }
             details.mapToMavenScope('compile')
-            configureDependencyMapping(project, details, cliRuntimeClasspath)
+            CliPublishingSupport.configureDependencyMapping(project, details, cliRuntimeClasspath)
         }
         cliComponent.addVariantsFromConfiguration(cliRuntimeElements) { ConfigurationVariantDetails details ->
             if (hasDirectoryArtifacts(details)) {
@@ -149,8 +148,13 @@ abstract class GrailsCliArtifactGradlePlugin implements Plugin<Project> {
                 return
             }
             details.mapToMavenScope('runtime')
-            configureDependencyMapping(project, details, cliRuntimeClasspath)
+            CliPublishingSupport.configureDependencyMapping(project, details, cliRuntimeClasspath)
         }
+
+        // dependency mapping fixes the pom only; the module metadata keeps the capability
+        // request, which external consumers cannot resolve — rewrite it to the companion
+        // coordinate (see CliPublishingSupport)
+        CliPublishingSupport.rewritePublishedCliCapabilityDependencies(project)
 
         // the plugin's tests exercise the cli classes through their public API: the cli output
         // and the cli dependency buckets flow into the test configurations (dependency-based, so
@@ -197,28 +201,6 @@ abstract class GrailsCliArtifactGradlePlugin implements Plugin<Project> {
                 project.logger.warn('Project {} publishes a cli companion artifact but does not apply the Grails publish plugin (org.apache.grails.gradle.grails-publish). Apply it to publish `{}` automatically, or configure a publication for the `cli` component manually.',
                         project.name, extension.artifactId.get())
             }
-        }
-    }
-
-    /**
-     * Publish resolved variant-level coordinates for the cli variants so a dependency on another
-     * project's cli tier (declared with a capability inside a composite build) lands in the pom as
-     * the `-cli` coordinate rather than the primary one, which Maven consumers could not follow.
-     *
-     * Dependency mapping has not been promoted to Gradle's public API yet — it is only reachable
-     * via {@code ConfigurationVariantDetailsInternal}; fall back silently when the internal
-     * contract changes. Revisit when https://github.com/gradle/gradle/issues/26163 stabilizes.
-     */
-    @CompileDynamic
-    private static void configureDependencyMapping(Project project, ConfigurationVariantDetails details, Configuration cliRuntimeClasspath) {
-        try {
-            details.dependencyMapping {
-                it.publishResolvedCoordinates.set(true)
-                it.fromResolutionOf(cliRuntimeClasspath)
-            }
-        }
-        catch (Throwable e) {
-            project.logger.info('Dependency mapping is unavailable on this Gradle version; cli variant poms will record component-level coordinates.', e)
         }
     }
 

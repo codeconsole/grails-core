@@ -381,3 +381,48 @@ dependencies {
 
 By packaging commands this way, the plugin's runtime jar stays free of command code and CLI-only
 libraries, while applications get the commands with no additional build configuration.
+
+**Depending on Another Module's CLI Tier**
+
+Within a multi-project build, one project's cli tier may build on another project's cli companion.
+Declare the dependency on the owning project with a *capability* naming the companion:
+
+[source,groovy]
+----
+dependencies {
+    cliApi(project(':my-other-plugin')) {
+        capabilities {
+            requireCapability('com.example:my-other-plugin-cli')
+        }
+    }
+}
+----
+
+The cli-artifact plugin publishes such a dependency as a plain dependency on the companion
+coordinate (`com.example:my-other-plugin-cli`) in both the pom and the module metadata, so
+external consumers resolve the published artifacts directly.
+
+A library that consumes a cli tier in its *main* configurations (`api`/`implementation`) rather
+than a `cli` source set — and therefore does not apply the cli-artifact plugin — applies the
+`org.apache.grails.gradle.grails-cli-library` plugin to publish its cli dependencies the same way:
+
+[source,groovy]
+----
+plugins {
+    id 'java-library'
+    id 'org.apache.grails.gradle.grails-cli-library'
+}
+
+dependencies {
+    api(project(':my-other-plugin')) {
+        capabilities {
+            requireCapability('com.example:my-other-plugin-cli')
+        }
+    }
+}
+----
+
+WARNING: Capability requests are a build-internal addressing scheme. Never declare
+`requireCapability` on an *external* (binary) Grails dependency — published metadata cannot
+satisfy it and resolution fails with a capability conflict. External consumers always depend on
+the plain `-cli` coordinate, e.g. `grailsCli 'com.example:my-plugin-cli:1.0.0'`.
