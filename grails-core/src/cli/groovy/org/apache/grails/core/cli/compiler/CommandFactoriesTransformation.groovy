@@ -18,6 +18,8 @@
  */
 package org.apache.grails.core.cli.compiler
 
+import java.util.regex.Pattern
+
 import groovy.transform.CompileStatic
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ClassHelper
@@ -62,6 +64,14 @@ class CommandFactoriesTransformation implements ASTTransformation, TransformWith
             'src/cli/resources/META-INF/grails-cli.factories',
     ].asImmutable()
 
+    /**
+     * Commands shipped in a companion cli artifact live in the {@code cli} source set
+     * ({@code src/cli/groovy} or {@code src/cli/java}), which is not one of the standard
+     * project-source locations recognised by {@link GrailsResourceUtils#isProjectSource}.
+     */
+    protected static final Pattern CLI_SOURCE_PATTERN =
+            Pattern.compile('.+?[\\\\/]src[\\\\/]cli[\\\\/](groovy|java)[\\\\/].+?\\.(groovy|java)$')
+
     @Override
     int priority() {
         return GroovyTransformOrder.COMMAND_FACTORIES_ORDER
@@ -77,7 +87,7 @@ class CommandFactoriesTransformation implements ASTTransformation, TransformWith
         if (url == null) {
             return
         }
-        if (!GrailsResourceUtils.isProjectSource(new UrlResource(url))) {
+        if (!GrailsResourceUtils.isProjectSource(new UrlResource(url)) && !isCliSource(url)) {
             return
         }
 
@@ -87,5 +97,9 @@ class CommandFactoriesTransformation implements ASTTransformation, TransformWith
             FactoriesFileWriter.updateFactoriesWithType(classNode, APPLICATION_COMMAND_CLASS,
                     compilationTargetDirectory, CLI_FACTORIES_LOCATION, SOURCE_CLI_FACTORIES_LOCATIONS)
         }
+    }
+
+    protected static boolean isCliSource(URL url) {
+        CLI_SOURCE_PATTERN.matcher(url.file).matches()
     }
 }
