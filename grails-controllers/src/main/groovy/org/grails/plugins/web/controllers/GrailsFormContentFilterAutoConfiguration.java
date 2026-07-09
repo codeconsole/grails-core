@@ -32,9 +32,11 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.web.filter.FormContentFilter;
 
 /**
- * Guarantees a {@link FormContentFilter} for every Grails servlet web application, so form-encoded
- * {@code PUT}, {@code PATCH} and {@code DELETE} bodies are parsed into request parameters and are
- * visible through the standard {@code request.getParameter(...)} API.
+ * Guarantees a {@link FormContentFilter} for every Grails servlet web application, so
+ * {@code application/x-www-form-urlencoded} bodies of {@code PUT}, {@code PATCH} and {@code DELETE}
+ * requests are parsed into request parameters and are visible through the standard
+ * {@code request.getParameter(...)} API. Only that content type is affected — other request bodies
+ * (JSON, multipart, etc.) are untouched and remain available to data binding.
  *
  * Spring Boot's {@link WebMvcAutoConfiguration} already contributes an {@code OrderedFormContentFilter}
  * for a default Grails application, in which case this auto-configuration backs off. It only fills the
