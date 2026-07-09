@@ -133,7 +133,9 @@ class GrailsApp extends SpringApplication {
 
     @Override
     protected void configureEnvironment(ConfigurableEnvironment environment, String[] args) {
-        configurePropertySources(environment, args)
+        // Delegating to super installs the ApplicationConversionService so relaxed property
+        // resolution (e.g. lowercase enum values) works via environment.getProperty()
+        super.configureEnvironment(environment, args)
 
         String[] springProfile = environment.getProperty(SPRING_PROFILES, String[])
         if (springProfile) {
