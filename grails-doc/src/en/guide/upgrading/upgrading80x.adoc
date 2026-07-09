@@ -1410,3 +1410,101 @@ Now the framework bean simply backs off.
 
 NOTE: The back-off applies to beans that are registered before auto-configuration conditions are evaluated — `@Bean` methods in application configuration classes.
 Beans contributed later, through a plugin's `doWithSpring` or the application's `resources.groovy`, continue to take effect through bean-definition overriding, exactly as in previous releases.
+
+==== 33. CLI Commands Move to Companion `-cli` Artifacts
+
+Grails commands (`ApplicationCommand` implementations) no longer ship inside runtime plugin
+artifacts. Each command-bearing module publishes a companion artifact under its own coordinate with
+a `-cli` suffix, and commands are registered in a dedicated `META-INF/grails-cli.factories` file
+instead of `META-INF/grails.factories`.
+
+**Package rename.** The command contract moved from `grails.dev.commands.*` (in `grails-core`) to
+`org.apache.grails.core.cli.*` (in the new `org.apache.grails:grails-core-cli` artifact). Update
+imports in your `grails-app/commands` classes:
+
+[source,groovy]
+----
+// Grails 7
+import grails.dev.commands.ApplicationCommand
+import grails.dev.commands.ExecutionContext
+
+// Grails 8
+import org.apache.grails.core.cli.ApplicationCommand
+import org.apache.grails.core.cli.ExecutionContext
+----
+
+**New `grailsCli` configuration.** The Grails Gradle plugin registers a `grailsCli` configuration
+that is compile-visible for `grails-app/commands` sources and on the command-runner classpath, but
+never on `runtimeClasspath` — so commands and their CLI-only dependencies are excluded from
+`bootRun`, `bootJar`, and `bootWar`.
+
+**CLI dependencies are discovered automatically.** The plugin adds
+`org.apache.grails:grails-core-cli` (the command contract) and `org.apache.grails:grails-console`
+(the command runner) to `grailsCli`, and walks the application's resolved dependency graph —
+including transitive plugins — for jars carrying the `Grails-Cli-Artifact` manifest attribute,
+adding each advertised companion automatically. The per-command Gradle tasks (e.g. `dbmUpdate`)
+are registered from those companions as well, so no `buildscript` classpath entry is required. In
+most applications, upgrading therefore requires **no build changes** to keep plugin commands
+working:
+
+[source,groovy]
+.build.gradle
+----
+dependencies {
+    // the dbm-* commands are discovered automatically: the plugin jar advertises
+    // org.apache.grails:grails-data-hibernate7-dbmigration-cli, which is added to grailsCli
+    implementation 'org.apache.grails:grails-data-hibernate7-dbmigration'
+}
+----
+
+Disable the discovery with `grails { cliAutoProvision = false }` and declare the cli tier
+explicitly when full control over the command classpath is preferred:
+
+[source,groovy]
+.build.gradle
+----
+grails {
+    cliAutoProvision = false
+}
+
+dependencies {
+    implementation 'org.apache.grails:grails-data-hibernate7-dbmigration'
+    grailsCli 'org.apache.grails:grails-core-cli'
+    grailsCli 'org.apache.grails:grails-console'
+    grailsCli 'org.apache.grails:grails-data-hibernate7-dbmigration-cli'
+}
+----
+
+The renamed framework command packages are:
+
+|===
+|Grails 7 | Grails 8 (`-cli` artifact)
+
+|`grails.dev.commands.*` (grails-core)
+|`org.apache.grails.core.cli.*` (grails-core-cli)
+
+|`org.grails.web.mapping.reporting.UrlMappingsReportCommand`
+|`org.apache.grails.web.mapping.cli.UrlMappingsReportCommand` (grails-web-url-mappings-cli)
+
+|`scaffolding.*` commands
+|`org.apache.grails.scaffolding.cli.*` (grails-scaffolding-cli)
+
+|`grails.plugin.hibernate.commands.SchemaExportCommand`
+|`org.apache.grails.data.hibernate5.cli` / `...hibernate7.cli` (grails-data-hibernate5-cli / -7-cli)
+
+|`org.grails.plugins.databasemigration.command.*`
+|`org.apache.grails.data.hibernate5.dbmigration.cli` / `...hibernate7.dbmigration.cli`
+
+|`grails.plugin.springsecurity` s2 commands
+|`org.apache.grails.security.cli.*` (grails-spring-security-cli)
+|===
+
+**Third-party plugins must be rebuilt against Grails 8.** Apply the new
+`org.apache.grails.gradle.grails-plugin-cli` Gradle plugin, move command sources from
+`grails-app/commands` to `src/cli/groovy`, and update the contract imports — recompiling then
+regenerates the `grails-cli.factories` registration automatically and the companion `-cli`
+artifact is published alongside the plugin (see
+xref:commandLine#creatingCustomCommands[Creating Custom Commands] for the complete workflow).
+Hand-authored command registrations must move from
+`src/main/resources/META-INF/grails.factories` to `.../grails-cli.factories`. A Grails 7 command
+plugin dropped onto a Grails 8 application unchanged will not have its commands discovered.

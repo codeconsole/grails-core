@@ -39,6 +39,12 @@ dependencies {
     implementation platform(project(':grails-bom'))
 
     api project(":grails-core")
+    // the command runner executes ApplicationCommands, which live in the cli companion artifact
+    api(project(':grails-core')) {
+        capabilities {
+            requireCapability('org.apache.grails:grails-core-cli')
+        }
+    }
     api 'org.apache.groovy:groovy'
     api 'org.apache.groovy:groovy-console'
     api 'org.apache.groovy:groovy-swing'

@@ -99,6 +99,23 @@ dependencies {
     }
 }
 
+// Companion cli artifacts (published by the cli-artifact convention plugin) are additional
+// publications of existing projects, so the subproject enumeration above cannot see them. Each
+// applying project exports its companion coordinate via the `cliArtifactId` extra property, which
+// only exists once that project has been evaluated — so the constraints are computed lazily, in
+// the mutation window Gradle provides right before the configuration is first observed.
+configurations.named('api').configure { apiConfiguration ->
+    apiConfiguration.withDependencies {
+        for (Project subproject : rootProject.subprojects) {
+            def cliArtifactId = subproject.findProperty('cliArtifactId')
+            if (cliArtifactId) {
+                apiConfiguration.dependencyConstraints.add(
+                        project.dependencies.constraints.create("${subproject.group}:${cliArtifactId}:${projectVersion}"))
+            }
+        }
+    }
+}
+
 configurations.register('bomDependencies').configure {
     it.canBeResolved = true
     it.transitive = true
@@ -122,6 +139,11 @@ tasks.register('extractConstraints', ExtractDependenciesTask).configure { Extrac
 
         rootProject.subprojects.each { p ->
             artifactIdMappings[p.name] = p.findProperty('pomArtifactId') ?: p.name
+
+            String cliArtifactId = p.findProperty('cliArtifactId')
+            if (cliArtifactId) {
+                artifactIdMappings[cliArtifactId] = cliArtifactId
+            }
         }
 
         for (Map.Entry<String, String> dependency : project.ext.gradleBuildProjects.entrySet()) {
@@ -138,6 +160,11 @@ tasks.register('extractConstraints', ExtractDependenciesTask).configure { Extrac
             String artifactId = p.findProperty('pomArtifactId') as String ?: p.name
             String baseVersionName = artifactId.replaceAll('[.]', '-')
             projectCoordinates["${p.group}:${ artifactId}:${p.version}" as String] = baseVersionName
+
+            String cliArtifactId = p.findProperty('cliArtifactId')
+            if (cliArtifactId) {
+                projectCoordinates["${p.group}:${cliArtifactId}:${p.version}" as String] = cliArtifactId
+            }
         }
 
         for (Map.Entry<String, String> dependency : project.ext.gradleBuildProjects.entrySet()) {
@@ -192,6 +219,12 @@ ext {
             propertyNameCalculator.addProjects(rootProject.subprojects)
             for (String gradleArtifactId : project.ext.gradleBuildProjects) {
                 propertyNameCalculator.addProject('org.apache.grails.gradle', gradleArtifactId, project.version as String, gradleArtifactId)
+            }
+            for (Project p : rootProject.subprojects) {
+                String cliArtifactId = p.findProperty('cliArtifactId')
+                if (cliArtifactId) {
+                    propertyNameCalculator.addProject(p.group as String, cliArtifactId, p.version as String, cliArtifactId)
+                }
             }
 
             Map<String, String> pomProperties = [:]
