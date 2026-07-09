@@ -72,9 +72,9 @@ public class GrailsFormContentFilterAutoConfiguration {
     @ConditionalOnMissingBean(FormContentFilter.class)
     @ConditionalOnProperty(name = "spring.mvc.formcontent.filter.enabled", havingValue = "false")
     public FormContentParsingDisabledWarning formContentParsingDisabledWarning() {
-        logger.warn("Form-content parsing is disabled (spring.mvc.formcontent.filter.enabled=false): "
-                + "form-encoded PUT, PATCH and DELETE request bodies will not be parsed into request "
-                + "parameters, for controllers or for the Spring Security filter chain.");
+        logger.warn("Form-content parsing is disabled (spring.mvc.formcontent.filter.enabled=false): " +
+                "form-encoded PUT, PATCH and DELETE request bodies will not be parsed into request " +
+                "parameters, for controllers or for the Spring Security filter chain.");
         return new FormContentParsingDisabledWarning();
     }
 
