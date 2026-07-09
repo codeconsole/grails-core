@@ -45,6 +45,9 @@ bindData(target, params, [exclude: ['firstName', 'lastName']], "author")
 
 // using inclusive map
 bindData(target, params, [include: ['firstName', 'lastName']], "author")
+
+// clear included properties omitted from the source
+bindData(target, params, [include: ['firstName', 'lastName'], nullMissing: true])
 ----
 
 
@@ -57,10 +60,12 @@ Arguments:
 
 * `target` - The target object to bind to
 * `params` - A `Map` of source parameters, often the link:params.html[params] object when used in a controller
-* `includesExcludes` - (Optional) A map with 'include' and/or 'exclude' lists containing the names of properties to either include or exclude.
+* `includesExcludes` - (Optional) A map with 'include' and/or 'exclude' lists containing the names of properties to either include or exclude. Set `nullMissing: true` with an `include` list to assign `null` to included properties that are omitted from the binding source.
 * `prefix` - (Optional) A string representing a prefix to use to filter parameters. The method will automatically append a '.' when matching the prefix to parameters, so you can use 'author' to filter for parameters such as 'author.name'.
 
 NOTE: Note that if an empty List or no List is provided as a value for the `include` parameter then all statically typed instance properties will be subject to binding if they are not explicitly excluded. See the link:{constraintsRefFromRef}bindable.html[bindable] constraint documentation for more information on how to control what is bindable and what is not.
+
+`nullMissing` is opt-in and only applies when an `include` list is provided. This is useful for update forms where an omitted allowed field should clear an existing value instead of leaving stale persisted data. Excluded properties are not cleared.
 
 The underlying implementation uses Spring's Data Binding framework. If the target is a domain class, type conversion errors are stored in the `errors` property of the domain class.
 

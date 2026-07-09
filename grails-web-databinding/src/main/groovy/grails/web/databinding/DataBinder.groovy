@@ -67,7 +67,8 @@ trait DataBinder {
     BindingResult bindData(target, bindingSource, Map includeExclude, String filter) {
         List includeList = convertToListIfCharSequence(includeExclude?.include)
         List excludeList = convertToListIfCharSequence(includeExclude?.exclude)
-        DataBindingUtils.bindObjectToInstance(target, bindingSource, includeList, excludeList, filter)
+        boolean nullMissing = includeExclude?.nullMissing == true
+        DataBindingUtils.bindObjectToInstance(target, bindingSource, includeList, excludeList, filter, nullMissing)
     }
 
     @Generated
