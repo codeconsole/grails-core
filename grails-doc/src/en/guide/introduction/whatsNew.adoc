@@ -39,6 +39,20 @@ This brings the Spring Boot 4 modular artifact layout, Spring Framework 7 API re
 
 The Grails 8 upgrade guide calls out the major application-impacting changes and links to the Spring Boot 4.0 migration guide, Spring Boot 4.1 release notes and Spring Framework 7.0 release notes.
 
+==== Hibernate 7 Application Generation
+
+Grails Forge can now generate applications configured for Grails Data with Hibernate 7.
+The `create-*` commands also accept a new `-d, --data` option (the previous `-g` and `--gorm` flags remain supported as legacy aliases) with the values `hibernate5`, `hibernate7`, and `mongodb`; the legacy value `hibernate` is still accepted and selects Hibernate 5:
+
+[source,console]
+----
+grails -t forge create-app --data=hibernate7 com.example.demo
+----
+
+Applications generated for Hibernate 7 consume `grails-hibernate7-bom` — or `grails-hibernate7-micronaut-bom` when combined with the `grails-micronaut` feature — consistently across the application dependencies, the buildscript classpath, and `buildSrc`.
+This avoids the dependency resolution conflicts that occur when an application generated for Hibernate 5 is manually switched to `grails-data-hibernate7` while the default `grails-bom` remains on the build classpath.
+The `database-migration` feature also selects the matching `grails-data-hibernate7-dbmigration` plugin automatically.
+
 ==== GSP Tag Library Improvements
 
 Grails {grailsMajorVersion} continues the move toward method-based TagLib handlers while preserving compatibility with existing closure-based tags.
