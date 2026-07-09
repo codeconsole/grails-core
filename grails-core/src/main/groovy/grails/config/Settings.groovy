@@ -271,6 +271,13 @@ interface Settings {
     String WEB_REMOVE_DEFAULT_VIEW_RESOLVER_BEAN = 'grails.web.removeDefaultViewResolverBean'
 
     /**
+     * Whether to remove Spring Boot's welcome-page handler mappings so Grails' own URL mappings
+     * own the root path ('/') rather than a static {@code index.html} being served for it.
+     * Defaults to true
+     */
+    String WEB_REMOVE_WELCOME_PAGE_MAPPING = 'grails.web.removeWelcomePageMapping'
+
+    /**
      * The URL of the server
      */
     String SERVER_URL = 'grails.serverURL'
