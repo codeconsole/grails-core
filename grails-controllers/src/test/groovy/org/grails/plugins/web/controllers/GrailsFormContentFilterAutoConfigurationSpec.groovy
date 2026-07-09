@@ -74,4 +74,24 @@ class GrailsFormContentFilterAutoConfigurationSpec extends Specification {
                     assert context.getBeanNamesForType(FormContentFilter).length == 1
                 }
     }
+
+    void 'a startup warning is registered when form-content parsing is disabled'() {
+        expect: 'the opt-out is made visible when no filter ends up present'
+        new WebApplicationContextRunner()
+                .withPropertyValues('spring.mvc.formcontent.filter.enabled=false')
+                .withConfiguration(AutoConfigurations.of(GrailsFormContentFilterAutoConfiguration))
+                .run { context ->
+                    assert context.getBeanNamesForType(FormContentFilter).length == 0
+                    assert context.getBeanNamesForType(GrailsFormContentFilterAutoConfiguration.FormContentParsingDisabledWarning).length == 1
+                }
+    }
+
+    void 'no startup warning is registered when the filter is enabled'() {
+        expect: 'no warning while form-content parsing is available'
+        new WebApplicationContextRunner()
+                .withConfiguration(AutoConfigurations.of(GrailsFormContentFilterAutoConfiguration))
+                .run { context ->
+                    assert context.getBeanNamesForType(GrailsFormContentFilterAutoConfiguration.FormContentParsingDisabledWarning).length == 0
+                }
+    }
 }

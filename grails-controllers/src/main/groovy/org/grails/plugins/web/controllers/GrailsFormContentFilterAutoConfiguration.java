@@ -18,9 +18,13 @@
  */
 package org.grails.plugins.web.controllers;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBooleanProperty;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.boot.servlet.filter.OrderedFormContentFilter;
 import org.springframework.boot.webmvc.autoconfigure.WebMvcAutoConfiguration;
@@ -47,10 +51,35 @@ import org.springframework.web.filter.FormContentFilter;
 @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
 public class GrailsFormContentFilterAutoConfiguration {
 
+    private static final Logger logger = LoggerFactory.getLogger(GrailsFormContentFilterAutoConfiguration.class);
+
     @Bean
     @ConditionalOnMissingBean(FormContentFilter.class)
     @ConditionalOnBooleanProperty(name = "spring.mvc.formcontent.filter.enabled", matchIfMissing = true)
     public OrderedFormContentFilter formContentFilter() {
         return new OrderedFormContentFilter();
+    }
+
+    /**
+     * Warns, once at startup, that form-content parsing has been switched off. Registered only when
+     * {@code spring.mvc.formcontent.filter.enabled=false} is set and no {@link FormContentFilter} is
+     * present, so a deliberate opt-out is visible rather than silently leaving PUT/PATCH/DELETE form
+     * bodies unparsed — for controllers or for a plugin such as Spring Security.
+     */
+    @Bean
+    @ConditionalOnMissingBean(FormContentFilter.class)
+    @ConditionalOnProperty(name = "spring.mvc.formcontent.filter.enabled", havingValue = "false")
+    public FormContentParsingDisabledWarning formContentParsingDisabledWarning() {
+        logger.warn("Form-content parsing is disabled (spring.mvc.formcontent.filter.enabled=false): "
+                + "form-encoded PUT, PATCH and DELETE request bodies will not be parsed into request "
+                + "parameters, for controllers or for the Spring Security filter chain.");
+        return new FormContentParsingDisabledWarning();
+    }
+
+    /**
+     * Marker bean whose creation emits the startup warning above; present only when the form-content
+     * filter has been explicitly disabled.
+     */
+    public static final class FormContentParsingDisabledWarning {
     }
 }
