@@ -1237,7 +1237,10 @@ ${importStatements}
         project.afterEvaluate {
             consoleTask.configure {
                 it.dependsOn(tasks.named('classes'), tasks.named('findMainClass'))
-                it.classpath = project.sourceSets.main.runtimeClasspath + configuration.get()
+                // grails-console arrives through the auto-provisioned grailsCli tier; the
+                // `console` configuration remains for additional console-only dependencies
+                it.classpath = project.sourceSets.main.runtimeClasspath + configuration.get() +
+                        project.configurations.getByName(GRAILS_CLI_CLASSPATH_CONFIGURATION)
                 it.mainClass.set('grails.ui.console.GrailsSwingConsole')
 
                 def appClass = GrailsGradlePlugin.getMainClassProvider(project)
@@ -1256,7 +1259,10 @@ ${importStatements}
         project.afterEvaluate {
             shellTask.configure {
                 it.dependsOn(tasks.named('classes'), tasks.named('findMainClass'))
-                it.classpath = project.sourceSets.main.runtimeClasspath + configuration.get()
+                // grails-console arrives through the auto-provisioned grailsCli tier; the
+                // `console` configuration remains for additional console-only dependencies
+                it.classpath = project.sourceSets.main.runtimeClasspath + configuration.get() +
+                        project.configurations.getByName(GRAILS_CLI_CLASSPATH_CONFIGURATION)
                 it.mainClass.set('grails.ui.shell.GrailsShell')
                 it.standardInput = System.in
 

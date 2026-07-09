@@ -1457,6 +1457,11 @@ dependencies {
 }
 ----
 
+The `console` and `shell` tasks also draw from the provisioned cli tier, so the
+`console "org.apache.grails:grails-console"` dependency that earlier Grails versions generated in
+`build.gradle` is no longer needed and can be removed (the `console` configuration itself remains
+for additional console-only dependencies).
+
 Disable the discovery with `grails { cliAutoProvision = false }` and declare the cli tier
 explicitly when full control over the command classpath is preferred:
 
