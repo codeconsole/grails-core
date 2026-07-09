@@ -46,3 +46,6 @@ grails:
         defaultScope: singleton
     converters:
         encoding: UTF-8
+    i18n:
+        # Opt into header-based locale resolution; this disables ?lang= switching.
+        localeResolver: acceptHeader

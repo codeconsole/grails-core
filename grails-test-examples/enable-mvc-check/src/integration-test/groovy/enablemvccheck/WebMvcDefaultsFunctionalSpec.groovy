@@ -36,9 +36,12 @@ import org.apache.grails.testing.http.client.HttpClientSupport
  *       context root (no Boot catch-all static-resource handler)</li>
  *   <li>a static {@code index.html} is NOT served for the unmapped root path
  *       (no Boot {@code WelcomePageHandlerMapping})</li>
- *   <li>locale resolution follows the {@code Accept-Language} header rather than a
- *       {@code ?lang} request parameter</li>
  * </ul>
+ *
+ * This app also sets {@code grails.i18n.localeResolver=acceptHeader}, so locale resolution follows
+ * the {@code Accept-Language} header and the {@code ?lang} switch is disabled. That is independent
+ * of {@code @EnableWebMvc}: with the default session resolver the {@code ?lang=} switch works even
+ * under {@code @EnableWebMvc} (see {@code GrailsLocaleResolverAutoConfiguration}).
  *
  * Form-parameter parsing is <em>not</em> affected by the annotation: Grails contributes its
  * own {@code FormContentFilter} when Boot's {@code WebMvcAutoConfiguration} backs off, so
@@ -100,12 +103,11 @@ class WebMvcDefaultsFunctionalSpec extends Specification implements HttpClientSu
     }
 
     void 'locale resolution follows the Accept-Language header and the lang request parameter is ignored'() {
-        // @EnableWebMvc registers an AcceptHeaderLocaleResolver ahead of auto-configuration, so
-        // grails-i18n's SessionLocaleResolver backs off and Grails' ?lang= switching has no effect.
-        // Without the annotation the session-based resolver is active and ?lang=de returns "de".
-        // This intentionally differs from Grails 7 (where the i18n plugin overrode the annotation's
-        // resolver via bean-definition overriding): framework beans now back off cleanly instead of
-        // overriding. See upgrade notes section 31.4.
+        // This app sets grails.i18n.localeResolver=acceptHeader, so the read-only
+        // AcceptHeaderLocaleResolver is used: the locale follows the Accept-Language header and the
+        // ?lang= switch is disabled (its interceptor is not registered, so no error is logged).
+        // With the default (session) resolver, ?lang=de would win and return "de" — this holds even
+        // under @EnableWebMvc (see GrailsLocaleResolverAutoConfiguration).
         when:
         def response = http(['Accept-Language': 'fr-FR'], '/locale/echo?lang=de')
 

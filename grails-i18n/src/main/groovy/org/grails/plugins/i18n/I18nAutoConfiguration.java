@@ -30,11 +30,7 @@ import org.springframework.boot.autoconfigure.context.MessageSourceAutoConfigura
 import org.springframework.boot.webmvc.autoconfigure.WebMvcAutoConfiguration;
 import org.springframework.context.MessageSource;
 import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Condition;
-import org.springframework.context.annotation.ConditionContext;
-import org.springframework.context.annotation.Conditional;
 import org.springframework.context.support.AbstractApplicationContext;
-import org.springframework.core.type.AnnotatedTypeMetadata;
 import org.springframework.util.StringUtils;
 import org.springframework.web.servlet.DispatcherServlet;
 import org.springframework.web.servlet.LocaleResolver;
@@ -111,11 +107,10 @@ public class I18nAutoConfiguration {
         return Locale.getDefault();
     }
 
-    // The ?lang= switch mutates the LocaleResolver, which only the SESSION and COOKIE resolvers
-    // support; ACCEPT_HEADER and FIXED are read-only, so the interceptor is not registered for them
-    // (ControllersGrailsPlugin only adds it to the handler chain when the bean is present).
+    // The ?lang= interceptor is always registered. When the configured LocaleResolver is read-only
+    // (ACCEPT_HEADER or FIXED), ParamsAwareLocaleChangeInterceptor detects that the resolver cannot
+    // change and ignores the parameter, so ?lang= simply has no effect.
     @Bean
-    @Conditional(OnMutableLocaleResolver.class)
     @ConditionalOnMissingBean(name = "localeChangeInterceptor", search = SearchStrategy.CURRENT)
     public LocaleChangeInterceptor localeChangeInterceptor() {
         ParamsAwareLocaleChangeInterceptor localeChangeInterceptor = new ParamsAwareLocaleChangeInterceptor();
@@ -134,15 +129,5 @@ public class I18nAutoConfiguration {
             messageSource.setFileCacheSeconds(fileCacheSeconds);
         }
         return messageSource;
-    }
-
-    static class OnMutableLocaleResolver implements Condition {
-
-        @Override
-        public boolean matches(ConditionContext context, AnnotatedTypeMetadata metadata) {
-            LocaleResolverStrategy strategy = resolveStrategy(
-                    context.getEnvironment().getProperty(Settings.I18N_LOCALE_RESOLVER));
-            return strategy == LocaleResolverStrategy.SESSION || strategy == LocaleResolverStrategy.COOKIE;
-        }
     }
 }

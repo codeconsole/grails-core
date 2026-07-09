@@ -81,17 +81,18 @@ class I18nAutoConfigurationSpec extends Specification {
                 }
     }
 
-    void 'grails.i18n.localeResolver=acceptHeader uses an AcceptHeaderLocaleResolver and disables the ?lang= interceptor'() {
+    void 'grails.i18n.localeResolver=acceptHeader uses an AcceptHeaderLocaleResolver'() {
         expect:
         contextRunner()
                 .withPropertyValues("${Settings.I18N_LOCALE_RESOLVER}=acceptHeader")
                 .run { context ->
                     assert context.getBean('localeResolver') instanceof AcceptHeaderLocaleResolver
-                    assert context.getBeanNamesForType(LocaleChangeInterceptor).length == 0
+                    // the ?lang= interceptor is still registered; it no-ops for a read-only resolver
+                    assert context.getBean(LocaleChangeInterceptor) instanceof ParamsAwareLocaleChangeInterceptor
                 }
     }
 
-    void 'grails.i18n.localeResolver=fixed uses a FixedLocaleResolver honouring grails.i18n.default.locale and disables the ?lang= interceptor'() {
+    void 'grails.i18n.localeResolver=fixed uses a FixedLocaleResolver honouring grails.i18n.default.locale'() {
         expect:
         contextRunner()
                 .withPropertyValues(
@@ -101,7 +102,7 @@ class I18nAutoConfigurationSpec extends Specification {
                     def resolver = context.getBean('localeResolver')
                     assert resolver instanceof FixedLocaleResolver
                     assert resolver.resolveLocale(null).language == 'de'
-                    assert context.getBeanNamesForType(LocaleChangeInterceptor).length == 0
+                    assert context.getBean(LocaleChangeInterceptor) instanceof ParamsAwareLocaleChangeInterceptor
                 }
     }
 
