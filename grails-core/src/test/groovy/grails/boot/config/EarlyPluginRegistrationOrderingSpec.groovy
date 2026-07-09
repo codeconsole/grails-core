@@ -18,14 +18,21 @@
  */
 package grails.boot.config
 
+import java.util.concurrent.atomic.AtomicInteger
+
 import org.springframework.beans.factory.BeanRegistrar
 import org.springframework.beans.factory.BeanRegistry
+import org.springframework.beans.factory.support.BeanDefinitionOverrideException
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.context.annotation.AnnotationConfigApplicationContext
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 
+import org.springframework.core.env.StandardEnvironment
+
+import grails.core.DefaultGrailsApplication
 import grails.core.GrailsApplication
+import grails.plugins.DefaultGrailsPluginManager
 import grails.plugins.GrailsPluginManager
 import grails.plugins.Plugin
 import grails.util.Environment
@@ -178,6 +185,79 @@ class EarlyPluginRegistrationOrderingSpec extends Specification {
             Environment.setInitializing(false)
     }
 
+    void 'with bean-definition overriding disabled an application bean shadowing a plugin bean fails'() {
+        given: 'overriding disabled, a plugin registering overrideProbe and an app registering the same name'
+            def ctx = new AnnotationConfigApplicationContext()
+            ctx.allowBeanDefinitionOverriding = false
+            registerDiscovery(ctx, EarlyOrderingOverrideGrailsPlugin)
+            new GrailsPluginLifecycleInitializer().initialize(ctx)
+            ctx.register(EarlyOrderingOverrideApplication)
+
+        when: 'the context refreshes'
+            ctx.refresh()
+
+        then: 'the colliding application bean is rejected rather than silently merging (see the upgrade notes)'
+            thrown(BeanDefinitionOverrideException)
+
+        cleanup:
+            ctx.close()
+            Holders.clear()
+            Environment.setInitializing(false)
+    }
+
+    void 'the early phase loads plugins with a single manager pass, not a throwaway extra one'() {
+        given: 'the plugin construction count from one bare plugin-manager load, as a baseline'
+            // Grails wraps each plugin in a GrailsClass (a reference instance) and then creates the
+            // real instance, so a single load constructs the plugin more than once; what the retimed
+            // lifecycle guarantees is a single manager pass rather than a throwaway pass plus the real
+            // one (the rejected earlier approach), which would multiply this count.
+            EarlyOrderingCountingGrailsPlugin.INSTANCE_COUNT.set(0)
+            def baselineDiscovery = new DefaultPluginDiscovery([EarlyOrderingCountingGrailsPlugin] as Class<?>[])
+            baselineDiscovery.loadPluginsFromClasspath = false
+            baselineDiscovery.init(new StandardEnvironment())
+            new DefaultGrailsPluginManager(new DefaultGrailsApplication(), baselineDiscovery).loadPlugins()
+            int singleLoadCount = EarlyOrderingCountingGrailsPlugin.INSTANCE_COUNT.get()
+
+        and: 'the early phase booted through the real initializer'
+            EarlyOrderingCountingGrailsPlugin.INSTANCE_COUNT.set(0)
+            def ctx = new AnnotationConfigApplicationContext()
+            registerDiscovery(ctx, EarlyOrderingCountingGrailsPlugin)
+            new GrailsPluginLifecycleInitializer().initialize(ctx)
+
+        when: 'the context refreshes'
+            ctx.refresh()
+
+        then: 'the early phase instantiates the plugin no more than a single manager load — no throwaway second pass'
+            singleLoadCount > 0
+            EarlyOrderingCountingGrailsPlugin.INSTANCE_COUNT.get() == singleLoadCount
+
+        cleanup:
+            ctx.close()
+            Holders.clear()
+            Environment.setInitializing(false)
+    }
+
+    void 'the initializing flag is reset when the early phase throws'() {
+        given: 'a plugin whose doWithSpring throws while the early phase drains it'
+            def ctx = new AnnotationConfigApplicationContext()
+            registerDiscovery(ctx, EarlyOrderingThrowingGrailsPlugin)
+            new GrailsPluginLifecycleInitializer().initialize(ctx)
+
+        when: 'the context refreshes'
+            ctx.refresh()
+
+        then: 'the refresh fails...'
+            thrown(Exception)
+
+        and: '...but the initializing flag (a system property) was reset, not leaked to later contexts'
+            !Environment.isInitializing()
+
+        cleanup:
+            ctx.close()
+            Holders.clear()
+            Environment.setInitializing(false)
+    }
+
     private static void registerDiscovery(AnnotationConfigApplicationContext ctx, Class<?> pluginClass) {
         def discovery = new DefaultPluginDiscovery([pluginClass] as Class<?>[])
         discovery.loadPluginsFromClasspath = false
@@ -266,6 +346,27 @@ class EarlyOrderingClosureRegistrarGrailsPlugin extends Plugin {
         { BeanRegistry registry, org.springframework.core.env.Environment environment ->
             registry.registerBean('closureRegistrarBean', EarlyOrderingPluginResolver)
         } as BeanRegistrar
+    }
+}
+
+class EarlyOrderingCountingGrailsPlugin extends Plugin {
+
+    static final AtomicInteger INSTANCE_COUNT = new AtomicInteger()
+
+    def version = '1.0'
+
+    EarlyOrderingCountingGrailsPlugin() {
+        INSTANCE_COUNT.incrementAndGet()
+    }
+}
+
+class EarlyOrderingThrowingGrailsPlugin extends Plugin {
+
+    def version = '1.0'
+
+    @Override
+    Closure doWithSpring() {
+        { -> throw new IllegalStateException('boom from doWithSpring') }
     }
 }
 
