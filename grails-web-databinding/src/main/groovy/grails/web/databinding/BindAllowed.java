@@ -16,14 +16,15 @@
  *  specific language governing permissions and limitations
  *  under the License.
  */
-package org.grails.web.commandobjects
+package grails.web.databinding;
 
-import grails.validation.Validateable
+import java.lang.annotation.ElementType;
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
+import java.lang.annotation.Target;
 
-class SomeValidateableClass implements Validateable {
-    String name
-
-    static constraints = {
-        name matches: /[A-Z]*/, bindable: true
-    }
+@Retention(RetentionPolicy.RUNTIME)
+@Target(ElementType.PARAMETER)
+public @interface BindAllowed {
+    String[] value();
 }

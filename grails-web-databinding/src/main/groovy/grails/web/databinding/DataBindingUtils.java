@@ -70,6 +70,7 @@ public class DataBindingUtils {
     public static final String DATA_BINDER_BEAN_NAME = "grailsWebDataBinder";
     private static final String BLANK = "";
     private static final Map<Class, List> CLASS_TO_BINDING_INCLUDE_LIST = new ConcurrentHashMap<>();
+    private static final Map<Class, List> CLASS_TO_LEGACY_BINDING_INCLUDE_LIST = new ConcurrentHashMap<>();
 
     /**
      * Associations both sides of any bidirectional relationships found in the object and source map to bind
@@ -119,13 +120,19 @@ public class DataBindingUtils {
     }
 
     protected static List getBindingIncludeList(final Object object) {
-        List includeList = Collections.emptyList();
+        final boolean legacyBindableDefaultEnabled = isLegacyBindableDefaultEnabled();
+        final String whiteListFieldName = legacyBindableDefaultEnabled ?
+                DefaultASTDatabindingHelper.LEGACY_DATABINDING_WHITELIST :
+                DefaultASTDatabindingHelper.DEFAULT_DATABINDING_WHITELIST;
+        final Map<Class, List> includeListCache = legacyBindableDefaultEnabled ?
+                CLASS_TO_LEGACY_BINDING_INCLUDE_LIST : CLASS_TO_BINDING_INCLUDE_LIST;
+        List includeList = legacyBindableDefaultEnabled ? Collections.emptyList() : Collections.singletonList(DefaultASTDatabindingHelper.NO_BINDABLE_PROPERTIES);
         try {
             final Class<? extends Object> objectClass = object.getClass();
-            if (CLASS_TO_BINDING_INCLUDE_LIST.containsKey(objectClass)) {
-                includeList = CLASS_TO_BINDING_INCLUDE_LIST.get(objectClass);
+            if (includeListCache.containsKey(objectClass)) {
+                includeList = includeListCache.get(objectClass);
             } else {
-                final Field whiteListField = objectClass.getDeclaredField(DefaultASTDatabindingHelper.DEFAULT_DATABINDING_WHITELIST);
+                final Field whiteListField = objectClass.getDeclaredField(whiteListFieldName);
                 if (whiteListField != null) {
                     if ((whiteListField.getModifiers() & Modifier.STATIC) != 0) {
                         final Object whiteListValue = whiteListField.get(objectClass);
@@ -135,12 +142,21 @@ public class DataBindingUtils {
                     }
                 }
                 if (!Environment.getCurrent().isReloadEnabled()) {
-                    CLASS_TO_BINDING_INCLUDE_LIST.put(objectClass, includeList);
+                    includeListCache.put(objectClass, includeList);
                 }
             }
         } catch (Exception e) {
         }
         return includeList;
+    }
+
+    private static boolean isLegacyBindableDefaultEnabled() {
+        GrailsApplication application = Holders.findApplication();
+        if (application != null) {
+            return application.getConfig().getProperty(DefaultASTDatabindingHelper.LEGACY_BINDABLE_DEFAULT, Boolean.class, false);
+        }
+        Object value = Holders.getFlatConfig().get(DefaultASTDatabindingHelper.LEGACY_BINDABLE_DEFAULT);
+        return Boolean.TRUE.equals(value) || "true".equalsIgnoreCase(String.valueOf(value));
     }
 
     /**
@@ -212,8 +228,11 @@ public class DataBindingUtils {
      * @return A BindingResult if there were errors or null if it was successful
      */
     public static BindingResult bindObjectToInstance(Object object, Object source, List include, List exclude, String filter) {
-        if (include == null && exclude == null) {
+        if (include == null) {
             include = getBindingIncludeList(object);
+        }
+        else if (include.isEmpty()) {
+            include = Collections.singletonList(DefaultASTDatabindingHelper.NO_BINDABLE_PROPERTIES);
         }
         GrailsApplication application = Holders.findApplication();
         PersistentEntity entity = null;

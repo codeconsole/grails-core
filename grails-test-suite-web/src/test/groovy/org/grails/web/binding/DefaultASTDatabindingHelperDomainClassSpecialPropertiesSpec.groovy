@@ -20,8 +20,11 @@ package org.grails.web.binding
 
 import grails.gorm.dirty.checking.DirtyCheck
 import grails.persistence.Entity
+import grails.util.Holders
 import groovy.transform.CompileStatic
+import org.grails.config.PropertySourcesConfig
 import org.grails.validation.ConstraintEvalUtils
+import org.grails.web.databinding.DefaultASTDatabindingHelper
 import spock.lang.Issue
 import spock.lang.Specification
 
@@ -63,7 +66,7 @@ class DefaultASTDatabindingHelperDomainClassSpecialPropertiesSpec extends
         when: 'a domain class that extends a @DirtyCheck abstract base is bound with id and version'
         def obj = new MyDirtyCheckedDomain(id: 99L, version: 7L, name: 'Grace')
 
-        then: 'the regular property is bound but id and version are not'
+        then: 'the explicitly bindable regular property is bound but id and version are not'
         obj.name == 'Grace'
         obj.id == null
         obj.version == null
@@ -75,7 +78,7 @@ class DefaultASTDatabindingHelperDomainClassSpecialPropertiesSpec extends
         def now = new Date()
         def obj = new DomainWithInheritedTimestamps(id: 1L, version: 2L, name: 'Alan', title: 'Mathematician', dateCreated: now, lastUpdated: now)
 
-        then: 'regular inherited and declared properties are bound'
+        then: 'explicitly bindable inherited and declared properties are bound'
         obj.name == 'Alan'
         obj.title == 'Mathematician'
 
@@ -87,11 +90,11 @@ class DefaultASTDatabindingHelperDomainClassSpecialPropertiesSpec extends
     }
 
     @Issue('https://github.com/apache/grails-core/issues/15681')
-    void 'Test a regular property declared on a @DirtyCheck abstract base is still bound in the domain subclass'() {
+    void 'Test an explicitly bindable property declared on a @DirtyCheck abstract base is bound in the domain subclass'() {
         when: 'only regular properties are bound'
         def obj = new DomainWithInheritedTimestamps(name: 'Grace', title: 'Admiral')
 
-        then: 'all regular properties are bound and the special properties remain null'
+        then: 'explicitly bindable properties are bound and the special properties remain null'
         obj.name == 'Grace'
         obj.title == 'Admiral'
         obj.id == null
@@ -115,6 +118,30 @@ class DefaultASTDatabindingHelperDomainClassSpecialPropertiesSpec extends
         and: 'id and version remain excluded as there is no explicit override for them'
         obj.id == null
         obj.version == null
+    }
+
+    void 'Test a regular property without bindable true is not bound by default'() {
+        when:
+        def obj = new DomainWithDefaultDeniedProperty(name: 'Grace', title: 'Admiral')
+
+        then:
+        obj.name == null
+        obj.title == 'Admiral'
+    }
+
+    void 'Test legacy bindable default binds ordinary properties but preserves bindable false'() {
+        given:
+        Holders.setConfig(new PropertySourcesConfig([(DefaultASTDatabindingHelper.LEGACY_BINDABLE_DEFAULT): true]))
+
+        when:
+        def obj = new DomainWithLegacyBindableFalse(name: 'Grace', title: 'Admiral')
+
+        then:
+        obj.name == 'Grace'
+        obj.title == null
+
+        cleanup:
+        Holders.setConfig(null)
     }
 
     @Issue('https://github.com/apache/grails-core/issues/15795')
@@ -206,7 +233,7 @@ abstract class AbstractDirtyCheckedBase {
 @Entity
 class MyDirtyCheckedDomain extends AbstractDirtyCheckedBase {
     static constraints = {
-        name nullable: false
+        name nullable: false, bindable: true
     }
 }
 
@@ -221,6 +248,11 @@ abstract class AbstractDirtyCheckedBaseWithTimestamps {
 @Entity
 class DomainWithInheritedTimestamps extends AbstractDirtyCheckedBaseWithTimestamps {
     String title
+
+    static constraints = {
+        name bindable: true
+        title bindable: true
+    }
 }
 
 @Entity
@@ -228,6 +260,8 @@ class DomainWithInheritedBindableTimestamps extends AbstractDirtyCheckedBaseWith
     String title
 
     static constraints = {
+        name bindable: true
+        title bindable: true
         dateCreated bindable: true
         lastUpdated bindable: true
     }
@@ -238,6 +272,7 @@ abstract class AbstractDirtyCheckedBaseWithBindableId {
     String name
 
     static constraints = {
+        name bindable: true
         id bindable: true
     }
 }
@@ -245,6 +280,10 @@ abstract class AbstractDirtyCheckedBaseWithBindableId {
 @Entity
 class DomainInheritingBindableId extends AbstractDirtyCheckedBaseWithBindableId {
     String title
+
+    static constraints = {
+        title bindable: true
+    }
 }
 
 @Entity
@@ -253,6 +292,7 @@ class DomainOverridingBindableIdToFalse extends AbstractDirtyCheckedBaseWithBind
 
     static constraints = {
         id bindable: false
+        title bindable: true
     }
 }
 
@@ -261,6 +301,7 @@ abstract class AbstractDirtyCheckedGrandparentWithBindableId {
     String grandparentName
 
     static constraints = {
+        grandparentName bindable: true
         id bindable: true
     }
 }
@@ -273,6 +314,12 @@ abstract class AbstractPlainParentOfBindableId extends AbstractDirtyCheckedGrand
 @Entity
 class DomainInheritingBindableIdThroughIntermediate extends AbstractPlainParentOfBindableId {
     String childName
+
+    static constraints = {
+        grandparentName bindable: true
+        parentName bindable: true
+        childName bindable: true
+    }
 }
 
 @DirtyCheck
@@ -289,4 +336,34 @@ abstract class AbstractPlainParent extends AbstractDirtyCheckedGrandparent {
 @Entity
 class DomainExtendingMultiLevelHierarchy extends AbstractPlainParent {
     String childName
+
+    static constraints = {
+        grandparentName bindable: true
+        parentName bindable: true
+        childName bindable: true
+    }
+}
+
+@DirtyCheck
+abstract class AbstractDefaultDeniedBase {
+    String name
+}
+
+@Entity
+class DomainWithDefaultDeniedProperty extends AbstractDefaultDeniedBase {
+    String title
+
+    static constraints = {
+        title bindable: true
+    }
+}
+
+@Entity
+class DomainWithLegacyBindableFalse {
+    String name
+    String title
+
+    static constraints = {
+        title bindable: false
+    }
 }

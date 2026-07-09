@@ -60,7 +60,29 @@ Arguments:
 * `includesExcludes` - (Optional) A map with 'include' and/or 'exclude' lists containing the names of properties to either include or exclude.
 * `prefix` - (Optional) A string representing a prefix to use to filter parameters. The method will automatically append a '.' when matching the prefix to parameters, so you can use 'author' to filter for parameters such as 'author.name'.
 
-NOTE: Note that if an empty List or no List is provided as a value for the `include` parameter then all statically typed instance properties will be subject to binding if they are not explicitly excluded. See the link:{constraintsRefFromRef}bindable.html[bindable] constraint documentation for more information on how to control what is bindable and what is not.
+If no `include` list is supplied, `bindData` uses the target class default binding allowlist.  Only properties declared with `bindable: true` are included by default.  An empty `include` list binds no properties.
+
+Use `include` to allow only the properties needed for a request:
+
+[source,groovy]
+----
+bindData(target, params, [include: ['firstName', 'lastName']])
+----
+
+For controller action command object parameters, use `grails.web.databinding.BindAllowed` to allow request binding for only the listed properties:
+
+[source,groovy]
+----
+import grails.web.databinding.BindAllowed
+
+class PersonController {
+    def save(@BindAllowed(['firstName', 'lastName']) PersonCommand command) {
+        // command.email, command.admin, etc. are not bound by this action
+    }
+}
+----
+
+See the link:{constraintsRefFromRef}bindable.html[bindable] constraint documentation for more information on controlling default bindability.  Applications that need the previous default during migration may set `grails.databinding.legacyBindableDefault = true`.
 
 The underlying implementation uses Spring's Data Binding framework. If the target is a domain class, type conversion errors are stored in the `errors` property of the domain class.
 

@@ -20,4 +20,8 @@ package org.grails.web.commandobjects
 
 class NonValidateableCommand {
     String name
+
+    static constraints = {
+        name bindable: true
+    }
 }

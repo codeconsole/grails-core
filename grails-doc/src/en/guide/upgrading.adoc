@@ -17,3 +17,8 @@ specific language governing permissions and limitations
 under the License.
 ////
 
+=== Data Binding Defaults
+
+Mass data binding now uses an explicit allowlist by default.  Properties must declare `bindable: true`, be supplied through `bindData(..., [include: ...])`, or be listed on a controller action parameter with `@BindAllowed` to participate in automatic binding.  Empty `include` lists bind no properties.
+
+To restore the previous behavior while migrating an application, set `grails.databinding.legacyBindableDefault = true`.  Prefer replacing that setting with explicit allowlists before production deployment.

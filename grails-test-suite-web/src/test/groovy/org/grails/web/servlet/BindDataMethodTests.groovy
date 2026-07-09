@@ -20,6 +20,7 @@ package org.grails.web.servlet
 
 import grails.artefact.Artefact
 import grails.testing.web.controllers.ControllerUnitTest
+import grails.web.databinding.DataBindingUtils
 import spock.lang.Specification
 
 /**
@@ -57,14 +58,14 @@ class BindDataMethodTests extends Specification implements ControllerUnitTest<Bi
         target.email == null
     }
 
-    void 'Test bindData With Empty Includes/Excludes Map'() {
+    void 'Test bindData With Empty Includes/Excludes Map Uses Default Allowlist'() {
         when:
         def model = controller.bindWithEmptyIncludesExcludesMap()
         def target = model.target
 
         then:
-        target.name == 'Marc Palmer'
-        target.email == 'dowantthis'
+        target.name == null
+        target.email == null
     }
 
     void 'Test bindData Overriding Included With Excluded'() {
@@ -97,7 +98,7 @@ class BindDataMethodTests extends Specification implements ControllerUnitTest<Bi
 
         then:
         target.name == 'Marc Palmer'
-        target.address.country == 'gbr'
+        target.address.country == null
         target.email == null
     }
 
@@ -120,6 +121,40 @@ class BindDataMethodTests extends Specification implements ControllerUnitTest<Bi
         target.name == 'Lee Butts'
         target.email == null
     }
+
+    void 'Test bindData without generated allowlist binds no properties by default'() {
+        when:
+        def model = controller.bindWithDefaultAllowlist()
+        def target = model.target
+
+        then:
+        target.displayName == null
+        target.username == null
+        !target.admin
+        target.role == null
+    }
+
+    void 'Test bindData with empty include list binds no properties'() {
+        when:
+        def model = controller.bindWithEmptyIncludeList()
+        def target = model.target
+
+        then:
+        target.name == null
+        target.email == null
+    }
+
+    void 'Test direct DataBindingUtils binding with empty include list binds no properties'() {
+        given:
+        def target = new CommandObject()
+
+        when:
+        DataBindingUtils.bindObjectToInstance(target, [name: 'Marc Palmer', email: 'dontwantthis'], [], [], null)
+
+        then:
+        target.name == null
+        target.email == null
+    }
 }
 
 @Artefact('Controller')
@@ -127,13 +162,13 @@ class BindingController {
 
     def bindWithMap() {
         def target = new CommandObject()
-        bindData target, [ name : 'Marc Palmer' ]
+        bindData target, [ name : 'Marc Palmer' ], [include: ['name']]
         [target: target]
     }
 
     def bindWithExcludes() {
         def target = new CommandObject()
-        bindData target, [name: 'Marc Palmer', email: 'dontwantthis'], [exclude: ['email']]
+        bindData target, [name: 'Marc Palmer', email: 'dontwantthis'], [include: ['name', 'email'], exclude: ['email']]
         [target: target]
     }
 
@@ -158,20 +193,20 @@ class BindingController {
     def bindWithPrefixFilter() {
         def target = new CommandObject()
         def filter = "lee"
-        bindData target, [ 'mark.name' : 'Marc Palmer', 'mark.email' : 'dontwantthis', 'lee.name': 'Lee Butts', 'lee.email': 'lee@mail.com'], filter
+        bindData target, [ 'mark.name' : 'Marc Palmer', 'mark.email' : 'dontwantthis', 'lee.name': 'Lee Butts', 'lee.email': 'lee@mail.com'], [include: ['name', 'email']], filter
         [target: target]
     }
 
     def bindWithParamsAndDisallowed() {
         def target = new CommandObject()
-        bindData target, params, [exclude:['email']]
+        bindData target, params, [include: ['name', 'address.*'], exclude:['email']]
         [target: target]
     }
 
     def bindWithPrefixFilterAndDisallowed() {
         def target = new CommandObject()
         def filter = "lee"
-        def disallowed = [exclude:["email"]]
+        def disallowed = [include: ['name', 'email'], exclude:["email"]]
         bindData target, [ 'mark.name' : 'Marc Palmer', 'mark.email' : 'dontwantthis', 'lee.name': 'Lee Butts', 'lee.email': 'lee@mail.com'], disallowed, filter
         [target: target]
     }
@@ -179,18 +214,49 @@ class BindingController {
     def bindWithStringConvertedToList() {
         def target = new CommandObject()
         def filter = "lee"
-        def disallowed = [exclude:"email"]
+        def disallowed = [include: ['name', 'email'], exclude:"email"]
         bindData target, [ 'mark.name' : 'Marc Palmer', 'mark.email' : 'dontwantthis', 'lee.name': 'Lee Butts', 'lee.email': 'lee@mail.com'], disallowed, filter
         [target: target]
     }
+
+    def bindWithDefaultAllowlist() {
+        def target = new SecureCommandObject()
+        bindData target, [username: 'ghopper', displayName: 'Grace Hopper', admin: true, role: 'admin']
+        [target: target]
+    }
+
+    def bindWithEmptyIncludeList() {
+        def target = new CommandObject()
+        bindData target, [name: 'Marc Palmer', email: 'dontwantthis'], [include: []]
+        [target: target]
+    }
+
 }
 
 class CommandObject {
     String name
     String email
     Address address = new Address()
+
+    static constraints = {
+        name bindable: true
+        email bindable: true
+        address bindable: true
+    }
 }
 
 class Address {
     String country
+}
+
+class SecureCommandObject {
+    String username
+    String displayName
+    boolean admin
+    String role
+
+    static constraints = {
+        displayName bindable: true
+        role bindable: false
+    }
 }

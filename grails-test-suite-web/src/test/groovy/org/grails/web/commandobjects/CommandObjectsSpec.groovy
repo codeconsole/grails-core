@@ -23,6 +23,7 @@ import grails.artefact.Artefact
 import grails.testing.gorm.DataTest
 import grails.testing.web.controllers.ControllerUnitTest
 import grails.validation.Validateable
+import grails.web.databinding.BindAllowed
 import org.grails.validation.ConstraintEvalUtils
 import spock.lang.Issue
 import spock.lang.Specification
@@ -382,10 +383,28 @@ class CommandObjectsSpec extends Specification implements ControllerUnitTest<Tes
         then:
         commandObject.testId == 1
     }
+
+    void '@BindAllowed on a command object action parameter only binds listed fields'() {
+        given:
+        params.displayName = 'Grace Hopper'
+        params.admin = true
+        params.role = 'admin'
+
+        when:
+        def model = controller.methodActionWithBindAllowedUser()
+        def commandObject = model.commandObject
+
+        then:
+        commandObject.displayName == 'Grace Hopper'
+        !commandObject.admin
+        commandObject.role == null
+    }
 }
 
 @Artefact('Controller')
 class TestController {
+    static final String USER_ALLOWED_FIELD = 'displayName'
+
     def methodAction(Person p) {
         [person: p]
     }
@@ -448,26 +467,45 @@ class TestController {
     def methodTakingParent(ParentCommand command) {
         [commandObject: command, pId: 2]
     }
+
+    def methodActionWithBindAllowedUser(@BindAllowed([USER_ALLOWED_FIELD]) UserCommand command) {
+        [commandObject: command]
+    }
 }
 
 
 class ParentCommand implements Validateable {
     int testId
+
+    static constraints = {
+        testId bindable: true
+    }
 }
 
 class ChildCommand extends ParentCommand {
     int myId
+
+    static constraints = {
+        myId bindable: true
+    }
 }
 
 class DateComamndObject {
     Date birthday
+
+    static constraints = {
+        birthday bindable: true
+    }
 }
 
 class WidgetCommand {
     Integer width
     Integer height
 
-    static constraints = { height range: 1..10 }
+    static constraints = {
+        width bindable: true
+        height range: 1..10, bindable: true
+    }
 }
 
 class SomeCommand {
@@ -480,16 +518,20 @@ class SomeCommand {
     String getSomeValue() {
         someFieldWithNoSetter
     }
+
+    static constraints = {
+        someValue bindable: true
+    }
 }
 
 class Artist implements Validateable {
     String name
-    static constraints = { name shared: 'isProg' }
+    static constraints = { name shared: 'isProg', bindable: true }
 }
 
 class ArtistSubclass extends Artist {
     String bandName
-    static constraints = { bandName matches: /[A-Z].*/ }
+    static constraints = { bandName matches: /[A-Z].*/, bindable: true }
 }
 
 abstract class MyAbstractController {
@@ -514,9 +556,9 @@ class Person {
 
     static constraints = {
         name matches: /[A-Z]+/
-        bindable: false
+        name bindable: true
         city nullable: true, bindable: false
-        state nullable: true
+        state nullable: true, bindable: true
     }
 }
 
@@ -524,12 +566,29 @@ class NonDomainCommandObjectWithIdAndVersion {
     Long id
     Long version
     String name
+
+    static constraints = {
+        id bindable: true
+        version bindable: false
+        name bindable: true
+    }
 }
 
 abstract class WithGeneric<G> implements Validateable {
     String firstName
     G lastName
+
+    static constraints = {
+        firstName bindable: true
+        lastName bindable: true
+    }
 }
 
 class ConcreteGenericBased extends WithGeneric<String> {
+}
+
+class UserCommand implements Validateable {
+    String displayName
+    boolean admin
+    String role
 }
