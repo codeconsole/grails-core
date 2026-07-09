@@ -392,9 +392,13 @@ public class GrailsUpdater {
         if (location == null || location.isBlank()) {
             throw new IOException("Redirect response is missing a Location header for Grails wrapper remote resource: " + currentUri);
         }
-        URI redirectUri = currentUri.resolve(location);
-        validateHttpsUri(redirectUri);
-        return redirectUri;
+        try {
+            URI redirectUri = currentUri.resolve(location);
+            validateHttpsUri(redirectUri);
+            return redirectUri;
+        } catch (IllegalArgumentException e) {
+            throw new IOException("Invalid redirect Location header for Grails wrapper remote resource: " + location, e);
+        }
     }
 
     private static boolean isRedirect(int responseCode) {

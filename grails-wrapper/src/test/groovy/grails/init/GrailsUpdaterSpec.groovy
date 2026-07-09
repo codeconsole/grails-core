@@ -22,10 +22,15 @@ import java.net.HttpURLConnection
 import java.net.URI
 import java.net.URL
 
+import io.github.cjstehno.ersatz.GroovyErsatzServer
+import spock.lang.AutoCleanup
 import spock.lang.Specification
 import spock.lang.Unroll
 
 class GrailsUpdaterSpec extends Specification {
+
+    @AutoCleanup
+    GroovyErsatzServer server = new GroovyErsatzServer({})
 
     @Unroll
     def "remote wrapper URL must use HTTPS for #url"() {
@@ -71,96 +76,132 @@ class GrailsUpdaterSpec extends Specification {
         e.message == 'Redirect response is missing a Location header for Grails wrapper remote resource: https://repo.example.test/releases/maven-metadata.xml'
     }
 
+    def "remote wrapper redirect rejects malformed location header"() {
+        when:
+        GrailsUpdater.resolveSecureRedirectUrl(new URI('https://repo.example.test/releases/maven-metadata.xml'), 'http://[bad')
+
+        then:
+        def e = thrown(IOException)
+        e.message == 'Invalid redirect Location header for Grails wrapper remote resource: http://[bad'
+    }
+
     def "remote wrapper accepts final response after maximum redirects"() {
         given:
-        List<StubHttpURLConnection> connections = [
-                redirect('/redirect-1'),
-                redirect('/redirect-2'),
-                redirect('/redirect-3'),
-                redirect('/redirect-4'),
-                redirect('/final'),
-                response(HttpURLConnection.HTTP_OK),
-        ]
-        int requestIndex = 0
+        server.expectations {
+            GET('/start') {
+                called(1)
+                responder {
+                    code(HttpURLConnection.HTTP_MOVED_TEMP)
+                    header('Location', '/redirect-1')
+                }
+            }
+            GET('/redirect-1') {
+                called(1)
+                responder {
+                    code(HttpURLConnection.HTTP_MOVED_TEMP)
+                    header('Location', '/redirect-2')
+                }
+            }
+            GET('/redirect-2') {
+                called(1)
+                responder {
+                    code(HttpURLConnection.HTTP_MOVED_TEMP)
+                    header('Location', '/redirect-3')
+                }
+            }
+            GET('/redirect-3') {
+                called(1)
+                responder {
+                    code(HttpURLConnection.HTTP_MOVED_TEMP)
+                    header('Location', '/redirect-4')
+                }
+            }
+            GET('/redirect-4') {
+                called(1)
+                responder {
+                    code(HttpURLConnection.HTTP_MOVED_TEMP)
+                    header('Location', '/final')
+                }
+            }
+            GET('/final') {
+                called(1)
+                responder {
+                    code(HttpURLConnection.HTTP_OK)
+                    body('ok')
+                }
+            }
+        }
 
         when:
-        HttpURLConnection connection = GrailsUpdater.createHttpURLConnection('https://repo.example.test/start') { URL ignored ->
-            connections[requestIndex++]
+        HttpURLConnection connection = GrailsUpdater.createHttpURLConnection('https://repo.example.test/start') { URL requestedUrl ->
+            openErsatzConnection(requestedUrl)
         }
 
         then:
-        connection.is(connections.last())
-        requestIndex == connections.size()
-        connections.take(5).every { it.disconnected }
-        !connections.last().disconnected
+        connection.responseCode == HttpURLConnection.HTTP_OK
+        connection.inputStream.text == 'ok'
+        server.verify()
     }
 
     def "remote wrapper rejects redirect after maximum redirects"() {
         given:
-        List<StubHttpURLConnection> connections = [
-                redirect('/redirect-1'),
-                redirect('/redirect-2'),
-                redirect('/redirect-3'),
-                redirect('/redirect-4'),
-                redirect('/redirect-5'),
-                redirect('/too-many'),
-        ]
-        int requestIndex = 0
+        server.expectations {
+            GET('/start') {
+                called(1)
+                responder {
+                    code(HttpURLConnection.HTTP_MOVED_TEMP)
+                    header('Location', '/redirect-1')
+                }
+            }
+            GET('/redirect-1') {
+                called(1)
+                responder {
+                    code(HttpURLConnection.HTTP_MOVED_TEMP)
+                    header('Location', '/redirect-2')
+                }
+            }
+            GET('/redirect-2') {
+                called(1)
+                responder {
+                    code(HttpURLConnection.HTTP_MOVED_TEMP)
+                    header('Location', '/redirect-3')
+                }
+            }
+            GET('/redirect-3') {
+                called(1)
+                responder {
+                    code(HttpURLConnection.HTTP_MOVED_TEMP)
+                    header('Location', '/redirect-4')
+                }
+            }
+            GET('/redirect-4') {
+                called(1)
+                responder {
+                    code(HttpURLConnection.HTTP_MOVED_TEMP)
+                    header('Location', '/redirect-5')
+                }
+            }
+            GET('/redirect-5') {
+                called(1)
+                responder {
+                    code(HttpURLConnection.HTTP_MOVED_TEMP)
+                    header('Location', '/too-many')
+                }
+            }
+        }
 
         when:
-        GrailsUpdater.createHttpURLConnection('https://repo.example.test/start') { URL ignored ->
-            connections[requestIndex++]
+        GrailsUpdater.createHttpURLConnection('https://repo.example.test/start') { URL requestedUrl ->
+            openErsatzConnection(requestedUrl)
         }
 
         then:
         def e = thrown(IOException)
         e.message == 'Too many redirects while downloading Grails wrapper remote resource: https://repo.example.test/start'
-        requestIndex == connections.size()
-        connections.every { it.disconnected }
+        server.verify()
     }
 
-    private static StubHttpURLConnection redirect(String location) {
-        new StubHttpURLConnection(HttpURLConnection.HTTP_MOVED_TEMP, location)
-    }
-
-    private static StubHttpURLConnection response(int responseCode) {
-        new StubHttpURLConnection(responseCode, null)
-    }
-
-    private static final class StubHttpURLConnection extends HttpURLConnection {
-
-        private final int stubResponseCode
-        private final String location
-        boolean disconnected
-
-        private StubHttpURLConnection(int stubResponseCode, String location) {
-            super(new URL('https://repo.example.test/stub'))
-            this.stubResponseCode = stubResponseCode
-            this.location = location
-        }
-
-        @Override
-        int getResponseCode() {
-            stubResponseCode
-        }
-
-        @Override
-        String getHeaderField(String name) {
-            name == 'Location' ? location : null
-        }
-
-        @Override
-        void disconnect() {
-            disconnected = true
-        }
-
-        @Override
-        boolean usingProxy() {
-            false
-        }
-
-        @Override
-        void connect() {
-        }
+    private HttpURLConnection openErsatzConnection(URL requestedUrl) {
+        new URL(server.httpUrl(requestedUrl.path).toString()).openConnection() as HttpURLConnection
     }
 }

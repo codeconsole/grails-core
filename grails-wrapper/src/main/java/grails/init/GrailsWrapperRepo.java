@@ -17,6 +17,8 @@
 package grails.init;
 
 import java.io.File;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -98,19 +100,60 @@ public class GrailsWrapperRepo {
         return repos;
     }
 
-    private static GrailsWrapperRepo createGrailsWrapperRepo(String urlOrFile) {
+    static GrailsWrapperRepo createGrailsWrapperRepo(String urlOrFile) {
         GrailsWrapperRepo repo = new GrailsWrapperRepo();
-        repo.repoPath = "org/apache/grails/" + GrailsWrapperHome.CLI_COMBINED_PROJECT_NAME;
-        repo.baseUrl = urlOrFile;
-        repo.isFile = !repo.baseUrl.startsWith("http");
+        repo.isFile = isFileRepository(urlOrFile);
+        repo.repoPath = repo.isFile ?
+            String.join(File.separator, "org", "apache", "grails", GrailsWrapperHome.CLI_COMBINED_PROJECT_NAME) :
+            "org/apache/grails/" + GrailsWrapperHome.CLI_COMBINED_PROJECT_NAME;
+        repo.baseUrl = normalizeBaseUrl(urlOrFile, repo.isFile);
 
-        if ((repo.isFile && repo.baseUrl.endsWith(File.separator)) || (!repo.isFile && repo.baseUrl.endsWith("/"))) {
+        if ((repo.isFile && endsWithFileSeparator(repo.baseUrl)) || (!repo.isFile && repo.baseUrl.endsWith("/"))) {
             // remove trailing slash
             repo.baseUrl = repo.baseUrl.substring(0, repo.baseUrl.length() - 1);
         }
 
         repo.metadataName = repo.isFile ? "maven-metadata-local.xml" : "maven-metadata.xml";
         return repo;
+    }
+
+    private static boolean isFileRepository(String urlOrFile) {
+        if (isWindowsAbsolutePath(urlOrFile)) {
+            return true;
+        }
+        try {
+            URI uri = new URI(urlOrFile);
+            String scheme = uri.getScheme();
+            return scheme == null || "file".equalsIgnoreCase(scheme);
+        } catch (URISyntaxException e) {
+            return true;
+        }
+    }
+
+    private static String normalizeBaseUrl(String urlOrFile, boolean fileRepository) {
+        if (!fileRepository || isWindowsAbsolutePath(urlOrFile)) {
+            return urlOrFile;
+        }
+        try {
+            URI uri = new URI(urlOrFile);
+            if ("file".equalsIgnoreCase(uri.getScheme())) {
+                return new File(uri).getPath();
+            }
+        } catch (IllegalArgumentException | URISyntaxException e) {
+            return urlOrFile;
+        }
+        return urlOrFile;
+    }
+
+    private static boolean endsWithFileSeparator(String urlOrFile) {
+        return urlOrFile.endsWith("/") || urlOrFile.endsWith(File.separator);
+    }
+
+    private static boolean isWindowsAbsolutePath(String urlOrFile) {
+        return urlOrFile.length() > 2 &&
+            Character.isLetter(urlOrFile.charAt(0)) &&
+            urlOrFile.charAt(1) == ':' &&
+            (urlOrFile.charAt(2) == '\\' || urlOrFile.charAt(2) == '/');
     }
 
     /**
