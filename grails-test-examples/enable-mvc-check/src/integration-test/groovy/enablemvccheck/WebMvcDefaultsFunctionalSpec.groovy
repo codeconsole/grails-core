@@ -28,25 +28,22 @@ import grails.testing.mixin.integration.Integration
 import org.apache.grails.testing.http.client.HttpClientSupport
 
 /**
- * Verifies the HTTP behavior of a Grails application whose Application class declares
- * {@code @EnableWebMvc} (this app declares it explicitly; Grails 7 auto-injected it).
- * The annotation suppresses Spring Boot's {@code WebMvcAutoConfiguration}, so:
+ * Verifies the HTTP behavior of a Grails application that declares {@code @EnableWebMvc}
+ * (Grails 7 auto-injected this; Grails 8 no longer does, so this app opts back in). The
+ * annotation suppresses Spring Boot's {@code WebMvcAutoConfiguration}, so:
  * <ul>
- *   <li>form-encoded bodies of {@code DELETE} requests are NOT parsed into request
- *       parameters (no form-content filter is registered; {@code PUT} and {@code PATCH}
- *       bodies are parsed by Grails itself in {@code GrailsParameterMap} regardless of
- *       the annotation, so they serve as controls)</li>
  *   <li>classpath resources such as {@code classpath:/public/*} are NOT served at the
  *       context root (no Boot catch-all static-resource handler)</li>
  *   <li>a static {@code index.html} is NOT served for the unmapped root path
  *       (no Boot {@code WelcomePageHandlerMapping})</li>
+ *   <li>locale resolution follows the {@code Accept-Language} header rather than a
+ *       {@code ?lang} request parameter</li>
  * </ul>
  *
- * These assertions must hold whether {@code @EnableWebMvc} is auto-injected by the
- * framework (Grails 7) or declared explicitly by the application (Grails 8 onwards):
- * an application that opts in keeps exactly the previous behavior. Removing the
- * annotation from {@code Application} makes every non-control feature method here
- * fail, which is the documented Grails 8 behavior change.
+ * Form-parameter parsing is <em>not</em> affected by the annotation: Grails contributes its
+ * own {@code FormContentFilter} when Boot's {@code WebMvcAutoConfiguration} backs off, so
+ * {@code PUT}, {@code PATCH} and {@code DELETE} form bodies are parsed into request
+ * parameters either way.
  */
 @Integration
 @Tag('http-client')
@@ -55,30 +52,15 @@ class WebMvcDefaultsFunctionalSpec extends Specification implements HttpClientSu
     private static final String FORM_CONTENT_TYPE = 'application/x-www-form-urlencoded'
     private static final String FORM_BODY = 'title=The%20Stand&pages=1153'
 
-    void 'a form-encoded DELETE body is not parsed into request parameters'() {
-        when: 'a form-encoded body is sent with DELETE'
-        def response = sendHttpRequest(newHttpRequestWith('/formContent/echo') {
-            header('Content-Type', FORM_CONTENT_TYPE)
-            method('DELETE', HttpRequest.BodyPublishers.ofString(FORM_BODY))
-        })
-
-        then: 'the action executes but the form fields are not visible as request parameters'
-        response.assertStatus(200)
-        def json = response.json()
-        json.method == 'DELETE'
-        json.title == null
-        json.pages == null
-    }
-
     @Unroll
-    void 'a form-encoded #httpMethod body is parsed by Grails itself (control, unaffected by @EnableWebMvc)'() {
-        when: 'a form-encoded body is sent with a method Grails parses in GrailsParameterMap'
+    void 'a form-encoded #httpMethod body is parsed into request parameters'() {
+        when: 'a form-encoded body is sent with a non-POST method'
         def response = sendHttpRequest(newHttpRequestWith('/formContent/echo') {
             header('Content-Type', FORM_CONTENT_TYPE)
             method(httpMethod, HttpRequest.BodyPublishers.ofString(FORM_BODY))
         })
 
-        then: 'the form fields are visible as request parameters with or without a form-content filter'
+        then: 'the fields are visible as request parameters via the Grails-provided form-content filter'
         response.assertStatus(200)
         def json = response.json()
         json.method == httpMethod
@@ -86,10 +68,10 @@ class WebMvcDefaultsFunctionalSpec extends Specification implements HttpClientSu
         json.pages == '1153'
 
         where:
-        httpMethod << ['PUT', 'PATCH']
+        httpMethod << ['PUT', 'PATCH', 'DELETE']
     }
 
-    void 'a form-encoded POST body is parsed into request parameters (control, unaffected by @EnableWebMvc)'() {
+    void 'a form-encoded POST body is parsed into request parameters'() {
         when:
         def response = httpPostForm('/formContent/echo', [title: 'The Stand', pages: 1153])
 

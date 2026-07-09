@@ -31,6 +31,7 @@ import grails.boot.config.GrailsAutoConfiguration
  * integration tests can verify that the {@code @EnableWebMvc} behavior is identical
  * whether the annotation is auto-injected by the framework or declared by the application.
  */
+@EnableWebMvc
 @CompileStatic
 class Application extends GrailsAutoConfiguration {
     static void main(String[] args) {
