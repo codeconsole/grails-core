@@ -25,7 +25,7 @@ import org.grails.forge.application.generator.GeneratorContext
 import org.grails.forge.feature.Features
 import org.grails.forge.fixture.CommandOutputFixture
 
-class MongoGormSpec extends ApplicationContextSpec implements CommandOutputFixture {
+class GrailsDataMongoDBSpec extends ApplicationContextSpec implements CommandOutputFixture {
 
     void "test Mongo gorm features"() {
         when:

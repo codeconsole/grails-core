@@ -33,7 +33,7 @@ import java.util.Set;
 
 @Primary
 @Singleton
-public class HibernateGorm extends GormFeature implements DatabaseDriverConfigurationFeature {
+public class GrailsDataHibernate5 extends GormFeature implements DatabaseDriverConfigurationFeature {
 
     static final String PREFIX = "dataSource.";
     private static final String URL_KEY = PREFIX + "url";
@@ -44,7 +44,7 @@ public class HibernateGorm extends GormFeature implements DatabaseDriverConfigur
 
     private final DatabaseDriverFeature defaultDbFeature;
 
-    public HibernateGorm(DatabaseDriverFeature defaultDbFeature) {
+    public GrailsDataHibernate5(DatabaseDriverFeature defaultDbFeature) {
         this.defaultDbFeature = defaultDbFeature;
     }
 
@@ -123,6 +123,8 @@ public class HibernateGorm extends GormFeature implements DatabaseDriverConfigur
 
     @Override
     public boolean shouldApply(ApplicationType applicationType, Options options, Set<Feature> selectedFeatures) {
-        return selectedFeatures.stream().anyMatch(f -> f instanceof HibernateGorm) || options.getGormImpl() == GormImpl.HIBERNATE;
+        return selectedFeatures.stream().anyMatch(f -> f instanceof GrailsDataHibernate5)
+                || (options.getGormImpl() == GormImpl.HIBERNATE
+                        && selectedFeatures.stream().noneMatch(GrailsDataHibernate7.class::isInstance));
     }
 }

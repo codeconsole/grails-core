@@ -28,7 +28,7 @@ import static org.grails.forge.feature.config.ConfigurationFeature.TEST_ENVIRONM
 import static org.grails.forge.feature.config.ConfigurationFeature.PROD_ENVIRONMENT_KEY;
 import static org.grails.forge.feature.config.ConfigurationFeature.ENVIRONMENTS_KEY;
 import static org.grails.forge.feature.config.ConfigurationFeature.PROPERTIES_KEY;
-import static org.grails.forge.feature.database.HibernateGorm.PREFIX;
+import static org.grails.forge.feature.database.GrailsDataHibernate5.PREFIX;
 
 /**
  * A feature that configures a datasource with a driver
