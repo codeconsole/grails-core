@@ -48,6 +48,27 @@ class GrailsDataHibernate7Spec extends ApplicationContextSpec implements Command
         !features.contains("gorm-hibernate5")
     }
 
+    void "test a database driver feature does not add hibernate 5 when hibernate 7 is selected"() {
+        when:
+        Features features = getFeatures(['gorm-hibernate7', 'postgres'])
+
+        then:
+        features.contains("postgres")
+        features.contains("gorm-hibernate7")
+        !features.contains("gorm-hibernate5")
+    }
+
+    void "test a database driver feature dependencies with hibernate 7 for gradle"() {
+        when:
+        final String template = new BuildBuilder(beanContext)
+                .features(["gorm-hibernate7", "postgres"])
+                .render()
+
+        then:
+        template.contains('implementation "org.apache.grails:grails-data-hibernate7"')
+        !template.contains('grails-data-hibernate5')
+    }
+
     void "test dependencies are present for gradle"() {
         when:
         final String template = new BuildBuilder(beanContext)

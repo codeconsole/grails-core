@@ -33,6 +33,9 @@ public class GormImplTypeConverter implements TypeConverter<CharSequence, GormIm
 
     @Override
     public Optional<GormImpl> convert(CharSequence object, Class<GormImpl> targetType, ConversionContext context) {
+        if (object == null) {
+            return Optional.empty();
+        }
         return Optional.ofNullable(GormImpl.parse(object.toString()));
     }
 }

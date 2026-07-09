@@ -56,7 +56,7 @@ public abstract class DatabaseDriverFeature implements OneOfFeature {
         if (!featureContext.isPresent(TestContainers.class) && testContainers != null) {
             featureContext.addFeature(testContainers);
         }
-        if (!featureContext.isPresent(GrailsDataHibernate5.class) && grailsDataHibernate5 != null) {
+        if (!featureContext.isPresent(GormFeature.class) && grailsDataHibernate5 != null) {
             featureContext.addFeature(grailsDataHibernate5);
         }
     }

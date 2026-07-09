@@ -32,14 +32,18 @@ public class GrailsDataHibernateValidator implements FeatureValidator {
 
     @Override
     public void validatePreProcessing(Options options, ApplicationType applicationType, Set<Feature> features) {
-        if (features.stream().anyMatch(GrailsDataHibernate5.class::isInstance)
-                && features.stream().anyMatch(GrailsDataHibernate7.class::isInstance)) {
-            throw new IllegalArgumentException("Only one Grails Data for Hibernate implementation can be selected: gorm-hibernate5 or gorm-hibernate7");
-        }
+        validateOnlyOneHibernateImplementation(features);
     }
 
     @Override
     public void validatePostProcessing(Options options, ApplicationType applicationType, Set<Feature> features) {
+        validateOnlyOneHibernateImplementation(features);
+    }
 
+    private static void validateOnlyOneHibernateImplementation(Set<Feature> features) {
+        if (features.stream().anyMatch(GrailsDataHibernate5.class::isInstance)
+                && features.stream().anyMatch(GrailsDataHibernate7.class::isInstance)) {
+            throw new IllegalArgumentException("Only one Grails Data for Hibernate implementation can be selected: gorm-hibernate5 or gorm-hibernate7");
+        }
     }
 }

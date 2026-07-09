@@ -41,6 +41,19 @@ class CreateAppCommandSpec extends CommandSpec implements CommandFixture {
     @AutoCleanup
     ApplicationContext beanContext = ApplicationContext.run()
 
+    PrintStream originalOut
+    PrintStream originalErr
+
+    void setup() {
+        originalOut = System.out
+        originalErr = System.err
+    }
+
+    void cleanup() {
+        System.setOut(originalOut)
+        System.setErr(originalErr)
+    }
+
     void "test creating project with defaults"() {
         given:
         ByteArrayOutputStream out = new ByteArrayOutputStream()
@@ -135,7 +148,6 @@ class CreateAppCommandSpec extends CommandSpec implements CommandFixture {
     void "community and preview features are labelled as such"() {
         given:
         ByteArrayOutputStream baos = new ByteArrayOutputStream()
-        PrintStream old = System.out
         System.setOut(new PrintStream(baos))
 
         and:
@@ -152,8 +164,5 @@ class CreateAppCommandSpec extends CommandSpec implements CommandFixture {
         //baos.toString().contains("$previewFeature.name [PREVIEW]")
         communityFeature == null
         //baos.toString().contains("$communityFeature.name [COMMUNITY]")
-
-        cleanup:
-        System.setOut(old)
     }
 }
