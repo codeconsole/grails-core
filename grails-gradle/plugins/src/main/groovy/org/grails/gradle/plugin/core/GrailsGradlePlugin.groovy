@@ -204,6 +204,15 @@ class GrailsGradlePlugin implements Plugin<Project> {
             // "build"/"target" output-directory names. Reuses the same CommandLineArgumentProvider
             // pattern as forked test/run tasks (see configureForkSettings).
             c.groovyOptions.forkOptions.jvmArgumentProviders.add(new GrailsAppBaseDirProvider(project.projectDir))
+
+            // Publish the grails { compileStatic { controllers / services / tagLibs } } opt-ins to the
+            // compiler worker JVM as system properties so CompileStaticArtefactInjector can stamp
+            // @GrailsCompileStatic onto the matching artefacts. Read lazily (asArguments) so the value
+            // reflects the user's grails { } block regardless of configuration ordering.
+            GrailsExtension grailsExtension = project.extensions.findByType(GrailsExtension)
+            if (grailsExtension != null) {
+                c.groovyOptions.forkOptions.jvmArgumentProviders.add(new GrailsCompileStaticArtefactsProvider(grailsExtension.compileStatic))
+            }
             Closure<String> userScriptGenerator = getGroovyCompilerScript(c, project)
             c.doFirst {
                 // This isn't ideal - we're performing configuration at execution time, but the alternative would be having
@@ -1131,6 +1140,12 @@ ${importStatements}
             project.tasks.withType(BootRun).configureEach { BootRun it ->
                 it.dependsOn(findMainClassTask)
                 it.mainClass.convention(GrailsGradlePlugin.getMainClassProvider(project))
+                // Tell Spring Boot's AnsiOutput a console is available under bootRun (System.console()
+                // is null there, so DETECT mode would otherwise emit no colors). This is set on every
+                // OS on purpose: it is not a force-on. AnsiOutput's DETECT mode still gates Windows out
+                // internally (return !OS_NAME.contains("win")), so legacy Windows consoles never receive
+                // raw ANSI escapes, while macOS/Linux and modern terminals get colored bootRun output.
+                it.systemProperty('spring.output.ansi.console-available', 'true')
             }
 
             project.tasks.withType(ResolveMainClassName).configureEach {

@@ -74,6 +74,37 @@ class GrailsDependencyVersionsSpec extends Specification {
         current
     }
 
+    def "constructor fails fast when the root BOM cannot be resolved"() {
+        given: "A grape engine that cannot resolve the requested Grails BOM"
+        GrapeEngine grape = Mock(GrapeEngine)
+
+        when: "GrailsDependencyVersions is constructed"
+        new GrailsDependencyVersions(grape, [group: 'org.apache.grails', module: 'grails-bom', version: '1.0.0', type: 'pom'])
+
+        then: "The root BOM resolution is attempted"
+        1 * grape.resolve(null, { it.module == 'grails-bom' }) >> { throw new RuntimeException('Not found') }
+
+        and: "The failure is surfaced immediately"
+        def e = thrown(IllegalStateException)
+        e.message == 'Failed to resolve BOM org.apache.grails:grails-bom:1.0.0'
+        rootCause(e).message == 'Not found'
+    }
+
+    def "constructor fails fast when root BOM resolution returns no files"() {
+        given: "A grape engine that returns no POMs for the requested Grails BOM"
+        GrapeEngine grape = Mock(GrapeEngine)
+
+        when: "GrailsDependencyVersions is constructed"
+        new GrailsDependencyVersions(grape, [group: 'org.apache.grails', module: 'grails-bom', version: '1.0.0', type: 'pom'])
+
+        then: "The root BOM resolution is attempted"
+        1 * grape.resolve(null, { it.module == 'grails-bom' }) >> []
+
+        and: "The empty resolution is surfaced immediately"
+        def e = thrown(IllegalStateException)
+        e.message == 'Failed to resolve BOM org.apache.grails:grails-bom:1.0.0'
+    }
+
     def "addDependencyManagement parses direct dependencies from a BOM POM"() {
         given: "A GrailsDependencyVersions with a mock grape engine that returns a simple BOM"
         String coreVersion = '1.0.0'

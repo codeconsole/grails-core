@@ -72,7 +72,7 @@ class GrailsDependencyVersions implements DependencyManagement {
         if (!coordinates.containsKey('transitive')) {
             coordinates.put('transitive', false)
         }
-        def results = grape.resolve(null, coordinates)
+        List<URI> results = resolveBom(coordinates)
         DefaultModelBuilder modelBuilder = new DefaultModelBuilderFactory().newInstance()
         GrapeModelResolver modelResolver = new GrapeModelResolver(grapeEngine)
 
@@ -80,6 +80,24 @@ class GrailsDependencyVersions implements DependencyManagement {
             addDependencyManagement(buildModel(modelBuilder, new UrlModelSource(u.toURL()), modelResolver, u.toString()))
             addImportedModelProperties(modelBuilder, modelResolver)
         }
+    }
+
+    private List<URI> resolveBom(Map<String, Object> coordinates) {
+        try {
+            List<URI> results = grapeEngine.resolve(null, coordinates) as List<URI>
+            if (!results) {
+                throw new IllegalStateException("Failed to resolve BOM ${formatCoordinates(coordinates)}".toString())
+            }
+            return results
+        } catch (IllegalStateException e) {
+            throw e
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to resolve BOM ${formatCoordinates(coordinates)}".toString(), e)
+        }
+    }
+
+    private static String formatCoordinates(Map<String, Object> coordinates) {
+        "${coordinates['group']}:${coordinates['module']}:${coordinates['version']}".toString()
     }
 
     static GrapeEngine getDefaultEngine() {
