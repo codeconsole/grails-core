@@ -22,8 +22,6 @@ import java.util.Optional;
 
 import io.micronaut.core.convert.ConversionContext;
 import io.micronaut.core.convert.TypeConverter;
-import io.micronaut.core.convert.exceptions.ConversionErrorException;
-import io.micronaut.core.type.Argument;
 import jakarta.inject.Singleton;
 
 /**
@@ -40,8 +38,9 @@ public class GormImplTypeConverter implements TypeConverter<CharSequence, GormIm
         }
         GormImpl gormImpl = GormImpl.parse(object.toString());
         if (gormImpl == null) {
-            throw new ConversionErrorException(Argument.of(GormImpl.class),
+            context.reject(object,
                     new IllegalArgumentException("Invalid Grails Data implementation selection: " + object));
+            return Optional.empty();
         }
         return Optional.of(gormImpl);
     }

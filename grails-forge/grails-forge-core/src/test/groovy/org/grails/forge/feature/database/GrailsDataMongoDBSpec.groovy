@@ -24,6 +24,11 @@ import org.grails.forge.BuildBuilder
 import org.grails.forge.application.generator.GeneratorContext
 import org.grails.forge.feature.Features
 import org.grails.forge.fixture.CommandOutputFixture
+import org.grails.forge.options.DevelopmentReloading
+import org.grails.forge.options.GormImpl
+import org.grails.forge.options.JdkVersion
+import org.grails.forge.options.Options
+import org.grails.forge.options.ServletImpl
 
 class GrailsDataMongoDBSpec extends ApplicationContextSpec implements CommandOutputFixture {
 
@@ -61,5 +66,36 @@ class GrailsDataMongoDBSpec extends ApplicationContextSpec implements CommandOut
         ctx.configuration.containsKey("grails.mongodb.url")
     }
 
+    void "test a SQL driver combined with MongoDB still adds Hibernate 5 as the default SQL implementation"() {
+        given:
+        Options options = new Options(DevelopmentReloading.DEFAULT_OPTION, GormImpl.MONGODB, ServletImpl.DEFAULT_OPTION, JdkVersion.DEFAULT_OPTION)
+
+        when:
+        Features features = getFeatures(['gorm-mongodb', 'postgres'], options)
+
+        then:
+        features.contains("gorm-mongodb")
+        features.contains("postgres")
+        features.contains("gorm-hibernate5")
+        !features.contains("gorm-hibernate7")
+
+        when:
+        String template = new BuildBuilder(beanContext)
+                .features(['gorm-mongodb', 'postgres'])
+                .gormImpl(GormImpl.MONGODB)
+                .render()
+
+        then:
+        template.contains("implementation \"org.apache.grails:grails-data-mongodb\"")
+        template.contains("implementation \"org.apache.grails:grails-data-hibernate5\"")
+        template.contains("runtimeOnly \"org.postgresql:postgresql\"")
+
+        when:
+        GeneratorContext ctx = buildGeneratorContext(['gorm-mongodb', 'postgres'], options)
+
+        then:
+        ctx.configuration.containsKey("grails.mongodb.url")
+        ctx.configuration.get("dataSource.driverClassName") == 'org.postgresql.Driver'
+    }
 
 }
