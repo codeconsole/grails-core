@@ -33,12 +33,11 @@ import java.util.Set;
 @Singleton
 public class GrailsDataHibernate7 extends GormFeature implements DatabaseDriverConfigurationFeature {
 
-    static final String PREFIX = "dataSource.";
-    private static final String URL_KEY = PREFIX + "url";
-    private static final String DRIVER_KEY = PREFIX + "driverClassName";
-    private static final String USERNAME_KEY = PREFIX + "username";
-    private static final String PASSWORD_KEY = PREFIX + "password";
-    private static final String DB_CREATE_KEY = PREFIX + "dbCreate";
+    private static final String URL_KEY = DATASOURCE_PREFIX + "url";
+    private static final String DRIVER_KEY = DATASOURCE_PREFIX + "driverClassName";
+    private static final String USERNAME_KEY = DATASOURCE_PREFIX + "username";
+    private static final String PASSWORD_KEY = DATASOURCE_PREFIX + "password";
+    private static final String DB_CREATE_KEY = DATASOURCE_PREFIX + "dbCreate";
 
     private final DatabaseDriverFeature defaultDbFeature;
 
