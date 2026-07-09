@@ -22,7 +22,6 @@ import java.util.zip.ZipFile
 
 import grails.util.BuildSettings
 import grails.util.Environment
-import grails.util.GrailsNameUtils
 import grails.util.Metadata
 import groovy.transform.CompileDynamic
 import groovy.transform.CompileStatic
@@ -85,7 +84,6 @@ class GrailsGradlePlugin implements Plugin<Project> {
 
     private static final String CLI_PID_FILE_PROPERTY = 'grails.cli.pid.file'
     private static final String RUN_APP_PID_FILE_NAME = 'run-app.pid'
-
 
     List<Class<Plugin>> basePluginClasses = [IntegrationTestGradlePlugin] as List<Class<Plugin>>
     List<String> excludedGrailsAppSourceDirs = ['migrations', 'assets']

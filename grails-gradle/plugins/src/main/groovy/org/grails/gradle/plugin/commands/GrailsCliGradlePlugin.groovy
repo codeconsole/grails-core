@@ -35,7 +35,6 @@ import org.gradle.api.artifacts.result.ResolvedArtifactResult
 import org.gradle.api.file.FileCollection
 import org.gradle.api.tasks.JavaExec
 import org.gradle.api.tasks.SourceSet
-import org.gradle.api.tasks.SourceSetOutput
 import org.gradle.api.tasks.TaskContainer
 import org.gradle.api.tasks.TaskProvider
 
@@ -102,7 +101,6 @@ class GrailsCliGradlePlugin implements Plugin<Project> {
         configureRunCommand(project)
     }
 
-
     /**
      * Registers the `grailsCli` dependency bucket and its resolvable `grailsCliClasspath` view.
      * `grailsCli` carries the CLI tier — command companion artifacts (`<artifactId>-cli`) and the
@@ -156,7 +154,6 @@ class GrailsCliGradlePlugin implements Plugin<Project> {
         }
     }
 
-
     /**
      * Auto-provisions the CLI tier onto {@code grailsCli}: the command contract and runner, plus
      * every companion {@code -cli} artifact advertised by a dependency of the application. A
@@ -204,7 +201,6 @@ class GrailsCliGradlePlugin implements Plugin<Project> {
         }
     }
 
-
     /**
      * Returns the companion cli coordinate ({@code group:artifactId}) advertised by the given
      * resolved artifact, or {@code null}. For artifacts produced by a project of the same build
@@ -231,7 +227,6 @@ class GrailsCliGradlePlugin implements Plugin<Project> {
             return null
         }
     }
-
 
     @CompileDynamic
     protected void configureApplicationCommands(Project project) {
@@ -276,7 +271,6 @@ class GrailsCliGradlePlugin implements Plugin<Project> {
         }
     }
 
-
     /**
      * Loads command class names from the {@code META-INF/grails-cli.factories} files of the
      * resolved {@code grailsCliClasspath} jars, so per-command Gradle tasks (e.g. {@code dbmUpdate})
@@ -316,7 +310,6 @@ class GrailsCliGradlePlugin implements Plugin<Project> {
         names
     }
 
-
     protected void configureConsoleTask(Project project) {
         TaskContainer tasks = project.tasks
         if (!project.configurations.names.contains('console')) {
@@ -330,7 +323,6 @@ class GrailsCliGradlePlugin implements Plugin<Project> {
             createShellTask(project, tasks, consoleConfiguration)
         }
     }
-
 
     @CompileDynamic
     protected TaskProvider<JavaExec> createConsoleTask(Project project, TaskContainer tasks, NamedDomainObjectProvider<Configuration> configuration) {
@@ -354,7 +346,6 @@ class GrailsCliGradlePlugin implements Plugin<Project> {
         consoleTask
     }
 
-
     @CompileDynamic
     protected TaskProvider<JavaExec> createShellTask(Project project, TaskContainer tasks, NamedDomainObjectProvider<Configuration> configuration) {
         def shellTask = tasks.register('shell', JavaExec)
@@ -377,7 +368,6 @@ class GrailsCliGradlePlugin implements Plugin<Project> {
         }
         shellTask
     }
-
 
     @CompileDynamic
     protected void configureRunScript(Project project) {
@@ -410,7 +400,6 @@ class GrailsCliGradlePlugin implements Plugin<Project> {
         }
     }
 
-
     @CompileDynamic
     protected void configureRunCommand(Project project) {
         if (!project.tasks.names.contains('runCommand')) {
@@ -442,7 +431,5 @@ class GrailsCliGradlePlugin implements Plugin<Project> {
             }
         }
     }
-
-
 
 }
