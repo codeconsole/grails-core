@@ -28,7 +28,19 @@ Grails will automatically switch the user's locale and subsequent requests will 
 
 By default, Grails uses {springapi}org/springframework/web/servlet/i18n/SessionLocaleResolver.html[SessionLocaleResolver] as the `localeResolver` bean.
 
-You can change the default locale easily: 
+You can select a different resolver strategy with the `grails.i18n.localeResolver` configuration property, without declaring a bean:
+
+[source,yaml]
+.grails-app/conf/application.yml
+----
+grails:
+    i18n:
+        localeResolver: acceptHeader # session (default), cookie, acceptHeader or fixed
+----
+
+`session` and `cookie` are mutable, so the `?lang=` switch works with them. `acceptHeader` (the locale follows the incoming `Accept-Language` header) and `fixed` are read-only, so the `?lang=` switch has no effect and its interceptor is not registered. The `fixed` resolver uses `grails.i18n.default.locale`, falling back to the JVM default locale.
+
+You can change the default locale easily:
 
 [source,groovy]
 .grails-app/conf/spring/resources.groovy

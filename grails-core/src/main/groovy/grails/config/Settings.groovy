@@ -395,4 +395,11 @@ interface Settings {
     String I18N_CACHE_SECONDS = 'grails.i18n.cache.seconds'
 
     String I18N_FILE_CACHE_SECONDS = 'grails.i18n.filecache.seconds'
+
+    /**
+     * The locale resolution strategy: {@code session} (default), {@code cookie},
+     * {@code acceptHeader} or {@code fixed}. The {@code acceptHeader} and {@code fixed}
+     * resolvers are read-only, so the {@code ?lang=} switch is disabled for them.
+     */
+    String I18N_LOCALE_RESOLVER = 'grails.i18n.localeResolver'
 }

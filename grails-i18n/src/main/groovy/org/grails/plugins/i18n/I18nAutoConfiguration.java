@@ -19,6 +19,8 @@
 
 package org.grails.plugins.i18n;
 
+import java.util.Locale;
+
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -28,9 +30,17 @@ import org.springframework.boot.autoconfigure.context.MessageSourceAutoConfigura
 import org.springframework.boot.webmvc.autoconfigure.WebMvcAutoConfiguration;
 import org.springframework.context.MessageSource;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Condition;
+import org.springframework.context.annotation.ConditionContext;
+import org.springframework.context.annotation.Conditional;
 import org.springframework.context.support.AbstractApplicationContext;
+import org.springframework.core.type.AnnotatedTypeMetadata;
+import org.springframework.util.StringUtils;
 import org.springframework.web.servlet.DispatcherServlet;
 import org.springframework.web.servlet.LocaleResolver;
+import org.springframework.web.servlet.i18n.AcceptHeaderLocaleResolver;
+import org.springframework.web.servlet.i18n.CookieLocaleResolver;
+import org.springframework.web.servlet.i18n.FixedLocaleResolver;
 import org.springframework.web.servlet.i18n.LocaleChangeInterceptor;
 import org.springframework.web.servlet.i18n.SessionLocaleResolver;
 
@@ -57,16 +67,55 @@ public class I18nAutoConfiguration {
     @Value("${" + Settings.I18N_FILE_CACHE_SECONDS + ":5}")
     private int fileCacheSeconds;
 
+    @Value("${" + Settings.I18N_LOCALE_RESOLVER + ":session}")
+    private String localeResolverType;
+
+    // Default locale for the read-only 'fixed' resolver; empty falls back to the JVM default.
+    @Value("${grails.i18n.default.locale:}")
+    private String defaultLocale;
+
+    enum LocaleResolverStrategy { SESSION, COOKIE, ACCEPT_HEADER, FIXED }
+
+    // Normalizes the configured strategy, ignoring case and separators (e.g. 'accept-header').
+    static LocaleResolverStrategy resolveStrategy(String value) {
+        String normalized = value == null ? "" : value.toLowerCase(Locale.ROOT).replaceAll("[^a-z]", "");
+        return switch (normalized) {
+            case "cookie" -> LocaleResolverStrategy.COOKIE;
+            case "acceptheader", "header", "accept" -> LocaleResolverStrategy.ACCEPT_HEADER;
+            case "fixed" -> LocaleResolverStrategy.FIXED;
+            default -> LocaleResolverStrategy.SESSION;
+        };
+    }
+
     // SearchStrategy.CURRENT on all three guards: DispatcherServlet resolves these beans from its
     // own context, and Boot's MessageSourceAutoConfiguration uses the same scoping — a bean in a
     // parent context must not make the child context's bean back off.
     @Bean(DispatcherServlet.LOCALE_RESOLVER_BEAN_NAME)
     @ConditionalOnMissingBean(name = DispatcherServlet.LOCALE_RESOLVER_BEAN_NAME, search = SearchStrategy.CURRENT)
     public LocaleResolver localeResolver() {
-        return new SessionLocaleResolver();
+        return switch (resolveStrategy(localeResolverType)) {
+            case COOKIE -> new CookieLocaleResolver("locale");
+            case ACCEPT_HEADER -> new AcceptHeaderLocaleResolver();
+            case FIXED -> new FixedLocaleResolver(fixedLocale());
+            case SESSION -> new SessionLocaleResolver();
+        };
     }
 
+    private Locale fixedLocale() {
+        if (StringUtils.hasText(defaultLocale)) {
+            Locale parsed = StringUtils.parseLocale(defaultLocale);
+            if (parsed != null) {
+                return parsed;
+            }
+        }
+        return Locale.getDefault();
+    }
+
+    // The ?lang= switch mutates the LocaleResolver, which only the SESSION and COOKIE resolvers
+    // support; ACCEPT_HEADER and FIXED are read-only, so the interceptor is not registered for them
+    // (ControllersGrailsPlugin only adds it to the handler chain when the bean is present).
     @Bean
+    @Conditional(OnMutableLocaleResolver.class)
     @ConditionalOnMissingBean(name = "localeChangeInterceptor", search = SearchStrategy.CURRENT)
     public LocaleChangeInterceptor localeChangeInterceptor() {
         ParamsAwareLocaleChangeInterceptor localeChangeInterceptor = new ParamsAwareLocaleChangeInterceptor();
@@ -85,5 +134,15 @@ public class I18nAutoConfiguration {
             messageSource.setFileCacheSeconds(fileCacheSeconds);
         }
         return messageSource;
+    }
+
+    static class OnMutableLocaleResolver implements Condition {
+
+        @Override
+        public boolean matches(ConditionContext context, AnnotatedTypeMetadata metadata) {
+            LocaleResolverStrategy strategy = resolveStrategy(
+                    context.getEnvironment().getProperty(Settings.I18N_LOCALE_RESOLVER));
+            return strategy == LocaleResolverStrategy.SESSION || strategy == LocaleResolverStrategy.COOKIE;
+        }
     }
 }
