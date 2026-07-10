@@ -18,12 +18,16 @@
  */
 package grails.plugin.scaffolding
 
+import org.apache.grails.web.layout.GrailsLayoutViewResolverPostProcessor
+
 import org.springframework.beans.factory.config.BeanDefinition
 import org.springframework.beans.factory.support.DefaultListableBeanFactory
 import org.springframework.beans.factory.support.GenericBeanDefinition
 import org.springframework.core.env.MapPropertySource
 import org.springframework.core.env.StandardEnvironment
 import org.springframework.web.servlet.view.InternalResourceViewResolver
+
+import org.grails.plugins.web.GroovyPagesPostProcessor
 
 import spock.lang.Specification
 
@@ -79,7 +83,8 @@ class ScaffoldingViewResolverDefinitionPostProcessorSpec extends Specification {
     }
 
     void "runs before the SiteMesh 2 layout post-processor and the GSP default post-processor"() {
-        expect: "GrailsLayoutViewResolverPostProcessor runs at -1 and GroovyPagesPostProcessor at 0"
-        postProcessor.order < -1
+        expect: "grails-layout embeds this definition as its inner resolver, and the GSP default only registers when no definition exists"
+        postProcessor.order < new GrailsLayoutViewResolverPostProcessor().order
+        postProcessor.order < GroovyPagesPostProcessor.ORDER
     }
 }

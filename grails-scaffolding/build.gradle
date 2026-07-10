@@ -50,6 +50,7 @@ dependencies {
     compileOnly 'org.fusesource.jansi:jansi'
 
     testImplementation 'org.spockframework:spock-core'
+    testImplementation project(':grails-layout')
     testImplementation project(':grails-web-gsp')
     testImplementation project(':grails-core')
     testImplementation 'jakarta.servlet:jakarta.servlet-api'

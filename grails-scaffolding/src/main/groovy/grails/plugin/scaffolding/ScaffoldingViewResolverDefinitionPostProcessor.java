@@ -57,7 +57,11 @@ public class ScaffoldingViewResolverDefinitionPostProcessor implements BeanDefin
     @Override
     public void postProcessBeanDefinitionRegistry(BeanDefinitionRegistry registry) throws BeansException {
         if (registry.containsBeanDefinition(JSP_VIEW_RESOLVER_BEAN_NAME)) {
-            // an application- or plugin-supplied view resolver wins
+            // Any existing definition wins, whether the application's or another
+            // plugin's. Note this is stricter than the old doWithSpring()
+            // registration, which overwrote definitions from earlier-loading
+            // plugins: scaffolding now stands down for those too, matching how
+            // GroovyPagesPostProcessor contributes its default.
             return;
         }
         GenericBeanDefinition definition = new GenericBeanDefinition();
