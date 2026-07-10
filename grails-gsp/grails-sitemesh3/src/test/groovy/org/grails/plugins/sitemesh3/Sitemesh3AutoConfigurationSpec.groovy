@@ -47,7 +47,7 @@ class Sitemesh3AutoConfigurationSpec extends Specification {
 
     void "the definition post processor bean rewrites jspViewResolver at the registry level"() {
         expect:
-        Sitemesh3AutoConfiguration.siteMeshViewResolverDefinitionPostProcessor() instanceof Sitemesh3ViewResolverDefinitionPostProcessor
+        Sitemesh3AutoConfiguration.siteMeshViewResolverPostProcessor() instanceof Sitemesh3ViewResolverDefinitionPostProcessor
     }
 
     void "the decoratorSelector bean is created even when no groovyPageLocator is available"() {

@@ -19,6 +19,7 @@
 package org.grails.plugins.sitemesh3;
 
 import org.sitemesh.webmvc.SiteMeshViewResolverBeanPostProcessor;
+import org.sitemesh.webmvc.SiteMeshViewResolverPostProcessor;
 
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
@@ -49,20 +50,22 @@ import org.grails.web.gsp.io.GrailsConventionGroovyPageLocator;
  * <p>The definition-level rewrite is what applies decoration: because it acts
  * on the bean definition, the decorating resolver is what gets instantiated no
  * matter how early a consumer forces the lazy {@code jspViewResolver} into
- * existence (see {@link Sitemesh3ViewResolverDefinitionPostProcessor}). The
- * bean post-processor is retained as a safety net for a {@code jspViewResolver}
- * registered as an instance rather than a definition, and its presence keeps
- * upstream's wrap-all {@code SiteMeshViewResolverBeanPostProcessor} from
- * registering. Upstream's post-processor never re-wraps a resolver that is
- * already a {@code SiteMeshViewResolver}, so the two mechanisms cannot
- * double-decorate.</p>
+ * existence (see {@link Sitemesh3ViewResolverDefinitionPostProcessor}, the
+ * Grails implementation of upstream's {@code bean-definition} wrap mode). The
+ * bean post-processor is the fallback tier: it decorates a
+ * {@code jspViewResolver} registered as an instance rather than a definition.
+ * Upstream's post-processor never re-wraps a resolver that is already a
+ * {@code SiteMeshViewResolver}, so the two tiers cannot double-decorate.</p>
  *
  * <p>Upstream's {@code SiteMeshViewResolverAutoConfiguration} declares its
  * beans with {@code @ConditionalOnMissingBean} guards. By scheduling this
  * configuration first (via {@link AutoConfigureBefore}) the Grails
  * implementations are registered before those guards are evaluated, so the
  * upstream defaults back off cleanly rather than being registered and then
- * overridden after the fact.</p>
+ * overridden after the fact. The two post-processors here cover all of
+ * upstream's registrations by type: the definition post-processor preempts the
+ * {@code bean-definition} mode bean, and the bean post-processor preempts both
+ * the wrap-all and {@code bean-instance} mode beans.</p>
  *
  * <p>The {@code contentProcessor} and {@code decoratorSelector} beans drive view
  * decoration, which is only meaningful when Spring MVC is resolving views, so
@@ -80,8 +83,8 @@ import org.grails.web.gsp.io.GrailsConventionGroovyPageLocator;
 public class Sitemesh3AutoConfiguration {
 
     @Bean
-    @ConditionalOnMissingBean(Sitemesh3ViewResolverDefinitionPostProcessor.class)
-    public static Sitemesh3ViewResolverDefinitionPostProcessor siteMeshViewResolverDefinitionPostProcessor() {
+    @ConditionalOnMissingBean(SiteMeshViewResolverPostProcessor.class)
+    public static Sitemesh3ViewResolverDefinitionPostProcessor siteMeshViewResolverPostProcessor() {
         return new Sitemesh3ViewResolverDefinitionPostProcessor();
     }
 

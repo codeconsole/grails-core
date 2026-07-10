@@ -19,6 +19,7 @@
 package org.grails.plugins.sitemesh3;
 
 import org.sitemesh.webmvc.SiteMeshViewResolver;
+import org.sitemesh.webmvc.SiteMeshViewResolverPostProcessor;
 
 import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.annotation.AnnotatedBeanDefinition;
@@ -26,39 +27,45 @@ import org.springframework.beans.factory.config.BeanDefinition;
 import org.springframework.beans.factory.config.ConstructorArgumentValues;
 import org.springframework.beans.factory.config.RuntimeBeanReference;
 import org.springframework.beans.factory.support.BeanDefinitionRegistry;
-import org.springframework.beans.factory.support.BeanDefinitionRegistryPostProcessor;
 import org.springframework.beans.factory.support.GenericBeanDefinition;
 import org.springframework.context.ApplicationListener;
-import org.springframework.core.Ordered;
 import org.springframework.core.type.MethodMetadata;
 import org.springframework.util.ClassUtils;
 
 import org.grails.plugins.web.GroovyPagesPostProcessor;
 
 /**
- * Replaces the {@code jspViewResolver} bean definition with a
- * {@link GrailsSiteMeshViewResolver} definition that embeds the original
- * definition as an inner bean, so that every instantiation of the bean —
- * however early — yields the decorating resolver.
+ * Grails-flavoured {@link SiteMeshViewResolverPostProcessor} — the upstream
+ * bean-definition wrap mode ({@code sitemesh.viewResolver.wrapMode=bean-definition})
+ * expressed with Grails semantics. It rewrites the {@code jspViewResolver} bean
+ * definition into a {@link GrailsSiteMeshViewResolver} definition, so that every
+ * instantiation of the bean — however early — yields the decorating resolver.
  *
- * <p>Wrapping at the bean-definition level (rather than post-processing the
- * bean instance) closes an initialization-order race: {@code jspViewResolver}
- * is registered lazy, so it is instantiated by whichever component first asks
- * for it. If that consumer is initialized before the SiteMesh
+ * <p>Wrapping at the bean-definition level (rather than post-processing the bean
+ * instance) closes an initialization-order race: {@code jspViewResolver} is
+ * registered lazy, so it is instantiated by whichever component first asks for
+ * it. If that consumer is initialized before the SiteMesh
  * {@code BeanPostProcessor} takes effect — Spring Boot's
  * {@code ContentNegotiatingViewResolver} collecting every {@code ViewResolver}
- * while it initializes is one such consumer — it captures the raw,
- * non-decorating resolver and keeps rendering through it, silently disabling
- * layouts. With the wrap expressed in the definition itself there is no
- * "before the wrap" moment to observe. This mirrors the approach the SiteMesh
- * 2 module takes with its {@code GrailsLayoutViewResolverPostProcessor}.</p>
+ * while it initializes is one such consumer — it captures the raw, undecorating
+ * resolver and keeps rendering through it, silently disabling layouts. This
+ * mirrors the approach the SiteMesh 2 module takes with its
+ * {@code GrailsLayoutViewResolverPostProcessor}.</p>
  *
- * <p>Runs after {@link GroovyPagesPostProcessor} (which contributes the
- * default GSP resolver definition when no plugin has registered one) so the
- * definition being wrapped is final, whether it came from grails-gsp, the
- * scaffolding plugin, or the application.</p>
+ * <p>It deliberately diverges from the upstream implementation on one point:
+ * upstream re-registers the unwrapped resolver as a separate named bean
+ * ({@code innerBeanName}) that the wrapper references, which leaves the raw
+ * resolver discoverable by {@code getBeansOfType(ViewResolver)} sweeps — the
+ * exact exposure this class exists to close. The original definition is instead
+ * embedded as an anonymous inner-bean definition of the wrapper, making the
+ * undecorated resolver structurally unreachable.</p>
+ *
+ * <p>Runs after {@link GroovyPagesPostProcessor} (which contributes the default
+ * GSP resolver definition when no plugin has registered one) so the definition
+ * being wrapped is final, whether it came from grails-gsp, the scaffolding
+ * plugin, or the application.</p>
  */
-public class Sitemesh3ViewResolverDefinitionPostProcessor implements BeanDefinitionRegistryPostProcessor, Ordered {
+public class Sitemesh3ViewResolverDefinitionPostProcessor extends SiteMeshViewResolverPostProcessor {
 
     /**
      * After {@link GroovyPagesPostProcessor#ORDER} so the default GSP resolver
@@ -67,44 +74,42 @@ public class Sitemesh3ViewResolverDefinitionPostProcessor implements BeanDefinit
      */
     public static final int ORDER = GroovyPagesPostProcessor.ORDER + 10;
 
-    public static final String JSP_VIEW_RESOLVER_BEAN_NAME =
-            GrailsSiteMeshViewResolverBeanPostProcessor.TARGET_VIEW_RESOLVER_BEAN_NAME;
-
-    static final String CONTENT_PROCESSOR_BEAN_NAME = "contentProcessor";
-    static final String DECORATOR_SELECTOR_BEAN_NAME = "decoratorSelector";
-    static final String SERVLET_CONTEXT_BEAN_NAME = "servletContext";
-
-    @Override
-    public int getOrder() {
-        return ORDER;
+    public Sitemesh3ViewResolverDefinitionPostProcessor() {
+        setTargetViewResolverBeanName(GrailsSiteMeshViewResolverBeanPostProcessor.TARGET_VIEW_RESOLVER_BEAN_NAME);
+        setSiteMeshViewResolverClass(GrailsSiteMeshViewResolver.class);
+        setOrder(ORDER);
     }
 
     @Override
     public void postProcessBeanDefinitionRegistry(BeanDefinitionRegistry registry) throws BeansException {
-        if (!registry.containsBeanDefinition(JSP_VIEW_RESOLVER_BEAN_NAME) ||
-                !registry.containsBeanDefinition(CONTENT_PROCESSOR_BEAN_NAME) ||
-                !registry.containsBeanDefinition(DECORATOR_SELECTOR_BEAN_NAME)) {
+        if (!registry.containsBeanDefinition(getTargetViewResolverBeanName()) ||
+                !registry.containsBeanDefinition(getContentProcessorBeanName()) ||
+                !registry.containsBeanDefinition(getDecoratorSelectorBeanName())) {
             // Decoration is not possible in this context (no GSP view resolver, or a
             // context without the SiteMesh beans, e.g. the lightweight unit-test
             // contexts built by grails-testing-support) — leave the definition alone.
             return;
         }
-        BeanDefinition existing = registry.getBeanDefinition(JSP_VIEW_RESOLVER_BEAN_NAME);
+        BeanDefinition existing = registry.getBeanDefinition(getTargetViewResolverBeanName());
         if (isAlreadyDecorating(existing)) {
             return;
         }
-        registry.removeBeanDefinition(JSP_VIEW_RESOLVER_BEAN_NAME);
+        registry.removeBeanDefinition(getTargetViewResolverBeanName());
 
         GenericBeanDefinition wrapper = new GenericBeanDefinition();
-        wrapper.setBeanClass(GrailsSiteMeshViewResolver.class);
+        wrapper.setBeanClass(getSiteMeshViewResolverClass());
         wrapper.setLazyInit(existing.isLazyInit());
         wrapper.setPrimary(true);
         ConstructorArgumentValues arguments = wrapper.getConstructorArgumentValues();
         arguments.addIndexedArgumentValue(0, existing);
-        arguments.addIndexedArgumentValue(1, new RuntimeBeanReference(CONTENT_PROCESSOR_BEAN_NAME));
-        arguments.addIndexedArgumentValue(2, new RuntimeBeanReference(DECORATOR_SELECTOR_BEAN_NAME));
-        arguments.addIndexedArgumentValue(3, new RuntimeBeanReference(SERVLET_CONTEXT_BEAN_NAME));
-        registry.registerBeanDefinition(JSP_VIEW_RESOLVER_BEAN_NAME, wrapper);
+        arguments.addIndexedArgumentValue(1, new RuntimeBeanReference(getContentProcessorBeanName()));
+        arguments.addIndexedArgumentValue(2, new RuntimeBeanReference(getDecoratorSelectorBeanName()));
+        arguments.addIndexedArgumentValue(3, new RuntimeBeanReference(getServletContextBeanName()));
+        if (getDispatchMode() != null) {
+            wrapper.getPropertyValues().add("dispatchMode", getDispatchMode());
+        }
+        wrapper.getPropertyValues().add("includeErrorPages", isIncludeErrorPages());
+        registry.registerBeanDefinition(getTargetViewResolverBeanName(), wrapper);
     }
 
     /**
