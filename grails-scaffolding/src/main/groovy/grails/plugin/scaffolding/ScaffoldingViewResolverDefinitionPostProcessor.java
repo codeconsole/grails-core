@@ -28,6 +28,7 @@ import org.springframework.core.Ordered;
 import org.springframework.core.env.Environment;
 
 import grails.util.Metadata;
+import org.grails.plugins.web.GroovyPagesPostProcessor;
 
 /**
  * Registers the {@code jspViewResolver} bean definition as a
@@ -42,14 +43,12 @@ public class ScaffoldingViewResolverDefinitionPostProcessor implements BeanDefin
 
     /**
      * Runs before the SiteMesh 2 module's {@code GrailsLayoutViewResolverPostProcessor}
-     * ({@code GroovyPagesPostProcessor.ORDER - 1}, i.e. -1), which embeds the
-     * definition registered here as its inner view resolver, and before the GSP
-     * plugin's {@code GroovyPagesPostProcessor} ({@code ORDER} 0), which
-     * contributes the plain GSP resolver only when no definition exists by then.
-     * (The constants are not referenced directly because grails-gsp is not on
-     * this module's compile classpath.)
+     * ({@code GroovyPagesPostProcessor.ORDER - 1}), which embeds the definition
+     * registered here as its inner view resolver, and before
+     * {@link GroovyPagesPostProcessor} itself, which contributes the plain GSP
+     * resolver only when no definition exists by then.
      */
-    public static final int ORDER = -2;
+    public static final int ORDER = GroovyPagesPostProcessor.ORDER - 2;
 
     private static final String JSP_VIEW_RESOLVER_BEAN_NAME = "jspViewResolver";
 
