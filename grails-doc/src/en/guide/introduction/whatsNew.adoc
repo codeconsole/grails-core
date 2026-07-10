@@ -39,6 +39,35 @@ This brings the Spring Boot 4 modular artifact layout, Spring Framework 7 API re
 
 The Grails 8 upgrade guide calls out the major application-impacting changes and links to the Spring Boot 4.0 migration guide, Spring Boot 4.1 release notes and Spring Framework 7.0 release notes.
 
+==== Plugin Beans Register Before Spring Boot Auto-Configuration
+
+Grails {grailsMajorVersion} unifies and retimes the plugin lifecycle so that the beans a plugin contributes are registered before Spring Boot processes its auto-configurations.
+A plugin bean now takes precedence over a Spring Boot default guarded by `@ConditionalOnMissingBean` — Boot backs off in favour of the plugin's bean, with no need to override or remove it afterwards.
+
+Plugins register beans through the new `beanRegistrar()` hook, which returns a Spring Framework {springapi}org/springframework/beans/factory/BeanRegistrar.html[BeanRegistrar]. Because `BeanRegistrar` is a functional interface, a closure coerced with `as BeanRegistrar` is all that is required:
+
+[source,groovy]
+----
+import org.springframework.beans.factory.BeanRegistrar
+import org.springframework.beans.factory.BeanRegistry
+import org.springframework.core.env.Environment
+import grails.plugins.Plugin
+
+class MyGrailsPlugin extends Plugin {
+
+    @Override
+    BeanRegistrar beanRegistrar() {
+        { BeanRegistry registry, Environment environment ->
+            registry.registerBean('myService', MyServiceImpl)
+        } as BeanRegistrar
+    }
+}
+----
+
+`beanRegistrar()` replaces the `doWithSpring` bean builder DSL, which is deprecated in Grails {grailsMajorVersion}.
+The DSL continues to work for now, but you are strongly urged to migrate.
+See the xref:upgrading#upgrading80x[upgrade guide] for details.
+
 ==== GSP Tag Library Improvements
 
 Grails {grailsMajorVersion} continues the move toward method-based TagLib handlers while preserving compatibility with existing closure-based tags.
