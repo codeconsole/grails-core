@@ -18,6 +18,8 @@
  */
 package org.grails.plugins.sitemesh3
 
+import groovy.transform.CompileStatic
+
 import org.springframework.beans.factory.BeanRegistrar
 import org.springframework.beans.factory.BeanRegistry
 import org.springframework.core.env.Environment
@@ -34,7 +36,12 @@ import org.grails.plugins.web.taglib.RenderSitemeshTagLib
  * decoration is applied by {@link Sitemesh3AutoConfiguration}. The only bean
  * this plugin itself contributes is registered through {@link #beanRegistrar()},
  * the modern replacement for the deprecated {@code doWithSpring()} bean DSL.</p>
+ *
+ * <p>With no {@code doWithSpring()} bean-builder closure — whose dynamic
+ * dispatch against the bean builder prevents static compilation of descriptor
+ * classes — this plugin compiles statically as a whole.</p>
  */
+@CompileStatic
 class Sitemesh3GrailsPlugin extends Plugin {
 
     def grailsVersion = '7.0.0-SNAPSHOT > *'
