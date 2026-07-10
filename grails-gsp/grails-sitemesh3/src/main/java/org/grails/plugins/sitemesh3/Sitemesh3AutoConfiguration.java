@@ -113,9 +113,9 @@ public class Sitemesh3AutoConfiguration {
                 config.getProperty("grails.gsp.enable.reload", Boolean.class, false) ||
                 (developmentMode && env == Environment.DEVELOPMENT);
 
-        // The SiteMesh 3 specific key wins; fall back to the SiteMesh 2 plugin's
-        // grails.views.layout.default so existing apps keep their configured
-        // default layout when switching.
+        // The SiteMesh 3 specific key wins; fall back to the legacy
+        // grails.views.layout.default key so existing apps keep their
+        // configured default layout when switching.
         String defaultLayout = config.getProperty("grails.sitemesh.default.layout");
         if (defaultLayout == null || defaultLayout.isEmpty()) {
             defaultLayout = config.getProperty("grails.views.layout.default");

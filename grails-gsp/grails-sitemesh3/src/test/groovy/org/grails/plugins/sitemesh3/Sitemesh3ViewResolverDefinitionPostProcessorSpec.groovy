@@ -23,8 +23,6 @@ import org.sitemesh.webmvc.SiteMeshViewResolver
 import org.springframework.beans.factory.config.BeanDefinition
 import org.springframework.beans.factory.support.DefaultListableBeanFactory
 import org.springframework.beans.factory.support.GenericBeanDefinition
-import org.springframework.context.ApplicationEvent
-import org.springframework.context.ApplicationListener
 import org.springframework.mock.web.MockServletContext
 import org.springframework.web.servlet.ViewResolver
 import org.springframework.web.servlet.view.InternalResourceViewResolver
@@ -34,11 +32,6 @@ import spock.lang.Specification
 class Sitemesh3ViewResolverDefinitionPostProcessorSpec extends Specification {
 
     Sitemesh3ViewResolverDefinitionPostProcessor postProcessor = new Sitemesh3ViewResolverDefinitionPostProcessor()
-
-    static class ListenerViewResolver extends InternalResourceViewResolver implements ApplicationListener<ApplicationEvent> {
-        @Override
-        void onApplicationEvent(ApplicationEvent event) { }
-    }
 
     private static DefaultListableBeanFactory registryWithSiteMeshBeans() {
         DefaultListableBeanFactory registry = new DefaultListableBeanFactory()
@@ -134,8 +127,8 @@ class Sitemesh3ViewResolverDefinitionPostProcessorSpec extends Specification {
         then:
         registry.getBeanDefinition('jspViewResolver').beanClassName == alreadyDecorating.name
 
-        where: "the SiteMesh 3 wrapper itself, and SiteMesh 2's ApplicationListener-based layout resolver"
-        alreadyDecorating << [GrailsSiteMeshViewResolver, ListenerViewResolver]
+        where: "this module's wrapper, or any custom SiteMeshViewResolver"
+        alreadyDecorating << [GrailsSiteMeshViewResolver, SiteMeshViewResolver]
     }
 
     void "a consumer that force-initializes the lazy resolver before any post-processor runs still gets the decorating resolver"() {

@@ -29,9 +29,9 @@ import org.grails.plugins.web.taglib.RenderSitemeshTagLib
 
 /**
  * Provides GSP layout decoration through SiteMesh 3's filter-less,
- * view-resolver-based integration. Installing it alongside the legacy
- * SiteMesh 2 module (grails-layout) is supported; in that case the
- * SiteMesh 2 integration keeps decorating and this one stands down.
+ * view-resolver-based integration. It is a drop-in replacement for the
+ * grails-layout module — the two must never share a classpath, which
+ * {@link Sitemesh3EnvironmentPostProcessor} enforces at startup.
  *
  * <p>The heavy lifting lives outside this class: default configuration
  * properties are contributed by {@link Sitemesh3EnvironmentPostProcessor}

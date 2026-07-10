@@ -93,7 +93,7 @@ class Sitemesh3AutoConfigurationSpec extends Specification {
     }
 
     void "the decoratorSelector bean falls back to grails.views.layout.default"() {
-        given: "no SiteMesh 3 default, but a SiteMesh 2 style default layout"
+        given: "no grails.sitemesh.default.layout, but the legacy default layout key"
         GrailsConventionGroovyPageLocator locator = Mock(GrailsConventionGroovyPageLocator) {
             findViewByPath('/layouts/legacy') >> Mock(GroovyPageScriptSource)
         }

@@ -24,11 +24,11 @@ import org.sitemesh.webmvc.SiteMeshViewResolverPostProcessor;
 import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.annotation.AnnotatedBeanDefinition;
 import org.springframework.beans.factory.config.BeanDefinition;
+import org.springframework.beans.factory.config.ConfigurableBeanFactory;
 import org.springframework.beans.factory.config.ConstructorArgumentValues;
 import org.springframework.beans.factory.config.RuntimeBeanReference;
 import org.springframework.beans.factory.support.BeanDefinitionRegistry;
 import org.springframework.beans.factory.support.GenericBeanDefinition;
-import org.springframework.context.ApplicationListener;
 import org.springframework.core.type.MethodMetadata;
 import org.springframework.util.ClassUtils;
 
@@ -48,9 +48,7 @@ import org.grails.plugins.web.GroovyPagesPostProcessor;
  * {@code BeanPostProcessor} takes effect — Spring Boot's
  * {@code ContentNegotiatingViewResolver} collecting every {@code ViewResolver}
  * while it initializes is one such consumer — it captures the raw, undecorating
- * resolver and keeps rendering through it, silently disabling layouts. This
- * mirrors the approach the SiteMesh 2 module takes with its
- * {@code GrailsLayoutViewResolverPostProcessor}.</p>
+ * resolver and keeps rendering through it, silently disabling layouts.</p>
  *
  * <p>It deliberately diverges from the upstream implementation on one point:
  * upstream re-registers the unwrapped resolver as a separate named bean
@@ -69,8 +67,8 @@ public class Sitemesh3ViewResolverDefinitionPostProcessor extends SiteMeshViewRe
 
     /**
      * After {@link GroovyPagesPostProcessor#ORDER} so the default GSP resolver
-     * definition exists, and after the SiteMesh 2 module's post-processor
-     * (ORDER - 1) so legacy layout wrapping, when present, wins and is detected.
+     * definition exists whichever module contributed it, making this the last
+     * word on the {@code jspViewResolver} definition.
      */
     public static final int ORDER = GroovyPagesPostProcessor.ORDER + 10;
 
@@ -91,7 +89,7 @@ public class Sitemesh3ViewResolverDefinitionPostProcessor extends SiteMeshViewRe
             return;
         }
         BeanDefinition existing = registry.getBeanDefinition(getTargetViewResolverBeanName());
-        if (isAlreadyDecorating(existing)) {
+        if (isAlreadyDecorating(existing, registry)) {
             return;
         }
         registry.removeBeanDefinition(getTargetViewResolverBeanName());
@@ -113,13 +111,14 @@ public class Sitemesh3ViewResolverDefinitionPostProcessor extends SiteMeshViewRe
     }
 
     /**
-     * Skips definitions that already decorate: a {@link SiteMeshViewResolver}
-     * (this module's wrapper, or a custom one), or the legacy grails-layout
-     * module's {@code GrailsLayoutViewResolver} — an {@link ApplicationListener}
-     * that performs SiteMesh 2 decoration itself, matching the instance-level
-     * exclusion {@link GrailsSiteMeshViewResolverBeanPostProcessor} applies.
+     * A definition that is already a {@link SiteMeshViewResolver} — this
+     * module's wrapper, or a custom one — decorates by itself and must not be
+     * wrapped again. The class is resolved with the bean class loader the
+     * container itself will use to instantiate the definition, so application
+     * classes in a child or restart class loader (e.g. devtools) are visible
+     * to the check.
      */
-    private boolean isAlreadyDecorating(BeanDefinition definition) {
+    private boolean isAlreadyDecorating(BeanDefinition definition, BeanDefinitionRegistry registry) {
         String className = definition.getBeanClassName();
         if (className == null && definition instanceof AnnotatedBeanDefinition annotated) {
             MethodMetadata factoryMethod = annotated.getFactoryMethodMetadata();
@@ -130,10 +129,12 @@ public class Sitemesh3ViewResolverDefinitionPostProcessor extends SiteMeshViewRe
         if (className == null) {
             return false;
         }
+        ClassLoader loader = registry instanceof ConfigurableBeanFactory beanFactory ?
+                beanFactory.getBeanClassLoader() :
+                ClassUtils.getDefaultClassLoader();
         try {
-            Class<?> beanClass = ClassUtils.forName(className, getClass().getClassLoader());
-            return SiteMeshViewResolver.class.isAssignableFrom(beanClass) ||
-                    ApplicationListener.class.isAssignableFrom(beanClass);
+            Class<?> beanClass = ClassUtils.forName(className, loader);
+            return SiteMeshViewResolver.class.isAssignableFrom(beanClass);
         }
         catch (ClassNotFoundException | LinkageError ignored) {
             return false;

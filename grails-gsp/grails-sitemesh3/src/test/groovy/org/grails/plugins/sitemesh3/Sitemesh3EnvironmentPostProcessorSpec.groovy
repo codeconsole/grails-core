@@ -60,7 +60,7 @@ class Sitemesh3EnvironmentPostProcessorSpec extends Specification {
         defaults.containsProperty('sitemesh.decorator.metaTag')
     }
 
-    void "the default layout comes from the SiteMesh 3 key, falling back to the SiteMesh 2 key"() {
+    void "the default layout comes from grails.sitemesh.default.layout, falling back to the legacy grails.views.layout.default key"() {
         given:
         MockEnvironment environment = new MockEnvironment()
         if (sitemesh3Key) {
