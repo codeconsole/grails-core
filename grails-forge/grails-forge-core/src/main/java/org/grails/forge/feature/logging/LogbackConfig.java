@@ -20,7 +20,6 @@ package org.grails.forge.feature.logging;
 
 import jakarta.inject.Singleton;
 import org.grails.forge.application.ApplicationType;
-import org.grails.forge.application.OperatingSystem;
 import org.grails.forge.application.generator.GeneratorContext;
 import org.grails.forge.build.dependencies.Dependency;
 import org.grails.forge.feature.logging.template.logback;
@@ -64,13 +63,11 @@ public class LogbackConfig implements LoggingFeature {
 
     @Override
     public void apply(GeneratorContext generatorContext) {
-        boolean jansi = generatorContext.getOperatingSystem() != OperatingSystem.WINDOWS;
-
         String projectName = generatorContext.getProject().getName();
         String packageName = generatorContext.getProject().getPackageName();
 
         generatorContext.addTemplate("loggingConfig", new RockerTemplate("grails-app/conf/logback-spring.xml",
-                logback.template(projectName, packageName, jansi)));
+                logback.template(projectName, packageName)));
         generatorContext.addDependency(Dependency.builder()
                 .groupId("org.apache.grails")
                 .artifactId("grails-logging")

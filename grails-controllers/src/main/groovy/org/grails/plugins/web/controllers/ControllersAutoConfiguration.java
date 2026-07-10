@@ -32,6 +32,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplicat
 import org.springframework.boot.servlet.autoconfigure.HttpEncodingAutoConfiguration;
 import org.springframework.boot.servlet.filter.OrderedCharacterEncodingFilter;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
+import org.springframework.boot.webmvc.autoconfigure.DispatcherServletAutoConfiguration;
 import org.springframework.boot.webmvc.autoconfigure.DispatcherServletRegistrationBean;
 import org.springframework.boot.webmvc.autoconfigure.WebMvcAutoConfiguration;
 import org.springframework.context.ApplicationContext;
@@ -51,7 +52,7 @@ import org.grails.web.servlet.mvc.GrailsDispatcherServlet;
 import org.grails.web.servlet.mvc.GrailsWebRequestFilter;
 
 @AutoConfiguration(
-        before = {HttpEncodingAutoConfiguration.class, WebMvcAutoConfiguration.class},
+        before = {DispatcherServletAutoConfiguration.class, HttpEncodingAutoConfiguration.class, WebMvcAutoConfiguration.class},
         after = {GrailsDomainClassAutoConfiguration.class}
 )
 @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
@@ -108,13 +109,23 @@ public class ControllersAutoConfiguration {
         return registrationBean;
     }
 
+    // GrailsWebRequestFilter extends RequestContextFilter, so Boot's WebMvcAutoConfiguration backs off
+    // its own RequestContextFilter and the GrailsWebRequest stays bound. Also gated on the
+    // "grailsWebRequestFilter" registration bean name so an application overriding only that registration
+    // makes this raw filter back off with it, rather than leaving a duplicate filter on the chain.
     @Bean
-    @ConditionalOnMissingBean(GrailsWebRequestFilter.class)
-    public FilterRegistrationBean<Filter> grailsWebRequestFilter(ApplicationContext applicationContext) {
-        FilterRegistrationBean<Filter> registrationBean = new FilterRegistrationBean<>();
+    @ConditionalOnMissingBean(value = GrailsWebRequestFilter.class, name = "grailsWebRequestFilter")
+    public GrailsWebRequestFilter grailsWebRequest(ApplicationContext applicationContext) {
         GrailsWebRequestFilter grailsWebRequestFilter = new GrailsWebRequestFilter();
         grailsWebRequestFilter.setApplicationContext(applicationContext);
-        registrationBean.setFilter(grailsWebRequestFilter);
+        return grailsWebRequestFilter;
+    }
+
+    @Bean
+    @ConditionalOnMissingBean(name = "grailsWebRequestFilter")
+    public FilterRegistrationBean<GrailsWebRequestFilter> grailsWebRequestFilter(GrailsWebRequestFilter grailsWebRequest) {
+        FilterRegistrationBean<GrailsWebRequestFilter> registrationBean = new FilterRegistrationBean<>();
+        registrationBean.setFilter(grailsWebRequest);
         registrationBean.setDispatcherTypes(EnumSet.of(
                 DispatcherType.FORWARD,
                 DispatcherType.INCLUDE,
@@ -152,6 +163,7 @@ public class ControllersAutoConfiguration {
     }
 
     @Bean
+    @ConditionalOnMissingBean(GrailsWebMvcConfigurer.class)
     public GrailsWebMvcConfigurer webMvcConfig() {
         return new GrailsWebMvcConfigurer(resourcesCachePeriod, resourcesEnabled, resourcesPattern);
     }
