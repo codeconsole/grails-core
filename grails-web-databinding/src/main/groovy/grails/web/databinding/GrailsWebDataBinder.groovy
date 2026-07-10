@@ -70,6 +70,7 @@ import org.grails.web.databinding.SpringConversionServiceAdapter
 import org.grails.web.databinding.converters.ByteArrayMultipartFileValueConverter
 import org.grails.web.servlet.mvc.GrailsWebRequest
 
+import static grails.web.databinding.DataBindingUtils.addUnbindablePropertyNames
 import static grails.web.databinding.DataBindingUtils.getBindingIncludeList
 
 @CompileStatic
@@ -82,6 +83,8 @@ class GrailsWebDataBinder extends SimpleDataBinder {
     protected List<DataBindingListener> listeners = []
 
     private volatile ObservationRegistry observationRegistry
+    private final ThreadLocal<List> bindingIncludeList = new ThreadLocal<List>()
+    private final ThreadLocal<List> nestedBindingIncludeList = new ThreadLocal<List>()
 
     GrailsWebDataBinder(GrailsApplication grailsApplication) {
         this.grailsApplication = grailsApplication
@@ -96,7 +99,8 @@ class GrailsWebDataBinder extends SimpleDataBinder {
 
     @Override
     void bind(obj, DataBindingSource source, DataBindingListener listener) {
-        bind(obj, source, null, getBindingIncludeList(obj), null, listener)
+        List nestedIncludeList = nestedBindingIncludeList.get()
+        bind(obj, source, null, nestedIncludeList != null ? nestedIncludeList : getBindingIncludeList(obj), null, listener)
     }
 
     @Override
@@ -162,7 +166,17 @@ class GrailsWebDataBinder extends SimpleDataBinder {
         boolean bind = listenerWrapper.beforeBinding(object, bindingResult)
 
         if (bind) {
-            super.doBind(object, source, filter, whiteList, blackList, listenerWrapper, bindingResult)
+            List previousIncludeList = bindingIncludeList.get()
+            bindingIncludeList.set(whiteList)
+            try {
+                super.doBind(object, source, filter, whiteList, addUnbindablePropertyNames(object, blackList), listenerWrapper, bindingResult)
+            } finally {
+                if (previousIncludeList != null) {
+                    bindingIncludeList.set(previousIncludeList)
+                } else {
+                    bindingIncludeList.remove()
+                }
+            }
         }
 
         listenerWrapper.afterBinding(object, bindingResult)
@@ -603,8 +617,45 @@ class GrailsWebDataBinder extends SimpleDataBinder {
         }
 
         if (!isSet) {
-            super.setPropertyValue(obj, source, metaProperty, propertyValue, listener)
+            List nestedIncludeList = getNestedBindingIncludeList(propName)
+            if (nestedIncludeList != null && (propertyValue instanceof Map || propertyValue instanceof DataBindingSource)) {
+                List previousNestedIncludeList = nestedBindingIncludeList.get()
+                nestedBindingIncludeList.set(nestedIncludeList)
+                try {
+                    super.setPropertyValue(obj, source, metaProperty, propertyValue, listener)
+                } finally {
+                    if (previousNestedIncludeList != null) {
+                        nestedBindingIncludeList.set(previousNestedIncludeList)
+                    } else {
+                        nestedBindingIncludeList.remove()
+                    }
+                }
+            } else {
+                super.setPropertyValue(obj, source, metaProperty, propertyValue, listener)
+            }
         }
+    }
+
+    private List getNestedBindingIncludeList(String propertyName) {
+        List includeList = bindingIncludeList.get()
+        if (includeList == null) {
+            return null
+        }
+        List nestedIncludeList = []
+        boolean bindAllNestedProperties = false
+        String dotPrefix = propertyName + '.'
+        String underscorePrefix = propertyName + '_'
+        includeList.each { item ->
+            String includeName = item?.toString()
+            if (includeName == propertyName || includeName == propertyName + '.*' || includeName == propertyName + '_*') {
+                bindAllNestedProperties = true
+            } else if (includeName?.startsWith(dotPrefix)) {
+                nestedIncludeList << includeName.substring(dotPrefix.length())
+            } else if (includeName?.startsWith(underscorePrefix)) {
+                nestedIncludeList << includeName.substring(underscorePrefix.length())
+            }
+        }
+        bindAllNestedProperties ? [] : (nestedIncludeList ?: null)
     }
 
     @Override

@@ -1087,4 +1087,4 @@ bindData(p, params, [include: ['firstName', 'lastName']])
 
 NOTE: If an empty List is provided as a value for the `include` parameter then no fields will be bound.
 
-The link:{constraintsRef}bindable.html[bindable] constraint can be used to allow data binding for certain properties by declaring `bindable: true`.  Properties are not included in default mass binding unless they are explicitly bindable.  Controller action command object parameters may also be annotated with `grails.web.databinding.BindAllowed` to allow only the listed fields for that action.
+The link:{constraintsRef}bindable.html[bindable] constraint can be used to prevent data binding for sensitive properties by declaring `bindable: false`.  Applications may set `grails.databinding.denyByDefault = true` to require `bindable: true` before a property participates in default mass binding.  Controller action command object parameters may also be annotated with `grails.web.databinding.BindAllowed` to allow only the listed fields for that action.

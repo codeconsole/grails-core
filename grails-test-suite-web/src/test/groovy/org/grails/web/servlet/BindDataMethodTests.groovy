@@ -19,8 +19,11 @@
 package org.grails.web.servlet
 
 import grails.artefact.Artefact
+import grails.databinding.SimpleMapDataBindingSource
+import grails.persistence.Entity
 import grails.testing.web.controllers.ControllerUnitTest
 import grails.web.databinding.DataBindingUtils
+import org.grails.web.databinding.DefaultASTDatabindingHelper
 import spock.lang.Specification
 
 /**
@@ -58,14 +61,14 @@ class BindDataMethodTests extends Specification implements ControllerUnitTest<Bi
         target.email == null
     }
 
-    void 'Test bindData With Empty Includes/Excludes Map Uses Default Allowlist'() {
+    void 'Test bindData With Empty Includes/Excludes Map Uses Legacy Default Allowlist'() {
         when:
         def model = controller.bindWithEmptyIncludesExcludesMap()
         def target = model.target
 
         then:
-        target.name == null
-        target.email == null
+        target.name == 'Marc Palmer'
+        target.email == 'dowantthis'
     }
 
     void 'Test bindData Overriding Included With Excluded'() {
@@ -98,7 +101,7 @@ class BindDataMethodTests extends Specification implements ControllerUnitTest<Bi
 
         then:
         target.name == 'Marc Palmer'
-        target.address.country == null
+        target.address.country == 'gbr'
         target.email == null
     }
 
@@ -122,16 +125,83 @@ class BindDataMethodTests extends Specification implements ControllerUnitTest<Bi
         target.email == null
     }
 
-    void 'Test bindData without generated allowlist binds no properties by default'() {
+    void 'Test bindData uses legacy allowlist by default and preserves bindable false'() {
         when:
         def model = controller.bindWithDefaultAllowlist()
         def target = model.target
 
         then:
-        target.displayName == null
+        target.displayName == 'Grace Hopper'
+        target.username == 'ghopper'
+        target.admin
+        target.role == null
+    }
+
+    void 'Test bindData uses secure allowlist when deny by default is enabled'() {
+        given:
+        grailsApplication.config.setAt(DefaultASTDatabindingHelper.DENY_BY_DEFAULT, true)
+
+        when:
+        def model = controller.bindWithDefaultAllowlist()
+        def target = model.target
+
+        then:
+        target.displayName == 'Grace Hopper'
         target.username == null
         !target.admin
         target.role == null
+
+        cleanup:
+        grailsApplication.config.setAt(DefaultASTDatabindingHelper.DENY_BY_DEFAULT, false)
+    }
+
+    void 'Test direct web data binder preserves bindable false without generated allowlist'() {
+        given:
+        def binder = grailsApplication.mainContext.getBean(DataBindingUtils.DATA_BINDER_BEAN_NAME)
+        def target = new RuntimeConstrainedCommandObject()
+
+        when:
+        binder.bind(target, new SimpleMapDataBindingSource([username: 'ghopper', role: 'admin']))
+
+        then:
+        target.username == 'ghopper'
+        target.role == null
+    }
+
+    void 'Test bindData secure mode preserves nested runtime bindable true without generated allowlist'() {
+        given:
+        grailsApplication.config.setAt(DefaultASTDatabindingHelper.DENY_BY_DEFAULT, true)
+        params.username = 'ghopper'
+        params.'address.country' = 'USA'
+
+        when:
+        def model = controller.bindRuntimeConstrainedWithParams()
+        def target = model.target
+
+        then:
+        target.username == null
+        target.address.country == 'USA'
+
+        cleanup:
+        grailsApplication.config.setAt(DefaultASTDatabindingHelper.DENY_BY_DEFAULT, false)
+    }
+
+    void 'Test bindData secure mode ignores inherited generated allowlist for runtime constrained subclass'() {
+        given:
+        grailsApplication.config.setAt(DefaultASTDatabindingHelper.DENY_BY_DEFAULT, true)
+        params.parentDisplayName = 'Parent'
+        params.childDisplayName = 'Child'
+
+        when:
+        def model = controller.bindRuntimeConstrainedSubclassWithParams()
+        def target = model.target
+
+        then:
+        target.parentDisplayName == null
+        target.childDisplayName == 'Child'
+
+        cleanup:
+        grailsApplication.config.setAt(DefaultASTDatabindingHelper.DENY_BY_DEFAULT, false)
     }
 
     void 'Test bindData with empty include list binds no properties'() {
@@ -231,6 +301,18 @@ class BindingController {
         [target: target]
     }
 
+    def bindRuntimeConstrainedWithParams() {
+        def target = new RuntimeConstrainedCommandObject()
+        bindData target, params
+        [target: target]
+    }
+
+    def bindRuntimeConstrainedSubclassWithParams() {
+        def target = new ChildRuntimeConstrainedCommandObject()
+        bindData target, params
+        [target: target]
+    }
+
 }
 
 class CommandObject {
@@ -249,6 +331,7 @@ class Address {
     String country
 }
 
+@Entity
 class SecureCommandObject {
     String username
     String displayName
@@ -258,5 +341,31 @@ class SecureCommandObject {
     static constraints = {
         displayName bindable: true
         role bindable: false
+    }
+}
+
+class RuntimeConstrainedCommandObject {
+    String username
+    String role
+    Address address = new Address()
+
+    static constraints = {
+        address bindable: true
+        role bindable: false
+    }
+}
+
+class ParentRuntimeConstrainedCommandObject {
+    static final List $defaultDatabindingWhiteList = ['parentDisplayName']
+    static final List $legacyDatabindingWhiteList = ['parentDisplayName']
+
+    String parentDisplayName
+}
+
+class ChildRuntimeConstrainedCommandObject extends ParentRuntimeConstrainedCommandObject {
+    String childDisplayName
+
+    static constraints = {
+        childDisplayName bindable: true
     }
 }

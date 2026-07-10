@@ -120,25 +120,26 @@ class DefaultASTDatabindingHelperDomainClassSpecialPropertiesSpec extends
         obj.version == null
     }
 
-    void 'Test a regular property without bindable true is not bound by default'() {
+    void 'Test a regular property without bindable true is bound by default'() {
         when:
         def obj = new DomainWithDefaultDeniedProperty(name: 'Grace', title: 'Admiral')
 
         then:
-        obj.name == null
+        obj.name == 'Grace'
         obj.title == 'Admiral'
     }
 
-    void 'Test legacy bindable default binds ordinary properties but preserves bindable false'() {
+    void 'Test deny by default binds only explicitly bindable properties and preserves bindable false'() {
         given:
-        Holders.setConfig(new PropertySourcesConfig([(DefaultASTDatabindingHelper.LEGACY_BINDABLE_DEFAULT): true]))
+        Holders.setConfig(new PropertySourcesConfig([(DefaultASTDatabindingHelper.DENY_BY_DEFAULT): true]))
 
         when:
-        def obj = new DomainWithLegacyBindableFalse(name: 'Grace', title: 'Admiral')
+        def obj = new DomainWithSecureBindableDefault(name: 'Grace', title: 'Admiral', role: 'Admin')
 
         then:
-        obj.name == 'Grace'
-        obj.title == null
+        obj.name == null
+        obj.title == 'Admiral'
+        obj.role == null
 
         cleanup:
         Holders.setConfig(null)
@@ -359,11 +360,13 @@ class DomainWithDefaultDeniedProperty extends AbstractDefaultDeniedBase {
 }
 
 @Entity
-class DomainWithLegacyBindableFalse {
+class DomainWithSecureBindableDefault {
     String name
     String title
+    String role
 
     static constraints = {
-        title bindable: false
+        title bindable: true
+        role bindable: false
     }
 }

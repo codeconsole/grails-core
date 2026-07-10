@@ -21,6 +21,10 @@ package grails.web.databinding;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Modifier;
+import java.math.BigDecimal;
+import java.math.BigInteger;
+import java.net.URL;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
@@ -120,13 +124,16 @@ public class DataBindingUtils {
     }
 
     protected static List getBindingIncludeList(final Object object) {
-        final boolean legacyBindableDefaultEnabled = isLegacyBindableDefaultEnabled();
-        final String whiteListFieldName = legacyBindableDefaultEnabled ?
-                DefaultASTDatabindingHelper.LEGACY_DATABINDING_WHITELIST :
-                DefaultASTDatabindingHelper.DEFAULT_DATABINDING_WHITELIST;
-        final Map<Class, List> includeListCache = legacyBindableDefaultEnabled ?
-                CLASS_TO_LEGACY_BINDING_INCLUDE_LIST : CLASS_TO_BINDING_INCLUDE_LIST;
-        List includeList = legacyBindableDefaultEnabled ? Collections.emptyList() : Collections.singletonList(DefaultASTDatabindingHelper.NO_BINDABLE_PROPERTIES);
+        final boolean denyByDefaultEnabled = isDenyByDefaultEnabled();
+        final String whiteListFieldName = denyByDefaultEnabled ?
+                DefaultASTDatabindingHelper.DEFAULT_DATABINDING_WHITELIST :
+                DefaultASTDatabindingHelper.LEGACY_DATABINDING_WHITELIST;
+        final Map<Class, List> includeListCache = denyByDefaultEnabled ?
+                CLASS_TO_BINDING_INCLUDE_LIST : CLASS_TO_LEGACY_BINDING_INCLUDE_LIST;
+        List includeList = denyByDefaultEnabled ? getBindablePropertyNames(object) : Collections.emptyList();
+        if (denyByDefaultEnabled && includeList.isEmpty()) {
+            includeList = Collections.singletonList(DefaultASTDatabindingHelper.NO_BINDABLE_PROPERTIES);
+        }
         try {
             final Class<? extends Object> objectClass = object.getClass();
             if (includeListCache.containsKey(objectClass)) {
@@ -150,12 +157,142 @@ public class DataBindingUtils {
         return includeList;
     }
 
-    private static boolean isLegacyBindableDefaultEnabled() {
+    static List getBindablePropertyNames(final Object object) {
+        return getPropertyNamesWithBindableValue(object, Boolean.TRUE);
+    }
+
+    static List getUnbindablePropertyNames(final Object object) {
+        return getPropertyNamesWithBindableValue(object, Boolean.FALSE);
+    }
+
+    static List getPropertyNamesWithBindableValue(final Object object, final Boolean bindableValue) {
+        final Map constrainedProperties = getConstrainedProperties(object);
+        if (constrainedProperties == null || constrainedProperties.isEmpty()) {
+            return Collections.emptyList();
+        }
+        final List propertyNames = new ArrayList();
+        for (Object entryObject : constrainedProperties.entrySet()) {
+            Map.Entry entry = (Map.Entry) entryObject;
+            if (bindableValue.equals(getBindableConstraintValue(entry.getValue()))) {
+                String propertyName = String.valueOf(entry.getKey());
+                propertyNames.add(propertyName);
+                if (Boolean.TRUE.equals(bindableValue) && !isSimpleType(getConstrainedPropertyType(entry.getValue()))) {
+                    propertyNames.add(propertyName + "_*");
+                    propertyNames.add(propertyName + ".*");
+                }
+            }
+        }
+        return propertyNames;
+    }
+
+    private static Class getConstrainedPropertyType(final Object constrainedProperty) {
+        MetaClass metaClass = GroovySystem.getMetaClassRegistry().getMetaClass(constrainedProperty.getClass());
+        try {
+            Object propertyType = metaClass.invokeMethod(constrainedProperty, "getPropertyType", new Object[0]);
+            if (propertyType instanceof Class) {
+                return (Class) propertyType;
+            }
+        } catch (Exception ignored) {
+        }
+        return null;
+    }
+
+    private static boolean isSimpleType(final Class propertyType) {
+        return propertyType != null && (propertyType.isPrimitive() || String.class.equals(propertyType) ||
+                Boolean.class.equals(propertyType) || Character.class.equals(propertyType) || Number.class.isAssignableFrom(propertyType) ||
+                BigInteger.class.equals(propertyType) || BigDecimal.class.equals(propertyType) || URL.class.equals(propertyType));
+    }
+
+    static Map getConstrainedProperties(final Object object) {
+        MetaClass metaClass = GroovySystem.getMetaClassRegistry().getMetaClass(object.getClass());
+        try {
+            Object constrainedProperties = metaClass.getProperty(object, "constraintsMap");
+            if (constrainedProperties instanceof Map) {
+                return (Map) constrainedProperties;
+            }
+        } catch (Exception ignored) {
+        }
+        try {
+            Object constrainedProperties = metaClass.invokeMethod(object, "getConstraintsMap", new Object[0]);
+            if (constrainedProperties instanceof Map) {
+                return (Map) constrainedProperties;
+            }
+        } catch (Exception ignored) {
+        }
+        try {
+            Object constrainedProperties = metaClass.getProperty(object, "constraints");
+            if (constrainedProperties instanceof Map) {
+                return (Map) constrainedProperties;
+            }
+        } catch (Exception ignored) {
+        }
+        try {
+            Map constrainedProperties = evaluateConstrainedProperties(object.getClass());
+            if (constrainedProperties != null) {
+                return constrainedProperties;
+            }
+        } catch (Exception ignored) {
+        }
+        return Collections.emptyMap();
+    }
+
+    private static Map evaluateConstrainedProperties(final Class objectClass) {
+        try {
+            Class<?> validationSupport = Class.forName("org.grails.web.plugins.support.ValidationSupport");
+            Object constrainedProperties = validationSupport.getMethod("getConstrainedPropertiesForClass", Class.class, boolean.class).invoke(null, objectClass, false);
+            if (constrainedProperties instanceof Map) {
+                return (Map) constrainedProperties;
+            }
+        } catch (Exception ignored) {
+        }
+        return Collections.emptyMap();
+    }
+
+    static Object getBindableConstraintValue(final Object constrainedProperty) {
+        MetaClass metaClass = GroovySystem.getMetaClassRegistry().getMetaClass(constrainedProperty.getClass());
+        try {
+            Object value = metaClass.invokeMethod(constrainedProperty, "getMetaConstraintValue", new Object[] { DefaultASTDatabindingHelper.BINDABLE_CONSTRAINT_NAME });
+            if (value != null) {
+                return value;
+            }
+        } catch (Exception ignored) {
+        }
+        try {
+            Object metaConstraints = metaClass.getProperty(constrainedProperty, "metaConstraints");
+            if (metaConstraints instanceof Map) {
+                return ((Map) metaConstraints).get(DefaultASTDatabindingHelper.BINDABLE_CONSTRAINT_NAME);
+            }
+        } catch (Exception ignored) {
+        }
+        try {
+            Object delegate = metaClass.getProperty(constrainedProperty, "property");
+            if (delegate != null && delegate != constrainedProperty) {
+                return getBindableConstraintValue(delegate);
+            }
+        } catch (Exception ignored) {
+        }
+        return null;
+    }
+
+    static List addUnbindablePropertyNames(final Object object, final List exclude) {
+        final List unbindablePropertyNames = getUnbindablePropertyNames(object);
+        if (unbindablePropertyNames.isEmpty()) {
+            return exclude;
+        }
+        if (exclude == null || exclude.isEmpty()) {
+            return unbindablePropertyNames;
+        }
+        final List combinedExcludes = new ArrayList(exclude);
+        combinedExcludes.addAll(unbindablePropertyNames);
+        return combinedExcludes;
+    }
+
+    private static boolean isDenyByDefaultEnabled() {
         GrailsApplication application = Holders.findApplication();
         if (application != null) {
-            return application.getConfig().getProperty(DefaultASTDatabindingHelper.LEGACY_BINDABLE_DEFAULT, Boolean.class, false);
+            return application.getConfig().getProperty(DefaultASTDatabindingHelper.DENY_BY_DEFAULT, Boolean.class, false);
         }
-        Object value = Holders.getFlatConfig().get(DefaultASTDatabindingHelper.LEGACY_BINDABLE_DEFAULT);
+        Object value = Holders.getFlatConfig().get(DefaultASTDatabindingHelper.DENY_BY_DEFAULT);
         return Boolean.TRUE.equals(value) || "true".equalsIgnoreCase(String.valueOf(value));
     }
 

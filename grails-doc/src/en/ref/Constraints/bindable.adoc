@@ -79,9 +79,9 @@ assert 'Percussion' == employee.department
 assert 42.0 == employee.salary
 ----
 
-Properties are not bindable by default.  Add `bindable: true` to the relevant constraint to opt a property into mass data binding.  Properties with `bindable: false`, transient fields, dynamically typed properties and static properties are not bindable.
+Properties are bindable by default in Grails 8 unless they are marked with `bindable: false`, are transient fields, are dynamically typed properties, or are static properties.
 
-Applications that need the previous default during migration may set `grails.databinding.legacyBindableDefault = true` to allow statically typed instance properties to be bound when no explicit include list is supplied.  New applications should prefer explicit `bindable: true` constraints or `bindData(..., [include: ...])` allowlists.
+Applications may opt in to a stricter default by setting `grails.databinding.denyByDefault = true`.  When enabled, only properties declared with `bindable: true` or supplied through `bindData(..., [include: ...])` are included in default mass data binding.  Properties with `bindable: false` remain non-bindable.  Grails 9 may make this stricter default the standard behavior.
 
 See the link:{guidePath}theWebLayer.html#dataBinding[data binding] section for more details on data binding.
 
