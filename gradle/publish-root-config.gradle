@@ -88,7 +88,6 @@ def publishedProjects = [
         'grails-spring-security-rest-grailscache',
         'grails-spring-security-rest-memcached',
         'grails-spring-security-rest-redis',
-        'grails-spring-security-rest-testapp-profile',
         'grails-spring-security-ui',
         'grails-taglib',
         'grails-test-core',
