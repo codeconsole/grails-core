@@ -18,16 +18,23 @@
  */
 package org.grails.plugins.sitemesh3
 
-import org.springframework.core.env.ConfigurableEnvironment
-import org.springframework.core.env.MapPropertySource
-import org.springframework.core.env.PropertySource
+import org.springframework.beans.factory.BeanRegistrar
+import org.springframework.beans.factory.BeanRegistry
+import org.springframework.core.env.Environment
 
-import grails.core.DefaultGrailsApplication
 import grails.plugins.Plugin
-import org.grails.config.PropertySourcesConfig
 import org.grails.plugins.web.taglib.RenderSitemeshTagLib
-import org.grails.web.util.WebUtils
 
+/**
+ * Configures Grails to use SiteMesh 3 instead of SiteMesh 2.
+ *
+ * <p>The heavy lifting lives outside this class: default configuration
+ * properties are contributed by {@link Sitemesh3EnvironmentPostProcessor}
+ * (registered in {@code META-INF/spring.factories}) and the view-resolver
+ * decoration is applied by {@link Sitemesh3AutoConfiguration}. The only bean
+ * this plugin itself contributes is registered through {@link #beanRegistrar()},
+ * the modern replacement for the deprecated {@code doWithSpring()} bean DSL.</p>
+ */
 class Sitemesh3GrailsPlugin extends Plugin {
 
     def grailsVersion = '7.0.0-SNAPSHOT > *'
@@ -49,39 +56,13 @@ class Sitemesh3GrailsPlugin extends Plugin {
             Sitemesh3LayoutTagLib,
     ]
 
-    static PropertySource getDefaultPropertySource(ConfigurableEnvironment configurableEnvironment, String defaultLayout) {
-        Map props = [
-                'sitemesh.decorator.metaTag': 'layout',
-                'sitemesh.decorator.attribute': WebUtils.LAYOUT_ATTRIBUTE,
-                'sitemesh.decorator.prefix': '/layouts/',
-        ]
-        if (defaultLayout) {
-            props['sitemesh.decorator.default'] = defaultLayout
-        }
-        props.clone().each {
-            if (configurableEnvironment.getProperty(it.key)) {
-                props.remove(it.key)
-            }
-        }
-        new MapPropertySource('defaultSitemesh3Properties', props)
-    }
-
-    Closure doWithSpring() {
-        { ->
-            ConfigurableEnvironment configurableEnvironment = grailsApplication.mainContext.environment as ConfigurableEnvironment
-            def propertySources = configurableEnvironment.getPropertySources()
-            // The SiteMesh 3 specific key wins; fall back to the SiteMesh 2
-            // plugin's grails.views.layout.default so existing apps keep
-            // their configured default layout when switching.
-            String defaultLayout = grailsApplication.getConfig().getProperty('grails.sitemesh.default.layout') ?:
-                    grailsApplication.getConfig().getProperty('grails.views.layout.default')
-            propertySources.addFirst(getDefaultPropertySource(configurableEnvironment, defaultLayout))
-            (grailsApplication as DefaultGrailsApplication).config = new PropertySourcesConfig(propertySources)
-
+    @Override
+    BeanRegistrar beanRegistrar() {
+        { BeanRegistry registry, Environment environment ->
             // Unwraps the SiteMesh view for "render template:" partials so
             // they are never decorated with a layout (the SiteMesh 2 plugin
             // does the same with its GrailsLayoutRenderViewMutator).
-            grailsRenderViewMutator(Sitemesh3RenderViewMutator)
-        }
+            registry.registerBean('grailsRenderViewMutator', Sitemesh3RenderViewMutator)
+        } as BeanRegistrar
     }
 }

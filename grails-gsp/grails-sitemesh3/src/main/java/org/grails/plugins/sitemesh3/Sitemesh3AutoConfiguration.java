@@ -39,12 +39,26 @@ import org.grails.web.gsp.io.GrailsConventionGroovyPageLocator;
 
 /**
  * Registers the Grails SiteMesh 3 integration beans ahead of the upstream
- * auto-configuration: the {@link GrailsSiteMeshViewResolverBeanPostProcessor},
- * the {@link CaptureAwareContentProcessor} ({@code contentProcessor}) and the
+ * auto-configuration: the {@link Sitemesh3ViewResolverDefinitionPostProcessor}
+ * (which rewrites the {@code jspViewResolver} definition into the decorating
+ * {@link GrailsSiteMeshViewResolver}), the
+ * {@link GrailsSiteMeshViewResolverBeanPostProcessor}, the
+ * {@link CaptureAwareContentProcessor} ({@code contentProcessor}) and the
  * {@link Sitemesh3LayoutFinder} ({@code decoratorSelector}).
  *
- * <p>Upstream's {@code SiteMeshViewResolverAutoConfiguration} declares each of
- * these with a {@code @ConditionalOnMissingBean} guard. By scheduling this
+ * <p>The definition-level rewrite is what applies decoration: because it acts
+ * on the bean definition, the decorating resolver is what gets instantiated no
+ * matter how early a consumer forces the lazy {@code jspViewResolver} into
+ * existence (see {@link Sitemesh3ViewResolverDefinitionPostProcessor}). The
+ * bean post-processor is retained as a safety net for a {@code jspViewResolver}
+ * registered as an instance rather than a definition, and its presence keeps
+ * upstream's wrap-all {@code SiteMeshViewResolverBeanPostProcessor} from
+ * registering. Upstream's post-processor never re-wraps a resolver that is
+ * already a {@code SiteMeshViewResolver}, so the two mechanisms cannot
+ * double-decorate.</p>
+ *
+ * <p>Upstream's {@code SiteMeshViewResolverAutoConfiguration} declares its
+ * beans with {@code @ConditionalOnMissingBean} guards. By scheduling this
  * configuration first (via {@link AutoConfigureBefore}) the Grails
  * implementations are registered before those guards are evaluated, so the
  * upstream defaults back off cleanly rather than being registered and then
@@ -54,7 +68,9 @@ import org.grails.web.gsp.io.GrailsConventionGroovyPageLocator;
  * decoration, which is only meaningful when Spring MVC is resolving views, so
  * they are gated on a {@link DispatcherServlet} being present. This keeps them
  * out of the lightweight unit-test contexts built by grails-testing-support,
- * which have no dispatcher servlet.</p>
+ * which have no dispatcher servlet — and because the definition post-processor
+ * only rewrites {@code jspViewResolver} when both of those beans are registered,
+ * it keeps decoration out of such contexts too.</p>
  */
 @AutoConfiguration
 @AutoConfigureAfter(name = "org.springframework.boot.webmvc.autoconfigure.DispatcherServletAutoConfiguration")
@@ -62,6 +78,12 @@ import org.grails.web.gsp.io.GrailsConventionGroovyPageLocator;
 @ConditionalOnClass(SiteMeshViewResolverBeanPostProcessor.class)
 @ConditionalOnProperty(name = "sitemesh.integration", havingValue = "view-resolver", matchIfMissing = true)
 public class Sitemesh3AutoConfiguration {
+
+    @Bean
+    @ConditionalOnMissingBean(Sitemesh3ViewResolverDefinitionPostProcessor.class)
+    public static Sitemesh3ViewResolverDefinitionPostProcessor siteMeshViewResolverDefinitionPostProcessor() {
+        return new Sitemesh3ViewResolverDefinitionPostProcessor();
+    }
 
     @Bean
     @ConditionalOnMissingBean(SiteMeshViewResolverBeanPostProcessor.class)

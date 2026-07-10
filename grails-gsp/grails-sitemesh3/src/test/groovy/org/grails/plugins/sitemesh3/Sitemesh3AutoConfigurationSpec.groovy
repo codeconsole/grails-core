@@ -45,6 +45,11 @@ class Sitemesh3AutoConfigurationSpec extends Specification {
         Sitemesh3AutoConfiguration.siteMeshViewResolverBeanPostProcessor() instanceof GrailsSiteMeshViewResolverBeanPostProcessor
     }
 
+    void "the definition post processor bean rewrites jspViewResolver at the registry level"() {
+        expect:
+        Sitemesh3AutoConfiguration.siteMeshViewResolverDefinitionPostProcessor() instanceof Sitemesh3ViewResolverDefinitionPostProcessor
+    }
+
     void "the decoratorSelector bean is created even when no groovyPageLocator is available"() {
         given: "an empty locator provider, as in a context without GSP support"
         ObjectProvider<GrailsConventionGroovyPageLocator> provider = Mock(ObjectProvider) {
