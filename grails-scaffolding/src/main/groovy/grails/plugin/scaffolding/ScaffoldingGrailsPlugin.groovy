@@ -71,9 +71,9 @@ Plugin that generates scaffolded controllers and views for a Grails application.
 
     @Override
     BeanRegistrar beanRegistrar() {
-        { BeanRegistry registry, Environment environment ->
+        return { BeanRegistry registry, Environment environment ->
             registry.registerBean('scaffoldingViewResolverDefinitionPostProcessor',
                     ScaffoldingViewResolverDefinitionPostProcessor)
-        } as BeanRegistrar
+        }
     }
 }
