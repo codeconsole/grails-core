@@ -16,20 +16,18 @@
  *  specific language governing permissions and limitations
  *  under the License.
  */
-package grails.plugin.scaffolding
+package grails.plugin.scaffolding;
 
-import groovy.transform.CompileStatic
+import org.springframework.beans.BeansException;
+import org.springframework.beans.MutablePropertyValues;
+import org.springframework.beans.factory.support.BeanDefinitionRegistry;
+import org.springframework.beans.factory.support.BeanDefinitionRegistryPostProcessor;
+import org.springframework.beans.factory.support.GenericBeanDefinition;
+import org.springframework.context.EnvironmentAware;
+import org.springframework.core.Ordered;
+import org.springframework.core.env.Environment;
 
-import org.springframework.beans.BeansException
-import org.springframework.beans.MutablePropertyValues
-import org.springframework.beans.factory.support.BeanDefinitionRegistry
-import org.springframework.beans.factory.support.BeanDefinitionRegistryPostProcessor
-import org.springframework.beans.factory.support.GenericBeanDefinition
-import org.springframework.context.EnvironmentAware
-import org.springframework.core.Ordered
-import org.springframework.core.env.Environment
-
-import grails.util.Metadata
+import grails.util.Metadata;
 
 /**
  * Registers the {@code jspViewResolver} bean definition as a
@@ -40,8 +38,7 @@ import grails.util.Metadata
  * than building the resolver directly keeps the view-resolver configuration in
  * one place and preserves the established post-processor pipeline.
  */
-@CompileStatic
-class ScaffoldingViewResolverDefinitionPostProcessor implements BeanDefinitionRegistryPostProcessor, EnvironmentAware, Ordered {
+public class ScaffoldingViewResolverDefinitionPostProcessor implements BeanDefinitionRegistryPostProcessor, EnvironmentAware, Ordered {
 
     /**
      * Runs before the SiteMesh 2 module's {@code GrailsLayoutViewResolverPostProcessor}
@@ -52,42 +49,42 @@ class ScaffoldingViewResolverDefinitionPostProcessor implements BeanDefinitionRe
      * (The constants are not referenced directly because grails-gsp is not on
      * this module's compile classpath.)
      */
-    public static final int ORDER = -2
+    public static final int ORDER = -2;
 
-    private static final String JSP_VIEW_RESOLVER_BEAN_NAME = 'jspViewResolver'
+    private static final String JSP_VIEW_RESOLVER_BEAN_NAME = "jspViewResolver";
 
-    private Environment environment
+    private Environment environment;
 
     @Override
-    void postProcessBeanDefinitionRegistry(BeanDefinitionRegistry registry) throws BeansException {
+    public void postProcessBeanDefinitionRegistry(BeanDefinitionRegistry registry) throws BeansException {
         if (registry.containsBeanDefinition(JSP_VIEW_RESOLVER_BEAN_NAME)) {
             // an application- or plugin-supplied view resolver wins
-            return
+            return;
         }
-        GenericBeanDefinition definition = new GenericBeanDefinition()
-        definition.beanClass = ScaffoldingViewResolver
-        definition.parentName = 'abstractViewResolver'
-        definition.lazyInit = true
-        MutablePropertyValues properties = definition.propertyValues
-        properties.addPropertyValue('enableReload', isReloadEnabled())
-        properties.addPropertyValue('enableNamespaceViewDefaults', environment != null &&
-                environment.getProperty('grails.scaffolding.enableNamespaceViewDefaults', Boolean, false))
-        registry.registerBeanDefinition(JSP_VIEW_RESOLVER_BEAN_NAME, definition)
+        GenericBeanDefinition definition = new GenericBeanDefinition();
+        definition.setBeanClass(ScaffoldingViewResolver.class);
+        definition.setParentName("abstractViewResolver");
+        definition.setLazyInit(true);
+        MutablePropertyValues properties = definition.getPropertyValues();
+        properties.addPropertyValue("enableReload", isReloadEnabled());
+        properties.addPropertyValue("enableNamespaceViewDefaults", this.environment != null &&
+                this.environment.getProperty("grails.scaffolding.enableNamespaceViewDefaults", Boolean.class, false));
+        registry.registerBeanDefinition(JSP_VIEW_RESOLVER_BEAN_NAME, definition);
     }
 
     private static boolean isReloadEnabled() {
-        grails.util.Environment env = grails.util.Environment.current
-        env.reloadEnabled ||
-                (Metadata.current.isDevelopmentEnvironmentAvailable() && env == grails.util.Environment.DEVELOPMENT)
+        grails.util.Environment env = grails.util.Environment.getCurrent();
+        return env.isReloadEnabled() ||
+                (Metadata.getCurrent().isDevelopmentEnvironmentAvailable() && env == grails.util.Environment.DEVELOPMENT);
     }
 
     @Override
-    void setEnvironment(Environment environment) {
-        this.environment = environment
+    public void setEnvironment(Environment environment) {
+        this.environment = environment;
     }
 
     @Override
-    int getOrder() {
-        ORDER
+    public int getOrder() {
+        return ORDER;
     }
 }
