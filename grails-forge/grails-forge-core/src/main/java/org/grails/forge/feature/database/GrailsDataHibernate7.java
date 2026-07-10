@@ -18,7 +18,6 @@
  */
 package org.grails.forge.feature.database;
 
-import io.micronaut.context.annotation.Primary;
 import jakarta.inject.Singleton;
 import org.grails.forge.application.ApplicationType;
 import org.grails.forge.application.generator.GeneratorContext;
@@ -31,36 +30,34 @@ import org.grails.forge.options.Options;
 import java.util.Map;
 import java.util.Set;
 
-@Primary
 @Singleton
-public class HibernateGorm extends GormFeature implements DatabaseDriverConfigurationFeature {
+public class GrailsDataHibernate7 extends GormFeature implements DatabaseDriverConfigurationFeature {
 
-    static final String PREFIX = "dataSource.";
-    private static final String URL_KEY = PREFIX + "url";
-    private static final String DRIVER_KEY = PREFIX + "driverClassName";
-    private static final String USERNAME_KEY = PREFIX + "username";
-    private static final String PASSWORD_KEY = PREFIX + "password";
-    private static final String DB_CREATE_KEY = PREFIX + "dbCreate";
+    private static final String URL_KEY = DATASOURCE_PREFIX + "url";
+    private static final String DRIVER_KEY = DATASOURCE_PREFIX + "driverClassName";
+    private static final String USERNAME_KEY = DATASOURCE_PREFIX + "username";
+    private static final String PASSWORD_KEY = DATASOURCE_PREFIX + "password";
+    private static final String DB_CREATE_KEY = DATASOURCE_PREFIX + "dbCreate";
 
     private final DatabaseDriverFeature defaultDbFeature;
 
-    public HibernateGorm(DatabaseDriverFeature defaultDbFeature) {
+    public GrailsDataHibernate7(DatabaseDriverFeature defaultDbFeature) {
         this.defaultDbFeature = defaultDbFeature;
     }
 
     @Override
     public String getName() {
-        return "gorm-hibernate5";
+        return "gorm-hibernate7";
     }
 
     @Override
     public String getTitle() {
-        return "GORM for Hibernate 5";
+        return "Grails Data for Hibernate 7";
     }
 
     @Override
     public String getDescription() {
-        return "Configure GORM for using Hibernate 5.";
+        return "Configure Grails Data for using Hibernate 7.";
     }
 
     @Override
@@ -84,11 +81,11 @@ public class HibernateGorm extends GormFeature implements DatabaseDriverConfigur
 
         generatorContext.addBuildscriptDependency(Dependency.builder()
                 .groupId("org.apache.grails")
-                .artifactId("grails-data-hibernate5")
+                .artifactId("grails-data-hibernate7")
                 .buildSrc());
         generatorContext.addDependency(Dependency.builder()
                 .groupId("org.apache.grails")
-                .artifactId("grails-data-hibernate5")
+                .artifactId("grails-data-hibernate7")
                 .implementation());
         generatorContext.addDependency(Dependency.builder()
                 .groupId("com.zaxxer")
@@ -123,6 +120,6 @@ public class HibernateGorm extends GormFeature implements DatabaseDriverConfigur
 
     @Override
     public boolean shouldApply(ApplicationType applicationType, Options options, Set<Feature> selectedFeatures) {
-        return selectedFeatures.stream().anyMatch(f -> f instanceof HibernateGorm) || options.getGormImpl() == GormImpl.HIBERNATE;
+        return selectedFeatures.stream().anyMatch(GrailsDataHibernate7.class::isInstance) || options.getGormImpl() == GormImpl.HIBERNATE7;
     }
 }
