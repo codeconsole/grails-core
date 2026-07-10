@@ -19,7 +19,6 @@
 
 plugins {
     id 'org.apache.grails.gradle.grails-profile'
-    id 'org.apache.grails.buildsrc.publish'
     id 'org.apache.grails.buildsrc.sbom'
 }
 
