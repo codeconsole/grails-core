@@ -57,7 +57,14 @@ public class Sitemesh3EnvironmentPostProcessor implements EnvironmentPostProcess
         }
     }
 
-    static MapPropertySource getDefaultPropertySource(ConfigurableEnvironment environment) {
+    /**
+     * The SiteMesh 3 defaults not already configured in the given environment.
+     * Public because {@code grails.gsp.boot.GspAutoConfiguration} applies the
+     * same defaults for plain Spring Boot GSP applications whose contexts are
+     * built without {@code SpringApplication} (where no
+     * {@code EnvironmentPostProcessor} runs).
+     */
+    public static MapPropertySource getDefaultPropertySource(ConfigurableEnvironment environment) {
         Map<String, Object> properties = new LinkedHashMap<>();
         properties.put("sitemesh.decorator.metaTag", "layout");
         properties.put("sitemesh.decorator.attribute", WebUtils.LAYOUT_ATTRIBUTE);
