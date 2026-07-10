@@ -59,7 +59,7 @@ class LatencyFilter extends OncePerRequestFilter {
             throw new IllegalArgumentException("grails.testing.latency.max-delay (${properties.maxDelay}) " +
                     "must not be less than min-delay (${properties.minDelay})")
         }
-        if (probability < 0.0d || probability > 1.0d) {
+        if (!Double.isFinite(probability) || probability < 0.0d || probability > 1.0d) {
             throw new IllegalArgumentException("grails.testing.latency.probability must be between 0.0 and 1.0, was $probability")
         }
         random = properties.seed == null ? new Random() : new Random(properties.seed)
@@ -75,7 +75,10 @@ class LatencyFilter extends OncePerRequestFilter {
                 Thread.sleep(delayMillis)
             }
             catch (InterruptedException ignored) {
+                // The container is shutting down the worker thread; abandon the request
+                // instead of running it on an interrupted thread.
                 Thread.currentThread().interrupt()
+                return
             }
         }
         filterChain.doFilter(request, response)
@@ -88,6 +91,6 @@ class LatencyFilter extends OncePerRequestFilter {
         if (minDelayMillis == maxDelayMillis) {
             return minDelayMillis
         }
-        minDelayMillis + (long) (random.nextDouble() * (maxDelayMillis - minDelayMillis + 1))
+        random.nextLong(minDelayMillis, maxDelayMillis + 1)
     }
 }

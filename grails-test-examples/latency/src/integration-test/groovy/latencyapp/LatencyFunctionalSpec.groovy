@@ -28,35 +28,35 @@ import org.apache.grails.testing.http.client.HttpClientSupport
 /**
  * Confirms the behavior of the {@code grails-testing-support-latency} module against a running
  * application. The test environment enables latency for {@code /slow/*} with a minimum delay of
- * 1500ms (see {@code application.yml}), so matched requests must take at least that long while
+ * 3 seconds (see {@code application.yml}), so matched requests must take at least that long while
  * unmatched requests stay well under it.
  */
 @Integration
 class LatencyFunctionalSpec extends Specification implements HttpClientSupport {
 
-    private static final long MIN_DELAY_MILLIS = 1500
+    private static final long MIN_DELAY_NANOS = Duration.ofSeconds(3).toNanos()
 
     void 'requests matching the latency url patterns are delayed by at least the configured minimum'() {
         when:
         long start = System.nanoTime()
         def response = http('/slow/ping')
-        long elapsedMillis = Duration.ofNanos(System.nanoTime() - start).toMillis()
+        long elapsedNanos = System.nanoTime() - start
 
         then:
         response.assertStatus(200)
         response.assertContains('pong')
-        elapsedMillis >= MIN_DELAY_MILLIS
+        elapsedNanos >= MIN_DELAY_NANOS
     }
 
     void 'requests outside the latency url patterns are not delayed'() {
         when:
         long start = System.nanoTime()
         def response = http('/fast/ping')
-        long elapsedMillis = Duration.ofNanos(System.nanoTime() - start).toMillis()
+        long elapsedNanos = System.nanoTime() - start
 
         then:
         response.assertStatus(200)
         response.assertContains('pong')
-        elapsedMillis < MIN_DELAY_MILLIS
+        elapsedNanos < MIN_DELAY_NANOS
     }
 }

@@ -41,7 +41,7 @@ environments:
             testing:
                 latency:
                     enabled: true
-                    min-delay: 1500ms
-                    max-delay: 3s
+                    min-delay: 3s
+                    max-delay: 4s
                     url-patterns:
                       - '/slow/*'

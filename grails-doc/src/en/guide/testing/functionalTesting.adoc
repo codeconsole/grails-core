@@ -134,6 +134,10 @@ url-patterns,`/*`,Servlet url patterns the filter applies to
 seed,none,Optional fixed random seed for reproducible delay sequences
 |===
 
+NOTE: The random generator is shared by all requests, so a fixed `seed` produces a reproducible
+_sequence_ of delays, but with concurrent requests which request receives which delay depends on
+arrival order. Delays are only fully reproducible per request when requests are serialized.
+
 Durations without a unit suffix are interpreted as milliseconds; suffixes such as `500ms`, `2s` are
 also supported. For example, to delay half of all requests by between a quarter and two seconds:
 
@@ -151,6 +155,9 @@ grails:
 A useful pattern is a dedicated CI job (or an occasional local run) that executes the functional
 test suite with latency enabled and a generous `max-delay`. Tests that only pass on a fast server —
 for example a Geb assertion that reads the page before a click-triggered navigation completes —
-will fail deterministically under latency instead of flaking rarely in CI.
+will fail deterministically under latency instead of flaking rarely in CI. Keep in mind that each
+delay blocks a container thread for its duration, so a large `max-delay` combined with highly
+parallel tests can exhaust the servlet thread pool and distort results — size delays and test
+parallelism accordingly.
 
 WARNING: This module is a testing aid. Never enable it in production configuration.

@@ -39,18 +39,18 @@ class LatencyFilterSpec extends Specification {
         when:
         long start = System.nanoTime()
         filter.doFilter(new MockHttpServletRequest('GET', '/report/show'), new MockHttpServletResponse(), chain)
-        long elapsedMillis = Duration.ofNanos(System.nanoTime() - start).toMillis()
+        long elapsedNanos = System.nanoTime() - start
 
         then:
-        elapsedMillis >= 100
+        elapsedNanos >= Duration.ofMillis(100).toNanos()
         chain.request != null
     }
 
     void 'does not delay when the probability is zero'() {
         given:
         def filter = new LatencyFilter(new LatencyProperties(
-                minDelay: Duration.ofSeconds(30),
-                maxDelay: Duration.ofSeconds(30),
+                minDelay: Duration.ofSeconds(5),
+                maxDelay: Duration.ofSeconds(5),
                 probability: 0.0d
         ))
         def chain = new MockFilterChain()
@@ -58,11 +58,28 @@ class LatencyFilterSpec extends Specification {
         when:
         long start = System.nanoTime()
         filter.doFilter(new MockHttpServletRequest('GET', '/'), new MockHttpServletResponse(), chain)
-        long elapsedMillis = Duration.ofNanos(System.nanoTime() - start).toMillis()
+        long elapsedNanos = System.nanoTime() - start
 
         then: 'the request completes long before the configured delay'
-        elapsedMillis < 30_000
+        elapsedNanos < Duration.ofSeconds(5).toNanos()
         chain.request != null
+    }
+
+    void 'abandons the request when interrupted while delaying'() {
+        given:
+        def filter = new LatencyFilter(new LatencyProperties(
+                minDelay: Duration.ofSeconds(5),
+                maxDelay: Duration.ofSeconds(5)
+        ))
+        def chain = new MockFilterChain()
+
+        when: 'the thread is interrupted so the delay is cut short'
+        Thread.currentThread().interrupt()
+        filter.doFilter(new MockHttpServletRequest('GET', '/'), new MockHttpServletResponse(), chain)
+
+        then: 'the interrupt flag is re-asserted and the chain is never invoked'
+        Thread.interrupted()
+        chain.request == null
     }
 
     void 'random delays never undercut the configured minimum'() {
@@ -90,6 +107,8 @@ class LatencyFilterSpec extends Specification {
         'negative min-delay'         | new LatencyProperties(minDelay: Duration.ofMillis(-1))
         'probability above 1.0'      | new LatencyProperties(probability: 1.5d)
         'negative probability'       | new LatencyProperties(probability: -0.5d)
+        'NaN probability'            | new LatencyProperties(probability: Double.NaN)
+        'infinite probability'       | new LatencyProperties(probability: Double.POSITIVE_INFINITY)
     }
 
     private static List<Long> timings(LatencyFilter filter, int requests) {

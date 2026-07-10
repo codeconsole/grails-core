@@ -75,6 +75,10 @@ class LatencyProperties {
     /**
      * Optional fixed seed for the random number generator, for reproducible delay sequences.
      * When unset, delays vary from run to run.
+     * <p>
+     * The generator is shared by all requests, so with concurrent requests which request
+     * receives which delay is order-dependent; a fixed seed only yields a fully reproducible
+     * assignment of delays to requests when requests are serialized.
      */
     Long seed
 }
