@@ -96,6 +96,52 @@ class AvailableLocaleResolverSpec extends Specification {
         thrown(UnsupportedOperationException)
     }
 
+    void 'a null default locale is simply not added'() {
+        when:
+        List<Locale> locales = newResolver(null).availableLocales
+
+        then: 'the scanned bundles are still discovered'
+        locales.contains(Locale.forLanguageTag('es'))
+        locales.contains(Locale.forLanguageTag('fr'))
+
+        and: 'no null or language-less entry is present'
+        locales.every { it != null && it.language }
+    }
+
+    void 'a language-less default locale (Locale.ROOT) is simply not added'() {
+        expect:
+        !newResolver(Locale.ROOT).availableLocales.contains(Locale.ROOT)
+    }
+
+    void 'falls back to just the default locale when classpath scanning fails'() {
+        given: 'a class loader whose resource enumeration always fails'
+        ClassLoader failingClassLoader = new ClassLoader(null) {
+
+            @Override
+            Enumeration<URL> getResources(String name) throws IOException {
+                throw new IOException('simulated classpath failure')
+            }
+        }
+
+        when:
+        List<Locale> locales = new AvailableLocaleResolver(failingClassLoader, Locale.forLanguageTag('en')).availableLocales
+
+        then: 'no exception escapes and only the default locale is offered'
+        locales == [Locale.forLanguageTag('en')]
+    }
+
+    void 'bundles with no suffix, an empty suffix or a non-ISO suffix never contribute a locale'() {
+        given: 'deliberate fixtures: standalone.properties, messages_.properties and bogus-plugin_zz.properties'
+        List<Locale> locales = new AvailableLocaleResolver(getClass().classLoader, null, true).availableLocales
+
+        expect: 'the scan saw sibling fixtures (a valid plugin-namespaced bundle is discovered)'
+        locales.contains(Locale.forLanguageTag('zu'))
+
+        and: 'none of the malformed fixtures produced a locale'
+        locales.every { it.language && it.language in Locale.getISOLanguages() }
+        !locales.any { it.language == 'zz' }
+    }
+
     void 'caches the computed list until the cache is cleared'() {
         given:
         AvailableLocaleResolver resolver = newResolver()

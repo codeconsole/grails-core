@@ -54,6 +54,18 @@ class LocaleSelectAvailableSpec extends Specification implements TagLibUnitTest<
         output.contains('value="fr"')
     }
 
+    void 'an explicit available="false" keeps the full JVM locale list even when locales are published'() {
+        given:
+        request.servletContext.setAttribute('availableLocales',
+                [Locale.forLanguageTag('en'), Locale.forLanguageTag('es')])
+
+        when:
+        String output = applyTemplate('<g:localeSelect name="lang" available="false"/>')
+
+        then: 'a locale outside the published list is still offered'
+        output.contains('value="fr"')
+    }
+
     void 'available="true" falls back to the current locale when nothing is published'() {
         when:
         String output = applyTemplate('<g:localeSelect name="lang" available="true"/>')

@@ -155,6 +155,46 @@ class I18nAutoConfigurationSpec extends Specification {
         parent.close()
     }
 
+    void 'the availableLocaleResolver bean registers by default and includes plugin bundles'() {
+        expect:
+        contextRunner().run { context ->
+            def resolver = context.getBean(AvailableLocaleResolver)
+            // the default locale defaults to en, and includePlugins defaults to true so the
+            // plugin-namespaced spring-security-core_zu.properties fixture is discovered
+            assert resolver.availableLocales.contains(Locale.forLanguageTag('en'))
+            assert resolver.availableLocales.contains(Locale.forLanguageTag('zu'))
+        }
+    }
+
+    void 'grails.i18n.default.locale and availableLocales.includePlugins drive the availableLocaleResolver'() {
+        expect:
+        contextRunner()
+                .withPropertyValues(
+                        'grails.i18n.default.locale=pt_BR',
+                        'grails.i18n.availableLocales.includePlugins=false')
+                .run { context ->
+                    def resolver = context.getBean(AvailableLocaleResolver)
+                    // the underscore form is normalised to a language tag
+                    assert resolver.availableLocales.contains(Locale.forLanguageTag('pt-BR'))
+                    // plugin-namespaced bundles are excluded when includePlugins=false
+                    assert !resolver.availableLocales.contains(Locale.forLanguageTag('zu'))
+                }
+    }
+
+    void 'a user-defined AvailableLocaleResolver bean makes the Grails availableLocaleResolver back off'() {
+        given:
+        AvailableLocaleResolver userResolver = new AvailableLocaleResolver(getClass().classLoader, Locale.forLanguageTag('en'))
+        Supplier<AvailableLocaleResolver> userResolverSupplier = () -> userResolver
+
+        expect:
+        contextRunner()
+                .withBean('availableLocaleResolver', AvailableLocaleResolver, userResolverSupplier)
+                .run { context ->
+                    assert context.getBean(AvailableLocaleResolver).is(userResolver)
+                    assert context.getBeanNamesForType(AvailableLocaleResolver).length == 1
+                }
+    }
+
     void 'a user-defined messageSource bean makes the Grails messageSource back off'() {
         given:
         MessageSource userMessageSource = new StaticMessageSource()

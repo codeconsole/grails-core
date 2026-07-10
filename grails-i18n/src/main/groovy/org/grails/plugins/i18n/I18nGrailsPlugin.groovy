@@ -80,7 +80,8 @@ class I18nGrailsPlugin extends Plugin {
         def resourcesDir = BuildSettings.RESOURCES_DIR
         def classesDir = BuildSettings.CLASSES_DIR
 
-        if (resourcesDir.exists() && event.source instanceof FileSystemResource) {
+        // RESOURCES_DIR is null outside a Grails build (e.g. unit tests); nothing to copy then
+        if (resourcesDir?.exists() && event.source instanceof FileSystemResource) {
             // this MUST be getFile() because there's also a isFile() on this class
             File eventFile = (event.source as FileSystemResource).getFile().canonicalFile
             File i18nDir = eventFile.parentFile
