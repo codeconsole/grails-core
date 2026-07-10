@@ -81,9 +81,9 @@ public class Sitemesh3ViewResolverDefinitionPostProcessor implements BeanDefinit
 
     @Override
     public void postProcessBeanDefinitionRegistry(BeanDefinitionRegistry registry) throws BeansException {
-        if (!registry.containsBeanDefinition(JSP_VIEW_RESOLVER_BEAN_NAME)
-                || !registry.containsBeanDefinition(CONTENT_PROCESSOR_BEAN_NAME)
-                || !registry.containsBeanDefinition(DECORATOR_SELECTOR_BEAN_NAME)) {
+        if (!registry.containsBeanDefinition(JSP_VIEW_RESOLVER_BEAN_NAME) ||
+                !registry.containsBeanDefinition(CONTENT_PROCESSOR_BEAN_NAME) ||
+                !registry.containsBeanDefinition(DECORATOR_SELECTOR_BEAN_NAME)) {
             // Decoration is not possible in this context (no GSP view resolver, or a
             // context without the SiteMesh beans, e.g. the lightweight unit-test
             // contexts built by grails-testing-support) — leave the definition alone.
@@ -127,8 +127,8 @@ public class Sitemesh3ViewResolverDefinitionPostProcessor implements BeanDefinit
         }
         try {
             Class<?> beanClass = ClassUtils.forName(className, getClass().getClassLoader());
-            return SiteMeshViewResolver.class.isAssignableFrom(beanClass)
-                    || ApplicationListener.class.isAssignableFrom(beanClass);
+            return SiteMeshViewResolver.class.isAssignableFrom(beanClass) ||
+                    ApplicationListener.class.isAssignableFrom(beanClass);
         }
         catch (ClassNotFoundException | LinkageError ignored) {
             return false;
