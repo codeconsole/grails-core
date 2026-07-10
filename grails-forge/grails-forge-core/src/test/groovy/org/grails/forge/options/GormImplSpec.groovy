@@ -16,24 +16,33 @@
  *  specific language governing permissions and limitations
  *  under the License.
  */
-package org.grails.forge.cli.command;
 
-import io.micronaut.core.annotation.Introspected;
-import org.grails.forge.options.GormImpl;
-import picocli.CommandLine;
+package org.grails.forge.options
 
-@Introspected
-public class GormImplConverter implements CommandLine.ITypeConverter<GormImpl> {
+import spock.lang.Specification
+import spock.lang.Unroll
 
-    @Override
-    public GormImpl convert(String value) throws Exception {
-        if (value == null) {
-            return GormImpl.DEFAULT_OPTION;
-        }
-        GormImpl impl = GormImpl.parse(value);
-        if (impl != null) {
-            return impl;
-        }
-        throw new CommandLine.TypeConversionException("Invalid Grails Data implementation selection: " + value);
+class GormImplSpec extends Specification {
+
+    @Unroll
+    void "parse resolves #value to #expected"() {
+        expect:
+        GormImpl.parse(value) == expected
+
+        where:
+        value        | expected
+        'hibernate5' | GormImpl.HIBERNATE5
+        'HIBERNATE5' | GormImpl.HIBERNATE5
+        'hibernate'  | GormImpl.HIBERNATE5
+        'HIBERNATE'  | GormImpl.HIBERNATE5
+        'hibernate7' | GormImpl.HIBERNATE7
+        'mongodb'    | GormImpl.MONGODB
+        'neo4j'      | null
+        null         | null
+    }
+
+    void "the default option is Hibernate 5"() {
+        expect:
+        GormImpl.DEFAULT_OPTION == GormImpl.HIBERNATE5
     }
 }
