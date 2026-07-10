@@ -1517,7 +1517,9 @@ Both hooks may be used on the same plugin during migration; when a registrar and
 
 ==== 34. Zero-Config Logback Logging Is Now Supported
 
-Newly generated Grails 8 applications continue to include a starter `grails-app/conf/logback-spring.xml` file, but the file is now optional.
+Newly generated Grails 8 applications continue to include a starter `grails-app/conf/logback-spring.xml` file, but the file is now optional, and its content has been simplified to match Spring Boot's defaults.
+
+The starter file no longer duplicates Spring Boot's configuration: it composes Spring Boot's own `defaults.xml` and `console-appender.xml` and sets an `INFO` root level, while keeping a `<springProfile name="development">` block for environment-specific logging. Previous Grails releases generated a standalone configuration with an `ERROR` root level, which suppressed the `WARN` and `INFO` output — including framework startup warnings — that Spring Boot shows by default. Existing applications keep whatever configuration they already have.
 
 An application depends on `grails-logging`, which brings in Spring Boot's logging starter, so if `grails-app/conf/logback-spring.xml` is removed, Logback and Spring Boot's own default Logback configuration apply automatically. This matches the Spring Boot convention of needing no logging configuration file unless one is actually required.
 
