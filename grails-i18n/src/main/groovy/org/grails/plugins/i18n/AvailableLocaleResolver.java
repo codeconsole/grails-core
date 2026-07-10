@@ -50,8 +50,9 @@ import org.springframework.core.io.support.ResourcePatternResolver;
  * scanned. When {@code includePluginBundles} is enabled, every {@code *.properties}
  * bundle on the classpath is considered, so locales contributed by plugins &mdash; whose
  * bundles are namespaced (e.g. {@code spring-security-core_fr.properties}) &mdash; are
- * included too. Candidate suffixes are validated against {@link Locale#getISOLanguages()}
- * so non-i18n properties files (e.g. {@code application.properties}) are ignored. See
+ * included too. Candidate suffixes are validated against the ISO language codes (and the ISO
+ * country codes when a country is present), so non-i18n properties files (e.g.
+ * {@code application.properties} or {@code foo_en_prod.properties}) are ignored. See
  * {@code grails.i18n.availableLocales.includePlugins}.
  *
  * @since 8.0.0
@@ -66,6 +67,8 @@ public class AvailableLocaleResolver {
     private static final String PROPERTIES_SUFFIX = ".properties";
 
     private static final Set<String> ISO_LANGUAGES = new HashSet<>(Arrays.asList(Locale.getISOLanguages()));
+
+    private static final Set<String> ISO_COUNTRIES = new HashSet<>(Arrays.asList(Locale.getISOCountries()));
 
     private final ResourcePatternResolver resourcePatternResolver;
 
@@ -151,7 +154,10 @@ public class AvailableLocaleResolver {
     /**
      * Extracts the locale a bundle filename encodes, or {@code null} if it is not a locale-specific
      * message bundle. The base name ends at the first underscore (matching Grails' own message-source
-     * convention, where plugin base names use hyphens), and the suffix must be a recognised language.
+     * convention, where plugin base names use hyphens). The suffix follows the resource-bundle
+     * convention {@code language(_COUNTRY(_variant))} &mdash; not BCP 47 &mdash; so the language must
+     * be an ISO language and, when present, the country an ISO country; anything else (e.g.
+     * {@code foo_en_prod.properties}) is rejected rather than misparsed as a script or region.
      */
     private static Locale localeFromBundleFilename(String filename) {
         if (filename == null || !filename.endsWith(PROPERTIES_SUFFIX)) {
@@ -162,12 +168,19 @@ public class AvailableLocaleResolver {
         if (underscore < 0) {
             return null;
         }
-        String code = base.substring(underscore + 1);
-        if (code.isEmpty()) {
+        String[] parts = base.substring(underscore + 1).split("_", 3);
+        String language = parts[0];
+        if (!ISO_LANGUAGES.contains(language)) {
             return null;
         }
-        Locale locale = Locale.forLanguageTag(code.replace('_', '-'));
-        return ISO_LANGUAGES.contains(locale.getLanguage()) ? locale : null;
+        if (parts.length == 1) {
+            return Locale.of(language);
+        }
+        String country = parts[1];
+        if (!ISO_COUNTRIES.contains(country)) {
+            return null;
+        }
+        return (parts.length == 2) ? Locale.of(language, country) : Locale.of(language, country, parts[2]);
     }
 
 }

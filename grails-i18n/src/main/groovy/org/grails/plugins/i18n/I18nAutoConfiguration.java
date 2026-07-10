@@ -143,17 +143,17 @@ public class I18nAutoConfiguration {
      * Set {@code grails.i18n.availableLocales.includePlugins=false} to restrict discovery to the
      * application's own {@code messages_*.properties} bundles.
      *
-     * @param defaultLocale the base {@code messages.properties} locale, always included
-     * ({@code grails.i18n.default.locale}, defaults to {@code en})
+     * <p>The base {@code messages.properties} locale is always included, resolved from
+     * {@code grails.i18n.default.locale} exactly like the rest of this class (falling back to the
+     * JVM default locale when the property is not set).
+     *
      * @param includePlugins whether to also scan plugin-contributed message bundles
      * ({@code grails.i18n.availableLocales.includePlugins}, defaults to {@code true})
      */
     @Bean
     @ConditionalOnMissingBean(AvailableLocaleResolver.class)
     public AvailableLocaleResolver availableLocaleResolver(GrailsApplication grailsApplication,
-            @Value("${grails.i18n.default.locale:en}") String defaultLocale,
             @Value("${grails.i18n.availableLocales.includePlugins:true}") boolean includePlugins) {
-        return new AvailableLocaleResolver(grailsApplication.getClassLoader(),
-                Locale.forLanguageTag(defaultLocale.replace('_', '-')), includePlugins);
+        return new AvailableLocaleResolver(grailsApplication.getClassLoader(), fixedLocale(), includePlugins);
     }
 }

@@ -33,11 +33,12 @@ import spock.lang.Specification
  */
 class I18nGrailsPluginSpec extends Specification {
 
-    private static StaticWebApplicationContext webContext(AvailableLocaleResolver resolver = null) {
+    private static StaticWebApplicationContext webContext(AvailableLocaleResolver resolver = null,
+                                                          String beanName = 'availableLocaleResolver') {
         StaticWebApplicationContext ctx = new StaticWebApplicationContext()
         ctx.servletContext = new MockServletContext()
         if (resolver != null) {
-            ctx.beanFactory.registerSingleton('availableLocaleResolver', resolver)
+            ctx.beanFactory.registerSingleton(beanName, resolver)
         }
         // StaticApplicationContext already registers a StaticMessageSource under 'messageSource',
         // which is what onChange() looks up
@@ -62,6 +63,22 @@ class I18nGrailsPluginSpec extends Specification {
         plugin.doWithApplicationContext()
 
         then: 'views read the exact list the resolver computed'
+        ctx.servletContext.getAttribute('availableLocales').is(resolver.availableLocales)
+
+        cleanup:
+        ctx.close()
+    }
+
+    void 'a user-defined resolver under a custom bean name is still published (lookup is by type)'() {
+        given: 'the auto-configuration backs off by type, so the plugin must find the bean by type too'
+        AvailableLocaleResolver resolver = new AvailableLocaleResolver(getClass().classLoader, Locale.forLanguageTag('en'))
+        StaticWebApplicationContext ctx = webContext(resolver, 'myOwnLocaleResolver')
+        I18nGrailsPlugin plugin = pluginFor(ctx)
+
+        when:
+        plugin.doWithApplicationContext()
+
+        then:
         ctx.servletContext.getAttribute('availableLocales').is(resolver.availableLocales)
 
         cleanup:

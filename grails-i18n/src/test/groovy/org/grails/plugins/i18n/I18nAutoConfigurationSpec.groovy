@@ -159,9 +159,10 @@ class I18nAutoConfigurationSpec extends Specification {
         expect:
         contextRunner().run { context ->
             def resolver = context.getBean(AvailableLocaleResolver)
-            // the default locale defaults to en, and includePlugins defaults to true so the
+            // without grails.i18n.default.locale the JVM default is included (same fallback the
+            // fixed localeResolver uses), and includePlugins defaults to true so the
             // plugin-namespaced spring-security-core_zu.properties fixture is discovered
-            assert resolver.availableLocales.contains(Locale.forLanguageTag('en'))
+            assert resolver.availableLocales.contains(Locale.getDefault())
             assert resolver.availableLocales.contains(Locale.forLanguageTag('zu'))
         }
     }

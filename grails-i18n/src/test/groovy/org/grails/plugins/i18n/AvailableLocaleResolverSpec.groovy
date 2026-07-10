@@ -130,8 +130,8 @@ class AvailableLocaleResolverSpec extends Specification {
         locales == [Locale.forLanguageTag('en')]
     }
 
-    void 'bundles with no suffix, an empty suffix or a non-ISO suffix never contribute a locale'() {
-        given: 'deliberate fixtures: standalone.properties, messages_.properties and bogus-plugin_zz.properties'
+    void 'bundles with a malformed locale suffix never contribute a locale'() {
+        given: 'deliberate fixtures: standalone.properties (no suffix), messages_.properties (empty), bogus-plugin_zz.properties (non-ISO language) and report_en_prod.properties (non-ISO country)'
         List<Locale> locales = new AvailableLocaleResolver(getClass().classLoader, null, true).availableLocales
 
         expect: 'the scan saw sibling fixtures (a valid plugin-namespaced bundle is discovered)'
@@ -140,6 +140,15 @@ class AvailableLocaleResolverSpec extends Specification {
         and: 'none of the malformed fixtures produced a locale'
         locales.every { it.language && it.language in Locale.getISOLanguages() }
         !locales.any { it.language == 'zz' }
+
+        and: 'a non-ISO country is rejected rather than misparsed as a script or region (no en-Prod)'
+        !locales.any { it.toLanguageTag().toLowerCase().contains('prod') }
+    }
+
+    void 'a language_COUNTRY suffix is parsed by resource-bundle convention'() {
+        expect: 'the pt_BR fixture yields the pt-BR locale, with BR as the country'
+        Locale brazilian = newResolver().availableLocales.find { it.language == 'pt' }
+        brazilian.country == 'BR'
     }
 
     void 'caches the computed list until the cache is cleared'() {

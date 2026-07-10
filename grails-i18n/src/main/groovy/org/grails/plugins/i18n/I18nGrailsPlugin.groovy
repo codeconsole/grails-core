@@ -61,8 +61,13 @@ class I18nGrailsPlugin extends Plugin {
             return
         }
         def servletContext = ((WebApplicationContext) ctx).servletContext
-        if (servletContext != null && ctx.containsBean('availableLocaleResolver')) {
-            AvailableLocaleResolver resolver = ctx.getBean('availableLocaleResolver', AvailableLocaleResolver)
+        if (servletContext == null) {
+            return
+        }
+        // resolve by type, not name: the auto-configuration backs off by type, so a user-defined
+        // resolver registered under any bean name must still be published
+        AvailableLocaleResolver resolver = ctx.getBeanProvider(AvailableLocaleResolver).getIfAvailable()
+        if (resolver != null) {
             servletContext.setAttribute(AVAILABLE_LOCALES_ATTRIBUTE, resolver.availableLocales)
         }
     }
@@ -121,8 +126,9 @@ class I18nGrailsPlugin extends Plugin {
         }
 
         // A bundle may have been added/removed, so re-scan and re-publish the available locales.
-        if (ctx.containsBean('availableLocaleResolver')) {
-            ctx.getBean('availableLocaleResolver', AvailableLocaleResolver).clearCache()
+        AvailableLocaleResolver availableLocaleResolver = ctx.getBeanProvider(AvailableLocaleResolver).getIfAvailable()
+        if (availableLocaleResolver != null) {
+            availableLocaleResolver.clearCache()
             publishAvailableLocales()
         }
     }

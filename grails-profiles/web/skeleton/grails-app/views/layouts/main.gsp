@@ -28,7 +28,7 @@
                     <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="localeDropdown">
                         <g:each in="${availableLocales}" var="availableLocale">
                             <li>
-                                <a class="dropdown-item${availableLocale == currentLocale ? ' active' : ''}" href="?lang=${availableLocale.toLanguageTag()}">${availableLocale.getDisplayName(availableLocale)}</a>
+                                <a class="dropdown-item${availableLocale.language == currentLocale.language ? ' active' : ''}" href="?lang=${availableLocale.toLanguageTag()}">${availableLocale.getDisplayName(availableLocale)}</a>
                             </li>
                         </g:each>
                     </ul>
