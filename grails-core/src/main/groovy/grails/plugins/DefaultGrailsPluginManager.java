@@ -164,8 +164,8 @@ public class DefaultGrailsPluginManager extends AbstractGrailsPluginManager {
                 plugin = createBinaryGrailsPlugin(pluginInfo.getPluginClass(), pluginInfo.getPluginDescriptor());
             }
 
-            if (LOG.isInfoEnabled()) {
-                LOG.info("Grails plug-in [" + plugin.getName() + "] with version [" + plugin.getVersion() + "] loaded successfully");
+            if (LOG.isDebugEnabled()) {
+                LOG.debug("Grails plug-in [" + plugin.getName() + "] with version [" + plugin.getVersion() + "] loaded successfully");
             }
 
             // plugin is always ApplicationContextAware
