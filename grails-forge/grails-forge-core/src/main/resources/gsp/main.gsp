@@ -18,6 +18,22 @@
             <asset:image class="w-75" src="grails.svg" alt="Grails Logo"/>
         </a>
         <ul class="navbar-nav ms-auto">
+            <g:set var="availableLocales" value="${application.getAttribute('availableLocales')}"/>
+            <g:if test="${availableLocales && availableLocales.size() > 1}">
+                <g:set var="currentLocale" value="${org.springframework.web.servlet.support.RequestContextUtils.getLocale(request)}"/>
+                <li class="nav-item dropdown">
+                    <a class="nav-link dropdown-toggle" href="#" id="localeDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                        <i class="bi bi-globe me-1"></i>${currentLocale.getDisplayName(currentLocale)}
+                    </a>
+                    <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="localeDropdown">
+                        <g:each in="${availableLocales}" var="availableLocale">
+                            <li>
+                                <a class="dropdown-item${availableLocale.language == currentLocale.language ? ' active' : ''}" href="?lang=${availableLocale.toLanguageTag()}">${availableLocale.getDisplayName(availableLocale)}</a>
+                            </li>
+                        </g:each>
+                    </ul>
+                </li>
+            </g:if>
             <li class="nav-item dropdown">
                 <a class="nav-link dropdown-toggle d-flex align-items-center" href="#" id="themeDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Toggle theme">
                     <i class="bi bi-circle-half theme-icon-active"></i>
