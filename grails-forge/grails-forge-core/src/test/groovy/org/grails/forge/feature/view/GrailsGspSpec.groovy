@@ -81,6 +81,19 @@ class GrailsGspSpec extends ApplicationContextSpec implements CommandOutputFixtu
         output.containsKey("grails-app/views/notFound.gsp")
     }
 
+    void "test default layout includes the language selector dropdown"() {
+        when:
+        final def output = generate(ApplicationType.WEB, new Options(DevelopmentReloading.DEVTOOLS))
+        final String layout = output["grails-app/views/layouts/main.gsp"]
+
+        then: "the navbar reads the i18n plugin's published available locales"
+        layout.contains("application.getAttribute('availableLocales')")
+
+        and: "and renders a Bootstrap dropdown that switches language via ?lang="
+        layout.contains("dropdown-toggle")
+        layout.contains('?lang=${availableLocale.toLanguageTag()}')
+    }
+
     void "test default layout includes the light/dark/auto theme selector"() {
         when:
         final def output = generate(ApplicationType.WEB, new Options(DevelopmentReloading.DEVTOOLS))

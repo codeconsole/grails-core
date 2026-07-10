@@ -130,4 +130,30 @@ public class I18nAutoConfiguration {
         }
         return messageSource;
     }
+
+    /**
+     * Discovers the locales the application is translated into (from {@code <basename>_<locale>.properties}
+     * bundles on the classpath) so that a language selector can list only real translations rather
+     * than every JVM locale. Published to the servlet context by {@link I18nGrailsPlugin} and
+     * consumed by the {@code g:localeSelect available="true"} tag.
+     *
+     * <p>By default every {@code *.properties} bundle on the classpath is considered, so locales
+     * contributed by plugins &mdash; whose bundles are namespaced (e.g.
+     * {@code spring-security-core_*.properties}) &mdash; are included alongside the application's own.
+     * Set {@code grails.i18n.availableLocales.includePlugins=false} to restrict discovery to the
+     * application's own {@code messages_*.properties} bundles.
+     *
+     * <p>The base {@code messages.properties} locale is always included, resolved from
+     * {@code grails.i18n.default.locale} exactly like the rest of this class (falling back to the
+     * JVM default locale when the property is not set).
+     *
+     * @param includePlugins whether to also scan plugin-contributed message bundles
+     * ({@code grails.i18n.availableLocales.includePlugins}, defaults to {@code true})
+     */
+    @Bean
+    @ConditionalOnMissingBean(AvailableLocaleResolver.class)
+    public AvailableLocaleResolver availableLocaleResolver(GrailsApplication grailsApplication,
+            @Value("${grails.i18n.availableLocales.includePlugins:true}") boolean includePlugins) {
+        return new AvailableLocaleResolver(grailsApplication.getClassLoader(), fixedLocale(), includePlugins);
+    }
 }

@@ -18,9 +18,7 @@
  */
 package com.example.pages
 
-import geb.Page
-
-class LoginPage extends Page {
+class LoginPage extends NavigationPage {
 
     static String pageTitle = 'Please sign in'
 
