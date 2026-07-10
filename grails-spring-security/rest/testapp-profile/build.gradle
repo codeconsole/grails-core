@@ -29,9 +29,6 @@ group = 'org.apache.grails.profiles'
 ext {
     pomTitle = 'Grails Spring Security REST Test App Profile'
     pomDescription = 'A Grails profile to assist in generating various implementations of the Grails Spring Security REST plugin for testing purposes'
-    pomDevelopers = [
-            alvarosanchez: 'Alvaro Sanchez-Mariscal',
-    ]
 }
 
 tasks.register('generateProfileConfig') {
