@@ -157,7 +157,14 @@ class GrailsApp extends SpringApplication {
 
     @Override
     protected void configureEnvironment(ConfigurableEnvironment environment, String[] args) {
-        configurePropertySources(environment, args)
+        // Delegating to super installs the ApplicationConversionService so relaxed property
+        // resolution (e.g. lowercase enum values) works via environment.getProperty(). The same
+        // conversion service is propagated into PropertySourcesConfig, so typed access through
+        // grailsApplication.config.getProperty(name, type) is equally lenient.
+        // NOTE: GrailsApplicationPostProcessor mutates this service via addConverter(), which
+        // relies on Boot installing a new mutable instance here rather than the unmodifiable
+        // ApplicationConversionService.getSharedInstance() - verify on Spring Boot upgrades.
+        super.configureEnvironment(environment, args)
 
         String[] springProfile = environment.getProperty(SPRING_PROFILES, String[])
         if (springProfile) {
