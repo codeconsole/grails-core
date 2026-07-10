@@ -18,6 +18,8 @@
  */
 package org.grails.web.errors
 
+import grails.config.Config
+import grails.core.GrailsApplication
 import grails.web.mapping.UrlMappingsHolder
 import grails.web.mapping.exceptions.UrlMappingException
 import org.springframework.mock.web.MockHttpServletRequest
@@ -43,4 +45,35 @@ class GrailsExceptionResolverSpec extends Specification {
         noExceptionThrown()
         params.isEmpty()
     }
+    void "getRequestLogMessage masks excluded request parameters case-insensitively"() {
+        given:
+            def config = Mock(Config)
+            config.getProperty('grails.exceptionresolver.logRequestParameters', Boolean, _) >> true
+            config.getProperty('grails.exceptionresolver.params.exclude', List, _) >> [null, 'password', 'token']
+            config.getProperty('grails.exceptionresolver.logAuditor', Boolean, false) >> false
+            config.getProperty('grails.exceptionresolver.logRemoteAddr', Boolean, false) >> false
+            config.getProperty('grails.exceptionresolver.logFullStackTraceOnFilter', Boolean, true) >> false
+            config.getProperty('grails.exceptionresolver.logFullStackTrace', Boolean, false) >> false
+            def grailsApp = Mock(GrailsApplication)
+            grailsApp.getConfig() >> config
+            def resolver = new GrailsExceptionResolver()
+            resolver.grailsApplication = grailsApp
+            def request = new MockHttpServletRequest('POST', '/login')
+            request.addParameter('Password', 'secret')
+            request.addParameter('apiToken', 'visible')
+            request.addParameter('TOKEN', 'abc123')
+            request.addParameter('username', 'sherlock')
+
+        when:
+            def msg = resolver.getRequestLogMessage('RuntimeException', request, 'boom')
+
+        then:
+            msg.contains('Password: ***')
+            msg.contains('TOKEN: ***')
+            msg.contains('username: sherlock')
+            msg.contains('apiToken: visible')
+            !msg.contains('Password: secret')
+            !msg.contains('TOKEN: abc123')
+    }
+
 }
