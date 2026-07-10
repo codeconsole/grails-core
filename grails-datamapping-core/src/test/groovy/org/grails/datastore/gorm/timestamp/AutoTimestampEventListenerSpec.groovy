@@ -30,11 +30,17 @@ import java.util.concurrent.TimeUnit
 import groovy.transform.InheritConstructors
 import spock.lang.Specification
 
+import grails.gorm.annotation.CreatedBy
+import grails.gorm.annotation.LastModifiedBy
 import org.grails.datastore.gorm.events.AutoTimestampEventListener
+import org.grails.datastore.mapping.config.Property
 import org.grails.datastore.mapping.core.Datastore
 import org.grails.datastore.mapping.engine.EntityAccess
+import org.grails.datastore.mapping.model.ClassMapping
 import org.grails.datastore.mapping.model.MappingContext
 import org.grails.datastore.mapping.model.PersistentEntity
+import org.grails.datastore.mapping.model.PersistentProperty
+import org.grails.datastore.mapping.model.PropertyMapping
 
 class AutoTimestampEventListenerSpec extends Specification {
 
@@ -591,6 +597,68 @@ class AutoTimestampEventListenerSpec extends Specification {
         pool.shutdownNow()
     }
 
+    void "a snapshot captured inside an empty class-list window suppresses nothing"() {
+        given:
+        AutoTimestampEventListener.TimestampSuppression suppression = null
+        Map<String, Object> insideWindow = null
+        Map<String, Object> applied = null
+
+        when:
+        listener.withoutTimestamps([]) {
+            insideWindow = appliedOnInsert(Foo)
+            suppression = listener.captureTimestampSuppression()
+        }
+        listener.withTimestampSuppression(suppression) {
+            applied = appliedOnInsert(Foo)
+        }
+
+        then: 'an empty class list disables nothing inside the window'
+        insideWindow.keySet() == BOTH_TIMESTAMPS
+
+        and: 'the captured snapshot is empty and suppresses nothing when applied'
+        applied.keySet() == BOTH_TIMESTAMPS
+    }
+
+    void "auditor properties registered via persistentEntityAdded are populated on insert and update"() {
+        given:
+        listener.setAuditorAware([getCurrentAuditor: { -> Optional.of('testUser') }] as AuditorAware)
+        listener.persistentEntityAdded(auditedEntity())
+
+        when:
+        Map<String, Object> inserted = appliedOnInsert(Audited)
+        Map<String, Object> updated = appliedOnUpdate(Audited)
+
+        then:
+        inserted == [createdBy: 'testUser', lastModifiedBy: 'testUser']
+        updated == [lastModifiedBy: 'testUser']
+    }
+
+    private PersistentEntity auditedEntity() {
+        PersistentEntity entity = null
+        PersistentProperty createdBy = auditedProperty('createdBy') { -> entity }
+        PersistentProperty lastModifiedBy = auditedProperty('lastModifiedBy') { -> entity }
+        ClassMapping classMapping = [getMappedForm: { -> null }] as ClassMapping
+        entity = [
+                getName                : { -> Audited.name },
+                isInitialized          : { -> true },
+                getMapping             : { -> classMapping },
+                getJavaClass           : { -> Audited },
+                getPersistentProperties: { -> [createdBy, lastModifiedBy] }
+        ] as PersistentEntity
+        entity
+    }
+
+    private static PersistentProperty auditedProperty(String name, Closure<PersistentEntity> owner) {
+        Property mappedForm = new Property()
+        PropertyMapping mapping = [getMappedForm: { -> mappedForm }] as PropertyMapping
+        [
+                getName   : { -> name },
+                getType   : { -> String },
+                getMapping: { -> mapping },
+                getOwner  : { -> owner.call() }
+        ] as PersistentProperty
+    }
+
     private Map<String, Object> appliedOnInsert(Class clazz) {
         Map<String, Object> applied = new ConcurrentHashMap<>()
         listener.beforeInsert(entityFor(clazz), recordingAccess(applied))
@@ -617,6 +685,16 @@ class AutoTimestampEventListenerSpec extends Specification {
 }
 
 class Foo {
+
+}
+
+class Audited {
+
+    @CreatedBy
+    String createdBy
+
+    @LastModifiedBy
+    String lastModifiedBy
 
 }
 
