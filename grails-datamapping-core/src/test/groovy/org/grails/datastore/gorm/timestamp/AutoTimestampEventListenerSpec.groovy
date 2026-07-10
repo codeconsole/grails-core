@@ -428,6 +428,169 @@ class AutoTimestampEventListenerSpec extends Specification {
         pool.shutdownNow()
     }
 
+    void "captured suppression can be applied on another thread"() {
+        given:
+        AutoTimestampEventListener.TimestampSuppression suppression = null
+        listener.withoutTimestamps(Foo) {
+            suppression = listener.captureTimestampSuppression()
+        }
+        Map<String, Object> fooInside = null
+        Map<String, Object> barInside = null
+        Map<String, Object> fooAfter = null
+
+        when: 'a worker thread applies the state captured inside the window'
+        Thread worker = new Thread({
+            listener.withTimestampSuppression(suppression) {
+                fooInside = appliedOnInsert(Foo)
+                barInside = appliedOnInsert(Bar)
+            }
+            fooAfter = appliedOnInsert(Foo)
+        })
+        worker.start()
+        worker.join(10000)
+
+        then: 'the captured Foo suppression applies on the worker thread'
+        fooInside.isEmpty()
+        barInside.keySet() == BOTH_TIMESTAMPS
+
+        and: 'the worker thread is restored once the block completes'
+        fooAfter.keySet() == BOTH_TIMESTAMPS
+
+        and: 'the capturing thread is unaffected'
+        appliedOnInsert(Foo).keySet() == BOTH_TIMESTAMPS
+    }
+
+    void "captured suppression outlives the originating window and is reusable"() {
+        given:
+        AutoTimestampEventListener.TimestampSuppression suppression = null
+        listener.withoutLastUpdated {
+            suppression = listener.captureTimestampSuppression()
+        }
+        Map<String, Object> firstUse = null
+        Map<String, Object> secondUse = null
+
+        when:
+        listener.withTimestampSuppression(suppression) {
+            firstUse = appliedOnInsert(Foo)
+        }
+        listener.withTimestampSuppression(suppression) {
+            secondUse = appliedOnInsert(Foo)
+        }
+
+        then:
+        firstUse.keySet() == DATE_CREATED_ONLY
+        secondUse.keySet() == DATE_CREATED_ONLY
+
+        and:
+        appliedOnInsert(Foo).keySet() == BOTH_TIMESTAMPS
+    }
+
+    void "an empty captured suppression temporarily replaces the thread's own suppression"() {
+        given:
+        AutoTimestampEventListener.TimestampSuppression noSuppression = listener.captureTimestampSuppression()
+        Map<String, Object> insideCapture = null
+        Map<String, Object> afterCapture = null
+
+        when:
+        listener.withoutTimestamps {
+            listener.withTimestampSuppression(noSuppression) {
+                insideCapture = appliedOnInsert(Foo)
+            }
+            afterCapture = appliedOnInsert(Foo)
+        }
+
+        then: 'the empty snapshot re-enables timestamping while installed'
+        insideCapture.keySet() == BOTH_TIMESTAMPS
+
+        and: 'the enclosing window is restored once the snapshot block completes'
+        afterCapture.isEmpty()
+    }
+
+    void "the previous suppression state is restored when the propagated runnable throws"() {
+        given:
+        AutoTimestampEventListener.TimestampSuppression suppression = null
+        listener.withoutTimestamps {
+            suppression = listener.captureTimestampSuppression()
+        }
+
+        when:
+        listener.withTimestampSuppression(suppression) {
+            throw new IllegalStateException('failure inside withTimestampSuppression')
+        }
+
+        then:
+        thrown(IllegalStateException)
+        appliedOnInsert(Foo).keySet() == BOTH_TIMESTAMPS
+        appliedOnUpdate(Foo).keySet() == LAST_UPDATED_ONLY
+    }
+
+    void "nested scopes inside an applied suppression do not corrupt the snapshot"() {
+        given:
+        AutoTimestampEventListener.TimestampSuppression suppression = null
+        listener.withoutDateCreated(Foo) {
+            suppression = listener.captureTimestampSuppression()
+        }
+        Map<String, Object> barNested = null
+        Map<String, Object> secondUseFoo = null
+        Map<String, Object> secondUseBar = null
+
+        when: 'the first application opens and closes a nested scope for another class'
+        listener.withTimestampSuppression(suppression) {
+            listener.withoutDateCreated(Bar) {
+                barNested = appliedOnInsert(Bar)
+            }
+        }
+        listener.withTimestampSuppression(suppression) {
+            secondUseFoo = appliedOnInsert(Foo)
+            secondUseBar = appliedOnInsert(Bar)
+        }
+
+        then:
+        barNested.keySet() == LAST_UPDATED_ONLY
+
+        and: 'the second application still reflects only the captured state'
+        secondUseFoo.keySet() == LAST_UPDATED_ONLY
+        secondUseBar.keySet() == BOTH_TIMESTAMPS
+    }
+
+    void "one captured suppression can be applied concurrently on multiple threads"() {
+        given:
+        AutoTimestampEventListener.TimestampSuppression suppression = null
+        listener.withoutTimestamps(Foo) {
+            suppression = listener.captureTimestampSuppression()
+        }
+        int threadCount = 8
+        ExecutorService pool = Executors.newFixedThreadPool(threadCount)
+        CountDownLatch start = new CountDownLatch(1)
+
+        when:
+        List<Future<Boolean>> outcomes = (1..threadCount).collect {
+            pool.submit({
+                start.await(10, TimeUnit.SECONDS)
+                boolean consistent = true
+                25.times {
+                    listener.withTimestampSuppression(suppression) {
+                        consistent &= appliedOnInsert(Foo).isEmpty()
+                        listener.withoutTimestamps(Bar) {
+                            consistent &= appliedOnInsert(Bar).isEmpty()
+                        }
+                        consistent &= appliedOnInsert(Bar).keySet() == BOTH_TIMESTAMPS
+                    }
+                    consistent &= appliedOnInsert(Foo).keySet() == BOTH_TIMESTAMPS
+                }
+                consistent
+            } as Callable<Boolean>)
+        }
+        start.countDown()
+        List<Boolean> results = outcomes.collect { it.get(30, TimeUnit.SECONDS) }
+
+        then:
+        results.every { it }
+
+        cleanup:
+        pool.shutdownNow()
+    }
+
     private Map<String, Object> appliedOnInsert(Class clazz) {
         Map<String, Object> applied = new ConcurrentHashMap<>()
         listener.beforeInsert(entityFor(clazz), recordingAccess(applied))

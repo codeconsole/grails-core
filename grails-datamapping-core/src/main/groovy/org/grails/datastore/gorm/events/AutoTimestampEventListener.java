@@ -23,6 +23,7 @@ import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -277,25 +278,15 @@ public class AutoTimestampEventListener extends AbstractPersistenceEventListener
 
     protected void storeTimestampAvailability(Map<String, Optional<Set<String>>> timestampAvailabilityMap, PersistentEntity persistentEntity, PersistentProperty<?> property) {
         if (property != null && timestampProvider.supportsCreating(property.getType())) {
-            Optional<Set<String>> timestampProperties = timestampAvailabilityMap.computeIfAbsent(persistentEntity.getName(), k -> Optional.of(new HashSet<>()));
-            if (timestampProperties.isPresent()) {
-                timestampProperties.get().add(property.getName());
-            }
-            else {
-                throw new IllegalStateException("Timestamp properties for entity [" + persistentEntity.getName() + "] have been disabled. Cannot add property [" + property.getName() + "]");
-            }
+            timestampAvailabilityMap.computeIfAbsent(persistentEntity.getName(), k -> Optional.of(new HashSet<>()))
+                    .ifPresent(propertyNames -> propertyNames.add(property.getName()));
         }
     }
 
     protected void storeAuditorAvailability(Map<String, Optional<Set<String>>> auditorAvailabilityMap, PersistentEntity persistentEntity, PersistentProperty<?> property) {
         if (property != null) {
-            Optional<Set<String>> auditorProperties = auditorAvailabilityMap.computeIfAbsent(persistentEntity.getName(), k -> Optional.of(new HashSet<>()));
-            if (auditorProperties.isPresent()) {
-                auditorProperties.get().add(property.getName());
-            }
-            else {
-                throw new IllegalStateException("Auditor properties for entity [" + persistentEntity.getName() + "] have been disabled. Cannot add property [" + property.getName() + "]");
-            }
+            auditorAvailabilityMap.computeIfAbsent(persistentEntity.getName(), k -> Optional.of(new HashSet<>()))
+                    .ifPresent(propertyNames -> propertyNames.add(property.getName()));
         }
     }
 
@@ -479,6 +470,83 @@ public class AutoTimestampEventListener extends AbstractPersistenceEventListener
     }
 
     /**
+     * Captures the timestamp suppression state currently active on the calling thread, so that
+     * it can be re-applied on another thread with
+     * {@link #withTimestampSuppression(TimestampSuppression, Runnable)}. Because the
+     * {@code withoutTimestamps}, {@code withoutDateCreated} and {@code withoutLastUpdated}
+     * windows only affect the calling thread, work handed off to other threads (an executor,
+     * a reactive scheduler) is not suppressed unless the captured state is propagated to the
+     * executing thread.
+     *
+     * <p>The returned snapshot is immutable and may be applied on any number of threads,
+     * concurrently, including after the originating window has closed.
+     *
+     * @return the suppression state active on the calling thread at the time of the call
+     */
+    public TimestampSuppression captureTimestampSuppression() {
+        return new TimestampSuppression(disabledDateCreated.get(), disabledLastUpdated.get());
+    }
+
+    /**
+     * Executes the runnable with the given captured suppression state installed on the calling
+     * thread, restoring the thread's previous suppression state afterwards, even when the
+     * runnable throws. The snapshot replaces any suppression already active on the calling
+     * thread for the duration of the runnable.
+     *
+     * @param suppression The state captured by {@link #captureTimestampSuppression()}
+     * @param runnable The code to execute with the captured suppression state applied
+     */
+    public void withTimestampSuppression(final TimestampSuppression suppression, final Runnable runnable) {
+        Objects.requireNonNull(suppression, "suppression must not be null");
+        DisabledTimestamps previousDateCreated = installSuppression(disabledDateCreated, suppression.dateCreated);
+        DisabledTimestamps previousLastUpdated = installSuppression(disabledLastUpdated, suppression.lastUpdated);
+        try {
+            runnable.run();
+        } finally {
+            restoreSuppression(disabledLastUpdated, previousLastUpdated);
+            restoreSuppression(disabledDateCreated, previousDateCreated);
+        }
+    }
+
+    private static DisabledTimestamps installSuppression(final ThreadLocal<DisabledTimestamps> disabledTimestamps, final DisabledTimestamps snapshot) {
+        DisabledTimestamps previous = disabledTimestamps.get();
+        if (snapshot == null) {
+            disabledTimestamps.remove();
+        } else {
+            // install a copy: nested scopes inside the runnable mutate their thread's instance,
+            // which must not corrupt the shared snapshot or other threads applying it
+            disabledTimestamps.set(new DisabledTimestamps(snapshot));
+        }
+        return previous;
+    }
+
+    private static void restoreSuppression(final ThreadLocal<DisabledTimestamps> disabledTimestamps, final DisabledTimestamps previous) {
+        if (previous == null) {
+            disabledTimestamps.remove();
+        } else {
+            disabledTimestamps.set(previous);
+        }
+    }
+
+    /**
+     * An immutable snapshot of a thread's temporary timestamp suppression state, captured with
+     * {@link AutoTimestampEventListener#captureTimestampSuppression()} and applied on another
+     * thread with {@link AutoTimestampEventListener#withTimestampSuppression(TimestampSuppression, Runnable)}.
+     */
+    public static final class TimestampSuppression {
+
+        private final DisabledTimestamps dateCreated;
+
+        private final DisabledTimestamps lastUpdated;
+
+        private TimestampSuppression(DisabledTimestamps dateCreated, DisabledTimestamps lastUpdated) {
+            this.dateCreated = dateCreated == null || dateCreated.isEmpty() ? null : new DisabledTimestamps(dateCreated);
+            this.lastUpdated = lastUpdated == null || lastUpdated.isEmpty() ? null : new DisabledTimestamps(lastUpdated);
+        }
+
+    }
+
+    /**
      * The entities for which timestamp processing is temporarily disabled on the current thread.
      * All entities are disabled while {@code allDisabledDepth} is greater than zero; otherwise
      * only the entities named in {@code entityNames} are disabled.
@@ -488,6 +556,14 @@ public class AutoTimestampEventListener extends AbstractPersistenceEventListener
         private int allDisabledDepth;
 
         private final Set<String> entityNames = new HashSet<>();
+
+        private DisabledTimestamps() {
+        }
+
+        private DisabledTimestamps(DisabledTimestamps source) {
+            allDisabledDepth = source.allDisabledDepth;
+            entityNames.addAll(source.entityNames);
+        }
 
         private boolean isDisabled(String entityName) {
             return allDisabledDepth > 0 || entityNames.contains(entityName);
