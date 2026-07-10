@@ -68,8 +68,8 @@ class Sitemesh3GrailsPlugin extends Plugin {
 
     @Override
     BeanRegistrar beanRegistrar() {
-        { BeanRegistry registry, Environment environment ->
+        return { BeanRegistry registry, Environment environment ->
             registry.registerBean('grailsRenderViewMutator', Sitemesh3RenderViewMutator)
-        } as BeanRegistrar
+        }
     }
 }
