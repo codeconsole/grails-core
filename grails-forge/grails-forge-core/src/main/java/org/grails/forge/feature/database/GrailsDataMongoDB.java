@@ -32,11 +32,11 @@ import java.util.Map;
 import java.util.Set;
 
 @Singleton
-public class MongoGorm extends GormOneOfFeature {
+public class GrailsDataMongoDB extends GormOneOfFeature {
 
     private final TestContainers testContainers;
 
-    public MongoGorm(TestContainers testContainers) {
+    public GrailsDataMongoDB(TestContainers testContainers) {
         this.testContainers = testContainers;
     }
 
@@ -47,12 +47,12 @@ public class MongoGorm extends GormOneOfFeature {
 
     @Override
     public String getTitle() {
-        return "GORM for MongoDB";
+        return "Grails Data for MongoDB";
     }
 
     @Override
     public String getDescription() {
-        return "Configure GORM for using MongoDB.";
+        return "Configure Grails Data for using MongoDB.";
     }
 
     @Override
@@ -76,7 +76,7 @@ public class MongoGorm extends GormOneOfFeature {
 
     @Override
     public boolean shouldApply(ApplicationType applicationType, Options options, Set<Feature> selectedFeatures) {
-        return selectedFeatures.stream().anyMatch(f -> f instanceof MongoGorm) || options.getGormImpl() == GormImpl.MONGODB;
+        return selectedFeatures.stream().anyMatch(f -> f instanceof GrailsDataMongoDB) || options.getGormImpl() == GormImpl.MONGODB;
     }
 
     @Nullable

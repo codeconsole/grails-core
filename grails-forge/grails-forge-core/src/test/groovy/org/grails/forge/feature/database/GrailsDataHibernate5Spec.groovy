@@ -31,7 +31,7 @@ import org.grails.forge.options.JdkVersion
 import org.grails.forge.options.Options
 import org.grails.forge.options.TestFramework
 
-class HibernateGormSpec extends ApplicationContextSpec implements CommandOutputFixture{
+class GrailsDataHibernate5Spec extends ApplicationContextSpec implements CommandOutputFixture{
 
     void "test hibernate gorm features"() {
         when:
