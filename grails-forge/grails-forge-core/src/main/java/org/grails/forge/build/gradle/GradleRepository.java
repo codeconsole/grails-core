@@ -21,8 +21,10 @@ package org.grails.forge.build.gradle;
 import io.micronaut.core.annotation.NonNull;
 import io.micronaut.core.order.Ordered;
 
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.util.Arrays;
-import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
@@ -31,9 +33,12 @@ public interface GradleRepository extends Ordered {
     String toSnippet(String basePadding);
 
     static Set<GradleRepository> getDefaultRepositories(String grailsVersion) {
-        Set<GradleRepository> repositories = new HashSet<>();
+        return getDefaultRepositories(grailsVersion, System.getenv("GRAILS_REPO_URL"));
+    }
 
-        String overrideRepo = System.getenv("GRAILS_REPO_URL");
+    static Set<GradleRepository> getDefaultRepositories(String grailsVersion, String overrideRepo) {
+        Set<GradleRepository> repositories = new LinkedHashSet<>();
+
         if (overrideRepo != null && !overrideRepo.isEmpty()) {
             List<String> overrides = Arrays.stream(overrideRepo.split(";"))
                 .map(String::trim)
@@ -44,7 +49,7 @@ public interface GradleRepository extends Ordered {
                 repositories.add(
                     new DefaultGradleRepository(
                         repositories.size(),
-                        overrideUrl
+                        validateOverrideRepository(overrideUrl)
                     )
                 );
             }
@@ -94,5 +99,55 @@ public interface GradleRepository extends Ordered {
         }
 
         return repositories;
+    }
+
+    private static String validateOverrideRepository(String overrideUrl) {
+        try {
+            URI uri = new URI(overrideUrl);
+            String scheme = uri.getScheme();
+            if (scheme == null || "file".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme)) {
+                return overrideUrl;
+            }
+            throw new IllegalArgumentException("Remote GRAILS_REPO_URL repositories must use HTTPS: " + overrideUrl);
+        } catch (URISyntaxException e) {
+            if (isLocalRepository(overrideUrl)) {
+                return overrideUrl;
+            }
+            throw new IllegalArgumentException("Invalid GRAILS_REPO_URL repository: " + overrideUrl, e);
+        }
+    }
+
+    private static boolean isLocalRepository(String overrideUrl) {
+        if (isWindowsAbsolutePath(overrideUrl)) {
+            return true;
+        }
+        try {
+            URI uri = new URI(overrideUrl);
+            String scheme = uri.getScheme();
+            return scheme == null || "file".equalsIgnoreCase(scheme);
+        } catch (URISyntaxException e) {
+            return !looksLikeUri(overrideUrl);
+        }
+    }
+
+    private static boolean looksLikeUri(String overrideUrl) {
+        int colonIndex = overrideUrl.indexOf(':');
+        if (colonIndex < 1) {
+            return false;
+        }
+        for (int i = 0; i < colonIndex; i++) {
+            char character = overrideUrl.charAt(i);
+            if (!Character.isLetterOrDigit(character) && character != '+' && character != '-' && character != '.') {
+                return false;
+            }
+        }
+        return Character.isLetter(overrideUrl.charAt(0));
+    }
+
+    private static boolean isWindowsAbsolutePath(String overrideUrl) {
+        return overrideUrl.length() > 2 &&
+            Character.isLetter(overrideUrl.charAt(0)) &&
+            overrideUrl.charAt(1) == ':' &&
+            (overrideUrl.charAt(2) == '\\' || overrideUrl.charAt(2) == '/');
     }
 }

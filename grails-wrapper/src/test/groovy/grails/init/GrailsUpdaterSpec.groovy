@@ -29,6 +29,8 @@ import spock.lang.Unroll
 
 class GrailsUpdaterSpec extends Specification {
 
+    private static final String REMOTE_BASE_URL = 'https://localhost/releases/maven-metadata.xml'
+
     @AutoCleanup
     GroovyErsatzServer server = new GroovyErsatzServer({})
 
@@ -43,42 +45,42 @@ class GrailsUpdaterSpec extends Specification {
 
         where:
         url << [
-                'http://repo.example.test/maven-metadata.xml',
+                'http://localhost/maven-metadata.xml',
                 'file:/tmp/repo/maven-metadata.xml',
         ]
     }
 
     def "remote wrapper URL accepts HTTPS"() {
         expect:
-        GrailsUpdater.createSecureRemoteUrl('https://repo.example.test/maven-metadata.xml').toString() == 'https://repo.example.test/maven-metadata.xml'
+        GrailsUpdater.createSecureRemoteUrl(REMOTE_BASE_URL).toString() == REMOTE_BASE_URL
     }
 
     def "remote wrapper redirect must stay on HTTPS"() {
         when:
-        GrailsUpdater.resolveSecureRedirectUrl(new URI('https://repo.example.test/releases/maven-metadata.xml'), 'http://repo.example.test/releases/maven-metadata.xml')
+        GrailsUpdater.resolveSecureRedirectUrl(new URI(REMOTE_BASE_URL), 'http://localhost/releases/maven-metadata.xml')
 
         then:
         def e = thrown(IOException)
-        e.message == 'Grails wrapper remote repository URLs must use HTTPS: http://repo.example.test/releases/maven-metadata.xml'
+        e.message == 'Grails wrapper remote repository URLs must use HTTPS: http://localhost/releases/maven-metadata.xml'
     }
 
     def "remote wrapper redirect accepts relative HTTPS target"() {
         expect:
-        GrailsUpdater.resolveSecureRedirectUrl(new URI('https://repo.example.test/releases/maven-metadata.xml'), '../snapshots/maven-metadata.xml') == new URI('https://repo.example.test/snapshots/maven-metadata.xml')
+        GrailsUpdater.resolveSecureRedirectUrl(new URI(REMOTE_BASE_URL), '../snapshots/maven-metadata.xml') == new URI('https://localhost/snapshots/maven-metadata.xml')
     }
 
     def "remote wrapper redirect requires location header"() {
         when:
-        GrailsUpdater.resolveSecureRedirectUrl(new URI('https://repo.example.test/releases/maven-metadata.xml'), null)
+        GrailsUpdater.resolveSecureRedirectUrl(new URI(REMOTE_BASE_URL), null)
 
         then:
         def e = thrown(IOException)
-        e.message == 'Redirect response is missing a Location header for Grails wrapper remote resource: https://repo.example.test/releases/maven-metadata.xml'
+        e.message == 'Redirect response is missing a Location header for Grails wrapper remote resource: https://localhost/releases/maven-metadata.xml'
     }
 
     def "remote wrapper redirect rejects malformed location header"() {
         when:
-        GrailsUpdater.resolveSecureRedirectUrl(new URI('https://repo.example.test/releases/maven-metadata.xml'), 'http://[bad')
+        GrailsUpdater.resolveSecureRedirectUrl(new URI(REMOTE_BASE_URL), 'http://[bad')
 
         then:
         def e = thrown(IOException)
@@ -133,7 +135,7 @@ class GrailsUpdaterSpec extends Specification {
         }
 
         when:
-        HttpURLConnection connection = GrailsUpdater.createHttpURLConnection('https://repo.example.test/start') { URL requestedUrl ->
+        HttpURLConnection connection = GrailsUpdater.createHttpURLConnection('https://localhost/start') { URL requestedUrl ->
             openErsatzConnection(requestedUrl)
         }
 
@@ -191,13 +193,13 @@ class GrailsUpdaterSpec extends Specification {
         }
 
         when:
-        GrailsUpdater.createHttpURLConnection('https://repo.example.test/start') { URL requestedUrl ->
+        GrailsUpdater.createHttpURLConnection('https://localhost/start') { URL requestedUrl ->
             openErsatzConnection(requestedUrl)
         }
 
         then:
         def e = thrown(IOException)
-        e.message == 'Too many redirects while downloading Grails wrapper remote resource: https://repo.example.test/start'
+        e.message == 'Too many redirects while downloading Grails wrapper remote resource: https://localhost/start'
         server.verify()
     }
 

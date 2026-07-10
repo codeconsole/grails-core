@@ -73,11 +73,11 @@ class GrailsWrapperRepoSpec extends Specification {
 
     def 'HTTP scheme repo override is treated as a remote repository regardless of case'() {
         when:
-        GrailsWrapperRepo repo = GrailsWrapperRepo.createGrailsWrapperRepo('HTTP://repo.example.test/releases/')
+        GrailsWrapperRepo repo = GrailsWrapperRepo.createGrailsWrapperRepo('HTTP://localhost/releases/')
 
         then:
         !repo.isFile
-        repo.getUrl() == 'HTTP://repo.example.test/releases/org/apache/grails/grails-cli'
-        repo.getRootMetadataUrl() == 'HTTP://repo.example.test/releases/org/apache/grails/grails-cli/maven-metadata.xml'
+        repo.getUrl() == 'HTTP://localhost/releases/org/apache/grails/grails-cli'
+        repo.getRootMetadataUrl() == 'HTTP://localhost/releases/org/apache/grails/grails-cli/maven-metadata.xml'
     }
 }
