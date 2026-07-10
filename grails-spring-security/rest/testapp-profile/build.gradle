@@ -32,19 +32,21 @@ ext {
 }
 
 tasks.register('generateProfileConfig') {
-    copy {
-        from 'profile.yml.tmpl'
-        into '.'
-        rename { String fileName -> fileName.replaceAll '\\.tmpl', '' }
-        expand(pluginVersion: project.version, grailsVersion: findProperty('projectVersion'))
-    }
-
-    file('features').eachDir { feature ->
+    doLast {
         copy {
-            from "features/${feature.name}/feature.yml.tmpl"
-            into "features/${feature.name}/"
+            from 'profile.yml.tmpl'
+            into '.'
             rename { String fileName -> fileName.replaceAll '\\.tmpl', '' }
             expand(pluginVersion: project.version, grailsVersion: findProperty('projectVersion'))
+        }
+
+        file('features').eachDir { feature ->
+            copy {
+                from "features/${feature.name}/feature.yml.tmpl"
+                into "features/${feature.name}/"
+                rename { String fileName -> fileName.replaceAll '\\.tmpl', '' }
+                expand(pluginVersion: project.version, grailsVersion: findProperty('projectVersion'))
+            }
         }
     }
 }
@@ -54,5 +56,10 @@ dependencies {
 }
 
 tasks.named('compileProfile') {
+    dependsOn('generateProfileConfig')
+}
+
+// The sources jar packages the generated profile.yml, so it must be created first
+tasks.named('sourcesJar') {
     dependsOn('generateProfileConfig')
 }
