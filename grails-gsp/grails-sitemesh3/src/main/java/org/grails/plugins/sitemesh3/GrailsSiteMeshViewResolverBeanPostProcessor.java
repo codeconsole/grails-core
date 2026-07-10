@@ -18,10 +18,12 @@
  */
 package org.grails.plugins.sitemesh3;
 
+import org.sitemesh.webmvc.SiteMeshViewResolver;
 import org.sitemesh.webmvc.SiteMeshViewResolverBeanPostProcessor;
 
 import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.BeanFactory;
+import org.springframework.beans.factory.NoSuchBeanDefinitionException;
 import org.springframework.context.ApplicationListener;
 
 /**
@@ -71,5 +73,33 @@ public class GrailsSiteMeshViewResolverBeanPostProcessor extends SiteMeshViewRes
             return bean;
         }
         return super.postProcessAfterInitialization(bean, beanName);
+    }
+
+    /**
+     * The upstream implementation warns at startup when this post-processor
+     * wrapped nothing. With {@link Sitemesh3ViewResolverDefinitionPostProcessor}
+     * applying decoration at the bean-definition level, a zero-wrap startup is
+     * the expected healthy state — the target bean is already a
+     * {@link SiteMeshViewResolver} before this post-processor ever sees it — so
+     * the warning is suppressed when the target bean's type shows the
+     * definition-level wrap is in place. The type check is answered from the
+     * bean definition, so it does not force the lazy resolver into existence.
+     */
+    @Override
+    public void afterSingletonsInstantiated() {
+        BeanFactory beanFactory = getBeanFactory();
+        if (beanFactory != null && isTargetAlreadyDecorating(beanFactory)) {
+            return;
+        }
+        super.afterSingletonsInstantiated();
+    }
+
+    private boolean isTargetAlreadyDecorating(BeanFactory beanFactory) {
+        try {
+            return beanFactory.isTypeMatch(getTargetViewResolverBeanName(), SiteMeshViewResolver.class);
+        }
+        catch (NoSuchBeanDefinitionException ignored) {
+            return false;
+        }
     }
 }
