@@ -28,7 +28,10 @@ import grails.plugins.Plugin
 import org.grails.plugins.web.taglib.RenderSitemeshTagLib
 
 /**
- * Configures Grails to use SiteMesh 3 instead of SiteMesh 2.
+ * Provides GSP layout decoration through SiteMesh 3's filter-less,
+ * view-resolver-based integration. Installing it alongside the legacy
+ * SiteMesh 2 module (grails-layout) is supported; in that case the
+ * SiteMesh 2 integration keeps decorating and this one stands down.
  *
  * <p>The heavy lifting lives outside this class: default configuration
  * properties are contributed by {@link Sitemesh3EnvironmentPostProcessor}
@@ -49,7 +52,7 @@ class Sitemesh3GrailsPlugin extends Plugin {
     def title = 'SiteMesh 3'
     def author = 'Scott Murphy'
     def authorEmail = ''
-    def description = 'Configures Grails to use SiteMesh 3 instead of SiteMesh 2'
+    def description = 'Provides GSP layout decoration using SiteMesh 3'
     def profiles = ['web']
 
     def license = 'APACHE'
@@ -66,9 +69,6 @@ class Sitemesh3GrailsPlugin extends Plugin {
     @Override
     BeanRegistrar beanRegistrar() {
         { BeanRegistry registry, Environment environment ->
-            // Unwraps the SiteMesh view for "render template:" partials so
-            // they are never decorated with a layout (the SiteMesh 2 plugin
-            // does the same with its GrailsLayoutRenderViewMutator).
             registry.registerBean('grailsRenderViewMutator', Sitemesh3RenderViewMutator)
         } as BeanRegistrar
     }
