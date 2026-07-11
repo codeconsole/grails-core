@@ -758,9 +758,16 @@ public class MongoQuery extends BsonQuery implements QueryArgumentsAware {
     private static void prefixEmbeddedQuery(String prefix, Document source, Document target) {
         for (String key : source.keySet()) {
             Object value = source.get(key);
-            if (key.charAt(0) == '$' && value instanceof List) {
-                List rewritten = new ArrayList();
-                for (Object element : (List) value) {
+            if (key.charAt(0) == '$') {
+                if (!(value instanceof List)) {
+                    // A top-level operator whose value is not a rewritable list of clauses
+                    // (e.g. $where from a property-to-property comparison, or $text) cannot be
+                    // qualified with the embedded path - prefixing it would silently match nothing.
+                    throw new UnsupportedOperationException("Criterion [" + key +
+                            "] is not supported inside an embedded association query");
+                }
+                List<Object> rewritten = new ArrayList<>();
+                for (Object element : (List<?>) value) {
                     if (element instanceof Document) {
                         Document rewrittenElement = new Document();
                         prefixEmbeddedQuery(prefix, (Document) element, rewrittenElement);

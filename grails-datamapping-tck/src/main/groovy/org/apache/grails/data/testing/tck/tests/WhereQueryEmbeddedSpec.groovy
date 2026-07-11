@@ -276,7 +276,7 @@ class WhereQueryEmbeddedSpec extends GrailsDataTckSpec {
     }
 
     @Issue('https://github.com/apache/grails-core/issues/15955')
-    void 'where query with a disjunction inside an embedded association block'() {
+    void 'where query with a junction inside an embedded association block combined with another predicate'() {
         given:
         createWorkItems()
 

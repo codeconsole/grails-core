@@ -196,7 +196,8 @@ public class CriteriaMethodInvoker {
             // The JPA metamodel does not consider an embedded component an association, but the
             // GORM model does - an embedded block must build a DetachedAssociationCriteria so its
             // properties resolve against the component. It needs no join: its columns live in the
-            // owning entity's table.
+            // owning entity's table, so an explicit join-type argument on the block is
+            // intentionally ignored.
             final boolean embedded =
                     attribute.getPersistentAttributeType() == Attribute.PersistentAttributeType.EMBEDDED;
 
