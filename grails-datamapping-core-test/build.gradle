@@ -134,3 +134,9 @@ apply {
     from rootProject.layout.projectDirectory.file('gradle/test-config.gradle')
     from rootProject.layout.projectDirectory.file('gradle/grails-data-tck-config.gradle')
 }
+
+tasks.withType(Test).configureEach {
+    // Lets TCK specs opt out of features the simple in-memory datastore does not
+    // implement, mirroring the hibernate5/hibernate7/mongodb suite properties.
+    systemProperty('simple.gorm.suite', 'true')
+}
