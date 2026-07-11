@@ -214,6 +214,41 @@ class WhereQueryEmbeddedSpec extends GrailsDataTckSpec {
     }
 
     @Issue('https://github.com/apache/grails-core/issues/15955')
+    void 'where query with a disjunction inside an embedded association block'() {
+        given:
+        createWorkItems()
+
+        when: 'the embedded block itself contains a disjunction'
+        def results = WorkItem.where {
+            extRef1 { provider == 'Oracle' || value =~ '%ABC%' }
+        }.list()
+
+        then:
+        results.size() == 1
+        results[0].description == 'first'
+    }
+
+    @Issue('https://github.com/apache/grails-core/issues/15955')
+    void 'criteria query with a disjunction inside an embedded association block'() {
+        given:
+        createWorkItems()
+
+        when: 'the embedded block itself contains a disjunction'
+        def results = WorkItem.createCriteria().list {
+            extRef1 {
+                or {
+                    eq('provider', 'Oracle')
+                    like('value', '%ABC%')
+                }
+            }
+        }
+
+        then:
+        results.size() == 1
+        results[0].description == 'first'
+    }
+
+    @Issue('https://github.com/apache/grails-core/issues/15955')
     void 'criteria query with an embedded association block inside a conjunction'() {
         given:
         createWorkItems()
