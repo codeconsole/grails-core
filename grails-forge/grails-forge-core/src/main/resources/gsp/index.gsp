@@ -20,22 +20,29 @@
 <body>
 <main id="content" role="main" class="pb-4 pb-md-5">
     <div class="container-lg py-2 py-md-3">
-        <div class="row align-items-top g-4">
 
-            <%-- WELCOME MESSAGE --%>
-            <div class="col-12 col-md-7">
-                <h1 class="display-6 fw-semibold mb-2"><g:message code="welcome.title"/></h1>
-                <p class="lead text-body-secondary">
+        <%-- WELCOME HERO --%>
+        <section class="welcome-hero position-relative overflow-hidden rounded-3 p-4 p-md-5 mb-4">
+            <svg class="welcome-hero-cups" viewBox="140 0 720 500" xmlns="http://www.w3.org/2000/svg"
+                 aria-hidden="true" focusable="false">
+                <path fill="currentColor" d="M527.264,491.011 C544.051,488.613 563.236,483.817 572.829,479.021 C582.421,474.224 589.615,467.03 589.615,462.234 C589.615,462.234 587.217,457.438 584.819,452.641 C580.023,445.447 575.227,435.854 563.236,409.475 C558.44,397.484 547.589,366.072 544.051,351.92 C540.386,330.773 540.051,308.254 544.051,287.171 C547.531,274.839 552.314,262.919 560.838,253.597 C570.402,240.945 581.622,228.467 596.81,222.422 C644.094,203.599 699.929,162.469 728.707,116.904 C738.299,100.117 742.876,92.923 746.372,83.3305 C755.023,59.5988 762.66,34.3876 762.28,8.98871 L762.28,6.59059 L498.487,6.59059 L232.295,6.59059 L232.295,11.3868 C231.901,74.2274 269.048,130.868 313.831,172.061 C337.813,193.644 366.59,210.431 400.164,222.422 C412.154,227.218 416.951,229.616 426.543,239.208 C438.534,253.597 448.126,270.384 452.923,289.569 C455.827,317.286 453.654,346.577 445.728,373.503 L440.932,387.892 C438.534,397.484 431.339,411.873 419.349,435.854 C407.358,459.836 407.358,462.234 407.358,464.632 C412.154,479.021 440.932,488.613 484.098,493.409 C493.691,493.409 508.079,493.409 527.264,491.011 M325.822,409.475 C342.609,407.077 356.998,402.281 361.794,395.086 L361.794,392.688 L359.396,385.494 C342.609,354.318 333.016,327.939 333.016,301.56 C333.016,287.171 335.415,279.977 340.211,267.986 C347.405,255.995 349.803,252.125 361.794,247.329 C366.59,244.876 372.313,243.95 374.711,242.478 C380.979,240.625 388.173,236.81 388.173,236.81 C388.173,236.81 383.868,235.884 379.016,233.486 C364.628,228.69 359.396,224.82 347.405,217.625 C309.035,196.042 285.054,174.459 261.073,143.284 C253.878,131.293 250.156,125.996 246.684,121.163 L244.286,116.904 C241.888,114.506 145.963,114.506 143.565,116.904 C141.939,150.478 158.03,180.057 179.536,205.635 C204.661,235.514 225.101,244.005 244.286,248.801 C261.073,253.597 263.471,255.995 270.665,265.588 C275.462,277.578 277.86,284.773 277.86,299.161 C280.258,320.745 273.063,342.328 258.675,373.503 C253.878,383.096 249.082,392.688 249.082,392.688 C249.082,395.086 253.878,399.883 258.675,402.281 C270.665,409.475 304.239,414.271 325.822,409.475 M716.716,409.475 C735.901,407.077 747.892,402.281 750.29,395.086 C750.29,392.688 750.29,390.29 743.095,375.901 C728.008,346.118 717.597,310.72 726.308,277.578 C731.287,264.162 737.689,250.182 752.688,247.852 C776.669,240.658 795.854,229.616 819.835,205.635 C834.224,191.246 847.61,166.971 851.369,152.876 C854.382,141.577 858.172,128.066 855.807,116.904 C853.409,114.506 755.086,114.506 752.688,116.904 C752.688,116.904 750.29,119.302 747.892,121.7 C745.493,128.895 735.901,143.284 728.707,150.478 C719.114,162.469 690.337,191.246 680.744,198.44 C663.057,216.559 629.114,228.768 611.199,236.81 C613.597,239.208 625.587,246.403 635.18,248.801 C654.365,255.995 654.365,255.995 661.559,267.986 C666.355,279.977 668.754,287.171 668.754,301.56 C670.08,334.844 653.109,365.67 639.976,392.688 C657.022,411.883 692.824,411.394 716.716,409.475 Z"/>
+            </svg>
+            <div class="welcome-hero-body position-relative">
+                <h1 class="display-5 fw-bold mb-2"><g:message code="welcome.title"/></h1>
+                <p class="lead mb-2">
                     <g:message code="welcome.congratulations"/>
                 </p>
-                <p class="text-body-secondary">
+                <p class="welcome-hero-note mb-0">
                     <g:message code="welcome.default.page"/>
                 </p>
             </div>
+        </section>
+
+        <div class="row g-4 align-items-stretch">
 
             <%-- RUNTIME VERSIONS --%>
-            <div class="col-12 col-md-5">
-                <div class="card border-1 shadow-sm">
+            <div class="col-12 col-md-6 col-xxl-3">
+                <div class="card border-1 shadow-sm h-100">
                     <div class="card-body">
                         <h6 class="card-title mb-3 fw-semibold"><g:message code="welcome.runtime.versions"/></h6>
                         <ul class="list-group list-group-flush small">
@@ -78,13 +85,9 @@
                     </div>
                 </div>
             </div>
-        </div>
-    </div>
-    <div class="container-lg">
-        <div class="row g-4 align-items-stretch">
 
             <%-- APPLICATION INFO --%>
-            <div class="col-12 col-lg-4">
+            <div class="col-12 col-md-6 col-xxl-3">
                 <div class="card border-1 shadow-sm h-100">
                     <div class="card-body">
                         <div class="d-flex align-items-center justify-content-between mb-3">
@@ -129,7 +132,7 @@
             </div>
 
             <%-- SERVER INFO --%>
-            <div class="col-12 col-lg-4">
+            <div class="col-12 col-md-6 col-xxl-3">
                 <div class="card border-1 shadow-sm h-100">
                     <div class="card-body">
                         <div class="d-flex align-items-center justify-content-between mb-3">
@@ -156,7 +159,7 @@
             </div>
 
             <%-- ARTEFACT COUNTS --%>
-            <div class="col-12 col-lg-4">
+            <div class="col-12 col-md-6 col-xxl-3">
                 <div class="card border-1 shadow-sm h-100">
                     <div class="card-body">
                         <div class="d-flex align-items-center justify-content-between mb-3">
@@ -193,28 +196,43 @@
         <div class="row g-4 align-items-start">
             <div class="col-12 col-lg-7">
                 <div class="card border-1 shadow-sm h-100">
-                    <div class="card-body p-4 p-md-5">
-                        <div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-2">
-                            <div>
-                                <h2 class="h4 mb-1"><g:message code="welcome.controllers.title"/></h2>
-                                <p class="text-body-secondary mb-0">
-                                    <g:message code="welcome.controllers.detected" args="[numControllers]"/>
-                                </p>
+                    <div class="card-body">
+                        <div class="d-flex align-items-center justify-content-between mb-1">
+                            <h6 class="card-title mb-0 fw-semibold"><g:message code="welcome.controllers.title"/></h6>
+                            <div class="d-flex align-items-center gap-2">
+                                <span class="badge bg-body-tertiary text-body border">
+                                    ${numControllers}
+                                </span>
+                                <g:if test="${numControllers != 0}">
+                                    <div class="dropdown">
+                                        <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="dropdown"
+                                                data-bs-auto-close="outside" aria-expanded="false"
+                                                aria-label="${message(code: 'welcome.filter.name')}">
+                                            <i class="bi bi-filter" aria-hidden="true"></i>
+                                        </button>
+                                        <div class="dropdown-menu dropdown-menu-end p-2">
+                                            <input type="search" class="form-control form-control-sm filter-input"
+                                                   data-filter-list="#controllers-list" data-filter-empty="#controllers-empty"
+                                                   placeholder="${message(code: 'welcome.filter.name')}"
+                                                   aria-label="${message(code: 'welcome.filter.name')}">
+                                        </div>
+                                    </div>
+                                </g:if>
                             </div>
-                            <g:if test="${numControllers != 0}">
-                                <div class="small text-body-secondary">
-                                    <g:message code="welcome.controllers.click"/>
-                                </div>
-                            </g:if>
                         </div>
-                        <hr class="my-3 my-md-4 text-body-tertiary"/>
+                        <g:if test="${numControllers != 0}">
+                            <p class="small text-body-secondary mb-3">
+                                <g:message code="welcome.controllers.click"/>
+                            </p>
+                        </g:if>
                         <g:set var="controllersByNamespace"
                                value="${grailsApplication.controllerClasses
                                        .groupBy { cc -> ((cc.namespace ?: '').trim()) ?: 'default' }
                                        .sort { a, b -> a.key.toString().toLowerCase() <=> b.key.toString().toLowerCase() }}"/>
 
+                        <div id="controllers-list">
                         <g:each var="nsEntry" in="${controllersByNamespace}" status="nsIndex">
-                            <div class="${nsIndex > 0 ? 'mt-4' : ''}">
+                            <div class="${nsIndex > 0 ? 'mt-4' : ''}" data-filter-group>
                                 <div class="px-2 py-2 bg-body-tertiary">
                                     <div class="d-flex align-items-center justify-content-between">
                                         <div class="small text-uppercase text-body-secondary fw-semibold"
@@ -239,7 +257,7 @@
                                         <g:set var="controllerUrl"
                                                value="${createLink(controller: c.logicalPropertyName, namespace: c.namespace)}"/>
 
-                                        <li class="list-group-item list-group-item-action px-2">
+                                        <li class="list-group-item list-group-item-action px-2" data-name="${simpleName}">
                                             <div class="d-flex align-items-center justify-content-between gap-3">
                                                 <g:link controller="${c.logicalPropertyName}"
                                                         namespace="${c.namespace}"
@@ -261,6 +279,8 @@
                                 </ul>
                             </div>
                         </g:each>
+                        </div>
+                        <p id="controllers-empty" class="small text-body-secondary d-none mb-0"><g:message code="welcome.filter.none"/></p>
                     </div>
                 </div>
             </div>
@@ -271,13 +291,28 @@
                     <div class="card-body">
                         <div class="d-flex align-items-center justify-content-between mb-3">
                             <h6 class="card-title mb-0 fw-semibold"><g:message code="welcome.plugins.title"/></h6>
-                            <span class="badge text-bg-light border">
-                                ${pluginManager.allPlugins.size()}
-                            </span>
+                            <div class="d-flex align-items-center gap-2">
+                                <span class="badge bg-body-tertiary text-body border">
+                                    ${pluginManager.allPlugins.size()}
+                                </span>
+                                <div class="dropdown">
+                                    <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="dropdown"
+                                            data-bs-auto-close="outside" aria-expanded="false"
+                                            aria-label="${message(code: 'welcome.filter.name')}">
+                                        <i class="bi bi-filter" aria-hidden="true"></i>
+                                    </button>
+                                    <div class="dropdown-menu dropdown-menu-end p-2">
+                                        <input type="search" class="form-control form-control-sm filter-input"
+                                               data-filter-list="#plugins-table tbody" data-filter-empty="#plugins-empty"
+                                               placeholder="${message(code: 'welcome.filter.name')}"
+                                               aria-label="${message(code: 'welcome.filter.name')}">
+                                    </div>
+                                </div>
+                            </div>
                         </div>
 
                         <div class="table-responsive">
-                            <table class="table table-sm table-striped table-hover" data-sortable="true">
+                            <table id="plugins-table" class="table table-sm table-striped table-hover" data-sortable="true">
                                 <thead class="small">
                                 <tr>
                                     <th scope="col"
@@ -331,6 +366,7 @@
                                 </tbody>
                             </table>
                         </div>
+                        <p id="plugins-empty" class="small text-body-secondary d-none mb-0"><g:message code="welcome.filter.none"/></p>
                     </div>
                 </div>
             </div>

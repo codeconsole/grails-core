@@ -91,7 +91,7 @@ class GrailsDefaultPluginsSpec extends ApplicationContextSpec implements Command
         suffixes.every { suffix ->
             final String bundle = output["grails-app/i18n/messages" + suffix + ".properties"]
             ["welcome.title", "welcome.congratulations", "welcome.controllers.title",
-             "welcome.controllers.detected", "welcome.plugins.title"].every { key ->
+             "welcome.filter.name", "welcome.plugins.title"].every { key ->
                 bundle.contains(key + "=")
             }
         }
