@@ -72,38 +72,6 @@ class GrailsSiteMeshViewResolverBeanPostProcessorSpec extends Specification {
         pp.postProcessAfterInitialization(other, 'someOther').is(other)
     }
 
-    void "the zero-wrap startup warning is suppressed when the definition-level wrap is in place"() {
-        given: "a context whose jspViewResolver definition is already the SiteMesh wrapper"
-        beanFactory.isTypeMatch('jspViewResolver', org.sitemesh.webmvc.SiteMeshViewResolver) >> definitionWrapped
-        GrailsSiteMeshViewResolverBeanPostProcessor pp = new GrailsSiteMeshViewResolverBeanPostProcessor()
-        pp.setBeanFactory(beanFactory)
-
-        and: "the upstream warning is captured"
-        java.util.logging.Logger upstreamLogger =
-                java.util.logging.Logger.getLogger(org.sitemesh.webmvc.SiteMeshViewResolverBeanPostProcessor.name)
-        List<java.util.logging.LogRecord> records = []
-        java.util.logging.Handler handler = new java.util.logging.Handler() {
-            void publish(java.util.logging.LogRecord record) { records << record }
-            void flush() { }
-            void close() { }
-        }
-        upstreamLogger.addHandler(handler)
-
-        when:
-        pp.afterSingletonsInstantiated()
-
-        then:
-        records.any { it.level == java.util.logging.Level.WARNING } == expectWarning
-
-        cleanup:
-        upstreamLogger.removeHandler(handler)
-
-        where:
-        definitionWrapped | expectWarning
-        true              | false
-        false             | true
-    }
-
     void "the view resolver is left unwrapped when the SiteMesh beans are not in the context"() {
         given: "a context without the plugin's contentProcessor/decoratorSelector beans, like a unit-test context"
         beanFactory.containsBean('contentProcessor') >> hasContentProcessor

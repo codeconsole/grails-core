@@ -18,12 +18,10 @@
  */
 package org.grails.plugins.sitemesh3;
 
-import org.sitemesh.webmvc.SiteMeshViewResolver;
 import org.sitemesh.webmvc.SiteMeshViewResolverBeanPostProcessor;
 
 import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.BeanFactory;
-import org.springframework.beans.factory.NoSuchBeanDefinitionException;
 
 /**
  * {@link SiteMeshViewResolverBeanPostProcessor} preconfigured to wrap
@@ -68,34 +66,17 @@ public class GrailsSiteMeshViewResolverBeanPostProcessor extends SiteMeshViewRes
     }
 
     /**
-     * The upstream implementation warns at startup when this post-processor
-     * wrapped nothing. With {@link Sitemesh3ViewResolverDefinitionPostProcessor}
-     * applying decoration at the bean-definition level, a zero-wrap startup is
-     * the expected healthy state — the target bean is already a
-     * {@link SiteMeshViewResolver} before this post-processor ever sees it — so
-     * the warning is suppressed when the target bean's type shows the
-     * definition-level wrap is in place. The type check is answered from the
-     * bean definition, so it does not force the lazy resolver into existence.
+     * The upstream implementation already suppresses its zero-wrap startup
+     * warning when the target resolves to a {@link SiteMeshViewResolver}
+     * (the definition-level wrap applied by
+     * {@link Sitemesh3ViewResolverDefinitionPostProcessor}); the only Grails
+     * addition is silence when the SiteMesh 2 module owns decoration.
      */
     @Override
     public void afterSingletonsInstantiated() {
-        BeanFactory beanFactory = getBeanFactory();
-        if (beanFactory != null && isTargetAlreadyDecorating(beanFactory)) {
+        if (Sitemesh3EnvironmentPostProcessor.isSiteMesh2Present()) {
             return;
         }
         super.afterSingletonsInstantiated();
-    }
-
-    private boolean isTargetAlreadyDecorating(BeanFactory beanFactory) {
-        if (Sitemesh3EnvironmentPostProcessor.isSiteMesh2Present()) {
-            // SiteMesh 2 owns decoration; a zero-wrap startup is expected.
-            return true;
-        }
-        try {
-            return beanFactory.isTypeMatch(getTargetViewResolverBeanName(), SiteMeshViewResolver.class);
-        }
-        catch (NoSuchBeanDefinitionException ignored) {
-            return false;
-        }
     }
 }

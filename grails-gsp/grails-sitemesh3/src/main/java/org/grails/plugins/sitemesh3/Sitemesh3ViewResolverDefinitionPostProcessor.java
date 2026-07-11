@@ -25,10 +25,7 @@ import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.annotation.AnnotatedBeanDefinition;
 import org.springframework.beans.factory.config.BeanDefinition;
 import org.springframework.beans.factory.config.ConfigurableBeanFactory;
-import org.springframework.beans.factory.config.ConstructorArgumentValues;
-import org.springframework.beans.factory.config.RuntimeBeanReference;
 import org.springframework.beans.factory.support.BeanDefinitionRegistry;
-import org.springframework.beans.factory.support.GenericBeanDefinition;
 import org.springframework.core.type.MethodMetadata;
 import org.springframework.util.ClassUtils;
 
@@ -48,15 +45,10 @@ import org.grails.plugins.web.GroovyPagesPostProcessor;
  * {@code BeanPostProcessor} takes effect — Spring Boot's
  * {@code ContentNegotiatingViewResolver} collecting every {@code ViewResolver}
  * while it initializes is one such consumer — it captures the raw, undecorating
- * resolver and keeps rendering through it, silently disabling layouts.</p>
- *
- * <p>It deliberately diverges from the upstream implementation on one point:
- * upstream re-registers the unwrapped resolver as a separate named bean
- * ({@code innerBeanName}) that the wrapper references, which leaves the raw
- * resolver discoverable by {@code getBeansOfType(ViewResolver)} sweeps — the
- * exact exposure this class exists to close. The original definition is instead
- * embedded as an anonymous inner-bean definition of the wrapper, making the
- * undecorated resolver structurally unreachable.</p>
+ * resolver and keeps rendering through it, silently disabling layouts. The
+ * rewrite itself — embedding the original definition as an anonymous inner
+ * bean, invisible to type scans — is inherited from the upstream implementation;
+ * this subclass adds only the Grails-specific guards.</p>
  *
  * <p>Runs after {@link GroovyPagesPostProcessor} (which contributes the default
  * GSP resolver definition when no plugin has registered one) so the definition
@@ -92,55 +84,47 @@ public class Sitemesh3ViewResolverDefinitionPostProcessor extends SiteMeshViewRe
             // Decoration is not possible in this context (no GSP view resolver, or a
             // context without the SiteMesh beans, e.g. the lightweight unit-test
             // contexts built by grails-testing-support) — leave the definition alone.
+            // Returning here also keeps the upstream missing-target warning out of
+            // those contexts.
             return;
         }
         BeanDefinition existing = registry.getBeanDefinition(getTargetViewResolverBeanName());
-        if (isAlreadyDecorating(existing, registry)) {
+        if (isFactoryMethodReturningDecorator(existing, registry)) {
             return;
         }
-        registry.removeBeanDefinition(getTargetViewResolverBeanName());
+        super.postProcessBeanDefinitionRegistry(registry);
 
-        GenericBeanDefinition wrapper = new GenericBeanDefinition();
-        wrapper.setBeanClass(getSiteMeshViewResolverClass());
-        wrapper.setLazyInit(existing.isLazyInit());
-        wrapper.setPrimary(true);
-        ConstructorArgumentValues arguments = wrapper.getConstructorArgumentValues();
-        arguments.addIndexedArgumentValue(0, existing);
-        arguments.addIndexedArgumentValue(1, new RuntimeBeanReference(getContentProcessorBeanName()));
-        arguments.addIndexedArgumentValue(2, new RuntimeBeanReference(getDecoratorSelectorBeanName()));
-        arguments.addIndexedArgumentValue(3, new RuntimeBeanReference(getServletContextBeanName()));
-        if (getDispatchMode() != null) {
-            wrapper.getPropertyValues().add("dispatchMode", getDispatchMode());
+        // Upstream always marks the wrapper lazy; preserve the target's own
+        // eagerness so an eagerly-declared resolver keeps initialising at startup.
+        BeanDefinition wrapper = registry.getBeanDefinition(getTargetViewResolverBeanName());
+        if (wrapper != existing) {
+            wrapper.setLazyInit(existing.isLazyInit());
         }
-        wrapper.getPropertyValues().add("includeErrorPages", isIncludeErrorPages());
-        registry.registerBeanDefinition(getTargetViewResolverBeanName(), wrapper);
     }
 
     /**
-     * A definition that is already a {@link SiteMeshViewResolver} — this
-     * module's wrapper, or a custom one — decorates by itself and must not be
-     * wrapped again. The class is resolved with the bean class loader the
-     * container itself will use to instantiate the definition, so application
-     * classes in a child or restart class loader (e.g. devtools) are visible
-     * to the check.
+     * The upstream already-decorating guard recognises definitions by bean
+     * class name; a {@code @Bean} factory-method definition carries no class
+     * name, so a configuration-class method returning a
+     * {@link SiteMeshViewResolver} would slip past it and be double-wrapped.
+     * The return type is resolved with the bean class loader the container
+     * itself will use, so application classes in a child or restart class
+     * loader (e.g. devtools) are visible to the check.
      */
-    private boolean isAlreadyDecorating(BeanDefinition definition, BeanDefinitionRegistry registry) {
-        String className = definition.getBeanClassName();
-        if (className == null && definition instanceof AnnotatedBeanDefinition annotated) {
-            MethodMetadata factoryMethod = annotated.getFactoryMethodMetadata();
-            if (factoryMethod != null) {
-                className = factoryMethod.getReturnTypeName();
-            }
+    private boolean isFactoryMethodReturningDecorator(BeanDefinition definition, BeanDefinitionRegistry registry) {
+        if (definition.getBeanClassName() != null || !(definition instanceof AnnotatedBeanDefinition annotated)) {
+            return false;
         }
-        if (className == null) {
+        MethodMetadata factoryMethod = annotated.getFactoryMethodMetadata();
+        if (factoryMethod == null) {
             return false;
         }
         ClassLoader loader = registry instanceof ConfigurableBeanFactory beanFactory ?
                 beanFactory.getBeanClassLoader() :
                 ClassUtils.getDefaultClassLoader();
         try {
-            Class<?> beanClass = ClassUtils.forName(className, loader);
-            return SiteMeshViewResolver.class.isAssignableFrom(beanClass);
+            return SiteMeshViewResolver.class.isAssignableFrom(
+                    ClassUtils.forName(factoryMethod.getReturnTypeName(), loader));
         }
         catch (ClassNotFoundException | LinkageError ignored) {
             return false;
