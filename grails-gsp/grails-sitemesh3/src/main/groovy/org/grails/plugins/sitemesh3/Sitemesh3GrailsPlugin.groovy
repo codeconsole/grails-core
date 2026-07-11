@@ -30,8 +30,12 @@ import org.grails.plugins.web.taglib.RenderSitemeshTagLib
 /**
  * Provides GSP layout decoration through SiteMesh 3's filter-less,
  * view-resolver-based integration. It is a drop-in replacement for the
- * grails-layout module — the two must never share a classpath, which
- * {@link Sitemesh3EnvironmentPostProcessor} enforces at startup.
+ * grails-layout module; the two are mutually exclusive. Because this module
+ * arrives transitively through {@code grails-dependencies-starter-web}, an
+ * application that declares grails-layout can end up with both on the
+ * classpath — that state is tolerated for migration compatibility (SiteMesh 2
+ * keeps decorating and this module stands down) but warned about by
+ * {@link Sitemesh3EnvironmentPostProcessor}, and support for it may be removed.
  *
  * <p>The heavy lifting lives outside this class: default configuration
  * properties are contributed by {@link Sitemesh3EnvironmentPostProcessor}
@@ -69,7 +73,12 @@ class Sitemesh3GrailsPlugin extends Plugin {
     @Override
     BeanRegistrar beanRegistrar() {
         return { BeanRegistry registry, Environment environment ->
-            registry.registerBean('grailsRenderViewMutator', Sitemesh3RenderViewMutator)
+            // Registrar beans win name conflicts over doWithSpring() beans, so
+            // registering unconditionally would displace the SiteMesh 2
+            // module's GrailsLayoutRenderViewMutator on a combined classpath.
+            if (!Sitemesh3EnvironmentPostProcessor.isSiteMesh2Present()) {
+                registry.registerBean('grailsRenderViewMutator', Sitemesh3RenderViewMutator)
+            }
         }
     }
 }

@@ -80,6 +80,12 @@ public class Sitemesh3ViewResolverDefinitionPostProcessor extends SiteMeshViewRe
 
     @Override
     public void postProcessBeanDefinitionRegistry(BeanDefinitionRegistry registry) throws BeansException {
+        if (Sitemesh3EnvironmentPostProcessor.isSiteMesh2Present()) {
+            // Migration tolerance: with grails-layout on the classpath the
+            // SiteMesh 2 integration owns decoration and this module stands
+            // down (warned about in Sitemesh3EnvironmentPostProcessor).
+            return;
+        }
         if (!registry.containsBeanDefinition(getTargetViewResolverBeanName()) ||
                 !registry.containsBeanDefinition(getContentProcessorBeanName()) ||
                 !registry.containsBeanDefinition(getDecoratorSelectorBeanName())) {

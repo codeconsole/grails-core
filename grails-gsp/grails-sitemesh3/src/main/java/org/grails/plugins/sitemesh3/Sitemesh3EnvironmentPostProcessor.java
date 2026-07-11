@@ -21,6 +21,9 @@ package org.grails.plugins.sitemesh3;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.env.EnvironmentPostProcessor;
 import org.springframework.core.Ordered;
@@ -48,22 +51,43 @@ import org.grails.web.util.WebUtils;
  */
 public class Sitemesh3EnvironmentPostProcessor implements EnvironmentPostProcessor, Ordered {
 
+    private static final Logger LOG = LoggerFactory.getLogger(Sitemesh3EnvironmentPostProcessor.class);
+
     static final String PROPERTY_SOURCE_NAME = "defaultSitemesh3Properties";
 
     /**
-     * A class unique to the SiteMesh 2 module (grails-layout). SiteMesh 3 is a
-     * drop-in replacement for it — the two modules must never share a
-     * classpath, so co-presence fails startup with a clear message instead of
-     * producing an arbitrary winner.
+     * A class unique to the SiteMesh 2 module (grails-layout). grails-sitemesh3
+     * is a drop-in replacement for it — the two modules are mutually exclusive
+     * by contract. Because grails-sitemesh3 arrives transitively through
+     * {@code grails-dependencies-starter-web}, an application that declares
+     * grails-layout can end up with both on the classpath; that state is
+     * currently tolerated for migration compatibility — the SiteMesh 2
+     * integration keeps decorating and this module's view-resolver machinery
+     * stands down — but it is warned about loudly and support for it may be
+     * removed.
      */
     static final String SITEMESH2_MARKER_CLASS = "org.apache.grails.web.layout.GrailsLayoutViewResolverPostProcessor";
 
+    private static final boolean SITEMESH2_PRESENT =
+            ClassUtils.isPresent(SITEMESH2_MARKER_CLASS, ClassUtils.getDefaultClassLoader());
+
+    /**
+     * Whether the SiteMesh 2 module (grails-layout) shares the classpath. When
+     * it does, this module's view-resolver decoration stands down entirely.
+     */
+    public static boolean isSiteMesh2Present() {
+        return SITEMESH2_PRESENT;
+    }
+
     @Override
     public void postProcessEnvironment(ConfigurableEnvironment environment, SpringApplication application) {
-        if (ClassUtils.isPresent(SITEMESH2_MARKER_CLASS, ClassUtils.getDefaultClassLoader())) {
-            throw new IllegalStateException("grails-sitemesh3 is a drop-in replacement for grails-layout " +
-                    "(SiteMesh 2) and the two must not be on the classpath together - remove one of the " +
-                    "two dependencies.");
+        if (isSiteMesh2Present()) {
+            LOG.warn("Both grails-sitemesh3 and grails-layout (SiteMesh 2) are on the classpath. " +
+                    "grails-sitemesh3 is a drop-in replacement and the two are mutually exclusive; " +
+                    "the SiteMesh 2 integration stays active and SiteMesh 3 view-resolver decoration " +
+                    "is disabled. Remove the grails-layout dependency, or exclude grails-sitemesh3 " +
+                    "(it arrives via grails-dependencies-starter-web) to silence this warning - " +
+                    "tolerance for the combined classpath may be removed in a future release.");
         }
         MapPropertySource defaults = getDefaultPropertySource(environment);
         if (!defaults.getSource().isEmpty()) {

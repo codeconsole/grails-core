@@ -59,6 +59,7 @@ public class GrailsSiteMeshViewResolverBeanPostProcessor extends SiteMeshViewRes
     public Object postProcessAfterInitialization(Object bean, String beanName) throws BeansException {
         BeanFactory beanFactory = getBeanFactory();
         if (beanFactory == null ||
+                Sitemesh3EnvironmentPostProcessor.isSiteMesh2Present() ||
                 !beanFactory.containsBean(getContentProcessorBeanName()) ||
                 !beanFactory.containsBean(getDecoratorSelectorBeanName())) {
             return bean;
@@ -86,6 +87,10 @@ public class GrailsSiteMeshViewResolverBeanPostProcessor extends SiteMeshViewRes
     }
 
     private boolean isTargetAlreadyDecorating(BeanFactory beanFactory) {
+        if (Sitemesh3EnvironmentPostProcessor.isSiteMesh2Present()) {
+            // SiteMesh 2 owns decoration; a zero-wrap startup is expected.
+            return true;
+        }
         try {
             return beanFactory.isTypeMatch(getTargetViewResolverBeanName(), SiteMeshViewResolver.class);
         }
