@@ -17,6 +17,31 @@
         <a class="navbar-brand d-flex align-items-center" href="${request.contextPath}/">
             <asset:image class="w-75" src="grails.svg" alt="Grails Logo"/>
         </a>
+        <g:set var="navControllers"
+               value="${grailsApplication.controllerClasses.toList().sort { it.fullName }}"/>
+        <g:if test="${navControllers}">
+            <ul class="navbar-nav me-auto">
+                <li class="nav-item dropdown">
+                    <a class="nav-link dropdown-toggle" href="#" id="controllersDropdown" role="button"
+                       data-bs-toggle="dropdown" aria-expanded="false">
+                        <g:message code="welcome.artefact.controllers"/>
+                    </a>
+                    <ul class="dropdown-menu" aria-labelledby="controllersDropdown"
+                        style="max-height: 60vh; overflow-y: auto;">
+                        <g:each var="c" in="${navControllers}">
+                            <g:set var="navControllerName" value="${(c.fullName ?: '')
+                                    .tokenize('.')
+                                    .last()
+                                    .replaceFirst(/Controller$/, '')}"/>
+                            <li>
+                                <g:link controller="${c.logicalPropertyName}" namespace="${c.namespace}"
+                                        class="dropdown-item">${((c.namespace ?: '').trim()) ? "${c.namespace} / ${navControllerName}" : navControllerName}</g:link>
+                            </li>
+                        </g:each>
+                    </ul>
+                </li>
+            </ul>
+        </g:if>
         <ul class="navbar-nav ms-auto">
             <g:set var="availableLocales" value="${application.getAttribute('availableLocales')}"/>
             <g:if test="${availableLocales && availableLocales.size() > 1}">

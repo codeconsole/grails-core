@@ -89,13 +89,33 @@ class GrailsGspSpec extends ApplicationContextSpec implements CommandOutputFixtu
         then: "user-facing text renders through message codes, so the language selector actually translates the page"
         index.contains('<title><g:message code="welcome.title"/></title>')
         index.contains('<g:message code="welcome.congratulations"/>')
-        index.contains('<g:message code="welcome.controllers.detected" args="[numControllers]"/>')
         index.contains("message(code: 'welcome.reloading.active')")
+        index.contains("message(code: 'welcome.filter.name')")
 
         and: "no user-facing English remains hardcoded (product names like Grails/Spring stay literal)"
         !index.contains("Congratulations, you have successfully started")
         !index.contains(">Available Controllers<")
         !index.contains(">Installed plugins<")
+    }
+
+    void "test default index page carries the brand hero and per-card name filters"() {
+        when:
+        final def output = generate(ApplicationType.WEB, new Options(DevelopmentReloading.DEVTOOLS))
+        final String index = output["grails-app/views/index.gsp"]
+
+        then: "the Grails cups hero opens the page"
+        index.contains('class="welcome-hero-cups"')
+        index.contains('welcome-hero-body')
+
+        and: "controllers and plugins are filterable by name, with empty states"
+        index.contains('data-filter-list="#controllers-list"')
+        index.contains('data-filter-list="#plugins-table tbody"')
+        index.contains('id="controllers-empty"')
+        index.contains('id="plugins-empty"')
+
+        and: "count badges are theme-adaptive rather than hardcoded light"
+        index.contains('badge bg-body-tertiary text-body border')
+        !index.contains('text-bg-light')
     }
 
     void "test default layout includes the language selector dropdown"() {
@@ -109,6 +129,18 @@ class GrailsGspSpec extends ApplicationContextSpec implements CommandOutputFixtu
         and: "and renders a Bootstrap dropdown that switches language via ?lang="
         layout.contains("dropdown-toggle")
         layout.contains('?lang=${availableLocale.toLanguageTag()}')
+    }
+
+    void "test default layout includes a controllers dropdown on every page"() {
+        when:
+        final def output = generate(ApplicationType.WEB, new Options(DevelopmentReloading.DEVTOOLS))
+        final String layout = output["grails-app/views/layouts/main.gsp"]
+
+        then: "the navbar lists every controller and links to its default action"
+        layout.contains('id="controllersDropdown"')
+        layout.contains('<g:message code="welcome.artefact.controllers"/>')
+        layout.contains('grailsApplication.controllerClasses')
+        layout.contains('<g:link controller="${c.logicalPropertyName}" namespace="${c.namespace}"')
     }
 
     void "test default layout includes the light/dark/auto theme selector"() {
