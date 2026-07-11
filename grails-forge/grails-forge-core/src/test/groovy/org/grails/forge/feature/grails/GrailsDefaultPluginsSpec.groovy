@@ -51,6 +51,36 @@ class GrailsDefaultPluginsSpec extends ApplicationContextSpec implements Command
                 .findAll {prop -> { !output.containsKey("grails-app/i18n/messages_" + prop + ".properties") }})
     }
 
+    void "test i18n bundles are key-complete and MessageFormat-safe"() {
+        given:
+        final Map<String, String> output = generate(ApplicationType.WEB, new Options(DevelopmentReloading.DEVTOOLS))
+        final Map<String, Properties> bundles = output.keySet()
+                .findAll { it.startsWith("grails-app/i18n/") }
+                .collectEntries { name ->
+                    final Properties props = new Properties()
+                    props.load(new StringReader(output[name]))
+                    [name, props]
+                }
+        final Set<String> union = bundles.values().collectMany { it.stringPropertyNames() } as Set
+
+        expect: "every locale declares every key, so no locale silently falls back to English"
+        bundles.every { name, props ->
+            final Set<String> missing = (union - props.stringPropertyNames()) as Set
+            assert missing.isEmpty(), "${name} is missing ${missing}"
+            true
+        }
+
+        and: "every parameterized message is a valid MessageFormat that actually substitutes its arguments"
+        bundles.every { name, props ->
+            props.stringPropertyNames().findAll { props.getProperty(it).contains('{') }.every { key ->
+                final String formatted = new java.text.MessageFormat(props.getProperty(key))
+                        .format([2, 2, 2, 2, 2] as Object[])
+                assert !(formatted =~ /\{\d/), "${name} ${key} leaves placeholders unsubstituted: ${formatted}"
+                true
+            }
+        }
+    }
+
     void "test every i18n bundle translates the welcome page"() {
         given:
         final Map<String, String> output = generate(ApplicationType.WEB, new Options(DevelopmentReloading.DEVTOOLS))
