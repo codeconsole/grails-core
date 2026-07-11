@@ -76,6 +76,56 @@ class Book {
         'reassignment'     | 'String q; q = "from Book where title = ${title}"'
     }
 
+    @Unroll
+    void "test aliasing via #description before find fails to compile"() {
+        when:
+        new GroovyClassLoader().parseClass("""
+import grails.gorm.annotation.Entity
+
+@Entity
+class Book {
+    String title
+
+    static Book byTitle(String title) {
+        $declaration
+        find(q)
+    }
+}
+""")
+
+        then:
+        def e = thrown(MultipleCompilationErrorsException)
+        e.message.contains('GormUnsafeQueryString')
+
+        where:
+        description                      | declaration
+        'a variable holding a GString'   | 'def g = "from Book where title = ${title}"\nString q = g'
+        '.toString() on an alias'        | 'def g = "from Book where title = ${title}"\nString q = g.toString()'
+        'a two-hop alias chain'          | 'def g = "from Book where title = ${title}"\ndef h = g\nString q = h'
+        'assigning an already-flattened alias' | 'String p = "from Book where title = ${title}"\nString q = p'
+    }
+
+    void "test aliasing a plain non-interpolated variable compiles cleanly"() {
+        when:
+        Class<?> bookClass = new GroovyClassLoader().parseClass('''
+import grails.gorm.annotation.Entity
+
+@Entity
+class Book {
+    String title
+
+    static List all() {
+        def g = "from Book"
+        String q = g
+        executeQuery(q)
+    }
+}
+''')
+
+        then:
+        bookClass != null
+    }
+
     void "test a GString literal passed directly compiles cleanly"() {
         when:
         Class<?> bookClass = new GroovyClassLoader().parseClass('''
