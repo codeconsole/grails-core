@@ -22,38 +22,41 @@ import jakarta.inject.Singleton;
 import org.grails.forge.application.ApplicationType;
 import org.grails.forge.application.generator.GeneratorContext;
 import org.grails.forge.build.dependencies.Dependency;
+import org.grails.forge.feature.logging.template.logback;
+import org.grails.forge.template.RockerTemplate;
 
 /**
- * Opt-in logging feature that omits {@code grails-app/conf/logback-spring.xml}
- * and relies on Spring Boot's zero-config Logback defaults.
+ * Opt-in logging feature that generates an editable
+ * {@code grails-app/conf/logback-spring.xml} configuration file.
  *
- * <p>The default {@link Logback} feature generates a starter
- * {@code logback-spring.xml}. Selecting this feature instead produces an
- * application with no logging configuration file at all: {@code grails-logging}
- * (which brings Spring Boot's logging starter) is still added, so Logback and
- * Spring Boot's own default Logback configuration apply automatically — an
- * {@code INFO} root level and a colorized console pattern. Levels and patterns
- * can then be tuned entirely from {@code application.yml}, including
- * per-environment levels via the Grails {@code environments} block. Because it
+ * <p>Logback is already present in every generated application: the default
+ * {@link Logback} feature adds {@code grails-logging} (which brings Spring Boot's
+ * logging starter), so logging works out of the box using Spring Boot's zero-config
+ * Logback defaults with no configuration file. This feature does not change that
+ * dependency; it simply emits a starter {@code logback-spring.xml} — composing
+ * Spring Boot's own {@code defaults.xml} and {@code console-appender.xml} with an
+ * {@code INFO} root level and a {@code <springProfile name="development">} block —
+ * for projects that prefer to manage their logging configuration in XML. Because it
  * belongs to the same {@link LoggingFeature} group, selecting it supersedes the
- * default feature.</p>
+ * default feature, so it re-declares {@code grails-logging} to keep Logback on the
+ * classpath.</p>
  */
 @Singleton
-public class LogbackZeroConfig implements LoggingFeature {
+public class LogbackConfig implements LoggingFeature {
 
     @Override
     public String getName() {
-        return "logback-zero-config";
+        return "logback-config";
     }
 
     @Override
     public String getTitle() {
-        return "Zero-config Logback Logging";
+        return "Logback Configuration";
     }
 
     @Override
     public String getDescription() {
-        return "Omits grails-app/conf/logback-spring.xml and relies on Spring Boot's default Logback configuration. Logging levels and patterns can be tuned from application.yml, including per-environment levels via the environments block.";
+        return "Generates an editable grails-app/conf/logback-spring.xml. Logback logging already works out of the box via Spring Boot's defaults; add this only to customize logging configuration in XML.";
     }
 
     @Override
@@ -63,6 +66,11 @@ public class LogbackZeroConfig implements LoggingFeature {
 
     @Override
     public void apply(GeneratorContext generatorContext) {
+        String projectName = generatorContext.getProject().getName();
+        String packageName = generatorContext.getProject().getPackageName();
+
+        generatorContext.addTemplate("loggingConfig", new RockerTemplate("grails-app/conf/logback-spring.xml",
+                logback.template(projectName, packageName)));
         generatorContext.addDependency(Dependency.builder()
                 .groupId("org.apache.grails")
                 .artifactId("grails-logging")

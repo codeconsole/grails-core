@@ -42,23 +42,33 @@ class LogbackSpec extends ApplicationContextSpec implements CommandOutputFixture
     }
 
     @Unroll
-    void "test logback-spring.xml config file is present for #applicationType application"() {
+    void "test no logback-spring.xml config file is generated for #applicationType application"() {
         when:
         def output = generate(applicationType, new Options(DevelopmentReloading.DEVTOOLS))
 
         then:
-        output.containsKey("grails-app/conf/logback-spring.xml")
+        !output.containsKey("grails-app/conf/logback-spring.xml")
 
         where:
         applicationType << ApplicationType.values().toList()
     }
 
-    @Unroll
-    void "test logback-spring.xml composes Spring Boot defaults with an INFO root level for #applicationType application"() {
+    void "test logback-config feature is visible so it can be searched and selected"() {
         when:
-        def output = generate(applicationType, new Options(DevelopmentReloading.DEVTOOLS))
+        def feature = beanContext.getBean(LogbackConfig)
+
+        then:
+        feature.name == "logback-config"
+        feature.visible
+    }
+
+    @Unroll
+    void "test logback-config feature generates logback-spring.xml composing Spring Boot defaults for #applicationType application"() {
+        when:
+        def output = generate(applicationType, new Options(DevelopmentReloading.DEVTOOLS), ["logback-config"])
 
         then: "the file reuses Spring Boot's own defaults and console appender instead of duplicating them"
+        output.containsKey("grails-app/conf/logback-spring.xml")
         def logback = output.get("grails-app/conf/logback-spring.xml")
         logback.contains('<include resource="org/springframework/boot/logging/logback/defaults.xml"/>')
         logback.contains('<include resource="org/springframework/boot/logging/logback/console-appender.xml"/>')
@@ -76,31 +86,10 @@ class LogbackSpec extends ApplicationContextSpec implements CommandOutputFixture
         applicationType << ApplicationType.values().toList()
     }
 
-    void "test logback-zero-config feature is visible so it can be searched and selected"() {
-        when:
-        def feature = beanContext.getBean(LogbackZeroConfig)
-
-        then:
-        feature.name == "logback-zero-config"
-        feature.visible
-    }
-
     @Unroll
-    void "test logback-zero-config feature omits logback-spring.xml for #applicationType application"() {
+    void "test logback-config feature keeps the grails-logging dependency exactly once for #applicationType application"() {
         when:
-        def output = generate(applicationType, new Options(DevelopmentReloading.DEVTOOLS), ["logback-zero-config"])
-
-        then:
-        !output.containsKey("grails-app/conf/logback-spring.xml")
-
-        where:
-        applicationType << ApplicationType.values().toList()
-    }
-
-    @Unroll
-    void "test logback-zero-config feature keeps the grails-logging dependency exactly once for #applicationType application"() {
-        when:
-        def output = generate(applicationType, new Options(DevelopmentReloading.DEVTOOLS), ["logback-zero-config"])
+        def output = generate(applicationType, new Options(DevelopmentReloading.DEVTOOLS), ["logback-config"])
 
         then:
         output.containsKey("build.gradle")
