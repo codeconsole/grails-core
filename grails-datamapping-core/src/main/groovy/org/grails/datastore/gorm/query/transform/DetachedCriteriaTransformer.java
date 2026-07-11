@@ -68,6 +68,7 @@ import org.codehaus.groovy.ast.stmt.Statement;
 import org.codehaus.groovy.ast.stmt.SwitchStatement;
 import org.codehaus.groovy.ast.stmt.TryCatchStatement;
 import org.codehaus.groovy.ast.stmt.WhileStatement;
+import org.codehaus.groovy.control.ErrorCollector;
 import org.codehaus.groovy.control.SourceUnit;
 import org.codehaus.groovy.control.messages.LocatedMessage;
 import org.codehaus.groovy.syntax.Token;
@@ -101,6 +102,7 @@ public class DetachedCriteriaTransformer extends ClassCodeVisitorSupport {
     public static final ConstantExpression WHERE_LAZY = new ConstantExpression("whereLazy");
 
     private SourceUnit sourceUnit;
+    private boolean appliedWhereTransform;
     private static final Set<String> CANDIDATE_METHODS = newSet("where", "whereLazy", "whereAny", "findAll", "find");
 
     private static final Set<String> SUPPORTED_FUNCTIONS = newSet(
@@ -174,7 +176,22 @@ public class DetachedCriteriaTransformer extends ClassCodeVisitorSupport {
     public void visitClass(ClassNode node) {
         try {
             this.currentClassNode = node;
+            this.appliedWhereTransform = false;
             super.visitClass(node);
+            if (appliedWhereTransform) {
+                // The nested closures generated for association criteria share the outer
+                // where-closure's VariableScope, which still references every local variable the
+                // original closure used. Which locals a generated closure captures then depends on
+                // whether a later transformation happens to recompute the scopes, making the
+                // compiled closure constructors nondeterministic. Recompute the scopes now so each
+                // generated closure captures exactly the variables it references.
+                // A throwaway ErrorCollector is used because the code has already been scope-checked
+                // once and re-running the visitor must not report duplicate errors (see
+                // AbstractMethodDecoratingTransformation for the same pattern).
+                SourceUnit dummySourceUnit = new SourceUnit("dummy", "dummy", sourceUnit.getConfiguration(),
+                        sourceUnit.getClassLoader(), new ErrorCollector(sourceUnit.getConfiguration()));
+                AstUtils.processVariableScopes(dummySourceUnit, node, null);
+            }
         } catch (Exception e) {
             logTransformationError(node, e);
         } finally {
@@ -627,6 +644,7 @@ public class DetachedCriteriaTransformer extends ClassCodeVisitorSupport {
             if (!newCode.getStatements().isEmpty()) {
                 closureExpression.putNodeMetaData(TRANSFORMED_MARKER, Boolean.TRUE);
                 closureExpression.setCode(newCode);
+                appliedWhereTransform = true;
             }
         } finally {
             this.currentClassNode = previousClassNode;
