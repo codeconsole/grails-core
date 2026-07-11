@@ -51,4 +51,26 @@ class GrailsDefaultPluginsSpec extends ApplicationContextSpec implements Command
                 .findAll {prop -> { !output.containsKey("grails-app/i18n/messages_" + prop + ".properties") }})
     }
 
+    void "test every i18n bundle translates the welcome page"() {
+        given:
+        final Map<String, String> output = generate(ApplicationType.WEB, new Options(DevelopmentReloading.DEVTOOLS))
+        final List<String> suffixes = [""] + Arrays.asList("cs", "da", "de", "es", "fr", "it", "ja", "nb", "nl",
+                "pl", "pt_BR", "pt_PT", "ru", "sk", "sv", "th", "zh_CN").collect { "_" + it }
+
+        expect: "each bundle carries the welcome-page keys the default index.gsp renders through"
+        suffixes.every { suffix ->
+            final String bundle = output["grails-app/i18n/messages" + suffix + ".properties"]
+            ["welcome.title", "welcome.congratulations", "welcome.controllers.title",
+             "welcome.controllers.detected", "welcome.plugins.title"].every { key ->
+                bundle.contains(key + "=")
+            }
+        }
+
+        and: "spot-checked translations survive the template pipeline byte-intact"
+        output["grails-app/i18n/messages_ru.properties"].contains("welcome.title=Добро пожаловать в Grails")
+        output["grails-app/i18n/messages_ja.properties"].contains("welcome.title=Grailsへようこそ")
+        output["grails-app/i18n/messages_th.properties"].contains("welcome.title=ยินดีต้อนรับสู่ Grails")
+        output["grails-app/i18n/messages_zh_CN.properties"].contains("welcome.title=欢迎使用 Grails")
+    }
+
 }

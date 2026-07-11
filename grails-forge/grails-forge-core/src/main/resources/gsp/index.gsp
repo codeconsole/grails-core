@@ -13,7 +13,7 @@
 <!doctype html>
 <html>
 <head>
-    <title>Welcome to Grails</title>
+    <title><g:message code="welcome.title"/></title>
     <meta name="layout" content="main"/>
     <asset:stylesheet src="welcome.css"/>
 </head>
@@ -24,13 +24,12 @@
 
             <%-- WELCOME MESSAGE --%>
             <div class="col-12 col-md-7">
-                <h1 class="display-6 fw-semibold mb-2">Welcome to Grails</h1>
+                <h1 class="display-6 fw-semibold mb-2"><g:message code="welcome.title"/></h1>
                 <p class="lead text-body-secondary">
-                    Congratulations, you have successfully started a Grails application.
+                    <g:message code="welcome.congratulations"/>
                 </p>
                 <p class="text-body-secondary">
-                    At the moment this is the default page, feel free to modify it to either
-                    redirect to a controller or display whatever content you may choose.
+                    <g:message code="welcome.default.page"/>
                 </p>
             </div>
 
@@ -38,7 +37,7 @@
             <div class="col-12 col-md-5">
                 <div class="card border-1 shadow-sm">
                     <div class="card-body">
-                        <h6 class="card-title mb-3 fw-semibold">Runtime versions</h6>
+                        <h6 class="card-title mb-3 fw-semibold"><g:message code="welcome.runtime.versions"/></h6>
                         <ul class="list-group list-group-flush small">
                             <li class="list-group-item d-flex justify-content-between align-items-center px-0">
                                 <span class="d-inline-flex align-items-center text-body-secondary">
@@ -89,39 +88,39 @@
                 <div class="card border-1 shadow-sm h-100">
                     <div class="card-body">
                         <div class="d-flex align-items-center justify-content-between mb-3">
-                            <h6 class="card-title mb-0 fw-semibold">Application</h6>
+                            <h6 class="card-title mb-0 fw-semibold"><g:message code="welcome.application"/></h6>
                             <g:if test="${Environment.reloadingAgentEnabled}">
-                                <span class="reload-indicator text-success" role="status" aria-label="Reloading active">
+                                <span class="reload-indicator text-success" role="status" aria-label="${message(code: 'welcome.reloading.active')}">
                                     <span class="reload-dot ping" aria-hidden="true"></span>
-                                    <span class="text-body-secondary">Reloading active</span>
+                                    <span class="text-body-secondary"><g:message code="welcome.reloading.active"/></span>
                                 </span>
                             </g:if>
                             <g:else>
-                                <span class="reload-indicator text-danger" role="status" aria-label="Reloading inactive">
+                                <span class="reload-indicator text-danger" role="status" aria-label="${message(code: 'welcome.reloading.inactive')}">
                                     <span class="reload-dot" aria-hidden="true"></span>
-                                    <span class="text-body-secondary">Reloading inactive</span>
+                                    <span class="text-body-secondary"><g:message code="welcome.reloading.inactive"/></span>
                                 </span>
                             </g:else>
                         </div>
                         <ul class="list-group list-group-flush small">
                             <li class="list-group-item d-flex justify-content-between align-items-center px-0">
-                                <span class="text-body-secondary">Name</span>
+                                <span class="text-body-secondary"><g:message code="welcome.app.name"/></span>
                                 <span class="fw-medium text-truncate ms-3"><g:meta name="info.app.name"/></span>
                             </li>
                             <li class="list-group-item d-flex justify-content-between align-items-center px-0">
-                                <span class="text-body-secondary">Version</span>
+                                <span class="text-body-secondary"><g:message code="welcome.app.version"/></span>
                                 <span class="fw-medium" style="font-variant-numeric: tabular-nums;">
                                     <g:meta name="info.app.version"/>
                                 </span>
                             </li>
                             <li class="list-group-item d-flex justify-content-between align-items-center px-0">
-                                <span class="text-body-secondary">Profile</span>
+                                <span class="text-body-secondary"><g:message code="welcome.app.profile"/></span>
                                 <span class="fw-medium text-truncate ms-3">
                                     ${grailsApplication.config.getProperty('grails.profile')}
                                 </span>
                             </li>
                             <li class="list-group-item d-flex justify-content-between align-items-center px-0">
-                                <span class="text-body-secondary">Environment</span>
+                                <span class="text-body-secondary"><g:message code="welcome.app.environment"/></span>
                                 <span class="fw-medium">${Environment.current.name}</span>
                             </li>
                         </ul>
@@ -134,19 +133,19 @@
                 <div class="card border-1 shadow-sm h-100">
                     <div class="card-body">
                         <div class="d-flex align-items-center justify-content-between mb-3">
-                            <h6 class="card-title mb-0 fw-semibold">Server</h6>
+                            <h6 class="card-title mb-0 fw-semibold"><g:message code="welcome.server"/></h6>
                         </div>
                         <ul class="list-group list-group-flush small">
                             <li class="list-group-item d-flex justify-content-between align-items-center px-0">
-                                <span class="text-body-secondary">Servlet Container</span>
+                                <span class="text-body-secondary"><g:message code="welcome.server.servlet.container"/></span>
                                 <span class="fw-medium text-truncate ms-3">${servletContext.serverInfo}</span>
                             </li>
                             <li class="list-group-item d-flex justify-content-between align-items-center px-0">
-                                <span class="text-body-secondary">Host</span>
+                                <span class="text-body-secondary"><g:message code="welcome.server.host"/></span>
                                 <span class="fw-medium text-truncate ms-3">${InetAddress.localHost}</span>
                             </li>
                             <li class="list-group-item d-flex justify-content-between align-items-center px-0">
-                                <span class="text-body-secondary">OS</span>
+                                <span class="text-body-secondary"><g:message code="welcome.server.os"/></span>
                                 <span class="fw-medium text-truncate ms-3">
                                     ${System.getProperty('os.name')} ${System.getProperty('os.version')} (${System.getProperty('os.arch')})
                                 </span>
@@ -161,24 +160,24 @@
                 <div class="card border-1 shadow-sm h-100">
                     <div class="card-body">
                         <div class="d-flex align-items-center justify-content-between mb-3">
-                            <h6 class="card-title mb-0 fw-semibold">Artefact counts</h6>
+                            <h6 class="card-title mb-0 fw-semibold"><g:message code="welcome.artefact.counts"/></h6>
                         </div>
 
                         <ul class="list-group list-group-flush small">
                             <li class="list-group-item d-flex justify-content-between align-items-center px-0">
-                                <span class="text-body-secondary">Controllers</span>
+                                <span class="text-body-secondary"><g:message code="welcome.artefact.controllers"/></span>
                                 <span class="fw-medium">${numControllers}</span>
                             </li>
                             <li class="list-group-item d-flex justify-content-between align-items-center px-0">
-                                <span class="text-body-secondary">Domains</span>
+                                <span class="text-body-secondary"><g:message code="welcome.artefact.domains"/></span>
                                 <span class="fw-medium">${grailsApplication.domainClasses.size()}</span>
                             </li>
                             <li class="list-group-item d-flex justify-content-between align-items-center px-0">
-                                <span class="text-body-secondary">Services</span>
+                                <span class="text-body-secondary"><g:message code="welcome.artefact.services"/></span>
                                 <span class="fw-medium">${grailsApplication.serviceClasses.size()}</span>
                             </li>
                             <li class="list-group-item d-flex justify-content-between align-items-center px-0">
-                                <span class="text-body-secondary">Tag Libraries</span>
+                                <span class="text-body-secondary"><g:message code="welcome.artefact.taglibs"/></span>
                                 <span class="fw-medium">${grailsApplication.tagLibClasses.size()}</span>
                             </li>
                         </ul>
@@ -197,14 +196,14 @@
                     <div class="card-body p-4 p-md-5">
                         <div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-2">
                             <div>
-                                <h2 class="h4 mb-1">Available Controllers</h2>
+                                <h2 class="h4 mb-1"><g:message code="welcome.controllers.title"/></h2>
                                 <p class="text-body-secondary mb-0">
-                                    ${numControllers} controller${numControllers != 1 ? 's' : ''} detected.
+                                    <g:message code="welcome.controllers.detected" args="[numControllers]"/>
                                 </p>
                             </div>
                             <g:if test="${numControllers != 0}">
                                 <div class="small text-body-secondary">
-                                    Click a controller to execute its default action.
+                                    <g:message code="welcome.controllers.click"/>
                                 </div>
                             </g:if>
                         </div>
@@ -224,7 +223,7 @@
                                                 ${nsEntry.key}
                                             </g:if>
                                             <g:else>
-                                                Default namespace
+                                                <g:message code="welcome.namespace.default"/>
                                             </g:else>
                                         </div>
                                     </div>
@@ -271,7 +270,7 @@
                 <div class="card border-1 shadow-sm h-100">
                     <div class="card-body">
                         <div class="d-flex align-items-center justify-content-between mb-3">
-                            <h6 class="card-title mb-0 fw-semibold">Installed plugins</h6>
+                            <h6 class="card-title mb-0 fw-semibold"><g:message code="welcome.plugins.title"/></h6>
                             <span class="badge text-bg-light border">
                                 ${pluginManager.allPlugins.size()}
                             </span>
@@ -286,24 +285,24 @@
                                         data-sort-key="name"
                                         role="button"
                                         tabindex="0"
-                                        aria-label="Sort by name">
-                                        Name <span class="sort-hint" aria-hidden="true"></span>
+                                        aria-label="${message(code: 'welcome.plugins.sort.name')}">
+                                        <g:message code="welcome.plugins.name"/> <span class="sort-hint" aria-hidden="true"></span>
                                     </th>
                                     <th scope="col"
                                         class="text-body-secondary ps-0 fw-semibold text-end sortable"
                                         data-sort-key="version"
                                         role="button"
                                         tabindex="0"
-                                        aria-label="Sort by version">
-                                        <span class="sort-hint" aria-hidden="true"></span> Version
+                                        aria-label="${message(code: 'welcome.plugins.sort.version')}">
+                                        <span class="sort-hint" aria-hidden="true"></span> <g:message code="welcome.plugins.version"/>
                                     </th>
                                     <th scope="col"
                                         class="text-body-secondary text-end pe-0 sortable"
                                         data-sort-key="order"
                                         role="button"
                                         tabindex="0"
-                                        aria-label="Sort by load order">
-                                        <span class="sort-hint" aria-hidden="true"></span> Load order
+                                        aria-label="${message(code: 'welcome.plugins.sort.order')}">
+                                        <span class="sort-hint" aria-hidden="true"></span> <g:message code="welcome.plugins.load.order"/>
                                     </th>
                                 </tr>
                                 </thead>

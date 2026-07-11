@@ -81,6 +81,23 @@ class GrailsGspSpec extends ApplicationContextSpec implements CommandOutputFixtu
         output.containsKey("grails-app/views/notFound.gsp")
     }
 
+    void "test default index page is internationalized"() {
+        when:
+        final def output = generate(ApplicationType.WEB, new Options(DevelopmentReloading.DEVTOOLS))
+        final String index = output["grails-app/views/index.gsp"]
+
+        then: "user-facing text renders through message codes, so the language selector actually translates the page"
+        index.contains('<title><g:message code="welcome.title"/></title>')
+        index.contains('<g:message code="welcome.congratulations"/>')
+        index.contains('<g:message code="welcome.controllers.detected" args="[numControllers]"/>')
+        index.contains("message(code: 'welcome.reloading.active')")
+
+        and: "no user-facing English remains hardcoded (product names like Grails/Spring stay literal)"
+        !index.contains("Congratulations, you have successfully started")
+        !index.contains(">Available Controllers<")
+        !index.contains(">Installed plugins<")
+    }
+
     void "test default layout includes the language selector dropdown"() {
         when:
         final def output = generate(ApplicationType.WEB, new Options(DevelopmentReloading.DEVTOOLS))
