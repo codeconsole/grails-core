@@ -110,17 +110,23 @@ class DefaultGrailsPluginManagerSpec extends Specification {
         "7.0.0-M2"       | "7.0.0-M1"                 || false
     }
 
-    def "plugin loaded successfully message is not logged at INFO level"() {
-        given: 'a plugin manager backed by a discovery bean with a single plugin'
+    def "per-plugin loaded messages are DEBUG and a single INFO summary reports the load order"() {
+        given: 'a discovery bean with two plugins registered in reverse of their load order'
         def gcl = new GroovyClassLoader()
-        def pluginClass = gcl.parseClass('''
-class LogLevelProbeGrailsPlugin {
+        def alphaClass = gcl.parseClass('''
+class AlphaProbeGrailsPlugin {
     def version = "1.0.0"
+}
+''')
+        def betaClass = gcl.parseClass('''
+class BetaProbeGrailsPlugin {
+    def version = "2.0.0"
+    def loadAfter = ['alphaProbe']
 }
 ''')
         def application = new DefaultGrailsApplication()
         application.mainContext = new GenericApplicationContext()
-        def discovery = new DefaultPluginDiscovery(new Class<?>[]{pluginClass})
+        def discovery = new DefaultPluginDiscovery(new Class<?>[]{betaClass, alphaClass})
         discovery.loadPluginsFromClasspath = false
 
         and: 'standard error is captured to observe slf4j-simple output'
@@ -133,13 +139,21 @@ class LogLevelProbeGrailsPlugin {
         def manager = new DefaultGrailsPluginManager(application, discovery)
         manager.loadPlugins()
 
-        then: 'the plugin is loaded'
-        manager.getGrailsPlugin('logLevelProbe') != null
+        then: 'both plugins are loaded'
+        manager.getGrailsPlugin('alphaProbe') != null
+        manager.getGrailsPlugin('betaProbe') != null
 
-        and: 'the loaded-successfully message is not emitted at INFO'
+        and: 'the per-plugin loaded-successfully messages are not emitted at INFO'
         captured.toString().readLines()
-                .findAll { it.contains('loaded successfully') && it.contains('logLevelProbe') }
+                .findAll { it.contains('loaded successfully') }
                 .every { !it.contains('INFO') }
+
+        and: 'a single INFO summary line reports the plugins in load order'
+        def summaryLines = captured.toString().readLines()
+                .findAll { it.contains('Grails plugins in load order') }
+        summaryLines.size() == 1
+        summaryLines[0].contains('INFO')
+        summaryLines[0].contains('Loaded 2 Grails plugins in load order: [alphaProbe (1.0.0), betaProbe (2.0.0)]')
 
         cleanup:
         System.setErr(originalErr)
