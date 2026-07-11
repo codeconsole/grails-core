@@ -135,13 +135,18 @@ if (!args) {
 }
 
 args.each { dir ->
-    Files.walk(Paths.get(dir)).withCloseable { stream ->
-        stream.filter { it.toString().endsWith('.java') && Files.isRegularFile(it) }.each { Path path ->
+    // try/finally instead of withCloseable: Stream is AutoCloseable, not Closeable,
+    // and older Groovy runtimes lack withCloseable(AutoCloseable)
+    def stream = Files.walk(Paths.get(dir))
+    try {
+        stream.filter { it.toString().endsWith('.java') && Files.isRegularFile(it) }.forEach { Path path ->
             String original = new String(Files.readAllBytes(path), 'UTF-8')
             String normalized = normalize(original)
             if (normalized != original) {
                 Files.write(path, normalized.getBytes('UTF-8'))
             }
         }
+    } finally {
+        stream.close()
     }
 }
