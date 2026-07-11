@@ -99,4 +99,138 @@ class WhereQueryEmbeddedSpec extends GrailsDataTckSpec {
         results.size() == 1
         results[0].description == 'first'
     }
+
+    @Issue('https://github.com/apache/grails-core/issues/15955')
+    void 'where query with multiple dotted predicates on the same embedded component'() {
+        given:
+        createWorkItems()
+
+        when:
+        def results = WorkItem.where {
+            extRef1.provider == 'SAP' && extRef1.value =~ '%ABC%'
+        }.list()
+
+        then:
+        results.size() == 1
+        results[0].description == 'first'
+    }
+
+    @Issue('https://github.com/apache/grails-core/issues/15955')
+    void 'where query with an embedded component predicate in a nested junction'() {
+        given:
+        createWorkItems()
+
+        when:
+        def results = WorkItem.where {
+            (description == 'none' || extRef1.provider == 'Jira') && description == 'second'
+        }.list()
+
+        then:
+        results.size() == 1
+        results[0].description == 'second'
+    }
+
+    @Issue('https://github.com/apache/grails-core/issues/15955')
+    void 'where query with negated embedded component predicate'() {
+        given:
+        createWorkItems()
+
+        when:
+        def results = WorkItem.where {
+            !(extRef1.provider == 'SAP')
+        }.list()
+
+        then:
+        results.size() == 1
+        results[0].description == 'second'
+    }
+
+    @Issue('https://github.com/apache/grails-core/issues/15955')
+    void 'where query with inList on embedded component property'() {
+        given:
+        createWorkItems()
+
+        when:
+        def results = WorkItem.where {
+            extRef1.provider in ['SAP', 'Oracle'] && description != 'none'
+        }.list()
+
+        then:
+        results.size() == 1
+        results[0].description == 'first'
+    }
+
+    @Issue('https://github.com/apache/grails-core/issues/15955')
+    void 'where query with an embedded association block'() {
+        given:
+        createWorkItems()
+
+        when: 'the embedded component is addressed with an association block, with an outer condition matching both items'
+        def results = WorkItem.where {
+            description != 'none' && extRef1 { provider == 'SAP' }
+        }.list()
+
+        then:
+        results.size() == 1
+        results[0].description == 'first'
+    }
+
+    @Issue('https://github.com/apache/grails-core/issues/15955')
+    void 'count on a where query with an embedded component predicate in a junction'() {
+        given:
+        createWorkItems()
+
+        when: 'the queries are built outside the assertion so the where DSL transformation applies'
+        def conjunctionQuery = WorkItem.where {
+            description == 'first' && extRef1.value =~ '%ABC%'
+        }
+        def disjunctionQuery = WorkItem.where {
+            description == 'none' || extRef1.provider == 'Jira'
+        }
+
+        then:
+        conjunctionQuery.count() == 1
+        disjunctionQuery.count() == 1
+    }
+
+    @Issue('https://github.com/apache/grails-core/issues/15955')
+    void 'criteria query with an embedded association block inside a disjunction'() {
+        given:
+        createWorkItems()
+
+        when: 'the embedded block is nested in a junction, translating through AssociationQuery'
+        def results = WorkItem.createCriteria().list {
+            or {
+                eq('description', 'none')
+                extRef1 {
+                    eq('provider', 'SAP')
+                }
+            }
+        }
+
+        then:
+        results.size() == 1
+        results[0].description == 'first'
+    }
+
+    @Issue('https://github.com/apache/grails-core/issues/15955')
+    void 'criteria query with an embedded association block inside a conjunction'() {
+        given:
+        createWorkItems()
+
+        when: 'the embedded block itself carries more than one predicate'
+        def results = WorkItem.createCriteria().list {
+            and {
+                like('description', 'fir%')
+                extRef1 {
+                    eq('provider', 'SAP')
+                    like('value', '%ABC%')
+                }
+            }
+        }
+
+        then:
+        results.size() == 1
+        results[0].description == 'first'
+    }
 }
