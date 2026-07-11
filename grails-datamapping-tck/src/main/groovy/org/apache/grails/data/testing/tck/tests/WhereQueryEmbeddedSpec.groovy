@@ -18,10 +18,16 @@
  */
 package org.apache.grails.data.testing.tck.tests
 
+import grails.gorm.DetachedCriteria
+
 import org.apache.grails.data.testing.tck.base.GrailsDataTckSpec
 import org.apache.grails.data.testing.tck.domains.ExternalRef
 import org.apache.grails.data.testing.tck.domains.WorkItem
+import org.apache.grails.data.testing.tck.domains.WorkItemGroup
+import org.grails.datastore.mapping.query.Query
+import org.grails.datastore.mapping.query.Restrictions
 import spock.lang.Issue
+import spock.lang.Requires
 
 /**
  * Tests for where {} queries against properties of embedded components.
@@ -29,7 +35,7 @@ import spock.lang.Issue
 class WhereQueryEmbeddedSpec extends GrailsDataTckSpec {
 
     void setupSpec() {
-        manager.registerDomainClasses(WorkItem)
+        manager.registerDomainClasses(WorkItem, WorkItemGroup)
     }
 
     private void createWorkItems() {
@@ -263,6 +269,77 @@ class WhereQueryEmbeddedSpec extends GrailsDataTckSpec {
                 }
             }
         }
+
+        then:
+        results.size() == 1
+        results[0].description == 'first'
+    }
+
+    @Issue('https://github.com/apache/grails-core/issues/15955')
+    void 'where query with a disjunction inside an embedded association block'() {
+        given:
+        createWorkItems()
+
+        when: 'the embedded block itself contains a junction'
+        def results = WorkItem.where {
+            description != 'none' && extRef1 { provider == 'SAP' || provider == 'Oracle' }
+        }.list()
+
+        then:
+        results.size() == 1
+        results[0].description == 'first'
+    }
+
+    @Issue('https://github.com/apache/grails-core/issues/15955')
+    void 'where query with an aliased embedded association block'() {
+        given:
+        createWorkItems()
+
+        when: 'the embedded block declares an alias, exercising the runtime criteria DSL'
+        def results = new DetachedCriteria(WorkItem).build {
+            extRef1('ref') {
+                eq('value', 'ABC-123')
+            }
+        }.list()
+
+        then:
+        results.size() == 1
+        results[0].description == 'first'
+    }
+
+    // Restricting through an association requires join support, which MongoDB rejects
+    // and the simple in-memory datastore does not implement for nested paths.
+    @Requires({ Boolean.getBoolean('hibernate5.gorm.suite') || Boolean.getBoolean('hibernate7.gorm.suite') })
+    @Issue('https://github.com/apache/grails-core/issues/15955')
+    void 'where query on an association whose target entity has an embedded component'() {
+        given: 'groups pointing at items with embedded components'
+        createWorkItems()
+        new WorkItemGroup(name: 'alpha', item: WorkItem.findByDescription('first')).save(flush: true, failOnError: true)
+        new WorkItemGroup(name: 'beta', item: WorkItem.findByDescription('second')).save(flush: true, failOnError: true)
+
+        when: 'the embedded predicate is nested inside an association block'
+        def results = WorkItemGroup.where {
+            item { extRef1.value =~ '%ABC%' }
+        }.list()
+
+        then: 'the embedded path is qualified with the association alias'
+        results.size() == 1
+        results[0].name == 'alpha'
+    }
+
+    @Issue('https://github.com/apache/grails-core/issues/15955')
+    void 'querying an embedded component through the low-level Query API'() {
+        given:
+        createWorkItems()
+
+        when: 'an association query for the embedded component is added as a criterion'
+        // add(Restrictions...) rather than the eq() shortcut: implementations route add()
+        // into the association's criteria collector, which is what they translate.
+        Query query = manager.session.createQuery(WorkItem)
+        Query embeddedQuery = query.createQuery('extRef1')
+        embeddedQuery.add(Restrictions.eq('value', 'ABC-123'))
+        query.add((Query.Criterion) embeddedQuery)
+        def results = query.list()
 
         then:
         results.size() == 1
