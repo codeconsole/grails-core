@@ -16,22 +16,19 @@
  *  specific language governing permissions and limitations
  *  under the License.
  */
-package org.grails.plugins.sitemesh3;
+package org.grails.plugins.sitemesh3
 
-import java.util.LinkedHashMap;
-import java.util.Map;
+import groovy.transform.CompileStatic
+import groovy.util.logging.Slf4j
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import org.springframework.boot.SpringApplication
+import org.springframework.boot.env.EnvironmentPostProcessor
+import org.springframework.core.Ordered
+import org.springframework.core.env.ConfigurableEnvironment
+import org.springframework.core.env.MapPropertySource
+import org.springframework.util.ClassUtils
 
-import org.springframework.boot.SpringApplication;
-import org.springframework.boot.env.EnvironmentPostProcessor;
-import org.springframework.core.Ordered;
-import org.springframework.core.env.ConfigurableEnvironment;
-import org.springframework.core.env.MapPropertySource;
-import org.springframework.util.ClassUtils;
-
-import org.grails.web.util.WebUtils;
+import org.grails.web.util.WebUtils
 
 /**
  * Contributes the Grails defaults for the SiteMesh 3 configuration keys —
@@ -49,11 +46,11 @@ import org.grails.web.util.WebUtils;
  * itself, and the source is appended with lowest precedence, so application
  * configuration always wins.</p>
  */
-public class Sitemesh3EnvironmentPostProcessor implements EnvironmentPostProcessor, Ordered {
+@CompileStatic
+@Slf4j
+class Sitemesh3EnvironmentPostProcessor implements EnvironmentPostProcessor, Ordered {
 
-    private static final Logger LOG = LoggerFactory.getLogger(Sitemesh3EnvironmentPostProcessor.class);
-
-    static final String PROPERTY_SOURCE_NAME = "defaultSitemesh3Properties";
+    static final String PROPERTY_SOURCE_NAME = 'defaultSitemesh3Properties'
 
     /**
      * A class unique to the SiteMesh 2 module (grails-layout). grails-sitemesh3
@@ -66,32 +63,32 @@ public class Sitemesh3EnvironmentPostProcessor implements EnvironmentPostProcess
      * stands down — but it is warned about loudly and support for it may be
      * removed.
      */
-    static final String SITEMESH2_MARKER_CLASS = "org.apache.grails.web.layout.GrailsLayoutViewResolverPostProcessor";
+    static final String SITEMESH2_MARKER_CLASS = 'org.apache.grails.web.layout.GrailsLayoutViewResolverPostProcessor'
 
     private static final boolean SITEMESH2_PRESENT =
-            ClassUtils.isPresent(SITEMESH2_MARKER_CLASS, ClassUtils.getDefaultClassLoader());
+            ClassUtils.isPresent(SITEMESH2_MARKER_CLASS, ClassUtils.defaultClassLoader)
 
     /**
      * Whether the SiteMesh 2 module (grails-layout) shares the classpath. When
      * it does, this module's view-resolver decoration stands down entirely.
      */
-    public static boolean isSiteMesh2Present() {
-        return SITEMESH2_PRESENT;
+    static boolean isSiteMesh2Present() {
+        SITEMESH2_PRESENT
     }
 
     @Override
-    public void postProcessEnvironment(ConfigurableEnvironment environment, SpringApplication application) {
+    void postProcessEnvironment(ConfigurableEnvironment environment, SpringApplication application) {
         if (isSiteMesh2Present()) {
-            LOG.warn("Both grails-sitemesh3 and grails-layout (SiteMesh 2) are on the classpath. " +
-                    "grails-sitemesh3 is a drop-in replacement and the two are mutually exclusive; " +
-                    "the SiteMesh 2 integration stays active and SiteMesh 3 view-resolver decoration " +
-                    "is disabled. Remove the grails-layout dependency, or exclude grails-sitemesh3 " +
-                    "(it arrives via grails-dependencies-starter-web) to silence this warning - " +
-                    "tolerance for the combined classpath may be removed in a future release.");
+            log.warn('Both grails-sitemesh3 and grails-layout (SiteMesh 2) are on the classpath. ' +
+                    'grails-sitemesh3 is a drop-in replacement and the two are mutually exclusive; ' +
+                    'the SiteMesh 2 integration stays active and SiteMesh 3 view-resolver decoration ' +
+                    'is disabled. Remove the grails-layout dependency, or exclude grails-sitemesh3 ' +
+                    '(it arrives via grails-dependencies-starter-web) to silence this warning - ' +
+                    'tolerance for the combined classpath may be removed in a future release.')
         }
-        MapPropertySource defaults = getDefaultPropertySource(environment);
-        if (!defaults.getSource().isEmpty()) {
-            environment.getPropertySources().addLast(defaults);
+        MapPropertySource defaults = getDefaultPropertySource(environment)
+        if (!defaults.source.isEmpty()) {
+            environment.propertySources.addLast(defaults)
         }
     }
 
@@ -102,29 +99,27 @@ public class Sitemesh3EnvironmentPostProcessor implements EnvironmentPostProcess
      * built without {@code SpringApplication} (where no
      * {@code EnvironmentPostProcessor} runs).
      */
-    public static MapPropertySource getDefaultPropertySource(ConfigurableEnvironment environment) {
-        Map<String, Object> properties = new LinkedHashMap<>();
-        properties.put("sitemesh.decorator.metaTag", "layout");
-        properties.put("sitemesh.decorator.attribute", WebUtils.LAYOUT_ATTRIBUTE);
-        properties.put("sitemesh.decorator.prefix", "/layouts/");
+    static MapPropertySource getDefaultPropertySource(ConfigurableEnvironment environment) {
+        Map<String, Object> properties = new LinkedHashMap<>()
+        properties.put('sitemesh.decorator.metaTag', 'layout')
+        properties.put('sitemesh.decorator.attribute', WebUtils.LAYOUT_ATTRIBUTE)
+        properties.put('sitemesh.decorator.prefix', '/layouts/')
 
         // The SiteMesh 3 specific key wins; fall back to the legacy
         // grails.views.layout.default key so existing apps keep their
         // configured default layout when switching.
-        String defaultLayout = environment.getProperty("grails.sitemesh.default.layout");
-        if (defaultLayout == null || defaultLayout.isEmpty()) {
-            defaultLayout = environment.getProperty("grails.views.layout.default");
-        }
-        if (defaultLayout != null && !defaultLayout.isEmpty()) {
-            properties.put("sitemesh.decorator.default", defaultLayout);
+        String defaultLayout = environment.getProperty('grails.sitemesh.default.layout') ?:
+                environment.getProperty('grails.views.layout.default')
+        if (defaultLayout) {
+            properties.put('sitemesh.decorator.default', defaultLayout)
         }
 
-        properties.keySet().removeIf(key -> environment.getProperty(key) != null);
-        return new MapPropertySource(PROPERTY_SOURCE_NAME, properties);
+        properties.keySet().removeIf { String key -> environment.getProperty(key) != null }
+        new MapPropertySource(PROPERTY_SOURCE_NAME, properties)
     }
 
     @Override
-    public int getOrder() {
-        return Ordered.LOWEST_PRECEDENCE;
+    int getOrder() {
+        Ordered.LOWEST_PRECEDENCE
     }
 }

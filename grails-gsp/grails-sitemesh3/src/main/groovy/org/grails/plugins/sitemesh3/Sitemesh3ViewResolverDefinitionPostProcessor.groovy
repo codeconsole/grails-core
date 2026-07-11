@@ -16,20 +16,22 @@
  *  specific language governing permissions and limitations
  *  under the License.
  */
-package org.grails.plugins.sitemesh3;
+package org.grails.plugins.sitemesh3
 
-import org.sitemesh.webmvc.SiteMeshViewResolver;
-import org.sitemesh.webmvc.SiteMeshViewResolverPostProcessor;
+import groovy.transform.CompileStatic
 
-import org.springframework.beans.BeansException;
-import org.springframework.beans.factory.annotation.AnnotatedBeanDefinition;
-import org.springframework.beans.factory.config.BeanDefinition;
-import org.springframework.beans.factory.config.ConfigurableBeanFactory;
-import org.springframework.beans.factory.support.BeanDefinitionRegistry;
-import org.springframework.core.type.MethodMetadata;
-import org.springframework.util.ClassUtils;
+import org.sitemesh.webmvc.SiteMeshViewResolver
+import org.sitemesh.webmvc.SiteMeshViewResolverPostProcessor
 
-import org.grails.plugins.web.GroovyPagesPostProcessor;
+import org.springframework.beans.BeansException
+import org.springframework.beans.factory.annotation.AnnotatedBeanDefinition
+import org.springframework.beans.factory.config.BeanDefinition
+import org.springframework.beans.factory.config.ConfigurableBeanFactory
+import org.springframework.beans.factory.support.BeanDefinitionRegistry
+import org.springframework.core.type.MethodMetadata
+import org.springframework.util.ClassUtils
+
+import org.grails.plugins.web.GroovyPagesPostProcessor
 
 /**
  * Grails-flavoured {@link SiteMeshViewResolverPostProcessor} — the upstream
@@ -55,50 +57,51 @@ import org.grails.plugins.web.GroovyPagesPostProcessor;
  * being wrapped is final, whether it came from grails-gsp, the scaffolding
  * plugin, or the application.</p>
  */
-public class Sitemesh3ViewResolverDefinitionPostProcessor extends SiteMeshViewResolverPostProcessor {
+@CompileStatic
+class Sitemesh3ViewResolverDefinitionPostProcessor extends SiteMeshViewResolverPostProcessor {
 
     /**
      * After {@link GroovyPagesPostProcessor#ORDER} so the default GSP resolver
      * definition exists whichever module contributed it, making this the last
      * word on the {@code jspViewResolver} definition.
      */
-    public static final int ORDER = GroovyPagesPostProcessor.ORDER + 10;
+    public static final int ORDER = GroovyPagesPostProcessor.ORDER + 10
 
-    public Sitemesh3ViewResolverDefinitionPostProcessor() {
-        setTargetViewResolverBeanName(GrailsSiteMeshViewResolverBeanPostProcessor.TARGET_VIEW_RESOLVER_BEAN_NAME);
-        setSiteMeshViewResolverClass(GrailsSiteMeshViewResolver.class);
-        setOrder(ORDER);
+    Sitemesh3ViewResolverDefinitionPostProcessor() {
+        targetViewResolverBeanName = GrailsSiteMeshViewResolverBeanPostProcessor.TARGET_VIEW_RESOLVER_BEAN_NAME
+        siteMeshViewResolverClass = GrailsSiteMeshViewResolver
+        order = ORDER
     }
 
     @Override
-    public void postProcessBeanDefinitionRegistry(BeanDefinitionRegistry registry) throws BeansException {
+    void postProcessBeanDefinitionRegistry(BeanDefinitionRegistry registry) throws BeansException {
         if (Sitemesh3EnvironmentPostProcessor.isSiteMesh2Present()) {
             // Migration tolerance: with grails-layout on the classpath the
             // SiteMesh 2 integration owns decoration and this module stands
             // down (warned about in Sitemesh3EnvironmentPostProcessor).
-            return;
+            return
         }
-        if (!registry.containsBeanDefinition(getTargetViewResolverBeanName()) ||
-                !registry.containsBeanDefinition(getContentProcessorBeanName()) ||
-                !registry.containsBeanDefinition(getDecoratorSelectorBeanName())) {
+        if (!registry.containsBeanDefinition(targetViewResolverBeanName) ||
+                !registry.containsBeanDefinition(contentProcessorBeanName) ||
+                !registry.containsBeanDefinition(decoratorSelectorBeanName)) {
             // Decoration is not possible in this context (no GSP view resolver, or a
             // context without the SiteMesh beans, e.g. the lightweight unit-test
             // contexts built by grails-testing-support) — leave the definition alone.
             // Returning here also keeps the upstream missing-target warning out of
             // those contexts.
-            return;
+            return
         }
-        BeanDefinition existing = registry.getBeanDefinition(getTargetViewResolverBeanName());
+        BeanDefinition existing = registry.getBeanDefinition(targetViewResolverBeanName)
         if (isFactoryMethodReturningDecorator(existing, registry)) {
-            return;
+            return
         }
-        super.postProcessBeanDefinitionRegistry(registry);
+        super.postProcessBeanDefinitionRegistry(registry)
 
         // Upstream always marks the wrapper lazy; preserve the target's own
         // eagerness so an eagerly-declared resolver keeps initialising at startup.
-        BeanDefinition wrapper = registry.getBeanDefinition(getTargetViewResolverBeanName());
-        if (wrapper != existing) {
-            wrapper.setLazyInit(existing.isLazyInit());
+        BeanDefinition wrapper = registry.getBeanDefinition(targetViewResolverBeanName)
+        if (!wrapper.is(existing)) {
+            wrapper.lazyInit = existing.lazyInit
         }
     }
 
@@ -112,22 +115,22 @@ public class Sitemesh3ViewResolverDefinitionPostProcessor extends SiteMeshViewRe
      * loader (e.g. devtools) are visible to the check.
      */
     private boolean isFactoryMethodReturningDecorator(BeanDefinition definition, BeanDefinitionRegistry registry) {
-        if (definition.getBeanClassName() != null || !(definition instanceof AnnotatedBeanDefinition annotated)) {
-            return false;
+        if (definition.beanClassName != null || !(definition instanceof AnnotatedBeanDefinition)) {
+            return false
         }
-        MethodMetadata factoryMethod = annotated.getFactoryMethodMetadata();
+        MethodMetadata factoryMethod = ((AnnotatedBeanDefinition) definition).factoryMethodMetadata
         if (factoryMethod == null) {
-            return false;
+            return false
         }
-        ClassLoader loader = registry instanceof ConfigurableBeanFactory beanFactory ?
-                beanFactory.getBeanClassLoader() :
-                ClassUtils.getDefaultClassLoader();
+        ClassLoader loader = registry instanceof ConfigurableBeanFactory ?
+                ((ConfigurableBeanFactory) registry).beanClassLoader :
+                ClassUtils.defaultClassLoader
         try {
-            return SiteMeshViewResolver.class.isAssignableFrom(
-                    ClassUtils.forName(factoryMethod.getReturnTypeName(), loader));
+            return SiteMeshViewResolver.isAssignableFrom(
+                    ClassUtils.forName(factoryMethod.returnTypeName, loader))
         }
         catch (ClassNotFoundException | LinkageError ignored) {
-            return false;
+            return false
         }
     }
 }

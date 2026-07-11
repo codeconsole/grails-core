@@ -16,19 +16,22 @@
  *  specific language governing permissions and limitations
  *  under the License.
  */
-package org.grails.plugins.sitemesh3;
+package org.grails.plugins.sitemesh3
 
-import org.sitemesh.webmvc.SiteMeshViewResolverBeanPostProcessor;
+import groovy.transform.CompileStatic
 
-import org.springframework.beans.BeansException;
-import org.springframework.beans.factory.BeanFactory;
+import org.sitemesh.webmvc.SiteMeshViewResolverBeanPostProcessor
+
+import org.springframework.beans.BeansException
+import org.springframework.beans.factory.BeanFactory
 
 /**
  * {@link SiteMeshViewResolverBeanPostProcessor} preconfigured to wrap
  * Grails' {@code gspViewResolver} bean with a
  * {@link GrailsSiteMeshViewResolver}.
  */
-public class GrailsSiteMeshViewResolverBeanPostProcessor extends SiteMeshViewResolverBeanPostProcessor {
+@CompileStatic
+class GrailsSiteMeshViewResolverBeanPostProcessor extends SiteMeshViewResolverBeanPostProcessor {
 
     /**
      * The primary GSP view resolver bean name in Grails. The historical
@@ -39,11 +42,11 @@ public class GrailsSiteMeshViewResolverBeanPostProcessor extends SiteMeshViewRes
      * modern {@code GspAutoConfiguration.gspViewResolver()} bean is
      * aliased to this name too when it fires.
      */
-    public static final String TARGET_VIEW_RESOLVER_BEAN_NAME = "jspViewResolver";
+    public static final String TARGET_VIEW_RESOLVER_BEAN_NAME = 'jspViewResolver'
 
-    public GrailsSiteMeshViewResolverBeanPostProcessor() {
-        setTargetViewResolverBeanName(TARGET_VIEW_RESOLVER_BEAN_NAME);
-        setSiteMeshViewResolverClass(GrailsSiteMeshViewResolver.class);
+    GrailsSiteMeshViewResolverBeanPostProcessor() {
+        targetViewResolverBeanName = TARGET_VIEW_RESOLVER_BEAN_NAME
+        siteMeshViewResolverClass = GrailsSiteMeshViewResolver
     }
 
     /**
@@ -54,29 +57,29 @@ public class GrailsSiteMeshViewResolverBeanPostProcessor extends SiteMeshViewRes
      * so leave the view resolver unwrapped instead of failing the context.
      */
     @Override
-    public Object postProcessAfterInitialization(Object bean, String beanName) throws BeansException {
-        BeanFactory beanFactory = getBeanFactory();
+    Object postProcessAfterInitialization(Object bean, String beanName) throws BeansException {
+        BeanFactory beanFactory = getBeanFactory()
         if (beanFactory == null ||
                 Sitemesh3EnvironmentPostProcessor.isSiteMesh2Present() ||
-                !beanFactory.containsBean(getContentProcessorBeanName()) ||
-                !beanFactory.containsBean(getDecoratorSelectorBeanName())) {
-            return bean;
+                !beanFactory.containsBean(contentProcessorBeanName) ||
+                !beanFactory.containsBean(decoratorSelectorBeanName)) {
+            return bean
         }
-        return super.postProcessAfterInitialization(bean, beanName);
+        super.postProcessAfterInitialization(bean, beanName)
     }
 
     /**
      * The upstream implementation already suppresses its zero-wrap startup
-     * warning when the target resolves to a {@link SiteMeshViewResolver}
+     * warning when the target resolves to a {@link org.sitemesh.webmvc.SiteMeshViewResolver}
      * (the definition-level wrap applied by
      * {@link Sitemesh3ViewResolverDefinitionPostProcessor}); the only Grails
      * addition is silence when the SiteMesh 2 module owns decoration.
      */
     @Override
-    public void afterSingletonsInstantiated() {
+    void afterSingletonsInstantiated() {
         if (Sitemesh3EnvironmentPostProcessor.isSiteMesh2Present()) {
-            return;
+            return
         }
-        super.afterSingletonsInstantiated();
+        super.afterSingletonsInstantiated()
     }
 }

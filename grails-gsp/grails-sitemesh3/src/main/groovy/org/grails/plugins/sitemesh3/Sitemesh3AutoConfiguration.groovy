@@ -16,27 +16,29 @@
  *  specific language governing permissions and limitations
  *  under the License.
  */
-package org.grails.plugins.sitemesh3;
+package org.grails.plugins.sitemesh3
 
-import org.sitemesh.webmvc.SiteMeshViewResolverBeanPostProcessor;
-import org.sitemesh.webmvc.SiteMeshViewResolverPostProcessor;
+import groovy.transform.CompileStatic
 
-import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.boot.autoconfigure.AutoConfiguration;
-import org.springframework.boot.autoconfigure.AutoConfigureAfter;
-import org.springframework.boot.autoconfigure.AutoConfigureBefore;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.context.annotation.Bean;
-import org.springframework.web.servlet.DispatcherServlet;
+import org.sitemesh.webmvc.SiteMeshViewResolverBeanPostProcessor
+import org.sitemesh.webmvc.SiteMeshViewResolverPostProcessor
 
-import grails.config.Config;
-import grails.core.GrailsApplication;
-import grails.util.Environment;
-import grails.util.Metadata;
-import org.grails.web.gsp.io.GrailsConventionGroovyPageLocator;
+import org.springframework.beans.factory.ObjectProvider
+import org.springframework.boot.autoconfigure.AutoConfiguration
+import org.springframework.boot.autoconfigure.AutoConfigureAfter
+import org.springframework.boot.autoconfigure.AutoConfigureBefore
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean
+import org.springframework.boot.autoconfigure.condition.ConditionalOnClass
+import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
+import org.springframework.context.annotation.Bean
+import org.springframework.web.servlet.DispatcherServlet
+
+import grails.config.Config
+import grails.core.GrailsApplication
+import grails.util.Environment
+import grails.util.Metadata
+import org.grails.web.gsp.io.GrailsConventionGroovyPageLocator
 
 /**
  * Registers the Grails SiteMesh 3 integration beans ahead of the upstream
@@ -75,56 +77,55 @@ import org.grails.web.gsp.io.GrailsConventionGroovyPageLocator;
  * only rewrites {@code jspViewResolver} when both of those beans are registered,
  * it keeps decoration out of such contexts too.</p>
  */
+@CompileStatic
 @AutoConfiguration
-@AutoConfigureAfter(name = "org.springframework.boot.webmvc.autoconfigure.DispatcherServletAutoConfiguration")
-@AutoConfigureBefore(name = "org.sitemesh.autoconfigure.SiteMeshViewResolverAutoConfiguration")
-@ConditionalOnClass(SiteMeshViewResolverBeanPostProcessor.class)
-@ConditionalOnProperty(name = "sitemesh.integration", havingValue = "view-resolver", matchIfMissing = true)
-public class Sitemesh3AutoConfiguration {
+@AutoConfigureAfter(name = 'org.springframework.boot.webmvc.autoconfigure.DispatcherServletAutoConfiguration')
+@AutoConfigureBefore(name = 'org.sitemesh.autoconfigure.SiteMeshViewResolverAutoConfiguration')
+@ConditionalOnClass(SiteMeshViewResolverBeanPostProcessor)
+@ConditionalOnProperty(name = 'sitemesh.integration', havingValue = 'view-resolver', matchIfMissing = true)
+class Sitemesh3AutoConfiguration {
 
     @Bean
-    @ConditionalOnMissingBean(SiteMeshViewResolverPostProcessor.class)
-    public static Sitemesh3ViewResolverDefinitionPostProcessor siteMeshViewResolverPostProcessor() {
-        return new Sitemesh3ViewResolverDefinitionPostProcessor();
+    @ConditionalOnMissingBean(SiteMeshViewResolverPostProcessor)
+    static Sitemesh3ViewResolverDefinitionPostProcessor siteMeshViewResolverPostProcessor() {
+        new Sitemesh3ViewResolverDefinitionPostProcessor()
     }
 
     @Bean
-    @ConditionalOnMissingBean(SiteMeshViewResolverBeanPostProcessor.class)
-    public static GrailsSiteMeshViewResolverBeanPostProcessor siteMeshViewResolverBeanPostProcessor() {
-        return new GrailsSiteMeshViewResolverBeanPostProcessor();
+    @ConditionalOnMissingBean(SiteMeshViewResolverBeanPostProcessor)
+    static GrailsSiteMeshViewResolverBeanPostProcessor siteMeshViewResolverBeanPostProcessor() {
+        new GrailsSiteMeshViewResolverBeanPostProcessor()
     }
 
     @Bean
-    @ConditionalOnBean(DispatcherServlet.class)
-    @ConditionalOnMissingBean(name = "contentProcessor")
-    public CaptureAwareContentProcessor contentProcessor() {
-        return new CaptureAwareContentProcessor();
+    @ConditionalOnBean(DispatcherServlet)
+    @ConditionalOnMissingBean(name = 'contentProcessor')
+    CaptureAwareContentProcessor contentProcessor() {
+        new CaptureAwareContentProcessor()
     }
 
     @Bean
-    @ConditionalOnBean(DispatcherServlet.class)
-    @ConditionalOnMissingBean(name = "decoratorSelector")
-    public Sitemesh3LayoutFinder decoratorSelector(ObjectProvider<GrailsConventionGroovyPageLocator> groovyPageLocator,
-                                                   GrailsApplication grailsApplication) {
-        Config config = grailsApplication.getConfig();
-        Environment env = Environment.getCurrent();
-        boolean developmentMode = Metadata.getCurrent().isDevelopmentEnvironmentAvailable();
+    @ConditionalOnBean(DispatcherServlet)
+    @ConditionalOnMissingBean(name = 'decoratorSelector')
+    Sitemesh3LayoutFinder decoratorSelector(ObjectProvider<GrailsConventionGroovyPageLocator> groovyPageLocator,
+                                            GrailsApplication grailsApplication) {
+        Config config = grailsApplication.config
+        Environment env = Environment.current
+        boolean developmentMode = Metadata.current.isDevelopmentEnvironmentAvailable()
         boolean reloadEnabled = env.isReloadEnabled() ||
-                config.getProperty("grails.gsp.enable.reload", Boolean.class, false) ||
-                (developmentMode && env == Environment.DEVELOPMENT);
+                config.getProperty('grails.gsp.enable.reload', Boolean, false) ||
+                (developmentMode && env == Environment.DEVELOPMENT)
 
         // The SiteMesh 3 specific key wins; fall back to the legacy
         // grails.views.layout.default key so existing apps keep their
         // configured default layout when switching.
-        String defaultLayout = config.getProperty("grails.sitemesh.default.layout");
-        if (defaultLayout == null || defaultLayout.isEmpty()) {
-            defaultLayout = config.getProperty("grails.views.layout.default");
-        }
+        String defaultLayout = config.getProperty('grails.sitemesh.default.layout') ?:
+                config.getProperty('grails.views.layout.default')
 
-        Sitemesh3LayoutFinder finder = new Sitemesh3LayoutFinder(groovyPageLocator.getIfAvailable());
-        finder.setGspReloadEnabled(reloadEnabled);
-        finder.setDefaultDecoratorName(defaultLayout == null || defaultLayout.isEmpty() ? null : defaultLayout);
-        finder.setLayoutCacheExpirationMillis(config.getProperty("grails.sitemesh.layout.cache.interval", Long.class, 5000L));
-        return finder;
+        Sitemesh3LayoutFinder finder = new Sitemesh3LayoutFinder(groovyPageLocator.getIfAvailable())
+        finder.gspReloadEnabled = reloadEnabled
+        finder.defaultDecoratorName = defaultLayout ?: null
+        finder.layoutCacheExpirationMillis = config.getProperty('grails.sitemesh.layout.cache.interval', Long, 5000L)
+        return finder
     }
 }
