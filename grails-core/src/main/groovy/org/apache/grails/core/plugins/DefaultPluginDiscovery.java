@@ -510,8 +510,8 @@ public class DefaultPluginDiscovery implements PluginDiscovery {
             return;
         }
 
-        if (LOG.isInfoEnabled()) {
-            LOG.info(
+        if (LOG.isDebugEnabled()) {
+            LOG.debug(
                     "Grails plug-in [{}] with version [{}] loaded successfully",
                     plugin.getName(),
                     plugin.getPluginVersion()
