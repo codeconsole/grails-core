@@ -30,7 +30,8 @@ logging:
         com.example.myapp: DEBUG          # your packages
         org.hibernate.SQL: DEBUG          # see the generated SQL
     file:
-        name: logs/myapp.log              # setting this activates Spring Boot's file appender
+        name: logs/myapp.log              # activates Boot's file appender only when no logback-spring.xml is present
+                                          # (otherwise uncomment the file-appender include in that file)
 ----
 
 Per-environment levels need no XML either. Grails environments map to Spring profiles, so an `environments` block in `application.yml` applies levels to a single environment — for example, verbose logging for your own packages in development only (a profile-specific `application-development.yml` works as well):
@@ -48,6 +49,8 @@ environments:
 When properties are not enough — custom appenders, structured output, or per-environment appender routing — add a `grails-app/conf/logback-spring.xml` file. Use the `-spring` variant (not plain `logback.xml`), because it is processed by Spring Boot and unlocks `<springProfile>` and `<springProperty>`. The Grails environments `development`, `test` and `production` map to the corresponding Spring profiles, so `<springProfile name="development">` blocks configure environment-specific logging — one of the features lost when Logback removed Groovy configuration.
 
 TIP: When generating a project with https://start.grails.org[Grails Forge], select the *Zero-config Logback Logging* feature to omit the generated `grails-app/conf/logback-spring.xml` and rely entirely on Spring Boot's defaults plus `application.yml` tuning as described above.
+
+Everything above works the same with or without the file, with these boundaries: without a `logback-spring.xml` you give up anything only XML can express — `<springProfile>`-conditional *appenders* and routing (per-environment *levels* still work via the `environments` block) and the starter file's development-profile `StackTrace` logger setting. Conversely, activating a file appender purely by setting `logging.file.name` only works *without* the file; when a `logback-spring.xml` is present it replaces Spring Boot's bundled configuration, so file output requires uncommenting the `file-appender.xml` include in the generated file.
 
 // To be re-included when a Grails {grailsMajorVersion} release of the plugin gets released
 // See: virtualdogbert/logback-groovy-config#15

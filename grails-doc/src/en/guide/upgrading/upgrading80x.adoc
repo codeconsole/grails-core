@@ -1555,7 +1555,7 @@ environments:
 
 A profile-specific `grails-app/conf/application-development.yml` containing the same `logging.level` entries works as well.
 
-Keep (or re-add) a `logback-spring.xml` file when properties are not enough — for example custom appenders, structured/JSON output, or per-environment appender routing. Use the `-spring` variant (not plain `logback.xml`), because it is processed by Spring Boot and unlocks `<springProfile>` and `<springProperty>`:
+Keep (or re-add) a `logback-spring.xml` file when properties are not enough — for example custom appenders, structured/JSON output, or per-environment appender routing. Use the `-spring` variant (not plain `logback.xml`), because it is processed by Spring Boot and unlocks `<springProfile>` and `<springProperty>`. Note that once the file exists it *replaces* Spring Boot's bundled configuration entirely, so it must declare its own appenders — the simplest approach is to compose Spring Boot's own includes, as the generated starter file does:
 
 [source,xml]
 .grails-app/conf/logback-spring.xml
@@ -1563,6 +1563,11 @@ Keep (or re-add) a `logback-spring.xml` file when properties are not enough — 
 <?xml version="1.0" encoding="UTF-8"?>
 <configuration>
     <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+    <include resource="org/springframework/boot/logging/logback/console-appender.xml"/>
+
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+    </root>
 
     <springProfile name="development">
         <logger name="org.hibernate.SQL" level="DEBUG"/>
