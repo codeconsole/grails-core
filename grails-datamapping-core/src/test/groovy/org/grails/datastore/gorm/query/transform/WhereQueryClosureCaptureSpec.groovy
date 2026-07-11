@@ -31,26 +31,28 @@ import spock.lang.Specification
  */
 class WhereQueryClosureCaptureSpec extends Specification {
 
+    // The domain class names must be unique across the test JVM because
+    // AstPropertyResolveUtils caches resolved properties statically by class name
     private static final String SERVICE_SOURCE = '''
 import grails.gorm.DetachedCriteria
 import grails.gorm.annotation.Entity
 
-class BookQueryService {
-    protected DetachedCriteria<Book> findQueryByBookIdAndAuthorName(Serializable bookId, String authorName) {
-        Book.where {
+class ClosureCaptureBookQueryService {
+    protected DetachedCriteria<ClosureCaptureBook> findQueryByBookIdAndAuthorName(Serializable bookId, String authorName) {
+        ClosureCaptureBook.where {
             bookId == bookId && author.name == authorName
         }
     }
 }
 
 @Entity
-class Book {
+class ClosureCaptureBook {
     Long bookId
-    Author author
+    ClosureCaptureAuthor author
 }
 
 @Entity
-class Author {
+class ClosureCaptureAuthor {
     String name
 }
 '''
