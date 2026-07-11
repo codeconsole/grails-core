@@ -16,19 +16,21 @@
  *  specific language governing permissions and limitations
  *  under the License.
  */
-package grails.plugin.scaffolding;
+package grails.plugin.scaffolding
 
-import org.springframework.beans.BeansException;
-import org.springframework.beans.MutablePropertyValues;
-import org.springframework.beans.factory.support.BeanDefinitionRegistry;
-import org.springframework.beans.factory.support.BeanDefinitionRegistryPostProcessor;
-import org.springframework.beans.factory.support.GenericBeanDefinition;
-import org.springframework.context.EnvironmentAware;
-import org.springframework.core.Ordered;
-import org.springframework.core.env.Environment;
+import groovy.transform.CompileStatic
 
-import grails.util.Metadata;
-import org.grails.plugins.web.GroovyPagesPostProcessor;
+import org.springframework.beans.BeansException
+import org.springframework.beans.MutablePropertyValues
+import org.springframework.beans.factory.support.BeanDefinitionRegistry
+import org.springframework.beans.factory.support.BeanDefinitionRegistryPostProcessor
+import org.springframework.beans.factory.support.GenericBeanDefinition
+import org.springframework.context.EnvironmentAware
+import org.springframework.core.Ordered
+import org.springframework.core.env.Environment
+
+import grails.util.Metadata
+import org.grails.plugins.web.GroovyPagesPostProcessor
 
 /**
  * Registers the {@code jspViewResolver} bean definition as a
@@ -39,7 +41,8 @@ import org.grails.plugins.web.GroovyPagesPostProcessor;
  * than building the resolver directly keeps the view-resolver configuration in
  * one place and preserves the established post-processor pipeline.
  */
-public class ScaffoldingViewResolverDefinitionPostProcessor implements BeanDefinitionRegistryPostProcessor, EnvironmentAware, Ordered {
+@CompileStatic
+class ScaffoldingViewResolverDefinitionPostProcessor implements BeanDefinitionRegistryPostProcessor, EnvironmentAware, Ordered {
 
     /**
      * Runs before the SiteMesh 2 module's {@code GrailsLayoutViewResolverPostProcessor}
@@ -48,46 +51,46 @@ public class ScaffoldingViewResolverDefinitionPostProcessor implements BeanDefin
      * {@link GroovyPagesPostProcessor} itself, which contributes the plain GSP
      * resolver only when no definition exists by then.
      */
-    public static final int ORDER = GroovyPagesPostProcessor.ORDER - 2;
+    public static final int ORDER = GroovyPagesPostProcessor.ORDER - 2
 
-    private static final String JSP_VIEW_RESOLVER_BEAN_NAME = "jspViewResolver";
+    private static final String JSP_VIEW_RESOLVER_BEAN_NAME = 'jspViewResolver'
 
-    private Environment environment;
+    private Environment environment
 
     @Override
-    public void postProcessBeanDefinitionRegistry(BeanDefinitionRegistry registry) throws BeansException {
+    void postProcessBeanDefinitionRegistry(BeanDefinitionRegistry registry) throws BeansException {
         if (registry.containsBeanDefinition(JSP_VIEW_RESOLVER_BEAN_NAME)) {
             // Any existing definition wins, whether the application's or another
             // plugin's. Note this is stricter than the old doWithSpring()
             // registration, which overwrote definitions from earlier-loading
             // plugins: scaffolding now stands down for those too, matching how
             // GroovyPagesPostProcessor contributes its default.
-            return;
+            return
         }
-        GenericBeanDefinition definition = new GenericBeanDefinition();
-        definition.setBeanClass(ScaffoldingViewResolver.class);
-        definition.setParentName("abstractViewResolver");
-        definition.setLazyInit(true);
-        MutablePropertyValues properties = definition.getPropertyValues();
-        properties.addPropertyValue("enableReload", isReloadEnabled());
-        properties.addPropertyValue("enableNamespaceViewDefaults", this.environment != null &&
-                this.environment.getProperty("grails.scaffolding.enableNamespaceViewDefaults", Boolean.class, false));
-        registry.registerBeanDefinition(JSP_VIEW_RESOLVER_BEAN_NAME, definition);
+        GenericBeanDefinition definition = new GenericBeanDefinition()
+        definition.beanClass = ScaffoldingViewResolver
+        definition.parentName = 'abstractViewResolver'
+        definition.lazyInit = true
+        MutablePropertyValues properties = definition.propertyValues
+        properties.addPropertyValue('enableReload', isReloadEnabled())
+        properties.addPropertyValue('enableNamespaceViewDefaults', this.environment != null &&
+                this.environment.getProperty('grails.scaffolding.enableNamespaceViewDefaults', Boolean, false))
+        registry.registerBeanDefinition(JSP_VIEW_RESOLVER_BEAN_NAME, definition)
     }
 
     private static boolean isReloadEnabled() {
-        grails.util.Environment env = grails.util.Environment.getCurrent();
-        return env.isReloadEnabled() ||
-                (Metadata.getCurrent().isDevelopmentEnvironmentAvailable() && env == grails.util.Environment.DEVELOPMENT);
+        grails.util.Environment env = grails.util.Environment.current
+        env.isReloadEnabled() ||
+                (Metadata.current.isDevelopmentEnvironmentAvailable() && env == grails.util.Environment.DEVELOPMENT)
     }
 
     @Override
-    public void setEnvironment(Environment environment) {
-        this.environment = environment;
+    void setEnvironment(Environment environment) {
+        this.environment = environment
     }
 
     @Override
-    public int getOrder() {
-        return ORDER;
+    int getOrder() {
+        ORDER
     }
 }
