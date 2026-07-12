@@ -70,6 +70,16 @@ class GrailsDefaultPluginsSpec extends ApplicationContextSpec implements Command
             true
         }
 
+        and: "no bundle declares a key twice, since Properties silently keeps only the last value"
+        bundles.keySet().every { name ->
+            final List<String> keys = output[name].readLines()
+                    .findAll { it && !it.startsWith('#') && it.contains('=') }
+                    .collect { it.substring(0, it.indexOf('=')).trim() }
+            final List<String> duplicated = keys.countBy { it }.findAll { it.value > 1 }*.key
+            assert duplicated.isEmpty(), "${name} declares duplicate keys: ${duplicated}"
+            true
+        }
+
         and: "every parameterized message is a valid MessageFormat that actually substitutes its arguments"
         bundles.every { name, props ->
             props.stringPropertyNames().findAll { props.getProperty(it).contains('{') }.every { key ->

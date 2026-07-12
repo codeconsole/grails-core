@@ -52,8 +52,10 @@
                     </a>
                     <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="localeDropdown">
                         <%-- The default language stays pinned on top: a user who switched to a
-                             language they cannot read must always find a recognizable way back. --%>
-                        <g:set var="defaultLocale" value="${java.util.Locale.ENGLISH}"/>
+                             language they cannot read must always find a recognizable way back.
+                             Resolved from spring.web.locale so a configured default is honored. --%>
+                        <g:set var="defaultLocale"
+                               value="${org.springframework.util.StringUtils.parseLocale(grailsApplication.config.getProperty('spring.web.locale', 'en')) ?: java.util.Locale.ENGLISH}"/>
                         <li>
                             <a class="dropdown-item${defaultLocale.language == currentLocale.language ? ' active' : ''}" href="?lang=${defaultLocale.toLanguageTag()}">${defaultLocale.getDisplayName(defaultLocale)}</a>
                         </li>

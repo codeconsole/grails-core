@@ -99,7 +99,7 @@
             });
         });
 
-        // Initial load: show ascending indicator on Name (and sort to match).
+        // Initial load: show the ascending indicator on Name; the server already renders rows in that order.
         const defaultKey = 'name';
         const defaultTh = headers.find((th) => (th.getAttribute('data-sort-key') || '') === defaultKey);
         if (defaultTh) {

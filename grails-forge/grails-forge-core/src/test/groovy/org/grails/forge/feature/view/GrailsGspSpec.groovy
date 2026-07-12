@@ -182,6 +182,7 @@ class GrailsGspSpec extends ApplicationContextSpec implements CommandOutputFixtu
         !layout.contains('id="actuatorsDropdown"')
 
         and: "the language menu pins the default language on top so users can always navigate back"
+        layout.contains("getProperty('spring.web.locale', 'en')")
         layout.contains('java.util.Locale.ENGLISH')
         layout.indexOf('defaultLocale.getDisplayName(defaultLocale)') < layout.indexOf('availableLocale.getDisplayName(availableLocale)')
     }
@@ -195,7 +196,10 @@ class GrailsGspSpec extends ApplicationContextSpec implements CommandOutputFixtu
         index.contains('<g:message code="welcome.actuators"/>')
         index.contains("ClassUtils.isPresent('org.springframework.boot.actuate.endpoint.web.WebEndpointsSupplier'")
         index.contains('management.endpoints.web.base-path')
-        index.contains('${request.contextPath}${actuatorBasePath}/${endpoint.rootPath}')
+        index.contains('${actuatorUrlBase}${actuatorBasePath}/${endpoint.rootPath}')
+
+        and: "a separate management port redirects the links off the application port"
+        index.contains("getProperty('management.server.port')")
 
         and: "the runtime versions card reports Spring Security only when the dependency is present"
         index.contains("ClassUtils.isPresent('org.springframework.security.core.SpringSecurityCoreVersion'")

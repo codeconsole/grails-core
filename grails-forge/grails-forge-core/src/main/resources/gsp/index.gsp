@@ -391,6 +391,11 @@
                 <g:if test="${actuatorEndpoints}">
                     <g:set var="actuatorBasePath"
                            value="${grailsApplication.config.getProperty('management.endpoints.web.base-path') ?: '/actuator'}"/>
+                    <%-- With management.server.port the endpoints are not served on this
+                         app's port: link against the management port and its base path. --%>
+                    <g:set var="managementPort" value="${grailsApplication.config.getProperty('management.server.port')}"/>
+                    <g:set var="actuatorUrlBase"
+                           value="${managementPort && managementPort.toString() != request.serverPort.toString() ? '//' + request.serverName + ':' + managementPort + (grailsApplication.config.getProperty('management.server.base-path') ?: '') : request.contextPath}"/>
                     <div class="card border-1 shadow-sm mt-4">
                         <div class="card-body">
                             <div class="d-flex align-items-center justify-content-between mb-3">
@@ -403,7 +408,7 @@
                                 <g:each var="endpoint" in="${actuatorEndpoints}">
                                     <li class="list-group-item d-flex justify-content-between align-items-center px-0">
                                         <span class="fw-medium">${endpoint.endpointId}</span>
-                                        <a href="${request.contextPath}${actuatorBasePath}/${endpoint.rootPath}" target="_blank" rel="noopener"
+                                        <a href="${actuatorUrlBase}${actuatorBasePath}/${endpoint.rootPath}" target="_blank" rel="noopener"
                                            class="small link-primary link-offset-2 link-underline-opacity-0 link-underline-opacity-75-hover">
                                             ${actuatorBasePath}/${endpoint.rootPath}
                                         </a>
