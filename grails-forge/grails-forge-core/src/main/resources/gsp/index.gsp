@@ -1,6 +1,7 @@
 <%@ page import="grails.util.Environment"%>
 <%@ page import="org.springframework.boot.SpringBootVersion"%>
 <%@ page import="org.springframework.core.SpringVersion"%>
+<%@ page import="org.springframework.util.ClassUtils"%>
 <g:set var="pluginManager" bean="pluginManager"/>
 <g:set var="servletContext" bean="servletContext"/>
 <g:set var="pluginsWithOrder"
@@ -369,6 +370,37 @@
                         <p id="plugins-empty" class="small text-body-secondary d-none mb-0"><g:message code="welcome.filter.none"/></p>
                     </div>
                 </div>
+
+                <%-- ACTUATORS: shown only when Spring Boot Actuator is present and exposes web endpoints --%>
+                <g:set var="actuatorSupplierType"
+                       value="${ClassUtils.isPresent('org.springframework.boot.actuate.endpoint.web.WebEndpointsSupplier', null) ? ClassUtils.forName('org.springframework.boot.actuate.endpoint.web.WebEndpointsSupplier', null) : null}"/>
+                <g:set var="actuatorEndpoints"
+                       value="${actuatorSupplierType && applicationContext.getBeanNamesForType(actuatorSupplierType) ? applicationContext.getBean(actuatorSupplierType).endpoints.toList().sort { it.endpointId.toString() } : []}"/>
+                <g:if test="${actuatorEndpoints}">
+                    <g:set var="actuatorBasePath"
+                           value="${grailsApplication.config.getProperty('management.endpoints.web.base-path') ?: '/actuator'}"/>
+                    <div class="card border-1 shadow-sm mt-4">
+                        <div class="card-body">
+                            <div class="d-flex align-items-center justify-content-between mb-3">
+                                <h6 class="card-title mb-0 fw-semibold"><g:message code="welcome.actuators"/></h6>
+                                <span class="badge bg-body-tertiary text-body border">
+                                    ${actuatorEndpoints.size()}
+                                </span>
+                            </div>
+                            <ul class="list-group list-group-flush small">
+                                <g:each var="endpoint" in="${actuatorEndpoints}">
+                                    <li class="list-group-item d-flex justify-content-between align-items-center px-0">
+                                        <span class="fw-medium">${endpoint.endpointId}</span>
+                                        <a href="${request.contextPath}${actuatorBasePath}/${endpoint.rootPath}" target="_blank" rel="noopener"
+                                           class="small link-primary link-offset-2 link-underline-opacity-0 link-underline-opacity-75-hover">
+                                            ${actuatorBasePath}/${endpoint.rootPath}
+                                        </a>
+                                    </li>
+                                </g:each>
+                            </ul>
+                        </div>
+                    </div>
+                </g:if>
             </div>
         </div>
     </div>

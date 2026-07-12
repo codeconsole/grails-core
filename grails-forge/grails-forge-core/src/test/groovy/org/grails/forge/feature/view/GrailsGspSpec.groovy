@@ -143,35 +143,34 @@ class GrailsGspSpec extends ApplicationContextSpec implements CommandOutputFixtu
         layout.contains('<g:link controller="${c.logicalPropertyName}" namespace="${c.namespace}"')
     }
 
-    void "test default layout carries status, artefacts, actuators and plugins navigation"() {
+    void "test default layout keeps the navbar minimal and pins the default language"() {
         when:
         final def output = generate(ApplicationType.WEB, new Options(DevelopmentReloading.DEVTOOLS))
         final String layout = output["grails-app/views/layouts/main.gsp"]
 
-        then: "the application-status dropdown reports server, host, environment, profile, versions and reloading state"
-        layout.contains('id="statusDropdown"')
-        layout.contains('<g:message code="layout.status"/>')
-        layout.contains('request.servletContext.serverInfo')
-        layout.contains('InetAddress.localHost')
-        layout.contains('SpringBootVersion.getVersion()')
-        layout.contains('Environment.reloadingAgentEnabled')
-
-        and: "the artefacts dropdown reports the artefact counts"
-        layout.contains('id="artefactsDropdown"')
-        layout.contains('grailsApplication.domainClasses.size()')
-
-        and: "actuator endpoints are listed only when actuator exposes web endpoints, resolved without a hard class reference"
-        layout.contains('id="actuatorsDropdown"')
-        layout.contains("ClassUtils.isPresent('org.springframework.boot.actuate.endpoint.web.WebEndpointsSupplier'")
-        layout.contains('management.endpoints.web.base-path')
-
-        and: "the installed-plugins dropdown is filterable by name"
-        layout.contains('id="pluginsDropdown"')
-        layout.contains('data-filter-list="#nav-plugins-list"')
+        then: "only controllers, language and theme live in the navbar"
+        layout.contains('id="controllersDropdown"')
+        layout.contains('id="localeDropdown"')
+        layout.contains('id="themeDropdown"')
+        !layout.contains('id="statusDropdown"')
+        !layout.contains('id="pluginsDropdown"')
+        !layout.contains('id="actuatorsDropdown"')
 
         and: "the language menu pins the default language on top so users can always navigate back"
         layout.contains('java.util.Locale.ENGLISH')
         layout.indexOf('defaultLocale.getDisplayName(defaultLocale)') < layout.indexOf('availableLocale.getDisplayName(availableLocale)')
+    }
+
+    void "test default index page lists exposed actuator endpoints when actuator is present"() {
+        when:
+        final def output = generate(ApplicationType.WEB, new Options(DevelopmentReloading.DEVTOOLS))
+        final String index = output["grails-app/views/index.gsp"]
+
+        then: "the actuators card renders only when actuator exposes web endpoints, resolved without a hard class reference"
+        index.contains('<g:message code="welcome.actuators"/>')
+        index.contains("ClassUtils.isPresent('org.springframework.boot.actuate.endpoint.web.WebEndpointsSupplier'")
+        index.contains('management.endpoints.web.base-path')
+        index.contains('${request.contextPath}${actuatorBasePath}/${endpoint.rootPath}')
     }
 
     void "test default layout chrome is internationalized"() {
