@@ -1,3 +1,7 @@
+<%@ page import="grails.util.Environment" %>
+<%@ page import="org.springframework.boot.SpringBootVersion" %>
+<%@ page import="org.springframework.core.SpringVersion" %>
+<%@ page import="org.springframework.util.ClassUtils" %>
 <!doctype html>
 <html lang="en">
 <head>
@@ -17,10 +21,15 @@
         <a class="navbar-brand d-flex align-items-center" href="${request.contextPath}/">
             <asset:image class="w-75" src="grails.svg" alt="Grails Logo"/>
         </a>
-        <g:set var="navControllers"
-               value="${grailsApplication.controllerClasses.toList().sort { it.fullName }}"/>
-        <g:if test="${navControllers}">
-            <ul class="navbar-nav me-auto">
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#mainNavbar"
+                aria-controls="mainNavbar" aria-expanded="false" aria-label="${message(code: 'layout.status')}">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+        <div class="collapse navbar-collapse" id="mainNavbar">
+        <ul class="navbar-nav me-auto">
+            <g:set var="navControllers"
+                   value="${grailsApplication.controllerClasses.toList().sort { it.fullName }}"/>
+            <g:if test="${navControllers}">
                 <li class="nav-item dropdown">
                     <a class="nav-link dropdown-toggle" href="#" id="controllersDropdown" role="button"
                        data-bs-toggle="dropdown" aria-expanded="false">
@@ -40,8 +49,91 @@
                         </g:each>
                     </ul>
                 </li>
-            </ul>
-        </g:if>
+            </g:if>
+
+            <li class="nav-item dropdown">
+                <a class="nav-link dropdown-toggle" href="#" id="statusDropdown" role="button"
+                   data-bs-toggle="dropdown" aria-expanded="false">
+                    <g:message code="layout.status"/>
+                </a>
+                <ul class="dropdown-menu" aria-labelledby="statusDropdown">
+                    <li><span class="dropdown-item-text text-nowrap"><g:message code="welcome.server"/>: ${request.servletContext.serverInfo}</span></li>
+                    <li><span class="dropdown-item-text text-nowrap"><g:message code="welcome.server.host"/>: ${InetAddress.localHost}</span></li>
+                    <li><span class="dropdown-item-text text-nowrap"><g:message code="welcome.app.environment"/>: ${Environment.current.name}</span></li>
+                    <li><span class="dropdown-item-text text-nowrap"><g:message code="welcome.app.profile"/>: ${grailsApplication.config.getProperty('grails.profile')}</span></li>
+                    <li><span class="dropdown-item-text text-nowrap"><g:message code="welcome.app.version"/>: <g:meta name="info.app.version"/></span></li>
+                    <li><hr class="dropdown-divider"></li>
+                    <li><span class="dropdown-item-text text-nowrap">Grails: <g:meta name="info.app.grailsVersion"/></span></li>
+                    <li><span class="dropdown-item-text text-nowrap">Groovy: ${GroovySystem.getVersion()}</span></li>
+                    <li><span class="dropdown-item-text text-nowrap">JVM: ${System.getProperty('java.version')}</span></li>
+                    <li><span class="dropdown-item-text text-nowrap">Spring Boot: ${SpringBootVersion.getVersion()}</span></li>
+                    <li><span class="dropdown-item-text text-nowrap">Spring: ${SpringVersion.getVersion()}</span></li>
+                    <li><hr class="dropdown-divider"></li>
+                    <li>
+                        <span class="dropdown-item-text text-nowrap">
+                            <g:if test="${Environment.reloadingAgentEnabled}"><g:message code="welcome.reloading.active"/></g:if>
+                            <g:else><g:message code="welcome.reloading.inactive"/></g:else>
+                        </span>
+                    </li>
+                </ul>
+            </li>
+
+            <li class="nav-item dropdown">
+                <a class="nav-link dropdown-toggle" href="#" id="artefactsDropdown" role="button"
+                   data-bs-toggle="dropdown" aria-expanded="false">
+                    <g:message code="layout.artefacts"/>
+                </a>
+                <ul class="dropdown-menu" aria-labelledby="artefactsDropdown">
+                    <li><span class="dropdown-item-text text-nowrap"><g:message code="welcome.artefact.controllers"/>: ${grailsApplication.controllerClasses.size()}</span></li>
+                    <li><span class="dropdown-item-text text-nowrap"><g:message code="welcome.artefact.domains"/>: ${grailsApplication.domainClasses.size()}</span></li>
+                    <li><span class="dropdown-item-text text-nowrap"><g:message code="welcome.artefact.services"/>: ${grailsApplication.serviceClasses.size()}</span></li>
+                    <li><span class="dropdown-item-text text-nowrap"><g:message code="welcome.artefact.taglibs"/>: ${grailsApplication.tagLibClasses.size()}</span></li>
+                </ul>
+            </li>
+
+            <%-- Actuators: shown only when Spring Boot Actuator is present and exposes web endpoints --%>
+            <g:set var="actuatorSupplierType"
+                   value="${ClassUtils.isPresent('org.springframework.boot.actuate.endpoint.web.WebEndpointsSupplier', null) ? ClassUtils.forName('org.springframework.boot.actuate.endpoint.web.WebEndpointsSupplier', null) : null}"/>
+            <g:set var="actuatorEndpoints"
+                   value="${actuatorSupplierType && applicationContext.getBeanNamesForType(actuatorSupplierType) ? applicationContext.getBean(actuatorSupplierType).endpoints.toList().sort { it.endpointId.toString() } : []}"/>
+            <g:if test="${actuatorEndpoints}">
+                <g:set var="actuatorBasePath"
+                       value="${grailsApplication.config.getProperty('management.endpoints.web.base-path') ?: '/actuator'}"/>
+                <li class="nav-item dropdown">
+                    <a class="nav-link dropdown-toggle" href="#" id="actuatorsDropdown" role="button"
+                       data-bs-toggle="dropdown" aria-expanded="false">
+                        <g:message code="layout.actuators"/>
+                    </a>
+                    <ul class="dropdown-menu" aria-labelledby="actuatorsDropdown"
+                        style="max-height: 60vh; overflow-y: auto;">
+                        <g:each var="endpoint" in="${actuatorEndpoints}">
+                            <li><a class="dropdown-item" href="${request.contextPath}${actuatorBasePath}/${endpoint.rootPath}" target="_blank" rel="noopener">${endpoint.endpointId}</a></li>
+                        </g:each>
+                    </ul>
+                </li>
+            </g:if>
+
+            <li class="nav-item dropdown">
+                <a class="nav-link dropdown-toggle" href="#" id="pluginsDropdown" role="button"
+                   data-bs-toggle="dropdown" aria-expanded="false">
+                    <g:message code="welcome.plugins.title"/> (${applicationContext.getBean('pluginManager').allPlugins.size()})
+                </a>
+                <ul class="dropdown-menu p-2" id="nav-plugins-list" aria-labelledby="pluginsDropdown"
+                    style="max-height: 60vh; overflow-y: auto; min-width: 16rem;">
+                    <li class="pb-2">
+                        <input type="search" class="form-control form-control-sm filter-input"
+                               data-filter-list="#nav-plugins-list" data-filter-empty="#nav-plugins-empty"
+                               placeholder="${message(code: 'welcome.filter.name')}"
+                               aria-label="${message(code: 'welcome.filter.name')}">
+                    </li>
+                    <g:each var="navPlugin" in="${applicationContext.getBean('pluginManager').allPlugins.toList().sort { it.name.toLowerCase() }}">
+                        <li data-name="${navPlugin.name}"><span class="dropdown-item-text text-nowrap">${navPlugin.name} - ${navPlugin.version}</span></li>
+                    </g:each>
+                    <li id="nav-plugins-empty" class="d-none"><span class="dropdown-item-text text-body-secondary"><g:message code="welcome.filter.none"/></span></li>
+                </ul>
+            </li>
+        </ul>
+        </div>
         <ul class="navbar-nav ms-auto">
             <g:set var="availableLocales" value="${application.getAttribute('availableLocales')}"/>
             <g:if test="${availableLocales && availableLocales.size() > 1}">
@@ -51,10 +143,19 @@
                         <i class="bi bi-globe me-1"></i>${currentLocale.getDisplayName(currentLocale)}
                     </a>
                     <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="localeDropdown">
+                        <%-- The default language stays pinned on top: a user who switched to a
+                             language they cannot read must always find a recognizable way back. --%>
+                        <g:set var="defaultLocale" value="${java.util.Locale.ENGLISH}"/>
+                        <li>
+                            <a class="dropdown-item${defaultLocale.language == currentLocale.language ? ' active' : ''}" href="?lang=${defaultLocale.toLanguageTag()}">${defaultLocale.getDisplayName(defaultLocale)}</a>
+                        </li>
+                        <li><hr class="dropdown-divider"></li>
                         <g:each in="${availableLocales}" var="availableLocale">
-                            <li>
-                                <a class="dropdown-item${availableLocale.language == currentLocale.language ? ' active' : ''}" href="?lang=${availableLocale.toLanguageTag()}">${availableLocale.getDisplayName(availableLocale)}</a>
-                            </li>
+                            <g:if test="${availableLocale.language != defaultLocale.language}">
+                                <li>
+                                    <a class="dropdown-item${availableLocale.language == currentLocale.language ? ' active' : ''}" href="?lang=${availableLocale.toLanguageTag()}">${availableLocale.getDisplayName(availableLocale)}</a>
+                                </li>
+                            </g:if>
                         </g:each>
                     </ul>
                 </li>
