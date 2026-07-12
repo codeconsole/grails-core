@@ -171,6 +171,10 @@ class GrailsGspSpec extends ApplicationContextSpec implements CommandOutputFixtu
         index.contains("ClassUtils.isPresent('org.springframework.boot.actuate.endpoint.web.WebEndpointsSupplier'")
         index.contains('management.endpoints.web.base-path')
         index.contains('${request.contextPath}${actuatorBasePath}/${endpoint.rootPath}')
+
+        and: "the runtime versions card reports Spring Security only when the dependency is present"
+        index.contains("ClassUtils.isPresent('org.springframework.security.core.SpringSecurityCoreVersion'")
+        index.contains('Spring Security')
     }
 
     void "test default layout chrome is internationalized"() {

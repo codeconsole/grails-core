@@ -68,6 +68,18 @@
                                 </span>
                                 ${SpringVersion.getVersion()}
                             </li>
+                            <%-- Spring Security: only when the dependency is present --%>
+                            <g:set var="springSecurityVersion"
+                                   value="${ClassUtils.isPresent('org.springframework.security.core.SpringSecurityCoreVersion', null) ? ClassUtils.forName('org.springframework.security.core.SpringSecurityCoreVersion', null).getMethod('getVersion').invoke(null) : null}"/>
+                            <g:if test="${springSecurityVersion}">
+                                <li class="list-group-item d-flex justify-content-between align-items-center px-0">
+                                    <span class="d-inline-flex align-items-center text-body-secondary">
+                                        <asset:image src="spring.svg" alt="Spring Security" width="18" height="18" class="me-2"/>
+                                        Spring Security
+                                    </span>
+                                    ${springSecurityVersion}
+                                </li>
+                            </g:if>
                             <li class="list-group-item d-flex justify-content-between align-items-center px-0">
                                 <span class="d-inline-flex align-items-center text-body-secondary">
                                     <asset:image src="groovy.svg" alt="Groovy" width="18" height="18" class="me-2"/>
