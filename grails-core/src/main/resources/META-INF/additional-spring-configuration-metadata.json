@@ -29,6 +29,12 @@
       "type": "java.util.List<grails.boot.GrailsBanner.DefaultVersionOption>"
     },
     {
+      "name": "grails.converters.encoding",
+      "description": "The character encoding used for converter output and for the content type of responses rendered via respond() and render(), e.g. text/html;charset=UTF-8.",
+      "type": "java.lang.String",
+      "defaultValue": "UTF-8"
+    },
+    {
       "name": "grails.banner.versions.order",
       "description": "A sorted list of versions to put first in the banner versions.",
       "type": "java.util.List<grails.boot.GrailsBanner.VersionOption>"

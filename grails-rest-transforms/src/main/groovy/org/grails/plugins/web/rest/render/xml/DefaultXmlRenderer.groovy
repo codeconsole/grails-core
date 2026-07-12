@@ -86,6 +86,7 @@ class DefaultXmlRenderer<T> implements Renderer<T> {
             Renderer htmlRenderer = rendererRegistry?.findRenderer(MimeType.HTML, object)
             if (htmlRenderer == null) {
                 htmlRenderer = new DefaultHtmlRenderer(targetType)
+                htmlRenderer.encoding = encoding
             }
             htmlRenderer.render((Object) object, context)
         } else {

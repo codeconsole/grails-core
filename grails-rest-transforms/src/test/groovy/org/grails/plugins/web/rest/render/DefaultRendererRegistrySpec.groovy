@@ -29,6 +29,18 @@ import spock.lang.Specification
 
 class DefaultRendererRegistrySpec extends Specification {
 
+    void "Test the registry propagates its configured encoding to the default renderers"() {
+        given: "a registry configured with a non-default encoding"
+            def registry = new DefaultRendererRegistry()
+            registry.encoding = 'ISO-8859-1'
+            registry.initialize()
+
+        expect: "every default renderer stamps content types with that encoding"
+            registry.findRenderer(MimeType.HTML, new URL('https://grails.apache.org')).encoding == 'ISO-8859-1'
+            registry.findRenderer(MimeType.JSON, new URL('https://grails.apache.org')).encoding == 'ISO-8859-1'
+            registry.findRenderer(MimeType.XML, new URL('https://grails.apache.org')).encoding == 'ISO-8859-1'
+    }
+
     void setup() {
         // Clear the static mimeTypes cache to prevent test environment pollution
         HttpServletResponseExtension.@mimeTypes = null
