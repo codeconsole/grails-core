@@ -90,7 +90,9 @@ List<String> splitTopLevel(String text) {
             current.append(c)
         } else if (c == ',' as char && depth == 0) {
             parts << current.toString()
-            current.setLength(0)
+            // new instance instead of setLength(0): setLength is only declared on the
+            // package-private AbstractStringBuilder, which old Groovy runtimes cannot invoke
+            current = new StringBuilder()
         } else {
             current.append(c)
         }
@@ -130,7 +132,7 @@ String normalize(String text) {
 
 // ---------------------------------------------------------------------------
 if (!args) {
-    System.err.println "Usage: normalize-annotations.groovy <source-dir> [<source-dir> ...]"
+    System.err.println "Usage: normalize_annotations.groovy <source-dir> [<source-dir> ...]"
     System.exit 1
 }
 
