@@ -21,6 +21,7 @@ package org.grails.plugins.web.rest.render.html
 import groovy.transform.CompileStatic
 
 import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.validation.BeanPropertyBindingResult
 import org.springframework.validation.Errors
 
@@ -48,6 +49,7 @@ class DefaultHtmlRenderer<T> implements Renderer<T> {
 
     String suffix = ''
 
+    @Value('${grails.converters.encoding:UTF-8}')
     String encoding = GrailsWebUtil.DEFAULT_ENCODING
 
     DefaultHtmlRenderer(Class<T> targetType) {

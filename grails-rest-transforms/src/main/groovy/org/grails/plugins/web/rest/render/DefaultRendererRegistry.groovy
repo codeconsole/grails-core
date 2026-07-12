@@ -29,6 +29,7 @@ import com.github.benmanes.caffeine.cache.Cache
 import com.github.benmanes.caffeine.cache.Caffeine
 
 import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.validation.BeanPropertyBindingResult
 import org.springframework.validation.Errors
 
@@ -69,9 +70,11 @@ class DefaultRendererRegistry extends ClassAndMimeTypeRegistry<Renderer, Rendere
 
     /**
      * The character encoding applied to the content type of responses the
-     * default renderers produce. Wired from {@code grails.converters.encoding}
-     * by {@link org.grails.plugins.web.rest.plugin.RestResponderGrailsPlugin}.
+     * default renderers produce. Resolved from
+     * {@code grails.converters.encoding} when this registry is a Spring bean;
+     * defaults to UTF-8 otherwise.
      */
+    @Value('${grails.converters.encoding:UTF-8}')
     String encoding = grails.util.GrailsWebUtil.DEFAULT_ENCODING
 
     @PostConstruct

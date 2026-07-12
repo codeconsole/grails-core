@@ -31,9 +31,7 @@ import grails.rest.Resource
 import grails.util.GrailsUtil
 import org.grails.core.artefact.ControllerArtefactHandler
 import org.grails.core.artefact.DomainClassArtefactHandler
-import grails.util.GrailsWebUtil
 import org.grails.plugins.web.rest.render.DefaultRendererRegistry
-import org.grails.web.converters.configuration.ConvertersConfigurationInitializer
 
 /**
  * @since 2.3
@@ -59,9 +57,6 @@ class RestResponderGrailsPlugin extends Plugin {
             rendererRegistry(DefaultRendererRegistry) { bean ->
                 bean.lazyInit = true
                 modelSuffix = application.config.getProperty(Settings.SCAFFOLDING_DOMAIN_SUFFIX, '')
-                encoding = application.config.getProperty(
-                        ConvertersConfigurationInitializer.SETTING_CONVERTERS_ENCODING,
-                        GrailsWebUtil.DEFAULT_ENCODING)
             }
         }
     }
