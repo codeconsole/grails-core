@@ -60,24 +60,24 @@
                 </li>
             </g:if>
             <li class="nav-item dropdown">
-                <a class="nav-link dropdown-toggle d-flex align-items-center" href="#" id="themeDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Toggle theme">
+                <a class="nav-link dropdown-toggle d-flex align-items-center" href="#" id="themeDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="${message(code: 'layout.theme.toggle')}">
                     <i class="bi bi-circle-half theme-icon-active"></i>
-                    <span class="d-lg-none ms-2">Toggle theme</span>
+                    <span class="d-lg-none ms-2"><g:message code="layout.theme.toggle"/></span>
                 </a>
                 <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="themeDropdown">
                     <li>
                         <button type="button" class="dropdown-item d-flex align-items-center" data-bs-theme-value="light" aria-pressed="false">
-                            <i class="bi bi-sun-fill me-2"></i>Light<i class="bi bi-check ms-auto d-none"></i>
+                            <i class="bi bi-sun-fill me-2"></i><g:message code="layout.theme.light"/><i class="bi bi-check ms-auto d-none"></i>
                         </button>
                     </li>
                     <li>
                         <button type="button" class="dropdown-item d-flex align-items-center" data-bs-theme-value="dark" aria-pressed="false">
-                            <i class="bi bi-moon-stars-fill me-2"></i>Dark<i class="bi bi-check ms-auto d-none"></i>
+                            <i class="bi bi-moon-stars-fill me-2"></i><g:message code="layout.theme.dark"/><i class="bi bi-check ms-auto d-none"></i>
                         </button>
                     </li>
                     <li>
                         <button type="button" class="dropdown-item d-flex align-items-center" data-bs-theme-value="auto" aria-pressed="false">
-                            <i class="bi bi-circle-half me-2"></i>Auto<i class="bi bi-check ms-auto d-none"></i>
+                            <i class="bi bi-circle-half me-2"></i><g:message code="layout.theme.auto"/><i class="bi bi-check ms-auto d-none"></i>
                         </button>
                     </li>
                 </ul>
@@ -101,12 +101,11 @@
                    href="https://guides.grails.org" target="_blank" rel="noopener">
                     <div class="card-body p-4">
                         <div class="d-flex align-items-center justify-content-between mb-2">
-                            <h6 class="card-title mb-0 fw-semibold">Grails Guides</h6>
-                            <asset:image src="advancedgrails.svg" alt="Grails Guides" width="34" height="34"/>
+                            <h6 class="card-title mb-0 fw-semibold"><g:message code="layout.guides.title"/></h6>
+                            <asset:image src="advancedgrails.svg" alt="${message(code: 'layout.guides.title')}" width="34" height="34"/>
                         </div>
                         <p class="card-text text-body-secondary mb-0">
-                            Building your first Grails app? Looking to add security, or create a Single-Page-App?
-                            Check out the Grails Guides for step-by-step tutorials.
+                            <g:message code="layout.guides.text"/>
                         </p>
                     </div>
                 </a>
@@ -116,12 +115,11 @@
                    href="https://grails.apache.org/docs/" target="_blank" rel="noopener">
                     <div class="card-body p-4">
                         <div class="d-flex align-items-center justify-content-between mb-2">
-                            <h6 class="card-title mb-0 fw-semibold">Documentation</h6>
-                            <asset:image src="documentation.svg" alt="Grails Documentation" width="34" height="34"/>
+                            <h6 class="card-title mb-0 fw-semibold"><g:message code="layout.docs.title"/></h6>
+                            <asset:image src="documentation.svg" alt="${message(code: 'layout.docs.title')}" width="34" height="34"/>
                         </div>
                         <p class="card-text text-body-secondary mb-0">
-                            Ready to dig in? You can find in-depth documentation for all the features
-                            of Grails in the User Guide.
+                            <g:message code="layout.docs.text"/>
                         </p>
                     </div>
                 </a>
@@ -131,12 +129,11 @@
                    href="https://grails.apache.org/community.html" target="_blank" rel="noopener">
                     <div class="card-body p-4">
                         <div class="d-flex align-items-center justify-content-between mb-2">
-                            <h6 class="card-title mb-0 fw-semibold">Join the Community</h6>
-                            <asset:image src="community.svg" alt="Grails Community" width="34" height="34"/>
+                            <h6 class="card-title mb-0 fw-semibold"><g:message code="layout.community.title"/></h6>
+                            <asset:image src="community.svg" alt="${message(code: 'layout.community.title')}" width="34" height="34"/>
                         </div>
                         <p class="card-text text-body-secondary mb-0">
-                            Get feedback and share your experience with other Grails developers
-                            on the Grails mailing lists, GitHub discussions, or the community Slack channel.
+                            <g:message code="layout.community.text"/>
                         </p>
                     </div>
                 </a>
@@ -146,7 +143,7 @@
 </footer>
 <div id="spinner" class="position-absolute top-0 end-0 p-1" style="display:none;">
     <div class="spinner-border spinner-border-sm" role="status">
-        <span class="visually-hidden">Loading...</span>
+        <span class="visually-hidden"><g:message code="layout.loading"/></span>
     </div>
 </div>
 <asset:javascript src="application.js"/>

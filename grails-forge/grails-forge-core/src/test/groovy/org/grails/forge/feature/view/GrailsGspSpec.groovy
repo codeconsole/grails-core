@@ -143,6 +143,27 @@ class GrailsGspSpec extends ApplicationContextSpec implements CommandOutputFixtu
         layout.contains('<g:link controller="${c.logicalPropertyName}" namespace="${c.namespace}"')
     }
 
+    void "test default layout chrome is internationalized"() {
+        when:
+        final def output = generate(ApplicationType.WEB, new Options(DevelopmentReloading.DEVTOOLS))
+        final String layout = output["grails-app/views/layouts/main.gsp"]
+
+        then: "footer cards, theme selector and spinner render through message codes"
+        layout.contains('<g:message code="layout.guides.text"/>')
+        layout.contains('<g:message code="layout.docs.text"/>')
+        layout.contains('<g:message code="layout.community.text"/>')
+        layout.contains('<g:message code="layout.theme.light"/>')
+        layout.contains("message(code: 'layout.theme.toggle')")
+        layout.contains('<g:message code="layout.loading"/>')
+
+        and: "no user-facing English remains hardcoded in the layout"
+        !layout.contains("Building your first Grails app")
+        !layout.contains("Ready to dig in?")
+        !layout.contains("Get feedback and share your experience")
+        !layout.contains(">Toggle theme<")
+        !layout.contains(">Loading...<")
+    }
+
     void "test default layout includes the light/dark/auto theme selector"() {
         when:
         final def output = generate(ApplicationType.WEB, new Options(DevelopmentReloading.DEVTOOLS))
