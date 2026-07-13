@@ -34,6 +34,7 @@ import org.springframework.beans.factory.support.BeanRegistryAdapter;
 import org.springframework.beans.factory.support.DefaultSingletonBeanRegistry;
 import org.springframework.context.ApplicationListener;
 import org.springframework.context.ConfigurableApplicationContext;
+import org.springframework.context.EnvironmentAware;
 import org.springframework.context.event.ContextRefreshedEvent;
 import org.springframework.core.convert.support.ConfigurableConversionService;
 import org.springframework.core.env.AbstractEnvironment;
@@ -120,6 +121,11 @@ public class GrailsEarlyPluginRegistrationPostProcessor
             return;
         }
 
+        // The application class may customize the environment (secrets, discovered endpoints, …);
+        // apply that before anything in this phase — plugin loading, the config snapshot, the
+        // doWithSpring drain — reads configuration.
+        customizeEnvironmentFromApplicationClasses(registry);
+
         // The initializing flag is a system property, so a leak on failure poisons every subsequent
         // context in the same JVM (test forks especially). Reset it if anything below throws; the
         // success path leaves it set and resets on refresh via the listener added at the end.
@@ -165,6 +171,45 @@ public class GrailsEarlyPluginRegistrationPostProcessor
         catch (RuntimeException | Error e) {
             Environment.setInitializing(false);
             throw e;
+        }
+    }
+
+    /**
+     * Honours the documented externalized-configuration pattern where the application class
+     * implements {@link EnvironmentAware} to contribute property sources (secrets, discovered
+     * endpoints, …). Before this early phase existed, the application configuration bean was
+     * instantiated — and received its {@code setEnvironment} callback — before plugin
+     * {@code doWithSpring} closures ran, so configuration read by plugins (for example GORM
+     * connection URLs) already included the contributed sources. The early phase now runs before
+     * any bean is created, so the contract is replayed here on a detached instance (mirroring
+     * {@link #scanApplicationSource}) before the config snapshot is built and the plugin runtime
+     * configuration is drained.
+     *
+     * <p>The application bean is still created by Spring later and receives the standard
+     * {@code setEnvironment} callback a second time, so implementations must be idempotent —
+     * contribute a <em>named</em> property source (re-adding a source with the same name replaces
+     * the earlier one) rather than accumulating state.
+     */
+    private void customizeEnvironmentFromApplicationClasses(BeanDefinitionRegistry registry) {
+        for (Class<?> source : resolveApplicationSourceClasses(registry)) {
+            boolean applicationClass = GrailsAutoConfiguration.class.isAssignableFrom(source) ||
+                    GrailsApplicationClass.class.isAssignableFrom(source);
+            if (!applicationClass || !EnvironmentAware.class.isAssignableFrom(source)) {
+                continue;
+            }
+            EnvironmentAware application;
+            try {
+                application = (EnvironmentAware) source.getDeclaredConstructor().newInstance();
+            } catch (Exception | LinkageError e) {
+                LOG.warn("Unable to instantiate [{}] to apply its EnvironmentAware environment customization " +
+                        "before plugin registration; plugins may read configuration the application has not " +
+                        "customized yet: {}", source.getName(), e.toString());
+                continue;
+            }
+            if (application instanceof GrailsAutoConfiguration grailsAutoConfiguration) {
+                grailsAutoConfiguration.setApplicationContext(applicationContext);
+            }
+            application.setEnvironment(applicationContext.getEnvironment());
         }
     }
 

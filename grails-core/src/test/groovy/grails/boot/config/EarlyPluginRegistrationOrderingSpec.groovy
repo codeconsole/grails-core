@@ -237,6 +237,36 @@ class EarlyPluginRegistrationOrderingSpec extends Specification {
             Environment.setInitializing(false)
     }
 
+    void 'an EnvironmentAware application class customizes the environment before plugin doWithSpring reads config'() {
+        given: 'a plugin that captures a config value when its runtime configuration is drained'
+            EarlyOrderingConfigReadingGrailsPlugin.CAPTURED_URL = null
+            EarlyOrderingEnvAwareApplication.INVOCATIONS.set(0)
+            def ctx = new AnnotationConfigApplicationContext()
+            registerDiscovery(ctx, EarlyOrderingConfigReadingGrailsPlugin)
+            new GrailsPluginLifecycleInitializer().initialize(ctx)
+
+        and: 'an EnvironmentAware application class registered and stashed as the application source, as GrailsApp does'
+            ctx.register(EarlyOrderingEnvAwareApplication)
+            ctx.beanFactory.registerSingleton(
+                    GrailsEarlyPluginRegistrationPostProcessor.APPLICATION_SOURCE_CLASSES_BEAN_NAME,
+                    [EarlyOrderingEnvAwareApplication] as Class<?>[])
+
+        when: 'the context refreshes'
+            ctx.refresh()
+
+        then: 'the plugin saw the value contributed by setEnvironment, not the yaml/default value'
+            EarlyOrderingConfigReadingGrailsPlugin.CAPTURED_URL == 'mongodb://real-host:27017/app'
+
+        and: 'the callback ran twice — early on a detached instance, then on the real bean — without duplicating the named source'
+            EarlyOrderingEnvAwareApplication.INVOCATIONS.get() == 2
+            ctx.environment.propertySources.get('earlyOrderingSecrets') != null
+
+        cleanup:
+            ctx.close()
+            Holders.clear()
+            Environment.setInitializing(false)
+    }
+
     void 'the initializing flag is reset when the early phase throws'() {
         given: 'a plugin whose doWithSpring throws while the early phase drains it'
             def ctx = new AnnotationConfigApplicationContext()
@@ -371,6 +401,35 @@ class EarlyOrderingThrowingGrailsPlugin extends Plugin {
 }
 
 class EarlyOrderingAppResolver {
+}
+
+class EarlyOrderingEnvAwareApplication extends GrailsAutoConfiguration implements org.springframework.context.EnvironmentAware {
+
+    static final AtomicInteger INVOCATIONS = new AtomicInteger()
+
+    @Override
+    void setEnvironment(org.springframework.core.env.Environment environment) {
+        INVOCATIONS.incrementAndGet()
+        // a named source is idempotent: re-adding replaces the earlier source of the same name
+        ((org.springframework.core.env.ConfigurableEnvironment) environment).propertySources.addFirst(
+                new org.springframework.core.env.MapPropertySource('earlyOrderingSecrets',
+                        ['test.datastore.url': 'mongodb://real-host:27017/app'] as Map<String, Object>))
+    }
+}
+
+class EarlyOrderingConfigReadingGrailsPlugin extends Plugin {
+
+    static volatile String CAPTURED_URL
+
+    def version = '1.0'
+
+    @Override
+    Closure doWithSpring() {
+        // read config when the runtime configuration is drained, exactly as GORM plugins
+        // resolve their connection settings inside doWithSpring
+        CAPTURED_URL = config.getProperty('test.datastore.url') ?: 'default-localhost'
+        return { -> }
+    }
 }
 
 class EarlyOrderingOverrideGrailsPlugin extends Plugin {
