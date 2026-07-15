@@ -28,11 +28,9 @@ The `create-app` and related commands are available in both the Grails Shell CLI
 
 ====
 
-The primary command for creating a new project is `create-app`, which creates a standard Grails web application that communicates over HTTP.
-For other types of applications, see the documentation below.
+The primary command for creating a new project is `create-app`, which creates a standard Grails web application that communicates over HTTP. For other types of applications, see the documentation below.
 
-Creating a project is the primary usage of the Grails Forge CLI.
-You can also generate an application with grails-shell, which uses profiles for generation.
+Creating a project is the primary usage of the Grails Forge CLI.  You can also generate an application with grails-shell, which uses profiles for generation.
 
 The `create-app` and other commands support extended options in Forge, which must be run using the following format:
 

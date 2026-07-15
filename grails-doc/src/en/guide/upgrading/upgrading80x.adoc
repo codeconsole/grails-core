@@ -82,7 +82,7 @@ import org.springframework.boot.mongodb.autoconfigure.MongoAutoConfiguration
 
 In addition to the auto-configuration class moves, two foundational interfaces were relocated out of nested packages and into `org.springframework.boot` directly:
 
-[cols="1,1",options="header"]
+[cols="1,1", options="header"]
 |===
 | Before (Spring Boot 3.x)
 | After (Spring Boot 4.x)
@@ -148,7 +148,7 @@ However, if your application directly imports any of the following classes, you 
 
 If your application uses the default Grails Hibernate 5 integration (`org.apache.grails:grails-hibernate5` / `grails-data-hibernate5-spring-orm`), replace the `org.springframework.orm.hibernate5` package prefix with `org.grails.orm.hibernate.support.hibernate5`:
 
-[cols="1,1",options="header"]
+[cols="1,1", options="header"]
 |===
 | Before (Spring Framework 6 / Grails 7)
 | After (Grails 8 — Hibernate 5)
@@ -181,7 +181,7 @@ All other classes from `org.springframework.orm.hibernate5` follow the same patt
 
 If your application has opted in to Hibernate 7 (`org.apache.grails:grails-hibernate7` / `grails-data-hibernate7-spring-orm`), the equivalent vendored classes live under `org.grails.orm.hibernate.support.hibernate7`:
 
-[cols="1,1",options="header"]
+[cols="1,1", options="header"]
 |===
 | Before (Spring Framework 6 / Grails 7)
 | After (Grails 8 — Hibernate 7)
@@ -314,12 +314,10 @@ NOTE: The Grails Forge generator enforces this requirement: selecting any Micron
 
 Grails 8 introduces new BOMs for projects that combine Micronaut integration with a specific Hibernate version:
 
-* `org.apache.grails:grails-hibernate5-micronaut-bom` -- For Micronaut projects using Hibernate 5. This is the default Micronaut BOM for Hibernate 5 users (analogous to how `grails-micronaut-bom` is the default).
-Use this when your Micronaut-enabled Grails application targets Hibernate 5.
+* `org.apache.grails:grails-hibernate5-micronaut-bom` -- For Micronaut projects using Hibernate 5. This is the default Micronaut BOM for Hibernate 5 users (analogous to how `grails-micronaut-bom` is the default). Use this when your Micronaut-enabled Grails application targets Hibernate 5.
 * `org.apache.grails:grails-hibernate7-micronaut-bom` -- For Micronaut projects using Hibernate 7. Use this when your Micronaut-enabled Grails application targets Hibernate 7.
 
-This BOM extends `grails-base-bom` and the Micronaut platform directly, and includes the appropriate Hibernate dependency versions alongside the Micronaut-specific overrides (Groovy 5, Spock 2.4, etc.).
-This ensures no version conflicts when consumed via `enforcedPlatform`.
+This BOM extends `grails-base-bom` and the Micronaut platform directly, and includes the appropriate Hibernate dependency versions alongside the Micronaut-specific overrides (Groovy 5, Spock 2.4, etc.). This ensures no version conflicts when consumed via `enforcedPlatform`.
 
 [source,groovy]
 .build.gradle - Hibernate 5 with Micronaut (default)
@@ -339,8 +337,7 @@ dependencies {
 }
 ----
 
-The existing `grails-micronaut-bom` remains available and is equivalent to `grails-hibernate5-micronaut-bom` for backward compatibility.
-If the framework changes its default Hibernate version in the future, `grails-micronaut-bom` will track the new default while the Hibernate-specific BOMs remain pinned to their versions.
+The existing `grails-micronaut-bom` remains available and is equivalent to `grails-hibernate5-micronaut-bom` for backward compatibility. If the framework changes its default Hibernate version in the future, `grails-micronaut-bom` will track the new default while the Hibernate-specific BOMs remain pinned to their versions.
 
 ==== 8. Enum Serialization Default Changed
 
@@ -422,7 +419,7 @@ This is intended as a migration aid only; new code should target Jackson 3.
 **Spring Boot Jackson helper class renames.**
 If your code uses Spring Boot's Jackson helpers, rename them to the Jackson 3 equivalents:
 
-[cols="1,1",options="header"]
+[cols="1,1", options="header"]
 |===
 | Spring Boot 3.x (Jackson 2)
 | Spring Boot 4.x (Jackson 3)
@@ -447,7 +444,7 @@ If your code uses Spring Boot's Jackson helpers, rename them to the Jackson 3 eq
 The `spring.jackson.*` namespace was reorganized.
 The `spring-boot-properties-migrator` (see the tip at the top of this guide) will detect most of these and warn at boot time:
 
-[cols="1,1",options="header"]
+[cols="1,1", options="header"]
 |===
 | Before
 | After
@@ -496,7 +493,7 @@ GSP layouts and views that relied on theme resolution will need to use alternati
 Spring Boot 4 reorganized embedded server classes into separate modules.
 If your application or tests reference these classes directly, update the imports:
 
-[cols="1,1",options="header"]
+[cols="1,1", options="header"]
 |===
 | Before (Spring Boot 3.x / Grails 7)
 | After (Spring Boot 4.x / Grails 8)
@@ -575,7 +572,7 @@ New builds should use `grails { bom = null }` instead.
 **Two Spring DM features have no automatic migration.**
 If your `build.gradle` uses either of the patterns below, update it as follows:
 
-[cols="2,3",options="header"]
+[cols="2,3", options="header"]
 |===
 | Spring DM pattern (Grails 7)
 | Grails 8 replacement
@@ -598,8 +595,7 @@ Overriding a property that selects an imported BOM's version (for example `sprin
 NOTE: Projects that apply the `grails-micronaut` plugin already require `enforcedPlatform` for unrelated reasons (see section 7.2); those projects retain Spring DM's strict-version semantics automatically.
 
 **Selecting or opting out of the auto-applied BOM.**
-The Grails Gradle plugin applies a single Grails BOM automatically, selected by the `grails.bom` property.
-Its value is the BOM artifact name within the `org.apache.grails` group, which the plugin resolves as `org.apache.grails:$bom:$grailsVersion`.
+The Grails Gradle plugin applies a single Grails BOM automatically, selected by the `grails.bom` property. Its value is the BOM artifact name within the `org.apache.grails` group, which the plugin resolves as `org.apache.grails:$bom:$grailsVersion`.
 It defaults to `grails-bom`, which preserves the Grails 7 behaviour and is the right choice for the vast majority of applications.
 Exactly one Grails BOM is ever applied; the BOMs are split by integration (default / hibernate5 / micronaut), so the plugin never layers two of them.
 
@@ -631,7 +627,7 @@ You are responsible for declaring the BOM yourself and, if you still want `gradl
 Spring Boot 4 renamed several starters as part of its modularization effort.
 If your `build.gradle` references any of the following, update the artifact id:
 
-[cols="1,1",options="header"]
+[cols="1,1", options="header"]
 |===
 | Before (Spring Boot 3.x)
 | After (Spring Boot 4.x)
@@ -825,11 +821,7 @@ Spring Framework 7 deprecated `org.springframework.lang.Nullable` and `org.sprin
 The Spring annotations still work, so this is non-blocking, but new code should prefer the JSpecify equivalents.
 
 * **Namespaced link generation is namespace-aware.**
-When a link, form action, pagination link, sortable column link, redirect, chain, or include targets a controller without an explicit `namespace`, Grails now resolves the namespace automatically.
-In the normal case, where only one controller has the target name, `controller` and `action` generate the correct namespaced or non-namespaced URL.
-Ambiguity only occurs when multiple controllers share the same name.
-In that case, specify `namespace` to choose the target explicitly.
-Pass `namespace: null` from Groovy code or `namespace=""` in a GSP tag to target the non-namespaced controller explicitly.
+When a link, form action, pagination link, sortable column link, redirect, chain, or include targets a controller without an explicit `namespace`, Grails now resolves the namespace automatically. In the normal case, where only one controller has the target name, `controller` and `action` generate the correct namespaced or non-namespaced URL. Ambiguity only occurs when multiple controllers share the same name. In that case, specify `namespace` to choose the target explicitly. Pass `namespace: null` from Groovy code or `namespace=""` in a GSP tag to target the non-namespaced controller explicitly.
 
 ==== 21. Tag Library Test Cleanup Changes
 
@@ -859,8 +851,7 @@ class MyTagLibSpec extends Specification implements TagLibUnitTest<MyTagLib> {
 
 ==== 22. Method-based TagLib Handlers
 
-Grails 8 introduces method-based tag handler syntax as the recommended way to define tags.
-Closure-based handlers are still supported for backward compatibility.
+Grails 8 introduces method-based tag handler syntax as the recommended way to define tags. Closure-based handlers are still supported for backward compatibility.
 
 [source,groovy]
 ----
@@ -880,8 +871,7 @@ class DemoTagLib {
 }
 ----
 
-Method tags with the conventional signatures `def tag(Map attrs)`, `def tag(Closure body)`, and `def tag(Map attrs, Closure body)` are discovered automatically.
-Zero-argument method tags and method tags that bind named attributes directly to method parameters must use `@grails.gsp.Tag`; this avoids exposing ordinary public helper methods as tags.
+Method tags with the conventional signatures `def tag(Map attrs)`, `def tag(Closure body)`, and `def tag(Map attrs, Closure body)` are discovered automatically. Zero-argument method tags and method tags that bind named attributes directly to method parameters must use `@grails.gsp.Tag`; this avoids exposing ordinary public helper methods as tags.
 
 Grails Gradle application builds preserve Java and Groovy method parameter names by default (see §22.3 below).
 If you compile TagLib classes outside those plugins, enable Java `-parameters` and Groovy `groovyOptions.parameters = true` so `@Tag` methods can bind attributes by parameter name.
@@ -906,34 +896,27 @@ The compile-time deprecation warning emitted for closure-based tag fields can be
 
 ===== 22.1 Behavior change: tag method registration
 
-In Grails 7, the metaclass tag dispatchers registered for the taglib's own namespace did not override existing methods.
-Because method-based tags are now real methods on the TagLib class, those dispatchers must override methods of the same name so that function-style invocation (for example `tagLib.myTag(attrs)`) returns captured tag output rather than writing directly to `out`.
+In Grails 7, the metaclass tag dispatchers registered for the taglib's own namespace did not override existing methods. Because method-based tags are now real methods on the TagLib class, those dispatchers must override methods of the same name so that function-style invocation (for example `tagLib.myTag(attrs)`) returns captured tag output rather than writing directly to `out`.
 
-If a TagLib intentionally defines a method that shares a name with a default-namespace tag in another TagLib, the locally defined method will be shadowed by the tag dispatcher.
-Rename the helper method or move it behind a different namespace if the previous behavior is required.
+If a TagLib intentionally defines a method that shares a name with a default-namespace tag in another TagLib, the locally defined method will be shadowed by the tag dispatcher. Rename the helper method or move it behind a different namespace if the previous behavior is required.
 
-This shadowing is not reported at runtime by default.
-To audit which TagLib methods are being overridden by tag dispatchers, enable `DEBUG` logging for `org.grails.taglib.TagLibraryMetaUtils` in `logback.xml` (or `logback-spring.xml`):
+This shadowing is not reported at runtime by default. To audit which TagLib methods are being overridden by tag dispatchers, enable `DEBUG` logging for `org.grails.taglib.TagLibraryMetaUtils` in `logback.xml` (or `logback-spring.xml`):
 
 [source,xml]
 ----
 <logger name="org.grails.taglib.TagLibraryMetaUtils" level="DEBUG"/>
 ----
 
-Each override is logged as `Registering tag dispatcher <namespace>:<tagName> over existing method <Class>.<method>(<paramTypes>)`.
-Inspect the output after application startup; any entry whose `<Class>` is one of your own TagLibs identifies a method that has been replaced by the dispatcher.
+Each override is logged as `Registering tag dispatcher <namespace>:<tagName> over existing method <Class>.<method>(<paramTypes>)`. Inspect the output after application startup; any entry whose `<Class>` is one of your own TagLibs identifies a method that has been replaced by the dispatcher.
 
 ===== 22.2 Behavior change: parameter-name binding for `Map` and `Closure` parameters
 
-Method-based tag handlers bind attributes to method parameters by parameter name.
-Two reserved names participate in this resolution:
+Method-based tag handlers bind attributes to method parameters by parameter name. Two reserved names participate in this resolution:
 
 - A `Map`-typed parameter named `attrs` receives the full attributes map.
 - A `Closure`-typed parameter named `body` receives the tag body.
 
-In earlier iterations of the method-based handler implementation, a `Closure`-typed parameter was bound to the body regardless of its parameter name, while a `Map`-typed parameter required the literal name `attrs`.
-That asymmetry has been removed.
-Both reserved names are now applied consistently: a `Closure` parameter named anything other than `body` is treated as a normal named attribute (and must be supplied by name), just as a `Map` parameter named anything other than `attrs` is.
+In earlier iterations of the method-based handler implementation, a `Closure`-typed parameter was bound to the body regardless of its parameter name, while a `Map`-typed parameter required the literal name `attrs`. That asymmetry has been removed. Both reserved names are now applied consistently: a `Closure` parameter named anything other than `body` is treated as a normal named attribute (and must be supplied by name), just as a `Map` parameter named anything other than `attrs` is.
 
 If you have method-based tag handlers whose `Closure` parameter uses a name other than `body`, rename the parameter so the body binds as expected:
 
@@ -1021,12 +1004,14 @@ Check the https://github.com/apache/grails-core/issues[Grails issue tracker] for
 
 ==== 24. Custom JSON View Converters
 
-JSON views now use Groovy's `groovy.json.JsonGenerator` implementation instead of the previous Grails-specific JSON generator infrastructure.
+JSON views now use Groovy's `groovy.json.JsonGenerator` implementation instead of the previous Grails-specific
+JSON generator infrastructure.
 If you previously customized JSON view rendering with Grails-specific generator classes, migrate that logic to a
 `groovy.json.JsonGenerator.Converter` implementation.
 
 This change applies to JSON views rendered by the `grails-views-gson` module.
-The `grails.converters.JSON.registerObjectMarshaller(...)` API is still used by the `grails-converters` module for `render ... as JSON` and related converter-based rendering.
+The `grails.converters.JSON.registerObjectMarshaller(...)` API is still used by the `grails-converters` module
+for `render ... as JSON` and related converter-based rendering.
 
 To migrate your custom converters:
 
@@ -1039,7 +1024,6 @@ To migrate your custom converters:
 
 It is no longer possible to render a single enum value as JSON using the `render(Number.ONE as JSON)` syntax.
 Previously, rendering an enum value would produce a JSON string with the type and name of the enum value like:
-
 ```json
 {
   "enumType": "com.example.Number",
@@ -1074,7 +1058,7 @@ GORM's dynamic methods (`save()`, `delete()`, `get()`, `load()`, `merge()`, etc.
 
 You are only affected if your code calls the Hibernate `Session` or `StatelessSession` directly (e.g. inside a `withSession` or `withStatelessSession` block).
 
-[cols="1,1",options="header"]
+[cols="1,1", options="header"]
 |===
 | Removed (Hibernate 5/6)
 | Replacement (Hibernate 7 / JPA)
@@ -1103,7 +1087,7 @@ You are only affected if your code calls the Hibernate `Session` or `StatelessSe
 The following Hibernate-specific annotations were removed in Hibernate 7.
 Where a replacement exists, migrate before upgrading.
 
-[cols="1,2",options="header"]
+[cols="1,2", options="header"]
 |===
 | Removed annotation
 | Action required
@@ -1182,7 +1166,7 @@ YourDomain.withStatelessSession { StatelessSession session ->
 
 If you use `dbCreate = 'create-drop'` or `dbCreate = 'update'` in development, or generate a schema with the `schema-export` command, be aware of the following DDL differences in Hibernate 7.
 
-[cols="1,1,2",options="header"]
+[cols="1,1,2", options="header"]
 |===
 | Database
 | Column type
@@ -1323,13 +1307,10 @@ Previously every newly generated application declared a `grails.mime.types` bloc
 The built-in defaults cover `all`, `atom`, `css`, `csv`, `form`, `html`, `js`, `json`, `multipartForm`, `pdf`, `rss`, `text`, `hal` and `xml`, the same set new applications historically declared.
 
 **No action is required.**
-A declared `grails.mime.types` still *replaces* the defaults, exactly as in Grails 7. Your existing block remains authoritative and you get precisely the types you declared (including a deliberately narrowed set).
-New applications simply no longer need the block, because the framework supplies these defaults when none is configured.
+A declared `grails.mime.types` still *replaces* the defaults, exactly as in Grails 7. Your existing block remains authoritative and you get precisely the types you declared (including a deliberately narrowed set). New applications simply no longer need the block, because the framework supplies these defaults when none is configured.
 
 **Optional: merge instead of replace.**
-If you would rather add to the defaults than re-declare them, set `grails.mime.mergeDefaults` to `true`.
-Your declared entries are then merged over the built-in defaults.
-An entry replaces the default for its extension, and any extension you do not declare keeps its default, so you can register a single custom type without restating the full list:
+If you would rather add to the defaults than re-declare them, set `grails.mime.mergeDefaults` to `true`. Your declared entries are then merged over the built-in defaults. An entry replaces the default for its extension, and any extension you do not declare keeps its default, so you can register a single custom type without restating the full list:
 
 [source,yaml]
 .application.yml
@@ -1358,8 +1339,7 @@ In Grails 8 such a request correctly receives JSON.
 Browser page loads still resolve to HTML because modern browsers rank `text/html` highest, and `withFormat { html { } json { } }` continues to serve HTML to browsers and JSON to clients that ask for it.
 
 **`respond` endpoints without an HTML view now error for browser requests.**
-Because browsers now negotiate `text/html`, an action that uses `respond(...)` but has no corresponding HTML view (GSP) can no longer return JSON to a browser by accident.
-It negotiates `html` and attempts to render the missing view, which results in an error.
+Because browsers now negotiate `text/html`, an action that uses `respond(...)` but has no corresponding HTML view (GSP) can no longer return JSON to a browser by accident. It negotiates `html` and attempts to render the missing view, which results in an error.
 Previously the browser's `Accept` header was ignored, so such an endpoint happened to return JSON.
 If you have browser-facing `respond` endpoints, add an HTML view for the action (or `render` an appropriate response directly).
 API clients that send a specific `Accept` such as `application/json` are unaffected.
@@ -1416,8 +1396,7 @@ grails:
 ----
 
 NOTE: In GSP applications the GSP view resolver continues to be installed as the primary `viewResolver`, controlled as before by `spring.gsp.replaceViewResolverBean`.
-The earlier `spring.gsp.removeDefaultViewResolverBean` property (from when this removal lived in the GSP module) is still honoured for backward compatibility but is **deprecated** — `defaultViewResolver` removal is now handled centrally for all Grails servlet web applications by the `grails.web.removeDefaultViewResolverBean` property above, which takes precedence.
-Setting the old name logs a deprecation warning at startup.
+The earlier `spring.gsp.removeDefaultViewResolverBean` property (from when this removal lived in the GSP module) is still honoured for backward compatibility but is **deprecated** — `defaultViewResolver` removal is now handled centrally for all Grails servlet web applications by the `grails.web.removeDefaultViewResolverBean` property above, which takes precedence. Setting the old name logs a deprecation warning at startup.
 
 ===== 31.2 GrailsWebRequest binding
 
@@ -1435,21 +1414,15 @@ In a Grails application these can shadow URL mappings — a request that should 
 
 So that Grails' own URL mappings and resource handling stay in control, Grails 8 disables both by default:
 
-* `spring.web.resources.add-mappings` defaults to `false`, which disables Boot's catch-all static-resource handler.
-Re-enable it with `spring.web.resources.add-mappings: true`.
-* Boot's welcome-page mapping is removed so `UrlMappings` owns `/`.
-Opt out with `grails.web.removeWelcomePageMapping: false`.
+* `spring.web.resources.add-mappings` defaults to `false`, which disables Boot's catch-all static-resource handler. Re-enable it with `spring.web.resources.add-mappings: true`.
+* Boot's welcome-page mapping is removed so `UrlMappings` owns `/`. Opt out with `grails.web.removeWelcomePageMapping: false`.
 
 ===== 31.4 Other Boot MVC features now active
 
 Because Boot's `WebMvcAutoConfiguration` is now active, a handful of its features that `@EnableWebMvc` previously suppressed take effect for Grails servlet web applications.
 None require action for a typical application, but they are behavioral differences worth knowing about when you upgrade:
 
-* **Form-content filter for `PUT` / `PATCH` / `DELETE`.** A `FormContentFilter` parses `application/x-www-form-urlencoded` bodies of `PUT`, `PATCH` and `DELETE` requests so their fields are visible through the standard `request.getParameter(...)` API (and therefore in `params`).
-Boot's `OrderedFormContentFilter` provides it for a default application; for an application that declares `@EnableWebMvc` — where Boot's MVC auto-configuration backs off — Grails contributes an equivalent filter itself, so form parameters behave the same either way.
-In Grails 7 only `PUT` and `PATCH` bodies were parsed (by `GrailsParameterMap`) and `DELETE` was not; all three are now handled uniformly by the filter.
-It is enabled by default via `spring.mvc.formcontent.filter.enabled`; setting that to `false` disables `PUT` / `PATCH` / `DELETE` form-parameter parsing entirely.
-An application that reads those bodies itself can disable it:
+* **Form-content filter for `PUT` / `PATCH` / `DELETE`.** A `FormContentFilter` parses `application/x-www-form-urlencoded` bodies of `PUT`, `PATCH` and `DELETE` requests so their fields are visible through the standard `request.getParameter(...)` API (and therefore in `params`). Boot's `OrderedFormContentFilter` provides it for a default application; for an application that declares `@EnableWebMvc` — where Boot's MVC auto-configuration backs off — Grails contributes an equivalent filter itself, so form parameters behave the same either way. In Grails 7 only `PUT` and `PATCH` bodies were parsed (by `GrailsParameterMap`) and `DELETE` was not; all three are now handled uniformly by the filter. It is enabled by default via `spring.mvc.formcontent.filter.enabled`; setting that to `false` disables `PUT` / `PATCH` / `DELETE` form-parameter parsing entirely. An application that reads those bodies itself can disable it:
 +
 [source,yaml]
 .application.yml
@@ -1461,14 +1434,11 @@ spring:
                 enabled: false
 ----
 
-* **`spring.mvc.*` and `spring.web.*` properties now apply.** Properties such as `spring.web.locale`, `spring.mvc.format.date` / `time` / `date-time`, and `spring.web.resources.*` were inert before and now take effect.
-Review any of these you may have set inadvertently (for example copied from Boot documentation).
+* **`spring.mvc.*` and `spring.web.*` properties now apply.** Properties such as `spring.web.locale`, `spring.mvc.format.date` / `time` / `date-time`, and `spring.web.resources.*` were inert before and now take effect. Review any of these you may have set inadvertently (for example copied from Boot documentation).
 
-* **View resolution.** For non-GSP applications the primary `viewResolver` is now Boot's `ContentNegotiatingViewResolver`, which negotiates and delegates to the available view resolvers.
-GSP applications continue to use the GSP view resolver as before.
+* **View resolution.** For non-GSP applications the primary `viewResolver` is now Boot's `ContentNegotiatingViewResolver`, which negotiates and delegates to the available view resolvers. GSP applications continue to use the GSP view resolver as before.
 
-* **Conversion and message converters.** `mvcConversionService` is now Boot's `ApplicationConversionService` (which honours the `spring.mvc.format.*` properties above), and the MVC HTTP message converters pick up Boot's customizations, including the application's Jackson `ObjectMapper`.
-This mainly affects MVC-layer data binding and `@RestController`-style endpoints.
+* **Conversion and message converters.** `mvcConversionService` is now Boot's `ApplicationConversionService` (which honours the `spring.mvc.format.*` properties above), and the MVC HTTP message converters pick up Boot's customizations, including the application's Jackson `ObjectMapper`. This mainly affects MVC-layer data binding and `@RestController`-style endpoints.
 
 ===== 31.5 Locale resolution
 
@@ -1495,20 +1465,14 @@ Beans contributed through the application's `resources.groovy` or `resources.xml
 In Grails 7 and earlier, the beans a plugin contributed through `doWithSpring` were registered *after* Spring Boot had processed its auto-configurations.
 A plugin that wanted to replace a Boot-provided bean therefore had to rely on bean-definition overriding, and Boot beans guarded by `@ConditionalOnMissingBean` never saw the plugin's bean in time to back off.
 
-In Grails 8 the plugin lifecycle is unified and retimed: plugin bean definitions — both `doWithSpring` and the new `beanRegistrar()` hook — are drained into the bean definition registry *before* Spring Boot expands its auto-configurations.
-The practical effects are:
+In Grails 8 the plugin lifecycle is unified and retimed: plugin bean definitions — both `doWithSpring` and the new `beanRegistrar()` hook — are drained into the bean definition registry *before* Spring Boot expands its auto-configurations. The practical effects are:
 
-* **Plugin beans win `@ConditionalOnMissingBean` races.** When a plugin registers a bean, a Boot auto-configuration bean of the same name or type that is guarded by `@ConditionalOnMissingBean` now backs off in favor of the plugin's bean.
-Plugins no longer need to override or remove Boot's defaults after the fact.
+* **Plugin beans win `@ConditionalOnMissingBean` races.** When a plugin registers a bean, a Boot auto-configuration bean of the same name or type that is guarded by `@ConditionalOnMissingBean` now backs off in favor of the plugin's bean. Plugins no longer need to override or remove Boot's defaults after the fact.
 * **A single plugin manager and `GrailsApplication`.** The plugin manager and the `grailsApplication` are built once, early in the context lifecycle, and reused for the rest of startup, so plugins are loaded by a single manager pass rather than a throwaway pass followed by the real one. `Holders.grailsApplication` is available earlier than before.
-* **Artefact discovery happens earlier.** Controllers, services, domain classes and other artefacts are discovered before plugin beans are registered, because core plugins iterate the application's artefacts while defining beans.
-The set of discovered artefacts is unchanged — only the timing moved.
-* **Side-effectful `doWithSpring` closures still run once**, just earlier.
-Closures that read `grailsApplication.config` continue to work; the configuration is fully loaded (including plugin-contributed configuration) before any bean-definition code runs.
-* **The application class is instantiated a second time during early artefact discovery.** A throwaway instance is created solely to compute the application's class scan; the real lifecycle bean is still created by Spring.
-An application-class constructor with side effects therefore runs twice per boot, so keep application-class constructors free of side effects.
-* **Plugins that inspect the bean definition registry see a pre-auto-configuration registry.** A `doWithSpring` closure that checks for the presence of a bean definition (for example `dispatcherServlet` as a "web application" signal) now runs before Spring Boot has registered its auto-configured beans, so such a check returns `false` where it previously returned `true`.
-Plugin code should test a registration-order-independent signal instead — for example whether the application context is a web application context.
+* **Artefact discovery happens earlier.** Controllers, services, domain classes and other artefacts are discovered before plugin beans are registered, because core plugins iterate the application's artefacts while defining beans. The set of discovered artefacts is unchanged — only the timing moved.
+* **Side-effectful `doWithSpring` closures still run once**, just earlier. Closures that read `grailsApplication.config` continue to work; the configuration is fully loaded (including plugin-contributed configuration) before any bean-definition code runs.
+* **The application class is instantiated a second time during early artefact discovery.** A throwaway instance is created solely to compute the application's class scan; the real lifecycle bean is still created by Spring. An application-class constructor with side effects therefore runs twice per boot, so keep application-class constructors free of side effects.
+* **Plugins that inspect the bean definition registry see a pre-auto-configuration registry.** A `doWithSpring` closure that checks for the presence of a bean definition (for example `dispatcherServlet` as a "web application" signal) now runs before Spring Boot has registered its auto-configured beans, so such a check returns `false` where it previously returned `true`. Plugin code should test a registration-order-independent signal instead — for example whether the application context is a web application context.
 * **The `annotationHandlerMapping` and `annotationHandlerAdapter` beans were removed.** These duplicated the request-mapping infrastructure that Spring's own MVC configuration already provides and were never consulted at runtime, but with plugin beans now registering first the bare duplicate adapter started shadowing Spring's fully configured one. `@Controller` annotated beans continue to be handled by Spring Boot's standard MVC infrastructure.
 
 **The bean builder DSL is deprecated.** `doWithSpring()` on `GrailsApplicationLifeCycle` and `grails.plugins.Plugin` is deprecated as of Grails 8 — it continues to work, but the recommended way to register beans is the new `beanRegistrar()` hook, which returns a Spring Framework `org.springframework.beans.factory.BeanRegistrar`.
@@ -1558,7 +1522,6 @@ class MyGrailsPlugin extends Plugin {
 
 Both hooks may be used on the same plugin during migration; when a registrar and the DSL register a bean under the same name, the registrar's definition wins.
 
-**Bean-definition overriding edge case.** Grails defaults `spring.main.allow-bean-definition-overriding` to `true`, and under that default nothing changes: an application bean (from the application class, `resources.groovy` or `resources.xml`) that uses the same name as a plugin bean still replaces the plugin's bean.
-However, because plugin beans now register earlier and application beans register in a separate, later step, an application that explicitly sets `spring.main.allow-bean-definition-overriding` to `false` will see a `BeanDefinitionOverrideException` for an application bean that shadows a plugin bean — in previous releases the two definitions were merged before a single registry write, so the shadowing was silent even with overriding disabled.
+**Bean-definition overriding edge case.** Grails defaults `spring.main.allow-bean-definition-overriding` to `true`, and under that default nothing changes: an application bean (from the application class, `resources.groovy` or `resources.xml`) that uses the same name as a plugin bean still replaces the plugin's bean. However, because plugin beans now register earlier and application beans register in a separate, later step, an application that explicitly sets `spring.main.allow-bean-definition-overriding` to `false` will see a `BeanDefinitionOverrideException` for an application bean that shadows a plugin bean — in previous releases the two definitions were merged before a single registry write, so the shadowing was silent even with overriding disabled.
 
 **Most applications and plugins need no action.** Behavior only changes where a plugin bean and a conditional Boot bean competed for the same name or type — the plugin bean now wins, which is almost always the intended outcome.
