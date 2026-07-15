@@ -23,7 +23,7 @@ import io.undertow.Undertow.Builder;
  *
  * @author Andy Wilkinson
  * @since 4.0.0
- * @see UndertowServletWebServerFactory
+ * @see org.apache.grails.undertow.core.servlet.UndertowServletWebServerFactory
  */
 @FunctionalInterface
 public interface UndertowBuilderCustomizer {
