@@ -186,7 +186,7 @@ class BindDataMethodTests extends Specification implements ControllerUnitTest<Bi
         grailsApplication.config.setAt(DefaultASTDatabindingHelper.DENY_BY_DEFAULT, false)
     }
 
-    void 'Test bindData secure mode ignores inherited generated allowlist for runtime constrained subclass'() {
+    void 'Test bindData secure mode uses inherited generated allowlist for proxy subclass'() {
         given:
         grailsApplication.config.setAt(DefaultASTDatabindingHelper.DENY_BY_DEFAULT, true)
         params.parentDisplayName = 'Parent'
@@ -197,8 +197,8 @@ class BindDataMethodTests extends Specification implements ControllerUnitTest<Bi
         def target = model.target
 
         then:
-        target.parentDisplayName == null
-        target.childDisplayName == 'Child'
+        target.parentDisplayName == 'Parent'
+        target.childDisplayName == null
 
         cleanup:
         grailsApplication.config.setAt(DefaultASTDatabindingHelper.DENY_BY_DEFAULT, false)
@@ -356,8 +356,8 @@ class RuntimeConstrainedCommandObject {
 }
 
 class ParentRuntimeConstrainedCommandObject {
-    static final List $defaultDatabindingWhiteList = ['parentDisplayName']
-    static final List $legacyDatabindingWhiteList = ['parentDisplayName']
+    public static final List $defaultDatabindingWhiteList = ['parentDisplayName']
+    public static final List $legacyDatabindingWhiteList = ['parentDisplayName']
 
     String parentDisplayName
 }

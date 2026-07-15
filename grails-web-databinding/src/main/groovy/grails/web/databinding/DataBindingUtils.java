@@ -139,7 +139,7 @@ public class DataBindingUtils {
             if (includeListCache.containsKey(objectClass)) {
                 includeList = includeListCache.get(objectClass);
             } else {
-                final Field whiteListField = objectClass.getDeclaredField(whiteListFieldName);
+                final Field whiteListField = objectClass.getField(whiteListFieldName);
                 if (whiteListField != null) {
                     if ((whiteListField.getModifiers() & Modifier.STATIC) != 0) {
                         final Object whiteListValue = whiteListField.get(objectClass);
