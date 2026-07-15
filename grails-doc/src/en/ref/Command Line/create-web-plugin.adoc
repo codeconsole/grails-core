@@ -21,7 +21,8 @@ under the License.
 
 === Purpose
 
-The Grails Web Plugin simplifies the process of creating Grails plugins with a web layer. It streamlines the development of plugins that provide web-based functionality and can be easily integrated into Grails applications.
+The Grails Web Plugin simplifies the process of creating Grails plugins with a web layer.
+It streamlines the development of plugins that provide web-based functionality and can be easily integrated into Grails applications.
 
 === Usage
 
@@ -38,9 +39,11 @@ grails create-web-plugin [OPTIONS] NAME
 
 Here are the available options for the `create-web-plugin` command:
 
-- `-f, --features=FEATURE[,FEATURE...]`: Specifies the features to include in the plugin. Available options include h2, gorm-hibernate5, gorm-hibernate7, spring-boot-starter-jetty, micronaut-http-client, cache-ehcache, hibernate-validator, postgres, mysql, cache, database-migration, grails-gsp, hamcrest, gorm-mongodb, assertj, mockito, spring-boot-starter-undertow, github-workflow-java-ci, jrebel, testcontainers, sqlserver, grails-console, views-markup, views-json, gorm-neo4j, asciidoctor, grails-web-console, logbackGroovy, mongo-sync, shade, properties.
+- `-f, --features=FEATURE[,FEATURE...]`: Specifies the features to include in the plugin.
+Available options include h2, gorm-hibernate5, gorm-hibernate7, spring-boot-starter-jetty, micronaut-http-client, cache-ehcache, hibernate-validator, postgres, mysql, cache, database-migration, grails-gsp, hamcrest, gorm-mongodb, assertj, mockito, grails-undertow, github-workflow-java-ci, jrebel, testcontainers, sqlserver, grails-console, views-markup, views-json, gorm-neo4j, asciidoctor, grails-web-console, logbackGroovy, mongo-sync, shade, properties.
 
-- `-d, --data=Grails Data Implementation` (`-g`, `--gorm` are legacy aliases): Specifies the Grails Data implementation to configure for the plugin. Possible values are hibernate5, hibernate7, mongodb.
+- `-d, --data=Grails Data Implementation` (`-g`, `--gorm` are legacy aliases): Specifies the Grails Data implementation to configure for the plugin.
+Possible values are hibernate5, hibernate7, mongodb.
 
 - `-h, --help`: Displays the help message and exits.
 
@@ -50,9 +53,11 @@ Here are the available options for the `create-web-plugin` command:
 
 - `--list-features`: Outputs available features and their descriptions.
 
-- `-s, --servlet=Servlet Implementation`: Specifies the Servlet Implementation to configure for the plugin. Possible values are none, tomcat, jetty, undertow.
+- `-s, --servlet=Servlet Implementation`: Specifies the Servlet Implementation to configure for the plugin.
+Possible values are none, tomcat, jetty, undertow.
 
-- `-t, --test=TEST`: Specifies the test framework to use for the plugin. Possible values are junit, spock.
+- `-t, --test=TEST`: Specifies the test framework to use for the plugin.
+Possible values are junit, spock.
 
 === Examples
 

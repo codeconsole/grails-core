@@ -21,7 +21,8 @@ under the License.
 
 === Purpose
 
-Output the available features and their descriptions for a given `create-\<<application-type>>` command. Such as: `create-app`, `create-plugin`, `create-web-plugin`, etc.
+Output the available features and their descriptions for a given `create-\<<application-type>>` command.
+Such as: `create-app`, `create-plugin`, `create-web-plugin`, etc.
 
 NOTE: The `--list-features` flag is only supported by the Forge CLI and must be used with `grails -t forge`.
 
@@ -35,13 +36,15 @@ $ grails -t forge create-app --list-features
 === Description
 
 Usage:
+
 [source,console]
 ----
 $ grails -t forge create-app --list-features
 $ grails -t forge create-plugin --list-features
 ----
 
-Lists the features that are available. Note: Typical output looks like this:
+Lists the features that are available.
+Note: Typical output looks like this:
 
 [source,shell]
 ----
@@ -99,7 +102,7 @@ Available Features
   Server
   spring-boot-starter-jetty           spring-boot-starter-jetty
   spring-boot-starter-tomcat (+)      spring-boot-starter-tomcat
-  spring-boot-starter-undertow        spring-boot-starter-undertow
+  grails-undertow        grails-undertow
 
   Validation
   hibernate-validator                 Adds support for the Hibernate Validator

@@ -132,6 +132,8 @@ include(
         'grails-shell-cli',
         'grails-spring',
         'grails-test-core',
+        'grails-undertow',
+        'grails-undertow-spring-boot',
         'grails-url-mappings',
         'grails-validation',
         'grails-views-core',
@@ -287,6 +289,9 @@ project(':grails-web-gsp-taglib').projectDir = file('grails-gsp/grails-web-gsp-t
 project(':grails-web-jsp').projectDir = file('grails-gsp/grails-web-jsp')
 project(':grails-web-taglib').projectDir = file('grails-gsp/grails-web-taglib')
 project(':grails-gsp-spring-boot').projectDir = file('grails-gsp/spring-boot')
+
+project(':grails-undertow-spring-boot').projectDir = file('grails-undertow/spring-boot')
+project(':grails-undertow').projectDir = file('grails-undertow/plugin')
 
 // Data Mapping - Documentation
 include 'grails-data-docs-guide-developer'
@@ -557,6 +562,7 @@ include(
         'grails-test-examples-scaffolding',
         'grails-test-examples-scaffolding-fields',
         'grails-test-examples-test-phases',
+        'grails-test-examples-undertow',
         'grails-test-examples-views-functional-tests',
         'grails-test-examples-views-functional-tests-plugin',
 )
@@ -599,6 +605,7 @@ project(':grails-test-examples-views-functional-tests').projectDir = file('grail
 project(':grails-test-examples-views-functional-tests-plugin').projectDir = file('grails-test-examples/views-functional-tests-plugin')
 project(':grails-test-examples-test-phases').projectDir = file('grails-test-examples/test-phases')
 project(':grails-test-examples-jetty').projectDir = file('grails-test-examples/jetty')
+project(':grails-test-examples-undertow').projectDir = file('grails-test-examples/undertow')
 project(':grails-test-examples-latency').projectDir = file('grails-test-examples/latency')
 
 // The Spring Dependency Management example imports grails-bom as a Maven BOM through
