@@ -43,7 +43,7 @@ class UndertowSessionSpec extends ContainerGebSpec {
 
     void 'the application runs on the Undertow embedded servlet container'() {
         expect: 'the web server comes from the vendored Undertow support, not Tomcat or Jetty'
-        webServerApplicationContext.webServer.class.name.startsWith('org.grails.undertow')
+        webServerApplicationContext.webServer.class.name.startsWith('org.apache.grails.undertow.core')
     }
 
     void 'request params can be processed and stored in session on an Undertow-backed Grails app'() {

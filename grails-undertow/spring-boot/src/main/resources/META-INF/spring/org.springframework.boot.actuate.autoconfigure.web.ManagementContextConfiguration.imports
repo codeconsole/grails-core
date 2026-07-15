@@ -1,2 +1,2 @@
-org.grails.undertow.autoconfigure.actuate.web.server.UndertowReactiveManagementChildContextConfiguration
-org.grails.undertow.autoconfigure.actuate.web.server.UndertowServletManagementChildContextConfiguration
+org.apache.grails.undertow.core.autoconfigure.actuate.web.server.UndertowReactiveManagementChildContextConfiguration
+org.apache.grails.undertow.core.autoconfigure.actuate.web.server.UndertowServletManagementChildContextConfiguration

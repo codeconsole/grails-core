@@ -20,7 +20,7 @@
 // did not yet support Servlet 6.1. Undertow has since shipped Servlet 6.1 support
 // via io.undertow:undertow-core 2.4.x and the io.undertow.ee servlet/websockets
 // artifacts, so the module is vendored here from Spring Boot 4.0.0-M1
-// (org.springframework.boot.undertow, repackaged as org.grails.undertow) and
+// (org.springframework.boot.undertow, repackaged as org.apache.grails.undertow.core) and
 // adapted to the Spring Boot 4.1.x APIs.
 // Original source: https://github.com/spring-projects/spring-boot/tree/v4.0.0-M1/module/spring-boot-undertow
 
