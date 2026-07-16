@@ -104,4 +104,12 @@ class GrailsWrapperRepoSpec extends Specification {
         then: 'the interior separator is not treated as a URL scheme, so it stays a local repository'
         repo.isFile
     }
+
+    def 'Windows drive-relative repo override is treated as a local repository'() {
+        when: 'a Windows drive-relative path (single-letter scheme, no authority) is supplied'
+        GrailsWrapperRepo repo = GrailsWrapperRepo.createGrailsWrapperRepo('C:repo/releases')
+
+        then: 'the drive letter is not treated as a URL scheme, so it stays a local repository'
+        repo.isFile
+    }
 }

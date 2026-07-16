@@ -295,8 +295,12 @@ public class GrailsUpdater {
             }
             return Files.newInputStream(metadataFile.toPath());
         } else {
-            HttpURLConnection connection = createHttpURLConnection(metadataUrl);
             try {
+                // Open the connection inside the try so a connection/HTTP failure (including
+                // the eager response-code check and redirect resolution) is reported as a
+                // missing release for this repository, letting update() fall back to the next
+                // repository instead of aborting the whole wrapper run.
+                HttpURLConnection connection = createHttpURLConnection(metadataUrl);
                 return connection.getInputStream();
             } catch (Exception e) {
                 throw new GrailsReleaseNotFoundException("There was an error downloading the metadata file", e);

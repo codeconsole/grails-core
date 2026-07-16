@@ -138,7 +138,12 @@ public class GrailsWrapperRepo {
         try {
             URI uri = new URI(urlOrFile);
             String scheme = uri.getScheme();
-            return scheme == null || "file".equalsIgnoreCase(scheme);
+            if (scheme == null || "file".equalsIgnoreCase(scheme)) {
+                return true;
+            }
+            // A single-letter scheme with no authority is a Windows drive letter (e.g.
+            // "C:repo"), not a remote URL scheme, so it is a local filesystem repository.
+            return scheme.length() == 1 && uri.getRawAuthority() == null;
         } catch (URISyntaxException e) {
             // A malformed value that is clearly URL-shaped (has a leading "scheme://") is a
             // broken remote override, not a local path; classify it as remote so it is
