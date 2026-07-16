@@ -84,12 +84,15 @@
                             <a class="dropdown-item${defaultLocale.language == currentLocale.language ? ' active' : ''}" href="?lang=${defaultLocale.toLanguageTag()}">${defaultLocale.getDisplayName(defaultLocale)}</a>
                         </li>
                         <li><hr class="dropdown-divider"></li>
-                        <g:each in="${availableLocales}" var="availableLocale">
-                            <g:if test="${availableLocale.language != defaultLocale.language}">
-                                <li>
-                                    <a class="dropdown-item${availableLocale.language == currentLocale.language ? ' active' : ''}" href="?lang=${availableLocale.toLanguageTag()}">${availableLocale.getDisplayName(availableLocale)}</a>
-                                </li>
-                            </g:if>
+                        <%-- Order the remaining languages by their own display name (autonym)
+                             with a collator, so the visible labels read alphabetically within
+                             each script rather than in registration order. --%>
+                        <g:set var="localeCollator" value="${java.text.Collator.getInstance(currentLocale)}"/>
+                        <g:set var="sortedLocales" value="${availableLocales.findAll { it.language != defaultLocale.language }.sort(false) { localeCollator.getCollationKey(it.getDisplayName(it)) }}"/>
+                        <g:each in="${sortedLocales}" var="availableLocale">
+                            <li>
+                                <a class="dropdown-item${availableLocale.language == currentLocale.language ? ' active' : ''}" href="?lang=${availableLocale.toLanguageTag()}">${availableLocale.getDisplayName(availableLocale)}</a>
+                            </li>
                         </g:each>
                     </ul>
                 </li>
