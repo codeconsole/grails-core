@@ -102,23 +102,28 @@ public interface GradleRepository extends Ordered {
     }
 
     private static String validateOverrideRepository(String overrideUrl) {
+        // Local filesystem repositories (including Windows drive paths such as C:\repo,
+        // C:/repo and drive-relative C:repo) are always allowed; only genuine remote URLs
+        // are constrained to HTTPS.
+        if (isLocalRepository(overrideUrl)) {
+            return overrideUrl;
+        }
         try {
             URI uri = new URI(overrideUrl);
-            String scheme = uri.getScheme();
-            if (scheme == null || "file".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme)) {
+            if ("https".equalsIgnoreCase(uri.getScheme())) {
                 return overrideUrl;
             }
             throw new IllegalArgumentException("Remote GRAILS_REPO_URL repositories must use HTTPS: " + overrideUrl);
         } catch (URISyntaxException e) {
-            if (isLocalRepository(overrideUrl)) {
-                return overrideUrl;
-            }
             throw new IllegalArgumentException("Invalid GRAILS_REPO_URL repository: " + overrideUrl, e);
         }
     }
 
     private static boolean isLocalRepository(String overrideUrl) {
-        if (isWindowsAbsolutePath(overrideUrl)) {
+        // A Windows drive path (absolute "C:\repo" / "C:/repo" or drive-relative "C:repo",
+        // including nested paths and spaces) is checked before URI parsing, because a
+        // single-letter drive prefix is otherwise mistaken for a URL scheme.
+        if (isWindowsDrivePath(overrideUrl)) {
             return true;
         }
         try {
@@ -144,10 +149,14 @@ public interface GradleRepository extends Ordered {
         return Character.isLetter(overrideUrl.charAt(0));
     }
 
-    private static boolean isWindowsAbsolutePath(String overrideUrl) {
-        return overrideUrl.length() > 2 &&
-            Character.isLetter(overrideUrl.charAt(0)) &&
-            overrideUrl.charAt(1) == ':' &&
-            (overrideUrl.charAt(2) == '\\' || overrideUrl.charAt(2) == '/');
+    private static boolean isWindowsDrivePath(String overrideUrl) {
+        if (overrideUrl.length() < 2
+                || !Character.isLetter(overrideUrl.charAt(0))
+                || overrideUrl.charAt(1) != ':') {
+            return false;
+        }
+        // Distinguish a drive path ("C:\repo", "C:/repo", "C:repo") from a single-letter
+        // URL scheme ("c://host"), which has a "//" authority separator after the colon.
+        return !overrideUrl.regionMatches(2, "//", 0, 2);
     }
 }

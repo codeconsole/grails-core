@@ -64,4 +64,17 @@ class GradleRepositorySpec extends Specification {
         def e = thrown(IllegalArgumentException)
         e.message == 'Invalid GRAILS_REPO_URL repository: https://repo example'
     }
+
+    def 'GRAILS_REPO_URL overrides accept Windows drive local repositories'() {
+        when: 'a Windows drive path (backslash, forward-slash or drive-relative) is supplied'
+        List<DefaultGradleRepository> repositories = GradleRepository.getDefaultRepositories('8.0.0', windowsPath)
+                .findAll { it instanceof DefaultGradleRepository }
+                .collect { it as DefaultGradleRepository }
+
+        then: 'it is treated as a local repository, not rejected as a non-HTTPS remote URL'
+        repositories.first().url == windowsPath
+
+        where:
+        windowsPath << ['C:\\Users\\me\\.m2\\repository', 'C:/Users/me/.m2/repository', 'C:repo', 'C:repo\\subdir', 'C:my repo\\releases']
+    }
 }
