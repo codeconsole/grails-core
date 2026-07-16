@@ -128,12 +128,16 @@ public class DataBindingUtils {
         final boolean legacyBindableDefaultEnabled = isLegacyBindableDefaultEnabled();
         final Map<Class, List> includeListCache = legacyBindableDefaultEnabled ?
                 CLASS_TO_LEGACY_BINDING_INCLUDE_LIST : CLASS_TO_BINDING_INCLUDE_LIST;
-        List includeList = legacyBindableDefaultEnabled ? null : getBindablePropertyNames(object);
+        List includeList = null;
         try {
             final Class<? extends Object> objectClass = object.getClass();
             if (includeListCache.containsKey(objectClass)) {
                 includeList = includeListCache.get(objectClass);
             } else {
+                // Resolve the runtime-derived bindable names only on a cache miss - this walks the
+                // target's constraints/metaclass and would otherwise run on every bind of a cached class.
+                final List runtimeBindableNames = legacyBindableDefaultEnabled ? null : getBindablePropertyNames(object);
+                includeList = runtimeBindableNames;
                 final Field legacyWhiteListField = getField(objectClass, DefaultASTDatabindingHelper.LEGACY_DATABINDING_WHITELIST);
                 final Field defaultWhiteListField = legacyBindableDefaultEnabled ?
                         getField(objectClass, DefaultASTDatabindingHelper.DEFAULT_DATABINDING_WHITELIST) :
@@ -150,8 +154,8 @@ public class DataBindingUtils {
                     if (generatedIncludeList != null) {
                         combinedIncludeList.addAll(generatedIncludeList);
                     }
-                    if (includeList != null) {
-                        combinedIncludeList.addAll(includeList);
+                    if (runtimeBindableNames != null) {
+                        combinedIncludeList.addAll(runtimeBindableNames);
                     }
                     includeList = new ArrayList(combinedIncludeList);
                 }

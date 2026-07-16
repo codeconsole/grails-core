@@ -312,6 +312,19 @@ class BindDataMethodTests extends Specification implements ControllerUnitTest<Bi
         !target.memberArray[0].admin
     }
 
+    void 'Test JSON list array binding applies explicit nested allowlist to every element'() {
+        given:
+        def target = new TeamCommandObject()
+
+        when:
+        DataBindingUtils.bindObjectToInstance(target,
+                [memberArray: [[name: 'Grace Hopper', admin: true]]], ['memberArray.name'], [], null)
+
+        then:
+        target.memberArray*.name == ['Grace Hopper']
+        !target.memberArray[0].admin
+    }
+
     void 'Test JSON list binding applies explicit nested allowlist to collection elements'() {
         given:
         def target = new TeamCommandObject()
@@ -377,6 +390,19 @@ class BindDataMethodTests extends Specification implements ControllerUnitTest<Bi
         when:
         DataBindingUtils.bindObjectToInstance(target,
                 ['childArray[0]': [name: 'Array Child', admin: true]])
+
+        then:
+        target.childArray*.name == ['Array Child']
+        !target.childArray[0].admin
+    }
+
+    void 'Test generated parent allowlist applies child allowlist to JSON list array elements'() {
+        given:
+        def target = new GeneratedNestedContainerCommandObject()
+
+        when:
+        DataBindingUtils.bindObjectToInstance(target,
+                [childArray: [[name: 'Array Child', admin: true]]])
 
         then:
         target.childArray*.name == ['Array Child']

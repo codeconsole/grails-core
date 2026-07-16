@@ -19,6 +19,7 @@
 package grails.web.databinding
 
 import java.lang.annotation.Annotation
+import java.lang.reflect.Array
 
 import groovy.transform.CompileStatic
 import groovy.transform.TypeCheckingMode
@@ -454,6 +455,44 @@ class GrailsWebDataBinder extends SimpleDataBinder {
                         bindProperty(obj, source, metaProperty, null, listener, errors)
                     }
                 }
+            } else if (metaProperty.type.isArray() && val instanceof Collection &&
+                    !isBasicType(metaProperty.type.componentType) && ((Collection) val).any {
+                        it instanceof Map || it instanceof DataBindingSource
+                    }) {
+                needsBinding = false
+                Class<?> componentType = metaProperty.type.componentType
+                List boundItems = []
+                ((Collection) val).each { item ->
+                    if (item == null || componentType.isAssignableFrom(item.getClass())) {
+                        boundItems << item
+                    } else if (item instanceof Map || item instanceof DataBindingSource) {
+                        DataBindingSource itemBindingSource = item instanceof DataBindingSource ?
+                                (DataBindingSource) item : new SimpleMapDataBindingSource((Map) item)
+                        def instance
+                        if (isDomainClass(componentType)) {
+                            def idValue = getIdentifierValueFrom(item)
+                            if (idValue != null && idValue != '' && idValue != 'null') {
+                                instance = getPersistentInstance(componentType, idValue)
+                            }
+                        }
+                        if (instance == null) {
+                            instance = instantiateAndBindNestedOrUseMapConstructor(
+                                    componentType, item, itemBindingSource, nestedIncludeList, listener)
+                        } else {
+                            bindNested(instance, itemBindingSource, nestedIncludeList, listener)
+                        }
+                        if (instance != null) {
+                            boundItems << instance
+                        }
+                    } else {
+                        boundItems << convert(componentType, item)
+                    }
+                }
+                def array = Array.newInstance(componentType, boundItems.size())
+                boundItems.eachWithIndex { item, int index ->
+                    Array.set(array, index, item)
+                }
+                bindProperty(obj, source, metaProperty, array, listener, errors)
             } else if (Collection.isAssignableFrom(metaProperty.type)) {
                 def referencedType = getReferencedTypeForCollection(propName, obj)
                 if (referencedType) {

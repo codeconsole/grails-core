@@ -482,6 +482,24 @@ class GrailsWebDataBinderSpec extends Specification implements DataTest {
         !parent.child.admin
     }
 
+    void 'Test generated allowlist applies to persisted domain instances in typed arrays'() {
+        given:
+        def child = new GeneratedBindingChild(name: 'Original').save(flush: true, failOnError: true)
+        def holder = new GeneratedBindingArrayHolder()
+
+        when:
+        binder.bind(holder, new SimpleMapDataBindingSource([
+            children: [[id: child.id, name: 'Allowed', admin: true]]
+        ]))
+
+        then:
+        holder.children.length == 1
+        holder.children[0].is(child)
+        holder.children[0].id == child.id
+        holder.children[0].name == 'Allowed'
+        !holder.children[0].admin
+    }
+
     void 'Test null public include list resolves generated allowlist'() {
         given:
         def child = new GeneratedBindingChild(name: 'Original')
@@ -528,6 +546,7 @@ class GrailsWebDataBinderSpec extends Specification implements DataTest {
         given:
         def holder = new SecureMapConstructorHolder()
         def indexedHolder = new SecureMapConstructorHolder()
+        def arrayHolder = new SecureMapConstructorHolder()
         List<String> warnings = []
         def warningBinder = new GrailsWebDataBinder(grailsApplication) {
             @Override
@@ -548,10 +567,14 @@ class GrailsWebDataBinderSpec extends Specification implements DataTest {
         warningBinder.bind(indexedHolder, new SimpleMapDataBindingSource([
             'values[second]': [name: 'Also Allowed', admin: true]
         ]))
+        warningBinder.bind(arrayHolder, new SimpleMapDataBindingSource([
+            arrayValues: [[name: 'Array Allowed', admin: true]]
+        ]))
 
         then:
         holder.values.isEmpty()
         indexedHolder.values.isEmpty()
+        arrayHolder.arrayValues.length == 0
         warnings == [GrailsWebDataBinder.missingNoArgConstructorMessage(SecureMapConstructorValue)]
     }
 
@@ -562,12 +585,15 @@ class GrailsWebDataBinderSpec extends Specification implements DataTest {
 
         when:
         binder.bind(holder, new SimpleMapDataBindingSource([
-            values: [first: [name: 'Legacy', admin: true]]
+            values: [first: [name: 'Legacy', admin: true]],
+            arrayValues: [[name: 'Array Legacy', admin: true]]
         ]))
 
         then:
         holder.values.first.name == 'Legacy'
         holder.values.first.admin
+        holder.arrayValues*.name == ['Array Legacy']
+        holder.arrayValues[0].admin
 
         cleanup:
         grailsApplication.config.grails.databinding.legacyBindableDefault = false
@@ -2052,11 +2078,21 @@ class GeneratedBindingChild {
     }
 }
 
+class GeneratedBindingArrayHolder implements Validateable {
+    GeneratedBindingChild[] children = []
+
+    static constraints = {
+        children bindable: true
+    }
+}
+
 class SecureMapConstructorHolder implements Validateable {
     Map<String, SecureMapConstructorValue> values
+    SecureMapConstructorValue[] arrayValues = []
 
     static constraints = {
         values bindable: true
+        arrayValues bindable: true
     }
 }
 
