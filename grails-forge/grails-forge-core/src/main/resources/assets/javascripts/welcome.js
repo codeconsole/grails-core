@@ -154,3 +154,40 @@
         });
     });
 })();
+
+// "Jump to id" control in the Available Controllers list: send the visitor to
+// /controller/show/{id}. The form submits to /controller/show?id=… on its own,
+// so this only upgrades a working control to the cleaner path-style URL.
+(function () {
+    function jumpToId(form) {
+        const input = form.querySelector('.show-jump-input');
+        const base = form.getAttribute('data-show-base');
+        const id = input && input.value.trim();
+        if (!base || !id) return false;
+
+        window.location.assign(base.replace(/\/+$/, '') + '/' + encodeURIComponent(id));
+        return true;
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        document.querySelectorAll('form.show-jump').forEach((form) => {
+            // With JS in play we own the submit: navigate on a real id, no-op on empty.
+            // The plain GET fallback only runs when this listener never attaches.
+            form.addEventListener('submit', (e) => {
+                e.preventDefault();
+                jumpToId(form);
+            });
+
+            const input = form.querySelector('.show-jump-input');
+            if (!input) return;
+
+            // Offer a fuller example hint while focused, restore the terse label on blur.
+            const idle = input.getAttribute('placeholder') || '';
+            const hint = input.getAttribute('data-focus-placeholder');
+            if (hint) {
+                input.addEventListener('focus', () => { input.placeholder = hint; });
+                input.addEventListener('blur', () => { input.placeholder = idle; });
+            }
+        });
+    });
+})();

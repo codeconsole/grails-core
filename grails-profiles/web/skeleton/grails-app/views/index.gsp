@@ -270,8 +270,15 @@
                                         <g:set var="controllerUrl"
                                                value="${createLink(controller: c.logicalPropertyName, namespace: c.namespace)}"/>
 
+                                        <%-- A controller exposing a `show` action gets an inline
+                                             "jump to id" control: type an id, hit Show, land on
+                                             /controller/show/{id}. --%>
+                                        <g:set var="hasShow" value="${c.actions?.contains('show')}"/>
+                                        <g:set var="showBase"
+                                               value="${hasShow ? createLink(controller: c.logicalPropertyName, namespace: c.namespace, action: 'show') : ''}"/>
+
                                         <li class="list-group-item list-group-item-action px-2" data-name="${simpleName}">
-                                            <div class="d-flex align-items-center justify-content-between gap-3">
+                                            <div class="controller-row d-flex align-items-center gap-2 flex-wrap">
                                                 <g:link controller="${c.logicalPropertyName}"
                                                         namespace="${c.namespace}"
                                                         class="d-flex align-items-center gap-3 text-decoration-none min-w-0 flex-grow-1">
@@ -282,10 +289,29 @@
                                                     </div>
                                                 </g:link>
 
-                                                <a href="${controllerUrl}"
-                                                   class="small link-primary link-offset-2 link-underline-opacity-0 link-underline-opacity-75-hover flex-shrink-0">
-                                                    ${controllerUrl}
-                                                </a>
+                                                <div class="d-flex align-items-center gap-2 flex-shrink-0 ms-auto">
+                                                    <g:if test="${hasShow}">
+                                                        <%-- Falls back to GET /controller/show?id=… when JS is
+                                                             off; welcome.js upgrades it to the /show/{id} path. --%>
+                                                        <form class="show-jump d-lg-none" action="${showBase}" method="get" data-show-base="${showBase}">
+                                                            <%-- No inputmode: ids may be Long, String, or ObjectId, and a
+                                                                 numeric keypad would lock out non-digit ids on mobile. --%>
+                                                            <input type="text" name="id" autocomplete="off"
+                                                                   class="form-control form-control-sm show-jump-input"
+                                                                   placeholder="${message(code: 'welcome.show.placeholder')}"
+                                                                   data-focus-placeholder="${message(code: 'welcome.show.hint')}"
+                                                                   aria-label="${message(code: 'welcome.show.aria', args: [simpleName])}">
+                                                            <button type="submit" class="btn btn-sm btn-primary show-jump-go">
+                                                                <g:message code="welcome.show.label"/>
+                                                            </button>
+                                                        </form>
+                                                    </g:if>
+
+                                                    <a href="${controllerUrl}"
+                                                       class="small link-primary link-offset-2 link-underline-opacity-0 link-underline-opacity-75-hover">
+                                                        ${controllerUrl}
+                                                    </a>
+                                                </div>
                                             </div>
                                         </li>
                                     </g:each>

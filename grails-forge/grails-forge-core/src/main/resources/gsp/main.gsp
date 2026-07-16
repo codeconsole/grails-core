@@ -17,27 +17,51 @@
         <a class="navbar-brand d-flex align-items-center" href="${request.contextPath}/">
             <asset:image class="w-75" src="grails.svg" alt="Grails Logo"/>
         </a>
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse"
+                data-bs-target="#mainNav" aria-controls="mainNav" aria-expanded="false"
+                aria-label="${message(code: 'layout.nav.toggle', default: 'Toggle navigation')}">
+            <span class="navbar-toggler-icon"></span>
+        </button>
         <g:set var="navControllers"
                value="${grailsApplication.controllerClasses.toList().sort { it.fullName }}"/>
+        <div class="collapse navbar-collapse" id="mainNav">
         <g:if test="${navControllers}">
+            <%-- A filter earns its place only once the list is long enough to be a
+                 chore to scan; below the threshold the plain list is quicker. --%>
+            <g:set var="showNavFilter" value="${navControllers.size() > 8}"/>
             <ul class="navbar-nav me-auto">
                 <li class="nav-item dropdown">
                     <a class="nav-link dropdown-toggle" href="#" id="controllersDropdown" role="button"
                        data-bs-toggle="dropdown" aria-expanded="false">
                         <g:message code="welcome.artefact.controllers"/>
                     </a>
-                    <ul class="dropdown-menu" aria-labelledby="controllersDropdown"
+                    <ul class="dropdown-menu" id="controllersMenu" aria-labelledby="controllersDropdown"
                         style="max-height: 60vh; overflow-y: auto;">
+                        <g:if test="${showNavFilter}">
+                            <li class="position-sticky top-0 bg-body border-bottom px-2 pt-1 pb-2" style="z-index: 2;">
+                                <input type="search" class="form-control form-control-sm nav-filter-input"
+                                       data-filter-scope="#controllersMenu"
+                                       placeholder="${message(code: 'welcome.filter.name')}"
+                                       aria-label="${message(code: 'welcome.filter.name')}">
+                            </li>
+                        </g:if>
                         <g:each var="c" in="${navControllers}">
                             <g:set var="navControllerName" value="${(c.fullName ?: '')
                                     .tokenize('.')
                                     .last()
                                     .replaceFirst(/Controller$/, '')}"/>
-                            <li>
+                            <g:set var="navControllerLabel"
+                                   value="${((c.namespace ?: '').trim()) ? "${c.namespace} / ${navControllerName}" : navControllerName}"/>
+                            <li data-name="${navControllerLabel}">
                                 <g:link controller="${c.logicalPropertyName}" namespace="${c.namespace}"
-                                        class="dropdown-item">${((c.namespace ?: '').trim()) ? "${c.namespace} / ${navControllerName}" : navControllerName}</g:link>
+                                        class="dropdown-item">${navControllerLabel}</g:link>
                             </li>
                         </g:each>
+                        <g:if test="${showNavFilter}">
+                            <li class="nav-filter-empty dropdown-item-text small text-body-secondary d-none">
+                                <g:message code="welcome.filter.none"/>
+                            </li>
+                        </g:if>
                     </ul>
                 </li>
             </ul>
@@ -94,6 +118,7 @@
                 </ul>
             </li>
         </ul>
+        </div>
     </div>
 </nav>
 
