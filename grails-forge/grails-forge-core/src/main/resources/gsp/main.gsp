@@ -75,28 +75,17 @@
                         <i class="bi bi-globe me-1"></i>${currentLocale.getDisplayName(currentLocale)}
                     </a>
                     <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="localeDropdown">
-                        <%-- The default language stays pinned on top: a user who switched to a
-                             language they cannot read must always find a recognizable way back.
-                             Resolved from spring.web.locale so a configured default is honored. --%>
-                        <g:set var="defaultLocale"
-                               value="${org.springframework.util.StringUtils.parseLocale(grailsApplication.config.getProperty('spring.web.locale', 'en')) ?: java.util.Locale.ENGLISH}"/>
-                        <li>
-                            <a class="dropdown-item${defaultLocale.language == currentLocale.language ? ' active' : ''}" href="?lang=${defaultLocale.toLanguageTag()}">${defaultLocale.getDisplayName(defaultLocale)}</a>
-                        </li>
-                        <li><hr class="dropdown-divider"></li>
-                        <%-- Order the remaining languages by their own display name (autonym)
-                             so the visible labels read alphabetically within each script rather
-                             than in registration order. A fixed ROOT collator (not the current
-                             locale) keeps the order identical in every language, so this switcher
-                             stays spatially stable for a user who arrives in a language they
-                             cannot read. --%>
-                        <g:set var="localeCollator" value="${java.text.Collator.getInstance(java.util.Locale.ROOT)}"/>
-                        <g:set var="sortedLocales" value="${availableLocales.findAll { it.language != defaultLocale.language }.sort(false) { localeCollator.getCollationKey(it.getDisplayName(it)) }}"/>
-                        <g:each in="${sortedLocales}" var="availableLocale">
+                        <%-- g:localeSelect (body form) renders each translated locale, already
+                             autonym-sorted by AvailableLocaleResolver, and flags the active and default
+                             entries; this layout supplies only the Bootstrap markup. pinDefault emits the
+                             configured default first (index 0), so a user who switched to a language they
+                             cannot read always has a recognizable way back at the top, above the divider. --%>
+                        <g:localeSelect available="true" pinDefault="true" var="loc">
+                            <g:if test="${loc.index == 1}"><li><hr class="dropdown-divider"></li></g:if>
                             <li>
-                                <a class="dropdown-item${availableLocale.language == currentLocale.language ? ' active' : ''}" href="?lang=${availableLocale.toLanguageTag()}">${availableLocale.getDisplayName(availableLocale)}</a>
+                                <a class="dropdown-item${loc.active ? ' active' : ''}" href="?lang=${loc.tag}">${loc.autonym}</a>
                             </li>
-                        </g:each>
+                        </g:localeSelect>
                     </ul>
                 </li>
             </g:if>
