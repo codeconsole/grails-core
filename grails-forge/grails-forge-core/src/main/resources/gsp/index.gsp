@@ -349,8 +349,9 @@
                                         <g:set var="hasShow" value="${c.actions?.contains('show')}"/>
 
                                         <%-- A default action restricted to non-GET methods (per
-                                             allowedMethods, e.g. a POST-only logout) cannot be
-                                             linked to: show the methods as a badge instead. --%>
+                                             allowedMethods, e.g. a POST-only logout) is invoked
+                                             through a form using the method it allows, with the
+                                             methods shown as a badge in place of the URL link. --%>
                                         <g:set var="ctrlMethods"
                                                value="${c.getPropertyValue('allowedMethods') instanceof Map ? c.getPropertyValue('allowedMethods')[c.defaultAction ?: 'index'] : null}"/>
                                         <g:set var="ctrlGetOk"
@@ -372,13 +373,15 @@
                                                 </g:link>
                                                 </g:if>
                                                 <g:else>
-                                                <div class="d-flex align-items-center gap-3 min-w-0 flex-grow-1">
-                                                    <div class="min-w-0">
-                                                        <div class="fw-semibold text-body text-truncate">
-                                                            ${simpleName}
-                                                        </div>
-                                                    </div>
-                                                </div>
+                                                <form action="${controllerUrl}" method="post" class="m-0 d-flex align-items-center gap-3 min-w-0 flex-grow-1">
+                                                    <button type="submit" class="btn p-0 border-0 d-flex align-items-center gap-3 text-start min-w-0 w-100">
+                                                        <span class="min-w-0">
+                                                            <span class="fw-semibold text-body text-truncate d-block">
+                                                                ${simpleName}
+                                                            </span>
+                                                        </span>
+                                                    </button>
+                                                </form>
                                                 </g:else>
 
                                                 <div class="d-flex align-items-center gap-2 flex-shrink-0 ms-auto">

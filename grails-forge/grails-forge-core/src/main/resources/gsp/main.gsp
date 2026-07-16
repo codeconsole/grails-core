@@ -47,9 +47,9 @@
                         </g:if>
                         <g:each var="c" in="${navControllers}">
                             <%-- A controller whose default action cannot be requested with
-                                 GET (per allowedMethods, e.g. a POST-only logout) stays
-                                 listed but disabled with a method badge: a plain navigation
-                                 link would only produce a 405. --%>
+                                 GET (per allowedMethods, e.g. a POST-only logout) is invoked
+                                 through a form using the method it allows, with a badge
+                                 showing the verb: a plain link would only produce a 405. --%>
                             <g:set var="navMethods"
                                    value="${c.getPropertyValue('allowedMethods') instanceof Map ? c.getPropertyValue('allowedMethods')[c.defaultAction ?: 'index'] : null}"/>
                             <g:set var="navGetOk"
@@ -66,10 +66,12 @@
                                         class="dropdown-item">${navControllerLabel}</g:link>
                                 </g:if>
                                 <g:else>
-                                <span class="dropdown-item disabled d-flex align-items-center justify-content-between gap-3" aria-disabled="true">
-                                    ${navControllerLabel}
-                                    <span class="badge bg-body-tertiary text-body-secondary border">${[navMethods].flatten()*.toString()*.toUpperCase().join(' / ')}</span>
-                                </span>
+                                <form action="${createLink(controller: c.logicalPropertyName, namespace: c.namespace)}" method="post" class="m-0">
+                                    <button type="submit" class="dropdown-item d-flex align-items-center justify-content-between gap-3">
+                                        ${navControllerLabel}
+                                        <span class="badge bg-body-tertiary text-body-secondary border">${[navMethods].flatten()*.toString()*.toUpperCase().join(' / ')}</span>
+                                    </button>
+                                </form>
                                 </g:else>
                             </li>
                         </g:each>
