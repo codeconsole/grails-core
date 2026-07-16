@@ -11,10 +11,12 @@
 
 if (typeof jQuery !== 'undefined') {
     (function($) {
-        $('#spinner').ajaxStart(function() {
-            $(this).fadeIn();
-        }).ajaxStop(function() {
-            $(this).fadeOut();
+        // Global ajax events fire only on document (jQuery 1.9+), so bind the
+        // spinner's show/hide there rather than on #spinner itself.
+        $(document).on('ajaxStart', function() {
+            $('#spinner').fadeIn();
+        }).on('ajaxStop', function() {
+            $('#spinner').fadeOut();
         });
     })(jQuery);
 }
@@ -45,8 +47,13 @@ if (typeof jQuery !== 'undefined') {
 
             const dropdown = input.closest('.dropdown');
             if (!dropdown) return;
-            // Focus the field as the menu opens; clear it once the menu closes.
-            dropdown.addEventListener('shown.bs.dropdown', () => input.focus());
+            // Focus the field as the menu opens, but only in pointer/hover
+            // environments — on touch devices autofocus pops the on-screen
+            // keyboard over the list the user is about to scan. Clear it once
+            // the menu closes.
+            dropdown.addEventListener('shown.bs.dropdown', () => {
+                if (window.matchMedia('(hover: hover)').matches) input.focus();
+            });
             dropdown.addEventListener('hidden.bs.dropdown', () => {
                 input.value = '';
                 applyNavFilter(input);
