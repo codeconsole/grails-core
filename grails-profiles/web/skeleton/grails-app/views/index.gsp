@@ -347,11 +347,20 @@
                                              "jump to id" control: type an id, hit Show, land on
                                              /controller/show/{id}. --%>
                                         <g:set var="hasShow" value="${c.actions?.contains('show')}"/>
+
+                                        <%-- A default action restricted to non-GET methods (per
+                                             allowedMethods, e.g. a POST-only logout) cannot be
+                                             linked to: show the methods as a badge instead. --%>
+                                        <g:set var="ctrlMethods"
+                                               value="${c.getPropertyValue('allowedMethods') instanceof Map ? c.getPropertyValue('allowedMethods')[c.defaultAction ?: 'index'] : null}"/>
+                                        <g:set var="ctrlGetOk"
+                                               value="${ctrlMethods == null || 'GET' in [ctrlMethods].flatten()*.toString()*.toUpperCase()}"/>
                                         <g:set var="showBase"
                                                value="${hasShow ? createLink(controller: c.logicalPropertyName, namespace: c.namespace, action: 'show') : ''}"/>
 
                                         <li class="list-group-item list-group-item-action px-2" data-name="${simpleName}">
                                             <div class="controller-row d-flex align-items-center gap-2 flex-wrap">
+                                                <g:if test="${ctrlGetOk}">
                                                 <g:link controller="${c.logicalPropertyName}"
                                                         namespace="${c.namespace}"
                                                         class="d-flex align-items-center gap-3 text-decoration-none min-w-0 flex-grow-1">
@@ -361,6 +370,16 @@
                                                         </div>
                                                     </div>
                                                 </g:link>
+                                                </g:if>
+                                                <g:else>
+                                                <div class="d-flex align-items-center gap-3 min-w-0 flex-grow-1">
+                                                    <div class="min-w-0">
+                                                        <div class="fw-semibold text-body text-truncate">
+                                                            ${simpleName}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                </g:else>
 
                                                 <div class="d-flex align-items-center gap-2 flex-shrink-0 ms-auto">
                                                     <g:if test="${hasShow}">
@@ -380,10 +399,18 @@
                                                         </form>
                                                     </g:if>
 
+                                                    <g:if test="${ctrlGetOk}">
                                                     <a href="${controllerUrl}"
                                                        class="small link-primary link-offset-2 link-underline-opacity-0 link-underline-opacity-75-hover">
                                                         ${controllerUrl}
                                                     </a>
+                                                    </g:if>
+                                                    <g:else>
+                                                    <span class="badge bg-body-tertiary text-body-secondary border">
+                                                        ${[ctrlMethods].flatten()*.toString()*.toUpperCase().join(' / ')}
+                                                    </span>
+                                                    <span class="small text-body-secondary">${controllerUrl}</span>
+                                                    </g:else>
                                                 </div>
                                             </div>
                                         </li>

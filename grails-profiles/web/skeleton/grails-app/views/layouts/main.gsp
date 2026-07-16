@@ -46,6 +46,12 @@
                             </li>
                         </g:if>
                         <g:each var="c" in="${navControllers}">
+                            <%-- Skip controllers whose default action cannot be requested
+                                 with GET (per allowedMethods, e.g. a POST-only logout):
+                                 a plain navigation link would only produce a 405. --%>
+                            <g:set var="navMethods"
+                                   value="${c.getPropertyValue('allowedMethods') instanceof Map ? c.getPropertyValue('allowedMethods')[c.defaultAction ?: 'index'] : null}"/>
+                            <g:if test="${navMethods == null || 'GET' in [navMethods].flatten()*.toString()*.toUpperCase()}">
                             <g:set var="navControllerName" value="${(c.fullName ?: '')
                                     .tokenize('.')
                                     .last()
@@ -56,6 +62,7 @@
                                 <g:link controller="${c.logicalPropertyName}" namespace="${c.namespace}"
                                         class="dropdown-item">${navControllerLabel}</g:link>
                             </li>
+                            </g:if>
                         </g:each>
                         <g:if test="${showNavFilter}">
                             <li class="nav-filter-empty dropdown-item-text small text-body-secondary d-none">
