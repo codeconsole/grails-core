@@ -1601,3 +1601,22 @@ Custom field renderers should go through the documented `f:field`, `f:widget`, a
 | Custom context subclasses should use supported Spring lifecycle extension points instead of overriding this removed hook.
 Spring theme APIs removed from the same area are covered in section 10.
 |===
+
+==== 35. jQuery Webjar Upgraded to 4.0.0
+
+The jQuery webjar managed by the `grails-bom` (`org.webjars.npm:jquery`) moves from 3.7.1 to 4.0.0.
+jQuery 4 is a major release: it drops Internet Explorer and other legacy browsers and removes long-deprecated utilities such as `jQuery.trim`, `jQuery.type`, `jQuery.isArray`, `jQuery.isFunction`, `jQuery.proxy`, and `jQuery.isWindow`.
+See the https://jquery.com/upgrade-guide/4.0/[jQuery 4.0 Upgrade Guide] for the complete list of changes.
+
+Because the version is managed by the BOM, any application that references the jQuery webjar without an explicit version picks up 4.0.0 automatically once it adopts the Grails 8 BOM.
+This includes the generated create-app welcome page, whose assets have been verified against 4.0.0.
+
+If your application's own JavaScript relies on the removed APIs, migrate those call sites.
+If you are not ready to migrate, pin the previous version by overriding the BOM-managed property (see section 14).
+A plain `implementation 'org.webjars.npm:jquery:3.7.1'` is not sufficient, because the auto-applied Grails BOM is a non-enforced `platform()` and its 4.0.0 wins under Gradle's highest-version-wins resolution; the property override is applied as a strict constraint and correctly downgrades the version:
+
+[source,properties]
+.gradle.properties
+----
+jquery.version=3.7.1
+----
