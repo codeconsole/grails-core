@@ -46,12 +46,14 @@
                             </li>
                         </g:if>
                         <g:each var="c" in="${navControllers}">
-                            <%-- Skip controllers whose default action cannot be requested
-                                 with GET (per allowedMethods, e.g. a POST-only logout):
-                                 a plain navigation link would only produce a 405. --%>
+                            <%-- A controller whose default action cannot be requested with
+                                 GET (per allowedMethods, e.g. a POST-only logout) stays
+                                 listed but disabled with a method badge: a plain navigation
+                                 link would only produce a 405. --%>
                             <g:set var="navMethods"
                                    value="${c.getPropertyValue('allowedMethods') instanceof Map ? c.getPropertyValue('allowedMethods')[c.defaultAction ?: 'index'] : null}"/>
-                            <g:if test="${navMethods == null || 'GET' in [navMethods].flatten()*.toString()*.toUpperCase()}">
+                            <g:set var="navGetOk"
+                                   value="${navMethods == null || 'GET' in [navMethods].flatten()*.toString()*.toUpperCase()}"/>
                             <g:set var="navControllerName" value="${(c.fullName ?: '')
                                     .tokenize('.')
                                     .last()
@@ -59,10 +61,17 @@
                             <g:set var="navControllerLabel"
                                    value="${((c.namespace ?: '').trim()) ? "${c.namespace} / ${navControllerName}" : navControllerName}"/>
                             <li data-name="${navControllerLabel}">
+                                <g:if test="${navGetOk}">
                                 <g:link controller="${c.logicalPropertyName}" namespace="${c.namespace}"
                                         class="dropdown-item">${navControllerLabel}</g:link>
+                                </g:if>
+                                <g:else>
+                                <span class="dropdown-item disabled d-flex align-items-center justify-content-between gap-3" aria-disabled="true">
+                                    ${navControllerLabel}
+                                    <span class="badge bg-body-tertiary text-body-secondary border">${[navMethods].flatten()*.toString()*.toUpperCase().join(' / ')}</span>
+                                </span>
+                                </g:else>
                             </li>
-                            </g:if>
                         </g:each>
                         <g:if test="${showNavFilter}">
                             <li class="nav-filter-empty dropdown-item-text small text-body-secondary d-none">
