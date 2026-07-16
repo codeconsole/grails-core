@@ -1612,8 +1612,7 @@ Because the version is managed by the BOM, any application that references the j
 This includes the generated create-app welcome page, whose assets have been verified against 4.0.0.
 
 If your application's own JavaScript relies on the removed APIs, migrate those call sites.
-If you are not ready to migrate, pin the previous version by overriding the BOM-managed property (see section 14).
-A plain `implementation 'org.webjars.npm:jquery:3.7.1'` is not sufficient, because the auto-applied Grails BOM is a non-enforced `platform()` and its 4.0.0 wins under Gradle's highest-version-wins resolution; the property override is applied as a strict constraint and correctly downgrades the version:
+If you are not ready to migrate, pin the previous version in your gradle build:
 
 [source,properties]
 .gradle.properties
