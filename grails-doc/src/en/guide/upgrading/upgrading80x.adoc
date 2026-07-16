@@ -1619,3 +1619,20 @@ If you are not ready to migrate, pin the previous version in your gradle build:
 ----
 jquery.version=3.7.1
 ----
+
+==== 36. spring-security-ui Rewritten on Bootstrap 5
+
+The `spring-security-ui` plugin's screens are rewritten on Bootstrap 5 with no bundled styling of their own.
+The plugin no longer ships or depends on jQuery UI, jquery-form, jGrowl, DataTables, bgiframe or the bundled jdMenu/positionBy plugins, and every plugin stylesheet and image has been removed — dialogs are Bootstrap modals, tabs are nav-tabs, notifications render through `g:flashMessages`, and the autocomplete search uses a native `datalist`.
+jQuery (4.x) and Bootstrap are expected from the host application, as provided by the create-app layout.
+
+Plugin pages now render through the host application's own layout — configured with `grails.plugin.springsecurity.ui.gsp.parentLayout` (default `main`) — inheriting its theme, including Bootstrap dark mode, locale selector and branding.
+The security menu and login state are contributed to the host navbar through `nav` and `navActions` content blocks, which the create-app layout renders with `<g:pageProperty name="page.nav"/>` and `<g:pageProperty name="page.navActions"/>`; a custom layout that wants the menu in its navbar renders the same page properties.
+
+If you upgrade an application that customized the plugin:
+
+* Views previously copied into the application with `s2ui-override` reference removed stylesheets and rely on the old table-based markup of the `s2ui` field-row tags, which now emit Bootstrap form groups; regenerate or update those copies.
+* CSS written against the old `s2ui_*` and `jd_menu` classes no longer has anything to match; restyle against Bootstrap classes.
+* Applications that used the plugin's transitive webjars (jQuery UI, jGrowl, DataTables, jquery-form) must now declare those dependencies themselves.
+* The `grails.plugin.springsecurity.ui.Constants` class and the `spring-security-ui-register.js` and `spring-security-ui-*` stylesheet assets have been removed.
+* `LogoutController` now declares a computed `allowedMethods` restricting its action to POST while `logout.postOnly` is active (the default), making the restriction visible to tooling such as the create-app welcome page.
