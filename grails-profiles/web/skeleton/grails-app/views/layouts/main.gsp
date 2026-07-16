@@ -85,9 +85,12 @@
                         </li>
                         <li><hr class="dropdown-divider"></li>
                         <%-- Order the remaining languages by their own display name (autonym)
-                             with a collator, so the visible labels read alphabetically within
-                             each script rather than in registration order. --%>
-                        <g:set var="localeCollator" value="${java.text.Collator.getInstance(currentLocale)}"/>
+                             so the visible labels read alphabetically within each script rather
+                             than in registration order. A fixed ROOT collator (not the current
+                             locale) keeps the order identical in every language, so this switcher
+                             stays spatially stable for a user who arrives in a language they
+                             cannot read. --%>
+                        <g:set var="localeCollator" value="${java.text.Collator.getInstance(java.util.Locale.ROOT)}"/>
                         <g:set var="sortedLocales" value="${availableLocales.findAll { it.language != defaultLocale.language }.sort(false) { localeCollator.getCollationKey(it.getDisplayName(it)) }}"/>
                         <g:each in="${sortedLocales}" var="availableLocale">
                             <li>
