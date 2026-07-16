@@ -105,6 +105,7 @@ class GrailsDefaultPluginsSpec extends ApplicationContextSpec implements Command
              "welcome.artefacts.switch", "welcome.artefacts.none",
              "welcome.listeners.title", "welcome.binding.title", "welcome.beans.none",
              "welcome.mime.types.title", "welcome.datastores.title",
+             "welcome.filters.title", "welcome.registrations.title", "welcome.securitychain.title",
              "welcome.filter.name", "welcome.plugins.title"].every { key ->
                 bundle.contains(key + "=")
             }

@@ -606,6 +606,40 @@
                 <g:set var="mimeTypeProviders"
                        value="${applicationContext.getBeansOfType(grails.web.mime.MimeTypeProvider)
                                .entrySet().toList().sort { it.key.toLowerCase() }}"/>
+                <%-- The filters still on the call stack ARE this request's pipeline, in
+                     execution order: walk the reversed stack, keep Filter classes, collapse
+                     the extra frames a filter contributes through its abstract bases, and
+                     number what remains. No registry can report this actual order. --%>
+                <g:set var="requestFilters"
+                       value="${Thread.currentThread().stackTrace.toList().reverse()
+                               .findResults { ste ->
+                                   def cls = null
+                                   try { cls = Class.forName(ste.className, false, Thread.currentThread().contextClassLoader) } catch (Throwable ignored) { }
+                                   (cls != null && jakarta.servlet.Filter.isAssignableFrom(cls)) ? cls : null
+                               }
+                               .inject([]) { acc, cls ->
+                                   def prev = acc ? acc[-1] : null
+                                   if (prev == cls) { return acc }
+                                   if (prev != null && prev.isAssignableFrom(cls)) { acc[-1] = cls; return acc }
+                                   if (prev != null && cls.isAssignableFrom(prev)) { return acc }
+                                   acc << cls
+                               }
+                               .unique()}"/>
+                <g:set var="filterRegistrations"
+                       value="${applicationContext.getBeansOfType(org.springframework.boot.web.servlet.FilterRegistrationBean)
+                               .entrySet().toList().sort { it.value.order }}"/>
+                <g:set var="filterChainProxyType"
+                       value="${ClassUtils.isPresent('org.springframework.security.web.FilterChainProxy', null) ? ClassUtils.forName('org.springframework.security.web.FilterChainProxy', null) : null}"/>
+                <g:set var="securityFilterChains"
+                       value="${filterChainProxyType ? applicationContext.getBeansOfType(filterChainProxyType).values().toList()
+                               .collectMany { proxy -> proxy.filterChains }
+                               .withIndex()
+                               .collect { chain, i ->
+                                   def matcher = ''
+                                   try { matcher = chain.requestMatcher?.toString() ?: '' } catch (Throwable ignored) { }
+                                   [index: i + 1, matcher: matcher, filters: chain.filters]
+                               } : []}"/>
+                <g:set var="numSecurityFilters" value="${securityFilterChains.sum { c -> c.filters.size() } ?: 0}"/>
 
                 <div id="runtime-beans" data-switch-scope class="card border-1 shadow-sm h-100">
                     <div class="card-body">
@@ -617,7 +651,7 @@
                                 <button type="button" class="btn btn-sm p-0 border-0 h6 card-title mb-0 fw-semibold dropdown-toggle"
                                         data-bs-toggle="dropdown" aria-expanded="false"
                                         aria-label="${message(code: 'welcome.runtime.switch')}">
-                                    <span data-switch-for="listeners"><g:message code="welcome.listeners.title"/></span><span data-switch-for="binding" class="d-none"><g:message code="welcome.binding.title"/></span><span data-switch-for="mimeproviders" class="d-none"><g:message code="welcome.mime.providers.title"/></span>
+                                    <span data-switch-for="listeners"><g:message code="welcome.listeners.title"/></span><span data-switch-for="binding" class="d-none"><g:message code="welcome.binding.title"/></span><span data-switch-for="mimeproviders" class="d-none"><g:message code="welcome.mime.providers.title"/></span><span data-switch-for="filters" class="d-none"><g:message code="welcome.filters.title"/></span><span data-switch-for="registrations" class="d-none"><g:message code="welcome.registrations.title"/></span><g:if test="${filterChainProxyType}"><span data-switch-for="securitychain" class="d-none"><g:message code="welcome.securitychain.title"/></span></g:if>
                                 </button>
                                 <ul class="dropdown-menu">
                                     <li>
@@ -641,13 +675,41 @@
                                             <span class="badge bg-body-tertiary text-body border ms-3">${mimeTypeProviders.size()}</span>
                                         </button>
                                     </li>
+                                    <li>
+                                        <button type="button" class="dropdown-item d-flex justify-content-between align-items-center"
+                                                data-switch-type="filters" aria-pressed="false">
+                                            <g:message code="welcome.filters.title"/>
+                                            <span class="badge bg-body-tertiary text-body border ms-3">${requestFilters.size()}</span>
+                                        </button>
+                                    </li>
+                                    <li>
+                                        <button type="button" class="dropdown-item d-flex justify-content-between align-items-center"
+                                                data-switch-type="registrations" aria-pressed="false">
+                                            <g:message code="welcome.registrations.title"/>
+                                            <span class="badge bg-body-tertiary text-body border ms-3">${filterRegistrations.size()}</span>
+                                        </button>
+                                    </li>
+                                    <g:if test="${filterChainProxyType}">
+                                        <li>
+                                            <button type="button" class="dropdown-item d-flex justify-content-between align-items-center"
+                                                    data-switch-type="securitychain" aria-pressed="false">
+                                                <g:message code="welcome.securitychain.title"/>
+                                                <span class="badge bg-body-tertiary text-body border ms-3">${numSecurityFilters}</span>
+                                            </button>
+                                        </li>
+                                    </g:if>
                                 </ul>
                             </div>
                             <div class="d-flex align-items-center gap-2">
                                 <span class="badge bg-body-tertiary text-body border" data-switch-for="listeners">${appListeners.size()}</span>
                                 <span class="badge bg-body-tertiary text-body border d-none" data-switch-for="binding">${numBindingBeans}</span>
                                 <span class="badge bg-body-tertiary text-body border d-none" data-switch-for="mimeproviders">${mimeTypeProviders.size()}</span>
-                                <g:if test="${appListeners.size() + numBindingBeans + mimeTypeProviders.size() != 0}">
+                                <span class="badge bg-body-tertiary text-body border d-none" data-switch-for="filters">${requestFilters.size()}</span>
+                                <span class="badge bg-body-tertiary text-body border d-none" data-switch-for="registrations">${filterRegistrations.size()}</span>
+                                <g:if test="${filterChainProxyType}">
+                                    <span class="badge bg-body-tertiary text-body border d-none" data-switch-for="securitychain">${numSecurityFilters}</span>
+                                </g:if>
+                                <g:if test="${appListeners.size() + numBindingBeans + mimeTypeProviders.size() + requestFilters.size() + filterRegistrations.size() + numSecurityFilters != 0}">
                                     <div class="dropdown">
                                         <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="dropdown"
                                                 data-bs-auto-close="outside" aria-expanded="false"
@@ -673,6 +735,23 @@
                                                    data-filter-list="#mimeproviders-list" data-filter-empty="#mimeproviders-empty"
                                                    placeholder="${message(code: 'welcome.filter.name')}"
                                                    aria-label="${message(code: 'welcome.filter.name')}">
+                                            <input type="search" class="form-control form-control-sm filter-input d-none"
+                                                   data-switch-for="filters"
+                                                   data-filter-list="#filters-list" data-filter-empty="#filters-empty"
+                                                   placeholder="${message(code: 'welcome.filter.name')}"
+                                                   aria-label="${message(code: 'welcome.filter.name')}">
+                                            <input type="search" class="form-control form-control-sm filter-input d-none"
+                                                   data-switch-for="registrations"
+                                                   data-filter-list="#registrations-list" data-filter-empty="#registrations-empty"
+                                                   placeholder="${message(code: 'welcome.filter.name')}"
+                                                   aria-label="${message(code: 'welcome.filter.name')}">
+                                            <g:if test="${filterChainProxyType}">
+                                                <input type="search" class="form-control form-control-sm filter-input d-none"
+                                                       data-switch-for="securitychain"
+                                                       data-filter-list="#securitychain-list" data-filter-empty="#securitychain-empty"
+                                                       placeholder="${message(code: 'welcome.filter.name')}"
+                                                       aria-label="${message(code: 'welcome.filter.name')}">
+                                            </g:if>
                                         </div>
                                     </div>
                                 </g:if>
@@ -748,6 +827,97 @@
                             <p class="small text-body-secondary mb-0"><g:message code="welcome.beans.none"/></p>
                         </g:else>
                         </div>
+
+                        <div data-switch-for="filters" class="d-none">
+                        <g:if test="${requestFilters}">
+                            <p class="small text-body-secondary mb-3">
+                                <g:message code="welcome.filters.request"/>
+                            </p>
+                        </g:if>
+                        <div id="filters-list">
+                            <ul class="list-group list-group-flush">
+                                <g:each var="f" in="${requestFilters}" status="fi">
+                                    <li class="list-group-item px-2 d-flex align-items-center justify-content-between gap-2"
+                                        data-name="${f.simpleName ?: f.name.tokenize('.').last()} ${f.package?.name ?: ''}" title="${f.name}">
+                                        <span class="d-flex align-items-center gap-2 min-w-0">
+                                            <span class="small text-body-secondary" style="font-variant-numeric: tabular-nums;">${(fi + 1).toString().padLeft(2, '0')}</span>
+                                            <span class="fw-semibold text-body text-truncate">${f.simpleName ?: f.name.tokenize('.').last()}</span>
+                                        </span>
+                                        <span class="small text-body-secondary text-truncate">${f.package?.name ?: ''}</span>
+                                    </li>
+                                </g:each>
+                            </ul>
+                        </div>
+                        <g:if test="${requestFilters}">
+                            <p id="filters-empty" class="small text-body-secondary d-none mb-0"><g:message code="welcome.filter.none"/></p>
+                        </g:if>
+                        <g:else>
+                            <p class="small text-body-secondary mb-0"><g:message code="welcome.beans.none"/></p>
+                        </g:else>
+                        </div>
+
+                        <div data-switch-for="registrations" class="d-none">
+                        <div id="registrations-list">
+                            <ul class="list-group list-group-flush">
+                                <g:each var="fr" in="${filterRegistrations}">
+                                    <li class="list-group-item px-2 d-flex align-items-center justify-content-between gap-2"
+                                        data-name="${fr.key} ${fr.value.filter?.getClass()?.name ?: ''}" title="${fr.value.filter?.getClass()?.name ?: ''}">
+                                        <span class="d-flex align-items-center gap-2 min-w-0">
+                                            <span class="small text-body-secondary" style="font-variant-numeric: tabular-nums;">${fr.value.order}</span>
+                                            <span class="fw-semibold text-body text-truncate">${fr.key}</span>
+                                        </span>
+                                        <span class="small text-body-secondary text-truncate">${fr.value.filter?.getClass()?.name ?: ''}</span>
+                                    </li>
+                                </g:each>
+                            </ul>
+                        </div>
+                        <g:if test="${filterRegistrations}">
+                            <p id="registrations-empty" class="small text-body-secondary d-none mb-0"><g:message code="welcome.filter.none"/></p>
+                        </g:if>
+                        <g:else>
+                            <p class="small text-body-secondary mb-0"><g:message code="welcome.beans.none"/></p>
+                        </g:else>
+                        </div>
+
+                        <g:if test="${filterChainProxyType}">
+                            <div data-switch-for="securitychain" class="d-none">
+                            <div id="securitychain-list">
+                                <g:each var="chain" in="${securityFilterChains}" status="cIndex">
+                                    <div class="${cIndex > 0 ? 'mt-4' : ''}" data-filter-group>
+                                        <div class="px-2 py-2 bg-body-tertiary">
+                                            <div class="d-flex align-items-center justify-content-between">
+                                                <div class="small text-uppercase text-body-secondary fw-semibold"
+                                                     style="letter-spacing: .04em;">
+                                                    <g:message code="welcome.securitychain.chain"/> ${chain.index}
+                                                </div>
+                                                <g:if test="${chain.matcher}">
+                                                    <div class="small text-body-secondary text-truncate">${chain.matcher}</div>
+                                                </g:if>
+                                            </div>
+                                        </div>
+                                        <ul class="list-group list-group-flush">
+                                            <g:each var="cf" in="${chain.filters}" status="cfi">
+                                                <li class="list-group-item px-2 d-flex align-items-center justify-content-between gap-2"
+                                                    data-name="${cf.getClass().simpleName} ${cf.getClass().package?.name ?: ''}" title="${cf.getClass().name}">
+                                                    <span class="d-flex align-items-center gap-2 min-w-0">
+                                                        <span class="small text-body-secondary" style="font-variant-numeric: tabular-nums;">${(cfi + 1).toString().padLeft(2, '0')}</span>
+                                                        <span class="fw-semibold text-body text-truncate">${cf.getClass().simpleName}</span>
+                                                    </span>
+                                                    <span class="small text-body-secondary text-truncate">${cf.getClass().package?.name ?: ''}</span>
+                                                </li>
+                                            </g:each>
+                                        </ul>
+                                    </div>
+                                </g:each>
+                            </div>
+                            <g:if test="${numSecurityFilters != 0}">
+                                <p id="securitychain-empty" class="small text-body-secondary d-none mb-0"><g:message code="welcome.filter.none"/></p>
+                            </g:if>
+                            <g:else>
+                                <p class="small text-body-secondary mb-0"><g:message code="welcome.beans.none"/></p>
+                            </g:else>
+                            </div>
+                        </g:if>
                     </div>
                 </div>
             </div>

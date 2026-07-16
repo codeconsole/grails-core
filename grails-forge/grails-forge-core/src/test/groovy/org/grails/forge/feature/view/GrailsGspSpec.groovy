@@ -103,6 +103,9 @@ class GrailsGspSpec extends ApplicationContextSpec implements CommandOutputFixtu
         !index.contains(">Data Binding<")
         !index.contains(">Mime Types<")
         !index.contains(">Datastores<")
+        !index.contains(">Servlet Filters<")
+        !index.contains(">Filter Registrations<")
+        !index.contains(">Security Filter Chain<")
     }
 
     void "test default index page carries the brand hero and per-card name filters"() {
@@ -130,10 +133,16 @@ class GrailsGspSpec extends ApplicationContextSpec implements CommandOutputFixtu
         index.contains('data-filter-list="#listeners-list"')
         index.contains('data-filter-list="#binding-list"')
         index.contains('data-filter-list="#mimeproviders-list"')
+        index.contains('data-filter-list="#filters-list"')
+        index.contains('data-filter-list="#registrations-list"')
+        index.contains('data-filter-list="#securitychain-list"')
         index.contains('data-filter-list="#mime-types-table tbody"')
         index.contains('id="listeners-empty"')
         index.contains('id="binding-empty"')
         index.contains('id="mimeproviders-empty"')
+        index.contains('id="filters-empty"')
+        index.contains('id="registrations-empty"')
+        index.contains('id="securitychain-empty"')
         index.contains('id="mime-types-empty"')
 
         and: "count badges are theme-adaptive rather than hardcoded light"
@@ -212,6 +221,21 @@ class GrailsGspSpec extends ApplicationContextSpec implements CommandOutputFixtu
         index.contains("ClassUtils.isPresent('org.grails.datastore.mapping.core.Datastore'")
         index.contains('mappingContext.eventListeners')
         index.contains('<g:message code="welcome.datastores.listeners"/>')
+
+        and: "the request's effective filter pipeline is derived from the rendering call stack"
+        index.contains('data-switch-type="filters"')
+        index.contains('Thread.currentThread().stackTrace')
+        index.contains('jakarta.servlet.Filter.isAssignableFrom')
+        index.contains('<g:message code="welcome.filters.request"/>')
+
+        and: "filter registrations render sorted by their order value"
+        index.contains('data-switch-type="registrations"')
+        index.contains('org.springframework.boot.web.servlet.FilterRegistrationBean')
+
+        and: "the security filter chain panel renders only when Spring Security is present"
+        index.contains('data-switch-type="securitychain"')
+        index.contains("ClassUtils.isPresent('org.springframework.security.web.FilterChainProxy'")
+        index.contains('<g:message code="welcome.securitychain.chain"/>')
     }
 
     void "test default layout includes the language selector dropdown"() {
