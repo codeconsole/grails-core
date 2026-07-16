@@ -17,7 +17,10 @@
  *  under the License.
  */
 
-$(function() {
+// Registered on DOMContentLoaded so the host layout's end-of-body scripts
+// (jQuery, Bootstrap) are guaranteed to have loaded before this runs,
+// regardless of where the plugin's script tag lands in the document.
+document.addEventListener('DOMContentLoaded', function() {
 
 	$('#loginModal').on('shown.bs.modal', function() {
 		$('#ajaxUsername').trigger('focus');

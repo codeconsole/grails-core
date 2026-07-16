@@ -847,7 +847,14 @@ class SecurityUiTagLib {
             pageScope.entityName = entityName
         }
 
-        out << "<title>${message(code: messageCode, args: args)}</title>"
+        // A literal <title> in GSP source is rewritten by the compile-time
+        // preprocessor into grailsLayout:wrapTitleTag/captureTitle so layouts
+        // can read it through g:layoutTitle; a taglib-emitted <title> bypasses
+        // that capture, so invoke the same tags directly.
+        String titleText = message(code: messageCode, args: args)
+        out << grailsLayout.wrapTitleTag([:], { ->
+            grailsLayout.captureTitle([:], { -> titleText })
+        })
     }
 
     protected getRequiredAttribute(attrs, String name, String tagName) {
@@ -863,9 +870,13 @@ class SecurityUiTagLib {
     }
 
     protected void writeDocumentReady(writer, javascript) {
+        // DOMContentLoaded fires after the host layout's classic end-of-body
+        // scripts (jQuery included), so plugin pages rendered through a host
+        // layout can rely on jQuery inside the callback regardless of where
+        // this inline script lands in the document.
         writer << asset.script {
             """
-\$(function() {
+document.addEventListener('DOMContentLoaded', function() {
 $javascript
 });\n"""
         }

@@ -25,11 +25,11 @@
         <g:set var="navControllers"
                value="${grailsApplication.controllerClasses.toList().sort { it.fullName }}"/>
         <div class="collapse navbar-collapse" id="mainNav">
+        <ul class="navbar-nav me-auto">
         <g:if test="${navControllers}">
             <%-- A filter earns its place only once the list is long enough to be a
                  chore to scan; below the threshold the plain list is quicker. --%>
             <g:set var="showNavFilter" value="${navControllers.size() > 8}"/>
-            <ul class="navbar-nav me-auto">
                 <li class="nav-item dropdown">
                     <a class="nav-link dropdown-toggle" href="#" id="controllersDropdown" role="button"
                        data-bs-toggle="dropdown" aria-expanded="false">
@@ -64,9 +64,15 @@
                         </g:if>
                     </ul>
                 </li>
-            </ul>
         </g:if>
+            <%-- Navbar items contributed by the rendered page (e.g. plugin screens)
+                 through a <content tag="nav"> block of <li> elements. --%>
+            <g:pageProperty name="page.nav"/>
+        </ul>
         <ul class="navbar-nav ms-auto">
+            <%-- Right-aligned navbar items contributed by the rendered page
+                 through a <content tag="navActions"> block of <li> elements. --%>
+            <g:pageProperty name="page.navActions"/>
             <g:set var="availableLocales" value="${application.getAttribute('availableLocales')}"/>
             <g:if test="${availableLocales && availableLocales.size() > 1}">
                 <g:set var="currentLocale" value="${org.springframework.web.servlet.support.RequestContextUtils.getLocale(request)}"/>

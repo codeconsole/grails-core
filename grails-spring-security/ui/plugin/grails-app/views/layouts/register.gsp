@@ -16,22 +16,20 @@
   ~  specific language governing permissions and limitations
   ~  under the License.
   --%>
-<!doctype html>
-<html lang="en">
+<%--
+  A thin sub-layout for the registration pages: they render through the host
+  application's own layout (grails.plugin.springsecurity.ui.gsp.parentLayout,
+  default 'main'), inheriting its theme, locale selector, branding and assets.
+  --%>
+<g:set var="s2uiPageTitle" value="${g.layoutTitle()}"/>
+<g:applyLayout name="${securityConfig.ui.gsp.parentLayout ?: 'main'}" params="[title: s2uiPageTitle]">
+<html>
 <head>
-	<meta charset="utf-8">
-	<meta name="viewport" content="width=device-width, initial-scale=1">
-	<asset:stylesheet src='spring-security-ui.css'/>
-<g:layoutHead/>
+	<g:layoutHead/>
 </head>
 <body>
-<main class="bg-body-tertiary min-vh-100">
-	<div class="container py-5">
-		<g:flashMessages/>
-		<g:layoutBody/>
-	</div>
-</main>
-<asset:javascript src='spring-security-ui-register.js'/>
+<g:layoutBody/>
 <s2ui:deferredScripts/>
 </body>
 </html>
+</g:applyLayout>

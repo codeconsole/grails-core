@@ -17,6 +17,4 @@
  *  under the License.
  */
 
-//= require webjars/jquery/%/dist/jquery.js
-//= require webjars/bootstrap/%/dist/js/bootstrap.bundle.js
 //= require spring-security-ui-ajaxLogin.js
