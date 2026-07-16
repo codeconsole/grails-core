@@ -154,10 +154,18 @@ class GrailsWebDataBinderBindingXmlSpec extends Specification implements DataTes
 
 class CommandObject implements Validateable {
     List<Something> somethings
+
+    static constraints = {
+        somethings bindable: true
+    }
 }
 
 class Something {
     String name
+
+    static constraints = {
+        name bindable: true
+    }
 }
 
 @Entity
@@ -165,6 +173,11 @@ class Writer {
     String name
     List books
     static hasMany = [books: Book]
+
+    static constraints = {
+        name bindable: true
+        books bindable: true
+    }
 }
 
 @Entity
@@ -172,4 +185,10 @@ class Book {
     String publisher
     String title
     Set<String> reviewerNames
+
+    static constraints = {
+        publisher bindable: true
+        title bindable: true
+        reviewerNames bindable: true
+    }
 }

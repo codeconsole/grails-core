@@ -57,10 +57,19 @@ class GrailsWebDataBinderListenerSpec extends Specification {
 class Person {
     String firstName
     String lastName
+
+    static constraints = {
+        firstName bindable: true
+        lastName bindable: true
+    }
 }
 
 class Country {
     String name
+
+    static constraints = {
+        name bindable: true
+    }
 }
 
 class PersonDataBindingListener extends DataBindingListenerAdapter {

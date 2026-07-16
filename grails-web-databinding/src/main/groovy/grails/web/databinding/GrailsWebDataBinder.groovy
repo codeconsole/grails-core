@@ -26,6 +26,8 @@ import groovy.xml.slurpersupport.GPathResult
 import org.codehaus.groovy.runtime.InvokerHelper
 import org.codehaus.groovy.runtime.MetaClassHelper
 import org.codehaus.groovy.runtime.metaclass.ThreadManagedMetaBeanProperty
+import org.slf4j.Logger
+import org.slf4j.LoggerFactory
 
 import io.micrometer.observation.Observation
 import io.micrometer.observation.ObservationRegistry
@@ -65,6 +67,7 @@ import org.grails.datastore.mapping.model.types.OneToMany
 import org.grails.datastore.mapping.model.types.OneToOne
 import org.grails.datastore.mapping.model.types.Simple
 import org.grails.web.databinding.DataBindingEventMulticastListener
+import org.grails.web.databinding.DefaultASTDatabindingHelper
 import org.grails.web.databinding.GrailsWebDataBindingListener
 import org.grails.web.databinding.SpringConversionServiceAdapter
 import org.grails.web.databinding.converters.ByteArrayMultipartFileValueConverter
@@ -76,6 +79,13 @@ import static grails.web.databinding.DataBindingUtils.getBindingIncludeList
 @CompileStatic
 class GrailsWebDataBinder extends SimpleDataBinder {
 
+    private static final Logger LOG = LoggerFactory.getLogger(GrailsWebDataBinder)
+    private static final int MAX_WARNED_BINDING_SHAPES = 1024
+    private static final Set<String> WARNED_BINDING_SHAPES = new LinkedHashSet<>()
+    private static final Set<String> FRAMEWORK_MANAGED_PROPERTIES = [
+        'class', 'errors', 'id', 'version', 'dateCreated', 'lastUpdated'
+    ] as Set<String>
+
     protected GrailsApplication grailsApplication
     protected MessageSource messageSource
     boolean trimStrings = true
@@ -85,6 +95,7 @@ class GrailsWebDataBinder extends SimpleDataBinder {
     private volatile ObservationRegistry observationRegistry
     private final ThreadLocal<List> bindingIncludeList = new ThreadLocal<List>()
     private final ThreadLocal<List> nestedBindingIncludeList = new ThreadLocal<List>()
+    private final ThreadLocal<Class<?>> bindingTargetType = new ThreadLocal<Class<?>>()
 
     GrailsWebDataBinder(GrailsApplication grailsApplication) {
         this.grailsApplication = grailsApplication
@@ -94,7 +105,8 @@ class GrailsWebDataBinder extends SimpleDataBinder {
 
     @Override
     void bind(obj, DataBindingSource source) {
-        bind(obj, source, null, getBindingIncludeList(obj), null, null)
+        List nestedIncludeList = nestedBindingIncludeList.get()
+        bind(obj, source, null, nestedIncludeList != null ? nestedIncludeList : getBindingIncludeList(obj), null, null)
     }
 
     @Override
@@ -104,9 +116,39 @@ class GrailsWebDataBinder extends SimpleDataBinder {
     }
 
     @Override
+    void bind(obj, DataBindingSource source, List whiteList) {
+        bind(obj, source, null, whiteList, null, null)
+    }
+
+    @Override
+    void bind(obj, DataBindingSource source, List whiteList, List blackList) {
+        bind(obj, source, null, whiteList, blackList, null)
+    }
+
+    @Override
+    void bind(obj, DataBindingSource source, String filter, List whiteList, List blackList) {
+        bind(obj, source, filter, whiteList, blackList, null)
+    }
+
+    @Override
     void bind(object, DataBindingSource source, String filter, List whiteList, List blackList, DataBindingListener listener) {
+        bindInternal(object, source, filter, normalizeBindingIncludeList(object, whiteList), blackList, listener)
+    }
+
+    private void bindInternal(object, DataBindingSource source, String filter, List whiteList, List blackList,
+            DataBindingListener listener) {
         def bindingResult = new BeanPropertyBindingResult(object, object.getClass().name)
         doBind(object, source, filter, whiteList, blackList, listener, bindingResult)
+    }
+
+    private List normalizeBindingIncludeList(object, List includeList) {
+        if (includeList == null) {
+            return getBindingIncludeList(object)
+        }
+        if (includeList.isEmpty() && !isBindAllBindingIncludeList(includeList)) {
+            return [DefaultASTDatabindingHelper.NO_BINDABLE_PROPERTIES]
+        }
+        includeList
     }
 
     @Override
@@ -167,7 +209,9 @@ class GrailsWebDataBinder extends SimpleDataBinder {
 
         if (bind) {
             List previousIncludeList = bindingIncludeList.get()
+            Class<?> previousTargetType = bindingTargetType.get()
             bindingIncludeList.set(whiteList)
+            bindingTargetType.set(object.getClass())
             try {
                 super.doBind(object, source, filter, whiteList, addUnbindablePropertyNames(object, blackList), listenerWrapper, bindingResult)
             } finally {
@@ -176,12 +220,63 @@ class GrailsWebDataBinder extends SimpleDataBinder {
                 } else {
                     bindingIncludeList.remove()
                 }
+                if (previousTargetType != null) {
+                    bindingTargetType.set(previousTargetType)
+                } else {
+                    bindingTargetType.remove()
+                }
             }
         }
 
         listenerWrapper.afterBinding(object, bindingResult)
 
         populateErrors(object, bindingResult)
+    }
+
+    @Override
+    protected boolean isOkToBind(MetaProperty property, List whiteList, List blackList) {
+        boolean allowed = super.isOkToBind(property, whiteList, blackList)
+        if (!allowed && DataBindingUtils.isGeneratedBindingIncludeList(whiteList) &&
+                super.isOkToBind(property, null, blackList) &&
+                !FRAMEWORK_MANAGED_PROPERTIES.contains(property.name)) {
+            warnAboutIgnoredBindingProperty(bindingTargetType.get(), property.name)
+        }
+        allowed
+    }
+
+    protected void warnAboutIgnoredBindingProperty(Class<?> targetType, String propertyName) {
+        if (!isBindingWarningEnabled() || targetType == null) {
+            return
+        }
+        String warningKey = targetType.name + '#' + propertyName
+        if (markBindingShapeWarned(warningKey)) {
+            logBindingWarning(ignoredBindingPropertyMessage(targetType, propertyName))
+        }
+    }
+
+    protected boolean isBindingWarningEnabled() {
+        LOG.warnEnabled
+    }
+
+    protected void logBindingWarning(String message) {
+        LOG.warn(message)
+    }
+
+    static String ignoredBindingPropertyMessage(Class<?> targetType, String propertyName) {
+        "Ignored request parameter [${propertyName}] while binding to [${targetType.name}]: it is not in the binding allowlist. " +
+                'Grails 8 binds only allowlisted properties by default to prevent mass assignment (CWE-915). ' +
+                "To bind [${propertyName}], declare it bindable - `static constraints = { ${propertyName} bindable: true }` on the class, " +
+                "add it to the binding `include:` list, or annotate the controller action parameter with `@BindAllowed(['${propertyName}'])`. " +
+                'To restore the previous permissive binding for the whole application, set `grails.databinding.legacyBindableDefault=true`.'
+    }
+
+    private static boolean markBindingShapeWarned(String warningKey) {
+        synchronized (WARNED_BINDING_SHAPES) {
+            if (WARNED_BINDING_SHAPES.contains(warningKey) || WARNED_BINDING_SHAPES.size() >= MAX_WARNED_BINDING_SHAPES) {
+                return false
+            }
+            WARNED_BINDING_SHAPES.add(warningKey)
+        }
     }
 
     @Override
@@ -321,6 +416,7 @@ class GrailsWebDataBinder extends SimpleDataBinder {
     @Override
     protected processProperty(obj, MetaProperty metaProperty, val, DataBindingSource source, DataBindingListener listener, errors) {
         boolean needsBinding = true
+        List nestedIncludeList = getNestedBindingIncludeList(metaProperty.name)
 
         if (source.dataSourceAware) {
             def propName = metaProperty.name
@@ -334,9 +430,9 @@ class GrailsWebDataBinder extends SimpleDataBinder {
                         bindProperty(obj, source, metaProperty, persistedInstance, listener, errors)
                         if (persistedInstance != null) {
                             if (val instanceof Map) {
-                                bind(persistedInstance, new SimpleMapDataBindingSource(val), listener)
+                                bindNested(persistedInstance, new SimpleMapDataBindingSource(val), nestedIncludeList, listener)
                             } else if (val instanceof DataBindingSource) {
-                                bind(persistedInstance, val, listener)
+                                bindNested(persistedInstance, val, nestedIncludeList, listener)
                             }
                         }
                     }
@@ -394,20 +490,63 @@ class GrailsWebDataBinder extends SimpleDataBinder {
                                             } else {
                                                 newBindingSource = new SimpleMapDataBindingSource((Map) item)
                                             }
-                                            bind(persistentInstance, newBindingSource, listener)
+                                            bindNested(persistentInstance, newBindingSource, nestedIncludeList, listener)
                                             itemsWhichNeedBinding << persistentInstance
                                         }
                                     }
                                 }
                             }
                             if (persistentInstance == null) {
-                                itemsWhichNeedBinding << item
+                                if (item instanceof Map || item instanceof DataBindingSource) {
+                                    DataBindingSource itemBindingSource = item instanceof DataBindingSource ?
+                                            (DataBindingSource) item : new SimpleMapDataBindingSource((Map) item)
+                                    def instance = instantiateAndBindNestedOrUseMapConstructor(
+                                            referencedType, item, itemBindingSource, nestedIncludeList, listener)
+                                    if (instance != null) {
+                                        itemsWhichNeedBinding << instance
+                                    }
+                                } else {
+                                    itemsWhichNeedBinding << item
+                                }
                             }
                         }
                         if (itemsWhichNeedBinding) {
                             for (item in itemsWhichNeedBinding) {
                                 addElementToCollection(obj, metaProperty.name, metaProperty.type, item, false)
                             }
+                        }
+                    }
+                }
+            } else if (Map.isAssignableFrom(metaProperty.type) && val instanceof Map) {
+                def referencedType = getReferencedTypeForCollection(propName, obj)
+                if (referencedType != null) {
+                    needsBinding = false
+                    Map map = initializeMap(obj, propName)
+                    map.clear()
+                    ((Map) val).each { key, item ->
+                        if (item == null || referencedType.isAssignableFrom(item.getClass())) {
+                            map[key] = item
+                        } else if (item instanceof Map || item instanceof DataBindingSource) {
+                            def instance
+                            if (isDomainClass(referencedType)) {
+                                def idValue = getIdentifierValueFrom(item)
+                                if (idValue != null && idValue != '' && idValue != 'null') {
+                                    instance = getPersistentInstance(referencedType, idValue)
+                                }
+                            }
+                            DataBindingSource itemBindingSource = item instanceof DataBindingSource ?
+                                    (DataBindingSource) item : new SimpleMapDataBindingSource((Map) item)
+                            if (instance == null) {
+                                instance = instantiateAndBindNestedOrUseMapConstructor(
+                                        referencedType, item, itemBindingSource, nestedIncludeList, listener)
+                            } else {
+                                bindNested(instance, itemBindingSource, nestedIncludeList, listener)
+                            }
+                            if (instance != null) {
+                                map[key] = instance
+                            }
+                        } else {
+                            map[key] = convert(referencedType, item)
                         }
                     }
                 }
@@ -433,10 +572,74 @@ class GrailsWebDataBinder extends SimpleDataBinder {
         }
     }
 
+    private Object instantiateAndBindNestedOrUseMapConstructor(Class referencedType, Object value,
+            DataBindingSource source, List includeList, DataBindingListener listener) {
+        try {
+            def instance = referencedType.getDeclaredConstructor().newInstance()
+            bindNested(instance, source, includeList, listener)
+            return instance
+        } catch (NoSuchMethodException | IllegalAccessException ignored) {
+            if (value instanceof Map) {
+                if (isBindAllBindingIncludeList(includeList) ||
+                        DataBindingUtils.isLegacyBindableDefaultEnabled()) {
+                    return referencedType.newInstance((Map) value)
+                }
+                if (DataBindingUtils.isGeneratedBindingIncludeList(bindingIncludeList.get())) {
+                    warnAboutMissingNoArgConstructor(referencedType)
+                }
+                return null
+            }
+            throw ignored
+        }
+    }
+
+    @Override
+    protected Object instantiateAndBindOrUseMapConstructor(Class referencedType, Map values,
+            DataBindingListener listener) {
+        instantiateAndBindNestedOrUseMapConstructor(referencedType, values,
+                new SimpleMapDataBindingSource(values), nestedBindingIncludeList.get(), listener)
+    }
+
+    protected void warnAboutMissingNoArgConstructor(Class<?> targetType) {
+        if (!isBindingWarningEnabled()) {
+            return
+        }
+        String warningKey = targetType.name + '#no-arg-constructor'
+        if (markBindingShapeWarned(warningKey)) {
+            logBindingWarning(missingNoArgConstructorMessage(targetType))
+        }
+    }
+
+    static String missingNoArgConstructorMessage(Class<?> targetType) {
+        "Cannot securely data-bind [${targetType.name}] because it has no accessible no-arg constructor. " +
+                'Add a no-arg constructor and bindable constraints, pass an explicit bind-all include for this element, ' +
+                'or set `grails.databinding.legacyBindableDefault=true`.'
+    }
+
     @Override
     protected processIndexedProperty(obj, MetaProperty metaProperty, IndexedPropertyReferenceDescriptor indexedPropertyReferenceDescriptor, val,
             DataBindingSource source, DataBindingListener listener, errors) {
+        List previousNestedIncludeList = nestedBindingIncludeList.get()
+        List indexedNestedIncludeList = getNestedBindingIncludeList(indexedPropertyReferenceDescriptor.propertyName)
+        if (indexedNestedIncludeList != null) {
+            nestedBindingIncludeList.set(indexedNestedIncludeList)
+        } else {
+            nestedBindingIncludeList.remove()
+        }
+        try {
+            processIndexedPropertyWithNestedIncludeList(obj, metaProperty, indexedPropertyReferenceDescriptor, val, source, listener, errors)
+        } finally {
+            if (previousNestedIncludeList != null) {
+                nestedBindingIncludeList.set(previousNestedIncludeList)
+            } else {
+                nestedBindingIncludeList.remove()
+            }
+        }
+    }
 
+    private void processIndexedPropertyWithNestedIncludeList(obj, MetaProperty metaProperty,
+            IndexedPropertyReferenceDescriptor indexedPropertyReferenceDescriptor, val,
+            DataBindingSource source, DataBindingListener listener, errors) {
         boolean needsBinding = true
         if (source.dataSourceAware) {
             def propName = indexedPropertyReferenceDescriptor.propertyName
@@ -571,6 +774,27 @@ class GrailsWebDataBinder extends SimpleDataBinder {
     }
 
     @Override
+    protected bindProperty(obj, DataBindingSource source, MetaProperty metaProperty, propertyValue,
+            DataBindingListener listener, errors) {
+        List previousNestedIncludeList = nestedBindingIncludeList.get()
+        List propertyNestedIncludeList = getNestedBindingIncludeList(metaProperty.name)
+        if (propertyNestedIncludeList != null) {
+            nestedBindingIncludeList.set(propertyNestedIncludeList)
+        } else {
+            nestedBindingIncludeList.remove()
+        }
+        try {
+            super.bindProperty(obj, source, metaProperty, propertyValue, listener, errors)
+        } finally {
+            if (previousNestedIncludeList != null) {
+                nestedBindingIncludeList.set(previousNestedIncludeList)
+            } else {
+                nestedBindingIncludeList.remove()
+            }
+        }
+    }
+
+    @Override
     protected setPropertyValue(obj, DataBindingSource source, MetaProperty metaProperty, propertyValue, DataBindingListener listener) {
         def propName = metaProperty.name
         boolean isSet = false
@@ -618,9 +842,13 @@ class GrailsWebDataBinder extends SimpleDataBinder {
 
         if (!isSet) {
             List nestedIncludeList = getNestedBindingIncludeList(propName)
-            if (nestedIncludeList != null && (propertyValue instanceof Map || propertyValue instanceof DataBindingSource)) {
+            if (propertyValue instanceof Map || propertyValue instanceof DataBindingSource) {
                 List previousNestedIncludeList = nestedBindingIncludeList.get()
-                nestedBindingIncludeList.set(nestedIncludeList)
+                if (nestedIncludeList != null) {
+                    nestedBindingIncludeList.set(nestedIncludeList)
+                } else {
+                    nestedBindingIncludeList.remove()
+                }
                 try {
                     super.setPropertyValue(obj, source, metaProperty, propertyValue, listener)
                 } finally {
@@ -641,21 +869,43 @@ class GrailsWebDataBinder extends SimpleDataBinder {
         if (includeList == null) {
             return null
         }
+        boolean generatedIncludeList = DataBindingUtils.isGeneratedBindingIncludeList(includeList)
+        if (!generatedIncludeList && includeList.any { item ->
+            String includeName = item?.toString()
+            includeName == propertyName || includeName == propertyName + '.*' || includeName == propertyName + '_*'
+        }) {
+            return getBindAllBindingIncludeList()
+        }
         List nestedIncludeList = []
-        boolean bindAllNestedProperties = false
         String dotPrefix = propertyName + '.'
         String underscorePrefix = propertyName + '_'
         includeList.each { item ->
             String includeName = item?.toString()
-            if (includeName == propertyName || includeName == propertyName + '.*' || includeName == propertyName + '_*') {
-                bindAllNestedProperties = true
-            } else if (includeName?.startsWith(dotPrefix)) {
+            if (includeName?.startsWith(dotPrefix) && includeName != propertyName + '.*') {
                 nestedIncludeList << includeName.substring(dotPrefix.length())
-            } else if (includeName?.startsWith(underscorePrefix)) {
+            } else if (includeName?.startsWith(underscorePrefix) && includeName != propertyName + '_*') {
                 nestedIncludeList << includeName.substring(underscorePrefix.length())
             }
         }
-        bindAllNestedProperties ? [] : (nestedIncludeList ?: null)
+        if (nestedIncludeList) {
+            return generatedIncludeList ? DataBindingUtils.asGeneratedBindingIncludeList(nestedIncludeList) : nestedIncludeList
+        }
+        if (generatedIncludeList && !includeList.contains(propertyName + '.*') &&
+                !includeList.contains(propertyName + '_*')) {
+            return DataBindingUtils.asGeneratedBindingIncludeList(
+                    [DefaultASTDatabindingHelper.NO_BINDABLE_PROPERTIES])
+        }
+        null
+    }
+
+    private void bindNested(Object object, DataBindingSource source, List includeList, DataBindingListener listener) {
+        // A null nested include list from a generated parent allowlist (which carries the automatic
+        // `prop.*`/`prop_*` wildcards emitted for non-simple bindable properties) must not bind the
+        // child unrestricted: cascade deny-by-default by resolving the child's own generated
+        // allowlist. The bind-all marker preserves an explicit nested wildcard, and legacy mode
+        // still resolves to a null (permissive) child allowlist.
+        List effectiveIncludeList = includeList != null ? includeList : getBindingIncludeList(object)
+        bindInternal(object, source, null, effectiveIncludeList, null, listener)
     }
 
     @Override

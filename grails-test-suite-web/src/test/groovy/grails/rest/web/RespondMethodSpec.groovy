@@ -296,7 +296,7 @@ class Book {
     String title
 
     static constraints = {
-        title blank:false, nullable: false
+        title blank:false, nullable: false, bindable: true
     }
 }
 

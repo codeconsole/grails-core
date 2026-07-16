@@ -33,6 +33,7 @@ class DefaultASTDatabindingHelperDomainClassSpecialPropertiesSpec extends
 
     def setup() {
         ConstraintEvalUtils.clearDefaultConstraints()
+        Holders.setConfig(new PropertySourcesConfig([(DefaultASTDatabindingHelper.LEGACY_BINDABLE_DEFAULT): false]))
     }
 
     def cleanup() {
@@ -120,24 +121,24 @@ class DefaultASTDatabindingHelperDomainClassSpecialPropertiesSpec extends
         obj.version == null
     }
 
-    void 'Test a regular property without bindable true is bound by default'() {
+    void 'Test a regular property without bindable true is denied by default'() {
         when:
         def obj = new DomainWithDefaultDeniedProperty(name: 'Grace', title: 'Admiral')
 
         then:
-        obj.name == 'Grace'
+        obj.name == null
         obj.title == 'Admiral'
     }
 
-    void 'Test deny by default binds only explicitly bindable properties and preserves bindable false'() {
+    void 'Test legacy bindable default restores permissive binding and preserves bindable false'() {
         given:
-        Holders.setConfig(new PropertySourcesConfig([(DefaultASTDatabindingHelper.DENY_BY_DEFAULT): true]))
+        Holders.setConfig(new PropertySourcesConfig([(DefaultASTDatabindingHelper.LEGACY_BINDABLE_DEFAULT): true]))
 
         when:
         def obj = new DomainWithSecureBindableDefault(name: 'Grace', title: 'Admiral', role: 'Admin')
 
         then:
-        obj.name == null
+        obj.name == 'Grace'
         obj.title == 'Admiral'
         obj.role == null
 

@@ -52,7 +52,7 @@ public class DefaultASTDatabindingHelper implements ASTDatabindingHelper {
     public static final String DEFAULT_DATABINDING_WHITELIST = "$defaultDatabindingWhiteList";
     public static final String LEGACY_DATABINDING_WHITELIST = "$legacyDatabindingWhiteList";
     public static final String NO_BINDABLE_PROPERTIES = "$_NO_BINDABLE_PROPERTIES_$";
-    public static final String DENY_BY_DEFAULT = "grails.databinding.denyByDefault";
+    public static final String LEGACY_BINDABLE_DEFAULT = "grails.databinding.legacyBindableDefault";
 
     private static Map<ClassNode, Set<String>> CLASS_NODE_TO_WHITE_LIST_PROPERTY_NAMES = new HashMap<>();
 

@@ -28,6 +28,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -124,37 +125,112 @@ public class DataBindingUtils {
     }
 
     protected static List getBindingIncludeList(final Object object) {
-        final boolean denyByDefaultEnabled = isDenyByDefaultEnabled();
-        final String whiteListFieldName = denyByDefaultEnabled ?
-                DefaultASTDatabindingHelper.DEFAULT_DATABINDING_WHITELIST :
-                DefaultASTDatabindingHelper.LEGACY_DATABINDING_WHITELIST;
-        final Map<Class, List> includeListCache = denyByDefaultEnabled ?
-                CLASS_TO_BINDING_INCLUDE_LIST : CLASS_TO_LEGACY_BINDING_INCLUDE_LIST;
-        List includeList = denyByDefaultEnabled ? getBindablePropertyNames(object) : Collections.emptyList();
-        if (denyByDefaultEnabled && includeList.isEmpty()) {
-            includeList = Collections.singletonList(DefaultASTDatabindingHelper.NO_BINDABLE_PROPERTIES);
-        }
+        final boolean legacyBindableDefaultEnabled = isLegacyBindableDefaultEnabled();
+        final Map<Class, List> includeListCache = legacyBindableDefaultEnabled ?
+                CLASS_TO_LEGACY_BINDING_INCLUDE_LIST : CLASS_TO_BINDING_INCLUDE_LIST;
+        List includeList = legacyBindableDefaultEnabled ? null : getBindablePropertyNames(object);
         try {
             final Class<? extends Object> objectClass = object.getClass();
             if (includeListCache.containsKey(objectClass)) {
                 includeList = includeListCache.get(objectClass);
             } else {
-                final Field whiteListField = objectClass.getField(whiteListFieldName);
-                if (whiteListField != null) {
-                    if ((whiteListField.getModifiers() & Modifier.STATIC) != 0) {
-                        final Object whiteListValue = whiteListField.get(objectClass);
-                        if (whiteListValue instanceof List) {
-                            includeList = (List) whiteListValue;
-                        }
+                final Field legacyWhiteListField = getField(objectClass, DefaultASTDatabindingHelper.LEGACY_DATABINDING_WHITELIST);
+                final Field defaultWhiteListField = legacyBindableDefaultEnabled ?
+                        getField(objectClass, DefaultASTDatabindingHelper.DEFAULT_DATABINDING_WHITELIST) :
+                        getPairedField(objectClass, DefaultASTDatabindingHelper.DEFAULT_DATABINDING_WHITELIST,
+                                DefaultASTDatabindingHelper.LEGACY_DATABINDING_WHITELIST);
+                if (legacyBindableDefaultEnabled) {
+                    includeList = getStaticListFieldValue(legacyWhiteListField);
+                    if (includeList == null) {
+                        includeList = getStaticListFieldValue(defaultWhiteListField);
                     }
+                } else if (defaultWhiteListField != null) {
+                    final List generatedIncludeList = getStaticListFieldValue(defaultWhiteListField);
+                    final Collection combinedIncludeList = new LinkedHashSet();
+                    if (generatedIncludeList != null) {
+                        combinedIncludeList.addAll(generatedIncludeList);
+                    }
+                    if (includeList != null) {
+                        combinedIncludeList.addAll(includeList);
+                    }
+                    includeList = new ArrayList(combinedIncludeList);
                 }
-                if (!Environment.getCurrent().isReloadEnabled()) {
+                if (!legacyBindableDefaultEnabled) {
+                    includeList = asGeneratedBindingIncludeList(includeList);
+                }
+                if (includeList != null && !Environment.getCurrent().isReloadEnabled()) {
                     includeListCache.put(objectClass, includeList);
                 }
             }
         } catch (Exception e) {
         }
+        if (!legacyBindableDefaultEnabled) {
+            includeList = asGeneratedBindingIncludeList(includeList);
+        }
         return includeList;
+    }
+
+    static List asGeneratedBindingIncludeList(final List includeList) {
+        if (includeList instanceof GeneratedBindingIncludeList) {
+            return includeList;
+        }
+        final Collection values = includeList == null || includeList.isEmpty() ?
+                Collections.singletonList(DefaultASTDatabindingHelper.NO_BINDABLE_PROPERTIES) : includeList;
+        return new GeneratedBindingIncludeList(values);
+    }
+
+    static boolean isGeneratedBindingIncludeList(final List includeList) {
+        return includeList instanceof GeneratedBindingIncludeList;
+    }
+
+    private static final class GeneratedBindingIncludeList extends ArrayList {
+        private GeneratedBindingIncludeList(final Collection values) {
+            super(values);
+        }
+    }
+
+    private static Field getField(final Class objectClass, final String fieldName) {
+        Class currentClass = objectClass;
+        while (currentClass != null) {
+            final Field field = getPublicDeclaredField(currentClass, fieldName);
+            if (field != null) {
+                return field;
+            }
+            currentClass = currentClass.getSuperclass();
+        }
+        return null;
+    }
+
+    private static Field getPairedField(final Class objectClass, final String fieldName, final String pairedFieldName) {
+        Class currentClass = objectClass;
+        while (currentClass != null) {
+            final Field field = getPublicDeclaredField(currentClass, fieldName);
+            final Field pairedField = getPublicDeclaredField(currentClass, pairedFieldName);
+            if (field != null && pairedField != null) {
+                return field;
+            }
+            currentClass = currentClass.getSuperclass();
+        }
+        return null;
+    }
+
+    private static Field getPublicDeclaredField(final Class objectClass, final String fieldName) {
+        try {
+            final Field field = objectClass.getDeclaredField(fieldName);
+            return Modifier.isPublic(field.getModifiers()) ? field : null;
+        } catch (NoSuchFieldException ignored) {
+            return null;
+        }
+    }
+
+    private static List getStaticListFieldValue(final Field field) throws IllegalAccessException {
+        if (field != null && (field.getModifiers() & Modifier.STATIC) != 0) {
+            final Object value = field.get(null);
+            if (value instanceof List) {
+                return (List) value;
+            }
+        }
+        return null;
     }
 
     static List getBindablePropertyNames(final Object object) {
@@ -287,12 +363,12 @@ public class DataBindingUtils {
         return combinedExcludes;
     }
 
-    private static boolean isDenyByDefaultEnabled() {
+    static boolean isLegacyBindableDefaultEnabled() {
         GrailsApplication application = Holders.findApplication();
         if (application != null) {
-            return application.getConfig().getProperty(DefaultASTDatabindingHelper.DENY_BY_DEFAULT, Boolean.class, false);
+            return application.getConfig().getProperty(DefaultASTDatabindingHelper.LEGACY_BINDABLE_DEFAULT, Boolean.class, false);
         }
-        Object value = Holders.getFlatConfig().get(DefaultASTDatabindingHelper.DENY_BY_DEFAULT);
+        Object value = Holders.getFlatConfig().get(DefaultASTDatabindingHelper.LEGACY_BINDABLE_DEFAULT);
         return Boolean.TRUE.equals(value) || "true".equalsIgnoreCase(String.valueOf(value));
     }
 
@@ -400,6 +476,12 @@ public class DataBindingUtils {
     @SuppressWarnings("unchecked")
     public static BindingResult bindObjectToDomainInstance(PersistentEntity entity, Object object,
                                                            Object source, List include, List exclude, String filter) {
+        if (include == null) {
+            include = getBindingIncludeList(object);
+        }
+        else if (include.isEmpty()) {
+            include = Collections.singletonList(DefaultASTDatabindingHelper.NO_BINDABLE_PROPERTIES);
+        }
         BindingResult bindingResult = null;
         GrailsApplication grailsApplication = Holders.findApplication();
 
