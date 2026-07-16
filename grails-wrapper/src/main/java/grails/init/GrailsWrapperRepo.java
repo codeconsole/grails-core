@@ -103,6 +103,9 @@ public class GrailsWrapperRepo {
     static GrailsWrapperRepo createGrailsWrapperRepo(String urlOrFile) {
         GrailsWrapperRepo repo = new GrailsWrapperRepo();
         repo.isFile = isFileRepository(urlOrFile);
+        if (!repo.isFile) {
+            validateRemoteRepositoryUrl(urlOrFile);
+        }
         repo.repoPath = repo.isFile ?
             String.join(File.separator, "org", "apache", "grails", GrailsWrapperHome.CLI_COMBINED_PROJECT_NAME) :
             "org/apache/grails/" + GrailsWrapperHome.CLI_COMBINED_PROJECT_NAME;
@@ -115,6 +118,17 @@ public class GrailsWrapperRepo {
 
         repo.metadataName = repo.isFile ? "maven-metadata-local.xml" : "maven-metadata.xml";
         return repo;
+    }
+
+    private static void validateRemoteRepositoryUrl(String url) {
+        try {
+            URI uri = new URI(url);
+            if (!"https".equalsIgnoreCase(uri.getScheme())) {
+                throw new IllegalArgumentException("Grails wrapper remote repository URLs must use HTTPS: " + url);
+            }
+        } catch (URISyntaxException e) {
+            throw new IllegalArgumentException("Invalid Grails wrapper remote repository URL: " + url, e);
+        }
     }
 
     private static boolean isFileRepository(String urlOrFile) {

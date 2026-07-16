@@ -342,28 +342,35 @@ public class GrailsUpdater {
 
     static HttpURLConnection createHttpURLConnection(String mavenMetadataFileUrl, HttpURLConnectionFactory openConnection) throws IOException {
         URI uri = createSecureRemoteUri(mavenMetadataFileUrl);
-        for (int redirectCount = 0; redirectCount <= MAX_REDIRECTS; redirectCount++) {
+        for (int redirectCount = 0; ; redirectCount++) {
             URL url = uri.toURL();
             HttpURLConnection conn = openConnection.open(url);
-            conn.setRequestProperty("User-Agent", "Apache-Maven/3.9.6");
-            conn.setInstanceFollowRedirects(false);
+            String location;
+            try {
+                conn.setRequestProperty("User-Agent", "Apache-Maven/3.9.6");
+                conn.setInstanceFollowRedirects(false);
 
-            int responseCode = conn.getResponseCode();
-            if (!isRedirect(responseCode)) {
-                return conn;
+                int responseCode = conn.getResponseCode();
+                if (!isRedirect(responseCode)) {
+                    // Ownership of the open connection transfers to the caller.
+                    return conn;
+                }
+
+                if (redirectCount >= MAX_REDIRECTS) {
+                    throw new IOException("Too many redirects while downloading Grails wrapper remote resource: " + mavenMetadataFileUrl);
+                }
+
+                location = conn.getHeaderField("Location");
             }
-
-            if (redirectCount >= MAX_REDIRECTS) {
+            catch (IOException | RuntimeException e) {
+                // Never leak a connection when request setup, the response code, or the
+                // redirect cap fails partway through an iteration.
                 closeQuietly(conn);
-                throw new IOException("Too many redirects while downloading Grails wrapper remote resource: " + mavenMetadataFileUrl);
+                throw e;
             }
-
-            String location = conn.getHeaderField("Location");
             closeQuietly(conn);
             uri = resolveSecureRedirectUrl(uri, location);
         }
-
-        throw new IOException("Too many redirects while downloading Grails wrapper remote resource: " + mavenMetadataFileUrl);
     }
 
     private static void closeQuietly(HttpURLConnection conn) {

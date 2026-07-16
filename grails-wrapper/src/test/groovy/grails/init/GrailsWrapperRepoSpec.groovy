@@ -71,13 +71,12 @@ class GrailsWrapperRepoSpec extends Specification {
         repo.getRootMetadataUrl().endsWith([GrailsWrapperHome.CLI_COMBINED_PROJECT_NAME, 'maven-metadata-local.xml'].join(File.separator))
     }
 
-    def 'HTTP scheme repo override is treated as a remote repository regardless of case'() {
+    def 'HTTP scheme repo override is rejected regardless of case'() {
         when:
-        GrailsWrapperRepo repo = GrailsWrapperRepo.createGrailsWrapperRepo('HTTP://localhost/releases/')
+        GrailsWrapperRepo.createGrailsWrapperRepo('HTTP://localhost/releases/')
 
         then:
-        !repo.isFile
-        repo.getUrl() == 'HTTP://localhost/releases/org/apache/grails/grails-cli'
-        repo.getRootMetadataUrl() == 'HTTP://localhost/releases/org/apache/grails/grails-cli/maven-metadata.xml'
+        def e = thrown(IllegalArgumentException)
+        e.message == 'Grails wrapper remote repository URLs must use HTTPS: HTTP://localhost/releases/'
     }
 }

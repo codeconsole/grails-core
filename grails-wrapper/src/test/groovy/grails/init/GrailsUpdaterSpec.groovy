@@ -64,6 +64,29 @@ class GrailsUpdaterSpec extends Specification {
         e.message == 'Grails wrapper remote repository URLs must use HTTPS: http://localhost/releases/maven-metadata.xml'
     }
 
+    def "remote wrapper rejects HTTP redirect responses"() {
+        given:
+        server.expectations {
+            GET('/start') {
+                called(1)
+                responder {
+                    code(HttpURLConnection.HTTP_MOVED_TEMP)
+                    header('Location', 'http://localhost/insecure')
+                }
+            }
+        }
+
+        when:
+        GrailsUpdater.createHttpURLConnection('https://localhost/start') { URL requestedUrl ->
+            openErsatzConnection(requestedUrl)
+        }
+
+        then:
+        def e = thrown(IOException)
+        e.message == 'Grails wrapper remote repository URLs must use HTTPS: http://localhost/insecure'
+        server.verify()
+    }
+
     def "remote wrapper redirect accepts relative HTTPS target"() {
         expect:
         GrailsUpdater.resolveSecureRedirectUrl(new URI(REMOTE_BASE_URL), '../snapshots/maven-metadata.xml') == new URI('https://localhost/snapshots/maven-metadata.xml')
@@ -76,6 +99,28 @@ class GrailsUpdaterSpec extends Specification {
         then:
         def e = thrown(IOException)
         e.message == 'Redirect response is missing a Location header for Grails wrapper remote resource: https://localhost/releases/maven-metadata.xml'
+    }
+
+    def "remote wrapper rejects redirect responses without a location header"() {
+        given:
+        server.expectations {
+            GET('/start') {
+                called(1)
+                responder {
+                    code(HttpURLConnection.HTTP_MOVED_TEMP)
+                }
+            }
+        }
+
+        when:
+        GrailsUpdater.createHttpURLConnection('https://localhost/start') { URL requestedUrl ->
+            openErsatzConnection(requestedUrl)
+        }
+
+        then:
+        def e = thrown(IOException)
+        e.message == 'Redirect response is missing a Location header for Grails wrapper remote resource: https://localhost/start'
+        server.verify()
     }
 
     def "remote wrapper redirect rejects malformed location header"() {
