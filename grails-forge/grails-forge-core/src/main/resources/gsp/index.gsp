@@ -221,7 +221,7 @@
     <div class="container-lg mt-4">
         <div class="row g-4 align-items-start">
             <div class="col-12 col-lg-7">
-                <div id="available-artefacts" data-switch-scope class="card border-1 shadow-sm h-100">
+                <div id="available-artefacts" data-switch-scope class="card border-1 shadow-sm">
                     <div class="card-body">
                         <div class="d-flex align-items-center justify-content-between mb-1">
                             <div class="dropdown">
@@ -458,139 +458,10 @@
                         </div>
                     </div>
                 </div>
-            </div>
 
-            <%-- PLUGINS --%>
-            <div class="col-12 col-lg-5">
-                <div class="card border-1 shadow-sm h-100">
-                    <div class="card-body">
-                        <div class="d-flex align-items-center justify-content-between mb-3">
-                            <h6 class="card-title mb-0 fw-semibold"><g:message code="welcome.plugins.title"/></h6>
-                            <div class="d-flex align-items-center gap-2">
-                                <span class="badge bg-body-tertiary text-body border">
-                                    ${pluginManager.allPlugins.size()}
-                                </span>
-                                <div class="dropdown">
-                                    <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="dropdown"
-                                            data-bs-auto-close="outside" aria-expanded="false"
-                                            aria-label="${message(code: 'welcome.filter.name')}">
-                                        <i class="bi bi-filter" aria-hidden="true"></i>
-                                    </button>
-                                    <div class="dropdown-menu dropdown-menu-end p-2">
-                                        <input type="search" class="form-control form-control-sm filter-input"
-                                               data-filter-list="#plugins-table tbody" data-filter-empty="#plugins-empty"
-                                               placeholder="${message(code: 'welcome.filter.name')}"
-                                               aria-label="${message(code: 'welcome.filter.name')}">
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="table-responsive">
-                            <table id="plugins-table" class="table table-sm table-striped table-hover" data-sortable="true">
-                                <thead class="small">
-                                <tr>
-                                    <th scope="col"
-                                        class="text-body-secondary ps-0 fw-semibold sortable"
-                                        data-sort-key="name"
-                                        role="button"
-                                        tabindex="0"
-                                        aria-label="${message(code: 'welcome.plugins.sort.name')}">
-                                        <g:message code="welcome.plugins.name"/> <span class="sort-hint" aria-hidden="true"></span>
-                                    </th>
-                                    <th scope="col"
-                                        class="text-body-secondary ps-0 fw-semibold text-end sortable"
-                                        data-sort-key="version"
-                                        role="button"
-                                        tabindex="0"
-                                        aria-label="${message(code: 'welcome.plugins.sort.version')}">
-                                        <span class="sort-hint" aria-hidden="true"></span> <g:message code="welcome.plugins.version"/>
-                                    </th>
-                                    <th scope="col"
-                                        class="text-body-secondary text-end pe-0 sortable"
-                                        data-sort-key="order"
-                                        role="button"
-                                        tabindex="0"
-                                        aria-label="${message(code: 'welcome.plugins.sort.order')}">
-                                        <span class="sort-hint" aria-hidden="true"></span> <g:message code="welcome.plugins.load.order"/>
-                                    </th>
-                                </tr>
-                                </thead>
-                                <tbody class="small">
-                                <g:each var="row" in="${pluginsWithOrder}">
-                                    <g:set var="pluginName"
-                                           value="${row.plugin.name
-                                                   .replaceAll(/([A-Z]+)([A-Z][a-z])/, '$1 $2')
-                                                   .replaceAll(/([a-z0-9])([A-Z])/, '$1 $2')
-                                                   .replaceAll(/[_-]+/, ' ')
-                                                   .trim()
-                                                   .capitalize()}"
-                                    />
-                                    <tr data-name="${pluginName}" data-version="${row.plugin.version}" data-order="${row.order}">
-                                        <td class="text-truncate">
-                                            ${pluginName}
-                                        </td>
-                                        <td class="text-end" style="font-variant-numeric: tabular-nums;">
-                                            ${row.plugin.version}
-                                        </td>
-                                        <td class="text-end text-body-secondary" style="font-variant-numeric: tabular-nums;">
-                                            ${row.order}
-                                        </td>
-                                    </tr>
-                                </g:each>
-                                </tbody>
-                            </table>
-                        </div>
-                        <p id="plugins-empty" class="small text-body-secondary d-none mb-0"><g:message code="welcome.filter.none"/></p>
-                    </div>
-                </div>
-
-                <%-- ACTUATORS: shown only when Spring Boot Actuator is present and exposes web endpoints --%>
-                <g:set var="actuatorSupplierType"
-                       value="${ClassUtils.isPresent('org.springframework.boot.actuate.endpoint.web.WebEndpointsSupplier', null) ? ClassUtils.forName('org.springframework.boot.actuate.endpoint.web.WebEndpointsSupplier', null) : null}"/>
-                <g:set var="actuatorEndpoints"
-                       value="${actuatorSupplierType && applicationContext.getBeanNamesForType(actuatorSupplierType) ? applicationContext.getBean(actuatorSupplierType).endpoints.toList().sort { it.endpointId.toString() } : []}"/>
-                <g:if test="${actuatorEndpoints}">
-                    <g:set var="actuatorBasePath"
-                           value="${grailsApplication.config.getProperty('management.endpoints.web.base-path') ?: '/actuator'}"/>
-                    <%-- With management.server.port the endpoints are not served on this
-                         app's port: link against the management port and its base path. --%>
-                    <g:set var="managementPort" value="${grailsApplication.config.getProperty('management.server.port')}"/>
-                    <g:set var="actuatorUrlBase"
-                           value="${managementPort && managementPort.toString() != request.serverPort.toString() ? '//' + request.serverName + ':' + managementPort + (grailsApplication.config.getProperty('management.server.base-path') ?: '') : request.contextPath}"/>
-                    <div class="card border-1 shadow-sm mt-4">
-                        <div class="card-body">
-                            <div class="d-flex align-items-center justify-content-between mb-3">
-                                <h6 class="card-title mb-0 fw-semibold"><g:message code="welcome.actuators"/></h6>
-                                <span class="badge bg-body-tertiary text-body border">
-                                    ${actuatorEndpoints.size()}
-                                </span>
-                            </div>
-                            <ul class="list-group list-group-flush small">
-                                <g:each var="endpoint" in="${actuatorEndpoints}">
-                                    <li class="list-group-item d-flex justify-content-between align-items-center px-0">
-                                        <span class="fw-medium">${endpoint.endpointId}</span>
-                                        <a href="${actuatorUrlBase}${actuatorBasePath}/${endpoint.rootPath}" target="_blank" rel="noopener"
-                                           class="small link-primary link-offset-2 link-underline-opacity-0 link-underline-opacity-75-hover">
-                                            ${actuatorBasePath}/${endpoint.rootPath}
-                                        </a>
-                                    </li>
-                                </g:each>
-                            </ul>
-                        </div>
-                    </div>
-                </g:if>
-            </div>
-        </div>
-    </div>
-
-    <%-- RUNTIME INTERNALS: listeners, data binding and mime handling resolved from
-         the running application context, plus datastores when GORM is present.
-         The left card reuses the same data-switch-scope pattern as the artefacts
-         card; the right column mirrors the plugins table and actuators cards. --%>
-    <div class="container-lg mt-4">
-        <div class="row g-4 align-items-start">
-            <div class="col-12 col-lg-7">
+                <%-- RUNTIME INTERNALS: listeners, data binding, mime handling and
+                     the request filter pipeline resolved from the running application
+                     context; reuses the artefacts card's data-switch-scope pattern. --%>
                 <g:set var="appListeners"
                        value="${applicationContext.applicationListeners.toList()
                                .collect { l -> [name: (l.getClass().simpleName ?: l.getClass().name.tokenize('.').last()),
@@ -641,7 +512,7 @@
                                } : []}"/>
                 <g:set var="numSecurityFilters" value="${securityFilterChains.sum { c -> c.filters.size() } ?: 0}"/>
 
-                <div id="runtime-beans" data-switch-scope class="card border-1 shadow-sm h-100">
+                <div id="runtime-beans" data-switch-scope class="card border-1 shadow-sm mt-4">
                     <div class="card-body">
                         <div class="d-flex align-items-center justify-content-between mb-1">
                             <div class="dropdown">
@@ -922,12 +793,131 @@
                 </div>
             </div>
 
+            <%-- PLUGINS --%>
             <div class="col-12 col-lg-5">
+                <div class="card border-1 shadow-sm">
+                    <div class="card-body">
+                        <div class="d-flex align-items-center justify-content-between mb-3">
+                            <h6 class="card-title mb-0 fw-semibold"><g:message code="welcome.plugins.title"/></h6>
+                            <div class="d-flex align-items-center gap-2">
+                                <span class="badge bg-body-tertiary text-body border">
+                                    ${pluginManager.allPlugins.size()}
+                                </span>
+                                <div class="dropdown">
+                                    <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="dropdown"
+                                            data-bs-auto-close="outside" aria-expanded="false"
+                                            aria-label="${message(code: 'welcome.filter.name')}">
+                                        <i class="bi bi-filter" aria-hidden="true"></i>
+                                    </button>
+                                    <div class="dropdown-menu dropdown-menu-end p-2">
+                                        <input type="search" class="form-control form-control-sm filter-input"
+                                               data-filter-list="#plugins-table tbody" data-filter-empty="#plugins-empty"
+                                               placeholder="${message(code: 'welcome.filter.name')}"
+                                               aria-label="${message(code: 'welcome.filter.name')}">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="table-responsive">
+                            <table id="plugins-table" class="table table-sm table-striped table-hover" data-sortable="true">
+                                <thead class="small">
+                                <tr>
+                                    <th scope="col"
+                                        class="text-body-secondary ps-0 fw-semibold sortable"
+                                        data-sort-key="name"
+                                        role="button"
+                                        tabindex="0"
+                                        aria-label="${message(code: 'welcome.plugins.sort.name')}">
+                                        <g:message code="welcome.plugins.name"/> <span class="sort-hint" aria-hidden="true"></span>
+                                    </th>
+                                    <th scope="col"
+                                        class="text-body-secondary ps-0 fw-semibold text-end sortable"
+                                        data-sort-key="version"
+                                        role="button"
+                                        tabindex="0"
+                                        aria-label="${message(code: 'welcome.plugins.sort.version')}">
+                                        <span class="sort-hint" aria-hidden="true"></span> <g:message code="welcome.plugins.version"/>
+                                    </th>
+                                    <th scope="col"
+                                        class="text-body-secondary text-end pe-0 sortable"
+                                        data-sort-key="order"
+                                        role="button"
+                                        tabindex="0"
+                                        aria-label="${message(code: 'welcome.plugins.sort.order')}">
+                                        <span class="sort-hint" aria-hidden="true"></span> <g:message code="welcome.plugins.load.order"/>
+                                    </th>
+                                </tr>
+                                </thead>
+                                <tbody class="small">
+                                <g:each var="row" in="${pluginsWithOrder}">
+                                    <g:set var="pluginName"
+                                           value="${row.plugin.name
+                                                   .replaceAll(/([A-Z]+)([A-Z][a-z])/, '$1 $2')
+                                                   .replaceAll(/([a-z0-9])([A-Z])/, '$1 $2')
+                                                   .replaceAll(/[_-]+/, ' ')
+                                                   .trim()
+                                                   .capitalize()}"
+                                    />
+                                    <tr data-name="${pluginName}" data-version="${row.plugin.version}" data-order="${row.order}">
+                                        <td class="text-truncate">
+                                            ${pluginName}
+                                        </td>
+                                        <td class="text-end" style="font-variant-numeric: tabular-nums;">
+                                            ${row.plugin.version}
+                                        </td>
+                                        <td class="text-end text-body-secondary" style="font-variant-numeric: tabular-nums;">
+                                            ${row.order}
+                                        </td>
+                                    </tr>
+                                </g:each>
+                                </tbody>
+                            </table>
+                        </div>
+                        <p id="plugins-empty" class="small text-body-secondary d-none mb-0"><g:message code="welcome.filter.none"/></p>
+                    </div>
+                </div>
+
+                <%-- ACTUATORS: shown only when Spring Boot Actuator is present and exposes web endpoints --%>
+                <g:set var="actuatorSupplierType"
+                       value="${ClassUtils.isPresent('org.springframework.boot.actuate.endpoint.web.WebEndpointsSupplier', null) ? ClassUtils.forName('org.springframework.boot.actuate.endpoint.web.WebEndpointsSupplier', null) : null}"/>
+                <g:set var="actuatorEndpoints"
+                       value="${actuatorSupplierType && applicationContext.getBeanNamesForType(actuatorSupplierType) ? applicationContext.getBean(actuatorSupplierType).endpoints.toList().sort { it.endpointId.toString() } : []}"/>
+                <g:if test="${actuatorEndpoints}">
+                    <g:set var="actuatorBasePath"
+                           value="${grailsApplication.config.getProperty('management.endpoints.web.base-path') ?: '/actuator'}"/>
+                    <%-- With management.server.port the endpoints are not served on this
+                         app's port: link against the management port and its base path. --%>
+                    <g:set var="managementPort" value="${grailsApplication.config.getProperty('management.server.port')}"/>
+                    <g:set var="actuatorUrlBase"
+                           value="${managementPort && managementPort.toString() != request.serverPort.toString() ? '//' + request.serverName + ':' + managementPort + (grailsApplication.config.getProperty('management.server.base-path') ?: '') : request.contextPath}"/>
+                    <div class="card border-1 shadow-sm mt-4">
+                        <div class="card-body">
+                            <div class="d-flex align-items-center justify-content-between mb-3">
+                                <h6 class="card-title mb-0 fw-semibold"><g:message code="welcome.actuators"/></h6>
+                                <span class="badge bg-body-tertiary text-body border">
+                                    ${actuatorEndpoints.size()}
+                                </span>
+                            </div>
+                            <ul class="list-group list-group-flush small">
+                                <g:each var="endpoint" in="${actuatorEndpoints}">
+                                    <li class="list-group-item d-flex justify-content-between align-items-center px-0">
+                                        <span class="fw-medium">${endpoint.endpointId}</span>
+                                        <a href="${actuatorUrlBase}${actuatorBasePath}/${endpoint.rootPath}" target="_blank" rel="noopener"
+                                           class="small link-primary link-offset-2 link-underline-opacity-0 link-underline-opacity-75-hover">
+                                            ${actuatorBasePath}/${endpoint.rootPath}
+                                        </a>
+                                    </li>
+                                </g:each>
+                            </ul>
+                        </div>
+                    </div>
+                </g:if>
                 <g:set var="mimeTypes"
                        value="${applicationContext.containsBean('mimeTypes') ?
                                applicationContext.getBean('mimeTypes').toList()
                                        .sort { a, b -> ((a.extension ?: '').toLowerCase() <=> (b.extension ?: '').toLowerCase()) ?: (a.name <=> b.name) } : []}"/>
-                <div class="card border-1 shadow-sm">
+                <div class="card border-1 shadow-sm mt-4">
                     <div class="card-body">
                         <div class="d-flex align-items-center justify-content-between mb-3">
                             <h6 class="card-title mb-0 fw-semibold"><g:message code="welcome.mime.types.title"/></h6>
