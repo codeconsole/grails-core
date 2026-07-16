@@ -140,8 +140,29 @@ public class GrailsWrapperRepo {
             String scheme = uri.getScheme();
             return scheme == null || "file".equalsIgnoreCase(scheme);
         } catch (URISyntaxException e) {
-            return true;
+            // A malformed value that is clearly URL-shaped (has a leading "scheme://") is a
+            // broken remote override, not a local path; classify it as remote so it is
+            // validated and rejected rather than silently searched on the filesystem. A
+            // "://" that appears inside an absolute local path is not a scheme separator.
+            return !hasLeadingUrlScheme(urlOrFile);
         }
+    }
+
+    private static boolean hasLeadingUrlScheme(String value) {
+        int schemeEnd = value.indexOf("://");
+        if (schemeEnd <= 0) {
+            return false;
+        }
+        for (int i = 0; i < schemeEnd; i++) {
+            char c = value.charAt(i);
+            boolean valid = (i == 0)
+                ? Character.isLetter(c)
+                : (Character.isLetterOrDigit(c) || c == '+' || c == '-' || c == '.');
+            if (!valid) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static String normalizeBaseUrl(String urlOrFile, boolean fileRepository) {

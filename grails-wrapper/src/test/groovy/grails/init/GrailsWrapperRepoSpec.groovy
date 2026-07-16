@@ -79,4 +79,29 @@ class GrailsWrapperRepoSpec extends Specification {
         def e = thrown(IllegalArgumentException)
         e.message == 'Grails wrapper remote repository URLs must use HTTPS: HTTP://localhost/releases/'
     }
+
+    def 'malformed URL-shaped repo override is rejected rather than treated as a local path'() {
+        when: 'a value that is clearly URL-shaped but not a parseable URI is supplied'
+        GrailsWrapperRepo.createGrailsWrapperRepo('https://repo example/releases')
+
+        then: 'it is classified as a broken remote override and rejected, not searched on the filesystem'
+        def e = thrown(IllegalArgumentException)
+        e.message.startsWith('Invalid Grails wrapper remote repository URL:')
+    }
+
+    def 'malformed local path override without a scheme separator remains a local repository'() {
+        when: 'a non-URL local path that does not parse as a URI is supplied'
+        GrailsWrapperRepo repo = GrailsWrapperRepo.createGrailsWrapperRepo('/tmp/local repo/releases')
+
+        then: 'it is still treated as a local maven repository'
+        repo.isFile
+    }
+
+    def 'malformed local path override with an interior scheme separator remains a local repository'() {
+        when: 'an absolute local path whose interior contains "://" but has no leading scheme is supplied'
+        GrailsWrapperRepo repo = GrailsWrapperRepo.createGrailsWrapperRepo('/tmp/cache://local repo/releases')
+
+        then: 'the interior separator is not treated as a URL scheme, so it stays a local repository'
+        repo.isFile
+    }
 }
