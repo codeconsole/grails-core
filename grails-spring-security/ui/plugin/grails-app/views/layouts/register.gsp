@@ -17,20 +17,21 @@
   ~  under the License.
   --%>
 <!doctype html>
-<html class="no-js" lang="">
+<html lang="en">
 <head>
 	<meta charset="utf-8">
-	<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
-	<meta http-equiv="x-ua-compatible" content="ie=edge">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
-	<s2ui:stylesheet src='spring-security-ui-register.css'/>
+	<asset:stylesheet src='spring-security-ui.css'/>
 <g:layoutHead/>
 </head>
 <body>
-		<p/>
+<main class="bg-body-tertiary min-vh-100">
+	<div class="container py-5">
+		<g:flashMessages/>
 		<g:layoutBody/>
+	</div>
+</main>
 <asset:javascript src='spring-security-ui-register.js'/>
-<s2ui:showFlash/>
 <s2ui:deferredScripts/>
 </body>
 </html>
