@@ -27,7 +27,7 @@
         if (key === 'name') return (tr.dataset.name || '').toLowerCase();
         if (key === 'version') return (tr.dataset.version || '');
         if (key === 'order') return Number(tr.dataset.order || '0');
-        return '';
+        return (tr.dataset[key] || '').toLowerCase();
     }
 
     function sortTableBy(table, key, dir) {
@@ -99,8 +99,9 @@
             });
         });
 
-        // Initial load: show the ascending indicator on Name; the server already renders rows in that order.
-        const defaultKey = 'name';
+        // Initial load: show the ascending indicator on the default column; the
+        // server already renders rows in that order.
+        const defaultKey = table.getAttribute('data-sort-default') || 'name';
         const defaultTh = headers.find((th) => (th.getAttribute('data-sort-key') || '') === defaultKey);
         if (defaultTh) {
             state.key = defaultKey;
@@ -192,41 +193,46 @@
     });
 })();
 
-// Available-artefacts card: one server-rendered panel per artefact type. Every
-// type-scoped element (title span, count badge, filter input, panel) carries
-// data-artefact-for, so switching only toggles visibility and no localized
-// text ever lives in this script.
+// Switchable cards: one server-rendered panel per type inside a
+// data-switch-scope container. Every type-scoped element (title span, count
+// badge, filter input, panel) carries data-switch-for, so switching only
+// toggles visibility within its own card and no localized text ever lives in
+// this script. Multiple switchable cards on one page stay independent.
 (function () {
-    function activate(type) {
-        document.querySelectorAll('[data-artefact-for]').forEach((el) => {
-            el.classList.toggle('d-none', el.getAttribute('data-artefact-for') !== type);
+    function activate(scope, type) {
+        scope.querySelectorAll('[data-switch-for]').forEach((el) => {
+            el.classList.toggle('d-none', el.getAttribute('data-switch-for') !== type);
         });
 
-        document.querySelectorAll('[data-artefact-type]').forEach((btn) => {
-            const active = btn.getAttribute('data-artefact-type') === type;
+        scope.querySelectorAll('[data-switch-type]').forEach((btn) => {
+            const active = btn.getAttribute('data-switch-type') === type;
             btn.classList.toggle('active', active);
             btn.setAttribute('aria-pressed', String(active));
         });
 
         // Resync the shared filter toggle's engaged indicator (and the newly
         // shown list) with the filter state the visible input still holds.
-        const input = document.querySelector('input.filter-input[data-artefact-for="' + type + '"]');
+        const input = scope.querySelector('input.filter-input[data-switch-for="' + type + '"]');
         if (input) input.dispatchEvent(new Event('input'));
     }
 
     document.addEventListener('DOMContentLoaded', () => {
-        document.querySelectorAll('[data-artefact-type]').forEach((btn) => {
-            btn.addEventListener('click', () => activate(btn.getAttribute('data-artefact-type')));
+        document.querySelectorAll('[data-switch-scope]').forEach((scope) => {
+            scope.querySelectorAll('[data-switch-type]').forEach((btn) => {
+                btn.addEventListener('click', () => activate(scope, btn.getAttribute('data-switch-type')));
+            });
         });
 
-        // Artefact-count rows land on the card already switched to their type.
-        // The plain #available-artefacts anchor stays as the no-JS fallback.
-        document.querySelectorAll('[data-artefact-jump]').forEach((el) => {
+        // Jump links (e.g. the artefact-count rows) land on the card their
+        // anchor names, already switched to their type. The plain anchor stays
+        // as the no-JS fallback.
+        document.querySelectorAll('a[data-switch-jump]').forEach((el) => {
             el.addEventListener('click', (e) => {
+                const card = document.querySelector(el.getAttribute('href') || '');
+                if (!card) return;
                 e.preventDefault();
-                activate(el.getAttribute('data-artefact-jump'));
-                const card = document.getElementById('available-artefacts');
-                if (card) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                activate(card, el.getAttribute('data-switch-jump'));
+                card.scrollIntoView({ behavior: 'smooth', block: 'start' });
             });
         });
     });

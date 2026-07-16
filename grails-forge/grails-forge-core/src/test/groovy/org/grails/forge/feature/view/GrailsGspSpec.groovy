@@ -99,6 +99,10 @@ class GrailsGspSpec extends ApplicationContextSpec implements CommandOutputFixtu
         !index.contains(">Available Services<")
         !index.contains(">Available Tag Libraries<")
         !index.contains(">Installed plugins<")
+        !index.contains(">Application Listeners<")
+        !index.contains(">Data Binding<")
+        !index.contains(">Mime Types<")
+        !index.contains(">Datastores<")
     }
 
     void "test default index page carries the brand hero and per-card name filters"() {
@@ -122,6 +126,16 @@ class GrailsGspSpec extends ApplicationContextSpec implements CommandOutputFixtu
         index.contains('id="taglibs-empty"')
         index.contains('id="plugins-empty"')
 
+        and: "so are the runtime internals lists and the mime types table"
+        index.contains('data-filter-list="#listeners-list"')
+        index.contains('data-filter-list="#binding-list"')
+        index.contains('data-filter-list="#mimeproviders-list"')
+        index.contains('data-filter-list="#mime-types-table tbody"')
+        index.contains('id="listeners-empty"')
+        index.contains('id="binding-empty"')
+        index.contains('id="mimeproviders-empty"')
+        index.contains('id="mime-types-empty"')
+
         and: "count badges are theme-adaptive rather than hardcoded light"
         index.contains('badge bg-body-tertiary text-body border')
         !index.contains('text-bg-light')
@@ -133,10 +147,10 @@ class GrailsGspSpec extends ApplicationContextSpec implements CommandOutputFixtu
         final String index = output["grails-app/views/index.gsp"]
 
         then: "all four artefact panels are server-rendered, with only controllers visible by default"
-        index.contains('<div data-artefact-for="controllers">')
-        index.contains('<div data-artefact-for="domains" class="d-none">')
-        index.contains('<div data-artefact-for="services" class="d-none">')
-        index.contains('<div data-artefact-for="taglibs" class="d-none">')
+        index.contains('<div data-switch-for="controllers">')
+        index.contains('<div data-switch-for="domains" class="d-none">')
+        index.contains('<div data-switch-for="services" class="d-none">')
+        index.contains('<div data-switch-for="taglibs" class="d-none">')
 
         and: "the panels list every artefact collection, not just controllers"
         index.contains('grailsApplication.domainClasses')
@@ -144,25 +158,60 @@ class GrailsGspSpec extends ApplicationContextSpec implements CommandOutputFixtu
         index.contains('grailsApplication.tagLibClasses')
 
         and: "the card title is a dropdown whose items switch the type through localized labels"
-        index.contains('data-artefact-type="controllers"')
-        index.contains('data-artefact-type="domains"')
-        index.contains('data-artefact-type="services"')
-        index.contains('data-artefact-type="taglibs"')
+        index.contains('data-switch-type="controllers"')
+        index.contains('data-switch-type="domains"')
+        index.contains('data-switch-type="services"')
+        index.contains('data-switch-type="taglibs"')
         index.contains("message(code: 'welcome.artefacts.switch')")
         index.contains('<g:message code="welcome.artefact.domains"/>')
 
         and: "the artefact-count rows jump to the card already switched to their type"
-        index.contains('id="available-artefacts"')
-        index.contains('href="#available-artefacts" data-artefact-jump="controllers"')
-        index.contains('href="#available-artefacts" data-artefact-jump="domains"')
-        index.contains('href="#available-artefacts" data-artefact-jump="services"')
-        index.contains('href="#available-artefacts" data-artefact-jump="taglibs"')
+        index.contains('id="available-artefacts" data-switch-scope')
+        index.contains('href="#available-artefacts" data-switch-jump="controllers"')
+        index.contains('href="#available-artefacts" data-switch-jump="domains"')
+        index.contains('href="#available-artefacts" data-switch-jump="services"')
+        index.contains('href="#available-artefacts" data-switch-jump="taglibs"')
 
-        and: "the page script drives switching purely by toggling data-artefact-for visibility"
+        and: "the page script drives switching purely by toggling visibility within each scope"
         final String welcomeJs = output["grails-app/assets/javascripts/welcome.js"]
-        welcomeJs.contains("querySelectorAll('[data-artefact-for]')")
-        welcomeJs.contains("querySelectorAll('[data-artefact-type]')")
-        welcomeJs.contains("querySelectorAll('[data-artefact-jump]')")
+        welcomeJs.contains("querySelectorAll('[data-switch-scope]')")
+        welcomeJs.contains("querySelectorAll('[data-switch-for]')")
+        welcomeJs.contains("querySelectorAll('[data-switch-type]')")
+        welcomeJs.contains("querySelectorAll('a[data-switch-jump]')")
+    }
+
+    void "test the runtime internals row surfaces listeners, data binding, mime handling and datastores"() {
+        when:
+        final def output = generate(ApplicationType.WEB, new Options(DevelopmentReloading.DEVTOOLS))
+        final String index = output["grails-app/views/index.gsp"]
+
+        then: "a second switchable card lists application listeners, data binding beans and mime type providers"
+        index.contains('id="runtime-beans" data-switch-scope')
+        index.contains('applicationContext.applicationListeners')
+        index.contains('data-switch-type="listeners"')
+        index.contains('data-switch-type="binding"')
+        index.contains('data-switch-type="mimeproviders"')
+        index.contains("message(code: 'welcome.runtime.switch')")
+
+        and: "the data binding panel groups the four binding bean types with localized headers"
+        index.contains('grails.databinding.converters.ValueConverter')
+        index.contains('grails.databinding.converters.FormattedValueConverter')
+        index.contains('grails.databinding.TypedStructuredBindingEditor')
+        index.contains('grails.databinding.events.DataBindingListener')
+        index.contains("welcome.binding.value")
+        index.contains("welcome.binding.structured")
+
+        and: "mime types render as a sortable table defaulting to the extension column"
+        index.contains('grails.web.mime.MimeTypeProvider')
+        index.contains("applicationContext.containsBean('mimeTypes')")
+        index.contains('data-sortable="true" data-sort-default="extension"')
+        index.contains('data-sort-key="extension"')
+        index.contains('data-sort-key="type"')
+
+        and: "the datastores card renders only when GORM is present, resolved without a hard class reference"
+        index.contains("ClassUtils.isPresent('org.grails.datastore.mapping.core.Datastore'")
+        index.contains('mappingContext.eventListeners')
+        index.contains('<g:message code="welcome.datastores.listeners"/>')
     }
 
     void "test default layout includes the language selector dropdown"() {
