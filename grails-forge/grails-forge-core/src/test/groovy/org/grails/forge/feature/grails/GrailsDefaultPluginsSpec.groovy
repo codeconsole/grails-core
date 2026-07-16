@@ -101,6 +101,8 @@ class GrailsDefaultPluginsSpec extends ApplicationContextSpec implements Command
         suffixes.every { suffix ->
             final String bundle = output["grails-app/i18n/messages" + suffix + ".properties"]
             ["welcome.title", "welcome.congratulations", "welcome.controllers.title",
+             "welcome.domains.title", "welcome.services.title", "welcome.taglibs.title",
+             "welcome.artefacts.switch", "welcome.artefacts.none",
              "welcome.filter.name", "welcome.plugins.title"].every { key ->
                 bundle.contains(key + "=")
             }
@@ -111,6 +113,8 @@ class GrailsDefaultPluginsSpec extends ApplicationContextSpec implements Command
         output["grails-app/i18n/messages_ja.properties"].contains("welcome.title=Grailsへようこそ")
         output["grails-app/i18n/messages_th.properties"].contains("welcome.title=ยินดีต้อนรับสู่ Grails")
         output["grails-app/i18n/messages_zh_CN.properties"].contains("welcome.title=欢迎使用 Grails")
+        output["grails-app/i18n/messages_ru.properties"].contains("welcome.domains.title=Доступные домены")
+        output["grails-app/i18n/messages_zh_CN.properties"].contains("welcome.taglibs.title=可用标签库")
     }
 
 }

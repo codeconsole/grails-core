@@ -191,3 +191,43 @@
         });
     });
 })();
+
+// Available-artefacts card: one server-rendered panel per artefact type. Every
+// type-scoped element (title span, count badge, filter input, panel) carries
+// data-artefact-for, so switching only toggles visibility and no localized
+// text ever lives in this script.
+(function () {
+    function activate(type) {
+        document.querySelectorAll('[data-artefact-for]').forEach((el) => {
+            el.classList.toggle('d-none', el.getAttribute('data-artefact-for') !== type);
+        });
+
+        document.querySelectorAll('[data-artefact-type]').forEach((btn) => {
+            const active = btn.getAttribute('data-artefact-type') === type;
+            btn.classList.toggle('active', active);
+            btn.setAttribute('aria-pressed', String(active));
+        });
+
+        // Resync the shared filter toggle's engaged indicator (and the newly
+        // shown list) with the filter state the visible input still holds.
+        const input = document.querySelector('input.filter-input[data-artefact-for="' + type + '"]');
+        if (input) input.dispatchEvent(new Event('input'));
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        document.querySelectorAll('[data-artefact-type]').forEach((btn) => {
+            btn.addEventListener('click', () => activate(btn.getAttribute('data-artefact-type')));
+        });
+
+        // Artefact-count rows land on the card already switched to their type.
+        // The plain #available-artefacts anchor stays as the no-JS fallback.
+        document.querySelectorAll('[data-artefact-jump]').forEach((el) => {
+            el.addEventListener('click', (e) => {
+                e.preventDefault();
+                activate(el.getAttribute('data-artefact-jump'));
+                const card = document.getElementById('available-artefacts');
+                if (card) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            });
+        });
+    });
+})();

@@ -95,6 +95,9 @@ class GrailsGspSpec extends ApplicationContextSpec implements CommandOutputFixtu
         and: "no user-facing English remains hardcoded (product names like Grails/Spring stay literal)"
         !index.contains("Congratulations, you have successfully started")
         !index.contains(">Available Controllers<")
+        !index.contains(">Available Domains<")
+        !index.contains(">Available Services<")
+        !index.contains(">Available Tag Libraries<")
         !index.contains(">Installed plugins<")
     }
 
@@ -107,15 +110,59 @@ class GrailsGspSpec extends ApplicationContextSpec implements CommandOutputFixtu
         index.contains('class="welcome-hero-cups"')
         index.contains('welcome-hero-body')
 
-        and: "controllers and plugins are filterable by name, with empty states"
+        and: "every artefact list and the plugins table are filterable by name, with empty states"
         index.contains('data-filter-list="#controllers-list"')
+        index.contains('data-filter-list="#domains-list"')
+        index.contains('data-filter-list="#services-list"')
+        index.contains('data-filter-list="#taglibs-list"')
         index.contains('data-filter-list="#plugins-table tbody"')
         index.contains('id="controllers-empty"')
+        index.contains('id="domains-empty"')
+        index.contains('id="services-empty"')
+        index.contains('id="taglibs-empty"')
         index.contains('id="plugins-empty"')
 
         and: "count badges are theme-adaptive rather than hardcoded light"
         index.contains('badge bg-body-tertiary text-body border')
         !index.contains('text-bg-light')
+    }
+
+    void "test the available artefacts card switches between artefact types"() {
+        when:
+        final def output = generate(ApplicationType.WEB, new Options(DevelopmentReloading.DEVTOOLS))
+        final String index = output["grails-app/views/index.gsp"]
+
+        then: "all four artefact panels are server-rendered, with only controllers visible by default"
+        index.contains('<div data-artefact-for="controllers">')
+        index.contains('<div data-artefact-for="domains" class="d-none">')
+        index.contains('<div data-artefact-for="services" class="d-none">')
+        index.contains('<div data-artefact-for="taglibs" class="d-none">')
+
+        and: "the panels list every artefact collection, not just controllers"
+        index.contains('grailsApplication.domainClasses')
+        index.contains('grailsApplication.serviceClasses')
+        index.contains('grailsApplication.tagLibClasses')
+
+        and: "the card title is a dropdown whose items switch the type through localized labels"
+        index.contains('data-artefact-type="controllers"')
+        index.contains('data-artefact-type="domains"')
+        index.contains('data-artefact-type="services"')
+        index.contains('data-artefact-type="taglibs"')
+        index.contains("message(code: 'welcome.artefacts.switch')")
+        index.contains('<g:message code="welcome.artefact.domains"/>')
+
+        and: "the artefact-count rows jump to the card already switched to their type"
+        index.contains('id="available-artefacts"')
+        index.contains('href="#available-artefacts" data-artefact-jump="controllers"')
+        index.contains('href="#available-artefacts" data-artefact-jump="domains"')
+        index.contains('href="#available-artefacts" data-artefact-jump="services"')
+        index.contains('href="#available-artefacts" data-artefact-jump="taglibs"')
+
+        and: "the page script drives switching purely by toggling data-artefact-for visibility"
+        final String welcomeJs = output["grails-app/assets/javascripts/welcome.js"]
+        welcomeJs.contains("querySelectorAll('[data-artefact-for]')")
+        welcomeJs.contains("querySelectorAll('[data-artefact-type]')")
+        welcomeJs.contains("querySelectorAll('[data-artefact-jump]')")
     }
 
     void "test default layout includes the language selector dropdown"() {
@@ -128,7 +175,8 @@ class GrailsGspSpec extends ApplicationContextSpec implements CommandOutputFixtu
 
         and: "and renders a Bootstrap dropdown that switches language via ?lang="
         layout.contains("dropdown-toggle")
-        layout.contains('?lang=${availableLocale.toLanguageTag()}')
+        layout.contains('?lang=${loc.tag}')
+        layout.contains('${loc.autonym}')
     }
 
     void "test default layout includes a controllers dropdown on every page"() {
@@ -182,9 +230,9 @@ class GrailsGspSpec extends ApplicationContextSpec implements CommandOutputFixtu
         !layout.contains('id="actuatorsDropdown"')
 
         and: "the language menu pins the default language on top so users can always navigate back"
-        layout.contains("getProperty('spring.web.locale', 'en')")
-        layout.contains('java.util.Locale.ENGLISH')
-        layout.indexOf('defaultLocale.getDisplayName(defaultLocale)') < layout.indexOf('availableLocale.getDisplayName(availableLocale)')
+        layout.contains('<g:localeSelect available="true" pinDefault="true" var="loc">')
+        layout.contains('loc.index == 1')
+        layout.contains('dropdown-divider')
     }
 
     void "test default index page lists exposed actuator endpoints when actuator is present"() {

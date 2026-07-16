@@ -11,6 +11,9 @@
                .sort { a, b -> a.plugin.name.toLowerCase() <=> b.plugin.name.toLowerCase() }}"
 />
 <g:set var="numControllers" value="${grailsApplication.controllerClasses.size()}"/>
+<g:set var="numDomains" value="${grailsApplication.domainClasses.size()}"/>
+<g:set var="numServices" value="${grailsApplication.serviceClasses.size()}"/>
+<g:set var="numTagLibs" value="${grailsApplication.tagLibClasses.size()}"/>
 <!doctype html>
 <html>
 <head>
@@ -179,24 +182,30 @@
                             <h6 class="card-title mb-0 fw-semibold"><g:message code="welcome.artefact.counts"/></h6>
                         </div>
 
-                        <ul class="list-group list-group-flush small">
-                            <li class="list-group-item d-flex justify-content-between align-items-center px-0">
+                        <%-- Each row jumps to the available-artefacts card already switched to
+                             its type; the plain anchor is the no-JS fallback (jump only). --%>
+                        <div class="list-group list-group-flush small">
+                            <a href="#available-artefacts" data-artefact-jump="controllers"
+                               class="list-group-item list-group-item-action d-flex justify-content-between align-items-center px-0">
                                 <span class="text-body-secondary"><g:message code="welcome.artefact.controllers"/></span>
                                 <span class="fw-medium">${numControllers}</span>
-                            </li>
-                            <li class="list-group-item d-flex justify-content-between align-items-center px-0">
+                            </a>
+                            <a href="#available-artefacts" data-artefact-jump="domains"
+                               class="list-group-item list-group-item-action d-flex justify-content-between align-items-center px-0">
                                 <span class="text-body-secondary"><g:message code="welcome.artefact.domains"/></span>
-                                <span class="fw-medium">${grailsApplication.domainClasses.size()}</span>
-                            </li>
-                            <li class="list-group-item d-flex justify-content-between align-items-center px-0">
+                                <span class="fw-medium">${numDomains}</span>
+                            </a>
+                            <a href="#available-artefacts" data-artefact-jump="services"
+                               class="list-group-item list-group-item-action d-flex justify-content-between align-items-center px-0">
                                 <span class="text-body-secondary"><g:message code="welcome.artefact.services"/></span>
-                                <span class="fw-medium">${grailsApplication.serviceClasses.size()}</span>
-                            </li>
-                            <li class="list-group-item d-flex justify-content-between align-items-center px-0">
+                                <span class="fw-medium">${numServices}</span>
+                            </a>
+                            <a href="#available-artefacts" data-artefact-jump="taglibs"
+                               class="list-group-item list-group-item-action d-flex justify-content-between align-items-center px-0">
                                 <span class="text-body-secondary"><g:message code="welcome.artefact.taglibs"/></span>
-                                <span class="fw-medium">${grailsApplication.tagLibClasses.size()}</span>
-                            </li>
-                        </ul>
+                                <span class="fw-medium">${numTagLibs}</span>
+                            </a>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -204,28 +213,91 @@
         </div>
     </div>
 
-    <%-- AVAILABLE CONTROLLERS --%>
+    <%-- AVAILABLE ARTEFACTS: one server-rendered panel per artefact type. The card
+         title is a dropdown that switches which panel is visible; every type-scoped
+         element (title span, count badge, filter input, panel) carries
+         data-artefact-for, and welcome.js only toggles visibility, so no localized
+         text lives in the script. --%>
     <div class="container-lg mt-4">
         <div class="row g-4 align-items-start">
             <div class="col-12 col-lg-7">
-                <div class="card border-1 shadow-sm h-100">
+                <div id="available-artefacts" class="card border-1 shadow-sm h-100">
                     <div class="card-body">
                         <div class="d-flex align-items-center justify-content-between mb-1">
-                            <h6 class="card-title mb-0 fw-semibold"><g:message code="welcome.controllers.title"/></h6>
+                            <div class="dropdown">
+                                <%-- Bootstrap resolves the menu as the toggle's next sibling, so the
+                                     button carries the heading typography itself instead of nesting
+                                     inside an h6. --%>
+                                <button type="button" class="btn btn-sm p-0 border-0 h6 card-title mb-0 fw-semibold dropdown-toggle"
+                                        data-bs-toggle="dropdown" aria-expanded="false"
+                                        aria-label="${message(code: 'welcome.artefacts.switch')}">
+                                    <span data-artefact-for="controllers"><g:message code="welcome.controllers.title"/></span><span data-artefact-for="domains" class="d-none"><g:message code="welcome.domains.title"/></span><span data-artefact-for="services" class="d-none"><g:message code="welcome.services.title"/></span><span data-artefact-for="taglibs" class="d-none"><g:message code="welcome.taglibs.title"/></span>
+                                </button>
+                                <ul class="dropdown-menu">
+                                    <li>
+                                        <button type="button" class="dropdown-item d-flex justify-content-between align-items-center active"
+                                                data-artefact-type="controllers" aria-pressed="true">
+                                            <g:message code="welcome.artefact.controllers"/>
+                                            <span class="badge bg-body-tertiary text-body border ms-3">${numControllers}</span>
+                                        </button>
+                                    </li>
+                                    <li>
+                                        <button type="button" class="dropdown-item d-flex justify-content-between align-items-center"
+                                                data-artefact-type="domains" aria-pressed="false">
+                                            <g:message code="welcome.artefact.domains"/>
+                                            <span class="badge bg-body-tertiary text-body border ms-3">${numDomains}</span>
+                                        </button>
+                                    </li>
+                                    <li>
+                                        <button type="button" class="dropdown-item d-flex justify-content-between align-items-center"
+                                                data-artefact-type="services" aria-pressed="false">
+                                            <g:message code="welcome.artefact.services"/>
+                                            <span class="badge bg-body-tertiary text-body border ms-3">${numServices}</span>
+                                        </button>
+                                    </li>
+                                    <li>
+                                        <button type="button" class="dropdown-item d-flex justify-content-between align-items-center"
+                                                data-artefact-type="taglibs" aria-pressed="false">
+                                            <g:message code="welcome.artefact.taglibs"/>
+                                            <span class="badge bg-body-tertiary text-body border ms-3">${numTagLibs}</span>
+                                        </button>
+                                    </li>
+                                </ul>
+                            </div>
                             <div class="d-flex align-items-center gap-2">
-                                <span class="badge bg-body-tertiary text-body border">
-                                    ${numControllers}
-                                </span>
-                                <g:if test="${numControllers != 0}">
+                                <span class="badge bg-body-tertiary text-body border" data-artefact-for="controllers">${numControllers}</span>
+                                <span class="badge bg-body-tertiary text-body border d-none" data-artefact-for="domains">${numDomains}</span>
+                                <span class="badge bg-body-tertiary text-body border d-none" data-artefact-for="services">${numServices}</span>
+                                <span class="badge bg-body-tertiary text-body border d-none" data-artefact-for="taglibs">${numTagLibs}</span>
+                                <g:if test="${numControllers + numDomains + numServices + numTagLibs != 0}">
                                     <div class="dropdown">
                                         <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="dropdown"
                                                 data-bs-auto-close="outside" aria-expanded="false"
                                                 aria-label="${message(code: 'welcome.filter.name')}">
                                             <i class="bi bi-filter" aria-hidden="true"></i>
                                         </button>
+                                        <%-- One input per artefact type, toggled with its panel. All four share
+                                             the focus-on-open listener; focus() is a no-op on hidden inputs, so
+                                             only the visible one takes focus. --%>
                                         <div class="dropdown-menu dropdown-menu-end p-2">
                                             <input type="search" class="form-control form-control-sm filter-input"
+                                                   data-artefact-for="controllers"
                                                    data-filter-list="#controllers-list" data-filter-empty="#controllers-empty"
+                                                   placeholder="${message(code: 'welcome.filter.name')}"
+                                                   aria-label="${message(code: 'welcome.filter.name')}">
+                                            <input type="search" class="form-control form-control-sm filter-input d-none"
+                                                   data-artefact-for="domains"
+                                                   data-filter-list="#domains-list" data-filter-empty="#domains-empty"
+                                                   placeholder="${message(code: 'welcome.filter.name')}"
+                                                   aria-label="${message(code: 'welcome.filter.name')}">
+                                            <input type="search" class="form-control form-control-sm filter-input d-none"
+                                                   data-artefact-for="services"
+                                                   data-filter-list="#services-list" data-filter-empty="#services-empty"
+                                                   placeholder="${message(code: 'welcome.filter.name')}"
+                                                   aria-label="${message(code: 'welcome.filter.name')}">
+                                            <input type="search" class="form-control form-control-sm filter-input d-none"
+                                                   data-artefact-for="taglibs"
+                                                   data-filter-list="#taglibs-list" data-filter-empty="#taglibs-empty"
                                                    placeholder="${message(code: 'welcome.filter.name')}"
                                                    aria-label="${message(code: 'welcome.filter.name')}">
                                         </div>
@@ -233,6 +305,7 @@
                                 </g:if>
                             </div>
                         </div>
+                        <div data-artefact-for="controllers">
                         <g:if test="${numControllers != 0}">
                             <p class="small text-body-secondary mb-3">
                                 <g:message code="welcome.controllers.click"/>
@@ -319,7 +392,70 @@
                             </div>
                         </g:each>
                         </div>
-                        <p id="controllers-empty" class="small text-body-secondary d-none mb-0"><g:message code="welcome.filter.none"/></p>
+                        <g:if test="${numControllers != 0}">
+                            <p id="controllers-empty" class="small text-body-secondary d-none mb-0"><g:message code="welcome.filter.none"/></p>
+                        </g:if>
+                        <g:else>
+                            <p class="small text-body-secondary mb-0"><g:message code="welcome.artefacts.none"/></p>
+                        </g:else>
+                        </div>
+
+                        <div data-artefact-for="domains" class="d-none">
+                        <div id="domains-list">
+                            <ul class="list-group list-group-flush">
+                                <g:each var="d" in="${grailsApplication.domainClasses.toList().sort { it.shortName }}">
+                                    <li class="list-group-item px-2 d-flex align-items-center justify-content-between gap-2" data-name="${d.shortName}">
+                                        <span class="fw-semibold text-body text-truncate">${d.shortName}</span>
+                                        <span class="small text-body-secondary text-truncate">${d.packageName}</span>
+                                    </li>
+                                </g:each>
+                            </ul>
+                        </div>
+                        <g:if test="${numDomains != 0}">
+                            <p id="domains-empty" class="small text-body-secondary d-none mb-0"><g:message code="welcome.filter.none"/></p>
+                        </g:if>
+                        <g:else>
+                            <p class="small text-body-secondary mb-0"><g:message code="welcome.artefacts.none"/></p>
+                        </g:else>
+                        </div>
+
+                        <div data-artefact-for="services" class="d-none">
+                        <div id="services-list">
+                            <ul class="list-group list-group-flush">
+                                <g:each var="s" in="${grailsApplication.serviceClasses.toList().sort { it.shortName }}">
+                                    <li class="list-group-item px-2 d-flex align-items-center justify-content-between gap-2" data-name="${s.shortName}">
+                                        <span class="fw-semibold text-body text-truncate">${s.shortName}</span>
+                                        <span class="small text-body-secondary text-truncate">${s.packageName}</span>
+                                    </li>
+                                </g:each>
+                            </ul>
+                        </div>
+                        <g:if test="${numServices != 0}">
+                            <p id="services-empty" class="small text-body-secondary d-none mb-0"><g:message code="welcome.filter.none"/></p>
+                        </g:if>
+                        <g:else>
+                            <p class="small text-body-secondary mb-0"><g:message code="welcome.artefacts.none"/></p>
+                        </g:else>
+                        </div>
+
+                        <div data-artefact-for="taglibs" class="d-none">
+                        <div id="taglibs-list">
+                            <ul class="list-group list-group-flush">
+                                <g:each var="t" in="${grailsApplication.tagLibClasses.toList().sort { it.shortName }}">
+                                    <li class="list-group-item px-2 d-flex align-items-center justify-content-between gap-2" data-name="${t.shortName}">
+                                        <span class="fw-semibold text-body text-truncate">${t.shortName}</span>
+                                        <span class="small text-truncate"><code>${t.namespace}</code> <span class="text-body-secondary">${t.packageName}</span></span>
+                                    </li>
+                                </g:each>
+                            </ul>
+                        </div>
+                        <g:if test="${numTagLibs != 0}">
+                            <p id="taglibs-empty" class="small text-body-secondary d-none mb-0"><g:message code="welcome.filter.none"/></p>
+                        </g:if>
+                        <g:else>
+                            <p class="small text-body-secondary mb-0"><g:message code="welcome.artefacts.none"/></p>
+                        </g:else>
+                        </div>
                     </div>
                 </div>
             </div>
