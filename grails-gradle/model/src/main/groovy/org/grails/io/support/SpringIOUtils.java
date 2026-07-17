@@ -81,7 +81,7 @@ public class SpringIOUtils {
     /**
      * Convert a byte[] array to readable string format. This makes the "hex" readable!
      *
-     * @return result String buffer in String format
+     * @return result in String format
      * @param in
      *            byte[] buffer to convert to string format
      */
