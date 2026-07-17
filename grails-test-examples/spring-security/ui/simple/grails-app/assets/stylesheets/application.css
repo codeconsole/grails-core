@@ -19,5 +19,6 @@
 
 /*
  *= require main
+ *= require webjars/bootstrap/%/dist/css/bootstrap.css
  *= require_self
 */

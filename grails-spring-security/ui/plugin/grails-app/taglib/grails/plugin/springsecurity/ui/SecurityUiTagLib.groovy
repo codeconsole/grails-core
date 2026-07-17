@@ -476,7 +476,7 @@ class SecurityUiTagLib {
                 </nav>"""
         }
 
-        out << """\n\t\t\t\t\t\t<p class="text-center text-body-secondary small">$summary</p>"""
+        out << """\n\t\t\t\t\t\t<p id="searchSummary" class="text-center text-body-secondary small">$summary</p>"""
     }
 
     /**
