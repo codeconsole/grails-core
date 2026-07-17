@@ -177,6 +177,10 @@ class GrailsGspSpec extends ApplicationContextSpec implements CommandOutputFixtu
         index.contains("message(code: 'welcome.artefacts.switch')")
         index.contains('<g:message code="welcome.artefact.domains"/>')
 
+        and: "framework tag libraries link to their published groovydoc, plugin ones stay plain"
+        index.contains('''<g:if test="${t.packageName?.startsWith('org.grails.')}">''')
+        index.contains('https://grails.apache.org/docs/latest/api/${t.packageName.replace(\'.\', \'/\')}/${t.shortName}.html')
+
         and: "the artefact-count rows jump to the card already switched to their type"
         index.contains('id="available-artefacts" data-switch-scope')
         index.contains('href="#available-artefacts" data-switch-jump="controllers"')

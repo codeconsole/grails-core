@@ -473,7 +473,16 @@
                             <ul class="list-group list-group-flush">
                                 <g:each var="t" in="${grailsApplication.tagLibClasses.toList().sort { it.shortName }}">
                                     <li class="list-group-item px-2 d-flex align-items-center justify-content-between gap-2" data-name="${t.shortName}">
-                                        <span class="fw-semibold text-body text-truncate">${t.shortName}</span>
+                                        <%-- Framework tag libraries (org.grails.*) link to their published
+                                             groovydoc; plugin-provided ones are not in those docs. --%>
+                                        <g:if test="${t.packageName?.startsWith('org.grails.')}">
+                                            <a href="https://grails.apache.org/docs/latest/api/${t.packageName.replace('.', '/')}/${t.shortName}.html"
+                                               target="_blank" rel="noopener"
+                                               class="fw-semibold text-truncate link-primary link-offset-2 link-underline-opacity-0 link-underline-opacity-75-hover">${t.shortName}</a>
+                                        </g:if>
+                                        <g:else>
+                                            <span class="fw-semibold text-body text-truncate">${t.shortName}</span>
+                                        </g:else>
                                         <span class="small text-truncate"><code>${t.namespace}</code> <span class="text-body-secondary">${t.packageName}</span></span>
                                     </li>
                                 </g:each>
