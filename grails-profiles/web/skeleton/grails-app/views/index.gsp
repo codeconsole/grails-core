@@ -542,6 +542,182 @@
                                } : []}"/>
                 <g:set var="numSecurityFilters" value="${securityFilterChains.sum { c -> c.filters.size() } ?: 0}"/>
 
+                <%-- URL MAPPINGS: the active mappings in evaluation order, plus a resolver
+                     that replays UrlMappingsHolder.matchAll for a pasted URL and method.
+                     Patterns are rebuilt the way the url-mappings-report command prints
+                     them: captured wildcards become their constraint's parameter name. --%>
+                <g:set var="urlMappingsHolder"
+                       value="${applicationContext.containsBean('grailsUrlMappingsHolder') ? applicationContext.getBean('grailsUrlMappingsHolder') : null}"/>
+                <g:set var="urlMappingDynamicLabel" value="${message(code: 'welcome.urlmappings.dynamic')}"/>
+                <g:set var="urlMappingDefaultActionLabel" value="${message(code: 'welcome.urlmappings.default.action')}"/>
+                <g:set var="urlMappingPattern"
+                       value="${ { mapping ->
+                           try {
+                               def data = mapping.urlData
+                               if (data.hasProperty('responseCode')) {
+                                   return 'ERROR: ' + data.responseCode
+                               }
+                               def constraints = (mapping.constraints ?: []) as List
+                               int ci = 0
+                               StringBuilder pattern = new StringBuilder('/')
+                               def tokens = data.tokens
+                               tokens.eachWithIndex { token, i ->
+                                   String finalToken = token
+                                   while (finalToken.contains('(*)') || finalToken.contains('(**)')) {
+                                       String name = ci < constraints.size() ? constraints[ci++].propertyName?.toString() : 'param'
+                                       if (finalToken.contains('(*)')) {
+                                           finalToken = finalToken.replaceFirst(java.util.regex.Pattern.quote('(*)'),
+                                                   java.util.regex.Matcher.quoteReplacement('${' + name + '}'))
+                                       }
+                                       else {
+                                           finalToken = finalToken.replaceFirst(java.util.regex.Pattern.quote('(**)'),
+                                                   java.util.regex.Matcher.quoteReplacement('${' + name + '}**'))
+                                       }
+                                   }
+                                   pattern << finalToken
+                                   if (i < tokens.length - 1) { pattern << '/' }
+                               }
+                               if (data.hasOptionalExtension()) {
+                                   pattern << ('(.' + '${' + (constraints ? constraints[-1].propertyName : 'format') + '}' + ')?')
+                               }
+                               pattern.toString()
+                           } catch (Throwable ignored) { String.valueOf(mapping) }
+                       } }"/>
+                <%-- controllerName/actionName are lazy evaluator objects (not Strings) on
+                     implicit-variable mappings like /$controller/$action - only concrete
+                     names are printable; everything else is the localized (dynamic). --%>
+                <g:set var="urlMappingTarget"
+                       value="${ { m ->
+                           try {
+                               if (m.viewName) { return 'view: ' + m.viewName }
+                               if (m.redirectInfo != null) { return 'redirect: ' + m.redirectInfo }
+                               if (!(m.controllerName instanceof CharSequence)) { return urlMappingDynamicLabel }
+                               def action = m.actionName instanceof CharSequence ? m.actionName.toString() :
+                                       (m.actionName == null ? urlMappingDefaultActionLabel : urlMappingDynamicLabel)
+                               def target = m.controllerName.toString() + ' · ' + action
+                               m.pluginName ? target + ' (' + m.pluginName + ')' : target
+                           } catch (Throwable ignored) { String.valueOf(m) }
+                       } }"/>
+                <g:set var="urlMappingRows"
+                       value="${urlMappingsHolder ? urlMappingsHolder.urlMappings.toList().collect { m ->
+                               [mapping: m, pattern: urlMappingPattern(m), method: (m.httpMethod ?: '*'), target: urlMappingTarget(m)]
+                           } : []}"/>
+                <g:set var="urlMappingExcludes" value="${urlMappingsHolder?.excludePatterns ?: []}"/>
+                <g:set var="resolveMethods" value="${['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS']}"/>
+                <g:set var="resolveUrlParam" value="${params.resolveUrl?.toString()?.trim() ?: ''}"/>
+                <g:set var="resolveMethodParam"
+                       value="${resolveMethods.contains(params.resolveMethod?.toString()?.toUpperCase()) ? params.resolveMethod.toString().toUpperCase() : 'GET'}"/>
+                <g:set var="resolveAcceptParam" value="${params.resolveAccept?.toString() ?: ''}"/>
+                <%-- Request parameters to send when the resolved request is called. They
+                     never influence which mapping matches - matching is URI + method
+                     (+ Accept-Version) only - but Call replays them faithfully. The field
+                     applies to POST only; GET carries parameters in the URL itself, so any
+                     query string pasted with the URL is preserved for the call. --%>
+                <g:set var="resolveParamsParam" value="${params.resolveParams?.toString()?.trim() ?: ''}"/>
+                <g:set var="resolveQueryParam"
+                       value="${ { ->
+                           String raw = resolveUrlParam
+                           int h = raw.indexOf('#')
+                           if (h != -1) { raw = raw.substring(0, h) }
+                           int q = raw.indexOf('?')
+                           q != -1 ? raw.substring(q + 1) : ''
+                       }() }"/>
+                <g:set var="resolveAcceptChoices"
+                       value="${(applicationContext.containsBean('mimeTypes') ? applicationContext.getBean('mimeTypes').toList()*.name.unique() : []) ?: ['text/html', 'application/json', 'application/xml']}"/>
+                <%-- Accept absolute URLs and app-relative paths alike: strip scheme and
+                     host, query string, fragment and this app's context path, because
+                     matchAll sees only the context-relative path at dispatch time. --%>
+                <g:set var="resolvePath"
+                       value="${ { ->
+                           String path = resolveUrlParam
+                           if (!path) { return '' }
+                           try {
+                               if (path ==~ '(?i)[a-z][a-z0-9+.-]*://.*') { path = new java.net.URI(path).rawPath ?: '/' }
+                           } catch (Throwable ignored) { }
+                           int q = path.indexOf('?')
+                           if (q != -1) { path = path.substring(0, q) }
+                           int h = path.indexOf('#')
+                           if (h != -1) { path = path.substring(0, h) }
+                           if (request.contextPath && path.startsWith(request.contextPath + '/')) { path = path.substring(request.contextPath.length()) }
+                           path.startsWith('/') ? path : '/' + path
+                       }() }"/>
+                <g:set var="resolveMatches"
+                       value="${ { ->
+                           if (!urlMappingsHolder || !resolvePath) { return [] }
+                           try { (urlMappingsHolder.matchAll(resolvePath, resolveMethodParam) ?: []).toList() }
+                           catch (Throwable ignored) { [] }
+                       }() }"/>
+                <g:set var="resolveInfoParams"
+                       value="${ { info ->
+                           try { (info.parameters ?: [:]).entrySet().toList().sort { it.key.toString() } }
+                           catch (Throwable ignored) { [] }
+                       } }"/>
+                <g:set var="resolveInfoPattern"
+                       value="${ { info ->
+                           try { urlMappingRows.find { r -> r.mapping.urlData.is(info.urlData) }?.pattern }
+                           catch (Throwable ignored) { null }
+                       } }"/>
+                <%-- Read controller/action from the extracted parameters first: the
+                     info's name getters evaluate lazily against the dispatching request
+                     and are unreliable before the info is configured for dispatch. --%>
+                <g:set var="resolveInfoTarget"
+                       value="${ { info ->
+                           try {
+                               if (info.viewName) { return 'view: ' + info.viewName }
+                               if (info.redirectInfo != null) { return 'redirect: ' + info.redirectInfo }
+                               def p = [:]
+                               try { p = info.parameters ?: [:] } catch (Throwable ignored) { }
+                               def cn = p.controller ?: info.controllerName
+                               def an = p.action ?: info.actionName
+                               if (cn == null) { return urlMappingDynamicLabel }
+                               def target = cn.toString() + ' · ' + (an != null ? an.toString() : urlMappingDefaultActionLabel)
+                               info.pluginName ? target + ' (' + info.pluginName + ')' : target
+                           } catch (Throwable ignored) { String.valueOf(info) }
+                       } }"/>
+                <%-- The response format the winning request would negotiate: a format
+                     bound from the URL extension beats the Accept selection, exactly as
+                     dispatch treats a format request parameter. --%>
+                <g:set var="resolveFormat"
+                       value="${ { ->
+                           def winner = resolveMatches ? resolveMatches[0] : null
+                           if (!winner) { return '' }
+                           def fromUrl = null
+                           try { fromUrl = winner.parameters?.format } catch (Throwable ignored) { }
+                           if (fromUrl) { return fromUrl.toString() }
+                           if (resolveAcceptParam && applicationContext.containsBean('mimeTypes')) {
+                               return applicationContext.getBean('mimeTypes').find { it.name == resolveAcceptParam }?.extension ?: ''
+                           }
+                           ''
+                       }() }"/>
+                <%-- Without a resolve the list shows every mapping. With one it shows ONLY
+                     the matching mappings, in match order: rank 1 is the mapping that
+                     dispatches, rank 2 is what would win if rank 1 did not exist, and so
+                     on - matchAll returns matches in the holder's evaluation order. When
+                     nothing matches, the 404 status mappings are shown instead, because
+                     that is what actually handles the request. --%>
+                <g:set var="resolveActive" value="${urlMappingsHolder && resolvePath ? true : false}"/>
+                <g:set var="displayedMappingRows"
+                       value="${ { ->
+                           if (!resolveActive) { return urlMappingRows }
+                           if (resolveMatches) {
+                               return resolveMatches.withIndex().collect { info, i ->
+                                   def row = urlMappingRows.find { r -> r.mapping.urlData.is(info.urlData) }
+                                   [pattern: row != null ? row.pattern : resolvePath,
+                                    method: row != null ? row.method : resolveMethodParam,
+                                    target: resolveInfoTarget(info),
+                                    rank: i + 1]
+                               }
+                           }
+                           urlMappingRows.findAll { r ->
+                               try { r.mapping.urlData.hasProperty('responseCode') && r.mapping.urlData.responseCode == 404 }
+                               catch (Throwable ignored) { false }
+                           }.withIndex().collect { r, i -> r + [rank: i + 1] }
+                       }() }"/>
+                <%-- URL Mappings is the card's default panel whenever the holder exists;
+                     it is computed server-side so resolver round-trips (plain GETs back
+                     to this page) land on the open panel without any JS. --%>
+                <g:set var="runtimePanel" value="${urlMappingsHolder ? 'urlmappings' : 'listeners'}"/>
+
                 <div id="runtime-beans" data-switch-scope class="card border-1 shadow-sm mt-4">
                     <div class="card-body">
                         <div class="d-flex align-items-center justify-content-between mb-1">
@@ -552,12 +728,21 @@
                                 <button type="button" class="btn btn-sm p-0 border-0 h6 card-title mb-0 fw-semibold dropdown-toggle"
                                         data-bs-toggle="dropdown" aria-expanded="false"
                                         aria-label="${message(code: 'welcome.runtime.switch')}">
-                                    <span data-switch-for="listeners"><g:message code="welcome.listeners.title"/></span><span data-switch-for="binding" class="d-none"><g:message code="welcome.binding.title"/></span><span data-switch-for="mimeproviders" class="d-none"><g:message code="welcome.mime.providers.title"/></span><span data-switch-for="filters" class="d-none"><g:message code="welcome.filters.title"/></span><span data-switch-for="registrations" class="d-none"><g:message code="welcome.registrations.title"/></span><g:if test="${filterChainProxyType}"><span data-switch-for="securitychain" class="d-none"><g:message code="welcome.securitychain.title"/></span></g:if>
+                                    <span data-switch-for="listeners" class="${runtimePanel == 'listeners' ? '' : 'd-none'}"><g:message code="welcome.listeners.title"/></span><span data-switch-for="binding" class="d-none"><g:message code="welcome.binding.title"/></span><span data-switch-for="mimeproviders" class="d-none"><g:message code="welcome.mime.providers.title"/></span><span data-switch-for="filters" class="d-none"><g:message code="welcome.filters.title"/></span><span data-switch-for="registrations" class="d-none"><g:message code="welcome.registrations.title"/></span><g:if test="${filterChainProxyType}"><span data-switch-for="securitychain" class="d-none"><g:message code="welcome.securitychain.title"/></span></g:if><g:if test="${urlMappingsHolder}"><span data-switch-for="urlmappings" class="${runtimePanel == 'urlmappings' ? '' : 'd-none'}"><g:message code="welcome.urlmappings.title"/></span></g:if>
                                 </button>
                                 <ul class="dropdown-menu">
+                                    <g:if test="${urlMappingsHolder}">
+                                        <li>
+                                            <button type="button" class="dropdown-item d-flex justify-content-between align-items-center ${runtimePanel == 'urlmappings' ? 'active' : ''}"
+                                                    data-switch-type="urlmappings" aria-pressed="${runtimePanel == 'urlmappings'}">
+                                                <g:message code="welcome.urlmappings.title"/>
+                                                <span class="badge bg-body-tertiary text-body border ms-3">${urlMappingRows.size()}</span>
+                                            </button>
+                                        </li>
+                                    </g:if>
                                     <li>
-                                        <button type="button" class="dropdown-item d-flex justify-content-between align-items-center active"
-                                                data-switch-type="listeners" aria-pressed="true">
+                                        <button type="button" class="dropdown-item d-flex justify-content-between align-items-center ${runtimePanel == 'listeners' ? 'active' : ''}"
+                                                data-switch-type="listeners" aria-pressed="${runtimePanel == 'listeners'}">
                                             <g:message code="welcome.listeners.title"/>
                                             <span class="badge bg-body-tertiary text-body border ms-3">${appListeners.size()}</span>
                                         </button>
@@ -602,7 +787,7 @@
                                 </ul>
                             </div>
                             <div class="d-flex align-items-center gap-2">
-                                <span class="badge bg-body-tertiary text-body border" data-switch-for="listeners">${appListeners.size()}</span>
+                                <span class="badge bg-body-tertiary text-body border ${runtimePanel == 'listeners' ? '' : 'd-none'}" data-switch-for="listeners">${appListeners.size()}</span>
                                 <span class="badge bg-body-tertiary text-body border d-none" data-switch-for="binding">${numBindingBeans}</span>
                                 <span class="badge bg-body-tertiary text-body border d-none" data-switch-for="mimeproviders">${mimeTypeProviders.size()}</span>
                                 <span class="badge bg-body-tertiary text-body border d-none" data-switch-for="filters">${requestFilters.size()}</span>
@@ -610,7 +795,10 @@
                                 <g:if test="${filterChainProxyType}">
                                     <span class="badge bg-body-tertiary text-body border d-none" data-switch-for="securitychain">${numSecurityFilters}</span>
                                 </g:if>
-                                <g:if test="${appListeners.size() + numBindingBeans + mimeTypeProviders.size() + requestFilters.size() + filterRegistrations.size() + numSecurityFilters != 0}">
+                                <g:if test="${urlMappingsHolder}">
+                                    <span class="badge bg-body-tertiary text-body border ${runtimePanel == 'urlmappings' ? '' : 'd-none'}" data-switch-for="urlmappings">${urlMappingRows.size()}</span>
+                                </g:if>
+                                <g:if test="${appListeners.size() + numBindingBeans + mimeTypeProviders.size() + requestFilters.size() + filterRegistrations.size() + numSecurityFilters + urlMappingRows.size() != 0}">
                                     <div class="dropdown">
                                         <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="dropdown"
                                                 data-bs-auto-close="outside" aria-expanded="false"
@@ -621,7 +809,7 @@
                                              the focus-on-open listener; focus() is a no-op on hidden inputs, so
                                              only the visible one takes focus. --%>
                                         <div class="dropdown-menu dropdown-menu-end p-2">
-                                            <input type="search" class="form-control form-control-sm filter-input"
+                                            <input type="search" class="form-control form-control-sm filter-input ${runtimePanel == 'listeners' ? '' : 'd-none'}"
                                                    data-switch-for="listeners"
                                                    data-filter-list="#listeners-list" data-filter-empty="#listeners-empty"
                                                    placeholder="${message(code: 'welcome.filter.name')}"
@@ -653,13 +841,20 @@
                                                        placeholder="${message(code: 'welcome.filter.name')}"
                                                        aria-label="${message(code: 'welcome.filter.name')}">
                                             </g:if>
+                                            <g:if test="${urlMappingsHolder}">
+                                                <input type="search" class="form-control form-control-sm filter-input ${runtimePanel == 'urlmappings' ? '' : 'd-none'}"
+                                                       data-switch-for="urlmappings"
+                                                       data-filter-list="#urlmappings-list" data-filter-empty="#urlmappings-empty"
+                                                       placeholder="${message(code: 'welcome.filter.name')}"
+                                                       aria-label="${message(code: 'welcome.filter.name')}">
+                                            </g:if>
                                         </div>
                                     </div>
                                 </g:if>
                             </div>
                         </div>
 
-                        <div data-switch-for="listeners">
+                        <div data-switch-for="listeners" class="${runtimePanel == 'listeners' ? '' : 'd-none'}">
                         <div id="listeners-list">
                             <ul class="list-group list-group-flush">
                                 <g:each var="l" in="${appListeners}">
@@ -817,6 +1012,134 @@
                             <g:else>
                                 <p class="small text-body-secondary mb-0"><g:message code="welcome.beans.none"/></p>
                             </g:else>
+                            </div>
+                        </g:if>
+
+                        <g:if test="${urlMappingsHolder}">
+                            <div data-switch-for="urlmappings" class="${runtimePanel == 'urlmappings' ? '' : 'd-none'}">
+                            <p class="small text-body-secondary mb-2"><g:message code="welcome.urlmappings.resolve.hint"/></p>
+                            <%-- Plain GET back to this page: the resolver works without any JS
+                                 and the reload reopens this panel with the result rendered. The
+                                 action's fragment survives GET submission, so the reload lands
+                                 on this card instead of the top of the page. --%>
+                            <form method="get" action="${(request.contextPath ?: '') + '/'}#runtime-beans" class="mb-3 mapping-resolve">
+                                <div class="input-group input-group-sm mb-2">
+                                    <input type="text" name="resolveUrl" value="${resolveUrlParam}" class="form-control"
+                                           placeholder="/book/show/1"
+                                           aria-label="${message(code: 'welcome.urlmappings.resolve.url')}">
+                                    <g:if test="${resolveActive}">
+                                        <a href="${(request.contextPath ?: '') + '/'}#runtime-beans" class="btn btn-outline-secondary d-flex align-items-center"
+                                           aria-label="${message(code: 'welcome.urlmappings.resolve.clear')}">
+                                            <i class="bi bi-x-lg" aria-hidden="true"></i>
+                                        </a>
+                                    </g:if>
+                                </div>
+                                <input type="text" name="resolveParams" value="${resolveParamsParam}"
+                                       class="form-control form-control-sm mb-2 resolve-params ${resolveMethodParam == 'POST' ? '' : 'd-none'}"
+                                       placeholder="name=value&amp;other=value"
+                                       aria-label="${message(code: 'welcome.urlmappings.resolve.params')}">
+                                <div class="input-group input-group-sm">
+                                    <select name="resolveMethod" class="form-select"
+                                            aria-label="${message(code: 'welcome.urlmappings.resolve.method')}">
+                                        <g:each var="m" in="${resolveMethods}">
+                                            <option value="${m}" ${m == resolveMethodParam ? 'selected' : ''}>${m}</option>
+                                        </g:each>
+                                    </select>
+                                    <select name="resolveAccept" class="form-select"
+                                            aria-label="${message(code: 'welcome.urlmappings.resolve.accept')}">
+                                        <g:each var="mt" in="${resolveAcceptChoices}">
+                                            <option value="${mt}" ${mt == resolveAcceptParam ? 'selected' : ''}>${mt}</option>
+                                        </g:each>
+                                    </select>
+                                    <button type="submit" class="btn btn-outline-secondary"><g:message code="welcome.urlmappings.resolve.button"/></button>
+                                </div>
+                            </form>
+                            <g:if test="${resolvePath}">
+                                <g:if test="${resolveMatches}">
+                                    <div class="border rounded p-2 mb-3">
+                                        <div class="small text-uppercase text-body-secondary fw-semibold mb-1" style="letter-spacing: .04em;">
+                                            <g:message code="welcome.urlmappings.resolve.result"/>
+                                        </div>
+                                        <div class="d-flex align-items-center gap-2 flex-wrap">
+                                            <span class="badge text-bg-primary">${resolveMatches[0].httpMethod && resolveMatches[0].httpMethod != '*' ? resolveMatches[0].httpMethod : resolveMethodParam}</span>
+                                            <code class="text-break">${resolveInfoPattern(resolveMatches[0]) ?: resolvePath}</code>
+                                            <span class="small text-body-secondary text-break">${resolveInfoTarget(resolveMatches[0])}</span>
+                                        </div>
+                                        <g:set var="winnerParams" value="${resolveInfoParams(resolveMatches[0])}"/>
+                                        <g:if test="${winnerParams}">
+                                            <div class="mt-1 d-flex align-items-center gap-1 flex-wrap small">
+                                                <g:each var="entry" in="${winnerParams}">
+                                                    <span class="badge bg-body-tertiary text-body border fw-normal">${entry.key} = ${entry.value}</span>
+                                                </g:each>
+                                            </div>
+                                        </g:if>
+                                        <div class="small text-body-secondary mt-1">
+                                            <g:message code="welcome.urlmappings.resolve.candidates"/>: ${resolveMatches.size()}<g:if test="${resolveFormat}"> &middot; <g:message code="welcome.urlmappings.resolve.format"/>: <code>${resolveFormat}</code></g:if>
+                                        </div>
+                                        <%-- Issue exactly the request that was resolved - same URL, same
+                                             method, same parameters (carried in the query string, which
+                                             Grails reads into params on a POST just like form fields). A
+                                             plain link for GET, a plain form for POST; other verbs cannot
+                                             be sent from static HTML, so no control. --%>
+                                        <g:set var="resolveCallQuery"
+                                               value="${[resolveQueryParam, resolveMethodParam == 'POST' ? resolveParamsParam : ''].findAll { it }.join('&')}"/>
+                                        <g:set var="resolveCallUrl"
+                                               value="${(request.contextPath ?: '') + resolvePath + (resolveCallQuery ? '?' + resolveCallQuery : '')}"/>
+                                        <g:if test="${resolveMethodParam == 'GET'}">
+                                            <div class="mt-2">
+                                                <a href="${resolveCallUrl}" target="_blank" rel="noopener"
+                                                   class="btn btn-sm btn-outline-primary">
+                                                    <i class="bi bi-box-arrow-up-right me-1" aria-hidden="true"></i><g:message code="welcome.urlmappings.resolve.call"/>
+                                                </a>
+                                            </div>
+                                        </g:if>
+                                        <g:elseif test="${resolveMethodParam == 'POST'}">
+                                            <form method="post" action="${resolveCallUrl}" target="_blank" class="mt-2 mb-0">
+                                                <button type="submit" class="btn btn-sm btn-outline-primary">
+                                                    <i class="bi bi-box-arrow-up-right me-1" aria-hidden="true"></i><g:message code="welcome.urlmappings.resolve.call"/>
+                                                </button>
+                                            </form>
+                                        </g:elseif>
+                                    </div>
+                                </g:if>
+                                <g:else>
+                                    <div class="alert alert-warning py-2 px-3 small mb-3">
+                                        <g:message code="welcome.urlmappings.resolve.none"/> <code>${resolveMethodParam} ${resolvePath}</code>
+                                    </div>
+                                </g:else>
+                            </g:if>
+                            <g:if test="${displayedMappingRows}">
+                                <div id="urlmappings-list">
+                                    <ul class="list-group list-group-flush">
+                                        <%-- Long patterns and targets wrap instead of truncating, so the
+                                             full mapping is always readable - including on touch devices,
+                                             where a hover tooltip would hide it. --%>
+                                        <g:each var="row" in="${displayedMappingRows}">
+                                            <li class="list-group-item px-2 d-flex align-items-center flex-wrap justify-content-between column-gap-2 row-gap-1 ${row.rank == 1 ? 'border-start border-3 border-primary' : ''}"
+                                                data-name="${row.pattern} ${row.method} ${row.target}">
+                                                <span class="d-flex align-items-center gap-2 min-w-0">
+                                                    <g:if test="${row.rank}">
+                                                        <span class="badge ${row.rank == 1 ? 'text-bg-primary' : 'bg-body-tertiary text-body border'}" style="font-variant-numeric: tabular-nums;">#${row.rank}</span>
+                                                    </g:if>
+                                                    <span class="badge bg-body-tertiary text-body border">${row.method}</span>
+                                                    <code class="text-break">${row.pattern}</code>
+                                                </span>
+                                                <span class="small text-body-secondary ms-auto text-end text-break">${row.target}</span>
+                                            </li>
+                                        </g:each>
+                                    </ul>
+                                </div>
+                                <p id="urlmappings-empty" class="small text-body-secondary d-none mb-0"><g:message code="welcome.filter.none"/></p>
+                            </g:if>
+                            <g:elseif test="${!resolveActive}">
+                                <p class="small text-body-secondary mb-0"><g:message code="welcome.beans.none"/></p>
+                            </g:elseif>
+                            <g:if test="${urlMappingExcludes}">
+                                <p class="small text-body-secondary mt-2 mb-0">
+                                    <g:message code="welcome.urlmappings.excludes"/>:
+                                    <g:each var="ex" in="${urlMappingExcludes}"><code class="me-1">${ex}</code></g:each>
+                                </p>
+                            </g:if>
                             </div>
                         </g:if>
                     </div>

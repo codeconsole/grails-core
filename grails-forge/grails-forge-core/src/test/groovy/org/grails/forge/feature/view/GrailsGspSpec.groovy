@@ -106,6 +106,7 @@ class GrailsGspSpec extends ApplicationContextSpec implements CommandOutputFixtu
         !index.contains(">Servlet Filters<")
         !index.contains(">Filter Registrations<")
         !index.contains(">Security Filter Chain<")
+        !index.contains(">URL Mappings<")
     }
 
     void "test default index page carries the brand hero and per-card name filters"() {
@@ -136,6 +137,7 @@ class GrailsGspSpec extends ApplicationContextSpec implements CommandOutputFixtu
         index.contains('data-filter-list="#filters-list"')
         index.contains('data-filter-list="#registrations-list"')
         index.contains('data-filter-list="#securitychain-list"')
+        index.contains('data-filter-list="#urlmappings-list"')
         index.contains('data-filter-list="#mime-types-table tbody"')
         index.contains('id="listeners-empty"')
         index.contains('id="binding-empty"')
@@ -143,6 +145,7 @@ class GrailsGspSpec extends ApplicationContextSpec implements CommandOutputFixtu
         index.contains('id="filters-empty"')
         index.contains('id="registrations-empty"')
         index.contains('id="securitychain-empty"')
+        index.contains('id="urlmappings-empty"')
         index.contains('id="mime-types-empty"')
 
         and: "count badges are theme-adaptive rather than hardcoded light"
@@ -236,6 +239,31 @@ class GrailsGspSpec extends ApplicationContextSpec implements CommandOutputFixtu
         index.contains('data-switch-type="securitychain"')
         index.contains("ClassUtils.isPresent('org.springframework.security.web.FilterChainProxy'")
         index.contains('<g:message code="welcome.securitychain.chain"/>')
+
+        and: "the URL mappings panel lists the active mappings and replays matchAll for a pasted URL"
+        index.contains('data-switch-type="urlmappings"')
+        index.contains("applicationContext.containsBean('grailsUrlMappingsHolder')")
+        index.contains('name="resolveUrl"')
+        index.contains('name="resolveMethod"')
+        index.contains('name="resolveAccept"')
+        index.contains('''action="${(request.contextPath ?: '') + '/'}#runtime-beans"''')
+        index.contains('urlMappingsHolder.matchAll(resolvePath, resolveMethodParam)')
+        index.contains('<g:message code="welcome.urlmappings.resolve.hint"/>')
+        index.contains('<g:message code="welcome.urlmappings.resolve.result"/>')
+        index.contains('<g:message code="welcome.urlmappings.resolve.none"/>')
+
+        and: "URL mappings is the card's default panel and a resolve lists only the matches in match order"
+        index.contains('''<g:set var="runtimePanel" value="${urlMappingsHolder ? 'urlmappings' : 'listeners'}"/>''')
+        index.contains('displayedMappingRows')
+        index.contains('resolveMatches.withIndex()')
+        index.contains("row.rank == 1 ? 'border-start border-3 border-primary'")
+        index.contains('responseCode == 404')
+
+        and: "the resolve step accepts POST parameters and Call replays exactly the resolved request"
+        index.contains('name="resolveParams"')
+        index.contains('''resolve-params ${resolveMethodParam == 'POST' ? '' : 'd-none'}''')
+        index.contains('<g:message code="welcome.urlmappings.resolve.call"/>')
+        index.contains('''(resolveCallQuery ? '?' + resolveCallQuery : '')''')
     }
 
     void "test default layout includes the language selector dropdown"() {

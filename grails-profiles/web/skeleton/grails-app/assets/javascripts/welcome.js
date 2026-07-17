@@ -237,3 +237,33 @@
         });
     });
 })();
+
+// The URL-mappings resolve and clear round-trips land on the #runtime-beans
+// fragment, but the browser anchors before late layout settles; re-align once
+// the page has fully loaded so the card tops the viewport. The fragment alone
+// remains the no-JS fallback.
+(function () {
+    window.addEventListener('load', () => {
+        if (window.location.hash === '#runtime-beans') {
+            const card = document.getElementById('runtime-beans');
+            if (card) card.scrollIntoView({ block: 'start' });
+        }
+    });
+})();
+
+
+// The resolver's parameters field applies to POST calls only - GET requests
+// carry parameters in the URL itself - so it follows the method selection.
+// The server renders its initial visibility from the resolved method.
+(function () {
+    document.addEventListener('DOMContentLoaded', () => {
+        document.querySelectorAll('form.mapping-resolve').forEach((form) => {
+            const method = form.querySelector('select[name="resolveMethod"]');
+            const params = form.querySelector('.resolve-params');
+            if (!method || !params) return;
+            const sync = () => params.classList.toggle('d-none', method.value !== 'POST');
+            method.addEventListener('change', sync);
+            sync();
+        });
+    });
+})();
