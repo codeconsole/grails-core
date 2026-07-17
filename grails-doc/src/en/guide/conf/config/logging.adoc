@@ -48,7 +48,7 @@ logging:
             console: ecs
             file: logstash
         json:
-            exclude: process.id
+            exclude: process.pid
             rename:
                 log.level: severity
             add:
