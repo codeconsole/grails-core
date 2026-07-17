@@ -175,57 +175,106 @@ class GrailsCliGradlePlugin implements Plugin<Project> {
         dependencies.add(project.dependencies.create('org.apache.grails:grails-console'))
 
         Configuration probe = project.configurations.getByName(GRAILS_CLI_DETECT_CONFIGURATION)
-        Set<String> companions = [] as Set
-        def lenientArtifacts = probe.incoming.artifactView { it.lenient(true) }.artifacts
-        for (ResolvedArtifactResult artifact : lenientArtifacts.artifacts) {
-            String companion = findAdvertisedCliArtifact(project, artifact)
-            if (companion) {
-                companions.add(companion)
+        def probeArtifacts = probe.incoming.artifactView { it.lenient(true) }.artifacts
+        // lenient resolution never throws, but companions carried by an unresolvable dependency
+        // are silently dropped along with their per-command tasks; surface that rather than
+        // leaving the user to wonder why a command task is missing
+        for (Throwable failure : probeArtifacts.failures) {
+            project.logger.warn('Could not fully resolve CLI companion probe dependencies for project {}; some companion -cli artifacts (and their per-command Gradle tasks) may not be auto-provisioned. Cause: {}',
+                    project.name, failure.message)
+        }
+
+        Map<String, Dependency> companions = [:]
+        for (ResolvedArtifactResult artifact : probeArtifacts.artifacts) {
+            Dependency companion = findAdvertisedCliArtifact(project, artifact)
+            if (companion != null) {
+                companions.putIfAbsent("${companion.group}:${companion.name}" as String, companion)
             }
         }
 
-        for (String companion : companions) {
-            List<String> coordinate = companion.tokenize(':')
-            if (coordinate.size() != 2) {
-                project.logger.warn('Ignoring malformed Grails-Cli-Artifact value [{}] found in the dependencies of project {}', companion, project.name)
-                continue
-            }
+        for (Map.Entry<String, Dependency> entry : companions) {
+            Dependency companion = entry.value
             boolean alreadyDeclared = dependencies.any { Dependency existing ->
-                existing.group == coordinate[0] && existing.name == coordinate[1]
+                existing.group == companion.group && existing.name == companion.name
             }
             if (!alreadyDeclared) {
                 project.logger.info('Detected cli companion artifact {}, adding it to the {} configuration of project {}',
-                        companion, GRAILS_CLI_CONFIGURATION, project.name)
-                dependencies.add(project.dependencies.create(companion))
+                        entry.key, GRAILS_CLI_CONFIGURATION, project.name)
+                dependencies.add(companion)
             }
         }
     }
 
     /**
-     * Returns the companion cli coordinate ({@code group:artifactId}) advertised by the given
-     * resolved artifact, or {@code null}. For artifacts produced by a project of the same build
-     * the (possibly not yet built) jar is not read — the coordinate comes from the project's
-     * {@code cliArtifactId} property exported by the cli-artifact convention.
+     * Returns the {@link Dependency} on the companion cli artifact advertised by the given
+     * resolved artifact, or {@code null} if it advertises none.
+     *
+     * <p>A companion produced by a project of the <em>current</em> build is bound as a project
+     * dependency requesting the project's {@code cli} feature capability, so it resolves against
+     * the sibling project's not-yet-published variant instead of a repository (the multi-project
+     * plugin-development workflow). Everything else — external modules and projects of an included
+     * (composite) build — is bound to the plain {@code group:artifactId} module coordinate read
+     * from the resolved jar's {@code Grails-Cli-Artifact} manifest attribute.</p>
      */
     @CompileDynamic
-    protected String findAdvertisedCliArtifact(Project project, ResolvedArtifactResult artifact) {
+    protected Dependency findAdvertisedCliArtifact(Project project, ResolvedArtifactResult artifact) {
         def componentIdentifier = artifact.id.componentIdentifier
         if (componentIdentifier instanceof ProjectComponentIdentifier) {
-            Project target = project.rootProject.findProject(((ProjectComponentIdentifier) componentIdentifier).projectPath)
-            def cliArtifactId = target?.findProperty('cliArtifactId')
-            return cliArtifactId ? "${target.group}:${cliArtifactId}" as String : null
+            Dependency projectCompanion = findProjectCliCompanion(project, (ProjectComponentIdentifier) componentIdentifier)
+            if (projectCompanion != null) {
+                return projectCompanion
+            }
+            // a project of an included build (or a same-named project in the wrong build) is not
+            // addressable through findProject; fall through to the advertised module coordinate
         }
 
         File file = artifact.file
         if (file == null || !file.isFile() || !file.name.endsWith('.jar')) {
             return null
         }
+        String advertised
         try (JarFile jarFile = new JarFile(file)) {
-            return jarFile.manifest?.mainAttributes?.getValue('Grails-Cli-Artifact')
+            advertised = jarFile.manifest?.mainAttributes?.getValue(GrailsCliArtifactGradlePlugin.CLI_ARTIFACT_MANIFEST_ATTRIBUTE)
         }
         catch (IOException ignored) {
             return null
         }
+        if (!advertised) {
+            return null
+        }
+        if (advertised.tokenize(':').size() != 2) {
+            project.logger.warn('Ignoring malformed {} value [{}] found in the dependencies of project {}',
+                    GrailsCliArtifactGradlePlugin.CLI_ARTIFACT_MANIFEST_ATTRIBUTE, advertised, project.name)
+            return null
+        }
+        project.dependencies.create(advertised)
+    }
+
+    /**
+     * Binds a companion advertised by a project of the current build as a project dependency on
+     * its {@code cli} feature capability, or returns {@code null} when the component is not a
+     * resolvable project of the current build (an included-build project, or a coincidental
+     * same-named project). The companion coordinate comes from the project's {@code cliArtifactId}
+     * property exported by the cli-artifact convention, so the (possibly not-yet-built) jar is
+     * never read.
+     */
+    @CompileDynamic
+    protected Dependency findProjectCliCompanion(Project project, ProjectComponentIdentifier componentIdentifier) {
+        // only the current build (buildPath ":") is addressable via findProject; a component from
+        // an included build shares the project-path namespace and would resolve to the wrong
+        // project, so it is intentionally excluded here
+        if (componentIdentifier.build.buildPath != ':') {
+            return null
+        }
+        Project target = project.rootProject.findProject(componentIdentifier.projectPath)
+        def cliArtifactId = target?.findProperty('cliArtifactId')
+        if (!cliArtifactId) {
+            return null
+        }
+        String capabilityCoordinate = "${target.group}:${cliArtifactId}" as String
+        Dependency dependency = project.dependencies.project(path: componentIdentifier.projectPath)
+        dependency.capabilities { it.requireCapability(capabilityCoordinate) }
+        dependency
     }
 
     @CompileDynamic
