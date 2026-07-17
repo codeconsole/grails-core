@@ -36,6 +36,10 @@ import spock.lang.Specification
  */
 class BindDataMethodTests extends Specification implements ControllerUnitTest<BindingController> {
 
+    void setup() {
+        grailsApplication.config.setAt(DefaultASTDatabindingHelper.LEGACY_BINDABLE_DEFAULT, false)
+    }
+
     void 'Test bindData with Map'() {
         when:
         def model = controller.bindWithMap()
@@ -281,7 +285,7 @@ class BindDataMethodTests extends Specification implements ControllerUnitTest<Bi
         target.protectedChildren[0].secret == 'keep-me'
     }
 
-    void 'Test bindData uses secure allowlist by default and preserves bindable false'() {
+    void 'Test bindData uses the allowlist in explicit secure mode and preserves bindable false'() {
         when:
         def model = controller.bindWithDefaultAllowlist()
         def target = model.target
@@ -293,7 +297,7 @@ class BindDataMethodTests extends Specification implements ControllerUnitTest<Bi
         target.role == null
     }
 
-    void 'Test an existing bindable true allowlist works unchanged without configuration'() {
+    void 'Test an existing bindable true allowlist works in explicit secure mode'() {
         given:
         def binder = new RecordingGrailsWebDataBinder(grailsApplication)
         def target = new ExistingAllowlistCommandObject()
@@ -315,7 +319,7 @@ class BindDataMethodTests extends Specification implements ControllerUnitTest<Bi
         model.target.foo_admin == null
     }
 
-    void 'Test deny by default rejects an unlisted property and emits one actionable warning'() {
+    void 'Test explicit secure mode rejects an unlisted property and emits one actionable warning'() {
         given:
         def binder = new RecordingGrailsWebDataBinder(grailsApplication)
         def target = new NoAllowlistCommandObject()
@@ -328,16 +332,16 @@ class BindDataMethodTests extends Specification implements ControllerUnitTest<Bi
         target.username == null
         binder.warnings == [
             'Ignored request parameter [username] while binding to [org.grails.web.servlet.NoAllowlistCommandObject]: it is not in the binding allowlist. ' +
-                    'Grails 8 binds only allowlisted properties by default to prevent mass assignment (CWE-915). ' +
+                    'Secure data binding is enabled and binds only allowlisted properties to prevent mass assignment (CWE-915). ' +
                     'To bind [username], declare it bindable - `static constraints = { username bindable: true }` on the class, ' +
                     'add it to the binding `include:` list, or annotate the controller action parameter with `@BindAllowed([\'username\'])`. ' +
-                    'To restore the previous permissive binding for the whole application, set `grails.databinding.legacyBindableDefault=true`.'
+                    'To restore compatibility binding for the whole application, remove `grails.databinding.legacyBindableDefault` or set it to `true`.'
         ]
     }
 
-    void 'Test legacy bindable default restores permissive binding for a class with no allowlist'() {
+    void 'Test unconfigured binding remains permissive for a class with no allowlist'() {
         given:
-        grailsApplication.config.setAt(DefaultASTDatabindingHelper.LEGACY_BINDABLE_DEFAULT, true)
+        grailsApplication.config.setAt(DefaultASTDatabindingHelper.LEGACY_BINDABLE_DEFAULT, null)
         def binder = new RecordingGrailsWebDataBinder(grailsApplication)
         def target = new NoAllowlistCommandObject()
 
@@ -352,7 +356,7 @@ class BindDataMethodTests extends Specification implements ControllerUnitTest<Bi
         grailsApplication.config.setAt(DefaultASTDatabindingHelper.LEGACY_BINDABLE_DEFAULT, false)
     }
 
-    void 'Test bindData uses legacy allowlist when legacy bindable default is enabled'() {
+    void 'Test explicit compatibility configuration uses the legacy allowlist'() {
         given:
         grailsApplication.config.setAt(DefaultASTDatabindingHelper.LEGACY_BINDABLE_DEFAULT, true)
 
@@ -370,7 +374,7 @@ class BindDataMethodTests extends Specification implements ControllerUnitTest<Bi
         grailsApplication.config.setAt(DefaultASTDatabindingHelper.LEGACY_BINDABLE_DEFAULT, false)
     }
 
-    void 'Test direct web data binder denies unlisted properties without generated allowlist'() {
+    void 'Test direct web data binder in explicit secure mode denies unlisted properties without generated allowlist'() {
         given:
         def binder = grailsApplication.mainContext.getBean(DataBindingUtils.DATA_BINDER_BEAN_NAME)
         def target = new RuntimeConstrainedCommandObject()
@@ -383,7 +387,7 @@ class BindDataMethodTests extends Specification implements ControllerUnitTest<Bi
         target.role == null
     }
 
-    void 'Test bindData secure default applies the nested target allowlist'() {
+    void 'Test bindData in explicit secure mode applies the nested target allowlist'() {
         given:
         params.username = 'ghopper'
         params.'address.country' = 'USA'
@@ -435,7 +439,7 @@ class BindDataMethodTests extends Specification implements ControllerUnitTest<Bi
         !target.address.admin
     }
 
-    void 'Test bindData secure default augments inherited generated allowlist with runtime bindable properties'() {
+    void 'Test bindData in explicit secure mode augments inherited generated allowlist with runtime bindable properties'() {
         given:
         params.parentDisplayName = 'Parent'
         params.childDisplayName = 'Child'
@@ -625,7 +629,7 @@ class BindDataMethodTests extends Specification implements ControllerUnitTest<Bi
         !nestedTarget.childrenByKey.nested.admin
     }
 
-    void 'Test legacy bindable default permits all child properties through generated parent allowlist'() {
+    void 'Test explicit compatibility configuration permits all child properties through generated parent allowlist'() {
         given:
         grailsApplication.config.setAt(DefaultASTDatabindingHelper.LEGACY_BINDABLE_DEFAULT, true)
         def target = new GeneratedNestedContainerCommandObject()
@@ -649,7 +653,7 @@ class BindDataMethodTests extends Specification implements ControllerUnitTest<Bi
         grailsApplication.config.setAt(DefaultASTDatabindingHelper.LEGACY_BINDABLE_DEFAULT, false)
     }
 
-    void 'Test secure default ignores an old broad default allowlist field'() {
+    void 'Test explicit secure mode ignores an old broad default allowlist field'() {
         when:
         def model = controller.bindPrecompiledLegacyTarget()
         def target = model.target
@@ -660,7 +664,7 @@ class BindDataMethodTests extends Specification implements ControllerUnitTest<Bi
         target.admin == null
     }
 
-    void 'Test legacy mode falls back to an old default allowlist field'() {
+    void 'Test compatibility mode falls back to an old default allowlist field'() {
         given:
         grailsApplication.config.setAt(DefaultASTDatabindingHelper.LEGACY_BINDABLE_DEFAULT, true)
 
@@ -677,7 +681,7 @@ class BindDataMethodTests extends Specification implements ControllerUnitTest<Bi
         grailsApplication.config.setAt(DefaultASTDatabindingHelper.LEGACY_BINDABLE_DEFAULT, false)
     }
 
-    void 'Test secure default ignores an old subclass broad allowlist paired with an inherited legacy allowlist'() {
+    void 'Test explicit secure mode ignores an old subclass broad allowlist paired with an inherited legacy allowlist'() {
         given:
         params.name = 'trusted'
         params.admin = true
@@ -695,7 +699,7 @@ class BindDataMethodTests extends Specification implements ControllerUnitTest<Bi
                 DefaultASTDatabindingHelper.LEGACY_DATABINDING_WHITELIST)
     }
 
-    void 'Test secure default ignores an old nested subclass broad allowlist paired with an inherited legacy allowlist'() {
+    void 'Test explicit secure mode ignores an old nested subclass broad allowlist paired with an inherited legacy allowlist'() {
         given:
         params.'child.name' = 'trusted nested'
         params.'child.admin' = true
@@ -743,7 +747,7 @@ class BindDataMethodTests extends Specification implements ControllerUnitTest<Bi
         target.email == null
     }
 
-    void 'Test direct domain binding with null include uses secure default allowlist'() {
+    void 'Test direct domain binding with null include uses the explicit secure-mode allowlist'() {
         given:
         def target = new SecureCommandObject()
 

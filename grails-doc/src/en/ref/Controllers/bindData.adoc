@@ -63,7 +63,7 @@ Arguments:
 * `includesExcludes` - (Optional) A map with 'include' and/or 'exclude' lists containing the names of properties to either include or exclude. Set `nullMissing: true` with an `include` list to assign `null` to included properties that are omitted from the binding source.
 * `prefix` - (Optional) A string representing a prefix to use to filter parameters. The method will automatically append a '.' when matching the prefix to parameters, so you can use 'author' to filter for parameters such as 'author.name'.
 
-If no `include` list is supplied, `bindData` uses the target class binding allowlist.  Existing `bindable: true` declarations and explicit `include` lists continue to bind exactly the properties they name without configuration changes.  In Grails 8, a class with no allowlisted properties binds none of its request parameters by default.  An empty `include` list also binds no properties.
+If no `include` list is supplied, `bindData` uses the target class default binding behavior.  By default, statically typed instance properties bind for compatibility unless they are marked `bindable: false`.  Existing `bindable: true` declarations and explicit `include` lists continue to bind exactly the properties they name without configuration changes.  An empty `include` list binds no properties.
 
 Use `include` to allow only the properties needed for a request:
 
@@ -85,7 +85,7 @@ class PersonController {
 }
 ----
 
-See the link:{constraintsRefFromRef}bindable.html[bindable] constraint documentation for more information on controlling default bindability.  To permit a property, declare it with `bindable: true`, add it to an explicit `include` list, or use `@BindAllowed` on a controller action command object parameter.  Applications may set `grails.databinding.legacyBindableDefault=true` to restore permissive legacy binding for the whole application.
+See the link:{constraintsRefFromRef}bindable.html[bindable] constraint documentation for more information on controlling default bindability.  Applications may set `grails.databinding.legacyBindableDefault=false` to opt into deny-by-default binding allowlists.  In secure mode, permit a property with `bindable: true`, an explicit `include` list, or `@BindAllowed` on a controller action command object parameter.
 
 `nullMissing` is opt-in and only applies when an `include` list is provided. This is useful for update forms where an omitted allowed field should clear an existing value instead of leaving stale persisted data. Excluded properties are not cleared.
 

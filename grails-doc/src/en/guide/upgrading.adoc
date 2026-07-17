@@ -19,6 +19,6 @@ under the License.
 
 === Data Binding Defaults
 
-Grails 8 uses deny-by-default mass data binding to prevent mass assignment.  Existing `bindable: true` declarations, explicit `bindData(..., [include: ...])` lists, and controller action parameter `@BindAllowed` annotations continue to bind exactly the properties they name with no code or configuration changes.  Applications that relied on permissive binding without an allowlist now bind no additional request properties.  Empty `include` lists bind no properties.
+Grails 8 retains permissive mass data binding by default for compatibility, so properties without a `bindable` constraint continue to bind.  Properties marked `bindable: false` remain non-bindable in either mode.  Empty `include` lists bind no properties.
 
-To bind a rejected property, declare it with `bindable: true`, add it to an explicit `include` list, or list it in `@BindAllowed`.  Applications that need the previous permissive behavior may set `grails.databinding.legacyBindableDefault=true`.  Properties marked `bindable: false` remain non-bindable in legacy mode.
+Applications can opt into deny-by-default mass data binding by setting `grails.databinding.legacyBindableDefault=false`.  In secure mode, declare each permitted property with `bindable: true`, add it to an explicit `include` list, or list it in `@BindAllowed`; only in this mode does `bindable: true` act as a restrictive allowlist.

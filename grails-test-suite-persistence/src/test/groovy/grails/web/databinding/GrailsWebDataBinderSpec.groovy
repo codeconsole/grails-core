@@ -31,6 +31,7 @@ import grails.persistence.Entity
 import grails.testing.gorm.DataTest
 import grails.validation.DeferredBindingActions
 import grails.validation.Validateable
+import org.grails.config.PropertySourcesConfig
 import org.springframework.context.support.StaticMessageSource
 import spock.lang.Issue
 import spock.lang.Specification
@@ -51,6 +52,7 @@ class GrailsWebDataBinderSpec extends Specification implements DataTest {
     }
 
     void setup() {
+        grailsApplication.config.grails.databinding.legacyBindableDefault = false
         binder = grailsApplication.mainContext.getBean(DataBindingUtils.DATA_BINDER_BEAN_NAME) as GrailsWebDataBinder
     }
     
@@ -578,7 +580,7 @@ class GrailsWebDataBinderSpec extends Specification implements DataTest {
         warnings == [GrailsWebDataBinder.missingNoArgConstructorMessage(SecureMapConstructorValue)]
     }
 
-    void 'Test Map constructor fallback remains permissive in legacy mode'() {
+    void 'Test Map constructor fallback remains permissive in compatibility mode'() {
         given:
         grailsApplication.config.grails.databinding.legacyBindableDefault = true
         def holder = new SecureMapConstructorHolder()
@@ -591,12 +593,31 @@ class GrailsWebDataBinderSpec extends Specification implements DataTest {
 
         then:
         holder.values.first.name == 'Legacy'
-        holder.values.first.admin
+        !holder.values.first.admin
         holder.arrayValues*.name == ['Array Legacy']
-        holder.arrayValues[0].admin
+        !holder.arrayValues[0].admin
 
         cleanup:
         grailsApplication.config.grails.databinding.legacyBindableDefault = false
+    }
+
+    void 'Test Map constructor fallback binds unconfigured properties but not bindable false by default'() {
+        given:
+        def configuredConfig = grailsApplication.config
+        grailsApplication.config = new PropertySourcesConfig([:])
+        def holder = new SecureMapConstructorHolder()
+
+        when:
+        binder.bind(holder, new SimpleMapDataBindingSource([
+            values: [first: [name: 'Default', admin: true]]
+        ]))
+
+        then:
+        holder.values.first.name == 'Default'
+        !holder.values.first.admin
+
+        cleanup:
+        grailsApplication.config = configuredConfig
     }
 
     void 'Test Map constructor fallback remains permissive for explicit bind-all'() {
@@ -610,7 +631,7 @@ class GrailsWebDataBinderSpec extends Specification implements DataTest {
 
         then:
         holder.values.first.name == 'Explicit'
-        holder.values.first.admin
+        !holder.values.first.admin
     }
 
     void 'Test Map constructor fallback fails closed for a narrow explicit include'() {

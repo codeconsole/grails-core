@@ -253,8 +253,15 @@ public class DataBindingUtils {
         return getPropertyNamesWithBindableValue(object, Boolean.FALSE);
     }
 
+    static List getUnbindablePropertyNames(final Class objectClass) {
+        return getPropertyNamesWithBindableValue(evaluateConstrainedProperties(objectClass), Boolean.FALSE);
+    }
+
     static List getPropertyNamesWithBindableValue(final Object object, final Boolean bindableValue) {
-        final Map constrainedProperties = getConstrainedProperties(object);
+        return getPropertyNamesWithBindableValue(getConstrainedProperties(object), bindableValue);
+    }
+
+    private static List getPropertyNamesWithBindableValue(final Map constrainedProperties, final Boolean bindableValue) {
         if (constrainedProperties == null || constrainedProperties.isEmpty()) {
             return Collections.emptyList();
         }
@@ -378,10 +385,10 @@ public class DataBindingUtils {
     static boolean isLegacyBindableDefaultEnabled() {
         GrailsApplication application = Holders.findApplication();
         if (application != null) {
-            return application.getConfig().getProperty(DefaultASTDatabindingHelper.LEGACY_BINDABLE_DEFAULT, Boolean.class, false);
+            return application.getConfig().getProperty(DefaultASTDatabindingHelper.LEGACY_BINDABLE_DEFAULT, Boolean.class, true);
         }
         Object value = Holders.getFlatConfig().get(DefaultASTDatabindingHelper.LEGACY_BINDABLE_DEFAULT);
-        return Boolean.TRUE.equals(value) || "true".equalsIgnoreCase(String.valueOf(value));
+        return value == null || Boolean.TRUE.equals(value) || "true".equalsIgnoreCase(String.valueOf(value));
     }
 
     /**

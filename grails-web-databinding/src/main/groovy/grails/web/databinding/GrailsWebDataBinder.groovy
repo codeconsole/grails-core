@@ -265,10 +265,10 @@ class GrailsWebDataBinder extends SimpleDataBinder {
 
     static String ignoredBindingPropertyMessage(Class<?> targetType, String propertyName) {
         "Ignored request parameter [${propertyName}] while binding to [${targetType.name}]: it is not in the binding allowlist. " +
-                'Grails 8 binds only allowlisted properties by default to prevent mass assignment (CWE-915). ' +
+                'Secure data binding is enabled and binds only allowlisted properties to prevent mass assignment (CWE-915). ' +
                 "To bind [${propertyName}], declare it bindable - `static constraints = { ${propertyName} bindable: true }` on the class, " +
                 "add it to the binding `include:` list, or annotate the controller action parameter with `@BindAllowed(['${propertyName}'])`. " +
-                'To restore the previous permissive binding for the whole application, set `grails.databinding.legacyBindableDefault=true`.'
+                'To restore compatibility binding for the whole application, remove `grails.databinding.legacyBindableDefault` or set it to `true`.'
     }
 
     private static boolean markBindingShapeWarned(String warningKey) {
@@ -621,7 +621,7 @@ class GrailsWebDataBinder extends SimpleDataBinder {
             if (value instanceof Map) {
                 if (isBindAllBindingIncludeList(includeList) ||
                         DataBindingUtils.isLegacyBindableDefaultEnabled()) {
-                    return referencedType.newInstance((Map) value)
+                    return referencedType.newInstance(filterUnbindableMapConstructorArguments(referencedType, (Map) value))
                 }
                 if (DataBindingUtils.isGeneratedBindingIncludeList(bindingIncludeList.get())) {
                     warnAboutMissingNoArgConstructor(referencedType)
@@ -630,6 +630,16 @@ class GrailsWebDataBinder extends SimpleDataBinder {
             }
             throw ignored
         }
+    }
+
+    private Map filterUnbindableMapConstructorArguments(Class referencedType, Map values) {
+        List unbindablePropertyNames = DataBindingUtils.getUnbindablePropertyNames(referencedType)
+        if (unbindablePropertyNames.isEmpty()) {
+            return values
+        }
+        Map filteredValues = new LinkedHashMap(values)
+        unbindablePropertyNames.each { filteredValues.remove(it) }
+        filteredValues
     }
 
     @Override
@@ -940,9 +950,9 @@ class GrailsWebDataBinder extends SimpleDataBinder {
     private void bindNested(Object object, DataBindingSource source, List includeList, DataBindingListener listener) {
         // A null nested include list from a generated parent allowlist (which carries the automatic
         // `prop.*`/`prop_*` wildcards emitted for non-simple bindable properties) must not bind the
-        // child unrestricted: cascade deny-by-default by resolving the child's own generated
-        // allowlist. The bind-all marker preserves an explicit nested wildcard, and legacy mode
-        // still resolves to a null (permissive) child allowlist.
+        // child unrestricted: secure mode resolves the child's own generated allowlist. The bind-all
+        // marker preserves an explicit nested wildcard, and compatibility mode resolves a null
+        // (permissive) child allowlist.
         List effectiveIncludeList = includeList != null ? includeList : getBindingIncludeList(object)
         bindInternal(object, source, null, effectiveIncludeList, null, listener)
     }

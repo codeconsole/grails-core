@@ -18,6 +18,7 @@
  */
 package org.grails.web.binding
 
+import grails.config.Config
 import grails.gorm.dirty.checking.DirtyCheck
 import grails.persistence.Entity
 import grails.util.Holders
@@ -26,10 +27,18 @@ import org.grails.config.PropertySourcesConfig
 import org.grails.validation.ConstraintEvalUtils
 import org.grails.web.databinding.DefaultASTDatabindingHelper
 import spock.lang.Issue
+import spock.lang.Shared
 import spock.lang.Specification
 
 class DefaultASTDatabindingHelperDomainClassSpecialPropertiesSpec extends
         Specification {
+
+    @Shared
+    Config originalConfig
+
+    def setupSpec() {
+        originalConfig = Holders.config
+    }
 
     def setup() {
         ConstraintEvalUtils.clearDefaultConstraints()
@@ -38,6 +47,11 @@ class DefaultASTDatabindingHelperDomainClassSpecialPropertiesSpec extends
 
     def cleanup() {
         ConstraintEvalUtils.clearDefaultConstraints()
+    }
+
+    def cleanupSpec() {
+        ConstraintEvalUtils.clearDefaultConstraints()
+        Holders.setConfig(originalConfig)
     }
 
     @Issue('GRAILS-11173')
@@ -121,7 +135,7 @@ class DefaultASTDatabindingHelperDomainClassSpecialPropertiesSpec extends
         obj.version == null
     }
 
-    void 'Test a regular property without bindable true is denied by default'() {
+    void 'Test a regular property without bindable true is denied in explicit secure mode'() {
         when:
         def obj = new DomainWithDefaultDeniedProperty(name: 'Grace', title: 'Admiral')
 
@@ -130,9 +144,10 @@ class DefaultASTDatabindingHelperDomainClassSpecialPropertiesSpec extends
         obj.title == 'Admiral'
     }
 
-    void 'Test legacy bindable default restores permissive binding and preserves bindable false'() {
+    void 'Test unconfigured binding remains permissive and preserves bindable false'() {
         given:
-        Holders.setConfig(new PropertySourcesConfig([(DefaultASTDatabindingHelper.LEGACY_BINDABLE_DEFAULT): true]))
+        def configuredConfig = Holders.config
+        Holders.setConfig(null)
 
         when:
         def obj = new DomainWithSecureBindableDefault(name: 'Grace', title: 'Admiral', role: 'Admin')
@@ -143,7 +158,7 @@ class DefaultASTDatabindingHelperDomainClassSpecialPropertiesSpec extends
         obj.role == null
 
         cleanup:
-        Holders.setConfig(null)
+        Holders.setConfig(configuredConfig)
     }
 
     @Issue('https://github.com/apache/grails-core/issues/15795')
