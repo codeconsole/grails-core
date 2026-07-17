@@ -18,6 +18,12 @@
  */
 package org.grails.plugins.converters
 
+import groovy.transform.CompileStatic
+
+import org.springframework.beans.factory.BeanRegistrar
+import org.springframework.beans.factory.BeanRegistry
+import org.springframework.core.env.Environment
+
 import grails.converters.JSON
 import grails.converters.XML
 import grails.plugins.Plugin
@@ -37,6 +43,7 @@ import org.grails.web.converters.marshaller.xml.ValidationErrorsMarshaller as Xm
  *
  * @since 0.6
  */
+@CompileStatic
 class ConvertersGrailsPlugin extends Plugin {
 
     def version = GrailsUtil.getGrailsVersion()
@@ -48,22 +55,30 @@ class ConvertersGrailsPlugin extends Plugin {
     ]
 
     @Override
-    Closure doWithSpring() {
-        { ->
-            jsonErrorsMarshaller(JsonErrorsMarshaller)
+    BeanRegistrar beanRegistrar() {
+        return { BeanRegistry registry, Environment environment ->
+            registry.registerBean('jsonErrorsMarshaller', JsonErrorsMarshaller)
 
-            xmlErrorsMarshaller(XmlErrorsMarshaller)
+            registry.registerBean('xmlErrorsMarshaller', XmlErrorsMarshaller)
 
-            convertersConfigurationInitializer(ConvertersConfigurationInitializer)
+            registry.registerBean('convertersConfigurationInitializer', ConvertersConfigurationInitializer)
 
-            errorsXmlMarshallerRegisterer(ObjectMarshallerRegisterer) {
-                marshaller = { XmlErrorsMarshaller om -> }
-                converterClass = XML
+            registry.registerBean('errorsXmlMarshallerRegisterer', ObjectMarshallerRegisterer) { BeanRegistry.Spec<ObjectMarshallerRegisterer> spec ->
+                spec.supplier { BeanRegistry.SupplierContext context ->
+                    ObjectMarshallerRegisterer registerer = new ObjectMarshallerRegisterer()
+                    registerer.marshaller = context.bean('xmlErrorsMarshaller', XmlErrorsMarshaller)
+                    registerer.converterClass = XML
+                    return registerer
+                }
             }
 
-            errorsJsonMarshallerRegisterer(ObjectMarshallerRegisterer) {
-                marshaller = { JsonErrorsMarshaller om -> }
-                converterClass = JSON
+            registry.registerBean('errorsJsonMarshallerRegisterer', ObjectMarshallerRegisterer) { BeanRegistry.Spec<ObjectMarshallerRegisterer> spec ->
+                spec.supplier { BeanRegistry.SupplierContext context ->
+                    ObjectMarshallerRegisterer registerer = new ObjectMarshallerRegisterer()
+                    registerer.marshaller = context.bean('jsonErrorsMarshaller', JsonErrorsMarshaller)
+                    registerer.converterClass = JSON
+                    return registerer
+                }
             }
         }
     }

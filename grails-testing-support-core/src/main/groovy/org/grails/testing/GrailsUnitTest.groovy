@@ -23,7 +23,9 @@ import java.lang.reflect.Method
 import groovy.transform.CompileDynamic
 import groovy.transform.CompileStatic
 
+import org.springframework.beans.factory.BeanRegistrar
 import org.springframework.beans.factory.support.BeanDefinitionRegistry
+import org.springframework.beans.factory.support.BeanRegistryAdapter
 import org.springframework.context.ApplicationContext
 import org.springframework.context.ConfigurableApplicationContext
 import org.springframework.context.MessageSource
@@ -107,6 +109,17 @@ trait GrailsUnitTest {
         applicationContext.beanFactory.preInstantiateSingletons()
     }
 
+    /**
+     * Applies a {@link BeanRegistrar} to the test application context, the same way a plugin's
+     * {@code beanRegistrar()} hook is applied by the framework at boot time.
+     */
+    void defineBeans(BeanRegistrar registrar) {
+        ConfigurableApplicationContext context = applicationContext
+        new BeanRegistryAdapter((BeanDefinitionRegistry) context, context.beanFactory,
+                context.environment, registrar.getClass()).register(registrar)
+        context.beanFactory.preInstantiateSingletons()
+    }
+
     void defineBeans(Object plugin) {
         Class clazz = plugin.getClass()
         try {
@@ -114,6 +127,15 @@ trait GrailsUnitTest {
             Closure config = (Closure) doWithSpringMethod.invoke(plugin)
             if (config != null) {
                 defineBeans(config)
+                return
+            }
+        } catch (NoSuchMethodException e) {}
+
+        try {
+            Method beanRegistrarMethod = clazz.getMethod('beanRegistrar')
+            BeanRegistrar registrar = (BeanRegistrar) beanRegistrarMethod.invoke(plugin)
+            if (registrar != null) {
+                defineBeans(registrar)
                 return
             }
         } catch (NoSuchMethodException e) {}

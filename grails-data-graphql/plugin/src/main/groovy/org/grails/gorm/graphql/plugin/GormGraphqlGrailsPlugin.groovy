@@ -19,23 +19,41 @@
 
 package org.grails.gorm.graphql.plugin
 
+import groovy.transform.CompileStatic
+
+import org.springframework.beans.factory.BeanRegistrar
+import org.springframework.beans.factory.BeanRegistry
+import org.springframework.context.MessageSource
+import org.springframework.core.env.Environment
+
 import grails.plugins.Plugin
 import grails.web.mime.MimeType
 import graphql.GraphQL
 import graphql.schema.GraphQLCodeRegistry
+import graphql.schema.GraphQLSchema
 import org.grails.gorm.graphql.GraphQLServiceManager
 import org.grails.gorm.graphql.Schema
+import org.grails.gorm.graphql.binding.GraphQLDataBinder
 import org.grails.gorm.graphql.binding.manager.DefaultGraphQLDataBinderManager
+import org.grails.gorm.graphql.binding.manager.GraphQLDataBinderManager
 import org.grails.gorm.graphql.entity.GraphQLEntityNamingConvention
 import org.grails.gorm.graphql.entity.property.manager.DefaultGraphQLDomainPropertyManager
+import org.grails.gorm.graphql.entity.property.manager.GraphQLDomainPropertyManager
 import org.grails.gorm.graphql.fetcher.manager.DefaultGraphQLDataFetcherManager
+import org.grails.gorm.graphql.fetcher.manager.GraphQLDataFetcherManager
 import org.grails.gorm.graphql.interceptor.manager.DefaultGraphQLInterceptorManager
+import org.grails.gorm.graphql.interceptor.manager.GraphQLInterceptorManager
 import org.grails.gorm.graphql.plugin.binding.GrailsGraphQLDataBinder
 import org.grails.gorm.graphql.response.delete.DefaultGraphQLDeleteResponseHandler
+import org.grails.gorm.graphql.response.delete.GraphQLDeleteResponseHandler
 import org.grails.gorm.graphql.response.errors.DefaultGraphQLErrorsResponseHandler
+import org.grails.gorm.graphql.response.errors.GraphQLErrorsResponseHandler
 import org.grails.gorm.graphql.response.pagination.DefaultGraphQLPaginationResponseHandler
+import org.grails.gorm.graphql.response.pagination.GraphQLPaginationResponseHandler
 import org.grails.gorm.graphql.types.DefaultGraphQLTypeManager
+import org.grails.gorm.graphql.types.GraphQLTypeManager
 
+@CompileStatic
 class GormGraphqlGrailsPlugin extends Plugin {
 
     def license = 'Apache 2.0 License'
@@ -51,58 +69,88 @@ class GormGraphqlGrailsPlugin extends Plugin {
     public static final MimeType GRAPHQL_MIME = new MimeType('application/graphql')
 
     @Override
-    Closure doWithSpring() {
-        { ->
-            grailsGraphQLConfiguration(GrailsGraphQLConfiguration)
+    BeanRegistrar beanRegistrar() {
+        return { BeanRegistry registry, Environment environment ->
+            registry.registerBean('grailsGraphQLConfiguration', GrailsGraphQLConfiguration)
 
-            if (!config.getProperty('grails.gorm.graphql.enabled', Boolean, true)) {
+            if (!environment.getProperty('grails.gorm.graphql.enabled', Boolean, true)) {
                 return
             }
 
-            graphQLContextBuilder(DefaultGraphQLContextBuilder)
+            registry.registerBean('graphQLContextBuilder', DefaultGraphQLContextBuilder)
 
-            graphQLDataBinder(GrailsGraphQLDataBinder)
-            graphQLCodeRegistry(GraphQLCodeRegistry) { bean ->
-                bean.factoryMethod = 'newCodeRegistry'
+            registry.registerBean('graphQLDataBinder', GrailsGraphQLDataBinder)
+            registry.registerBean('graphQLCodeRegistry', GraphQLCodeRegistry.Builder) { BeanRegistry.Spec<GraphQLCodeRegistry.Builder> spec ->
+                spec.supplier { BeanRegistry.SupplierContext context ->
+                    GraphQLCodeRegistry.newCodeRegistry()
+                }
             }
-            graphQLErrorsResponseHandler(DefaultGraphQLErrorsResponseHandler, ref('messageSource'), ref('graphQLCodeRegistry'))
-            graphQLEntityNamingConvention(GraphQLEntityNamingConvention)
-            graphQLDomainPropertyManager(DefaultGraphQLDomainPropertyManager)
-            graphQLPaginationResponseHandler(DefaultGraphQLPaginationResponseHandler)
+            registry.registerBean('graphQLErrorsResponseHandler', DefaultGraphQLErrorsResponseHandler) { BeanRegistry.Spec<DefaultGraphQLErrorsResponseHandler> spec ->
+                spec.supplier { BeanRegistry.SupplierContext context ->
+                    new DefaultGraphQLErrorsResponseHandler(
+                            context.bean('messageSource', MessageSource),
+                            context.bean('graphQLCodeRegistry', GraphQLCodeRegistry.Builder))
+                }
+            }
+            registry.registerBean('graphQLEntityNamingConvention', GraphQLEntityNamingConvention)
+            registry.registerBean('graphQLDomainPropertyManager', DefaultGraphQLDomainPropertyManager)
+            registry.registerBean('graphQLPaginationResponseHandler', DefaultGraphQLPaginationResponseHandler)
 
-            graphQLTypeManager(DefaultGraphQLTypeManager,
-                    ref('graphQLCodeRegistry'),
-                    ref('graphQLEntityNamingConvention'),
-                    ref('graphQLErrorsResponseHandler'),
-                    ref('graphQLDomainPropertyManager'),
-                    ref('graphQLPaginationResponseHandler'))
-            graphQLDataBinderManager(DefaultGraphQLDataBinderManager, ref('graphQLDataBinder'))
-            graphQLDeleteResponseHandler(DefaultGraphQLDeleteResponseHandler)
-            graphQLDataFetcherManager(DefaultGraphQLDataFetcherManager)
-            graphQLInterceptorManager(DefaultGraphQLInterceptorManager)
-            graphQLServiceManager(GraphQLServiceManager)
+            registry.registerBean('graphQLTypeManager', DefaultGraphQLTypeManager) { BeanRegistry.Spec<DefaultGraphQLTypeManager> spec ->
+                spec.supplier { BeanRegistry.SupplierContext context ->
+                    new DefaultGraphQLTypeManager(
+                            context.bean('graphQLCodeRegistry', GraphQLCodeRegistry.Builder),
+                            context.bean('graphQLEntityNamingConvention', GraphQLEntityNamingConvention),
+                            context.bean('graphQLErrorsResponseHandler', GraphQLErrorsResponseHandler),
+                            context.bean('graphQLDomainPropertyManager', GraphQLDomainPropertyManager),
+                            context.bean('graphQLPaginationResponseHandler', GraphQLPaginationResponseHandler))
+                }
+            }
+            registry.registerBean('graphQLDataBinderManager', DefaultGraphQLDataBinderManager) { BeanRegistry.Spec<DefaultGraphQLDataBinderManager> spec ->
+                spec.supplier { BeanRegistry.SupplierContext context ->
+                    new DefaultGraphQLDataBinderManager(context.bean('graphQLDataBinder', GraphQLDataBinder))
+                }
+            }
+            registry.registerBean('graphQLDeleteResponseHandler', DefaultGraphQLDeleteResponseHandler)
+            registry.registerBean('graphQLDataFetcherManager', DefaultGraphQLDataFetcherManager)
+            registry.registerBean('graphQLInterceptorManager', DefaultGraphQLInterceptorManager)
+            registry.registerBean('graphQLServiceManager', GraphQLServiceManager)
 
-            graphQLSchemaGenerator(Schema) {
-                codeRegistry = ref('graphQLCodeRegistry')
-                deleteResponseHandler = ref('graphQLDeleteResponseHandler')
-                namingConvention = ref('graphQLEntityNamingConvention')
-                typeManager = ref('graphQLTypeManager')
-                dataBinderManager = ref('graphQLDataBinderManager')
-                dataFetcherManager = ref('graphQLDataFetcherManager')
-                interceptorManager = ref('graphQLInterceptorManager')
-                paginationResponseHandler = ref('graphQLPaginationResponseHandler')
-                serviceManager = ref('graphQLServiceManager')
+            registry.registerBean('graphQLSchemaGenerator', Schema) { BeanRegistry.Spec<Schema> spec ->
+                spec.supplier { BeanRegistry.SupplierContext context ->
+                    Schema schema = new Schema()
+                    schema.codeRegistry = context.bean('graphQLCodeRegistry', GraphQLCodeRegistry.Builder)
+                    schema.deleteResponseHandler = context.bean('graphQLDeleteResponseHandler', GraphQLDeleteResponseHandler)
+                    schema.namingConvention = context.bean('graphQLEntityNamingConvention', GraphQLEntityNamingConvention)
+                    schema.typeManager = context.bean('graphQLTypeManager', GraphQLTypeManager)
+                    schema.dataBinderManager = context.bean('graphQLDataBinderManager', GraphQLDataBinderManager)
+                    schema.dataFetcherManager = context.bean('graphQLDataFetcherManager', GraphQLDataFetcherManager)
+                    schema.interceptorManager = context.bean('graphQLInterceptorManager', GraphQLInterceptorManager)
+                    schema.paginationResponseHandler = context.bean('graphQLPaginationResponseHandler', GraphQLPaginationResponseHandler)
+                    schema.serviceManager = context.bean('graphQLServiceManager', GraphQLServiceManager)
 
-                dateFormats = '#{grailsGraphQLConfiguration.getDateFormats()}'
-                dateFormatLenient = '#{grailsGraphQLConfiguration.getDateFormatLenient()}'
-                listArguments = '#{grailsGraphQLConfiguration.getListArguments()}'
+                    GrailsGraphQLConfiguration configuration = context.bean('grailsGraphQLConfiguration', GrailsGraphQLConfiguration)
+                    schema.dateFormats = configuration.dateFormats
+                    schema.dateFormatLenient = configuration.dateFormatLenient ?: false
+                    schema.listArguments = configuration.listArguments
+                    return schema
+                }
             }
 
-            graphQLSchema(graphQLSchemaGenerator: 'generate')
-            graphQLBuilder(GraphQL.Builder, ref('graphQLSchema'))
-            graphQL(GraphQL) { bean ->
-                bean.factoryBean = 'graphQLBuilder'
-                bean.factoryMethod = 'build'
+            registry.registerBean('graphQLSchema', GraphQLSchema) { BeanRegistry.Spec<GraphQLSchema> spec ->
+                spec.supplier { BeanRegistry.SupplierContext context ->
+                    context.bean('graphQLSchemaGenerator', Schema).generate()
+                }
+            }
+            registry.registerBean('graphQLBuilder', GraphQL.Builder) { BeanRegistry.Spec<GraphQL.Builder> spec ->
+                spec.supplier { BeanRegistry.SupplierContext context ->
+                    GraphQL.newGraphQL(context.bean('graphQLSchema', GraphQLSchema))
+                }
+            }
+            registry.registerBean('graphQL', GraphQL) { BeanRegistry.Spec<GraphQL> spec ->
+                spec.supplier { BeanRegistry.SupplierContext context ->
+                    context.bean('graphQLBuilder', GraphQL.Builder).build()
+                }
             }
         }
     }

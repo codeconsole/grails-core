@@ -22,12 +22,16 @@ package grails.plugin.cache
 import groovy.transform.CompileStatic
 import groovy.util.logging.Slf4j
 
+import org.springframework.beans.factory.BeanRegistrar
+import org.springframework.beans.factory.BeanRegistry
 import org.springframework.cache.Cache
+import org.springframework.core.env.Environment
 
 import grails.plugins.Plugin
 import org.grails.plugin.cache.GrailsCacheManager
 
 @Slf4j
+@CompileStatic
 class CacheGrailsPlugin extends Plugin {
 
     def grailsVersion = '7.0.0-SNAPSHOT > *'
@@ -46,26 +50,36 @@ class CacheGrailsPlugin extends Plugin {
         config.getProperty('grails.cache.enabled', Boolean, true)
     }
 
-    Closure doWithSpring() {
-        { ->
-            if (!cachingEnabled) {
+    @Override
+    BeanRegistrar beanRegistrar() {
+        return { BeanRegistry registry, Environment environment ->
+            if (!environment.getProperty('grails.cache.enabled', Boolean, true)) {
                 log.warn('Cache plugin is disabled')
                 return
             }
 
-            customCacheKeyGenerator(CustomCacheKeyGenerator)
+            registry.registerBean('customCacheKeyGenerator', CustomCacheKeyGenerator)
 
-            Class<? extends GrailsCacheManager> cacheClazz = GrailsConcurrentMapCacheManager
             // Selects cache manager from config
-            if (config.getProperty('grails.cache.cacheManager', String, null) == 'GrailsConcurrentLinkedMapCacheManager') {
-                cacheClazz = GrailsConcurrentLinkedMapCacheManager
+            if (environment.getProperty('grails.cache.cacheManager', String) == 'GrailsConcurrentLinkedMapCacheManager') {
+                registry.registerBean('grailsCacheManager', GrailsConcurrentLinkedMapCacheManager) { BeanRegistry.Spec<GrailsConcurrentLinkedMapCacheManager> spec ->
+                    spec.supplier { BeanRegistry.SupplierContext context ->
+                        GrailsConcurrentLinkedMapCacheManager cacheManager = new GrailsConcurrentLinkedMapCacheManager()
+                        cacheManager.configuration = context.bean('grailsCacheConfiguration', CachePluginConfiguration)
+                        return cacheManager
+                    }
+                }
+            } else {
+                registry.registerBean('grailsCacheManager', GrailsConcurrentMapCacheManager) { BeanRegistry.Spec<GrailsConcurrentMapCacheManager> spec ->
+                    spec.supplier { BeanRegistry.SupplierContext context ->
+                        GrailsConcurrentMapCacheManager cacheManager = new GrailsConcurrentMapCacheManager()
+                        cacheManager.configuration = context.bean('grailsCacheConfiguration', CachePluginConfiguration)
+                        return cacheManager
+                    }
+                }
             }
-
-            grailsCacheManager(cacheClazz) {
-                configuration = ref('grailsCacheConfiguration')
-            }
-            grailsCacheAdminService(GrailsCacheAdminService)
-            grailsCacheConfiguration(CachePluginConfiguration)
+            registry.registerBean('grailsCacheAdminService', GrailsCacheAdminService)
+            registry.registerBean('grailsCacheConfiguration', CachePluginConfiguration)
         }
     }
 

@@ -21,6 +21,9 @@ package org.grails.plugins.web.interceptors
 import groovy.transform.CompileDynamic
 import groovy.transform.CompileStatic
 
+import org.springframework.beans.factory.BeanRegistrar
+import org.springframework.beans.factory.BeanRegistry
+import org.springframework.core.env.Environment
 import org.springframework.web.servlet.handler.MappedInterceptor
 
 import grails.artefact.Interceptor
@@ -46,21 +49,29 @@ class InterceptorsGrailsPlugin extends Plugin {
     GrailsInterceptorHandlerInterceptorAdapter interceptorAdapter
 
     @Override
-    @CompileDynamic
-    Closure doWithSpring() {
-        { ->
+    BeanRegistrar beanRegistrar() {
+        return { BeanRegistry registry, Environment environment ->
             GrailsClass[] interceptors = grailsApplication.getArtefacts(InterceptorArtefactHandler.TYPE)
-            if (interceptors.length == 0) return
+            if (interceptors.length == 0) {
+                return
+            }
 
-            grailsInterceptorMappedInterceptor(MappedInterceptor, ['/**'] as String[], bean(GrailsInterceptorHandlerInterceptorAdapter))
+            // The adapter is a named bean (rather than an inner bean of the mapped interceptor)
+            // so its @Autowired members — most importantly the Interceptor[] — are still injected
+            registry.registerBean('grailsInterceptorHandlerInterceptorAdapter', GrailsInterceptorHandlerInterceptorAdapter)
+            registry.registerBean('grailsInterceptorMappedInterceptor', MappedInterceptor) { BeanRegistry.Spec<MappedInterceptor> spec ->
+                spec.supplier { BeanRegistry.SupplierContext context ->
+                    new MappedInterceptor(['/**'] as String[],
+                            context.bean('grailsInterceptorHandlerInterceptorAdapter', GrailsInterceptorHandlerInterceptorAdapter))
+                }
+            }
 
-            def enableJsessionId = config.getProperty(Settings.GRAILS_VIEWS_ENABLE_JSESSIONID, Boolean, false)
-            for (GrailsClass i in interceptors) {
-                "${i.propertyName}"(i.clazz) { bean ->
-                    bean.autowire = 'byName'
-                    if (enableJsessionId) {
-                        useJessionId = enableJsessionId
-                    }
+            // Interceptor beans autowire by name, which the BeanRegistry API cannot express —
+            // their definitions are contributed by a dedicated post-processor instead
+            boolean enableJsessionId = environment.getProperty(Settings.GRAILS_VIEWS_ENABLE_JSESSIONID, Boolean, false)
+            registry.registerBean('interceptorBeanDefinitionsPostProcessor', InterceptorBeanDefinitionsPostProcessor) { BeanRegistry.Spec<InterceptorBeanDefinitionsPostProcessor> spec ->
+                spec.infrastructure().supplier { BeanRegistry.SupplierContext context ->
+                    new InterceptorBeanDefinitionsPostProcessor(grailsApplication, enableJsessionId)
                 }
             }
         }

@@ -20,6 +20,11 @@
 package grails.plugins.redis.util
 
 import groovy.util.logging.Slf4j
+
+import org.springframework.beans.factory.config.RuntimeBeanReference
+import org.springframework.beans.factory.support.BeanDefinitionRegistry
+import org.springframework.beans.factory.support.GenericBeanDefinition
+
 import redis.clients.jedis.JedisPool
 import redis.clients.jedis.JedisPoolConfig
 import redis.clients.jedis.JedisSentinelPool
@@ -97,6 +102,69 @@ class RedisConfigurationUtil {
                 redisPool = ref("redisPool${key}")
             }
         }
+    }
+
+    /**
+     * Registers the pool-config, pool and service bean definitions for a redis connection
+     * directly against a {@link BeanDefinitionRegistry}, mirroring the beans the
+     * {@link #configureService} closure wires through the bean builder DSL. Used by the redis
+     * plugin's {@code beanRegistrar()}-registered post-processor.
+     */
+    static void configureService(BeanDefinitionRegistry registry, def redisConfigMap, String key, Class serviceClass) {
+        String poolConfigBeanName = "redisPoolConfig${key}"
+        def validPoolProperties = findValidPoolProperties(redisConfigMap?.poolConfig)
+
+        GenericBeanDefinition poolConfigDefinition = new GenericBeanDefinition(beanClass: JedisPoolConfig)
+        validPoolProperties?.each { configKey, value ->
+            poolConfigDefinition.propertyValues.addPropertyValue(configKey.toString(), value)
+        }
+        registry.registerBeanDefinition(poolConfigBeanName, poolConfigDefinition)
+
+        def host = redisConfigMap?.host ?: 'localhost'
+        def port = redisConfigMap.containsKey('port') ? "${redisConfigMap.port}" as Integer : Protocol.DEFAULT_PORT
+        def timeout = redisConfigMap.containsKey('timeout') ? "${redisConfigMap?.timeout}" as Integer : Protocol.DEFAULT_TIMEOUT
+        def password = redisConfigMap?.password ?: null
+        def database = redisConfigMap?.database ?: Protocol.DEFAULT_DATABASE
+        def sentinels = redisConfigMap?.sentinels ?: null
+        def masterName = redisConfigMap?.masterName ?: null
+        def useSSL = redisConfigMap?.useSSL ?: false
+
+        GenericBeanDefinition poolDefinition = new GenericBeanDefinition(destroyMethodName: 'destroy')
+        // If sentinels and a masterName is present, using different pool implementation
+        if (sentinels && masterName) {
+            if (sentinels instanceof String) {
+                sentinels = Eval.me(sentinels.toString())
+            }
+            if (!(sentinels instanceof Collection)) {
+                throw new RuntimeException('Redis configuraiton property [sentinels] does not appear to be a valid collection.')
+            }
+            poolDefinition.beanClass = JedisSentinelPool
+            poolDefinition.constructorArgumentValues.with {
+                addIndexedArgumentValue(0, masterName)
+                addIndexedArgumentValue(1, sentinels as Set)
+                addIndexedArgumentValue(2, new RuntimeBeanReference(poolConfigBeanName))
+                addIndexedArgumentValue(3, timeout)
+                addIndexedArgumentValue(4, password)
+                addIndexedArgumentValue(5, database)
+                addIndexedArgumentValue(6, useSSL)
+            }
+        } else {
+            poolDefinition.beanClass = JedisPool
+            poolDefinition.constructorArgumentValues.with {
+                addIndexedArgumentValue(0, new RuntimeBeanReference(poolConfigBeanName))
+                addIndexedArgumentValue(1, host)
+                addIndexedArgumentValue(2, port)
+                addIndexedArgumentValue(3, timeout)
+                addIndexedArgumentValue(4, password)
+                addIndexedArgumentValue(5, database)
+                addIndexedArgumentValue(6, useSSL)
+            }
+        }
+        registry.registerBeanDefinition("redisPool${key}", poolDefinition)
+
+        GenericBeanDefinition serviceDefinition = new GenericBeanDefinition(beanClass: serviceClass)
+        serviceDefinition.propertyValues.addPropertyValue('redisPool', new RuntimeBeanReference("redisPool${key}"))
+        registry.registerBeanDefinition("redisService${key}", serviceDefinition)
     }
 
     static def findValidPoolProperties(def properties) {
