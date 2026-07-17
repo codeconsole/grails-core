@@ -25,6 +25,7 @@ import org.springframework.beans.factory.support.DefaultListableBeanFactory
 import org.springframework.beans.factory.support.GenericBeanDefinition
 import org.springframework.core.Ordered
 import org.springframework.core.env.StandardEnvironment
+import org.springframework.web.servlet.HandlerInterceptor
 import org.springframework.web.servlet.handler.MappedInterceptor
 
 import grails.core.GrailsApplication
@@ -42,39 +43,56 @@ class InterceptorsGrailsPluginSpec extends Specification {
         getClazz() >> TestInterceptor
     }
 
-    void "no interceptor beans are registered when there are no interceptor artefacts"() {
+    void "beanRegistrar registers only the definitions post-processor"() {
         given:
         DefaultListableBeanFactory beanFactory = new DefaultListableBeanFactory()
+        GrailsApplication application = Mock(GrailsApplication)
+
+        when:
+        applyRegistrar(beanFactory, application)
+
+        then: 'the registrar itself does not touch the artefacts or register the interceptor beans directly'
+        0 * application.getArtefacts(_)
+        beanFactory.containsBeanDefinition('interceptorBeanDefinitionsPostProcessor')
+        !beanFactory.containsBeanDefinition('grailsInterceptorMappedInterceptor')
+    }
+
+    void "no interceptor beans are registered when there are no interceptor artefacts"() {
+        given:
+        DefaultListableBeanFactory registry = new DefaultListableBeanFactory()
         GrailsApplication application = Mock(GrailsApplication) {
             getArtefacts(InterceptorArtefactHandler.TYPE) >> { new GrailsClass[0] }
         }
 
         when:
-        applyRegistrar(beanFactory, application)
+        new InterceptorBeanDefinitionsPostProcessor(application, false).postProcessBeanDefinitionRegistry(registry)
 
         then:
-        beanFactory.beanDefinitionCount == 0
+        registry.beanDefinitionCount == 0
     }
 
-    void "beanRegistrar registers the mapped interceptor around the named adapter bean"() {
+    void "the definitions post-processor registers the mapped interceptor wrapping an inner adapter bean"() {
         given:
-        DefaultListableBeanFactory beanFactory = new DefaultListableBeanFactory()
+        DefaultListableBeanFactory registry = new DefaultListableBeanFactory()
         GrailsApplication application = Mock(GrailsApplication) {
             getArtefacts(InterceptorArtefactHandler.TYPE) >> { [interceptorClass] as GrailsClass[] }
         }
 
         when:
-        applyRegistrar(beanFactory, application)
+        new InterceptorBeanDefinitionsPostProcessor(application, false).postProcessBeanDefinitionRegistry(registry)
+        AbstractBeanDefinition mappedInterceptor = (AbstractBeanDefinition) registry.getBeanDefinition('grailsInterceptorMappedInterceptor')
 
         then:
-        beanFactory.getBeanDefinition('grailsInterceptorHandlerInterceptorAdapter').beanClassName ==
-                GrailsInterceptorHandlerInterceptorAdapter.name
-        beanFactory.containsBeanDefinition('interceptorBeanDefinitionsPostProcessor')
+        mappedInterceptor.beanClassName == MappedInterceptor.name
 
-        and: 'the mapped interceptor wraps the adapter bean'
-        MappedInterceptor mappedInterceptor = beanFactory.getBean('grailsInterceptorMappedInterceptor', MappedInterceptor)
-        mappedInterceptor.interceptor.is(beanFactory.getBean('grailsInterceptorHandlerInterceptorAdapter',
-                GrailsInterceptorHandlerInterceptorAdapter))
+        and: 'the adapter is an inner bean, not a top-level HandlerInterceptor bean that would run twice'
+        mappedInterceptor.constructorArgumentValues.getIndexedArgumentValue(1, null).value instanceof AbstractBeanDefinition
+        ((AbstractBeanDefinition) mappedInterceptor.constructorArgumentValues.getIndexedArgumentValue(1, null).value)
+                .beanClassName == GrailsInterceptorHandlerInterceptorAdapter.name
+        registry.getBeanNamesForType(GrailsInterceptorHandlerInterceptorAdapter).length == 0
+
+        and: 'WebUtils.lookupHandlerInterceptors (getBeansOfType) sees only the mapped interceptor, so no interceptor runs twice'
+        registry.getBeanNamesForType(HandlerInterceptor) as List == ['grailsInterceptorMappedInterceptor']
     }
 
     void "the definitions post-processor registers name-autowired interceptor beans"() {

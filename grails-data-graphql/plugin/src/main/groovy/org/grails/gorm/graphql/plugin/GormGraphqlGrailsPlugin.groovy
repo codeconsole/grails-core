@@ -31,6 +31,7 @@ import grails.web.mime.MimeType
 import graphql.GraphQL
 import graphql.schema.GraphQLCodeRegistry
 import graphql.schema.GraphQLSchema
+import org.grails.datastore.mapping.model.MappingContext
 import org.grails.gorm.graphql.GraphQLServiceManager
 import org.grails.gorm.graphql.Schema
 import org.grails.gorm.graphql.binding.GraphQLDataBinder
@@ -118,7 +119,12 @@ class GormGraphqlGrailsPlugin extends Plugin {
 
             registry.registerBean('graphQLSchemaGenerator', Schema) { BeanRegistry.Spec<Schema> spec ->
                 spec.supplier { BeanRegistry.SupplierContext context ->
-                    Schema schema = new Schema()
+                    // The Schema's varargs MappingContext constructor was previously satisfied by
+                    // Spring's implicit single-constructor autowiring, collecting every MappingContext
+                    // bean; the supplier must resolve them the same way or generate() yields an empty
+                    // schema (and returns null when there are no query fields)
+                    List<MappingContext> mappingContexts = context.beanProvider(MappingContext).orderedStream().toList()
+                    Schema schema = new Schema(mappingContexts as MappingContext[])
                     schema.codeRegistry = context.bean('graphQLCodeRegistry', GraphQLCodeRegistry.Builder)
                     schema.deleteResponseHandler = context.bean('graphQLDeleteResponseHandler', GraphQLDeleteResponseHandler)
                     schema.namingConvention = context.bean('graphQLEntityNamingConvention', GraphQLEntityNamingConvention)

@@ -51,23 +51,12 @@ class InterceptorsGrailsPlugin extends Plugin {
     @Override
     BeanRegistrar beanRegistrar() {
         return { BeanRegistry registry, Environment environment ->
-            GrailsClass[] interceptors = grailsApplication.getArtefacts(InterceptorArtefactHandler.TYPE)
-            if (interceptors.length == 0) {
-                return
-            }
-
-            // The adapter is a named bean (rather than an inner bean of the mapped interceptor)
-            // so its @Autowired members — most importantly the Interceptor[] — are still injected
-            registry.registerBean('grailsInterceptorHandlerInterceptorAdapter', GrailsInterceptorHandlerInterceptorAdapter)
-            registry.registerBean('grailsInterceptorMappedInterceptor', MappedInterceptor) { BeanRegistry.Spec<MappedInterceptor> spec ->
-                spec.supplier { BeanRegistry.SupplierContext context ->
-                    new MappedInterceptor(['/**'] as String[],
-                            context.bean('grailsInterceptorHandlerInterceptorAdapter', GrailsInterceptorHandlerInterceptorAdapter))
-                }
-            }
-
-            // Interceptor beans autowire by name, which the BeanRegistry API cannot express —
-            // their definitions are contributed by a dedicated post-processor instead
+            // The mapped interceptor (wrapping the handler adapter as an inner bean) and the
+            // per-interceptor beans autowire by name and must not expose the adapter as a
+            // top-level HandlerInterceptor bean — WebUtils.lookupHandlerInterceptors collects
+            // every HandlerInterceptor bean, so a top-level adapter would run twice. None of
+            // that is expressible through the BeanRegistry API, so the definitions are
+            // contributed by a dedicated post-processor instead.
             boolean enableJsessionId = environment.getProperty(Settings.GRAILS_VIEWS_ENABLE_JSESSIONID, Boolean, false)
             registry.registerBean('interceptorBeanDefinitionsPostProcessor', InterceptorBeanDefinitionsPostProcessor) { BeanRegistry.Spec<InterceptorBeanDefinitionsPostProcessor> spec ->
                 spec.infrastructure().supplier { BeanRegistry.SupplierContext context ->

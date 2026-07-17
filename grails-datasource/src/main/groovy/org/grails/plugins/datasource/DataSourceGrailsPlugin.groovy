@@ -19,7 +19,6 @@
 package org.grails.plugins.datasource
 
 import javax.management.MBeanServer
-import javax.sql.DataSource
 
 import groovy.transform.CompileStatic
 
@@ -34,8 +33,6 @@ import org.springframework.util.ClassUtils
 
 import grails.plugins.Plugin
 import grails.util.GrailsUtil
-import org.grails.datastore.mapping.core.connections.ConnectionSources
-import org.grails.spring.beans.factory.InstanceFactoryBean
 import org.grails.transaction.ChainedTransactionManagerPostProcessor
 
 /**
@@ -84,15 +81,13 @@ class DataSourceGrailsPlugin extends Plugin {
                     }
                 }
                 if (dataSources) {
-                    registry.registerBean('dataSourceConnectionSources', DataSourceConnectionSourcesFactoryBean) { BeanRegistry.Spec<DataSourceConnectionSourcesFactoryBean> spec ->
-                        spec.supplier { BeanRegistry.SupplierContext context ->
-                            new DataSourceConnectionSourcesFactoryBean(grailsApplication.config)
-                        }
-                    }
-                    registry.registerBean('dataSource', InstanceFactoryBean) { BeanRegistry.Spec<InstanceFactoryBean> spec ->
-                        spec.supplier { BeanRegistry.SupplierContext context ->
-                            ConnectionSources connectionSources = context.bean('dataSourceConnectionSources', ConnectionSources)
-                            new InstanceFactoryBean(connectionSources.defaultConnectionSource.source, DataSource)
+                    // The dataSource is an InstanceFactoryBean whose produced DataSource type must
+                    // stay visible to Spring's factory-bean type prediction for by-type autowiring —
+                    // which an instance supplier would hide — so the definitions are contributed by
+                    // a dedicated post-processor instead.
+                    registry.registerBean('dataSourceBeanDefinitionsPostProcessor', DataSourceBeanDefinitionsPostProcessor) { BeanRegistry.Spec<DataSourceBeanDefinitionsPostProcessor> spec ->
+                        spec.infrastructure().supplier { BeanRegistry.SupplierContext context ->
+                            new DataSourceBeanDefinitionsPostProcessor(grailsApplication.config)
                         }
                     }
                 }

@@ -21,7 +21,6 @@ package org.grails.plugins.web.mapping
 import groovy.transform.CompileDynamic
 import groovy.transform.CompileStatic
 
-import org.springframework.aop.framework.ProxyFactoryBean
 import org.springframework.aop.target.HotSwappableTargetSource
 import org.springframework.beans.factory.BeanRegistrar
 import org.springframework.beans.factory.BeanRegistry
@@ -32,14 +31,10 @@ import grails.config.Settings
 import grails.plugins.Plugin
 import grails.util.GrailsUtil
 import grails.web.mapping.LinkGenerator
-import grails.web.mapping.UrlMappings
 import grails.web.mapping.UrlMappingsHolder
-import grails.web.mapping.cors.GrailsCorsConfiguration
 import org.grails.core.artefact.UrlMappingsArtefactHandler
-import org.grails.spring.beans.factory.HotSwappableTargetSourceFactoryBean
 import org.grails.web.mapping.CachingLinkGenerator
 import org.grails.web.mapping.UrlMappingsHolderFactoryBean
-import org.grails.web.mapping.mvc.UrlMappingsHandlerMapping
 
 /**
  * Handles the configuration of URL mappings.
@@ -63,44 +58,17 @@ class UrlMappingsGrailsPlugin extends Plugin {
                 grailsApplication.addArtefact(UrlMappingsArtefactHandler.TYPE, DefaultUrlMappings)
             }
 
-            boolean isReloadEnabled = grails.util.Environment.isDevelopmentMode() ||
+            boolean reloadEnabled = grails.util.Environment.isDevelopmentMode() ||
                     grails.util.Environment.current.isReloadEnabled()
             boolean corsFilterEnabled = environment.getProperty(Settings.SETTING_CORS_FILTER, Boolean, true)
 
-            registry.registerBean('urlMappingsHandlerMapping', UrlMappingsHandlerMapping) { BeanRegistry.Spec<UrlMappingsHandlerMapping> spec ->
-                spec.supplier { BeanRegistry.SupplierContext context ->
-                    UrlMappingsHandlerMapping handlerMapping =
-                            new UrlMappingsHandlerMapping(context.bean('grailsUrlMappingsHolder', UrlMappingsHolder))
-                    if (!corsFilterEnabled) {
-                        handlerMapping.grailsCorsConfiguration = context.bean('grailsCorsConfiguration', GrailsCorsConfiguration)
-                    }
-                    return handlerMapping
-                }
-            }
-
-            if (isReloadEnabled) {
-                registry.registerBean('urlMappingsTargetSource', HotSwappableTargetSourceFactoryBean) { BeanRegistry.Spec<HotSwappableTargetSourceFactoryBean> spec ->
-                    spec.lazyInit().supplier { BeanRegistry.SupplierContext context ->
-                        UrlMappingsHolderFactoryBean urlMappingsFactory = new UrlMappingsHolderFactoryBean()
-                        urlMappingsFactory.grailsApplication = grailsApplication
-                        urlMappingsFactory.applicationContext = applicationContext
-                        urlMappingsFactory.afterPropertiesSet()
-                        HotSwappableTargetSourceFactoryBean targetSourceFactory = new HotSwappableTargetSourceFactoryBean()
-                        targetSourceFactory.target = urlMappingsFactory.object
-                        return targetSourceFactory
-                    }
-                }
-                registry.registerBean('grailsUrlMappingsHolder', ProxyFactoryBean) { BeanRegistry.Spec<ProxyFactoryBean> spec ->
-                    spec.lazyInit().supplier { BeanRegistry.SupplierContext context ->
-                        ProxyFactoryBean proxyFactory = new ProxyFactoryBean()
-                        proxyFactory.targetSource = context.bean('urlMappingsTargetSource', HotSwappableTargetSource)
-                        proxyFactory.proxyInterfaces = [UrlMappings] as Class[]
-                        return proxyFactory
-                    }
-                }
-            } else {
-                registry.registerBean('grailsUrlMappingsHolder', UrlMappingsHolderFactoryBean) { BeanRegistry.Spec<UrlMappingsHolderFactoryBean> spec ->
-                    spec.lazyInit()
+            // The url-mapping holder is a ProxyFactoryBean (reload mode) whose produced UrlMappings
+            // type must stay visible to Spring's factory-bean type prediction for by-type autowiring
+            // of UrlMappingsHolder — which an instance supplier would hide — so the definitions are
+            // contributed by a dedicated post-processor instead.
+            registry.registerBean('urlMappingsBeanDefinitionsPostProcessor', UrlMappingsBeanDefinitionsPostProcessor) { BeanRegistry.Spec<UrlMappingsBeanDefinitionsPostProcessor> spec ->
+                spec.infrastructure().supplier { BeanRegistry.SupplierContext context ->
+                    new UrlMappingsBeanDefinitionsPostProcessor(reloadEnabled, corsFilterEnabled)
                 }
             }
         }

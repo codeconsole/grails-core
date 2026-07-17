@@ -27,16 +27,21 @@ import org.springframework.beans.factory.support.BeanDefinitionRegistryPostProce
 import org.springframework.beans.factory.support.GenericBeanDefinition
 import org.springframework.core.Ordered
 import org.springframework.core.PriorityOrdered
+import org.springframework.web.servlet.handler.MappedInterceptor
 
 import grails.core.GrailsApplication
 import grails.core.GrailsClass
 
 /**
- * Registers a bean definition for every interceptor artefact, replacing the registration the
- * interceptors plugin previously performed through the {@code doWithSpring()} bean DSL.
- * Interceptor beans autowire by name, which cannot be expressed through the
+ * Registers the interceptor bean definitions the interceptors plugin previously contributed through
+ * the {@code doWithSpring()} bean DSL: the {@code grailsInterceptorMappedInterceptor} (wrapping the
+ * handler adapter as an <em>inner</em> bean) and one bean per interceptor artefact. Interceptor
+ * beans autowire by name and the adapter must remain an inner bean — a top-level
+ * {@link org.grails.plugins.web.interceptors.GrailsInterceptorHandlerInterceptorAdapter} would be
+ * collected a second time by {@code WebUtils.lookupHandlerInterceptors} and run every interceptor
+ * twice — and neither can be expressed through the
  * {@link org.springframework.beans.factory.BeanRegistry} API, so the definitions are contributed
- * by this post-processor instead.
+ * here instead.
  *
  * <p>Runs as a {@link PriorityOrdered} post-processor with highest precedence so the interceptor
  * definitions are registered before Spring Boot's configuration-class post-processor evaluates
@@ -59,7 +64,26 @@ class InterceptorBeanDefinitionsPostProcessor implements BeanDefinitionRegistryP
 
     @Override
     void postProcessBeanDefinitionRegistry(BeanDefinitionRegistry registry) throws BeansException {
-        for (GrailsClass interceptorClass in grailsApplication.getArtefacts(InterceptorArtefactHandler.TYPE)) {
+        GrailsClass[] interceptors = grailsApplication.getArtefacts(InterceptorArtefactHandler.TYPE)
+        if (interceptors.length == 0) {
+            return
+        }
+
+        if (!registry.containsBeanDefinition('grailsInterceptorMappedInterceptor')) {
+            // The handler adapter is an inner bean of the mapped interceptor (as in the original
+            // DSL): inner beans are still fully autowired — the adapter's @Autowired Interceptor[]
+            // is injected — but are not returned by getBeansOfType, so the adapter is not collected
+            // a second time as a standalone HandlerInterceptor.
+            GenericBeanDefinition adapter = new GenericBeanDefinition()
+            adapter.beanClass = GrailsInterceptorHandlerInterceptorAdapter
+            GenericBeanDefinition mappedInterceptor = new GenericBeanDefinition()
+            mappedInterceptor.beanClass = MappedInterceptor
+            mappedInterceptor.constructorArgumentValues.addIndexedArgumentValue(0, ['/**'] as String[])
+            mappedInterceptor.constructorArgumentValues.addIndexedArgumentValue(1, adapter)
+            registry.registerBeanDefinition('grailsInterceptorMappedInterceptor', mappedInterceptor)
+        }
+
+        for (GrailsClass interceptorClass in interceptors) {
             if (registry.containsBeanDefinition(interceptorClass.propertyName)) {
                 continue
             }
