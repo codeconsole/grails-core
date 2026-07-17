@@ -116,12 +116,12 @@ trait GrailsUnitTest {
                 defineBeans(config)
                 return
             }
-        } catch (NoSuchMethodException e) {}
+        } catch (NoSuchMethodException ignored) {}
 
         try {
             Method doWithSpringField = clazz.getMethod('getDoWithSpring')
             defineBeans((Closure) doWithSpringField.invoke(plugin))
-        } catch (NoSuchMethodException e) {}
+        } catch (NoSuchMethodException ignored) {}
     }
 
     Closure doWithSpring() {

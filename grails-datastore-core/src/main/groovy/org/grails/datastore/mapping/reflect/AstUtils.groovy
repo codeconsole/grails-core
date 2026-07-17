@@ -438,7 +438,7 @@ class AstUtils {
                 if (isDomainClass(new File(filePath).toURI().toURL())) {
                     return true
                 }
-            } catch (MalformedURLException e) {
+            } catch (MalformedURLException ignored) {
                 // ignore
             }
         }

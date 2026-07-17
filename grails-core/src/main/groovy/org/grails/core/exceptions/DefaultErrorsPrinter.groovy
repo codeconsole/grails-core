@@ -125,13 +125,13 @@ class DefaultErrorsPrinter extends DefaultStackTracePrinter implements CodeSnipp
                             }
                         }
                     }
-                    catch (e) {
+                    catch (ignored) {
                         // ignore
                     }
                     finally {
                         try {
                             input?.close()
-                        } catch (e) {
+                        } catch (ignored) {
                             // ignore
                         }
                         pw.print(formatCodeSnippetEnd(res, lineNumber))
@@ -164,7 +164,7 @@ class DefaultErrorsPrinter extends DefaultStackTracePrinter implements CodeSnipp
                             break
                         }
                     }
-                } catch (e) {
+                } catch (ignored) {
                     // ignore
                 }
             }

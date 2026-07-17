@@ -85,7 +85,7 @@ class GrailsApplicationContextCommandRunner extends DevelopmentGrailsApplication
             finally {
                 try {
                     ctx?.close()
-                } catch (Throwable e) {
+                } catch (Throwable ignored) {
                     // ignore
                 }
             }

@@ -195,7 +195,7 @@ class ModelEntry {
                             if (defaultTypeClass.isAssignableFrom(fieldTypeClass)) {
                                 cleanedFieldType = defaultType
                             }
-                        } catch (e) {
+                        } catch (ignored) {
                             // ignore
                         }
                     }

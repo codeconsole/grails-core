@@ -420,7 +420,7 @@ trait ResponseRenderer extends WebAttributes {
                     if (input) {
                         try {
                             ((InputStream) input).close()
-                        } catch (IOException e) {
+                        } catch (IOException ignored) {
                             // ignore
                         }
                     }

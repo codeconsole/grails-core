@@ -42,7 +42,7 @@ class GradleAsyncInvoker {
                         POOL.shutdownNow()
                     }
                 }.join(1000)
-            } catch (Throwable e) {
+            } catch (Throwable ignored) {
                 // ignore
             }
         }

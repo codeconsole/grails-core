@@ -337,7 +337,7 @@ abstract class AbstractHibernateGormInstanceApi<D> extends GormInstanceApi<D> {
                         }
                     }
                 }
-                catch (InvalidPropertyException ipe) {
+                catch (InvalidPropertyException ignored) {
                     // property is not accessable
                 }
             }
