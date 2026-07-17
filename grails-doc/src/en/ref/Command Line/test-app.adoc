@@ -45,7 +45,7 @@ grails test-app Foo Bar
 Usage:
 [source,groovy]
 ----
-grails <<environment>>* test-app <<names>>* [-unit|-integration] [-continuous]
+grails <<environment>>* test-app <<names>>* [-unit] [-integration] [-continuous]
 ----
 
 Fired Events:
