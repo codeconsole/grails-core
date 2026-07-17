@@ -18,15 +18,19 @@
  */
 package org.grails.plugins.web.controllers
 
-import java.lang.reflect.Field
-
 import org.springframework.beans.factory.BeanRegistrar
 import org.springframework.beans.factory.support.BeanRegistryAdapter
 import org.springframework.beans.factory.support.DefaultListableBeanFactory
 import org.springframework.core.env.StandardEnvironment
-import org.springframework.web.servlet.handler.SimpleMappingExceptionResolver
+import org.springframework.mock.web.MockHttpServletRequest
+import org.springframework.mock.web.MockHttpServletResponse
+import org.springframework.mock.web.MockServletContext
+import org.springframework.web.context.WebApplicationContext
+import org.springframework.web.context.support.StaticWebApplicationContext
+import org.springframework.web.servlet.ModelAndView
 
 import grails.core.DefaultGrailsApplication
+import grails.core.GrailsApplication
 import org.grails.plugins.web.servlet.context.BootStrapClassRunner
 import org.grails.web.errors.GrailsExceptionResolver
 import org.grails.web.servlet.mvc.TokenResponseActionResultTransformer
@@ -54,13 +58,27 @@ class ControllersGrailsPluginSpec extends Specification {
     }
 
     void "the exception handler maps exceptions to the error view"() {
-        when:
+        given:
         GrailsExceptionResolver exceptionResolver = beanFactory.getBean('exceptionHandler', GrailsExceptionResolver)
-        Field mappingsField = SimpleMappingExceptionResolver.getDeclaredField('exceptionMappings')
-        mappingsField.accessible = true
+        exceptionResolver.grailsApplication = new DefaultGrailsApplication()
+        exceptionResolver.servletContext = servletContextWithWebApplicationContext()
+
+        when:
+        ModelAndView modelAndView = exceptionResolver.resolveException(
+                new MockHttpServletRequest(), new MockHttpServletResponse(), null, new Exception('boom'))
 
         then:
-        ((Properties) mappingsField.get(exceptionResolver)).getProperty('java.lang.Exception') == '/error'
+        modelAndView.viewName == '/error'
+    }
+
+    private static MockServletContext servletContextWithWebApplicationContext() {
+        MockServletContext servletContext = new MockServletContext()
+        StaticWebApplicationContext webApplicationContext = new StaticWebApplicationContext()
+        webApplicationContext.servletContext = servletContext
+        webApplicationContext.refresh()
+        webApplicationContext.beanFactory.registerSingleton(GrailsApplication.APPLICATION_ID, new DefaultGrailsApplication())
+        servletContext.setAttribute(WebApplicationContext.ROOT_WEB_APPLICATION_CONTEXT_ATTRIBUTE, webApplicationContext)
+        return servletContext
     }
 
     void "the controller definitions post-processor is created for the plugin's application"() {

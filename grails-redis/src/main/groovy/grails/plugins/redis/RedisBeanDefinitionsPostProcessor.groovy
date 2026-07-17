@@ -38,6 +38,8 @@ import grails.plugins.redis.util.RedisConfigurationUtil
  * definitions are registered before Spring Boot's configuration-class post-processor evaluates
  * auto-configuration conditions — the same visibility the {@code doWithSpring()} registration had.</p>
  *
+ * <p>Not statically compiled: the redis configuration is an untyped map traversed dynamically.</p>
+ *
  * @since 8.0
  */
 class RedisBeanDefinitionsPostProcessor implements BeanDefinitionRegistryPostProcessor, PriorityOrdered {
@@ -51,8 +53,8 @@ class RedisBeanDefinitionsPostProcessor implements BeanDefinitionRegistryPostPro
     @Override
     void postProcessBeanDefinitionRegistry(BeanDefinitionRegistry registry) throws BeansException {
         RedisConfigurationUtil.configureService(registry, redisConfigMap, '', RedisService)
-        redisConfigMap?.connections?.each { connection ->
-            RedisConfigurationUtil.configureService(registry, connection.value, connection?.key?.capitalize(), RedisService)
+        redisConfigMap.connections?.each { connection ->
+            RedisConfigurationUtil.configureService(registry, connection.value, connection.key?.capitalize(), RedisService)
         }
     }
 

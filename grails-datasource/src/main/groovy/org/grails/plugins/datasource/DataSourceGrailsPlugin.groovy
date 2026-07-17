@@ -73,6 +73,8 @@ class DataSourceGrailsPlugin extends Plugin {
                 }
 
             } else {
+                // Read through the Grails config, not the Environment: map-shaped subtrees are
+                // not resolvable as Environment properties
                 Map dataSources = config.getProperty('dataSources', Map, [:])
                 if (!dataSources) {
                     Map defaultDataSource = config.getProperty('dataSource', Map)

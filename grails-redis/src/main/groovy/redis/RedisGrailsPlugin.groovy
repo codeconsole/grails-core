@@ -63,6 +63,8 @@ class RedisGrailsPlugin extends Plugin {
     @Override
     BeanRegistrar beanRegistrar() {
         return { BeanRegistry registry, Environment environment ->
+            // Read through the Grails config, not the Environment: map-shaped subtrees are
+            // not resolvable as Environment properties
             Map redisConfigMap = (Map) (grailsApplication.config.get('grails.redis') ?: [:])
 
             // The redis pool definitions need destroy methods and dynamic pool-config property
