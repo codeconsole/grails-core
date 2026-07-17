@@ -18,12 +18,22 @@
  */
 package org.grails.datastore.gorm.query.transform
 
+import org.codehaus.groovy.control.CompilationUnit
 import org.codehaus.groovy.control.MultipleCompilationErrorsException
+import org.codehaus.groovy.control.Phases
+import org.codehaus.groovy.control.messages.WarningMessage
 
 import spock.lang.Specification
 import spock.lang.Unroll
 
 class GormQuerySafetyTransformerSpec extends Specification {
+
+    private List<WarningMessage> compileAndCollectWarnings(String source) {
+        CompilationUnit unit = new CompilationUnit(new GroovyClassLoader())
+        def sourceUnit = unit.addSource("Book.groovy", source)
+        unit.compile(Phases.CANONICALIZATION)
+        sourceUnit.getErrorCollector().getWarnings() ?: []
+    }
 
     void "test String query flattened from an interpolated GString before executeQuery fails to compile"() {
         when:
@@ -103,6 +113,83 @@ class Book {
         '.toString() on an alias'        | 'def g = "from Book where title = ${title}"\nString q = g.toString()'
         'a two-hop alias chain'          | 'def g = "from Book where title = ${title}"\ndef h = g\nString q = h'
         'assigning an already-flattened alias' | 'String p = "from Book where title = ${title}"\nString q = p'
+    }
+
+    void "test a variable flattened in only one branch of an if/else still fails to compile"() {
+        when:
+        new GroovyClassLoader().parseClass('''
+import grails.gorm.annotation.Entity
+
+@Entity
+class Book {
+    String title
+
+    static Book byTitle(String title, boolean condition) {
+        String q
+        if (condition) {
+            q = "from Book where title = ${title}"
+        } else {
+            q = "from Book"
+        }
+        find(q)
+    }
+}
+''')
+
+        then:
+        def e = thrown(MultipleCompilationErrorsException)
+        e.message.contains('GormUnsafeQueryString')
+    }
+
+    void "test a variable flattened only in the else branch still fails to compile"() {
+        when:
+        new GroovyClassLoader().parseClass('''
+import grails.gorm.annotation.Entity
+
+@Entity
+class Book {
+    String title
+
+    static Book byTitle(String title, boolean condition) {
+        String q
+        if (condition) {
+            q = "from Book"
+        } else {
+            q = "from Book where title = ${title}"
+        }
+        find(q)
+    }
+}
+''')
+
+        then:
+        def e = thrown(MultipleCompilationErrorsException)
+        e.message.contains('GormUnsafeQueryString')
+    }
+
+    void "test if/else where both branches build a safe query compiles cleanly"() {
+        when:
+        Class<?> bookClass = new GroovyClassLoader().parseClass('''
+import grails.gorm.annotation.Entity
+
+@Entity
+class Book {
+    String title
+
+    static Book byTitle(String title, boolean condition) {
+        String q
+        if (condition) {
+            q = "from Book where title = :title"
+        } else {
+            q = "from Book"
+        }
+        find(q, [title: title])
+    }
+}
+''')
+
+        then:
+        bookClass != null
     }
 
     void "test aliasing a plain non-interpolated variable compiles cleanly"() {
@@ -273,5 +360,157 @@ class Book {
         then:
         def e = thrown(MultipleCompilationErrorsException)
         e.message.contains('GormUnsafeQueryString')
+    }
+
+    void "test a field flattened via its own GString initializer warns but still compiles"() {
+        when:
+        List<WarningMessage> warnings = compileAndCollectWarnings('''
+import grails.gorm.annotation.Entity
+
+@Entity
+class Book {
+    String title
+    String cachedQuery = "from Book where title = ${title}"
+
+    List loadCached() {
+        executeQuery(this.cachedQuery)
+    }
+}
+''')
+
+        then:
+        warnings.size() == 1
+        warnings[0].message.contains('GormUnsafeQueryString')
+        warnings[0].message.contains("passed to 'executeQuery'")
+    }
+
+    void "test a field flattened via this.field assignment warns but still compiles"() {
+        when:
+        List<WarningMessage> warnings = compileAndCollectWarnings('''
+import grails.gorm.annotation.Entity
+
+@Entity
+class Book {
+    String title
+    String cachedQuery
+
+    void prepare(String title) {
+        this.cachedQuery = "from Book where title = ${title}"
+    }
+
+    List loadCached() {
+        executeQuery(this.cachedQuery)
+    }
+}
+''')
+
+        then:
+        warnings.size() == 1
+        warnings[0].message.contains('GormUnsafeQueryString')
+    }
+
+    void "test a field safely reassigned does not warn"() {
+        when:
+        List<WarningMessage> warnings = compileAndCollectWarnings('''
+import grails.gorm.annotation.Entity
+
+@Entity
+class Book {
+    String title
+    String cachedQuery = "from Book"
+
+    List loadCached() {
+        this.cachedQuery = "from Book where title = :title"
+        executeQuery(this.cachedQuery, [title: title])
+    }
+}
+''')
+
+        then:
+        warnings.empty
+    }
+
+    void "test string concatenation with a non-constant value warns but still compiles"() {
+        when:
+        List<WarningMessage> warnings = compileAndCollectWarnings('''
+import grails.gorm.annotation.Entity
+
+@Entity
+class Book {
+    String title
+
+    static List byTitle(String title) {
+        String q = "from Book where title = " + title
+        executeQuery(q)
+    }
+}
+''')
+
+        then:
+        warnings.size() == 1
+        warnings[0].message.contains('GormUnsafeQueryString')
+        warnings[0].message.contains("passed to 'executeQuery'")
+    }
+
+    void "test string concatenation passed directly as the query argument warns but still compiles"() {
+        when:
+        List<WarningMessage> warnings = compileAndCollectWarnings('''
+import grails.gorm.annotation.Entity
+
+@Entity
+class Book {
+    String title
+
+    static List byTitle(String title) {
+        executeQuery("from Book where title = " + title)
+    }
+}
+''')
+
+        then:
+        warnings.size() == 1
+        warnings[0].message.contains('GormUnsafeQueryString')
+    }
+
+    void "test concatenating two constant strings does not warn"() {
+        when:
+        List<WarningMessage> warnings = compileAndCollectWarnings('''
+import grails.gorm.annotation.Entity
+
+@Entity
+class Book {
+    String title
+
+    static List all() {
+        String q = "from " + "Book"
+        executeQuery(q)
+    }
+}
+''')
+
+        then:
+        warnings.empty
+    }
+
+    void "test concatenating a GString with more text fails to compile as flattening, not as a lesser concatenation warning"() {
+        when:
+        new GroovyClassLoader().parseClass('''
+import grails.gorm.annotation.Entity
+
+@Entity
+class Book {
+    String title
+
+    static List byTitle(String title) {
+        String q = "from Book where title = ${title}" + " order by title"
+        executeQuery(q)
+    }
+}
+''')
+
+        then:
+        def e = thrown(MultipleCompilationErrorsException)
+        e.message.contains('GormUnsafeQueryString')
+        e.message.contains("passed to 'executeQuery'")
     }
 }

@@ -1532,4 +1532,6 @@ If your application has this pattern, fix it by keeping the query a `GString` al
 
 This check runs automatically wherever `grails-datamapping-core` is on the compile classpath — no opt-in configuration is required or possible beyond the per-call-site suppression above.
 
+The same check also emits (non-build-breaking) **compile-time warnings**, not errors, for two related but lower-confidence patterns: a `String`-typed field assigned an interpolated `GString` and later read through `this.field` in a query call, and query text built with `+` concatenation from a non-constant value with no `GString` involved. Neither of these fails the build, but both are worth reviewing — see <<sqlInjection,SQL injection>> for examples of both.
+
 **Most applications and plugins need no action.** Behavior only changes where a plugin bean and a conditional Boot bean competed for the same name or type — the plugin bean now wins, which is almost always the intended outcome.
