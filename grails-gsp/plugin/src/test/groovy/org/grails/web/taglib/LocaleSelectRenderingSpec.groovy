@@ -84,6 +84,43 @@ class LocaleSelectRenderingSpec extends Specification implements TagLibUnitTest<
         !output.contains('?lang=pt_BR')
     }
 
+    void 'tags="true" still marks the current locale selected in select mode'() {
+        given:
+        publish([Locale.forLanguageTag('en'), Locale.forLanguageTag('pt-BR')])
+
+        when: 'the current locale is fixed to pt-BR'
+        String output = applyTemplate('<g:localeSelect name="lang" available="true" tags="true" value="pt_BR"/>')
+
+        then: 'the BCP-47 keyed option for the current locale carries the selected attribute'
+        output =~ /<option value="pt-BR" selected/
+    }
+
+    void 'active falls back to a language match when the list offers no exact country match'() {
+        given: 'a language-only available list, as produced by messages_xx.properties discovery'
+        publish([Locale.forLanguageTag('en'), Locale.forLanguageTag('it')])
+
+        when: 'the current locale is country-qualified, as browsers typically send'
+        String output = applyTemplate(
+                '<g:localeSelect available="true" value="en_US" var="loc">[${loc.tag}|${loc.active}]</g:localeSelect>')
+
+        then:
+        output.contains('[en|true]')
+        output.contains('[it|false]')
+    }
+
+    void 'active prefers the exact country match when the list offers one'() {
+        given:
+        publish([Locale.forLanguageTag('pt'), Locale.forLanguageTag('pt-BR')])
+
+        when:
+        String output = applyTemplate(
+                '<g:localeSelect available="true" value="pt_BR" var="loc">[${loc.tag}|${loc.active}]</g:localeSelect>')
+
+        then: 'only the exact match is active, not every entry sharing the language'
+        output.contains('[pt-BR|true]')
+        output.contains('[pt|false]')
+    }
+
     void 'sort orders the locales by their label using a collator'() {
         given: 'insertion order nl, it, en; autonyms Nederlands, italiano, English'
         publish([Locale.forLanguageTag('nl'), Locale.forLanguageTag('it'), Locale.forLanguageTag('en')])
@@ -100,7 +137,7 @@ class LocaleSelectRenderingSpec extends Specification implements TagLibUnitTest<
         given:
         publish([Locale.forLanguageTag('es'), Locale.forLanguageTag('en'), Locale.forLanguageTag('cs')])
 
-        when: 'no spring.web.locale is configured, so the default falls back to English'
+        when: 'neither grails.i18n.default.locale nor spring.web.locale is configured, so the default falls back to English'
         String output = applyTemplate(
                 '<g:localeSelect available="true" pinDefault="true" sort="true" var="loc">[${loc.tag}:${loc.default}]</g:localeSelect>')
 

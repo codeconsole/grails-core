@@ -1032,6 +1032,9 @@ class FormTagLib implements ApplicationContextAware, InitializingBean, TagLibrar
                     locales = [pinned] + locales.findAll { it.language != defaultLocale.language }
                 }
             }
+            // A country-qualified request locale (e.g. Accept-Language: en-US) must still mark the
+            // language-only entry (en) active when the list offers no exact country match.
+            boolean exactActiveMatch = locales.any { it.language == current.language && it.country == current.country }
             locales.eachWithIndex { locale, i ->
                 out << body([(varName): [
                         locale: locale,
@@ -1040,7 +1043,9 @@ class FormTagLib implements ApplicationContextAware, InitializingBean, TagLibrar
                         autonym: locale.getDisplayName(locale),
                         name: locale.getDisplayName(current),
                         label: label(locale),
-                        active: locale.language == current.language && locale.country == current.country,
+                        active: exactActiveMatch ?
+                                locale.language == current.language && locale.country == current.country :
+                                locale.language == current.language,
                         'default': locale.language == defaultLocale.language,
                         index: i
                 ]])
@@ -1064,7 +1069,7 @@ class FormTagLib implements ApplicationContextAware, InitializingBean, TagLibrar
         attrs.remove('param')
         attrs.remove('pinDefault')
         attrs.from = locales
-        attrs.value = localeKey(current)
+        attrs.value = useTags ? current.toLanguageTag() : localeKey(current)
         attrs.optionKey = useTags ? { it.toLanguageTag() } : { localeKey(it) }
         attrs.optionValue = label
         out << select(attrs)
@@ -1094,7 +1099,8 @@ class FormTagLib implements ApplicationContextAware, InitializingBean, TagLibrar
     }
 
     private Locale configuredDefaultLocale() {
-        def configured = grailsApplication?.config?.getProperty('spring.web.locale')
+        def configured = grailsApplication?.config?.getProperty('grails.i18n.default.locale') ?:
+                grailsApplication?.config?.getProperty('spring.web.locale')
         (configured ? StringUtils.parseLocale(configured.toString()) : null) ?: Locale.ENGLISH
     }
 

@@ -66,6 +66,6 @@ Attributes
 * `labelType` (optional) - The option/link label: `autonym` (each locale in its own language, e.g. `Deutsch`), `name` (in the display locale, e.g. `German`), `both`, or omitted for the legacy `"language, [COUNTRY,] name"` label.
 * `sort` (optional) - If `true`, orders the locales by their label using a locale-independent collator.
 * `tags` (optional) - If `true`, option/link keys are BCP&#8209;47 language tags (`en-US`) rather than the legacy `en_US` form.
-* `pinDefault` (optional) - If `true` (body mode), emits the configured default locale (`spring.web.locale`) first, so it can be pinned to the top of a switcher.
+* `pinDefault` (optional) - If `true` (body mode), emits the configured default locale (`grails.i18n.default.locale`, falling back to `spring.web.locale`) first, so it can be pinned to the top of a switcher.
 * `param` (optional) - The request parameter name used for `links`-mode hrefs. Defaults to `lang`.
 * `var` (optional) - Enables body mode: the name of the per-locale model variable exposed to the body. The model exposes `locale`, `tag` (BCP&#8209;47), `code` (`language_COUNTRY`), `autonym` (the name in its own language), `name` (the name in the display locale), `label`, `active` (matches the current locale), `default` (matches the configured default) and `index`.
