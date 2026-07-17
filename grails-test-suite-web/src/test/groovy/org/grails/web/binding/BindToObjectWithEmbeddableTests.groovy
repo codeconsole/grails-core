@@ -55,6 +55,12 @@ class EmbeddedAddressPerson {
     String name
     int age
     EmbeddedAddress address = new EmbeddedAddress()
+
+    static constraints = {
+        name bindable: true
+        age bindable: true
+        address bindable: true
+    }
 }
 
 class EmbeddedAddress {
@@ -65,7 +71,11 @@ class EmbeddedAddress {
     String zip
 
     static constraints = {
-        street2(nullable:true)
+        street bindable: true
+        street2 nullable:true, bindable: true
+        city bindable: true
+        state bindable: true
+        zip bindable: true
     }
 }
 

@@ -150,6 +150,12 @@ class DataBindingConfigurationSpec extends Specification implements GrailsUnitTe
         Date dob
         MyCustomProp prop
 
+        static constraints = {
+            name bindable: true
+            dob bindable: true
+            prop bindable: true
+        }
+
         Person() {}
     }
 }

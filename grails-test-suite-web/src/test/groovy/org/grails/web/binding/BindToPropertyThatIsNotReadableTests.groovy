@@ -49,6 +49,11 @@ class PropertyNotReadableBook {
 
     static transients = ['calculatedField']
 
+    static constraints = {
+        title bindable: true
+        calculatedField bindable: true
+    }
+
     void setCalculatedField(List value) {
         this.calculateField = value
     }

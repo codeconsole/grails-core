@@ -230,6 +230,10 @@ class ErrorHandlersController extends SomeAbstractController implements Database
 
 class MyCommand {
     String exceptionToThrow
+
+    static constraints = {
+        exceptionToThrow bindable: true
+    }
 }
 
 class MyException extends Exception {

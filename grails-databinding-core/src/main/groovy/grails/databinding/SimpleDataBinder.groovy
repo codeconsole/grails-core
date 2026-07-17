@@ -76,6 +76,8 @@ import org.grails.databinding.xml.GPathResultMap
 @CompileStatic
 class SimpleDataBinder implements DataBinder {
 
+    private static final List BIND_ALL_BINDING_INCLUDE_LIST = new BindAllBindingIncludeList()
+
     protected Map<Class, StructuredBindingEditor> structuredEditors = new HashMap<Class, StructuredBindingEditor>()
     ConversionService conversionService
     protected Map<Class, List<ValueConverter>> conversionHelpers = [:].withDefault { c -> [] }
@@ -269,7 +271,34 @@ class SimpleDataBinder implements DataBinder {
     }
 
     protected boolean isOkToBind(String propName, List whiteList, List blackList) {
-        'class' != propName && 'classLoader' != propName && 'protectionDomain' != propName && 'metaClass' != propName && 'metaPropertyValues' != propName && 'properties' != propName && !blackList?.contains(propName) && (!whiteList || whiteList.contains(propName) || whiteList.find { it -> it?.toString()?.startsWith(propName + '.') })
+        !isFrameworkProperty(propName) && !blackList?.contains(propName) &&
+                (whiteList == null || isBindAllBindingIncludeList(whiteList) || whiteList.contains(propName) ||
+                        whiteList.any { item -> item?.toString()?.startsWith(propName + '.') })
+    }
+
+    static boolean isPropertyExcluded(String propertyName, List excludeList) {
+        excludeList?.any { item ->
+            String excludeName = item?.toString()
+            excludeName == propertyName || propertyName.startsWith(excludeName + '.') ||
+                    (excludeName?.endsWith('.*') && propertyName.startsWith(excludeName.substring(0, excludeName.length() - 1))) ||
+                    (excludeName?.endsWith('_*') && propertyName.startsWith(excludeName.substring(0, excludeName.length() - 1)))
+        } ?: false
+    }
+
+    private static boolean isFrameworkProperty(String propertyName) {
+        'class' == propertyName || 'classLoader' == propertyName || 'protectionDomain' == propertyName ||
+                'metaClass' == propertyName || 'metaPropertyValues' == propertyName || 'properties' == propertyName
+    }
+
+    protected static List getBindAllBindingIncludeList() {
+        BIND_ALL_BINDING_INCLUDE_LIST
+    }
+
+    protected static boolean isBindAllBindingIncludeList(List includeList) {
+        includeList instanceof BindAllBindingIncludeList
+    }
+
+    private static final class BindAllBindingIncludeList extends ArrayList {
     }
 
     protected boolean isOkToBind(MetaProperty property, List whitelist, List blacklist) {
@@ -352,9 +381,10 @@ class SimpleDataBinder implements DataBinder {
                     } else if (isBasicType(genericType)) {
                         addElementToCollectionAt(obj, propName, collectionInstance, index, convert(genericType, val))
                     } else if (val instanceof Map) {
-                        indexedInstance = genericType.getDeclaredConstructor().newInstance()
-                        bind(indexedInstance, new SimpleMapDataBindingSource(val), listener)
-                        addElementToCollectionAt(obj, propName, collectionInstance, index, indexedInstance)
+                        indexedInstance = instantiateAndBindOrUseMapConstructor(genericType, (Map) val, listener)
+                        if (indexedInstance != null) {
+                            addElementToCollectionAt(obj, propName, collectionInstance, index, indexedInstance)
+                        }
                     } else if (val instanceof DataBindingSource) {
                         indexedInstance = genericType.getDeclaredConstructor().newInstance()
                         bind(indexedInstance, val, listener)
@@ -383,7 +413,14 @@ class SimpleDataBinder implements DataBinder {
                 def referencedType = getReferencedTypeForCollection(propName, obj)
                 if (referencedType != null) {
                     if (val instanceof Map) {
-                        mapInstance[indexedPropertyReferenceDescriptor.index] = referencedType.newInstance(val)
+                        def indexedInstance = instantiateAndBindOrUseMapConstructor(referencedType, (Map) val, listener)
+                        if (indexedInstance != null) {
+                            mapInstance[indexedPropertyReferenceDescriptor.index] = indexedInstance
+                        }
+                    } else if (val instanceof DataBindingSource) {
+                        def indexedInstance = referencedType.getDeclaredConstructor().newInstance()
+                        bind(indexedInstance, val, listener)
+                        mapInstance[indexedPropertyReferenceDescriptor.index] = indexedInstance
                     } else {
                         mapInstance[indexedPropertyReferenceDescriptor.index] = convert(referencedType, val)
                     }
@@ -391,6 +428,16 @@ class SimpleDataBinder implements DataBinder {
                     mapInstance[indexedPropertyReferenceDescriptor.index] = val
                 }
             }
+        }
+    }
+
+    protected Object instantiateAndBindOrUseMapConstructor(Class referencedType, Map values, DataBindingListener listener) {
+        try {
+            def instance = referencedType.getDeclaredConstructor().newInstance()
+            bind(instance, new SimpleMapDataBindingSource(values), listener)
+            return instance
+        } catch (NoSuchMethodException | IllegalAccessException ignored) {
+            return referencedType.newInstance(values)
         }
     }
 

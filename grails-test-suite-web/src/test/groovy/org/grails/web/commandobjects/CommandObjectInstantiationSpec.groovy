@@ -143,8 +143,16 @@ class InstantiationController {
 @Entity
 class DomainClassCommandObject {
     String name
+
+    static constraints = {
+        name bindable: true
+    }
 }
 
 class CommandObject {
     String name
+
+    static constraints = {
+        name bindable: true
+    }
 }

@@ -454,6 +454,11 @@ class DataBindingTests extends Specification implements ControllerUnitTest<TestC
 class Clown {
     String name
     String hairColour
+
+    static constraints = {
+        name bindable: true
+        hairColour bindable: true
+    }
 }
 
 @Artefact('Controller')
@@ -470,11 +475,21 @@ class DataBindingTestsBook {
     String title
     Author author
     URL site
+
+    static constraints = {
+        title bindable: true
+        author bindable: true
+        site bindable: true
+    }
 }
 
 @Entity
 class BookReview {
     DataBindingTestsBook book
+
+    static constraints = {
+        book bindable: true
+    }
 }
 
 @Entity
@@ -486,10 +501,11 @@ class MyBean {
   Integer thirdIntProperty
   Float someFloatProperty
   static constraints = {
-    someIntProperty(min:1, nullable:true)
-    someOtherIntProperty(max:99)
-    thirdIntProperty nullable:false
-    formattedDate nullable: true
+    someIntProperty min:1, nullable:true, bindable: true
+    someOtherIntProperty max:99, bindable: true
+    thirdIntProperty nullable:false, bindable: true
+    someFloatProperty bindable: true
+    formattedDate nullable: true, bindable: true
   }
 }
 @Entity
@@ -499,20 +515,28 @@ class Author {
     City placeOfBirth
 
     static constraints = {
-        name(nullable:true)
+        name nullable:true, bindable: true
+        hairColour bindable: true
+        placeOfBirth bindable: true
     }
 }
 @Entity
 class City {
     String name
     static hasMany = [people: DataBindingTestsPerson]
+
+    static constraints = {
+        name bindable: true
+        people bindable: true
+    }
 }
 @Entity
 class DataBindingTestsPerson {
     String name
     Date birthDate
     static constraints = {
-        birthDate nullable: true
+        name bindable: true
+        birthDate nullable: true, bindable: true
     }
 
     @Override
@@ -551,6 +575,12 @@ class Pet {
     String name
     Map detailMap
     DataBindingTestsPerson owner
+
+    static constraints = {
+        name bindable: true
+        detailMap bindable: true
+        owner bindable: true
+    }
 }
 
 @Entity
@@ -559,6 +589,7 @@ class WithEncoding {
     EmbedDate eDate
 
     static constraints = {
+        eDate bindable: true
     }
 
     static embedded = ['eDate']
@@ -569,6 +600,8 @@ class EmbedDate {
     byte[] aFile
 
     static constraints = {
+        aDate bindable: true
+        aFile bindable: true
     }
 }
 @Entity
@@ -577,8 +610,16 @@ class AuthorCommand {
     public AuthorCommand() {
         beans << new AuthorBean()
     }
+
+    static constraints = {
+        beans bindable: true
+    }
 }
 @Entity
 class AuthorBean {
     Integer[] integers
+
+    static constraints = {
+        integers bindable: true
+    }
 }

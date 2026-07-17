@@ -271,6 +271,13 @@ interface Settings {
     String WEB_REMOVE_DEFAULT_VIEW_RESOLVER_BEAN = 'grails.web.removeDefaultViewResolverBean'
 
     /**
+     * Whether to remove Spring Boot's welcome-page handler mappings so Grails' own URL mappings
+     * own the root path ('/') rather than a static {@code index.html} being served for it.
+     * Defaults to true
+     */
+    String WEB_REMOVE_WELCOME_PAGE_MAPPING = 'grails.web.removeWelcomePageMapping'
+
+    /**
      * The URL of the server
      */
     String SERVER_URL = 'grails.serverURL'
@@ -385,7 +392,16 @@ interface Settings {
 
     String DATE_LENIENT_PARSING = 'grails.databinding.dateParsingLenient'
 
+    String LEGACY_BINDABLE_DEFAULT = 'grails.databinding.legacyBindableDefault'
+
     String I18N_CACHE_SECONDS = 'grails.i18n.cache.seconds'
 
     String I18N_FILE_CACHE_SECONDS = 'grails.i18n.filecache.seconds'
+
+    /**
+     * The locale resolution strategy: {@code session} (default), {@code cookie},
+     * {@code acceptHeader} or {@code fixed}. The {@code acceptHeader} and {@code fixed}
+     * resolvers are read-only, so the {@code ?lang=} switch is disabled for them.
+     */
+    String I18N_LOCALE_RESOLVER = 'grails.i18n.localeResolver'
 }

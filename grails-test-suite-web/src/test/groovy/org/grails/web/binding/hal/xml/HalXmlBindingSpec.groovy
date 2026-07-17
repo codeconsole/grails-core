@@ -75,10 +75,22 @@ class Person {
     Integer age
     Address homeAddress
     Address workAddress
+
+    static constraints = {
+        name bindable: true
+        age bindable: true
+        homeAddress bindable: true
+        workAddress bindable: true
+    }
 }
 
 @Entity
 class Address {
     String city
     String state
+
+    static constraints = {
+        city bindable: true
+        state bindable: true
+    }
 }

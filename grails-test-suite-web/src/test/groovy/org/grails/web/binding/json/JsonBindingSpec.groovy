@@ -167,10 +167,21 @@ class BindingController {
 class Person {
     String name
     Integer age
+
+    static constraints = {
+        name bindable: true
+        age bindable: true
+    }
 }
 
 class Family {
     String lastName
     List<Person> familyMembers
     Map mapData
+
+    static constraints = {
+        lastName bindable: true
+        familyMembers bindable: true
+        mapData bindable: true
+    }
 }

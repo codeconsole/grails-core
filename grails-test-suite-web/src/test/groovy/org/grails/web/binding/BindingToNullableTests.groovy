@@ -63,7 +63,8 @@ class NullBindingPerson {
     Date dateOfBirth
 
     static constraints = {
-        dateOfBirth nullable: true
+        name bindable: true
+        dateOfBirth nullable: true, bindable: true
     }
 }
 
@@ -81,4 +82,3 @@ class NullBindingPersonController {
         }
     }
 }
-

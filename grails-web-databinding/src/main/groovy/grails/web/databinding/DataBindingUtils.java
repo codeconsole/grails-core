@@ -23,6 +23,9 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Modifier;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
+import java.math.BigDecimal;
+import java.math.BigInteger;
+import java.net.URL;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -49,6 +52,7 @@ import grails.core.GrailsApplication;
 import grails.databinding.CollectionDataBindingSource;
 import grails.databinding.DataBinder;
 import grails.databinding.DataBindingSource;
+import grails.databinding.SimpleDataBinder;
 import grails.util.Environment;
 import grails.util.Holders;
 import grails.validation.ValidationErrors;
@@ -76,6 +80,10 @@ public class DataBindingUtils {
     public static final String DATA_BINDER_BEAN_NAME = "grailsWebDataBinder";
     private static final String BLANK = "";
     private static final Map<Class, List> CLASS_TO_BINDING_INCLUDE_LIST = new ConcurrentHashMap<>();
+    private static final Map<Class, List> CLASS_TO_LEGACY_BINDING_INCLUDE_LIST = new ConcurrentHashMap<>();
+    private static final Set<String> FRAMEWORK_MANAGED_PROPERTIES = Set.of(
+            "class", "classLoader", "protectionDomain", "metaClass", "metaPropertyValues", "properties",
+            "errors", "id", "version", "dateCreated", "lastUpdated");
 
     /**
      * Associations both sides of any bidirectional relationships found in the object and source map to bind
@@ -125,28 +133,255 @@ public class DataBindingUtils {
     }
 
     protected static List getBindingIncludeList(final Object object) {
-        List includeList = Collections.emptyList();
+        final boolean legacyBindableDefaultEnabled = isLegacyBindableDefaultEnabled();
+        final Map<Class, List> includeListCache = legacyBindableDefaultEnabled ?
+                CLASS_TO_LEGACY_BINDING_INCLUDE_LIST : CLASS_TO_BINDING_INCLUDE_LIST;
+        List includeList = null;
         try {
             final Class<? extends Object> objectClass = object.getClass();
-            if (CLASS_TO_BINDING_INCLUDE_LIST.containsKey(objectClass)) {
-                includeList = CLASS_TO_BINDING_INCLUDE_LIST.get(objectClass);
+            if (includeListCache.containsKey(objectClass)) {
+                includeList = includeListCache.get(objectClass);
             } else {
-                final Field whiteListField = objectClass.getDeclaredField(DefaultASTDatabindingHelper.DEFAULT_DATABINDING_WHITELIST);
-                if (whiteListField != null) {
-                    if ((whiteListField.getModifiers() & Modifier.STATIC) != 0) {
-                        final Object whiteListValue = whiteListField.get(objectClass);
-                        if (whiteListValue instanceof List) {
-                            includeList = (List) whiteListValue;
-                        }
+                // Resolve the runtime-derived bindable names only on a cache miss - this walks the
+                // target's constraints/metaclass and would otherwise run on every bind of a cached class.
+                final List runtimeBindableNames = legacyBindableDefaultEnabled ? null : getBindablePropertyNames(object);
+                includeList = runtimeBindableNames;
+                final Field legacyWhiteListField = getField(objectClass, DefaultASTDatabindingHelper.LEGACY_DATABINDING_WHITELIST);
+                final Field defaultWhiteListField = legacyBindableDefaultEnabled ?
+                        getField(objectClass, DefaultASTDatabindingHelper.DEFAULT_DATABINDING_WHITELIST) :
+                        getPairedField(objectClass, DefaultASTDatabindingHelper.DEFAULT_DATABINDING_WHITELIST,
+                                DefaultASTDatabindingHelper.LEGACY_DATABINDING_WHITELIST);
+                if (legacyBindableDefaultEnabled) {
+                    includeList = getStaticListFieldValue(legacyWhiteListField);
+                    if (includeList == null) {
+                        includeList = getStaticListFieldValue(defaultWhiteListField);
                     }
+                } else if (defaultWhiteListField != null) {
+                    final List generatedIncludeList = getStaticListFieldValue(defaultWhiteListField);
+                    final Collection combinedIncludeList = new LinkedHashSet();
+                    if (generatedIncludeList != null) {
+                        combinedIncludeList.addAll(generatedIncludeList);
+                    }
+                    if (runtimeBindableNames != null) {
+                        combinedIncludeList.addAll(runtimeBindableNames);
+                    }
+                    includeList = new ArrayList(combinedIncludeList);
                 }
-                if (!Environment.getCurrent().isReloadEnabled()) {
-                    CLASS_TO_BINDING_INCLUDE_LIST.put(objectClass, includeList);
+                if (!legacyBindableDefaultEnabled) {
+                    includeList = asGeneratedBindingIncludeList(includeList);
+                }
+                if (includeList != null && !Environment.getCurrent().isReloadEnabled()) {
+                    includeListCache.put(objectClass, includeList);
                 }
             }
         } catch (Exception e) {
         }
+        if (!legacyBindableDefaultEnabled) {
+            includeList = asGeneratedBindingIncludeList(includeList);
+        }
         return includeList;
+    }
+
+    static List asGeneratedBindingIncludeList(final List includeList) {
+        if (includeList instanceof GeneratedBindingIncludeList) {
+            return includeList;
+        }
+        final Collection values = includeList == null || includeList.isEmpty() ?
+                Collections.singletonList(DefaultASTDatabindingHelper.NO_BINDABLE_PROPERTIES) : includeList;
+        return new GeneratedBindingIncludeList(values);
+    }
+
+    static boolean isGeneratedBindingIncludeList(final List includeList) {
+        return includeList instanceof GeneratedBindingIncludeList;
+    }
+
+    private static final class GeneratedBindingIncludeList extends ArrayList {
+        private GeneratedBindingIncludeList(final Collection values) {
+            super(values);
+        }
+    }
+
+    private static Field getField(final Class objectClass, final String fieldName) {
+        Class currentClass = objectClass;
+        while (currentClass != null) {
+            final Field field = getPublicDeclaredField(currentClass, fieldName);
+            if (field != null) {
+                return field;
+            }
+            currentClass = currentClass.getSuperclass();
+        }
+        return null;
+    }
+
+    private static Field getPairedField(final Class objectClass, final String fieldName, final String pairedFieldName) {
+        Class currentClass = objectClass;
+        while (currentClass != null) {
+            final Field field = getPublicDeclaredField(currentClass, fieldName);
+            final Field pairedField = getPublicDeclaredField(currentClass, pairedFieldName);
+            if (field != null && pairedField != null) {
+                return field;
+            }
+            currentClass = currentClass.getSuperclass();
+        }
+        return null;
+    }
+
+    private static Field getPublicDeclaredField(final Class objectClass, final String fieldName) {
+        try {
+            final Field field = objectClass.getDeclaredField(fieldName);
+            return Modifier.isPublic(field.getModifiers()) ? field : null;
+        } catch (NoSuchFieldException ignored) {
+            return null;
+        }
+    }
+
+    private static List getStaticListFieldValue(final Field field) throws IllegalAccessException {
+        if (field != null && (field.getModifiers() & Modifier.STATIC) != 0) {
+            final Object value = field.get(null);
+            if (value instanceof List) {
+                return (List) value;
+            }
+        }
+        return null;
+    }
+
+    static List getBindablePropertyNames(final Object object) {
+        return getPropertyNamesWithBindableValue(object, Boolean.TRUE);
+    }
+
+    static List getUnbindablePropertyNames(final Object object) {
+        return getPropertyNamesWithBindableValue(object, Boolean.FALSE);
+    }
+
+    static List getPropertyNamesWithBindableValue(final Object object, final Boolean bindableValue) {
+        final Map constrainedProperties = getConstrainedProperties(object);
+        if (constrainedProperties == null || constrainedProperties.isEmpty()) {
+            return Collections.emptyList();
+        }
+        final List propertyNames = new ArrayList();
+        for (Object entryObject : constrainedProperties.entrySet()) {
+            Map.Entry entry = (Map.Entry) entryObject;
+            if (bindableValue.equals(getBindableConstraintValue(entry.getValue()))) {
+                String propertyName = String.valueOf(entry.getKey());
+                propertyNames.add(propertyName);
+                if (Boolean.TRUE.equals(bindableValue) && !isSimpleType(getConstrainedPropertyType(entry.getValue()))) {
+                    propertyNames.add(propertyName + "_*");
+                    propertyNames.add(propertyName + ".*");
+                }
+            }
+        }
+        return propertyNames;
+    }
+
+    private static Class getConstrainedPropertyType(final Object constrainedProperty) {
+        MetaClass metaClass = GroovySystem.getMetaClassRegistry().getMetaClass(constrainedProperty.getClass());
+        try {
+            Object propertyType = metaClass.invokeMethod(constrainedProperty, "getPropertyType", new Object[0]);
+            if (propertyType instanceof Class) {
+                return (Class) propertyType;
+            }
+        } catch (Exception ignored) {
+        }
+        return null;
+    }
+
+    private static boolean isSimpleType(final Class propertyType) {
+        return propertyType != null && (propertyType.isPrimitive() || String.class.equals(propertyType) ||
+                Boolean.class.equals(propertyType) || Character.class.equals(propertyType) || Number.class.isAssignableFrom(propertyType) ||
+                BigInteger.class.equals(propertyType) || BigDecimal.class.equals(propertyType) || URL.class.equals(propertyType));
+    }
+
+    static Map getConstrainedProperties(final Object object) {
+        MetaClass metaClass = GroovySystem.getMetaClassRegistry().getMetaClass(object.getClass());
+        try {
+            Object constrainedProperties = metaClass.getProperty(object, "constraintsMap");
+            if (constrainedProperties instanceof Map) {
+                return (Map) constrainedProperties;
+            }
+        } catch (Exception ignored) {
+        }
+        try {
+            Object constrainedProperties = metaClass.invokeMethod(object, "getConstraintsMap", new Object[0]);
+            if (constrainedProperties instanceof Map) {
+                return (Map) constrainedProperties;
+            }
+        } catch (Exception ignored) {
+        }
+        try {
+            Object constrainedProperties = metaClass.getProperty(object, "constraints");
+            if (constrainedProperties instanceof Map) {
+                return (Map) constrainedProperties;
+            }
+        } catch (Exception ignored) {
+        }
+        try {
+            Map constrainedProperties = evaluateConstrainedProperties(object.getClass());
+            if (constrainedProperties != null) {
+                return constrainedProperties;
+            }
+        } catch (Exception ignored) {
+        }
+        return Collections.emptyMap();
+    }
+
+    private static Map evaluateConstrainedProperties(final Class objectClass) {
+        try {
+            Class<?> validationSupport = Class.forName("org.grails.web.plugins.support.ValidationSupport");
+            Object constrainedProperties = validationSupport.getMethod("getConstrainedPropertiesForClass", Class.class, boolean.class).invoke(null, objectClass, false);
+            if (constrainedProperties instanceof Map) {
+                return (Map) constrainedProperties;
+            }
+        } catch (Exception ignored) {
+        }
+        return Collections.emptyMap();
+    }
+
+    static Object getBindableConstraintValue(final Object constrainedProperty) {
+        MetaClass metaClass = GroovySystem.getMetaClassRegistry().getMetaClass(constrainedProperty.getClass());
+        try {
+            Object value = metaClass.invokeMethod(constrainedProperty, "getMetaConstraintValue", new Object[] { DefaultASTDatabindingHelper.BINDABLE_CONSTRAINT_NAME });
+            if (value != null) {
+                return value;
+            }
+        } catch (Exception ignored) {
+        }
+        try {
+            Object metaConstraints = metaClass.getProperty(constrainedProperty, "metaConstraints");
+            if (metaConstraints instanceof Map) {
+                return ((Map) metaConstraints).get(DefaultASTDatabindingHelper.BINDABLE_CONSTRAINT_NAME);
+            }
+        } catch (Exception ignored) {
+        }
+        try {
+            Object delegate = metaClass.getProperty(constrainedProperty, "property");
+            if (delegate != null && delegate != constrainedProperty) {
+                return getBindableConstraintValue(delegate);
+            }
+        } catch (Exception ignored) {
+        }
+        return null;
+    }
+
+    static List addUnbindablePropertyNames(final Object object, final List exclude) {
+        final List unbindablePropertyNames = getUnbindablePropertyNames(object);
+        if (unbindablePropertyNames.isEmpty()) {
+            return exclude;
+        }
+        if (exclude == null || exclude.isEmpty()) {
+            return unbindablePropertyNames;
+        }
+        final List combinedExcludes = new ArrayList(exclude);
+        combinedExcludes.addAll(unbindablePropertyNames);
+        return combinedExcludes;
+    }
+
+    static boolean isLegacyBindableDefaultEnabled() {
+        GrailsApplication application = Holders.findApplication();
+        if (application != null) {
+            return application.getConfig().getProperty(DefaultASTDatabindingHelper.LEGACY_BINDABLE_DEFAULT, Boolean.class, false);
+        }
+        Object value = Holders.getFlatConfig().get(DefaultASTDatabindingHelper.LEGACY_BINDABLE_DEFAULT);
+        return Boolean.TRUE.equals(value) || "true".equalsIgnoreCase(String.valueOf(value));
     }
 
     /**
@@ -223,8 +458,11 @@ public class DataBindingUtils {
 
     public static BindingResult bindObjectToInstance(Object object, Object source, List include, List exclude, String filter, boolean nullMissing) {
         boolean explicitInclude = include != null;
-        if (include == null && exclude == null) {
+        if (include == null) {
             include = getBindingIncludeList(object);
+        }
+        else if (include.isEmpty()) {
+            include = Collections.singletonList(DefaultASTDatabindingHelper.NO_BINDABLE_PROPERTIES);
         }
         GrailsApplication application = Holders.findApplication();
         PersistentEntity entity = null;
@@ -255,12 +493,25 @@ public class DataBindingUtils {
     @SuppressWarnings("unchecked")
     public static BindingResult bindObjectToDomainInstance(PersistentEntity entity, Object object,
                                                            Object source, List include, List exclude, String filter) {
+        if (include == null) {
+            include = getBindingIncludeList(object);
+        }
+        else if (include.isEmpty()) {
+            include = Collections.singletonList(DefaultASTDatabindingHelper.NO_BINDABLE_PROPERTIES);
+        }
         return bindObjectToDomainInstance(entity, object, source, include, exclude, filter, false);
     }
 
     @SuppressWarnings("unchecked")
     public static BindingResult bindObjectToDomainInstance(PersistentEntity entity, Object object,
                                                            Object source, List include, List exclude, String filter, boolean nullMissing) {
+        boolean explicitInclude = include != null;
+        if (include == null) {
+            include = getBindingIncludeList(object);
+        }
+        else if (include.isEmpty()) {
+            include = Collections.singletonList(DefaultASTDatabindingHelper.NO_BINDABLE_PROPERTIES);
+        }
         BindingResult bindingResult = null;
         GrailsApplication grailsApplication = Holders.findApplication();
 
@@ -268,7 +519,7 @@ public class DataBindingUtils {
             final DataBindingSource bindingSource = createDataBindingSource(grailsApplication, object.getClass(), source);
             final DataBinder grailsWebDataBinder = getGrailsWebDataBinder(grailsApplication);
             grailsWebDataBinder.bind(object, bindingSource, filter, include, exclude);
-            if (nullMissing && include != null && !include.isEmpty()) {
+            if (nullMissing && explicitInclude && !include.isEmpty()) {
                 assignNullToMissingIncludedProperties(object, bindingSource, include, exclude, filter);
             }
         } catch (InvalidRequestBodyException e) {
@@ -324,7 +575,7 @@ public class DataBindingUtils {
         for (Object includedProperty : include) {
             if (includedProperty instanceof CharSequence) {
                 String propertyName = includedProperty.toString();
-                if (propertyName.indexOf('*') == -1 && !isExcludedProperty(propertyName, exclude) && isBindingAllowed(object, propertyName)) {
+                if (propertyName.indexOf('*') == -1 && isNullMissingPropertyBindable(object, propertyName, include, exclude)) {
                     if (assignNullToMissingIndexedProperties(object, bindingSource, propertyName, filter)) {
                         continue;
                     }
@@ -336,30 +587,16 @@ public class DataBindingUtils {
         }
     }
 
-    private static boolean isExcludedProperty(String propertyName, List exclude) {
-        if (exclude == null) {
-            return false;
-        }
-        for (Object excludedProperty : exclude) {
-            if (excludedProperty instanceof CharSequence) {
-                String excludedPropertyName = excludedProperty.toString();
-                if (propertyName.equals(excludedPropertyName) || propertyName.startsWith(excludedPropertyName + ".") || rootPropertyName(propertyName).equals(excludedPropertyName)) {
-                    return true;
-                }
-            }
-        }
-        return false;
-    }
-
-    private static boolean isBindingAllowed(Object object, String propertyName) {
+    private static boolean isNullMissingPropertyBindable(Object object, String propertyName, List include, List exclude) {
         if (object == null) {
             return false;
         }
-
-        if (!isPropertyAllowedByWhitelist(object, propertyName)) {
+        String allowlistPropertyName = removePropertyIndexes(propertyName);
+        List bindingIncludeList = getBindingIncludeList(object);
+        List bindingExcludeList = normalizePropertyIndexes(addUnbindablePropertyNames(object, exclude));
+        if (!isNullMissingPropertyPathAllowed(allowlistPropertyName, bindingIncludeList, include, bindingExcludeList)) {
             return false;
         }
-
         int separator = propertyPathSeparator(propertyName);
         if (separator == -1) {
             return true;
@@ -369,7 +606,7 @@ public class DataBindingUtils {
         String nestedPropertyName = propertyName.substring(separator + 1);
         if (nestedObject instanceof Collection) {
             for (Object item : (Collection) nestedObject) {
-                if (item != null && !isBindingAllowed(item, nestedPropertyName)) {
+                if (item != null && !isNullMissingPropertyBindable(item, nestedPropertyName, getNestedIncludeList(include, propertyName), null)) {
                     return false;
                 }
             }
@@ -377,45 +614,92 @@ public class DataBindingUtils {
         }
         if (nestedObject instanceof Map) {
             for (Object value : ((Map) nestedObject).values()) {
-                if (value != null && !isBindingAllowed(value, nestedPropertyName)) {
+                if (value != null && !isNullMissingPropertyBindable(value, nestedPropertyName, getNestedIncludeList(include, propertyName), null)) {
                     return false;
                 }
             }
             return true;
         }
-        return nestedObject == null || isBindingAllowed(nestedObject, nestedPropertyName);
+        return nestedObject == null || isNullMissingPropertyBindable(nestedObject, nestedPropertyName, getNestedIncludeList(include, propertyName), null);
     }
 
-    private static boolean isPropertyAllowedByWhitelist(Object object, String propertyName) {
-        List bindingIncludeList = getBindingIncludeList(object);
-        if (bindingIncludeList == null || bindingIncludeList.isEmpty()) {
-            return true;
+    private static String removePropertyIndexes(String propertyName) {
+        return propertyName.replaceAll("\\[[^]]*]", "");
+    }
+
+    private static List normalizePropertyIndexes(List propertyNames) {
+        if (propertyNames == null) {
+            return Collections.emptyList();
         }
-        for (Object includedProperty : bindingIncludeList) {
+        List normalizedPropertyNames = new ArrayList(propertyNames.size());
+        for (Object propertyName : propertyNames) {
+            normalizedPropertyNames.add(propertyName instanceof CharSequence ? removePropertyIndexes(propertyName.toString()) : propertyName);
+        }
+        return normalizedPropertyNames;
+    }
+
+    private static List getNestedIncludeList(List include, String propertyName) {
+        if (include == null || include.isEmpty()) {
+            return Collections.emptyList();
+        }
+        String normalizedPropertyName = removePropertyIndexes(propertyName);
+        int separator = propertyPathSeparator(normalizedPropertyName);
+        if (separator == -1) {
+            return Collections.emptyList();
+        }
+        String rootPropertyName = normalizedPropertyName.substring(0, separator);
+        List nestedIncludeList = new ArrayList();
+        for (Object includedProperty : include) {
             if (includedProperty instanceof CharSequence) {
-                String includedPropertyName = includedProperty.toString();
-                if (propertyName.equals(includedPropertyName) || includedPropertyName.startsWith(propertyName + ".")) {
+                String includedPropertyName = removePropertyIndexes(includedProperty.toString());
+                int includedPropertySeparator = propertyPathSeparator(includedPropertyName);
+                if (includedPropertySeparator != -1 && rootPropertyName.equals(includedPropertyName.substring(0, includedPropertySeparator))) {
+                    nestedIncludeList.add(includedPropertyName.substring(includedPropertySeparator + 1));
+                }
+            }
+        }
+        return nestedIncludeList;
+    }
+
+    private static boolean isNullMissingPropertyPathAllowed(String propertyName, List generatedIncludeList, List explicitIncludeList, List excludeList) {
+        if (isFrameworkManagedProperty(propertyName) || SimpleDataBinder.isPropertyExcluded(propertyName, excludeList)) {
+            return false;
+        }
+        return isNullMissingPropertyIncluded(propertyName, generatedIncludeList) ||
+                isNullMissingPropertyIncluded(propertyName, explicitIncludeList);
+    }
+
+    private static boolean isFrameworkManagedProperty(String propertyName) {
+        int separator = propertyPathSeparator(propertyName);
+        String rootPropertyName = separator == -1 ? propertyName : propertyName.substring(0, separator);
+        return FRAMEWORK_MANAGED_PROPERTIES.contains(rootPropertyName);
+    }
+
+    private static boolean isNullMissingPropertyIncluded(String propertyName, List includeList) {
+        if (includeList == null) {
+            return false;
+        }
+        for (Object includedProperty : includeList) {
+            if (includedProperty instanceof CharSequence) {
+                String includedPropertyName = removePropertyIndexes(includedProperty.toString());
+                if (includedPropertyName.equals(propertyName)) {
                     return true;
+                }
+                if (includedPropertyName.endsWith(".*")) {
+                    String prefix = includedPropertyName.substring(0, includedPropertyName.length() - 2);
+                    if (propertyName.startsWith(prefix + ".")) {
+                        return true;
+                    }
+                }
+                if (includedPropertyName.endsWith("_*")) {
+                    String prefix = includedPropertyName.substring(0, includedPropertyName.length() - 2);
+                    if (propertyName.startsWith(prefix + ".") || propertyName.startsWith(prefix + "_")) {
+                        return true;
+                    }
                 }
             }
         }
         return false;
-    }
-
-    private static String rootPropertyName(String propertyName) {
-        int dotIndex = propertyName.indexOf('.');
-        int bracketIndex = propertyName.indexOf('[');
-        int endIndex = -1;
-        if (dotIndex > -1 && bracketIndex > -1) {
-            endIndex = Math.min(dotIndex, bracketIndex);
-        }
-        else if (dotIndex > -1) {
-            endIndex = dotIndex;
-        }
-        else if (bracketIndex > -1) {
-            endIndex = bracketIndex;
-        }
-        return endIndex == -1 ? propertyName : propertyName.substring(0, endIndex);
     }
 
     private static boolean assignNullToMissingIndexedProperties(Object object, DataBindingSource bindingSource, String propertyName, String filter) {

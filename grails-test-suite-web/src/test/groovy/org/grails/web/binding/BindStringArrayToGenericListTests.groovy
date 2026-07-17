@@ -58,4 +58,9 @@ class Menu {
     static hasMany = [items: String]
 
     List<String> items
+
+    static constraints = {
+        name bindable: true
+        items bindable: true
+    }
 }

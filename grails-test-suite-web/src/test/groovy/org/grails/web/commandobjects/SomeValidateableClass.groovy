@@ -24,6 +24,6 @@ class SomeValidateableClass implements Validateable {
     String name
 
     static constraints = {
-        name matches: /[A-Z]*/
+        name matches: /[A-Z]*/, bindable: true
     }
 }
