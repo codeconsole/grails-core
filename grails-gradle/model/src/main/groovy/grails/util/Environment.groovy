@@ -149,7 +149,7 @@ enum Environment {
                         } finally {
                             try {
                                 inputStream.close()
-                            } catch (IOException e) {
+                            } catch (IOException ignored) {
                                 // ignore
                             }
                         }
@@ -168,7 +168,7 @@ enum Environment {
                     version = 'Unknown'
                 }
             }
-            catch (Exception e) {
+            catch (Exception ignored) {
                 version = 'Unknown'
             }
         }
@@ -294,7 +294,7 @@ enum Environment {
             try {
                 env = valueOf(envName.toUpperCase())
             }
-            catch (IllegalArgumentException e) {
+            catch (IllegalArgumentException ignored) {
                 // ignore
             }
         }
