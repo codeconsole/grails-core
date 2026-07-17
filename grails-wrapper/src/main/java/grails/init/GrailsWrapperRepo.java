@@ -160,9 +160,8 @@ public class GrailsWrapperRepo {
         }
         for (int i = 0; i < schemeEnd; i++) {
             char c = value.charAt(i);
-            boolean valid = (i == 0)
-                ? Character.isLetter(c)
-                : (Character.isLetterOrDigit(c) || c == '+' || c == '-' || c == '.');
+            boolean valid = (i == 0) ? Character.isLetter(c) :
+                (Character.isLetterOrDigit(c) || c == '+' || c == '-' || c == '.');
             if (!valid) {
                 return false;
             }
