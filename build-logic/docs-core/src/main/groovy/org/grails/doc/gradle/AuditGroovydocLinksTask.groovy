@@ -22,9 +22,6 @@ import org.gradle.api.DefaultTask
 import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.tasks.InputDirectory
 import org.gradle.api.tasks.TaskAction
-import java.nio.file.*
-import java.util.regex.Matcher
-import java.util.regex.Pattern
 
 /**
  * A task that audits generated Groovydocs for malformed navigation links.
@@ -44,45 +41,8 @@ abstract class AuditGroovydocLinksTask extends DefaultTask {
             return
         }
 
-        // Patterns common to Groovydoc navigation failures
-        Map<Pattern, String> replacements = [
-            (Pattern.compile(/href='([^']+?)\/deprecated-list\.html'/)): "href='deprecated-list.html'",
-            (Pattern.compile(/href='([^']+?)\/help-doc\.html'/)): "href='help-doc.html'",
-            (Pattern.compile(/href='([^']+?)\/index-all\.html'/)): "href='index-all.html'",
-            (Pattern.compile(/href='([^']+?)\/overview-summary\.html'/)): "href='overview-summary.html'"
-        ]
+        List<String> violations = GroovydocLinkAuditor.findViolations(apiDir)
 
-        List<String> violations = []
-
-        apiDir.eachFileRecurse { File file ->
-            if (file.name.endsWith(".html")) {
-                String content = file.text
-                
-                replacements.each { pattern, replacement ->
-                    Matcher matcher = pattern.matcher(content)
-                    if (matcher.find()) {
-                        violations << "Malformed nav link in ${file.name}: ${matcher.group(0)}"
-                    }
-                }
-                
-                // Check specific inner class path issues like Query/Order.Direction.html -> Query.Order.Direction.html
-                Pattern innerClassPattern = Pattern.compile(/href='([^']+?)\/([A-Z][A-Za-z0-9_]*?)\/([A-Z][A-Za-z0-9_.]*?\.html)'/)
-                Matcher innerMatcher = innerClassPattern.matcher(content)
-                while (innerMatcher.find()) {
-                    String relPath = innerMatcher.group(1)
-                    String outer = innerMatcher.group(2)
-                    String inner = innerMatcher.group(3)
-                    
-                    Path currentPath = file.toPath().parent
-                    Path targetPath = currentPath.resolve(relPath).resolve("${outer}.${inner}").normalize()
-                    
-                    if (Files.exists(targetPath)) {
-                        violations << "Malformed inner class link in ${file.name}: ${innerMatcher.group(0)}"
-                    }
-                }
-            }
-        }
-        
         if (!violations.isEmpty()) {
             violations.take(10).each { logger.error(it) }
             if (violations.size() > 10) logger.error("... and ${violations.size() - 10} more")
