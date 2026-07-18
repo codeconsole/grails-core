@@ -23,17 +23,18 @@ import jakarta.inject.Singleton;
 import org.grails.forge.application.generator.GeneratorContext;
 import org.grails.forge.build.dependencies.Dependency;
 import org.grails.forge.feature.security.template.securityApplicationGroovy;
-import org.grails.forge.feature.security.template.securitySpringResources;
+import org.grails.forge.feature.security.template.userController;
 import org.grails.forge.feature.view.Scaffolding;
 import org.grails.forge.template.RockerTemplate;
 
 /**
- * Secures the application with the Grails Spring Security Core plugin. It reuses the
- * shared user artifacts: the {@code UserService} is aliased to the plugin's
- * {@code userDetailsService} bean, and the seeded admin's delegating-encoded password
- * matches the plugin's default password encoder. The plugin locks every URL down by
- * default ({@code rejectIfNoRule}), so generated static rules open the public pages
- * and restrict the scaffolded user admin to {@code ROLE_ADMIN}.
+ * Secures the application with the Grails Spring Security Core plugin over the
+ * classic User/Role/UserRole domain model, served by the plugin's own GORM
+ * {@code UserDetailsService}. The model matches the Spring Security UI flavor
+ * exactly, so adopting the UI plugin later is a dependency-and-config change,
+ * not a domain restructuring. The plugin locks every URL down by default
+ * ({@code rejectIfNoRule}); generated static rules open the public pages and
+ * restrict the scaffolded user admin to {@code ROLE_ADMIN}.
  *
  * @since 8.0
  */
@@ -57,8 +58,9 @@ public class GrailsSpringSecurity extends SecurityFeature {
     @Override
     public String getDescription() {
         return "Secures the application with the Grails Spring Security Core plugin: @Secured annotations, the sec taglib, " +
-                "the plugin's login pages backed by a GORM User domain, static URL rules that lock the application down " +
-                "(the scaffolded user admin requires ROLE_ADMIN), and a bootstrapped admin account with a generated password.";
+                "the plugin's login pages backed by the classic GORM User/Role/UserRole model, static URL rules that lock " +
+                "the application down (the scaffolded user admin requires ROLE_ADMIN), and a bootstrapped admin account " +
+                "with a generated password.";
     }
 
     @Override
@@ -73,12 +75,12 @@ public class GrailsSpringSecurity extends SecurityFeature {
                 .artifactId("grails-spring-security")
                 .implementation());
 
-        applyUserArtifacts(generatorContext);
+        applyClassicDomainModel(generatorContext);
+        generatorContext.addTemplate("securityUserController",
+                new RockerTemplate("grails-app/controllers/{packagePath}/UserController.groovy",
+                        userController.template(generatorContext.getProject())));
         generatorContext.addTemplate("securityApplicationGroovy",
                 new RockerTemplate("grails-app/conf/application.groovy",
-                        securityApplicationGroovy.template(generatorContext.getProject())));
-        generatorContext.addTemplate("springResources",
-                new RockerTemplate("grails-app/conf/spring/resources.groovy",
-                        securitySpringResources.template(generatorContext.getProject())));
+                        securityApplicationGroovy.template(generatorContext.getProject(), false)));
     }
 }

@@ -20,23 +20,18 @@ package org.grails.forge.feature.security;
 
 import jakarta.inject.Singleton;
 
-import org.grails.forge.application.Project;
 import org.grails.forge.application.generator.GeneratorContext;
 import org.grails.forge.build.dependencies.Dependency;
-import org.grails.forge.feature.security.template.role;
-import org.grails.forge.feature.security.template.securityUiApplicationGroovy;
-import org.grails.forge.feature.security.template.userClassic;
-import org.grails.forge.feature.security.template.userClassicSpec;
-import org.grails.forge.feature.security.template.userRole;
+import org.grails.forge.feature.security.template.securityApplicationGroovy;
 import org.grails.forge.feature.view.Scaffolding;
 import org.grails.forge.template.RockerTemplate;
 
 /**
  * Secures the application with the Grails Spring Security Core plugin plus the
- * Spring Security UI plugin's administration screens. The UI plugin manages roles
- * and role assignments, so this flavor generates the classic User/Role/UserRole
- * domain model (instead of the lighter shared user artifacts) and relies on the
- * plugin's own user admin controllers rather than a scaffolded one.
+ * Spring Security UI plugin's administration screens, over the same classic
+ * User/Role/UserRole domain model the core-plugin flavor generates. The UI
+ * plugin ships its own user and role admin controllers, so no scaffolded
+ * controller is generated.
  *
  * @since 8.0
  */
@@ -61,8 +56,8 @@ public class GrailsSpringSecurityUi extends SecurityFeature {
     public String getDescription() {
         return "Secures the application with the Grails Spring Security Core plugin and adds the Spring Security UI plugin's " +
                 "administration screens, rendered through the application's own layout: user and role CRUD, registration and " +
-                "forgot-password flows (sending mail requires SMTP configuration), and a classic User/Role/UserRole domain model " +
-                "with a bootstrapped ROLE_ADMIN account.";
+                "forgot-password flows (sending mail requires SMTP configuration), and the classic User/Role/UserRole domain " +
+                "model with a bootstrapped ROLE_ADMIN account.";
     }
 
     @Override
@@ -85,17 +80,10 @@ public class GrailsSpringSecurityUi extends SecurityFeature {
                 .artifactId("grails-mail")
                 .implementation());
 
-        final Project project = generatorContext.getProject();
-        generatorContext.addTemplate("securityUiUser",
-                new RockerTemplate("grails-app/domain/{packagePath}/User.groovy", userClassic.template(project)));
-        generatorContext.addTemplate("securityUiRole",
-                new RockerTemplate("grails-app/domain/{packagePath}/Role.groovy", role.template(project)));
-        generatorContext.addTemplate("securityUiUserRole",
-                new RockerTemplate("grails-app/domain/{packagePath}/UserRole.groovy", userRole.template(project)));
-        generatorContext.addTemplate("securityUiUserSpec",
-                new RockerTemplate(generatorContext.getTestSourcePath("/{packagePath}/User"), userClassicSpec.template(project)));
-        generatorContext.addTemplate("securityUiApplicationGroovy",
-                new RockerTemplate("grails-app/conf/application.groovy", securityUiApplicationGroovy.template(project)));
+        applyClassicDomainModel(generatorContext);
+        generatorContext.addTemplate("securityApplicationGroovy",
+                new RockerTemplate("grails-app/conf/application.groovy",
+                        securityApplicationGroovy.template(generatorContext.getProject(), true)));
 
         generatorContext.getConfiguration().put("grails.mail.default.from", "do.not.reply@localhost");
     }

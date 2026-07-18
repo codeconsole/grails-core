@@ -25,19 +25,18 @@ import org.grails.forge.feature.Category;
 import org.grails.forge.feature.FeatureContext;
 import org.grails.forge.feature.FeaturePhase;
 import org.grails.forge.feature.OneOfFeature;
-import org.grails.forge.feature.security.template.user;
-import org.grails.forge.feature.security.template.userController;
-import org.grails.forge.feature.security.template.userService;
-import org.grails.forge.feature.security.template.userSpec;
+import org.grails.forge.feature.security.template.role;
+import org.grails.forge.feature.security.template.userClassic;
+import org.grails.forge.feature.security.template.userClassicSpec;
+import org.grails.forge.feature.security.template.userRole;
 import org.grails.forge.feature.view.Scaffolding;
 import org.grails.forge.template.RockerTemplate;
 
 /**
- * Base of the mutually exclusive security features. Both flavors share the same
- * generated artifacts - a GORM-backed {@code User} implementing {@code UserDetails},
- * a scaffolded controller, a {@code UserService} that doubles as the
- * {@code UserDetailsService}, a seeded admin account and a domain spec - and differ
- * only in what enforces security around them.
+ * Base of the mutually exclusive security features. The two plugin flavors share the
+ * classic User/Role/UserRole domain model so an application generated with the core
+ * plugin can adopt the UI plugin later without restructuring; the plain-starter
+ * flavor generates its own lighter artifacts.
  *
  * @since 8.0
  */
@@ -79,15 +78,15 @@ public abstract class SecurityFeature implements OneOfFeature {
         }
     }
 
-    protected void applyUserArtifacts(GeneratorContext generatorContext) {
+    protected void applyClassicDomainModel(GeneratorContext generatorContext) {
         final Project project = generatorContext.getProject();
         generatorContext.addTemplate("securityUser",
-                new RockerTemplate("grails-app/domain/{packagePath}/User.groovy", user.template(project)));
-        generatorContext.addTemplate("securityUserController",
-                new RockerTemplate("grails-app/controllers/{packagePath}/UserController.groovy", userController.template(project)));
-        generatorContext.addTemplate("securityUserService",
-                new RockerTemplate("grails-app/services/{packagePath}/UserService.groovy", userService.template(project)));
+                new RockerTemplate("grails-app/domain/{packagePath}/User.groovy", userClassic.template(project)));
+        generatorContext.addTemplate("securityRole",
+                new RockerTemplate("grails-app/domain/{packagePath}/Role.groovy", role.template(project)));
+        generatorContext.addTemplate("securityUserRole",
+                new RockerTemplate("grails-app/domain/{packagePath}/UserRole.groovy", userRole.template(project)));
         generatorContext.addTemplate("securityUserSpec",
-                new RockerTemplate(generatorContext.getTestSourcePath("/{packagePath}/User"), userSpec.template(project)));
+                new RockerTemplate(generatorContext.getTestSourcePath("/{packagePath}/User"), userClassicSpec.template(project)));
     }
 }
