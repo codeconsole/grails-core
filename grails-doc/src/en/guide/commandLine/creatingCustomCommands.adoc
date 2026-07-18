@@ -126,7 +126,7 @@ class GreetCommand implements GrailsApplicationCommand {
 }
 ----
 
-In this example, we've created a `GreetCommand` class that implements the `GrailsApplicationCommand` trait. It provides a `getName()` method to define the command name, a `getDescription()` method for a brief description, and the `run()` method to specify the code to execute when the command is run.
+In this example, we've created a `GreetCommand` class that implements the `GrailsApplicationCommand` trait. It provides a `getName()` method to define the command name (overriding the default derived from the class name), a `getDescription()` method for a brief description, and the `handle()` method to specify the code to execute when the command is run.
 
 Step 2: Build Your Grails Application
 
@@ -179,9 +179,10 @@ class GreetCommand implements GrailsApplicationCommand {
     }
 
     boolean handle() {
-        def args = commandLine.args
-        String name = args.size() > 0 ? args[0] : "user"
-        boolean loud = args.contains("--loud")
+        // `args` (from the GrailsApplicationCommand trait) holds the remaining arguments
+        // after the command name; `--`-prefixed flags are parsed as options instead
+        String name = args ? args[0] : "user"
+        boolean loud = executionContext.commandLine.hasOption("loud")
 
         if (loud) {
             println("HELLO, $name! (LOUD)")
