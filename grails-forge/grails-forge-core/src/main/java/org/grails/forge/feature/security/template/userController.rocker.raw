@@ -18,27 +18,14 @@ under the License.
 *@
 
 @import org.grails.forge.application.Project
-@import org.grails.forge.feature.Features
 
-@args(Project project, Features features)
+@args (Project project)
 
 package @project.getPackageName()
 
-@if(features.contains("spring-boot-starter-security")) {
-import org.springframework.security.crypto.factory.PasswordEncoderFactories
+import grails.plugin.scaffolding.RestfulServiceController
+import grails.plugin.scaffolding.annotation.Scaffold
 
-}
-class BootStrap {
-
-    def init = {
-@if(features.contains("spring-boot-starter-security")) {
-        def password = UUID.randomUUID().toString()
-        new User(username: 'admin', password: PasswordEncoderFactories.createDelegatingPasswordEncoder().encode(password), roles: ['ROLE_ADMIN']).save(failOnError: true)
-        log.warn "Generated admin credentials: admin / $password"
-}
-    }
-
-    def destroy = {
-    }
-
+@@Scaffold(RestfulServiceController<User>)
+class UserController {
 }

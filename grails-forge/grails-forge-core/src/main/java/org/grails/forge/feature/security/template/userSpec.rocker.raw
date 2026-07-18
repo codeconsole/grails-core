@@ -18,27 +18,24 @@ under the License.
 *@
 
 @import org.grails.forge.application.Project
-@import org.grails.forge.feature.Features
 
-@args(Project project, Features features)
+@args (Project project)
 
 package @project.getPackageName()
 
-@if(features.contains("spring-boot-starter-security")) {
-import org.springframework.security.crypto.factory.PasswordEncoderFactories
+import grails.testing.gorm.DomainUnitTest
+import spock.lang.Specification
 
-}
-class BootStrap {
+class UserSpec extends Specification implements DomainUnitTest<User> {
 
-    def init = {
-@if(features.contains("spring-boot-starter-security")) {
-        def password = UUID.randomUUID().toString()
-        new User(username: 'admin', password: PasswordEncoderFactories.createDelegatingPasswordEncoder().encode(password), roles: ['ROLE_ADMIN']).save(failOnError: true)
-        log.warn "Generated admin credentials: admin / $password"
-}
+    void 'username and password are required'() {
+        expect:
+        !new User(username: '', password: '').validate()
+        new User(username: 'admin', password: 'secret', roles: ['ROLE_ADMIN']).validate()
     }
 
-    def destroy = {
+    void 'authorities derive from the roles'() {
+        expect:
+        new User(username: 'admin', password: 'secret', roles: ['ROLE_ADMIN']).authorities*.authority == ['ROLE_ADMIN']
     }
-
 }

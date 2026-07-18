@@ -18,27 +18,34 @@ under the License.
 *@
 
 @import org.grails.forge.application.Project
-@import org.grails.forge.feature.Features
 
-@args(Project project, Features features)
+@args (Project project)
 
 package @project.getPackageName()
 
-@if(features.contains("spring-boot-starter-security")) {
+import org.springframework.context.annotation.Bean
+import org.springframework.context.annotation.Configuration
+import org.springframework.security.config.annotation.web.builders.HttpSecurity
+import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity
 import org.springframework.security.crypto.factory.PasswordEncoderFactories
+import org.springframework.security.crypto.password.PasswordEncoder
+import org.springframework.security.web.SecurityFilterChain
 
-}
-class BootStrap {
+@@Configuration
+@@EnableWebSecurity
+class SecurityConfig {
 
-    def init = {
-@if(features.contains("spring-boot-starter-security")) {
-        def password = UUID.randomUUID().toString()
-        new User(username: 'admin', password: PasswordEncoderFactories.createDelegatingPasswordEncoder().encode(password), roles: ['ROLE_ADMIN']).save(failOnError: true)
-        log.warn "Generated admin credentials: admin / $password"
-}
+    @@Bean
+    PasswordEncoder passwordEncoder() {
+        PasswordEncoderFactories.createDelegatingPasswordEncoder()
     }
 
-    def destroy = {
+    @@Bean
+    SecurityFilterChain filterChain(HttpSecurity http) {
+        http
+            .authorizeHttpRequests { it.anyRequest().permitAll() }
+            .formLogin { }
+            .logout { it.logoutSuccessUrl('/') }
+        http.build()
     }
-
 }

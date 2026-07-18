@@ -18,27 +18,23 @@ under the License.
 *@
 
 @import org.grails.forge.application.Project
-@import org.grails.forge.feature.Features
 
-@args(Project project, Features features)
+@args (Project project)
 
 package @project.getPackageName()
 
-@if(features.contains("spring-boot-starter-security")) {
-import org.springframework.security.crypto.factory.PasswordEncoderFactories
+import grails.gorm.transactions.Transactional
+import grails.plugin.scaffolding.annotation.Scaffold
+import org.springframework.security.core.userdetails.UserDetails
+import org.springframework.security.core.userdetails.UserDetailsService
+import org.springframework.security.core.userdetails.UsernameNotFoundException
 
-}
-class BootStrap {
+@@Scaffold(User)
+class UserService implements UserDetailsService {
 
-    def init = {
-@if(features.contains("spring-boot-starter-security")) {
-        def password = UUID.randomUUID().toString()
-        new User(username: 'admin', password: PasswordEncoderFactories.createDelegatingPasswordEncoder().encode(password), roles: ['ROLE_ADMIN']).save(failOnError: true)
-        log.warn "Generated admin credentials: admin / $password"
-}
+    @@Override
+    @@Transactional(readOnly = true)
+    UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
+        User.findByUsername(username, [fetch: [roles: 'join']]) ?: { throw new UsernameNotFoundException(username) }()
     }
-
-    def destroy = {
-    }
-
 }
