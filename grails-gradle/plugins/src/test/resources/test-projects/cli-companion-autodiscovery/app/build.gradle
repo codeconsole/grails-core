@@ -7,11 +7,12 @@ plugins {
 
 dependencies {
     implementation project(':my-plugin')
+    implementation project(':renamed-plugin')
 }
 
 tasks.register('inspectGrailsCli') {
-    // build the sibling jar so its component (and advertised companion) is resolvable
-    dependsOn ':my-plugin:jar'
+    // build the sibling jars so their components (and advertised companions) are resolvable
+    dependsOn ':my-plugin:jar', ':renamed-plugin:jar'
     def grailsCli = configurations.grailsCli
     doLast {
         grailsCli.dependencies.each { dep ->
@@ -35,11 +36,22 @@ tasks.register('inspectClasspathWiring') {
 }
 
 tasks.register('inspectRuntimeClasspath') {
-    dependsOn ':my-plugin:jar'
+    dependsOn ':my-plugin:jar', ':renamed-plugin:jar'
     def runtimeClasspath = configurations.runtimeClasspath
     doLast {
         runtimeClasspath.incoming.artifactView { it.lenient(true) }.files.each {
             println "RUNTIME_ARTIFACT: ${it.name}"
+        }
+    }
+}
+
+tasks.register('inspectCliClasspath') {
+    // the companion jars must actually resolve through the projects' cli capabilities
+    dependsOn ':my-plugin:cliJar', ':renamed-plugin:cliJar'
+    def cliClasspath = configurations.grailsCliClasspath
+    doLast {
+        cliClasspath.incoming.artifactView { it.lenient(true) }.files.each {
+            println "CLI_ARTIFACT: ${it.name}"
         }
     }
 }

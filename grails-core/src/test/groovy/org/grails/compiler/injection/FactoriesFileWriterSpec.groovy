@@ -60,6 +60,16 @@ class FactoriesFileWriterSpec extends Specification {
         !new File(targetDir, LOCATION).exists()
     }
 
+    def "registers a subtype that implements the contract indirectly through a trait"() {
+        when: 'the command implements the contract only via a trait, like GrailsApplicationCommand'
+        boolean registered = FactoriesFileWriter.updateFactoriesWithType(
+                ClassHelper.make(TraitBasedCommand), CONTRACT, targetDir, LOCATION, [])
+
+        then:
+        registered
+        factories().getProperty(CONTRACT_NAME) == TraitBasedCommand.name
+    }
+
     def "does not register a type that is not a subtype of the contract"() {
         when:
         boolean registered = FactoriesFileWriter.updateFactoriesWithType(
@@ -107,3 +117,8 @@ class FactoriesFileWriterSpec extends Specification {
 
     static class Unrelated {}
 }
+
+// analog of the GrailsApplicationCommand trait: implements the contract on behalf of commands
+trait SampleTraitContract implements FactoriesFileWriterSpec.SampleContract {}
+
+class TraitBasedCommand implements SampleTraitContract {}

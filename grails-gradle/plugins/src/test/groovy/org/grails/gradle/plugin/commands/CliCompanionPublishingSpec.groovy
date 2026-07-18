@@ -56,14 +56,24 @@ class CliCompanionPublishingSpec extends GradleSpecification {
         latestArtifact(repoDir, 'plugin-a-cli', '.pom').text.contains('<artifactId>owner-cli</artifactId>')
         latestArtifact(repoDir, 'console-lib', '.pom').text.contains('<artifactId>owner-cli</artifactId>')
 
+        and: 'a customized companion coordinate is published plainly too: the consumer metadata records acme-tools without capabilities'
+        def pluginBCliDependencies = variantDependencies(repoDir, 'plugin-b-cli')
+        pluginBCliDependencies.every { it.requestedCapabilities == null }
+        pluginBCliDependencies.any { it.group == 'org.example.test' && it.module == 'acme-tools' }
+        latestArtifact(repoDir, 'plugin-b-cli', '.pom').text.contains('<artifactId>acme-tools</artifactId>')
+
         when: 'an external consumer resolves the published modules from the repository'
         def resolveResult = executeTask(':resolver:resolveCliTier')
 
-        then: 'the owner, its companion, and both consumers resolve without a capability conflict'
+        then: 'the owners, their companions, and all consumers resolve without a capability conflict'
         resolveResult.output.contains('RESOLVED: owner-1.0.0-SNAPSHOT.jar')
         resolveResult.output.contains('RESOLVED: owner-cli-1.0.0-SNAPSHOT.jar')
         resolveResult.output.contains('RESOLVED: plugin-a-cli-1.0.0-SNAPSHOT.jar')
         resolveResult.output.contains('RESOLVED: console-lib-1.0.0-SNAPSHOT.jar')
+
+        and: 'the customized companion coordinate resolves externally as well'
+        resolveResult.output.contains('RESOLVED: plugin-b-cli-1.0.0-SNAPSHOT.jar')
+        resolveResult.output.contains('RESOLVED: acme-tools-1.0.0-SNAPSHOT.jar')
     }
 
     private static List<Map<String, Object>> variantDependencies(File repoDir, String artifactId) {

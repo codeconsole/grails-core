@@ -269,6 +269,12 @@ class GrailsCliGradlePlugin implements Plugin<Project> {
         }
         def cliArtifactId = target.findProperty('cliArtifactId')
         if (!cliArtifactId) {
+            // the extra property is exported in the producer's afterEvaluate; the cliArtifact
+            // extension (and its convention) exists from plugin-apply time, so consult it
+            // directly when discovery runs before the producer has been fully evaluated
+            cliArtifactId = target.extensions.findByName('cliArtifact')?.artifactId?.getOrNull()
+        }
+        if (!cliArtifactId) {
             return null
         }
         String capabilityCoordinate = "${target.group}:${cliArtifactId}" as String

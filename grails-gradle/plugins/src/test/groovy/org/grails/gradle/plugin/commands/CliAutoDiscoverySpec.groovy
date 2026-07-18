@@ -52,6 +52,21 @@ class CliAutoDiscoverySpec extends GradleSpecification {
         result.output.contains('GRAILSCLI_DEP: module org.apache.grails:grails-console')
     }
 
+    def "a companion with a customized artifactId is discovered and resolves through its advertised capability"() {
+        given: 'an app depending on a plugin whose companion coordinate is customized'
+        setupTestResourceProject('cli-companion-autodiscovery')
+
+        when: 'the app resolves its grailsCli dependencies'
+        def result = executeTask(':app:inspectGrailsCli', [':app:inspectCliClasspath'])
+
+        then: 'the companion is discovered under the advertised (customized) capability'
+        result.output.contains('GRAILSCLI_DEP: project path=:renamed-plugin capabilities=[org.example.test:acme-cli-tools]')
+
+        and: 'both companion jars actually resolve from the sibling projects cli variants'
+        result.output.contains('CLI_ARTIFACT: my-plugin-cli-1.0.0.jar')
+        result.output.contains('CLI_ARTIFACT: acme-cli-tools-1.0.0.jar')
+    }
+
     def "the cli tier is compile-visible but never leaks onto the runtime classpath"() {
         given:
         setupTestResourceProject('cli-companion-autodiscovery')

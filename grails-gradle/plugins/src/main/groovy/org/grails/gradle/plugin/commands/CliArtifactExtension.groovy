@@ -28,7 +28,11 @@ import org.gradle.api.provider.Property
 abstract class CliArtifactExtension {
 
     /**
-     * The artifactId of the companion cli artifact; defaults to {@code "${project.name}-cli"}
+     * The artifactId of the companion cli artifact; defaults to {@code "${project.name}-cli"}.
+     *
+     * <p>When customized, the companion's variants carry {@code "${group}:${artifactId}"} as an
+     * additional capability (alongside the Gradle default {@code "${group}:${project.name}-cli"}),
+     * so in-build consumers can require the advertised coordinate either way.</p>
      */
     abstract Property<String> getArtifactId()
 

@@ -15,6 +15,8 @@ dependencies {
     cliTier 'org.example.test:console-lib:1.0.0-SNAPSHOT'
     cliTier 'org.example.test:plugin-a-cli:1.0.0-SNAPSHOT'
     cliTier 'org.example.test:owner-cli:1.0.0-SNAPSHOT'
+    cliTier 'org.example.test:plugin-b-cli:1.0.0-SNAPSHOT'
+    cliTier 'org.example.test:acme-tools:1.0.0-SNAPSHOT'
 }
 
 tasks.register('resolveCliTier') {

@@ -89,10 +89,28 @@ final class CliPublishingSupport {
             task.doLast(new Action<Task>() {
                 @Override
                 void execute(Task t) {
-                    rewriteModuleFile(((GenerateModuleMetadata) t).outputFile.get().asFile)
+                    rewriteModuleFile(((GenerateModuleMetadata) t).outputFile.get().asFile,
+                            knownCompanionCapabilities(project))
                 }
             })
         }
+    }
+
+    /**
+     * The companion capabilities advertised by the projects of this build ({@code group:artifactId}),
+     * including customized companion coordinates ({@code cliArtifact { artifactId = ... }}) that the
+     * default {@code <module>-cli} naming convention cannot recognize. Computed at execution time,
+     * when every project has been evaluated.
+     */
+    private static Set<String> knownCompanionCapabilities(Project project) {
+        Set<String> capabilities = [] as Set
+        for (Project subproject : project.rootProject.allprojects) {
+            def cliArtifactId = subproject.findProperty('cliArtifactId')
+            if (cliArtifactId) {
+                capabilities.add("${subproject.group}:${cliArtifactId}" as String)
+            }
+        }
+        capabilities
     }
 
     /**
@@ -118,7 +136,7 @@ final class CliPublishingSupport {
     }
 
     @CompileDynamic
-    private static void rewriteModuleFile(File moduleFile) {
+    private static void rewriteModuleFile(File moduleFile, Set<String> knownCompanionCapabilities) {
         if (!moduleFile.file) {
             return
         }
@@ -127,9 +145,14 @@ final class CliPublishingSupport {
         metadata.variants?.each { Map<String, Object> variant ->
             variant.dependencies?.each { Map<String, Object> dependency ->
                 List<Map<String, Object>> capabilities = (List<Map<String, Object>>) dependency.requestedCapabilities
+                // a companion is recognized by the `<module>-cli` naming convention, or — for a
+                // customized companion coordinate — by matching a capability advertised by a
+                // project of this build; unrelated capability requests (e.g. an ehcache flavor)
+                // must survive untouched
                 if (capabilities?.size() == 1
                         && capabilities[0].group == dependency.group
-                        && capabilities[0].name == "${dependency.module}-cli" as String) {
+                        && (capabilities[0].name == "${dependency.module}-cli" as String
+                                || "${capabilities[0].group}:${capabilities[0].name}" as String in knownCompanionCapabilities)) {
                     dependency.module = capabilities[0].name
                     dependency.remove('requestedCapabilities')
                     changed = true

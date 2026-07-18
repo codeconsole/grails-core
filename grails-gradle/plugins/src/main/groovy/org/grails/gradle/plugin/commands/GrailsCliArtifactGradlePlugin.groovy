@@ -96,13 +96,26 @@ abstract class GrailsCliArtifactGradlePlugin implements Plugin<Project> {
         JavaPluginExtension java = project.extensions.getByType(JavaPluginExtension)
         java.registerFeature(CLI_SOURCE_SET_NAME) { spec ->
             // no explicit capability: the default (`${group}:${project.name}-cli:${version}`)
-            // is derived lazily from the project and matches the published coordinate
+            // is derived lazily from the project and matches the default published coordinate
             spec.usingSourceSet(cliSourceSet)
         }
 
         Configuration cliApiElements = project.configurations.getByName('cliApiElements')
         Configuration cliRuntimeElements = project.configurations.getByName('cliRuntimeElements')
         Configuration cliRuntimeClasspath = project.configurations.getByName('cliRuntimeClasspath')
+
+        // when the companion coordinate is customized, the cli variants additionally carry the
+        // custom capability (`${group}:${artifactId}`), so an in-build consumer requiring the
+        // advertised coordinate resolves regardless of the customization; the Gradle default
+        // capability is kept for compatibility
+        project.afterEvaluate {
+            String artifactId = extension.artifactId.get()
+            if (artifactId != "${project.name}-cli" as String) {
+                String capability = "${project.group}:${artifactId}:${project.version}"
+                cliApiElements.outgoing.capability(capability)
+                cliRuntimeElements.outgoing.capability(capability)
+            }
+        }
 
         // commands compile out of the box: the contract plus the plugin's own runtime classes
         // (computed lazily so `cliArtifact { defaultDependencies = false }` can opt out)
