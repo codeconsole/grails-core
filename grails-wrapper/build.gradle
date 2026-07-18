@@ -74,6 +74,11 @@ startScripts.configure { CreateStartScripts t ->
     t.mainClass = project.findProperty('startMainClass') as String
     t.classpath = files(jarTask)
 
+    // the wrapper loads the downloaded CLI jar into this JVM, where JLine loads a native terminal
+    // library via System::load, a restricted method under JEP 472; without this grant JDK 24+
+    // warns on every launch and a future JDK will refuse the call
+    t.defaultJvmOpts = ['--enable-native-access=ALL-UNNAMED']
+
     // See gradle tickets such as for lib https://github.com/gradle/gradle/issues/7033
     doLast {
         t.unixScript.text = t.unixScript.text
