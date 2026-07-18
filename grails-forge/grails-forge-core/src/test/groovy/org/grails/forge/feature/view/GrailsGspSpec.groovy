@@ -148,6 +148,10 @@ class GrailsGspSpec extends ApplicationContextSpec implements CommandOutputFixtu
         index.contains('id="urlmappings-empty"')
         index.contains('id="mime-types-empty"')
 
+        and: "truncatable status-card values expose their full text as a hover tooltip"
+        index.contains('title="${servletContext.serverInfo}"')
+        index.contains('title="${InetAddress.localHost}"')
+
         and: "count badges are theme-adaptive rather than hardcoded light"
         index.contains('badge bg-body-tertiary text-body border')
         !index.contains('text-bg-light')

@@ -124,7 +124,7 @@
                         <ul class="list-group list-group-flush small">
                             <li class="list-group-item d-flex justify-content-between align-items-center px-0">
                                 <span class="text-body-secondary"><g:message code="welcome.app.name"/></span>
-                                <span class="fw-medium text-truncate ms-3"><g:meta name="info.app.name"/></span>
+                                <span class="fw-medium text-truncate ms-3" title="${meta(name: 'info.app.name')}"><g:meta name="info.app.name"/></span>
                             </li>
                             <li class="list-group-item d-flex justify-content-between align-items-center px-0">
                                 <span class="text-body-secondary"><g:message code="welcome.app.version"/></span>
@@ -134,7 +134,7 @@
                             </li>
                             <li class="list-group-item d-flex justify-content-between align-items-center px-0">
                                 <span class="text-body-secondary"><g:message code="welcome.app.profile"/></span>
-                                <span class="fw-medium text-truncate ms-3">
+                                <span class="fw-medium text-truncate ms-3" title="${grailsApplication.config.getProperty('grails.profile')}">
                                     ${grailsApplication.config.getProperty('grails.profile')}
                                 </span>
                             </li>
@@ -157,15 +157,16 @@
                         <ul class="list-group list-group-flush small">
                             <li class="list-group-item d-flex justify-content-between align-items-center px-0">
                                 <span class="text-body-secondary"><g:message code="welcome.server.servlet.container"/></span>
-                                <span class="fw-medium text-truncate ms-3">${servletContext.serverInfo}</span>
+                                <span class="fw-medium text-truncate ms-3" title="${servletContext.serverInfo}">${servletContext.serverInfo}</span>
                             </li>
                             <li class="list-group-item d-flex justify-content-between align-items-center px-0">
                                 <span class="text-body-secondary"><g:message code="welcome.server.host"/></span>
-                                <span class="fw-medium text-truncate ms-3">${InetAddress.localHost}</span>
+                                <span class="fw-medium text-truncate ms-3" title="${InetAddress.localHost}">${InetAddress.localHost}</span>
                             </li>
                             <li class="list-group-item d-flex justify-content-between align-items-center px-0">
                                 <span class="text-body-secondary"><g:message code="welcome.server.os"/></span>
-                                <span class="fw-medium text-truncate ms-3">
+                                <span class="fw-medium text-truncate ms-3"
+                                      title="${System.getProperty('os.name')} ${System.getProperty('os.version')} (${System.getProperty('os.arch')})">
                                     ${System.getProperty('os.name')} ${System.getProperty('os.version')} (${System.getProperty('os.arch')})
                                 </span>
                             </li>
