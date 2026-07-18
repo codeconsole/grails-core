@@ -22,7 +22,6 @@ import java.util.zip.ZipFile
 
 import grails.util.BuildSettings
 import grails.util.Environment
-import grails.util.GrailsNameUtils
 import grails.util.Metadata
 import groovy.transform.CompileDynamic
 import groovy.transform.CompileStatic
@@ -32,7 +31,6 @@ import org.apache.tools.ant.filters.ReplaceTokens
 import org.gradle.api.DefaultTask
 import org.gradle.api.GradleException
 import org.gradle.api.JavaVersion
-import org.gradle.api.NamedDomainObjectProvider
 import org.gradle.api.Plugin
 import org.gradle.api.Project
 import org.gradle.api.Task
@@ -53,7 +51,6 @@ import org.gradle.api.provider.Provider
 import org.gradle.api.tasks.AbstractCopyTask
 import org.gradle.api.tasks.JavaExec
 import org.gradle.api.tasks.SourceSet
-import org.gradle.api.tasks.SourceSetOutput
 import org.gradle.api.tasks.TaskContainer
 import org.gradle.api.tasks.TaskProvider
 import org.gradle.api.tasks.compile.GroovyCompile
@@ -62,17 +59,14 @@ import org.gradle.jvm.toolchain.JavaToolchainService
 import org.gradle.language.jvm.tasks.ProcessResources
 import org.gradle.process.JavaForkOptions
 import org.gradle.tooling.provider.model.ToolingModelBuilderRegistry
-import org.grails.build.parsing.CommandLineParser
 import org.grails.gradle.plugin.bom.BomPropertyOverridesPlugin
-import org.grails.gradle.plugin.commands.ApplicationContextCommandTask
-import org.grails.gradle.plugin.commands.ApplicationContextScriptTask
+import org.grails.gradle.plugin.commands.GrailsCliGradlePlugin
 import org.grails.gradle.plugin.exploded.ExplodedCompatibilityRule
 import org.grails.gradle.plugin.exploded.ExplodedDisambiguationRule
 import org.grails.gradle.plugin.exploded.GrailsExplodedPlugin
 import org.grails.gradle.plugin.model.GrailsClasspathToolingModelBuilder
 import org.grails.gradle.plugin.run.FindMainClassTask
 import org.grails.gradle.plugin.util.SourceSets
-import org.grails.io.support.FactoriesLoaderSupport
 import org.springframework.boot.gradle.dsl.SpringBootExtension
 import org.springframework.boot.gradle.plugin.ResolveMainClassName
 import org.springframework.boot.gradle.plugin.SpringBootPlugin
@@ -84,12 +78,10 @@ import javax.inject.Inject
  * The main Grails gradle plugin implementation
  *
  * @since 3.0
- * @author Graeme Rocher
  */
 @CompileStatic
 class GrailsGradlePlugin implements Plugin<Project> {
 
-    public static final String APPLICATION_CONTEXT_COMMAND_CLASS = 'grails.dev.commands.ApplicationCommand'
     private static final String CLI_PID_FILE_PROPERTY = 'grails.cli.pid.file'
     private static final String RUN_APP_PID_FILE_NAME = 'run-app.pid'
 
@@ -141,7 +133,9 @@ class GrailsGradlePlugin implements Plugin<Project> {
 
         configureAssetCompilation(project)
 
-        configureConsoleTask(project)
+        // the CLI tier — the grailsCli configurations, command/console/shell/script tasks, and
+        // cli companion discovery — lives in its own plugin
+        project.pluginManager.apply(GrailsCliGradlePlugin)
 
         configureForkSettings(project, grailsVersion)
 
@@ -151,15 +145,9 @@ class GrailsGradlePlugin implements Plugin<Project> {
 
         configureGrailsSourceDirs(project)
 
-        configureApplicationCommands(project)
-
         project.gradle.projectsEvaluated {
             createBuildPropertiesTask(project)
         }
-
-        configureRunScript(project)
-
-        configureRunCommand(project)
 
         configureGroovyCompiler(project)
 
@@ -747,37 +735,6 @@ ${importStatements}
     }
 
     @CompileDynamic
-    protected void configureApplicationCommands(Project project) {
-        def applicationContextCommands = FactoriesLoaderSupport.loadFactoryNames(APPLICATION_CONTEXT_COMMAND_CLASS)
-        project.afterEvaluate {
-            FileCollection fileCollection = buildClasspath(project, project.configurations.runtimeClasspath, project.configurations.console)
-            for (ctxCommand in applicationContextCommands) {
-                String taskName = GrailsNameUtils.getLogicalPropertyName(ctxCommand, 'Command')
-                String commandName = GrailsNameUtils.getScriptName(GrailsNameUtils.getLogicalName(ctxCommand, 'Command'))
-                if (!project.tasks.names.contains(taskName)) {
-                    project.tasks.register(taskName, ApplicationContextCommandTask).configure {
-                        it.classpath = fileCollection
-                        it.command = commandName
-                        it.systemProperty(Environment.KEY, System.getProperty(Environment.KEY, Environment.DEVELOPMENT.getName()))
-                        List<Object> args = []
-                        def otherArgs = project.findProperty('args')
-                        if (otherArgs) {
-                            args.addAll(CommandLineParser.translateCommandline(otherArgs as String))
-                        }
-
-                        def appClassProvider = GrailsGradlePlugin.getMainClassProvider(project)
-
-                        it.doFirst {
-                            args << appClassProvider.get()
-                            it.args(args)
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    @CompileDynamic
     protected void configureGrailsSourceDirs(Project project) {
         project.sourceSets {
             main {
@@ -1013,59 +970,6 @@ ${importStatements}
         return JavaVersion.current().majorVersion.toInteger()
     }
 
-    protected void configureConsoleTask(Project project) {
-        TaskContainer tasks = project.tasks
-        if (!project.configurations.names.contains('console')) {
-            if (!tasks.names.contains('findMainClass')) {
-                project.logger.info('Project {} does not contain the findMainClass task so the console & shell tasks will not be created.', project.name)
-                return
-            }
-
-            NamedDomainObjectProvider<Configuration> consoleConfiguration = project.configurations.register('console')
-            createConsoleTask(project, tasks, consoleConfiguration)
-            createShellTask(project, tasks, consoleConfiguration)
-        }
-    }
-
-    @CompileDynamic
-    protected TaskProvider<JavaExec> createConsoleTask(Project project, TaskContainer tasks, NamedDomainObjectProvider<Configuration> configuration) {
-        def consoleTask = tasks.register('console', JavaExec)
-        project.afterEvaluate {
-            consoleTask.configure {
-                it.dependsOn(tasks.named('classes'), tasks.named('findMainClass'))
-                it.classpath = project.sourceSets.main.runtimeClasspath + configuration.get()
-                it.mainClass.set('grails.ui.console.GrailsSwingConsole')
-
-                def appClass = GrailsGradlePlugin.getMainClassProvider(project)
-
-                it.doFirst {
-                    it.args(appClass.get())
-                }
-            }
-        }
-        consoleTask
-    }
-
-    @CompileDynamic
-    protected TaskProvider<JavaExec> createShellTask(Project project, TaskContainer tasks, NamedDomainObjectProvider<Configuration> configuration) {
-        def shellTask = tasks.register('shell', JavaExec)
-        project.afterEvaluate {
-            shellTask.configure {
-                it.dependsOn(tasks.named('classes'), tasks.named('findMainClass'))
-                it.classpath = project.sourceSets.main.runtimeClasspath + configuration.get()
-                it.mainClass.set('grails.ui.shell.GrailsShell')
-                it.standardInput = System.in
-
-                def appClass = GrailsGradlePlugin.getMainClassProvider(project)
-
-                it.doFirst {
-                    it.args(appClass.get())
-                }
-            }
-        }
-        shellTask
-    }
-
     @CompileDynamic
     protected void registerFindMainClassTask(Project project) {
         TaskContainer taskContainer = project.tasks
@@ -1237,93 +1141,6 @@ ${importStatements}
         }
 
         native2asciiTask
-    }
-
-    @CompileDynamic
-    protected void configureRunScript(Project project) {
-        if (!project.tasks.names.contains('runScript')) {
-            def runTask = project.tasks.register('runScript', ApplicationContextScriptTask)
-            project.afterEvaluate {
-                runTask.configure {
-                    SourceSet mainSourceSet = SourceSets.findMainSourceSet(project)
-                    it.classpath = mainSourceSet.runtimeClasspath + project.configurations.getByName('console')
-                    it.systemProperty(Environment.KEY, System.getProperty(Environment.KEY, Environment.DEVELOPMENT.getName()))
-
-                    // devtools' automatic restart mechanism uses a specialized classloader setup, which can interfere
-                    // with Grails' plugin management and bean wiring when running CLI scripts via Gradle
-                    it.systemProperty('spring.devtools.restart.enabled', 'false')
-
-                    List<Object> args = []
-                    def otherArgs = project.findProperty('args')
-                    if (otherArgs) {
-                        args.addAll(CommandLineParser.translateCommandline(otherArgs as String))
-                    }
-
-                    def appClassProvider = GrailsGradlePlugin.getMainClassProvider(project)
-
-                    it.doFirst {
-                        args << appClassProvider.get()
-                        it.args(args)
-                    }
-                }
-            }
-        }
-    }
-
-    @CompileDynamic
-    protected void configureRunCommand(Project project) {
-        if (!project.tasks.names.contains('runCommand')) {
-            def runTask = project.tasks.register('runCommand', ApplicationContextCommandTask)
-            project.afterEvaluate {
-                runTask.configure {
-                    SourceSet mainSourceSet = SourceSets.findMainSourceSet(project)
-                    it.classpath = mainSourceSet.runtimeClasspath + project.configurations.getByName('console')
-                    it.systemProperty(Environment.KEY, System.getProperty(Environment.KEY, Environment.DEVELOPMENT.getName()))
-
-                    // devtools' automatic restart mechanism uses a specialized classloader setup, which can interfere
-                    // with Grails' plugin management and bean wiring when running CLI commands via Gradle
-                    it.systemProperty('spring.devtools.restart.enabled', 'false')
-
-                    List<Object> args = []
-                    def otherArgs = project.findProperty('args')
-                    if (otherArgs) {
-                        args.addAll(CommandLineParser.translateCommandline(otherArgs as String))
-                    }
-
-                    def appClassProvider = GrailsGradlePlugin.getMainClassProvider(project)
-
-                    it.doFirst {
-                        args << appClassProvider.get()
-                        it.args(args)
-                    }
-
-                }
-            }
-        }
-    }
-
-    protected FileCollection resolveClassesDirs(SourceSetOutput output, Project project) {
-        output?.classesDirs ?: project.files(project.layout.buildDirectory.dir('classes/main'))
-    }
-
-    protected FileCollection buildClasspath(Project project, Configuration... configurations) {
-        SourceSet mainSourceSet = SourceSets.findMainSourceSet(project)
-        SourceSetOutput output = mainSourceSet?.output
-        FileCollection mainFiles = resolveClassesDirs(output, project)
-        FileCollection fileCollection = project.files(project.layout.buildDirectory.dir('resources/main'), project.layout.buildDirectory.dir('gsp-classes')) + mainFiles
-        configurations.each {
-            fileCollection = fileCollection + it.filter({ File file -> !file.name.startsWith('spring-boot-devtools') })
-        }
-        fileCollection
-    }
-
-    protected FileCollection buildClasspath(Project project, String... configurationNames) {
-        buildClasspath(
-                project,
-                configurationNames.collect {
-                    project.configurations.named(it).getOrNull()
-                }.findAll(/* remove nulls */) as Configuration[]
-        )
     }
 
     @CompileStatic
