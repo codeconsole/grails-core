@@ -21,6 +21,7 @@ package grails.plugins.redis
 import org.springframework.beans.factory.config.BeanDefinition
 import org.springframework.beans.factory.support.AbstractBeanDefinition
 import org.springframework.beans.factory.support.DefaultListableBeanFactory
+import org.springframework.beans.factory.support.GenericBeanDefinition
 import org.springframework.core.Ordered
 
 import redis.clients.jedis.JedisPool
@@ -84,5 +85,24 @@ class RedisBeanDefinitionsPostProcessorSpec extends Specification {
 
         then:
         serviceDefinition.propertyValues.getPropertyValue('redisPool').value.beanName == 'redisPool'
+    }
+
+    void "an existing redis bean definition wins"() {
+        given:
+        DefaultListableBeanFactory registry = new DefaultListableBeanFactory()
+        registry.registerBeanDefinition('redisPool', new GenericBeanDefinition(beanClass: String))
+        registry.registerBeanDefinition('redisServiceCache', new GenericBeanDefinition(beanClass: String))
+
+        when:
+        new RedisBeanDefinitionsPostProcessor([connections: [cache: [:]]]).postProcessBeanDefinitionRegistry(registry)
+
+        then: 'the pre-existing definitions are not overwritten'
+        registry.getBeanDefinition('redisPool').beanClassName == String.name
+        registry.getBeanDefinition('redisServiceCache').beanClassName == String.name
+
+        and: 'the remaining redis beans are still contributed'
+        registry.getBeanDefinition('redisService').beanClassName == RedisService.name
+        registry.containsBeanDefinition('redisPoolConfig')
+        registry.getBeanDefinition('redisPoolCache').beanClassName == JedisPool.name
     }
 }

@@ -96,51 +96,60 @@ class RedisConfigurationUtil {
      * Registers the pool-config, pool and service bean definitions for a redis connection
      * directly against a {@link BeanDefinitionRegistry}, mirroring the beans the
      * {@link #configureService} closure wires through the bean builder DSL. Used by the redis
-     * plugin's {@code beanRegistrar()}-registered post-processor.
+     * plugin's {@code beanRegistrar()}-registered post-processor. An existing definition for any
+     * of the bean names wins, preserving the ability of the application (or another plugin) to
+     * override the beans.
      */
     static void configureService(BeanDefinitionRegistry registry, def redisConfigMap, String key, Class serviceClass) {
         String poolConfigBeanName = "redisPoolConfig${key}"
-        def validPoolProperties = findValidPoolProperties(redisConfigMap?.poolConfig)
-
-        GenericBeanDefinition poolConfigDefinition = new GenericBeanDefinition(beanClass: JedisPoolConfig)
-        validPoolProperties?.each { configKey, value ->
-            poolConfigDefinition.propertyValues.addPropertyValue(configKey.toString(), value)
-        }
-        registry.registerBeanDefinition(poolConfigBeanName, poolConfigDefinition)
-
-        Map settings = parseConnectionSettings(redisConfigMap)
-
-        GenericBeanDefinition poolDefinition = new GenericBeanDefinition(destroyMethodName: 'destroy')
-        // If sentinels and a masterName is present, using different pool implementation
-        if (settings.sentinels && settings.masterName) {
-            Collection sentinels = resolveSentinels(settings.sentinels)
-            poolDefinition.beanClass = JedisSentinelPool
-            poolDefinition.constructorArgumentValues.with {
-                addIndexedArgumentValue(0, settings.masterName)
-                addIndexedArgumentValue(1, sentinels as Set)
-                addIndexedArgumentValue(2, new RuntimeBeanReference(poolConfigBeanName))
-                addIndexedArgumentValue(3, settings.timeout)
-                addIndexedArgumentValue(4, settings.password)
-                addIndexedArgumentValue(5, settings.database)
-                addIndexedArgumentValue(6, settings.useSSL)
+        if (!registry.containsBeanDefinition(poolConfigBeanName)) {
+            def validPoolProperties = findValidPoolProperties(redisConfigMap?.poolConfig)
+            GenericBeanDefinition poolConfigDefinition = new GenericBeanDefinition(beanClass: JedisPoolConfig)
+            validPoolProperties?.each { configKey, value ->
+                poolConfigDefinition.propertyValues.addPropertyValue(configKey.toString(), value)
             }
-        } else {
-            poolDefinition.beanClass = JedisPool
-            poolDefinition.constructorArgumentValues.with {
-                addIndexedArgumentValue(0, new RuntimeBeanReference(poolConfigBeanName))
-                addIndexedArgumentValue(1, settings.host)
-                addIndexedArgumentValue(2, settings.port)
-                addIndexedArgumentValue(3, settings.timeout)
-                addIndexedArgumentValue(4, settings.password)
-                addIndexedArgumentValue(5, settings.database)
-                addIndexedArgumentValue(6, settings.useSSL)
-            }
+            registry.registerBeanDefinition(poolConfigBeanName, poolConfigDefinition)
         }
-        registry.registerBeanDefinition("redisPool${key}", poolDefinition)
 
-        GenericBeanDefinition serviceDefinition = new GenericBeanDefinition(beanClass: serviceClass)
-        serviceDefinition.propertyValues.addPropertyValue('redisPool', new RuntimeBeanReference("redisPool${key}"))
-        registry.registerBeanDefinition("redisService${key}", serviceDefinition)
+        String poolBeanName = "redisPool${key}"
+        if (!registry.containsBeanDefinition(poolBeanName)) {
+            Map settings = parseConnectionSettings(redisConfigMap)
+
+            GenericBeanDefinition poolDefinition = new GenericBeanDefinition(destroyMethodName: 'destroy')
+            // If sentinels and a masterName is present, using different pool implementation
+            if (settings.sentinels && settings.masterName) {
+                Collection sentinels = resolveSentinels(settings.sentinels)
+                poolDefinition.beanClass = JedisSentinelPool
+                poolDefinition.constructorArgumentValues.with {
+                    addIndexedArgumentValue(0, settings.masterName)
+                    addIndexedArgumentValue(1, sentinels as Set)
+                    addIndexedArgumentValue(2, new RuntimeBeanReference(poolConfigBeanName))
+                    addIndexedArgumentValue(3, settings.timeout)
+                    addIndexedArgumentValue(4, settings.password)
+                    addIndexedArgumentValue(5, settings.database)
+                    addIndexedArgumentValue(6, settings.useSSL)
+                }
+            } else {
+                poolDefinition.beanClass = JedisPool
+                poolDefinition.constructorArgumentValues.with {
+                    addIndexedArgumentValue(0, new RuntimeBeanReference(poolConfigBeanName))
+                    addIndexedArgumentValue(1, settings.host)
+                    addIndexedArgumentValue(2, settings.port)
+                    addIndexedArgumentValue(3, settings.timeout)
+                    addIndexedArgumentValue(4, settings.password)
+                    addIndexedArgumentValue(5, settings.database)
+                    addIndexedArgumentValue(6, settings.useSSL)
+                }
+            }
+            registry.registerBeanDefinition(poolBeanName, poolDefinition)
+        }
+
+        String serviceBeanName = "redisService${key}"
+        if (!registry.containsBeanDefinition(serviceBeanName)) {
+            GenericBeanDefinition serviceDefinition = new GenericBeanDefinition(beanClass: serviceClass)
+            serviceDefinition.propertyValues.addPropertyValue('redisPool', new RuntimeBeanReference(poolBeanName))
+            registry.registerBeanDefinition(serviceBeanName, serviceDefinition)
+        }
     }
 
     /**

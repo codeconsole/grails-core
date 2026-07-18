@@ -22,6 +22,7 @@ import groovy.transform.CompileStatic
 
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.boot.autoconfigure.AutoConfiguration
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.context.annotation.Bean
@@ -34,10 +35,16 @@ import org.grails.plugin.cache.GrailsCacheManager
  * plugin — for example a cache-provider plugin's {@code grailsCacheManager} — makes the default
  * back off cleanly instead of triggering a bean-definition override.
  *
+ * <p>Gated on the {@code CachePluginConfiguration} definition contributed by the cache plugin
+ * descriptor's registrar (which runs before auto-configuration conditions are evaluated), so the
+ * auto-configuration backs off entirely when the plugin is not active — e.g. the jar is on the
+ * classpath but the plugin is excluded — keeping it in lockstep with the descriptor.</p>
+ *
  * @since 8.0
  */
 @AutoConfiguration
 @ConditionalOnProperty(name = 'grails.cache.enabled', matchIfMissing = true)
+@ConditionalOnBean(CachePluginConfiguration)
 @CompileStatic
 class GrailsCacheAutoConfiguration {
 

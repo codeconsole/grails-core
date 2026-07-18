@@ -122,27 +122,28 @@ trait GrailsUnitTest {
 
     void defineBeans(Object plugin) {
         Class clazz = plugin.getClass()
+        // Mirror the boot order: the doWithSpring() DSL is applied first and the beanRegistrar()
+        // second, so a plugin defining both hooks (e.g. one that is mid-migration) gets both sets
+        // of beans and registrar beans win any name conflicts with the deprecated DSL
+        Closure dsl = null
         try {
-            Method doWithSpringMethod = clazz.getMethod('doWithSpring')
-            Closure config = (Closure) doWithSpringMethod.invoke(plugin)
-            if (config != null) {
-                defineBeans(config)
-                return
-            }
+            dsl = (Closure) clazz.getMethod('doWithSpring').invoke(plugin)
         } catch (NoSuchMethodException e) {}
+        if (dsl == null) {
+            try {
+                dsl = (Closure) clazz.getMethod('getDoWithSpring').invoke(plugin)
+            } catch (NoSuchMethodException e) {}
+        }
+        if (dsl != null) {
+            defineBeans(dsl)
+        }
 
         try {
             Method beanRegistrarMethod = clazz.getMethod('beanRegistrar')
             BeanRegistrar registrar = (BeanRegistrar) beanRegistrarMethod.invoke(plugin)
             if (registrar != null) {
                 defineBeans(registrar)
-                return
             }
-        } catch (NoSuchMethodException e) {}
-
-        try {
-            Method doWithSpringField = clazz.getMethod('getDoWithSpring')
-            defineBeans((Closure) doWithSpringField.invoke(plugin))
         } catch (NoSuchMethodException e) {}
     }
 

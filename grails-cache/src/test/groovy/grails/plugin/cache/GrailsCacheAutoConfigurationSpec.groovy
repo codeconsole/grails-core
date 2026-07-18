@@ -65,6 +65,18 @@ class GrailsCacheAutoConfigurationSpec extends Specification {
         context.close()
     }
 
+    void 'the auto-configuration backs off entirely when the cache plugin is not active'() {
+        given: 'a context without the plugin-contributed grailsCacheConfiguration definition'
+        AnnotationConfigApplicationContext context = buildContext([:], null, false)
+
+        expect:
+        !context.containsBean('grailsCacheManager')
+        !context.containsBean('customCacheKeyGenerator')
+
+        cleanup:
+        context.close()
+    }
+
     void 'a user-defined grailsCacheManager bean makes the auto-configured default back off'() {
         given: 'a user-defined cache manager under the auto-configured bean name'
         GrailsCacheManager userCacheManager = Mock(GrailsCacheManager)
@@ -80,10 +92,12 @@ class GrailsCacheAutoConfigurationSpec extends Specification {
 
     @CompileStatic
     private static AnnotationConfigApplicationContext buildContext(
-            Map<String, Object> properties, GrailsCacheManager userCacheManager = null) {
+            Map<String, Object> properties, GrailsCacheManager userCacheManager = null, boolean pluginActive = true) {
         AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext()
         context.environment.propertySources.addFirst(new MapPropertySource('test', properties))
-        context.registerBean('grailsCacheConfiguration', CachePluginConfiguration, () -> new CachePluginConfiguration())
+        if (pluginActive) {
+            context.registerBean('grailsCacheConfiguration', CachePluginConfiguration, () -> new CachePluginConfiguration())
+        }
         if (userCacheManager != null) {
             context.registerBean('grailsCacheManager', GrailsCacheManager, () -> userCacheManager)
         }

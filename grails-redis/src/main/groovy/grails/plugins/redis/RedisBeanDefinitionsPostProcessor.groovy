@@ -32,7 +32,8 @@ import grails.plugins.redis.util.RedisConfigurationUtil
  * through the {@code doWithSpring()} bean DSL. The pool beans need a {@code destroy} method and
  * per-connection pool-config property values, which the
  * {@link org.springframework.beans.factory.BeanRegistry} API cannot express, so the definitions
- * are contributed by this post-processor instead.
+ * are contributed by this post-processor instead. An existing definition for a bean name wins,
+ * preserving the ability of the application (or another plugin) to override the beans.
  *
  * <p>Runs as a {@link PriorityOrdered} post-processor with highest precedence so the redis
  * definitions are registered before Spring Boot's configuration-class post-processor evaluates
