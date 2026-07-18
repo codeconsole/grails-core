@@ -108,6 +108,20 @@ class LocaleSelectRenderingSpec extends Specification implements TagLibUnitTest<
         output.contains('[it|false]')
     }
 
+    void 'active elects a single winner when only country variants share the language'() {
+        given: 'two country variants and no bare-language entry, as the create-app bundles ship'
+        publish([Locale.forLanguageTag('pt-BR'), Locale.forLanguageTag('pt-PT'), Locale.forLanguageTag('en')])
+
+        when: 'the request locale is a bare language (an unlisted variant behaves the same)'
+        String output = applyTemplate(
+                '<g:localeSelect available="true" value="pt" var="loc">[${loc.tag}|${loc.active}]</g:localeSelect>')
+
+        then: 'only the first Portuguese variant is active, never both at once'
+        output.contains('[pt-BR|true]')
+        output.contains('[pt-PT|false]')
+        output.contains('[en|false]')
+    }
+
     void 'active prefers the exact country match when the list offers one'() {
         given:
         publish([Locale.forLanguageTag('pt'), Locale.forLanguageTag('pt-BR')])

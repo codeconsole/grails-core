@@ -246,6 +246,9 @@ class GrailsGspSpec extends ApplicationContextSpec implements CommandOutputFixtu
         index.contains('data-switch-type="registrations"')
         index.contains('org.springframework.boot.web.servlet.FilterRegistrationBean')
 
+        and: "the diagnostic internals render only in development"
+        index.contains('''<g:if test="${Environment.current == Environment.DEVELOPMENT}">''')
+
         and: "the security filter chain panel renders only when Spring Security is present"
         index.contains('data-switch-type="securitychain"')
         index.contains("ClassUtils.isPresent('org.springframework.security.web.FilterChainProxy'")

@@ -552,7 +552,10 @@
 
                 <%-- RUNTIME INTERNALS: listeners, data binding, mime handling and
                      the request filter pipeline resolved from the running application
-                     context; reuses the artefacts card's data-switch-scope pattern. --%>
+                     context; reuses the artefacts card's data-switch-scope pattern.
+                     Development-only: this card enumerates filter pipelines, security
+                     chains and bean internals that a production home page should not expose. --%>
+                <g:if test="${Environment.current == Environment.DEVELOPMENT}">
                 <g:set var="appListeners"
                        value="${applicationContext.applicationListeners.toList()
                                .collect { l -> [name: (l.getClass().simpleName ?: l.getClass().name.tokenize('.').last()),
@@ -1205,6 +1208,7 @@
                         </g:if>
                     </div>
                 </div>
+                </g:if>
             </div>
 
             <%-- PLUGINS --%>
@@ -1327,6 +1331,8 @@
                         </div>
                     </div>
                 </g:if>
+                <%-- Development-only diagnostics, matching the runtime internals card. --%>
+                <g:if test="${Environment.current == Environment.DEVELOPMENT}">
                 <g:set var="mimeTypes"
                        value="${applicationContext.containsBean('mimeTypes') ?
                                applicationContext.getBean('mimeTypes').toList()
@@ -1442,6 +1448,7 @@
                             </g:each>
                         </div>
                     </div>
+                </g:if>
                 </g:if>
             </div>
         </div>

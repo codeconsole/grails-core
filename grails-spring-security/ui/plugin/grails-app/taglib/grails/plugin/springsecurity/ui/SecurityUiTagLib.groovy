@@ -390,11 +390,9 @@ class SecurityUiTagLib {
         String elementId = getRequiredAttribute(attrs, 'elementId', 'linkButton')
 
         def out = getOut()
-        out << """<a href="${createLink(attrs).encodeAsHTML()}" id="$elementId" class="btn btn-outline-secondary" """
-// TODO encodeAsHTML
-
+        out << """<a href="${createLink(attrs).encodeAsHTML()}" id="${elementId.encodeAsHTML()}" class="btn btn-outline-secondary" """
         writeRemainingAttributes out, attrs
-        out << '>' << text << '</a>'
+        out << '>' << (text?.encodeAsHTML() ?: '') << '</a>'
     }
 
     /**
@@ -700,9 +698,9 @@ class SecurityUiTagLib {
         }
 
         def out = getOut()
-        out << """<button type="submit" id="$elementId" class="btn btn-primary" """
+        out << """<button type="submit" id="${elementId.encodeAsHTML()}" class="btn btn-primary" """
         writeRemainingAttributes out, attrs
-        out << ">$text</button>"
+        out << ">${text?.encodeAsHTML() ?: ''}</button>"
     }
 
     /**
@@ -883,7 +881,7 @@ $javascript
     }
 
     protected void writeRemainingAttributes(writer, attrs) {
-        writer << attrs.collect { k, v -> """ $k="$v" """ }.join('')
+        writer << attrs.collect { k, v -> """ ${k.toString().encodeAsHTML()}="${v.toString().encodeAsHTML()}" """ }.join('')
     }
 
     protected String createLink(String action, String controller = controllerName, Map params = null) {

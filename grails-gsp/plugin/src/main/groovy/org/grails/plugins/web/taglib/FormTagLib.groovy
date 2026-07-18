@@ -1026,15 +1026,15 @@ class FormTagLib implements ApplicationContextAware, InitializingBean, TagLibrar
         if (varName) {
             boolean pinDefault = Boolean.valueOf(attrs.remove('pinDefault')?.toString())
             Locale defaultLocale = configuredDefaultLocale()
-            if (pinDefault) {
-                Locale pinned = locales.find { it.language == defaultLocale.language }
-                if (pinned) {
-                    locales = [pinned] + locales.findAll { it.language != defaultLocale.language }
-                }
+            // Lists can carry several country variants of one language with no bare-language
+            // entry (pt_BR/pt_PT, zh_CN/zh_TW), so active and default must each elect a
+            // SINGLE winner: the exact match, else the bare-language entry, else the first
+            // locale sharing the language. Pinning keeps the losing variants in the list.
+            Locale defaultEntry = singleWinner(locales, defaultLocale)
+            if (pinDefault && defaultEntry) {
+                locales = [defaultEntry] + locales.findAll { !it.is(defaultEntry) }
             }
-            // A country-qualified request locale (e.g. Accept-Language: en-US) must still mark the
-            // language-only entry (en) active when the list offers no exact country match.
-            boolean exactActiveMatch = locales.any { it.language == current.language && it.country == current.country }
+            Locale activeEntry = singleWinner(locales, current)
             locales.eachWithIndex { locale, i ->
                 out << body([(varName): [
                         locale: locale,
@@ -1043,10 +1043,8 @@ class FormTagLib implements ApplicationContextAware, InitializingBean, TagLibrar
                         autonym: locale.getDisplayName(locale),
                         name: locale.getDisplayName(current),
                         label: label(locale),
-                        active: exactActiveMatch ?
-                                locale.language == current.language && locale.country == current.country :
-                                locale.language == current.language,
-                        'default': locale.language == defaultLocale.language,
+                        active: locale.is(activeEntry),
+                        'default': locale.is(defaultEntry),
                         index: i
                 ]])
             }
@@ -1077,6 +1075,12 @@ class FormTagLib implements ApplicationContextAware, InitializingBean, TagLibrar
 
     private static String localeKey(Locale locale) {
         locale.country ? "${locale.language}_${locale.country}" : locale.language
+    }
+
+    private static Locale singleWinner(List locales, Locale wanted) {
+        locales.find { it.language == wanted.language && it.country == wanted.country } ?:
+                locales.find { it.language == wanted.language && !it.country } ?:
+                locales.find { it.language == wanted.language }
     }
 
     private Closure localeLabel(labelType, Locale display) {
