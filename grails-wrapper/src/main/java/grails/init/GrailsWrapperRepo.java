@@ -22,11 +22,15 @@ import java.net.URISyntaxException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.regex.Pattern;
 
 /**
  * Helper class to locate the remote or local repository for the `grails-cli`
  */
 public class GrailsWrapperRepo {
+
+    private static final Pattern URL_SCHEME_PREFIX = Pattern.compile("[A-Za-z][A-Za-z0-9+.-]*://.*");
+
     private String baseUrl;
     private String repoPath;
     private String metadataName;
@@ -101,15 +105,16 @@ public class GrailsWrapperRepo {
     }
 
     static GrailsWrapperRepo createGrailsWrapperRepo(String urlOrFile) {
+        String resolvedUrlOrFile = resolveRepositoryAlias(urlOrFile);
         GrailsWrapperRepo repo = new GrailsWrapperRepo();
-        repo.isFile = isFileRepository(urlOrFile);
+        repo.isFile = isFileRepository(resolvedUrlOrFile);
         if (!repo.isFile) {
-            validateRemoteRepositoryUrl(urlOrFile);
+            validateRemoteRepositoryUrl(resolvedUrlOrFile);
         }
         repo.repoPath = repo.isFile ?
             String.join(File.separator, "org", "apache", "grails", GrailsWrapperHome.CLI_COMBINED_PROJECT_NAME) :
             "org/apache/grails/" + GrailsWrapperHome.CLI_COMBINED_PROJECT_NAME;
-        repo.baseUrl = normalizeBaseUrl(urlOrFile, repo.isFile);
+        repo.baseUrl = normalizeBaseUrl(resolvedUrlOrFile, repo.isFile);
 
         if ((repo.isFile && endsWithFileSeparator(repo.baseUrl)) || (!repo.isFile && repo.baseUrl.endsWith("/"))) {
             // remove trailing slash
@@ -118,6 +123,22 @@ public class GrailsWrapperRepo {
 
         repo.metadataName = repo.isFile ? "maven-metadata-local.xml" : "maven-metadata.xml";
         return repo;
+    }
+
+    /**
+     * Resolves the Gradle-style repository aliases {@code mavenLocal()} and {@code mavenCentral()}
+     * to the local Maven repository path and the Maven Central URL respectively. Keep the alias
+     * handling identical in shape to the GRAILS_REPO_URL handling in grails-forge and the Grails
+     * Shell CLI so all tools agree on what the aliases mean.
+     */
+    private static String resolveRepositoryAlias(String urlOrFile) {
+        if ("mavenLocal()".equals(urlOrFile)) {
+            return String.join(File.separator, System.getProperty("user.home"), ".m2", "repository");
+        }
+        if ("mavenCentral()".equals(urlOrFile)) {
+            return "https://repo1.maven.org/maven2";
+        }
+        return urlOrFile;
     }
 
     private static void validateRemoteRepositoryUrl(String url) {
@@ -132,67 +153,40 @@ public class GrailsWrapperRepo {
     }
 
     private static boolean isFileRepository(String urlOrFile) {
-        if (isWindowsAbsolutePath(urlOrFile)) {
-            return true;
-        }
         try {
             URI uri = new URI(urlOrFile);
             String scheme = uri.getScheme();
-            if (scheme == null || "file".equalsIgnoreCase(scheme)) {
-                return true;
-            }
-            // A single-letter scheme with no authority is a Windows drive letter (e.g.
-            // "C:repo"), not a remote URL scheme, so it is a local filesystem repository.
-            return scheme.length() == 1 && uri.getRawAuthority() == null;
+            // Local: no scheme (a plain path), an explicit file: scheme, or a single-letter
+            // scheme with no authority — a Windows drive letter ("C:/repo", "C:repo"), not a
+            // remote URL scheme ("c://host" carries an authority and stays remote).
+            return scheme == null ||
+                "file".equalsIgnoreCase(scheme) ||
+                (scheme.length() == 1 && uri.getRawAuthority() == null);
         } catch (URISyntaxException e) {
-            // A malformed value that is clearly URL-shaped (has a leading "scheme://") is a
-            // broken remote override, not a local path; classify it as remote so it is
-            // validated and rejected rather than silently searched on the filesystem. A
-            // "://" that appears inside an absolute local path is not a scheme separator.
-            return !hasLeadingUrlScheme(urlOrFile);
+            // Unparseable: a URL-shaped value (leading "scheme://") is a broken remote
+            // override, classified remote so it is validated and rejected rather than
+            // silently searched on the filesystem; anything else ("C:\repo", paths with
+            // spaces) is a local path.
+            return !URL_SCHEME_PREFIX.matcher(urlOrFile).matches();
         }
-    }
-
-    private static boolean hasLeadingUrlScheme(String value) {
-        int schemeEnd = value.indexOf("://");
-        if (schemeEnd <= 0) {
-            return false;
-        }
-        for (int i = 0; i < schemeEnd; i++) {
-            char c = value.charAt(i);
-            boolean valid = (i == 0) ? Character.isLetter(c) :
-                (Character.isLetterOrDigit(c) || c == '+' || c == '-' || c == '.');
-            if (!valid) {
-                return false;
-            }
-        }
-        return true;
     }
 
     private static String normalizeBaseUrl(String urlOrFile, boolean fileRepository) {
-        if (!fileRepository || isWindowsAbsolutePath(urlOrFile)) {
-            return urlOrFile;
-        }
-        try {
-            URI uri = new URI(urlOrFile);
-            if ("file".equalsIgnoreCase(uri.getScheme())) {
-                return new File(uri).getPath();
+        if (fileRepository) {
+            try {
+                URI uri = new URI(urlOrFile);
+                if ("file".equalsIgnoreCase(uri.getScheme())) {
+                    return new File(uri).getPath();
+                }
+            } catch (IllegalArgumentException | URISyntaxException ignored) {
+                // not a file: URI — use the value as a plain path
             }
-        } catch (IllegalArgumentException | URISyntaxException e) {
-            return urlOrFile;
         }
         return urlOrFile;
     }
 
     private static boolean endsWithFileSeparator(String urlOrFile) {
         return urlOrFile.endsWith("/") || urlOrFile.endsWith(File.separator);
-    }
-
-    private static boolean isWindowsAbsolutePath(String urlOrFile) {
-        return urlOrFile.length() > 2 &&
-            Character.isLetter(urlOrFile.charAt(0)) &&
-            urlOrFile.charAt(1) == ':' &&
-            (urlOrFile.charAt(2) == '\\' || urlOrFile.charAt(2) == '/');
     }
 
     /**

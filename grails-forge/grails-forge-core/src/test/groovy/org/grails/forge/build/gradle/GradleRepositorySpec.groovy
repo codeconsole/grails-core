@@ -77,4 +77,26 @@ class GradleRepositorySpec extends Specification {
         where:
         windowsPath << ['C:\\Users\\me\\.m2\\repository', 'C:/Users/me/.m2/repository', 'C:repo', 'C:repo\\subdir', 'C:my repo\\releases']
     }
+
+    def 'GRAILS_REPO_URL overrides support the Gradle repository aliases'() {
+        when:
+        List<GradleRepository> repositories = GradleRepository.getDefaultRepositories('8.0.0', 'mavenLocal();mavenCentral()').toList()
+
+        then: 'the aliases render as their repository method calls, in override order'
+        repositories[0] instanceof MavenLocalRepository
+        repositories[0].toSnippet('') == 'mavenLocal()'
+        repositories[1] instanceof MavenCentralRepository
+
+        and: 'maven central is not added a second time by the defaults'
+        repositories.count { it instanceof MavenCentralRepository } == 1
+    }
+
+    def 'GRAILS_REPO_URL overrides treat a single-letter scheme with an authority as remote'() {
+        when: 'a URL whose single-letter scheme carries a "//" authority is supplied'
+        GradleRepository.getDefaultRepositories('8.0.0', 'c://host/releases')
+
+        then: 'it is not mistaken for a drive letter and is rejected for not using HTTPS'
+        def e = thrown(IllegalArgumentException)
+        e.message == 'Remote GRAILS_REPO_URL repositories must use HTTPS: c://host/releases'
+    }
 }

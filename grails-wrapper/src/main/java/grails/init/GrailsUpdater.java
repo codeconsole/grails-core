@@ -196,8 +196,15 @@ public class GrailsUpdater {
                 contentLength = jarFile.length();
             } else {
                 HttpURLConnection conn = createHttpURLConnection(wrapperUrl);
-                contentLength = conn.getContentLengthLong();
-                inputStream = conn.getInputStream();
+                try {
+                    contentLength = conn.getContentLengthLong();
+                    inputStream = conn.getInputStream();
+                } catch (IOException | RuntimeException e) {
+                    // createHttpURLConnection transfers ownership; do not leak the
+                    // connection when the response turns out to be an error (e.g. 404)
+                    closeQuietly(conn);
+                    throw e;
+                }
             }
 
             success = downloadWrapperJar(version, downloadedJar, inputStream, contentLength, repo.isFile);
@@ -301,7 +308,14 @@ public class GrailsUpdater {
                 // missing release for this repository, letting update() fall back to the next
                 // repository instead of aborting the whole wrapper run.
                 HttpURLConnection connection = createHttpURLConnection(metadataUrl);
-                return connection.getInputStream();
+                try {
+                    return connection.getInputStream();
+                } catch (IOException | RuntimeException e) {
+                    // createHttpURLConnection transfers ownership; do not leak the
+                    // connection when the response turns out to be an error (e.g. 404)
+                    closeQuietly(connection);
+                    throw e;
+                }
             } catch (Exception e) {
                 throw new GrailsReleaseNotFoundException("There was an error downloading the metadata file", e);
             }

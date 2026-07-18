@@ -27,8 +27,12 @@ import java.util.Arrays;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 public interface GradleRepository extends Ordered {
+
+    Pattern URL_SCHEME_PREFIX = Pattern.compile("[A-Za-z][A-Za-z0-9+.-]*://.*");
+
     @NonNull
     String toSnippet(String basePadding);
 
@@ -46,15 +50,25 @@ public interface GradleRepository extends Ordered {
                 .toList();
 
             for (String overrideUrl : overrides) {
-                repositories.add(
-                    new DefaultGradleRepository(
-                        repositories.size(),
-                        validateOverrideRepository(overrideUrl)
-                    )
-                );
+                // The Gradle repository aliases render as their method calls rather than a
+                // maven { url = ... } block, so the generated build resolves them natively
+                if ("mavenLocal()".equals(overrideUrl)) {
+                    repositories.add(new MavenLocalRepository(repositories.size()));
+                } else if ("mavenCentral()".equals(overrideUrl)) {
+                    repositories.add(new MavenCentralRepository(repositories.size()));
+                } else {
+                    repositories.add(
+                        new DefaultGradleRepository(
+                            repositories.size(),
+                            validateOverrideRepository(overrideUrl)
+                        )
+                    );
+                }
             }
         }
-        repositories.add(new MavenCentralRepository(repositories.size()));
+        if (repositories.stream().noneMatch(MavenCentralRepository.class::isInstance)) {
+            repositories.add(new MavenCentralRepository(repositories.size()));
+        }
         repositories.add(new DefaultGradleRepository(repositories.size(), "https://repo.grails.org/grails/restricted"));
         if (grailsVersion.endsWith("SNAPSHOT")) {
             repositories.add(new DefaultGradleRepository(
@@ -119,44 +133,24 @@ public interface GradleRepository extends Ordered {
         }
     }
 
+    // Keep this classifier identical in shape to the GRAILS_REPO_URL handling in the
+    // wrapper's GrailsWrapperRepo so both tools agree on what is local vs remote.
     private static boolean isLocalRepository(String overrideUrl) {
-        // A Windows drive path (absolute "C:\repo" / "C:/repo" or drive-relative "C:repo",
-        // including nested paths and spaces) is checked before URI parsing, because a
-        // single-letter drive prefix is otherwise mistaken for a URL scheme.
-        if (isWindowsDrivePath(overrideUrl)) {
-            return true;
-        }
         try {
             URI uri = new URI(overrideUrl);
             String scheme = uri.getScheme();
-            return scheme == null || "file".equalsIgnoreCase(scheme);
+            // Local: no scheme (a plain path), an explicit file: scheme, or a single-letter
+            // scheme with no authority — a Windows drive letter ("C:/repo", "C:repo"), not a
+            // remote URL scheme ("c://host" carries an authority and stays remote).
+            return scheme == null ||
+                "file".equalsIgnoreCase(scheme) ||
+                (scheme.length() == 1 && uri.getRawAuthority() == null);
         } catch (URISyntaxException e) {
-            return !looksLikeUri(overrideUrl);
+            // Unparseable: a URL-shaped value (leading "scheme://") is a broken remote
+            // override, classified remote so it is validated and rejected rather than
+            // silently treated as a filesystem repository; anything else ("C:\repo",
+            // paths with spaces) is a local path.
+            return !URL_SCHEME_PREFIX.matcher(overrideUrl).matches();
         }
-    }
-
-    private static boolean looksLikeUri(String overrideUrl) {
-        int colonIndex = overrideUrl.indexOf(':');
-        if (colonIndex < 1) {
-            return false;
-        }
-        for (int i = 0; i < colonIndex; i++) {
-            char character = overrideUrl.charAt(i);
-            if (!Character.isLetterOrDigit(character) && character != '+' && character != '-' && character != '.') {
-                return false;
-            }
-        }
-        return Character.isLetter(overrideUrl.charAt(0));
-    }
-
-    private static boolean isWindowsDrivePath(String overrideUrl) {
-        if (overrideUrl.length() < 2
-                || !Character.isLetter(overrideUrl.charAt(0))
-                || overrideUrl.charAt(1) != ':') {
-            return false;
-        }
-        // Distinguish a drive path ("C:\repo", "C:/repo", "C:repo") from a single-letter
-        // URL scheme ("c://host"), which has a "//" authority separator after the colon.
-        return !overrideUrl.regionMatches(2, "//", 0, 2);
     }
 }

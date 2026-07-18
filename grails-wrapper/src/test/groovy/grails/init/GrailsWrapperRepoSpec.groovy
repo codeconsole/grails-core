@@ -112,4 +112,39 @@ class GrailsWrapperRepoSpec extends Specification {
         then: 'the drive letter is not treated as a URL scheme, so it stays a local repository'
         repo.isFile
     }
+
+    def 'Windows absolute repo override is treated as a local repository'() {
+        expect: 'both separator styles classify as local filesystem repositories'
+        GrailsWrapperRepo.createGrailsWrapperRepo(windowsPath).isFile
+
+        where:
+        windowsPath << ['C:\\Users\\me\\.m2\\repository', 'C:/Users/me/.m2/repository', 'C:my repo\\releases']
+    }
+
+    def 'the mavenLocal() alias resolves to the local maven repository'() {
+        when:
+        GrailsWrapperRepo repo = GrailsWrapperRepo.createGrailsWrapperRepo('mavenLocal()')
+
+        then:
+        repo.isFile
+        repo.getUrl().startsWith([System.getProperty('user.home'), '.m2', 'repository'].join(File.separator))
+    }
+
+    def 'the mavenCentral() alias resolves to the Maven Central URL'() {
+        when:
+        GrailsWrapperRepo repo = GrailsWrapperRepo.createGrailsWrapperRepo('mavenCentral()')
+
+        then:
+        !repo.isFile
+        repo.getUrl().startsWith('https://repo1.maven.org/maven2')
+    }
+
+    def 'single-letter scheme with an authority is a remote URL, not a drive letter'() {
+        when: 'a URL whose single-letter scheme carries a "//" authority is supplied'
+        GrailsWrapperRepo.createGrailsWrapperRepo('c://host/releases')
+
+        then: 'it is classified remote and rejected for not using HTTPS'
+        def e = thrown(IllegalArgumentException)
+        e.message == 'Grails wrapper remote repository URLs must use HTTPS: c://host/releases'
+    }
 }
