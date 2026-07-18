@@ -260,14 +260,14 @@ class GrailsCliGradlePlugin implements Plugin<Project> {
      */
     @CompileDynamic
     protected Dependency findProjectCliCompanion(Project project, ProjectComponentIdentifier componentIdentifier) {
-        // only the current build (buildPath ":") is addressable via findProject; a component from
-        // an included build shares the project-path namespace and would resolve to the wrong
-        // project, so it is intentionally excluded here
-        if (componentIdentifier.build.buildPath != ':') {
+        Project target = project.rootProject.findProject(componentIdentifier.projectPath)
+        // only a project of the consuming build is addressable via findProject; a component from
+        // another build of the composite shares the project-path namespace and would resolve to
+        // the wrong project — the build tree path comparison rejects that collision
+        if (target == null || target.buildTreePath != componentIdentifier.buildTreePath) {
             return null
         }
-        Project target = project.rootProject.findProject(componentIdentifier.projectPath)
-        def cliArtifactId = target?.findProperty('cliArtifactId')
+        def cliArtifactId = target.findProperty('cliArtifactId')
         if (!cliArtifactId) {
             return null
         }

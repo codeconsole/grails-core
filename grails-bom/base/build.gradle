@@ -97,22 +97,9 @@ dependencies {
     }
 }
 
-// Companion cli artifacts (published by the cli-artifact convention plugin) are additional
-// publications of existing projects, so the subproject enumeration above cannot see them. Each
-// applying project exports its companion coordinate via the `cliArtifactId` extra property, which
-// only exists once that project has been evaluated — so the constraints are computed lazily, in
-// the mutation window Gradle provides right before the configuration is first observed.
-configurations.named('api').configure { apiConfiguration ->
-    apiConfiguration.withDependencies {
-        for (Project subproject : rootProject.subprojects) {
-            def cliArtifactId = subproject.findProperty('cliArtifactId')
-            if (cliArtifactId) {
-                apiConfiguration.dependencyConstraints.add(
-                        project.dependencies.constraints.create("${subproject.group}:${cliArtifactId}:${projectVersion}"))
-            }
-        }
-    }
-}
+// Companion cli artifact constraints — declared directly here and on every derived BOM so that
+// enforcedPlatform() consumers also receive forced companion versions (see the shared script).
+apply from: rootProject.layout.projectDirectory.file('gradle/cli-companion-bom-constraints.gradle')
 
 configurations.register('bomDependencies').configure {
     it.canBeResolved = true

@@ -19,6 +19,7 @@
 package org.grails.compiler.injection
 
 import java.lang.reflect.Modifier
+import java.nio.charset.StandardCharsets
 
 import groovy.transform.CompileStatic
 import org.codehaus.groovy.ast.ClassNode
@@ -78,7 +79,9 @@ class FactoriesFileWriter {
 
             addToProps(props, superTypeName, classNodeName)
 
-            factoriesFile.withWriter { Writer writer ->
+            // ISO-8859-1 to stay consistent with Properties.load(InputStream) and the
+            // ISO-8859-1 rewrite performed by makePropertiesFileReproducible below
+            factoriesFile.withWriter(StandardCharsets.ISO_8859_1.name()) { Writer writer ->
                 props.store(writer, 'Grails Factories File')
             }
 
@@ -102,15 +105,16 @@ class FactoriesFileWriter {
     }
 
     private static Properties addToProps(Properties props, String superTypeName, String classNodeNames) {
-        final List<String> classNodesNameList = classNodeNames.tokenize(',')
-        classNodesNameList.forEach(classNodeName -> {
-            String existing = props.getProperty(superTypeName)
-            if (!existing) {
-                props.put(superTypeName, classNodeName)
-            } else if (existing && !existing.contains(classNodeName)) {
-                props.put(superTypeName, [existing, classNodeName].join(','))
-            }
-        })
+        // Exact-membership dedup: a substring test would collide distinct FQCNs where one is a
+        // prefix of another (e.g. com.example.Foo and com.example.FooCommand, or MyCommand and
+        // MyCommand2) and silently drop the second registration.
+        Set<String> names = new LinkedHashSet<>()
+        String existing = props.getProperty(superTypeName)
+        if (existing) {
+            names.addAll(existing.tokenize(',')*.trim())
+        }
+        names.addAll(classNodeNames.tokenize(',')*.trim())
+        props.put(superTypeName, names.join(','))
         props
     }
 
