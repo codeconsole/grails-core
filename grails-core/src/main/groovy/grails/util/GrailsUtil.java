@@ -74,7 +74,7 @@ public class GrailsUtil {
      * <p>No-ops when {@code application} is null. Safe to call more than once — the last successful
      * invocation wins.
      *
-     * @since 7.1.2
+     * @since 7.1.5
      */
     public static void initializeStackFilterer(GrailsApplication application) {
         if (application == null) {
@@ -207,11 +207,11 @@ public class GrailsUtil {
         boolean logOnFilter = true;
         Config config = application.getConfig();
         if (config != null) {
-            Class<? extends StackTraceFilterer> configured = config.getProperty(
+            Class<? extends StackTraceFilterer> configuredFiltererClass = config.getProperty(
                     Settings.SETTING_LOGGING_STACKTRACE_FILTER_CLASS,
                     Class.class, DefaultStackTraceFilterer.class);
-            if (configured != null) {
-                filtererClass = configured;
+            if (configuredFiltererClass != null) {
+                filtererClass = configuredFiltererClass;
             }
             Boolean configuredLogOnFilter = config.getProperty(
                     Settings.SETTING_LOG_FULL_STACKTRACE_ON_FILTER,
@@ -220,19 +220,19 @@ public class GrailsUtil {
                 logOnFilter = configuredLogOnFilter;
             }
         }
-        StackTraceFilterer instance;
+        StackTraceFilterer filterer;
         try {
-            instance = BeanUtils.instantiateClass(filtererClass, StackTraceFilterer.class);
+            filterer = BeanUtils.instantiateClass(filtererClass, StackTraceFilterer.class);
         }
         catch (Throwable t) {
             LOG.warn("Problem instantiating configured StackTraceFilterer [" + filtererClass.getName() +
                     "], falling back to default: " + t.getMessage());
-            instance = new DefaultStackTraceFilterer();
+            filterer = new DefaultStackTraceFilterer();
         }
-        if (instance instanceof DefaultStackTraceFilterer) {
-            ((DefaultStackTraceFilterer) instance).setLogFullStackTraceOnFilter(logOnFilter);
+        if (filterer instanceof DefaultStackTraceFilterer) {
+            ((DefaultStackTraceFilterer) filterer).setLogFullStackTraceOnFilter(logOnFilter);
         }
-        return instance;
+        return filterer;
     }
 
 }
