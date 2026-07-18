@@ -326,6 +326,11 @@ plugins {
 cliArtifact {
     // recommended: a unique, stable JPMS module name matching the cli package
     automaticModuleName = 'com.example.myplugin.cli'
+
+    // optional: customize the companion coordinate (defaults to '<plugin-artifactId>-cli');
+    // the advertised coordinate is also carried as a capability of the cli variants, so
+    // in-build consumers can require it either way
+    // artifactId = 'my-plugin-tools'
 }
 
 dependencies {
@@ -400,7 +405,9 @@ dependencies {
 
 The cli-artifact plugin publishes such a dependency as a plain dependency on the companion
 coordinate (`com.example:my-other-plugin-cli`) in both the pom and the module metadata, so
-external consumers resolve the published artifacts directly.
+external consumers resolve the published artifacts directly. This works with a customized
+`cliArtifact { artifactId = ... }` as well: the customized coordinate is carried as a capability
+of the cli variants, and the published metadata records the customized plain coordinate.
 
 A library that consumes a cli tier in its *main* configurations (`api`/`implementation`) rather
 than a `cli` source set — and therefore does not apply the cli-artifact plugin — applies the

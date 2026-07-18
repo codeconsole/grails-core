@@ -127,7 +127,12 @@ same plugin.
 
 This removes CLI-only dependencies — and their side effects, such as the WAR-deployment failure
 caused by a CLI Spring Boot initializer on the runtime classpath — from packaged applications.
-See the xref:upgrading#upgrading80x[upgrade guide] for the migration steps.
+
+The split does not hold up application upgrades on plugin re-releases: a plugin that ships no
+commands is unaffected, and a command-bearing plugin that has not yet been rebuilt for Grails 8
+keeps its runtime functionality — only its commands are unavailable until it publishes a companion
+`-cli` artifact. See the xref:upgrading#upgrading80x[upgrade guide] for the migration steps and the
+full upgrade-impact breakdown.
 
 ==== GSP Tag Library Improvements
 
