@@ -28,7 +28,7 @@ import spock.lang.Specification
 
 class CacheGrailsPluginSpec extends Specification {
 
-    void "beanRegistrar registers the cache beans"() {
+    void "beanRegistrar registers the cache infrastructure beans"() {
         given:
         DefaultListableBeanFactory beanFactory = new DefaultListableBeanFactory()
 
@@ -36,27 +36,22 @@ class CacheGrailsPluginSpec extends Specification {
         applyRegistrar(beanFactory, new StandardEnvironment())
 
         then:
-        beanFactory.containsBeanDefinition('customCacheKeyGenerator')
-        beanFactory.getBeanDefinition('grailsCacheManager').beanClassName == GrailsConcurrentMapCacheManager.name
         beanFactory.containsBeanDefinition('grailsCacheAdminService')
         beanFactory.containsBeanDefinition('grailsCacheConfiguration')
     }
 
-    void "the cache manager implementation is selected from configuration"() {
+    void "the cache manager and key generator defaults are left to GrailsCacheAutoConfiguration"() {
+        // Auto-configured with @ConditionalOnMissingBean so an application- or plugin-defined
+        // bean backs the default off instead of triggering a definition override
         given:
         DefaultListableBeanFactory beanFactory = new DefaultListableBeanFactory()
-        StandardEnvironment environment = new StandardEnvironment()
-        environment.propertySources.addFirst(new MapPropertySource('test',
-                ['grails.cache.cacheManager': 'GrailsConcurrentLinkedMapCacheManager']))
 
         when:
-        applyRegistrar(beanFactory, environment)
+        applyRegistrar(beanFactory, new StandardEnvironment())
 
         then:
-        beanFactory.getBeanDefinition('grailsCacheManager').beanClassName == GrailsConcurrentLinkedMapCacheManager.name
-
-        and: 'the manager is created with the plugin configuration applied'
-        beanFactory.getBean('grailsCacheManager', GrailsConcurrentLinkedMapCacheManager) != null
+        !beanFactory.containsBeanDefinition('grailsCacheManager')
+        !beanFactory.containsBeanDefinition('customCacheKeyGenerator')
     }
 
     void "no cache beans are registered when caching is disabled"() {

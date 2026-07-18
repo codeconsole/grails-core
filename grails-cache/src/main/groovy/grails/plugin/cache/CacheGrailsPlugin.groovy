@@ -58,26 +58,6 @@ class CacheGrailsPlugin extends Plugin {
                 return
             }
 
-            registry.registerBean('customCacheKeyGenerator', CustomCacheKeyGenerator)
-
-            // Selects cache manager from config
-            if (environment.getProperty('grails.cache.cacheManager', String) == 'GrailsConcurrentLinkedMapCacheManager') {
-                registry.registerBean('grailsCacheManager', GrailsConcurrentLinkedMapCacheManager) { BeanRegistry.Spec<GrailsConcurrentLinkedMapCacheManager> spec ->
-                    spec.supplier { BeanRegistry.SupplierContext context ->
-                        GrailsConcurrentLinkedMapCacheManager cacheManager = new GrailsConcurrentLinkedMapCacheManager()
-                        cacheManager.configuration = context.bean('grailsCacheConfiguration', CachePluginConfiguration)
-                        return cacheManager
-                    }
-                }
-            } else {
-                registry.registerBean('grailsCacheManager', GrailsConcurrentMapCacheManager) { BeanRegistry.Spec<GrailsConcurrentMapCacheManager> spec ->
-                    spec.supplier { BeanRegistry.SupplierContext context ->
-                        GrailsConcurrentMapCacheManager cacheManager = new GrailsConcurrentMapCacheManager()
-                        cacheManager.configuration = context.bean('grailsCacheConfiguration', CachePluginConfiguration)
-                        return cacheManager
-                    }
-                }
-            }
             registry.registerBean('grailsCacheAdminService', GrailsCacheAdminService)
             registry.registerBean('grailsCacheConfiguration', CachePluginConfiguration)
         }

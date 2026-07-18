@@ -1454,6 +1454,7 @@ Several Grails framework beans that were previously registered unconditionally a
 * i18n: `localeResolver`, `localeChangeInterceptor` and `messageSource`
 * URL mappings: `grailsCorsFilter`, `urlMappingsErrorPageCustomizer` and `urlMappingsInfoHandlerAdapter`
 * Controllers: `exceptionHandler`
+* Cache: `grailsCacheManager` and `customCacheKeyGenerator`
 
 **No action is required.**
 The framework beans still register by default; this only changes what happens when you define your own.
