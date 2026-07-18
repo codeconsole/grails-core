@@ -20,37 +20,24 @@ package org.grails.forge.feature.security;
 
 import jakarta.inject.Singleton;
 
-import org.grails.forge.application.ApplicationType;
-import org.grails.forge.application.Project;
 import org.grails.forge.application.generator.GeneratorContext;
 import org.grails.forge.build.dependencies.Dependency;
-import org.grails.forge.feature.Category;
-import org.grails.forge.feature.Feature;
-import org.grails.forge.feature.FeatureContext;
 import org.grails.forge.feature.security.template.securityConfig;
-import org.grails.forge.feature.security.template.user;
-import org.grails.forge.feature.security.template.userController;
-import org.grails.forge.feature.security.template.userService;
-import org.grails.forge.feature.security.template.userSpec;
 import org.grails.forge.feature.view.Scaffolding;
 import org.grails.forge.template.RockerTemplate;
 
 /**
  * Secures the application with plain Spring Security: the spring-boot-starter-security
- * dependency, a GORM-backed {@code User} implementing {@code UserDetails}, a scaffolded
- * controller and service (the service doubling as the {@code UserDetailsService}), a
- * {@code SecurityConfig} with form login, and a seeded admin user. No Grails security
- * plugins are involved.
+ * dependency, the shared user artifacts and a {@code SecurityConfig} with form login.
+ * No Grails security plugins are involved.
  *
  * @since 8.0
  */
 @Singleton
-public class SpringBootStarterSecurity implements Feature {
-
-    private final Scaffolding scaffolding;
+public class SpringBootStarterSecurity extends SecurityFeature {
 
     public SpringBootStarterSecurity(Scaffolding scaffolding) {
-        this.scaffolding = scaffolding;
+        super(scaffolding);
     }
 
     @Override
@@ -71,25 +58,8 @@ public class SpringBootStarterSecurity implements Feature {
     }
 
     @Override
-    public String getCategory() {
-        return Category.SPRING_SECURITY;
-    }
-
-    @Override
-    public boolean supports(ApplicationType applicationType) {
-        return applicationType == ApplicationType.WEB;
-    }
-
-    @Override
     public String getDocumentation() {
         return "https://docs.spring.io/spring-boot/reference/web/spring-security.html";
-    }
-
-    @Override
-    public void processSelectedFeatures(FeatureContext featureContext) {
-        if (!featureContext.isPresent(Scaffolding.class) && scaffolding != null) {
-            featureContext.addFeature(scaffolding);
-        }
     }
 
     @Override
@@ -99,16 +69,9 @@ public class SpringBootStarterSecurity implements Feature {
                 .artifactId("spring-boot-starter-security")
                 .implementation());
 
-        final Project project = generatorContext.getProject();
-        generatorContext.addTemplate("securityUser",
-                new RockerTemplate("grails-app/domain/{packagePath}/User.groovy", user.template(project)));
-        generatorContext.addTemplate("securityUserController",
-                new RockerTemplate("grails-app/controllers/{packagePath}/UserController.groovy", userController.template(project)));
-        generatorContext.addTemplate("securityUserService",
-                new RockerTemplate("grails-app/services/{packagePath}/UserService.groovy", userService.template(project)));
+        applyUserArtifacts(generatorContext);
         generatorContext.addTemplate("securityConfig",
-                new RockerTemplate(generatorContext.getSourcePath("/{packagePath}/SecurityConfig"), securityConfig.template(project)));
-        generatorContext.addTemplate("securityUserSpec",
-                new RockerTemplate(generatorContext.getTestSourcePath("/{packagePath}/User"), userSpec.template(project)));
+                new RockerTemplate(generatorContext.getSourcePath("/{packagePath}/SecurityConfig"),
+                        securityConfig.template(generatorContext.getProject())));
     }
 }

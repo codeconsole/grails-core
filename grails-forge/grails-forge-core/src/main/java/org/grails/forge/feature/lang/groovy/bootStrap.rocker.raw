@@ -24,16 +24,23 @@ under the License.
 
 package @project.getPackageName()
 
-@if(features.contains("spring-boot-starter-security")) {
+@if(features.contains("spring-boot-starter-security") || features.contains("grails-spring-security")) {
 import org.springframework.security.crypto.factory.PasswordEncoderFactories
 
 }
 class BootStrap {
 
     def init = {
-@if(features.contains("spring-boot-starter-security")) {
+@if(features.contains("spring-boot-starter-security") || features.contains("grails-spring-security")) {
         def password = UUID.randomUUID().toString()
         new User(username: 'admin', password: PasswordEncoderFactories.createDelegatingPasswordEncoder().encode(password), roles: ['ROLE_ADMIN']).save(failOnError: true)
+        log.warn "Generated admin credentials: admin / $password"
+}
+@if(features.contains("grails-spring-security-ui")) {
+        def password = UUID.randomUUID().toString()
+        def adminRole = new Role('ROLE_ADMIN').save(failOnError: true)
+        def admin = new User('admin', password).save(failOnError: true)
+        UserRole.create(admin, adminRole, true)
         log.warn "Generated admin credentials: admin / $password"
 }
     }
