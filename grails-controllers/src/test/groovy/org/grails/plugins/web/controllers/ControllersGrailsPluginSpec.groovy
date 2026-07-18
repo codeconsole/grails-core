@@ -22,17 +22,9 @@ import org.springframework.beans.factory.BeanRegistrar
 import org.springframework.beans.factory.support.BeanRegistryAdapter
 import org.springframework.beans.factory.support.DefaultListableBeanFactory
 import org.springframework.core.env.StandardEnvironment
-import org.springframework.mock.web.MockHttpServletRequest
-import org.springframework.mock.web.MockHttpServletResponse
-import org.springframework.mock.web.MockServletContext
-import org.springframework.web.context.WebApplicationContext
-import org.springframework.web.context.support.StaticWebApplicationContext
-import org.springframework.web.servlet.ModelAndView
 
 import grails.core.DefaultGrailsApplication
-import grails.core.GrailsApplication
 import org.grails.plugins.web.servlet.context.BootStrapClassRunner
-import org.grails.web.errors.GrailsExceptionResolver
 import org.grails.web.servlet.mvc.TokenResponseActionResultTransformer
 import org.grails.web.servlet.view.CompositeViewResolver
 
@@ -52,33 +44,15 @@ class ControllersGrailsPluginSpec extends Specification {
         expect:
         beanFactory.getBeanDefinition('bootStrapClassRunner').beanClassName == BootStrapClassRunner.name
         beanFactory.getBeanDefinition('tokenResponseActionResultTransformer').beanClassName == TokenResponseActionResultTransformer.name
-        beanFactory.containsBeanDefinition('exceptionHandler')
         beanFactory.getBeanDefinition(CompositeViewResolver.BEAN_NAME).beanClassName == CompositeViewResolver.name
         beanFactory.containsBeanDefinition('controllerBeanDefinitionsPostProcessor')
     }
 
-    void "the exception handler maps exceptions to the error view"() {
-        given:
-        GrailsExceptionResolver exceptionResolver = beanFactory.getBean('exceptionHandler', GrailsExceptionResolver)
-        exceptionResolver.grailsApplication = new DefaultGrailsApplication()
-        exceptionResolver.servletContext = servletContextWithWebApplicationContext()
-
-        when:
-        ModelAndView modelAndView = exceptionResolver.resolveException(
-                new MockHttpServletRequest(), new MockHttpServletResponse(), null, new Exception('boom'))
-
-        then:
-        modelAndView.viewName == '/error'
-    }
-
-    private static MockServletContext servletContextWithWebApplicationContext() {
-        MockServletContext servletContext = new MockServletContext()
-        StaticWebApplicationContext webApplicationContext = new StaticWebApplicationContext()
-        webApplicationContext.servletContext = servletContext
-        webApplicationContext.refresh()
-        webApplicationContext.beanFactory.registerSingleton(GrailsApplication.APPLICATION_ID, new DefaultGrailsApplication())
-        servletContext.setAttribute(WebApplicationContext.ROOT_WEB_APPLICATION_CONTEXT_ATTRIBUTE, webApplicationContext)
-        return servletContext
+    void "the exception handler default is left to ControllersAutoConfiguration"() {
+        // Auto-configured with @ConditionalOnMissingBean so an application- or plugin-defined
+        // exceptionHandler backs the default off instead of triggering a definition override
+        expect:
+        !beanFactory.containsBeanDefinition('exceptionHandler')
     }
 
     void "the controller definitions post-processor is created for the plugin's application"() {

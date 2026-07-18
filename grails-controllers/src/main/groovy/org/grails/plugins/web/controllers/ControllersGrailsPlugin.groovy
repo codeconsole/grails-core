@@ -34,7 +34,6 @@ import grails.plugins.Plugin
 import grails.util.GrailsUtil
 import org.grails.core.artefact.ControllerArtefactHandler
 import org.grails.plugins.web.servlet.context.BootStrapClassRunner
-import org.grails.web.errors.GrailsExceptionResolver
 import org.grails.web.servlet.mvc.TokenResponseActionResultTransformer
 import org.grails.web.servlet.view.CompositeViewResolver
 
@@ -66,16 +65,6 @@ class ControllersGrailsPlugin extends Plugin {
             }
 
             registry.registerBean('tokenResponseActionResultTransformer', TokenResponseActionResultTransformer)
-
-            registry.registerBean('exceptionHandler', GrailsExceptionResolver) { BeanRegistry.Spec<GrailsExceptionResolver> spec ->
-                spec.supplier { BeanRegistry.SupplierContext context ->
-                    GrailsExceptionResolver exceptionResolver = new GrailsExceptionResolver()
-                    Properties exceptionMappings = new Properties()
-                    exceptionMappings.setProperty('java.lang.Exception', '/error')
-                    exceptionResolver.exceptionMappings = exceptionMappings
-                    return exceptionResolver
-                }
-            }
 
             registry.registerBean(CompositeViewResolver.BEAN_NAME, CompositeViewResolver)
 
