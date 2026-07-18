@@ -136,6 +136,45 @@
                     </li>
                 </ul>
             </li>
+            <%-- Sign-in affordance, rendered whenever Spring Security is on the classpath -
+                 the plain starter or the security plugin alike, resolved without a hard class
+                 reference. POST /logout is Spring Security's default LogoutFilter URL and the
+                 plugin's POST-only LogoutController route; /login is the starter's form-login
+                 page, which the plugin's LoginController also answers. g:form carries the
+                 CSRF token through the registered RequestDataValueProcessor. A page that
+                 contributes its own navActions (e.g. a security plugin's account menu)
+                 supersedes this block. --%>
+            <g:if test="${!pageProperty(name: 'page.navActions') && org.springframework.util.ClassUtils.isPresent('org.springframework.security.core.context.SecurityContextHolder', null)}">
+                <g:set var="securityAuthentication"
+                       value="${org.springframework.util.ClassUtils.forName('org.springframework.security.core.context.SecurityContextHolder', null).context?.authentication}"/>
+                <g:set var="securityLoggedIn"
+                       value="${securityAuthentication?.authenticated &&
+                               !org.springframework.util.ClassUtils.forName('org.springframework.security.authentication.AnonymousAuthenticationToken', null).isInstance(securityAuthentication)}"/>
+                <g:if test="${securityLoggedIn}">
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle d-flex align-items-center" href="#" id="userDropdown" role="button"
+                           data-bs-toggle="dropdown" aria-expanded="false">
+                            <i class="bi bi-person-circle me-1"></i>${securityAuthentication.name}
+                        </a>
+                        <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="userDropdown">
+                            <li>
+                                <g:form url="[uri: '/logout']" method="post">
+                                    <button type="submit" class="dropdown-item">
+                                        <i class="bi bi-box-arrow-right me-2"></i><g:message code="layout.logout"/>
+                                    </button>
+                                </g:form>
+                            </li>
+                        </ul>
+                    </li>
+                </g:if>
+                <g:else>
+                    <li class="nav-item d-flex align-items-center ms-lg-2">
+                        <a class="btn btn-primary btn-sm" href="${request.contextPath}/login">
+                            <g:message code="layout.login"/>
+                        </a>
+                    </li>
+                </g:else>
+            </g:if>
         </ul>
         </div>
     </div>

@@ -348,6 +348,17 @@ class GrailsGspSpec extends ApplicationContextSpec implements CommandOutputFixtu
         layout.contains('<g:localeSelect available="true" pinDefault="true" var="loc">')
         layout.contains('loc.index == 1')
         layout.contains('dropdown-divider')
+
+        and: "a sign-in affordance renders whenever Spring Security is on the classpath, plugin or plain starter"
+        layout.contains("ClassUtils.isPresent('org.springframework.security.core.context.SecurityContextHolder'")
+        layout.contains('AnonymousAuthenticationToken')
+        layout.contains('''<g:form url="[uri: '/logout']" method="post">''')
+        layout.contains('${request.contextPath}/login')
+        layout.contains('<g:message code="layout.login"/>')
+        layout.contains('<g:message code="layout.logout"/>')
+
+        and: "a page contributing its own navActions supersedes the built-in sign-in block"
+        layout.contains('''!pageProperty(name: 'page.navActions')''')
     }
 
     void "test default index page lists exposed actuator endpoints when actuator is present"() {
