@@ -18,7 +18,6 @@
  */
 package grails.plugin.json.view
 
-import org.springframework.beans.factory.BeanRegistrar
 import org.springframework.beans.factory.support.BeanRegistryAdapter
 import org.springframework.beans.factory.support.DefaultListableBeanFactory
 import org.springframework.context.support.GenericApplicationContext
@@ -33,14 +32,14 @@ import spock.lang.Specification
 
 class JsonViewGrailsPluginSpec extends Specification {
 
-    DefaultListableBeanFactory beanFactory = new DefaultListableBeanFactory()
-    GrailsPluginManager pluginManager = Mock(GrailsPluginManager)
+    def beanFactory = new DefaultListableBeanFactory()
+    def pluginManager = Mock(GrailsPluginManager)
 
     void setup() {
-        JsonViewGrailsPlugin plugin = new JsonViewGrailsPlugin()
+        def plugin = new JsonViewGrailsPlugin()
         plugin.applicationContext = new GenericApplicationContext()
         plugin.pluginManager = pluginManager
-        BeanRegistrar registrar = plugin.beanRegistrar()
+        def registrar = plugin.beanRegistrar()
         new BeanRegistryAdapter(beanFactory, new StandardEnvironment(), registrar.getClass()).register(registrar)
     }
 
@@ -55,7 +54,7 @@ class JsonViewGrailsPluginSpec extends Specification {
 
     void "the smart view resolver is wired with a plugin-aware template resolver"() {
         when:
-        JsonViewResolver viewResolver = beanFactory.getBean('jsonSmartViewResolver', JsonViewResolver)
+        def viewResolver = beanFactory.getBean('jsonSmartViewResolver', JsonViewResolver)
 
         then:
         viewResolver.templateEngine.is(beanFactory.getBean('jsonTemplateEngine', JsonViewTemplateEngine))

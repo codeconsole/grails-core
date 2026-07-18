@@ -36,24 +36,24 @@ class ControllerBeanDefinitionsPostProcessorSpec extends Specification {
     static class TestController {
     }
 
-    GrailsControllerClass controllerClass = Mock(GrailsControllerClass) {
+    def controllerClass = Mock(GrailsControllerClass) {
         getFullName() >> TestController.name
         getClazz() >> TestController
         getAvailable() >> true
         hasProperty('lazyInit') >> false
     }
-    GrailsApplication grailsApplication = Mock(GrailsApplication) {
+    def grailsApplication = Mock(GrailsApplication) {
         getArtefacts(ControllerArtefactHandler.TYPE) >> { [controllerClass] as GrailsClass[] }
     }
 
     void "registers a lazy, name-autowired bean definition for each controller artefact"() {
         given:
         controllerClass.getScope() >> 'singleton'
-        DefaultListableBeanFactory registry = new DefaultListableBeanFactory()
+        def registry = new DefaultListableBeanFactory()
 
         when:
         new ControllerBeanDefinitionsPostProcessor(grailsApplication, false).postProcessBeanDefinitionRegistry(registry)
-        AbstractBeanDefinition definition = (AbstractBeanDefinition) registry.getBeanDefinition(TestController.name)
+        def definition = (AbstractBeanDefinition) registry.getBeanDefinition(TestController.name)
 
         then:
         definition.beanClassName == TestController.name
@@ -67,11 +67,11 @@ class ControllerBeanDefinitionsPostProcessorSpec extends Specification {
     void "prototype controllers skip the dependency check and jsessionid can be enabled"() {
         given:
         controllerClass.getScope() >> 'prototype'
-        DefaultListableBeanFactory registry = new DefaultListableBeanFactory()
+        def registry = new DefaultListableBeanFactory()
 
         when:
         new ControllerBeanDefinitionsPostProcessor(grailsApplication, true).postProcessBeanDefinitionRegistry(registry)
-        AbstractBeanDefinition definition = (AbstractBeanDefinition) registry.getBeanDefinition(TestController.name)
+        def definition = (AbstractBeanDefinition) registry.getBeanDefinition(TestController.name)
 
         then:
         definition.scope == BeanDefinition.SCOPE_PROTOTYPE
@@ -82,7 +82,7 @@ class ControllerBeanDefinitionsPostProcessorSpec extends Specification {
     void "an existing controller bean definition wins"() {
         given:
         controllerClass.getScope() >> 'singleton'
-        DefaultListableBeanFactory registry = new DefaultListableBeanFactory()
+        def registry = new DefaultListableBeanFactory()
         registry.registerBeanDefinition(TestController.name, new GenericBeanDefinition(beanClass: String))
 
         when:

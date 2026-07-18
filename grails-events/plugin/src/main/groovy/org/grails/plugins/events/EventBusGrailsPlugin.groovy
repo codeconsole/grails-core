@@ -40,7 +40,7 @@ import org.grails.events.spring.SpringEventTranslator
 @CompileStatic
 class EventBusGrailsPlugin extends Plugin {
 
-    def grailsVersion = '7.0.0-SNAPSHOT > *'
+    def grailsVersion = '8.0.0-SNAPSHOT > *'
 
     /**
      * Whether to translate GORM events into reactor events
@@ -51,17 +51,17 @@ class EventBusGrailsPlugin extends Plugin {
     BeanRegistrar beanRegistrar() {
         return { BeanRegistry registry, Environment environment ->
             registry.registerBean('grailsEventBus', EventBusFactoryBean)
-            registry.registerBean('gormDispatchEventRegistrar', GormDispatcherRegistrar) { BeanRegistry.Spec<GormDispatcherRegistrar> spec ->
-                spec.supplier { BeanRegistry.SupplierContext context ->
-                    new GormDispatcherRegistrar(context.bean('grailsEventBus', EventBus))
+            registry.registerBean('gormDispatchEventRegistrar', GormDispatcherRegistrar) {
+                it.supplier {
+                    new GormDispatcherRegistrar(it.bean('grailsEventBus', EventBus))
                 }
             }
 
             // make it possible to enable reactor events
             if (environment.getProperty(TRANSLATE_SPRING_EVENTS, Boolean, false)) {
-                registry.registerBean('springEventTranslator', SpringEventTranslator) { BeanRegistry.Spec<SpringEventTranslator> spec ->
-                    spec.supplier { BeanRegistry.SupplierContext context ->
-                        new SpringEventTranslator(context.bean('grailsEventBus', EventBus))
+                registry.registerBean('springEventTranslator', SpringEventTranslator) {
+                    it.supplier {
+                        new SpringEventTranslator(it.bean('grailsEventBus', EventBus))
                     }
                 }
             }

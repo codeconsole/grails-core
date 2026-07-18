@@ -36,7 +36,7 @@ import grails.views.resolve.PluginAwareTemplateResolver
 class JsonViewGrailsPlugin extends Plugin {
 
     // the version or versions of Grails the plugin is designed for
-    def grailsVersion = '7.0.0-SNAPSHOT > *'
+    def grailsVersion = '8.0.0-SNAPSHOT > *'
 
     def title = 'JSON Views' // Headline display name of the plugin
     def author = 'Graeme Rocher'
@@ -69,26 +69,26 @@ class JsonViewGrailsPlugin extends Plugin {
         return { BeanRegistry registry, Environment environment ->
             registry.registerBean('jsonApiIdRenderStrategy', DefaultJsonApiIdRenderer)
             registry.registerBean('jsonViewConfiguration', JsonViewConfiguration)
-            registry.registerBean('jsonTemplateEngine', JsonViewTemplateEngine) { BeanRegistry.Spec<JsonViewTemplateEngine> spec ->
-                spec.supplier { BeanRegistry.SupplierContext context ->
+            registry.registerBean('jsonTemplateEngine', JsonViewTemplateEngine) {
+                it.supplier {
                     new JsonViewTemplateEngine(
-                            context.bean('jsonViewConfiguration', JsonViewConfiguration),
+                            it.bean('jsonViewConfiguration', JsonViewConfiguration),
                             applicationContext.classLoader)
                 }
             }
-            registry.registerBean('jsonSmartViewResolver', JsonViewResolver) { BeanRegistry.Spec<JsonViewResolver> spec ->
-                spec.supplier { BeanRegistry.SupplierContext context ->
-                    JsonViewResolver viewResolver = new JsonViewResolver(context.bean('jsonTemplateEngine', JsonViewTemplateEngine))
+            registry.registerBean('jsonSmartViewResolver', JsonViewResolver) {
+                it.supplier {
+                    JsonViewResolver viewResolver = new JsonViewResolver(it.bean('jsonTemplateEngine', JsonViewTemplateEngine))
                     PluginAwareTemplateResolver templateResolver = new PluginAwareTemplateResolver(
-                            context.bean('jsonViewConfiguration', JsonViewConfiguration))
+                            it.bean('jsonViewConfiguration', JsonViewConfiguration))
                     templateResolver.pluginManager = pluginManager
                     viewResolver.templateResolver = templateResolver
                     return viewResolver
                 }
             }
-            registry.registerBean('jsonViewResolver', GenericGroovyTemplateViewResolver) { BeanRegistry.Spec<GenericGroovyTemplateViewResolver> spec ->
-                spec.supplier { BeanRegistry.SupplierContext context ->
-                    new GenericGroovyTemplateViewResolver(context.bean('jsonSmartViewResolver', SmartViewResolver))
+            registry.registerBean('jsonViewResolver', GenericGroovyTemplateViewResolver) {
+                it.supplier {
+                    new GenericGroovyTemplateViewResolver(it.bean('jsonSmartViewResolver', SmartViewResolver))
                 }
             }
         }

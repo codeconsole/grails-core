@@ -18,7 +18,6 @@
  */
 package org.grails.plugins.web.rest.plugin
 
-import org.springframework.beans.factory.BeanRegistrar
 import org.springframework.beans.factory.support.BeanRegistryAdapter
 import org.springframework.beans.factory.support.DefaultListableBeanFactory
 import org.springframework.core.env.MapPropertySource
@@ -34,7 +33,7 @@ class RestResponderGrailsPluginSpec extends Specification {
 
     void "beanRegistrar registers a lazy renderer registry"() {
         given:
-        DefaultListableBeanFactory beanFactory = new DefaultListableBeanFactory()
+        def beanFactory = new DefaultListableBeanFactory()
 
         when:
         applyRegistrar(beanFactory, new StandardEnvironment())
@@ -46,8 +45,8 @@ class RestResponderGrailsPluginSpec extends Specification {
 
     void "the renderer registry model suffix is read from the environment"() {
         given:
-        DefaultListableBeanFactory beanFactory = new DefaultListableBeanFactory()
-        StandardEnvironment environment = new StandardEnvironment()
+        def beanFactory = new DefaultListableBeanFactory()
+        def environment = new StandardEnvironment()
         environment.propertySources.addFirst(
                 new MapPropertySource('test', [(Settings.SCAFFOLDING_DOMAIN_SUFFIX): 'Bean']))
 
@@ -59,8 +58,8 @@ class RestResponderGrailsPluginSpec extends Specification {
     }
 
     private static void applyRegistrar(DefaultListableBeanFactory beanFactory, StandardEnvironment environment) {
-        RestResponderGrailsPlugin plugin = new RestResponderGrailsPlugin(grailsApplication: new DefaultGrailsApplication())
-        BeanRegistrar registrar = plugin.beanRegistrar()
+        def plugin = new RestResponderGrailsPlugin(grailsApplication: new DefaultGrailsApplication())
+        def registrar = plugin.beanRegistrar()
         new BeanRegistryAdapter(beanFactory, environment, registrar.getClass()).register(registrar)
     }
 }

@@ -57,8 +57,8 @@ class RestResponderGrailsPlugin extends Plugin {
         return { BeanRegistry registry, Environment environment ->
             RestResponderGrailsPlugin.registryResourceControllers(grailsApplication)
 
-            registry.registerBean('rendererRegistry', DefaultRendererRegistry) { BeanRegistry.Spec<DefaultRendererRegistry> spec ->
-                spec.lazyInit().supplier { BeanRegistry.SupplierContext context ->
+            registry.registerBean('rendererRegistry', DefaultRendererRegistry) {
+                it.lazyInit().supplier {
                     DefaultRendererRegistry rendererRegistry = new DefaultRendererRegistry()
                     rendererRegistry.modelSuffix = environment.getProperty(Settings.SCAFFOLDING_DOMAIN_SUFFIX, '')
                     return rendererRegistry

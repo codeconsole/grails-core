@@ -18,13 +18,11 @@
  */
 package grails.plugin.formfields
 
-import org.springframework.beans.factory.BeanRegistrar
 import org.springframework.beans.factory.support.BeanRegistryAdapter
 import org.springframework.beans.factory.support.DefaultListableBeanFactory
 import org.springframework.core.env.StandardEnvironment
 
 import grails.core.support.proxy.DefaultProxyHandler
-import grails.core.support.proxy.ProxyHandler
 import org.grails.datastore.gorm.validation.constraints.eval.ConstraintsEvaluator
 import org.grails.datastore.mapping.model.MappingContext
 import org.grails.scaffolding.model.DomainModelServiceImpl
@@ -35,10 +33,10 @@ import spock.lang.Specification
 
 class FieldsGrailsPluginSpec extends Specification {
 
-    DefaultListableBeanFactory beanFactory = new DefaultListableBeanFactory()
+    def beanFactory = new DefaultListableBeanFactory()
 
     void setup() {
-        BeanRegistrar registrar = new FieldsGrailsPlugin().beanRegistrar()
+        def registrar = new FieldsGrailsPlugin().beanRegistrar()
         new BeanRegistryAdapter(beanFactory, new StandardEnvironment(), registrar.getClass()).register(registrar)
     }
 
@@ -52,15 +50,15 @@ class FieldsGrailsPluginSpec extends Specification {
 
     void "the bean property accessor factory is wired from the surrounding beans"() {
         given:
-        ConstraintsEvaluator constraintsEvaluator = Mock(ConstraintsEvaluator)
-        ProxyHandler proxyHandler = new DefaultProxyHandler()
-        MappingContext mappingContext = Mock(MappingContext)
+        def constraintsEvaluator = Mock(ConstraintsEvaluator)
+        def proxyHandler = new DefaultProxyHandler()
+        def mappingContext = Mock(MappingContext)
         beanFactory.registerSingleton(FieldsGrailsPlugin.CONSTRAINTS_EVALULATOR_BEAN_NAME, constraintsEvaluator)
         beanFactory.registerSingleton('proxyHandler', proxyHandler)
         beanFactory.registerSingleton('grailsDomainClassMappingContext', mappingContext)
 
         when:
-        BeanPropertyAccessorFactory factory = beanFactory.getBean('beanPropertyAccessorFactory', BeanPropertyAccessorFactory)
+        def factory = beanFactory.getBean('beanPropertyAccessorFactory', BeanPropertyAccessorFactory)
 
         then:
         factory.constraintsEvaluator.is(constraintsEvaluator)

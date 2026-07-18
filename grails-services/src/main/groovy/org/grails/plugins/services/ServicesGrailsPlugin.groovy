@@ -59,8 +59,8 @@ class ServicesGrailsPlugin extends Plugin  {
 
             // Service beans autowire by name and use per-service scopes, which the BeanRegistry
             // API cannot express — their definitions are contributed by a dedicated post-processor
-            registry.registerBean('serviceBeanDefinitionsPostProcessor', ServiceBeanDefinitionsPostProcessor) { BeanRegistry.Spec<ServiceBeanDefinitionsPostProcessor> spec ->
-                spec.infrastructure().supplier { BeanRegistry.SupplierContext context ->
+            registry.registerBean('serviceBeanDefinitionsPostProcessor', ServiceBeanDefinitionsPostProcessor) {
+                it.infrastructure().supplier {
                     new ServiceBeanDefinitionsPostProcessor(grailsApplication, manager)
                 }
             }

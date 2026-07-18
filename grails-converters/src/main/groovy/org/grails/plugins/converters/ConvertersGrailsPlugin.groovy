@@ -63,21 +63,21 @@ class ConvertersGrailsPlugin extends Plugin {
 
             registry.registerBean('convertersConfigurationInitializer', ConvertersConfigurationInitializer)
 
-            registry.registerBean('errorsXmlMarshallerRegisterer', ObjectMarshallerRegisterer) { BeanRegistry.Spec<ObjectMarshallerRegisterer> spec ->
-                spec.supplier { BeanRegistry.SupplierContext context ->
-                    ObjectMarshallerRegisterer registerer = new ObjectMarshallerRegisterer()
-                    registerer.marshaller = context.bean('xmlErrorsMarshaller', XmlErrorsMarshaller)
-                    registerer.converterClass = XML
-                    return registerer
+            registry.registerBean('errorsXmlMarshallerRegisterer', ObjectMarshallerRegisterer) {
+                it.supplier {
+                    new ObjectMarshallerRegisterer(
+                            marshaller: it.bean('xmlErrorsMarshaller', XmlErrorsMarshaller),
+                            converterClass: XML
+                    )
                 }
             }
 
-            registry.registerBean('errorsJsonMarshallerRegisterer', ObjectMarshallerRegisterer) { BeanRegistry.Spec<ObjectMarshallerRegisterer> spec ->
-                spec.supplier { BeanRegistry.SupplierContext context ->
-                    ObjectMarshallerRegisterer registerer = new ObjectMarshallerRegisterer()
-                    registerer.marshaller = context.bean('jsonErrorsMarshaller', JsonErrorsMarshaller)
-                    registerer.converterClass = JSON
-                    return registerer
+            registry.registerBean('errorsJsonMarshallerRegisterer', ObjectMarshallerRegisterer) {
+                it.supplier {
+                    new ObjectMarshallerRegisterer(
+                            marshaller: it.bean('jsonErrorsMarshaller', JsonErrorsMarshaller),
+                            converterClass: JSON
+                    )
                 }
             }
         }

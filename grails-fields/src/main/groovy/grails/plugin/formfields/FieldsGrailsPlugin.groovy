@@ -37,29 +37,29 @@ class FieldsGrailsPlugin extends Plugin {
 
     static final String CONSTRAINTS_EVALULATOR_BEAN_NAME = 'validateableConstraintsEvaluator'
 
-    def grailsVersion = '7.0.0-SNAPSHOT > *'
+    def grailsVersion = '8.0.0-SNAPSHOT > *'
 
     def loadAfter = ['domainClass']
 
     @Override
     BeanRegistrar beanRegistrar() {
         return { BeanRegistry registry, Environment environment ->
-            registry.registerBean('beanPropertyAccessorFactory', BeanPropertyAccessorFactory) { BeanRegistry.Spec<BeanPropertyAccessorFactory> spec ->
-                spec.supplier { BeanRegistry.SupplierContext context ->
+            registry.registerBean('beanPropertyAccessorFactory', BeanPropertyAccessorFactory) {
+                it.supplier {
                     BeanPropertyAccessorFactory factory = new BeanPropertyAccessorFactory()
-                    factory.constraintsEvaluator = context.bean(CONSTRAINTS_EVALULATOR_BEAN_NAME, ConstraintsEvaluator)
-                    factory.proxyHandler = context.bean('proxyHandler', ProxyHandler)
-                    factory.fieldsDomainPropertyFactory = context.bean('fieldsDomainPropertyFactory', DomainPropertyFactory)
-                    factory.grailsDomainClassMappingContext = context.bean('grailsDomainClassMappingContext', MappingContext)
+                    factory.constraintsEvaluator = it.bean(CONSTRAINTS_EVALULATOR_BEAN_NAME, ConstraintsEvaluator)
+                    factory.proxyHandler = it.bean('proxyHandler', ProxyHandler)
+                    factory.fieldsDomainPropertyFactory = it.bean('fieldsDomainPropertyFactory', DomainPropertyFactory)
+                    factory.grailsDomainClassMappingContext = it.bean('grailsDomainClassMappingContext', MappingContext)
                     return factory
                 }
             }
             registry.registerBean('formFieldsTemplateService', FormFieldsTemplateService)
             registry.registerBean('fieldsDomainPropertyFactory', DomainPropertyFactoryImpl)
-            registry.registerBean('domainModelService', DomainModelServiceImpl) { BeanRegistry.Spec<DomainModelServiceImpl> spec ->
-                spec.supplier { BeanRegistry.SupplierContext context ->
+            registry.registerBean('domainModelService', DomainModelServiceImpl) {
+                it.supplier {
                     DomainModelServiceImpl domainModelService = new DomainModelServiceImpl()
-                    domainModelService.domainPropertyFactory = context.bean('fieldsDomainPropertyFactory', DomainPropertyFactory)
+                    domainModelService.domainPropertyFactory = it.bean('fieldsDomainPropertyFactory', DomainPropertyFactory)
                     return domainModelService
                 }
             }

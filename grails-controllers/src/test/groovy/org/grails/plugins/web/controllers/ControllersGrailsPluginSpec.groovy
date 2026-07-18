@@ -18,7 +18,6 @@
  */
 package org.grails.plugins.web.controllers
 
-import org.springframework.beans.factory.BeanRegistrar
 import org.springframework.beans.factory.support.BeanRegistryAdapter
 import org.springframework.beans.factory.support.DefaultListableBeanFactory
 import org.springframework.core.env.StandardEnvironment
@@ -32,11 +31,11 @@ import spock.lang.Specification
 
 class ControllersGrailsPluginSpec extends Specification {
 
-    DefaultListableBeanFactory beanFactory = new DefaultListableBeanFactory()
+    def beanFactory = new DefaultListableBeanFactory()
 
     void setup() {
-        ControllersGrailsPlugin plugin = new ControllersGrailsPlugin(grailsApplication: new DefaultGrailsApplication())
-        BeanRegistrar registrar = plugin.beanRegistrar()
+        def plugin = new ControllersGrailsPlugin(grailsApplication: new DefaultGrailsApplication())
+        def registrar = plugin.beanRegistrar()
         new BeanRegistryAdapter(beanFactory, new StandardEnvironment(), registrar.getClass()).register(registrar)
     }
 

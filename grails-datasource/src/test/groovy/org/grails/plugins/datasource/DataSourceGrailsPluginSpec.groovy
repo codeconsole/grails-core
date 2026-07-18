@@ -22,7 +22,6 @@ import javax.sql.DataSource
 
 import groovy.sql.Sql
 
-import org.springframework.beans.factory.BeanRegistrar
 import org.springframework.beans.factory.support.BeanRegistryAdapter
 import org.springframework.context.support.GenericApplicationContext
 import org.springframework.core.env.MapPropertySource
@@ -43,7 +42,7 @@ class DataSourceGrailsPluginSpec extends Specification {
 
     void "test data sources Grails plugin Spring configuration"() {
         given:
-        GenericApplicationContext ctx = new GenericApplicationContext()
+        def ctx = new GenericApplicationContext()
         applyRegistrar(ctx, false, [
                 'dataSource.pooled': true,
                 'dataSource.url': 'jdbc:h2:mem:devDb;LOCK_TIMEOUT=10000;DB_CLOSE_ON_EXIT=FALSE'])
@@ -56,8 +55,8 @@ class DataSourceGrailsPluginSpec extends Specification {
         ctx.getBean('dataSource', DataSource)
 
         when: 'a query is executed'
-        DataSource ds = ctx.getBean('dataSource', DataSource)
-        Sql sql = new Sql(ds)
+        def ds = ctx.getBean('dataSource', DataSource)
+        def sql = new Sql(ds)
         int result = sql.call('CREATE TABLE `user` (username VARCHAR(50), password VARCHAR(50)); select * from `user`')
 
         then:
@@ -69,7 +68,7 @@ class DataSourceGrailsPluginSpec extends Specification {
 
     void "no data source beans are registered without data source configuration"() {
         given:
-        GenericApplicationContext ctx = new GenericApplicationContext()
+        def ctx = new GenericApplicationContext()
 
         when:
         applyRegistrar(ctx, false)
@@ -81,7 +80,7 @@ class DataSourceGrailsPluginSpec extends Specification {
 
     void "the chained transaction manager post-processor is registered when enabled with hibernate present"() {
         given:
-        GenericApplicationContext ctx = new GenericApplicationContext()
+        def ctx = new GenericApplicationContext()
         ctx.environment.propertySources.addFirst(new MapPropertySource('test',
                 [(DataSourceGrailsPlugin.TRANSACTION_MANAGER_ENABLED): 'true']))
 
@@ -98,17 +97,17 @@ class DataSourceGrailsPluginSpec extends Specification {
     }
 
     private void applyRegistrar(GenericApplicationContext ctx, boolean hibernatePresent, Map config = [:]) {
-        GrailsApplication application = Mock(GrailsApplication)
+        def application = Mock(GrailsApplication)
         application.getConfig() >> new PropertySourcesConfig(config)
-        GrailsPluginManager pluginManager = Mock(GrailsPluginManager)
+        def pluginManager = Mock(GrailsPluginManager)
         pluginManager.hasGrailsPlugin('hibernate') >> hibernatePresent
 
-        DataSourceGrailsPlugin plugin = new DataSourceGrailsPlugin()
+        def plugin = new DataSourceGrailsPlugin()
         plugin.setGrailsApplication(application)
         plugin.setPluginManager(pluginManager)
         plugin.setApplicationContext(ctx)
 
-        BeanRegistrar registrar = plugin.beanRegistrar()
+        def registrar = plugin.beanRegistrar()
         new BeanRegistryAdapter(ctx.defaultListableBeanFactory, (StandardEnvironment) ctx.environment,
                 registrar.getClass()).register(registrar)
     }

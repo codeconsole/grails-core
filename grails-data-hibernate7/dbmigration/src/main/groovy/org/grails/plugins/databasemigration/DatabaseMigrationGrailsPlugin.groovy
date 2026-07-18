@@ -37,7 +37,7 @@ class DatabaseMigrationGrailsPlugin extends Plugin {
 
     static final String CONFIG_MAIN_PREFIX = 'grails.plugin.databasemigration'
 
-    def grailsVersion = '7.0.0-SNAPSHOT > *'
+    def grailsVersion = '8.0.0-SNAPSHOT > *'
     def pluginExcludes = [
             '**/testapp/**',
             'grails-app/views/error.gsp'
@@ -55,8 +55,8 @@ class DatabaseMigrationGrailsPlugin extends Plugin {
     BeanRegistrar beanRegistrar() {
         return { BeanRegistry registry, Environment environment ->
             configureLiquibase()
-            registry.registerBean('grailsLiquibaseFactory', GrailsLiquibaseFactory) { BeanRegistry.Spec<GrailsLiquibaseFactory> spec ->
-                spec.supplier { BeanRegistry.SupplierContext context ->
+            registry.registerBean('grailsLiquibaseFactory', GrailsLiquibaseFactory) {
+                it.supplier {
                     new GrailsLiquibaseFactory(applicationContext)
                 }
             }

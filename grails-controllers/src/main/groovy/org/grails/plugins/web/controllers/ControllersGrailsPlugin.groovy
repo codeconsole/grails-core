@@ -71,8 +71,8 @@ class ControllersGrailsPlugin extends Plugin {
             // Controller beans autowire by name and use per-controller scopes, which the
             // BeanRegistry API cannot express — their definitions are contributed by a
             // dedicated post-processor instead
-            registry.registerBean('controllerBeanDefinitionsPostProcessor', ControllerBeanDefinitionsPostProcessor) { BeanRegistry.Spec<ControllerBeanDefinitionsPostProcessor> spec ->
-                spec.infrastructure().supplier { BeanRegistry.SupplierContext context ->
+            registry.registerBean('controllerBeanDefinitionsPostProcessor', ControllerBeanDefinitionsPostProcessor) {
+                it.infrastructure().supplier {
                     new ControllerBeanDefinitionsPostProcessor(grailsApplication, useJsessionId)
                 }
             }

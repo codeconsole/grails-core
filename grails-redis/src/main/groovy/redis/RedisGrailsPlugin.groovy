@@ -28,7 +28,7 @@ import grails.plugins.redis.RedisBeanDefinitionsPostProcessor
 
 class RedisGrailsPlugin extends Plugin {
 
-    def grailsVersion = '7.0.0-SNAPSHOT > *'
+    def grailsVersion = '8.0.0-SNAPSHOT > *'
     def pluginExcludes = [
             'codenarc.properties',
             'grails-app/conf/**',
@@ -70,8 +70,8 @@ class RedisGrailsPlugin extends Plugin {
             // The redis pool definitions need destroy methods and dynamic pool-config property
             // values, which the BeanRegistry API cannot express — the definitions are contributed
             // by a dedicated post-processor instead
-            registry.registerBean('redisBeanDefinitionsPostProcessor', RedisBeanDefinitionsPostProcessor) { BeanRegistry.Spec<RedisBeanDefinitionsPostProcessor> spec ->
-                spec.infrastructure().supplier { BeanRegistry.SupplierContext context ->
+            registry.registerBean('redisBeanDefinitionsPostProcessor', RedisBeanDefinitionsPostProcessor) {
+                it.infrastructure().supplier {
                     new RedisBeanDefinitionsPostProcessor(redisConfigMap)
                 }
             }

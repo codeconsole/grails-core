@@ -30,7 +30,6 @@ import org.springframework.core.Ordered
 import org.springframework.core.PriorityOrdered
 
 import grails.core.GrailsApplication
-import grails.core.GrailsClass
 import grails.core.GrailsControllerClass
 import org.grails.core.artefact.ControllerArtefactHandler
 
@@ -63,28 +62,35 @@ class ControllerBeanDefinitionsPostProcessor implements BeanDefinitionRegistryPo
 
     @Override
     void postProcessBeanDefinitionRegistry(BeanDefinitionRegistry registry) throws BeansException {
-        for (GrailsClass controller in grailsApplication.getArtefacts(ControllerArtefactHandler.TYPE)) {
-            log.debug('Configuring controller {}', controller.fullName)
-            GrailsControllerClass controllerClass = (GrailsControllerClass) controller
+        for (def controllerClass : resolveControllerClasses(grailsApplication)) {
+            log.debug('Configuring controller {}', controllerClass.fullName)
             if (!controllerClass.available || registry.containsBeanDefinition(controllerClass.fullName)) {
                 continue
             }
-            Object lazyInit = controllerClass.hasProperty('lazyInit') ? controllerClass.getPropertyValue('lazyInit') : true
-
-            GenericBeanDefinition definition = new GenericBeanDefinition()
-            definition.beanClass = controllerClass.clazz
-            definition.lazyInit = lazyInit as boolean
-            String beanScope = controllerClass.getScope()
-            definition.scope = beanScope
-            definition.autowireMode = AbstractBeanDefinition.AUTOWIRE_BY_NAME
-            if (beanScope == 'prototype') {
-                definition.dependencyCheck = AbstractBeanDefinition.DEPENDENCY_CHECK_NONE
+            def beanDefinition = new GenericBeanDefinition(
+                    beanClass: controllerClass.clazz,
+                    lazyInit: resolveControllerLazyInit(controllerClass),
+                    scope: controllerClass.scope,
+                    autowireMode: AbstractBeanDefinition.AUTOWIRE_BY_NAME
+            )
+            if (controllerClass.scope == 'prototype') {
+                beanDefinition.dependencyCheck = AbstractBeanDefinition.DEPENDENCY_CHECK_NONE
             }
             if (useJsessionId) {
-                definition.propertyValues.addPropertyValue('useJessionId', useJsessionId)
+                beanDefinition.propertyValues.addPropertyValue('useJessionId', useJsessionId)
             }
-            registry.registerBeanDefinition(controllerClass.fullName, definition)
+            registry.registerBeanDefinition(controllerClass.fullName, beanDefinition)
         }
+    }
+
+    private static List<GrailsControllerClass> resolveControllerClasses(GrailsApplication grailsApplication) {
+        grailsApplication.getArtefacts(ControllerArtefactHandler.TYPE).collect {
+            (GrailsControllerClass) it
+        }
+    }
+
+    private static boolean resolveControllerLazyInit(GrailsControllerClass controllerClass) {
+        controllerClass.hasProperty('lazyInit') ? controllerClass.getPropertyValue('lazyInit') as boolean : true
     }
 
     @Override

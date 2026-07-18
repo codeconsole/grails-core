@@ -18,7 +18,6 @@
  */
 package org.apache.grails.web.layout
 
-import org.springframework.beans.factory.BeanRegistrar
 import org.springframework.beans.factory.support.BeanRegistryAdapter
 import org.springframework.beans.factory.support.DefaultListableBeanFactory
 import org.springframework.core.env.MapPropertySource
@@ -30,7 +29,7 @@ class LayoutGrailsPluginSpec extends Specification {
 
     void "beanRegistrar registers the layout beans"() {
         given:
-        DefaultListableBeanFactory beanFactory = new DefaultListableBeanFactory()
+        def beanFactory = new DefaultListableBeanFactory()
 
         when:
         applyRegistrar(beanFactory, new StandardEnvironment())
@@ -45,15 +44,15 @@ class LayoutGrailsPluginSpec extends Specification {
 
     void "the layout finder is configured from the environment"() {
         given:
-        DefaultListableBeanFactory beanFactory = new DefaultListableBeanFactory()
-        StandardEnvironment environment = new StandardEnvironment()
+        def beanFactory = new DefaultListableBeanFactory()
+        def environment = new StandardEnvironment()
         environment.propertySources.addFirst(new MapPropertySource('test', [
                 (LayoutGrailsPlugin.DEFAULT_LAYOUT): 'main',
                 (LayoutGrailsPlugin.GRAILS_LAYOUT_ENABLE_NONGSP): 'true']))
 
         when:
         applyRegistrar(beanFactory, environment)
-        GroovyPageLayoutFinder layoutFinder = beanFactory.getBean('groovyPageLayoutFinder', GroovyPageLayoutFinder)
+        def layoutFinder = beanFactory.getBean('groovyPageLayoutFinder', GroovyPageLayoutFinder)
 
         then:
         layoutFinder.@defaultDecoratorName == 'main'
@@ -62,8 +61,8 @@ class LayoutGrailsPluginSpec extends Specification {
 
     void "no layout beans are registered when the layout view resolver is disabled"() {
         given:
-        DefaultListableBeanFactory beanFactory = new DefaultListableBeanFactory()
-        StandardEnvironment environment = new StandardEnvironment()
+        def beanFactory = new DefaultListableBeanFactory()
+        def environment = new StandardEnvironment()
         environment.propertySources.addFirst(new MapPropertySource('test',
                 [(LayoutGrailsPlugin.GSP_VIEW_LAYOUT_RESOLVER_ENABLED): 'false']))
 
@@ -75,7 +74,7 @@ class LayoutGrailsPluginSpec extends Specification {
     }
 
     private static void applyRegistrar(DefaultListableBeanFactory beanFactory, StandardEnvironment environment) {
-        BeanRegistrar registrar = new LayoutGrailsPlugin().beanRegistrar()
+        def registrar = new LayoutGrailsPlugin().beanRegistrar()
         new BeanRegistryAdapter(beanFactory, environment, registrar.getClass()).register(registrar)
     }
 }

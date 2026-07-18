@@ -18,7 +18,6 @@
  */
 package grails.plugin.cache
 
-import org.springframework.beans.factory.BeanRegistrar
 import org.springframework.beans.factory.support.BeanRegistryAdapter
 import org.springframework.beans.factory.support.DefaultListableBeanFactory
 import org.springframework.core.env.MapPropertySource
@@ -30,7 +29,7 @@ class CacheGrailsPluginSpec extends Specification {
 
     void "beanRegistrar registers the cache infrastructure beans"() {
         given:
-        DefaultListableBeanFactory beanFactory = new DefaultListableBeanFactory()
+        def beanFactory = new DefaultListableBeanFactory()
 
         when:
         applyRegistrar(beanFactory, new StandardEnvironment())
@@ -44,7 +43,7 @@ class CacheGrailsPluginSpec extends Specification {
         // Auto-configured with @ConditionalOnMissingBean so an application- or plugin-defined
         // bean backs the default off instead of triggering a definition override
         given:
-        DefaultListableBeanFactory beanFactory = new DefaultListableBeanFactory()
+        def beanFactory = new DefaultListableBeanFactory()
 
         when:
         applyRegistrar(beanFactory, new StandardEnvironment())
@@ -56,8 +55,8 @@ class CacheGrailsPluginSpec extends Specification {
 
     void "no cache beans are registered when caching is disabled"() {
         given:
-        DefaultListableBeanFactory beanFactory = new DefaultListableBeanFactory()
-        StandardEnvironment environment = new StandardEnvironment()
+        def beanFactory = new DefaultListableBeanFactory()
+        def environment = new StandardEnvironment()
         environment.propertySources.addFirst(new MapPropertySource('test', ['grails.cache.enabled': 'false']))
 
         when:
@@ -68,7 +67,7 @@ class CacheGrailsPluginSpec extends Specification {
     }
 
     private static void applyRegistrar(DefaultListableBeanFactory beanFactory, StandardEnvironment environment) {
-        BeanRegistrar registrar = new CacheGrailsPlugin().beanRegistrar()
+        def registrar = new CacheGrailsPlugin().beanRegistrar()
         new BeanRegistryAdapter(beanFactory, environment, registrar.getClass()).register(registrar)
     }
 }

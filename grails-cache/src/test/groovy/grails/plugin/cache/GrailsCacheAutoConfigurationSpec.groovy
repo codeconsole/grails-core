@@ -79,7 +79,7 @@ class GrailsCacheAutoConfigurationSpec extends Specification {
 
     void 'a user-defined grailsCacheManager bean makes the auto-configured default back off'() {
         given: 'a user-defined cache manager under the auto-configured bean name'
-        GrailsCacheManager userCacheManager = Mock(GrailsCacheManager)
+        def userCacheManager = Mock(GrailsCacheManager)
         AnnotationConfigApplicationContext context = buildContext([:], userCacheManager)
 
         expect: 'the user bean wins and the framework default is never registered'
@@ -93,7 +93,7 @@ class GrailsCacheAutoConfigurationSpec extends Specification {
     @CompileStatic
     private static AnnotationConfigApplicationContext buildContext(
             Map<String, Object> properties, GrailsCacheManager userCacheManager = null, boolean pluginActive = true) {
-        AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext()
+        def context = new AnnotationConfigApplicationContext()
         context.environment.propertySources.addFirst(new MapPropertySource('test', properties))
         if (pluginActive) {
             context.registerBean('grailsCacheConfiguration', CachePluginConfiguration, () -> new CachePluginConfiguration())

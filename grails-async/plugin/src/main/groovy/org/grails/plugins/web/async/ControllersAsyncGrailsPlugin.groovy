@@ -38,7 +38,7 @@ import org.grails.plugins.web.async.spring.PromiseFactoryBean
 @CompileStatic
 class ControllersAsyncGrailsPlugin extends Plugin {
 
-    def grailsVersion = '7.0.0-SNAPSHOT > *'
+    def grailsVersion = '8.0.0-SNAPSHOT > *'
     def loadAfter = ['controllers']
 
     @Override

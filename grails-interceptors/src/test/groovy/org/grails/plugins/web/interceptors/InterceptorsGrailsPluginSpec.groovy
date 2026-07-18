@@ -18,7 +18,6 @@
  */
 package org.grails.plugins.web.interceptors
 
-import org.springframework.beans.factory.BeanRegistrar
 import org.springframework.beans.factory.support.AbstractBeanDefinition
 import org.springframework.beans.factory.support.BeanRegistryAdapter
 import org.springframework.beans.factory.support.DefaultListableBeanFactory
@@ -38,15 +37,15 @@ class InterceptorsGrailsPluginSpec extends Specification {
     static class TestInterceptor {
     }
 
-    GrailsClass interceptorClass = Mock(GrailsClass) {
+    def interceptorClass = Mock(GrailsClass) {
         getPropertyName() >> 'testInterceptor'
         getClazz() >> TestInterceptor
     }
 
     void "beanRegistrar registers only the definitions post-processor"() {
         given:
-        DefaultListableBeanFactory beanFactory = new DefaultListableBeanFactory()
-        GrailsApplication application = Mock(GrailsApplication)
+        def beanFactory = new DefaultListableBeanFactory()
+        def application = Mock(GrailsApplication)
 
         when:
         applyRegistrar(beanFactory, application)
@@ -59,8 +58,8 @@ class InterceptorsGrailsPluginSpec extends Specification {
 
     void "no interceptor beans are registered when there are no interceptor artefacts"() {
         given:
-        DefaultListableBeanFactory registry = new DefaultListableBeanFactory()
-        GrailsApplication application = Mock(GrailsApplication) {
+        def registry = new DefaultListableBeanFactory()
+        def application = Mock(GrailsApplication) {
             getArtefacts(InterceptorArtefactHandler.TYPE) >> { new GrailsClass[0] }
         }
 
@@ -73,14 +72,14 @@ class InterceptorsGrailsPluginSpec extends Specification {
 
     void "the definitions post-processor registers the mapped interceptor wrapping an inner adapter bean"() {
         given:
-        DefaultListableBeanFactory registry = new DefaultListableBeanFactory()
-        GrailsApplication application = Mock(GrailsApplication) {
+        def registry = new DefaultListableBeanFactory()
+        def application = Mock(GrailsApplication) {
             getArtefacts(InterceptorArtefactHandler.TYPE) >> { [interceptorClass] as GrailsClass[] }
         }
 
         when:
         new InterceptorBeanDefinitionsPostProcessor(application, false).postProcessBeanDefinitionRegistry(registry)
-        AbstractBeanDefinition mappedInterceptor = (AbstractBeanDefinition) registry.getBeanDefinition('grailsInterceptorMappedInterceptor')
+        def mappedInterceptor = (AbstractBeanDefinition) registry.getBeanDefinition('grailsInterceptorMappedInterceptor')
 
         then:
         mappedInterceptor.beanClassName == MappedInterceptor.name
@@ -97,15 +96,15 @@ class InterceptorsGrailsPluginSpec extends Specification {
 
     void "the definitions post-processor registers name-autowired interceptor beans"() {
         given:
-        DefaultListableBeanFactory registry = new DefaultListableBeanFactory()
-        GrailsApplication application = Mock(GrailsApplication) {
+        def registry = new DefaultListableBeanFactory()
+        def application = Mock(GrailsApplication) {
             getArtefacts(InterceptorArtefactHandler.TYPE) >> { [interceptorClass] as GrailsClass[] }
         }
-        InterceptorBeanDefinitionsPostProcessor postProcessor = new InterceptorBeanDefinitionsPostProcessor(application, true)
+        def postProcessor = new InterceptorBeanDefinitionsPostProcessor(application, true)
 
         when:
         postProcessor.postProcessBeanDefinitionRegistry(registry)
-        AbstractBeanDefinition definition = (AbstractBeanDefinition) registry.getBeanDefinition('testInterceptor')
+        def definition = (AbstractBeanDefinition) registry.getBeanDefinition('testInterceptor')
 
         then:
         definition.beanClassName == TestInterceptor.name
@@ -116,9 +115,9 @@ class InterceptorsGrailsPluginSpec extends Specification {
 
     void "an existing interceptor bean definition wins"() {
         given:
-        DefaultListableBeanFactory registry = new DefaultListableBeanFactory()
+        def registry = new DefaultListableBeanFactory()
         registry.registerBeanDefinition('testInterceptor', new GenericBeanDefinition(beanClass: String))
-        GrailsApplication application = Mock(GrailsApplication) {
+        def application = Mock(GrailsApplication) {
             getArtefacts(InterceptorArtefactHandler.TYPE) >> { [interceptorClass] as GrailsClass[] }
         }
 
@@ -130,8 +129,8 @@ class InterceptorsGrailsPluginSpec extends Specification {
     }
 
     private static void applyRegistrar(DefaultListableBeanFactory beanFactory, GrailsApplication application) {
-        InterceptorsGrailsPlugin plugin = new InterceptorsGrailsPlugin(grailsApplication: application)
-        BeanRegistrar registrar = plugin.beanRegistrar()
+        def plugin = new InterceptorsGrailsPlugin(grailsApplication: application)
+        def registrar = plugin.beanRegistrar()
         new BeanRegistryAdapter(beanFactory, new StandardEnvironment(), registrar.getClass()).register(registrar)
     }
 }

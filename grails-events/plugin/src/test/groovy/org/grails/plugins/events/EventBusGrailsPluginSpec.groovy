@@ -18,7 +18,6 @@
  */
 package org.grails.plugins.events
 
-import org.springframework.beans.factory.BeanRegistrar
 import org.springframework.beans.factory.support.BeanRegistryAdapter
 import org.springframework.beans.factory.support.DefaultListableBeanFactory
 import org.springframework.core.env.MapPropertySource
@@ -34,7 +33,7 @@ class EventBusGrailsPluginSpec extends Specification {
 
     void "beanRegistrar registers the event bus beans"() {
         given:
-        DefaultListableBeanFactory beanFactory = new DefaultListableBeanFactory()
+        def beanFactory = new DefaultListableBeanFactory()
 
         when:
         applyRegistrar(beanFactory, new StandardEnvironment())
@@ -49,8 +48,8 @@ class EventBusGrailsPluginSpec extends Specification {
 
     void "beanRegistrar registers the spring event translator when enabled"() {
         given:
-        DefaultListableBeanFactory beanFactory = new DefaultListableBeanFactory()
-        StandardEnvironment environment = new StandardEnvironment()
+        def beanFactory = new DefaultListableBeanFactory()
+        def environment = new StandardEnvironment()
         environment.propertySources.addFirst(
                 new MapPropertySource('test', [(EventBusGrailsPlugin.TRANSLATE_SPRING_EVENTS): 'true']))
 
@@ -63,20 +62,20 @@ class EventBusGrailsPluginSpec extends Specification {
 
     void "the gorm dispatcher registrar is created with the registered event bus"() {
         given:
-        DefaultListableBeanFactory beanFactory = new DefaultListableBeanFactory()
-        EventBus eventBus = Mock(EventBus)
+        def beanFactory = new DefaultListableBeanFactory()
+        def eventBus = Mock(EventBus)
         applyRegistrar(beanFactory, new StandardEnvironment())
         beanFactory.registerSingleton('grailsEventBus', eventBus)
 
         when:
-        GormDispatcherRegistrar dispatcherRegistrar = beanFactory.getBean('gormDispatchEventRegistrar', GormDispatcherRegistrar)
+        def dispatcherRegistrar = beanFactory.getBean('gormDispatchEventRegistrar', GormDispatcherRegistrar)
 
         then:
         dispatcherRegistrar.@eventBus.is(eventBus)
     }
 
     private static void applyRegistrar(DefaultListableBeanFactory beanFactory, StandardEnvironment environment) {
-        BeanRegistrar registrar = new EventBusGrailsPlugin().beanRegistrar()
+        def registrar = new EventBusGrailsPlugin().beanRegistrar()
         new BeanRegistryAdapter(beanFactory, environment, registrar.getClass()).register(registrar)
     }
 }

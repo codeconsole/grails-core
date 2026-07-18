@@ -18,7 +18,6 @@
  */
 package grails.plugin.markup.view
 
-import org.springframework.beans.factory.BeanRegistrar
 import org.springframework.beans.factory.support.BeanRegistryAdapter
 import org.springframework.beans.factory.support.DefaultListableBeanFactory
 import org.springframework.context.support.GenericApplicationContext
@@ -33,14 +32,14 @@ import spock.lang.Specification
 
 class MarkupViewGrailsPluginSpec extends Specification {
 
-    DefaultListableBeanFactory beanFactory = new DefaultListableBeanFactory()
-    GrailsPluginManager pluginManager = Mock(GrailsPluginManager)
+    def beanFactory = new DefaultListableBeanFactory()
+    def pluginManager = Mock(GrailsPluginManager)
 
     void setup() {
-        MarkupViewGrailsPlugin plugin = new MarkupViewGrailsPlugin()
+        def plugin = new MarkupViewGrailsPlugin()
         plugin.applicationContext = new GenericApplicationContext()
         plugin.pluginManager = pluginManager
-        BeanRegistrar registrar = plugin.beanRegistrar()
+        def registrar = plugin.beanRegistrar()
         new BeanRegistryAdapter(beanFactory, new StandardEnvironment(), registrar.getClass()).register(registrar)
     }
 
@@ -54,7 +53,7 @@ class MarkupViewGrailsPluginSpec extends Specification {
 
     void "the smart view resolver is wired with a plugin-aware template resolver"() {
         when:
-        MarkupViewResolver viewResolver = beanFactory.getBean('smartMarkupViewResolver', MarkupViewResolver)
+        def viewResolver = beanFactory.getBean('smartMarkupViewResolver', MarkupViewResolver)
 
         then:
         viewResolver.templateEngine.is(beanFactory.getBean('markupTemplateEngine', MarkupViewTemplateEngine))

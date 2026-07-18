@@ -38,7 +38,6 @@ import org.springframework.mock.web.MockServletContext
 import org.springframework.web.context.WebApplicationContext
 import org.springframework.web.context.support.StaticWebApplicationContext
 import org.springframework.web.filter.RequestContextFilter
-import org.springframework.web.servlet.ModelAndView
 import org.springframework.web.servlet.handler.SimpleMappingExceptionResolver
 
 import org.grails.web.config.http.GrailsFilters
@@ -49,11 +48,11 @@ import spock.lang.Specification
 
 class ControllersAutoConfigurationSpec extends Specification {
 
-    ApplicationContext applicationContext = Mock(ApplicationContext) {
+    def applicationContext = Mock(ApplicationContext) {
         getBeansOfType(_) >> [:]
     }
 
-    ControllersAutoConfiguration autoConfiguration = new ControllersAutoConfiguration()
+    def autoConfiguration = new ControllersAutoConfiguration()
 
     void 'grailsWebRequest filter is a RequestContextFilter so Boot WebMvcAutoConfiguration backs off its own RequestContextFilter'() {
         when: 'the Grails request-binding filter bean is created'
@@ -87,7 +86,7 @@ class ControllersAutoConfigurationSpec extends Specification {
 
     void 'Grails controllers auto-config makes Boot WebMvcAutoConfiguration back off its requestContextFilter'() {
         given: 'a GrailsApplication, required by the controllers auto-config'
-        GrailsApplication grailsApplication = Mock(GrailsApplication) {
+        def grailsApplication = Mock(GrailsApplication) {
             getClassLoader() >> getClass().classLoader
         }
         Supplier<GrailsApplication> grailsApplicationSupplier = () -> grailsApplication
@@ -105,7 +104,7 @@ class ControllersAutoConfigurationSpec extends Specification {
 
     void 'a user-defined grailsWebRequestFilter registration bean makes the auto-configured one back off'() {
         given: 'a GrailsApplication, required by the controllers auto-config'
-        GrailsApplication grailsApplication = Mock(GrailsApplication) {
+        def grailsApplication = Mock(GrailsApplication) {
             getClassLoader() >> getClass().classLoader
         }
         Supplier<GrailsApplication> grailsApplicationSupplier = () -> grailsApplication
@@ -128,7 +127,7 @@ class ControllersAutoConfigurationSpec extends Specification {
 
     void 'a user-defined GrailsWebMvcConfigurer bean makes the auto-configured webMvcConfig back off'() {
         given: 'a GrailsApplication, required by the controllers auto-config'
-        GrailsApplication grailsApplication = Mock(GrailsApplication) {
+        def grailsApplication = Mock(GrailsApplication) {
             getClassLoader() >> getClass().classLoader
         }
         Supplier<GrailsApplication> grailsApplicationSupplier = () -> grailsApplication
@@ -156,7 +155,7 @@ class ControllersAutoConfigurationSpec extends Specification {
         exceptionResolver.servletContext = servletContextWithWebApplicationContext()
 
         when:
-        ModelAndView modelAndView = exceptionResolver.resolveException(
+        def modelAndView = exceptionResolver.resolveException(
                 new MockHttpServletRequest(), new MockHttpServletResponse(), null, new Exception('boom'))
 
         then:
@@ -165,7 +164,7 @@ class ControllersAutoConfigurationSpec extends Specification {
 
     void 'the exceptionHandler default is auto-configured when no user bean exists'() {
         given: 'a GrailsApplication, required by the controllers auto-config'
-        GrailsApplication grailsApplication = Mock(GrailsApplication) {
+        def grailsApplication = Mock(GrailsApplication) {
             getClassLoader() >> getClass().classLoader
         }
         Supplier<GrailsApplication> grailsApplicationSupplier = () -> grailsApplication
@@ -181,13 +180,13 @@ class ControllersAutoConfigurationSpec extends Specification {
 
     void 'a user-defined exceptionHandler bean makes the auto-configured default back off'() {
         given: 'a GrailsApplication, required by the controllers auto-config'
-        GrailsApplication grailsApplication = Mock(GrailsApplication) {
+        def grailsApplication = Mock(GrailsApplication) {
             getClassLoader() >> getClass().classLoader
         }
         Supplier<GrailsApplication> grailsApplicationSupplier = () -> grailsApplication
 
         and: 'a user-defined exception resolver under the auto-configured bean name'
-        SimpleMappingExceptionResolver userResolver = new SimpleMappingExceptionResolver()
+        def userResolver = new SimpleMappingExceptionResolver()
         Supplier<SimpleMappingExceptionResolver> userResolverSupplier = () -> userResolver
 
         expect: 'the user bean wins and the framework default is never registered'
@@ -202,8 +201,8 @@ class ControllersAutoConfigurationSpec extends Specification {
     }
 
     private static MockServletContext servletContextWithWebApplicationContext() {
-        MockServletContext servletContext = new MockServletContext()
-        StaticWebApplicationContext webApplicationContext = new StaticWebApplicationContext()
+        def servletContext = new MockServletContext()
+        def webApplicationContext = new StaticWebApplicationContext()
         webApplicationContext.servletContext = servletContext
         webApplicationContext.refresh()
         webApplicationContext.beanFactory.registerSingleton(GrailsApplication.APPLICATION_ID, new DefaultGrailsApplication())

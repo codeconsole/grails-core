@@ -18,7 +18,6 @@
  */
 package grails.plugins.redis
 
-import org.springframework.beans.factory.config.BeanDefinition
 import org.springframework.beans.factory.support.AbstractBeanDefinition
 import org.springframework.beans.factory.support.DefaultListableBeanFactory
 import org.springframework.beans.factory.support.GenericBeanDefinition
@@ -33,8 +32,8 @@ class RedisBeanDefinitionsPostProcessorSpec extends Specification {
 
     void "registers the pool and service definitions for the default and named connections"() {
         given:
-        DefaultListableBeanFactory registry = new DefaultListableBeanFactory()
-        RedisBeanDefinitionsPostProcessor postProcessor = new RedisBeanDefinitionsPostProcessor([
+        def registry = new DefaultListableBeanFactory()
+        def postProcessor = new RedisBeanDefinitionsPostProcessor([
                 poolConfig: [maxTotal: 10],
                 connections: [cache: [host: 'redis.example.com', port: 6380]]])
 
@@ -63,8 +62,8 @@ class RedisBeanDefinitionsPostProcessorSpec extends Specification {
 
     void "a sentinel configuration registers a sentinel pool"() {
         given:
-        DefaultListableBeanFactory registry = new DefaultListableBeanFactory()
-        RedisBeanDefinitionsPostProcessor postProcessor = new RedisBeanDefinitionsPostProcessor([
+        def registry = new DefaultListableBeanFactory()
+        def postProcessor = new RedisBeanDefinitionsPostProcessor([
                 masterName: 'mymaster',
                 sentinels: ['sentinel1:26379', 'sentinel2:26379']])
 
@@ -77,11 +76,11 @@ class RedisBeanDefinitionsPostProcessorSpec extends Specification {
 
     void "the service definition wires the redis pool by reference"() {
         given:
-        DefaultListableBeanFactory registry = new DefaultListableBeanFactory()
+        def registry = new DefaultListableBeanFactory()
 
         when:
         new RedisBeanDefinitionsPostProcessor([:]).postProcessBeanDefinitionRegistry(registry)
-        BeanDefinition serviceDefinition = registry.getBeanDefinition('redisService')
+        def serviceDefinition = registry.getBeanDefinition('redisService')
 
         then:
         serviceDefinition.propertyValues.getPropertyValue('redisPool').value.beanName == 'redisPool'
@@ -89,7 +88,7 @@ class RedisBeanDefinitionsPostProcessorSpec extends Specification {
 
     void "an existing redis bean definition wins"() {
         given:
-        DefaultListableBeanFactory registry = new DefaultListableBeanFactory()
+        def registry = new DefaultListableBeanFactory()
         registry.registerBeanDefinition('redisPool', new GenericBeanDefinition(beanClass: String))
         registry.registerBeanDefinition('redisServiceCache', new GenericBeanDefinition(beanClass: String))
 

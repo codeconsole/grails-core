@@ -34,7 +34,7 @@ import org.grails.plugin.cache.GrailsCacheManager
 @CompileStatic
 class CacheGrailsPlugin extends Plugin {
 
-    def grailsVersion = '7.0.0-SNAPSHOT > *'
+    def grailsVersion = '8.0.0-SNAPSHOT > *'
     def observe = ['controllers', 'services']
     def loadAfter = ['controllers', 'services']
     def authorEmail = 'brownj@objectcomputing.com'

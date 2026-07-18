@@ -18,7 +18,6 @@
  */
 package org.grails.plugins.converters
 
-import org.springframework.beans.factory.BeanRegistrar
 import org.springframework.beans.factory.support.BeanRegistryAdapter
 import org.springframework.beans.factory.support.DefaultListableBeanFactory
 import org.springframework.core.env.StandardEnvironment
@@ -34,26 +33,28 @@ import spock.lang.Specification
 
 class ConvertersGrailsPluginSpec extends Specification {
 
-    DefaultListableBeanFactory beanFactory = new DefaultListableBeanFactory()
+    def beanFactory = new DefaultListableBeanFactory()
 
     void setup() {
-        BeanRegistrar registrar = new ConvertersGrailsPlugin().beanRegistrar()
+        def registrar = new ConvertersGrailsPlugin().beanRegistrar()
         new BeanRegistryAdapter(beanFactory, new StandardEnvironment(), registrar.getClass()).register(registrar)
     }
 
     void "beanRegistrar registers the converters beans"() {
         expect:
-        beanFactory.getBeanDefinition('jsonErrorsMarshaller').beanClassName == JsonErrorsMarshaller.name
-        beanFactory.getBeanDefinition('xmlErrorsMarshaller').beanClassName == XmlErrorsMarshaller.name
-        beanFactory.getBeanDefinition('convertersConfigurationInitializer').beanClassName == ConvertersConfigurationInitializer.name
-        beanFactory.containsBeanDefinition('errorsXmlMarshallerRegisterer')
-        beanFactory.containsBeanDefinition('errorsJsonMarshallerRegisterer')
+        with(beanFactory) {
+            getBeanDefinition('jsonErrorsMarshaller').beanClassName == JsonErrorsMarshaller.name
+            getBeanDefinition('xmlErrorsMarshaller').beanClassName == XmlErrorsMarshaller.name
+            getBeanDefinition('convertersConfigurationInitializer').beanClassName == ConvertersConfigurationInitializer.name
+            containsBeanDefinition('errorsXmlMarshallerRegisterer')
+            containsBeanDefinition('errorsJsonMarshallerRegisterer')
+        }
     }
 
     void "the errors marshaller registerers use the named errors marshaller beans"() {
         when:
-        ObjectMarshallerRegisterer xmlRegisterer = beanFactory.getBean('errorsXmlMarshallerRegisterer', ObjectMarshallerRegisterer)
-        ObjectMarshallerRegisterer jsonRegisterer = beanFactory.getBean('errorsJsonMarshallerRegisterer', ObjectMarshallerRegisterer)
+        def xmlRegisterer = beanFactory.getBean('errorsXmlMarshallerRegisterer', ObjectMarshallerRegisterer)
+        def jsonRegisterer = beanFactory.getBean('errorsJsonMarshallerRegisterer', ObjectMarshallerRegisterer)
 
         then:
         xmlRegisterer.marshaller.is(beanFactory.getBean('xmlErrorsMarshaller', XmlErrorsMarshaller))

@@ -18,7 +18,6 @@
  */
 package org.grails.plugins.services
 
-import org.springframework.beans.factory.BeanRegistrar
 import org.springframework.beans.factory.support.AbstractBeanDefinition
 import org.springframework.beans.factory.support.BeanRegistryAdapter
 import org.springframework.beans.factory.support.DefaultListableBeanFactory
@@ -44,7 +43,7 @@ class ServicesGrailsPluginSpec extends Specification {
     static class TestService {
     }
 
-    GrailsServiceClass serviceClass = Mock(GrailsServiceClass) {
+    def serviceClass = Mock(GrailsServiceClass) {
         getClazz() >> TestService
         getPropertyName() >> 'testService'
         getShortName() >> 'TestService'
@@ -54,7 +53,7 @@ class ServicesGrailsPluginSpec extends Specification {
 
     void "beanRegistrar registers the service infrastructure beans"() {
         given:
-        DefaultListableBeanFactory beanFactory = new DefaultListableBeanFactory()
+        def beanFactory = new DefaultListableBeanFactory()
 
         when:
         applyRegistrar(beanFactory, new StandardEnvironment())
@@ -66,8 +65,8 @@ class ServicesGrailsPluginSpec extends Specification {
 
     void "spring proxy-based transaction management is rejected"() {
         given:
-        DefaultListableBeanFactory beanFactory = new DefaultListableBeanFactory()
-        StandardEnvironment environment = new StandardEnvironment()
+        def beanFactory = new DefaultListableBeanFactory()
+        def environment = new StandardEnvironment()
         environment.propertySources.addFirst(
                 new MapPropertySource('test', [(Settings.SPRING_TRANSACTION_MANAGEMENT): 'true']))
 
@@ -80,15 +79,15 @@ class ServicesGrailsPluginSpec extends Specification {
 
     void "the definitions post-processor registers name-autowired lazy service beans"() {
         given:
-        DefaultListableBeanFactory registry = new DefaultListableBeanFactory()
-        GrailsApplication application = Mock(GrailsApplication) {
+        def registry = new DefaultListableBeanFactory()
+        def application = Mock(GrailsApplication) {
             getArtefacts(ServiceArtefactHandler.TYPE) >> { [serviceClass] as GrailsClass[] }
         }
-        ServiceBeanDefinitionsPostProcessor postProcessor = new ServiceBeanDefinitionsPostProcessor(application, null)
+        def postProcessor = new ServiceBeanDefinitionsPostProcessor(application, null)
 
         when:
         postProcessor.postProcessBeanDefinitionRegistry(registry)
-        AbstractBeanDefinition definition = (AbstractBeanDefinition) registry.getBeanDefinition('testService')
+        def definition = (AbstractBeanDefinition) registry.getBeanDefinition('testService')
 
         then:
         definition.beanClassName == TestService.name
@@ -99,14 +98,14 @@ class ServicesGrailsPluginSpec extends Specification {
 
     void "services provided by a plugin are prefixed with the plugin name"() {
         given:
-        DefaultListableBeanFactory registry = new DefaultListableBeanFactory()
-        GrailsApplication application = Mock(GrailsApplication) {
+        def registry = new DefaultListableBeanFactory()
+        def application = Mock(GrailsApplication) {
             getArtefacts(ServiceArtefactHandler.TYPE) >> { [serviceClass] as GrailsClass[] }
         }
-        GrailsPlugin providingPlugin = Mock(GrailsPlugin) {
+        def providingPlugin = Mock(GrailsPlugin) {
             getName() >> 'security'
         }
-        GrailsPluginManager pluginManager = Mock(GrailsPluginManager) {
+        def pluginManager = Mock(GrailsPluginManager) {
             getPluginForClass(TestService) >> providingPlugin
         }
 
@@ -120,9 +119,9 @@ class ServicesGrailsPluginSpec extends Specification {
 
     void "an existing service bean definition wins"() {
         given:
-        DefaultListableBeanFactory registry = new DefaultListableBeanFactory()
+        def registry = new DefaultListableBeanFactory()
         registry.registerBeanDefinition('testService', new GenericBeanDefinition(beanClass: String))
-        GrailsApplication application = Mock(GrailsApplication) {
+        def application = Mock(GrailsApplication) {
             getArtefacts(ServiceArtefactHandler.TYPE) >> { [serviceClass] as GrailsClass[] }
         }
 
@@ -134,8 +133,8 @@ class ServicesGrailsPluginSpec extends Specification {
     }
 
     private static void applyRegistrar(DefaultListableBeanFactory beanFactory, StandardEnvironment environment) {
-        ServicesGrailsPlugin plugin = new ServicesGrailsPlugin(grailsApplication: new DefaultGrailsApplication())
-        BeanRegistrar registrar = plugin.beanRegistrar()
+        def plugin = new ServicesGrailsPlugin(grailsApplication: new DefaultGrailsApplication())
+        def registrar = plugin.beanRegistrar()
         new BeanRegistryAdapter(beanFactory, environment, registrar.getClass()).register(registrar)
     }
 }

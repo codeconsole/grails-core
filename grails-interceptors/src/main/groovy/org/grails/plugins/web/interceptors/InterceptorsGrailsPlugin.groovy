@@ -58,8 +58,8 @@ class InterceptorsGrailsPlugin extends Plugin {
             // that is expressible through the BeanRegistry API, so the definitions are
             // contributed by a dedicated post-processor instead.
             boolean enableJsessionId = environment.getProperty(Settings.GRAILS_VIEWS_ENABLE_JSESSIONID, Boolean, false)
-            registry.registerBean('interceptorBeanDefinitionsPostProcessor', InterceptorBeanDefinitionsPostProcessor) { BeanRegistry.Spec<InterceptorBeanDefinitionsPostProcessor> spec ->
-                spec.infrastructure().supplier { BeanRegistry.SupplierContext context ->
+            registry.registerBean('interceptorBeanDefinitionsPostProcessor', InterceptorBeanDefinitionsPostProcessor) {
+                it.infrastructure().supplier {
                     new InterceptorBeanDefinitionsPostProcessor(grailsApplication, enableJsessionId)
                 }
             }

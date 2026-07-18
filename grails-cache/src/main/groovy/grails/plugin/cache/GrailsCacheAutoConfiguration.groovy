@@ -23,8 +23,8 @@ import groovy.transform.CompileStatic
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.boot.autoconfigure.AutoConfiguration
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBooleanProperty
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.context.annotation.Bean
 
 import org.grails.plugin.cache.GrailsCacheManager
@@ -43,7 +43,7 @@ import org.grails.plugin.cache.GrailsCacheManager
  * @since 8.0
  */
 @AutoConfiguration
-@ConditionalOnProperty(name = 'grails.cache.enabled', matchIfMissing = true)
+@ConditionalOnBooleanProperty(name = 'grails.cache.enabled', matchIfMissing = true)
 @ConditionalOnBean(CachePluginConfiguration)
 @CompileStatic
 class GrailsCacheAutoConfiguration {
@@ -61,13 +61,9 @@ class GrailsCacheAutoConfiguration {
     @ConditionalOnMissingBean(name = 'grailsCacheManager')
     GrailsCacheManager grailsCacheManager(CachePluginConfiguration grailsCacheConfiguration) {
         if (cacheManagerType == 'GrailsConcurrentLinkedMapCacheManager') {
-            GrailsConcurrentLinkedMapCacheManager cacheManager = new GrailsConcurrentLinkedMapCacheManager()
-            cacheManager.configuration = grailsCacheConfiguration
-            return cacheManager
+            return new GrailsConcurrentLinkedMapCacheManager(configuration: grailsCacheConfiguration)
         }
-        GrailsConcurrentMapCacheManager cacheManager = new GrailsConcurrentMapCacheManager()
-        cacheManager.configuration = grailsCacheConfiguration
-        return cacheManager
+        new GrailsConcurrentMapCacheManager(configuration: grailsCacheConfiguration)
     }
 
 }

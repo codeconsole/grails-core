@@ -19,8 +19,6 @@
 package org.grails.plugins.web.mapping
 
 import org.springframework.aop.framework.ProxyFactoryBean
-import org.springframework.beans.factory.BeanRegistrar
-import org.springframework.beans.factory.config.BeanDefinition
 import org.springframework.beans.factory.config.RuntimeBeanReference
 import org.springframework.beans.factory.support.AbstractBeanDefinition
 import org.springframework.beans.factory.support.BeanRegistryAdapter
@@ -40,8 +38,8 @@ class UrlMappingsGrailsPluginSpec extends Specification {
 
     void "beanRegistrar contributes the default url mappings and registers the definitions post-processor"() {
         given: 'no url mappings artefacts exist'
-        DefaultListableBeanFactory beanFactory = new DefaultListableBeanFactory()
-        GrailsApplication application = Mock(GrailsApplication) {
+        def beanFactory = new DefaultListableBeanFactory()
+        def application = Mock(GrailsApplication) {
             getArtefacts(UrlMappingsArtefactHandler.TYPE) >> { new GrailsClass[0] }
         }
 
@@ -57,9 +55,9 @@ class UrlMappingsGrailsPluginSpec extends Specification {
 
     void "the default url mappings are not contributed when the application defines mappings"() {
         given:
-        DefaultListableBeanFactory beanFactory = new DefaultListableBeanFactory()
-        GrailsClass existingMappings = Mock(GrailsClass)
-        GrailsApplication application = Mock(GrailsApplication) {
+        def beanFactory = new DefaultListableBeanFactory()
+        def existingMappings = Mock(GrailsClass)
+        def application = Mock(GrailsApplication) {
             getArtefacts(UrlMappingsArtefactHandler.TYPE) >> { [existingMappings] as GrailsClass[] }
         }
 
@@ -72,11 +70,11 @@ class UrlMappingsGrailsPluginSpec extends Specification {
 
     void "the reload-mode holder is a ProxyFactoryBean defined so its produced UrlMappings type stays predictable"() {
         given:
-        DefaultListableBeanFactory registry = new DefaultListableBeanFactory()
+        def registry = new DefaultListableBeanFactory()
 
         when:
         new UrlMappingsBeanDefinitionsPostProcessor(true, true).postProcessBeanDefinitionRegistry(registry)
-        BeanDefinition holder = registry.getBeanDefinition('grailsUrlMappingsHolder')
+        def holder = registry.getBeanDefinition('grailsUrlMappingsHolder')
 
         then: 'proxyInterfaces are a definition property (not hidden in an instance supplier), so Spring can predict the UrlMappings type for by-type autowiring'
         holder.beanClassName == ProxyFactoryBean.name
@@ -85,7 +83,7 @@ class UrlMappingsGrailsPluginSpec extends Specification {
         holder.propertyValues.getPropertyValue('targetSource').value == new RuntimeBeanReference('urlMappingsTargetSource')
 
         and: 'the target source hot-swaps an inner UrlMappingsHolderFactoryBean, mirroring the original DSL'
-        BeanDefinition targetSource = registry.getBeanDefinition('urlMappingsTargetSource')
+        def targetSource = registry.getBeanDefinition('urlMappingsTargetSource')
         targetSource.beanClassName == HotSwappableTargetSourceFactoryBean.name
         ((AbstractBeanDefinition) targetSource.propertyValues.getPropertyValue('target').value).beanClassName ==
                 UrlMappingsHolderFactoryBean.name
@@ -93,11 +91,11 @@ class UrlMappingsGrailsPluginSpec extends Specification {
 
     void "the non-reload holder is a lazy UrlMappingsHolderFactoryBean"() {
         given:
-        DefaultListableBeanFactory registry = new DefaultListableBeanFactory()
+        def registry = new DefaultListableBeanFactory()
 
         when:
         new UrlMappingsBeanDefinitionsPostProcessor(false, true).postProcessBeanDefinitionRegistry(registry)
-        BeanDefinition holder = registry.getBeanDefinition('grailsUrlMappingsHolder')
+        def holder = registry.getBeanDefinition('grailsUrlMappingsHolder')
 
         then:
         holder.beanClassName == UrlMappingsHolderFactoryBean.name
@@ -106,8 +104,8 @@ class UrlMappingsGrailsPluginSpec extends Specification {
     }
 
     private static void applyRegistrar(DefaultListableBeanFactory beanFactory, GrailsApplication application) {
-        UrlMappingsGrailsPlugin plugin = new UrlMappingsGrailsPlugin(grailsApplication: application)
-        BeanRegistrar registrar = plugin.beanRegistrar()
+        def plugin = new UrlMappingsGrailsPlugin(grailsApplication: application)
+        def registrar = plugin.beanRegistrar()
         new BeanRegistryAdapter(beanFactory, new StandardEnvironment(), registrar.getClass()).register(registrar)
     }
 }

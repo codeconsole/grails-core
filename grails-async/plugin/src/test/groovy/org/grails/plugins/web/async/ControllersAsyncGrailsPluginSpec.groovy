@@ -18,7 +18,6 @@
  */
 package org.grails.plugins.web.async
 
-import org.springframework.beans.factory.BeanRegistrar
 import org.springframework.beans.factory.support.BeanRegistryAdapter
 import org.springframework.beans.factory.support.DefaultListableBeanFactory
 import org.springframework.core.env.StandardEnvironment
@@ -32,8 +31,8 @@ class ControllersAsyncGrailsPluginSpec extends Specification {
 
     void "beanRegistrar registers the async promise beans"() {
         given:
-        DefaultListableBeanFactory beanFactory = new DefaultListableBeanFactory()
-        BeanRegistrar registrar = new ControllersAsyncGrailsPlugin().beanRegistrar()
+        def beanFactory = new DefaultListableBeanFactory()
+        def registrar = new ControllersAsyncGrailsPlugin().beanRegistrar()
 
         when:
         new BeanRegistryAdapter(beanFactory, new StandardEnvironment(), registrar.getClass()).register(registrar)

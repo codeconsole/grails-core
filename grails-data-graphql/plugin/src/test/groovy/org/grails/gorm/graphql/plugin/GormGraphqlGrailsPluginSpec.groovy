@@ -18,7 +18,6 @@
  */
 package org.grails.gorm.graphql.plugin
 
-import org.springframework.beans.factory.BeanRegistrar
 import org.springframework.beans.factory.support.BeanRegistryAdapter
 import org.springframework.beans.factory.support.DefaultListableBeanFactory
 import org.springframework.context.support.StaticMessageSource
@@ -34,7 +33,7 @@ class GormGraphqlGrailsPluginSpec extends Specification {
 
     void "beanRegistrar registers the graphql beans"() {
         given:
-        DefaultListableBeanFactory beanFactory = new DefaultListableBeanFactory()
+        def beanFactory = new DefaultListableBeanFactory()
 
         when:
         applyRegistrar(beanFactory, new StandardEnvironment())
@@ -50,8 +49,8 @@ class GormGraphqlGrailsPluginSpec extends Specification {
 
     void "only the configuration bean is registered when graphql is disabled"() {
         given:
-        DefaultListableBeanFactory beanFactory = new DefaultListableBeanFactory()
-        StandardEnvironment environment = new StandardEnvironment()
+        def beanFactory = new DefaultListableBeanFactory()
+        def environment = new StandardEnvironment()
         environment.propertySources.addFirst(
                 new MapPropertySource('test', ['grails.gorm.graphql.enabled': 'false']))
 
@@ -65,19 +64,19 @@ class GormGraphqlGrailsPluginSpec extends Specification {
 
     void "the type manager is assembled from the registered collaborators"() {
         given:
-        DefaultListableBeanFactory beanFactory = new DefaultListableBeanFactory()
+        def beanFactory = new DefaultListableBeanFactory()
         applyRegistrar(beanFactory, new StandardEnvironment())
         beanFactory.registerSingleton('messageSource', new StaticMessageSource())
 
         when:
-        DefaultGraphQLTypeManager typeManager = beanFactory.getBean('graphQLTypeManager', DefaultGraphQLTypeManager)
+        def typeManager = beanFactory.getBean('graphQLTypeManager', DefaultGraphQLTypeManager)
 
         then:
         typeManager.codeRegistry.is(beanFactory.getBean('graphQLCodeRegistry', GraphQLCodeRegistry.Builder))
     }
 
     private static void applyRegistrar(DefaultListableBeanFactory beanFactory, StandardEnvironment environment) {
-        BeanRegistrar registrar = new GormGraphqlGrailsPlugin().beanRegistrar()
+        def registrar = new GormGraphqlGrailsPlugin().beanRegistrar()
         new BeanRegistryAdapter(beanFactory, environment, registrar.getClass()).register(registrar)
     }
 }

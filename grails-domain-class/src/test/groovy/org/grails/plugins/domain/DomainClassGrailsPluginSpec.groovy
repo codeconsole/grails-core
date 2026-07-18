@@ -18,7 +18,6 @@
  */
 package org.grails.plugins.domain
 
-import org.springframework.beans.factory.BeanRegistrar
 import org.springframework.beans.factory.support.BeanRegistryAdapter
 import org.springframework.beans.factory.support.DefaultListableBeanFactory
 import org.springframework.core.env.StandardEnvironment
@@ -33,9 +32,9 @@ class DomainClassGrailsPluginSpec extends Specification {
 
     void "beanRegistrar defaults the auto-timestamp annotation cache setting when not configured"() {
         given:
-        DefaultGrailsApplication application = new DefaultGrailsApplication()
+        def application = new DefaultGrailsApplication()
         application.config = new PropertySourcesConfig()
-        DomainClassGrailsPlugin plugin = new DomainClassGrailsPlugin(grailsApplication: application)
+        def plugin = new DomainClassGrailsPlugin(grailsApplication: application)
 
         when:
         applyRegistrar(plugin)
@@ -46,10 +45,10 @@ class DomainClassGrailsPluginSpec extends Specification {
 
     void "beanRegistrar leaves an explicitly configured auto-timestamp cache setting alone"() {
         given:
-        DefaultGrailsApplication application = new DefaultGrailsApplication()
+        def application = new DefaultGrailsApplication()
         application.config = new PropertySourcesConfig(
                 (DatastoreSettings.SETTING_AUTO_TIMESTAMP_CACHE_ANNOTATIONS): false)
-        DomainClassGrailsPlugin plugin = new DomainClassGrailsPlugin(grailsApplication: application)
+        def plugin = new DomainClassGrailsPlugin(grailsApplication: application)
 
         when:
         applyRegistrar(plugin)
@@ -59,8 +58,8 @@ class DomainClassGrailsPluginSpec extends Specification {
     }
 
     private static void applyRegistrar(DomainClassGrailsPlugin plugin) {
-        BeanRegistrar registrar = plugin.beanRegistrar()
-        DefaultListableBeanFactory beanFactory = new DefaultListableBeanFactory()
+        def registrar = plugin.beanRegistrar()
+        def beanFactory = new DefaultListableBeanFactory()
         new BeanRegistryAdapter(beanFactory, new StandardEnvironment(), registrar.getClass()).register(registrar)
     }
 }

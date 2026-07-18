@@ -62,8 +62,8 @@ class DataSourceGrailsPlugin extends Plugin {
                     // The post-processor itself only rewires the context when a transactionManager
                     // definition and more than one chainable transaction manager exist, so the
                     // unrefreshed-context guard the bean DSL registration used is not needed here
-                    registry.registerBean('chainedTransactionManagerPostProcessor', ChainedTransactionManagerPostProcessor) { BeanRegistry.Spec<ChainedTransactionManagerPostProcessor> spec ->
-                        spec.supplier { BeanRegistry.SupplierContext context ->
+                    registry.registerBean('chainedTransactionManagerPostProcessor', ChainedTransactionManagerPostProcessor) {
+                        it.supplier {
                             new ChainedTransactionManagerPostProcessor(config, whitelistPattern ?: null, blacklistPattern ?: null)
                         }
                     }
@@ -87,8 +87,8 @@ class DataSourceGrailsPlugin extends Plugin {
                     // stay visible to Spring's factory-bean type prediction for by-type autowiring —
                     // which an instance supplier would hide — so the definitions are contributed by
                     // a dedicated post-processor instead.
-                    registry.registerBean('dataSourceBeanDefinitionsPostProcessor', DataSourceBeanDefinitionsPostProcessor) { BeanRegistry.Spec<DataSourceBeanDefinitionsPostProcessor> spec ->
-                        spec.infrastructure().supplier { BeanRegistry.SupplierContext context ->
+                    registry.registerBean('dataSourceBeanDefinitionsPostProcessor', DataSourceBeanDefinitionsPostProcessor) {
+                        it.infrastructure().supplier {
                             new DataSourceBeanDefinitionsPostProcessor(grailsApplication.config)
                         }
                     }
@@ -100,8 +100,8 @@ class DataSourceGrailsPlugin extends Plugin {
                 try {
                     MBeanServer jmxMBeanServer = JmxUtils.locateMBeanServer()
                     if (jmxMBeanServer) {
-                        registry.registerBean('tomcatJDBCPoolMBeanExporter', TomcatJDBCPoolMBeanExporter) { BeanRegistry.Spec<TomcatJDBCPoolMBeanExporter> spec ->
-                            spec.supplier { BeanRegistry.SupplierContext context ->
+                        registry.registerBean('tomcatJDBCPoolMBeanExporter', TomcatJDBCPoolMBeanExporter) {
+                            it.supplier {
                                 TomcatJDBCPoolMBeanExporter exporter = new TomcatJDBCPoolMBeanExporter()
                                 exporter.grailsApplication = grailsApplication
                                 exporter.server = jmxMBeanServer

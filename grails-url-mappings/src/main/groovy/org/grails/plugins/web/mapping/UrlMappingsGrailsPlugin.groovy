@@ -66,8 +66,8 @@ class UrlMappingsGrailsPlugin extends Plugin {
             // type must stay visible to Spring's factory-bean type prediction for by-type autowiring
             // of UrlMappingsHolder — which an instance supplier would hide — so the definitions are
             // contributed by a dedicated post-processor instead.
-            registry.registerBean('urlMappingsBeanDefinitionsPostProcessor', UrlMappingsBeanDefinitionsPostProcessor) { BeanRegistry.Spec<UrlMappingsBeanDefinitionsPostProcessor> spec ->
-                spec.infrastructure().supplier { BeanRegistry.SupplierContext context ->
+            registry.registerBean('urlMappingsBeanDefinitionsPostProcessor', UrlMappingsBeanDefinitionsPostProcessor) {
+                it.infrastructure().supplier {
                     new UrlMappingsBeanDefinitionsPostProcessor(reloadEnabled, corsFilterEnabled)
                 }
             }

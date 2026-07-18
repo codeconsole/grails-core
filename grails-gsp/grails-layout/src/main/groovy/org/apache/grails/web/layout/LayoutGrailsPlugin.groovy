@@ -43,7 +43,7 @@ class LayoutGrailsPlugin extends Plugin {
     public static final String GRAILS_LAYOUT_ENABLE_NONGSP = 'grails.views.layout.enable.nongsp'
 
     def title = 'Layout'
-    def grailsVersion = '7.0.0-SNAPSHOT > *'
+    def grailsVersion = '8.0.0-SNAPSHOT > *'
     def dependsOn = [core: GrailsUtil.getGrailsVersion(), i18n: GrailsUtil.getGrailsVersion()]
     def observe = ['controllers']
     def loadAfter = ['groovyPages']
@@ -68,8 +68,8 @@ class LayoutGrailsPlugin extends Plugin {
             if (enableLayoutViewResolver) {
                 String defaultDecoratorNameSetting = environment.getProperty(DEFAULT_LAYOUT, '')
                 Boolean grailsLayoutEnableNonGspViews = environment.getProperty(GRAILS_LAYOUT_ENABLE_NONGSP, Boolean, false)
-                registry.registerBean('groovyPageLayoutFinder', GroovyPageLayoutFinder) { BeanRegistry.Spec<GroovyPageLayoutFinder> spec ->
-                    spec.supplier { BeanRegistry.SupplierContext context ->
+                registry.registerBean('groovyPageLayoutFinder', GroovyPageLayoutFinder) {
+                    it.supplier {
                         GroovyPageLayoutFinder layoutFinder = new GroovyPageLayoutFinder()
                         layoutFinder.gspReloadEnabled = enableReload
                         layoutFinder.defaultDecoratorName = defaultDecoratorNameSetting ?: null
