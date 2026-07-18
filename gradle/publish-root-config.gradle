@@ -101,6 +101,8 @@ def publishedProjects = [
         'grails-testing-support-mongodb',
         'grails-testing-support-views-gson',
         'grails-testing-support-web',
+        'grails-undertow',
+        'grails-undertow-spring-boot',
         'grails-url-mappings',
         'grails-validation',
         'grails-views-core',
