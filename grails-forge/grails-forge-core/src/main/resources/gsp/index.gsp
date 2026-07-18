@@ -221,6 +221,11 @@
     <div class="container-lg mt-4">
         <div class="row g-4 align-items-start">
             <div class="col-12 col-lg-7">
+                <%-- Row counts are opt-in per request (a plain GET round-trip carrying
+                     domainCounts), so no datastore query ever runs unless explicitly
+                     asked for; the round-trip reopens the domains panel server-side. --%>
+                <g:set var="showDomainCounts" value="${params.domainCounts != null}"/>
+                <g:set var="artefactPanel" value="${params.domainCounts != null ? 'domains' : 'controllers'}"/>
                 <div id="available-artefacts" data-switch-scope class="card border-1 shadow-sm">
                     <div class="card-body">
                         <div class="d-flex align-items-center justify-content-between mb-1">
@@ -231,19 +236,19 @@
                                 <button type="button" class="btn btn-sm p-0 border-0 h6 card-title mb-0 fw-semibold dropdown-toggle"
                                         data-bs-toggle="dropdown" aria-expanded="false"
                                         aria-label="${message(code: 'welcome.artefacts.switch')}">
-                                    <span data-switch-for="controllers"><g:message code="welcome.controllers.title"/></span><span data-switch-for="domains" class="d-none"><g:message code="welcome.domains.title"/></span><span data-switch-for="services" class="d-none"><g:message code="welcome.services.title"/></span><span data-switch-for="taglibs" class="d-none"><g:message code="welcome.taglibs.title"/></span>
+                                    <span data-switch-for="controllers" class="${artefactPanel == 'controllers' ? '' : 'd-none'}"><g:message code="welcome.controllers.title"/></span><span data-switch-for="domains" class="${artefactPanel == 'domains' ? '' : 'd-none'}"><g:message code="welcome.domains.title"/></span><span data-switch-for="services" class="d-none"><g:message code="welcome.services.title"/></span><span data-switch-for="taglibs" class="d-none"><g:message code="welcome.taglibs.title"/></span>
                                 </button>
                                 <ul class="dropdown-menu">
                                     <li>
-                                        <button type="button" class="dropdown-item d-flex justify-content-between align-items-center active"
-                                                data-switch-type="controllers" aria-pressed="true">
+                                        <button type="button" class="dropdown-item d-flex justify-content-between align-items-center ${artefactPanel == 'controllers' ? 'active' : ''}"
+                                                data-switch-type="controllers" aria-pressed="${artefactPanel == 'controllers'}">
                                             <g:message code="welcome.artefact.controllers"/>
                                             <span class="badge bg-body-tertiary text-body border ms-3">${numControllers}</span>
                                         </button>
                                     </li>
                                     <li>
-                                        <button type="button" class="dropdown-item d-flex justify-content-between align-items-center"
-                                                data-switch-type="domains" aria-pressed="false">
+                                        <button type="button" class="dropdown-item d-flex justify-content-between align-items-center ${artefactPanel == 'domains' ? 'active' : ''}"
+                                                data-switch-type="domains" aria-pressed="${artefactPanel == 'domains'}">
                                             <g:message code="welcome.artefact.domains"/>
                                             <span class="badge bg-body-tertiary text-body border ms-3">${numDomains}</span>
                                         </button>
@@ -265,10 +270,19 @@
                                 </ul>
                             </div>
                             <div class="d-flex align-items-center gap-2">
-                                <span class="badge bg-body-tertiary text-body border" data-switch-for="controllers">${numControllers}</span>
-                                <span class="badge bg-body-tertiary text-body border d-none" data-switch-for="domains">${numDomains}</span>
+                                <span class="badge bg-body-tertiary text-body border ${artefactPanel == 'controllers' ? '' : 'd-none'}" data-switch-for="controllers">${numControllers}</span>
+                                <span class="badge bg-body-tertiary text-body border ${artefactPanel == 'domains' ? '' : 'd-none'}" data-switch-for="domains">${numDomains}</span>
                                 <span class="badge bg-body-tertiary text-body border d-none" data-switch-for="services">${numServices}</span>
                                 <span class="badge bg-body-tertiary text-body border d-none" data-switch-for="taglibs">${numTagLibs}</span>
+                                <g:if test="${numDomains != 0}">
+                                    <a href="${(request.contextPath ?: '') + '/'}${showDomainCounts ? '' : '?domainCounts=true'}#available-artefacts"
+                                       class="btn btn-sm btn-outline-secondary ${showDomainCounts ? 'active' : ''} ${artefactPanel == 'domains' ? '' : 'd-none'}"
+                                       data-switch-for="domains"
+                                       title="${message(code: 'welcome.domains.counts')}"
+                                       aria-label="${message(code: 'welcome.domains.counts')}">
+                                        <i class="bi bi-123" aria-hidden="true"></i>
+                                    </a>
+                                </g:if>
                                 <g:if test="${numControllers + numDomains + numServices + numTagLibs != 0}">
                                     <div class="dropdown">
                                         <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="dropdown"
@@ -280,12 +294,12 @@
                                              the focus-on-open listener; focus() is a no-op on hidden inputs, so
                                              only the visible one takes focus. --%>
                                         <div class="dropdown-menu dropdown-menu-end p-2">
-                                            <input type="search" class="form-control form-control-sm filter-input"
+                                            <input type="search" class="form-control form-control-sm filter-input ${artefactPanel == 'controllers' ? '' : 'd-none'}"
                                                    data-switch-for="controllers"
                                                    data-filter-list="#controllers-list" data-filter-empty="#controllers-empty"
                                                    placeholder="${message(code: 'welcome.filter.name')}"
                                                    aria-label="${message(code: 'welcome.filter.name')}">
-                                            <input type="search" class="form-control form-control-sm filter-input d-none"
+                                            <input type="search" class="form-control form-control-sm filter-input ${artefactPanel == 'domains' ? '' : 'd-none'}"
                                                    data-switch-for="domains"
                                                    data-filter-list="#domains-list" data-filter-empty="#domains-empty"
                                                    placeholder="${message(code: 'welcome.filter.name')}"
@@ -305,7 +319,7 @@
                                 </g:if>
                             </div>
                         </div>
-                        <div data-switch-for="controllers">
+                        <div data-switch-for="controllers" class="${artefactPanel == 'controllers' ? '' : 'd-none'}">
                         <g:if test="${numControllers != 0}">
                             <p class="small text-body-secondary mb-3">
                                 <g:message code="welcome.controllers.click"/>
@@ -430,16 +444,54 @@
                         </g:else>
                         </div>
 
-                        <div data-switch-for="domains" class="d-none">
+                        <div data-switch-for="domains" class="${artefactPanel == 'domains' ? '' : 'd-none'}">
+                        <%-- Grouped by providing plugin (application-owned classes first),
+                             mirroring the controllers' namespace grouping. --%>
+                        <g:set var="domainsByPlugin"
+                               value="${grailsApplication.domainClasses.toList()
+                                       .groupBy { dc ->
+                                           def plugin = null
+                                           try { plugin = pluginManager.getPluginForClass(dc.clazz) } catch (Throwable ignored) { }
+                                           plugin?.name ?: ''
+                                       }
+                                       .sort { a, b -> a.key.toLowerCase() <=> b.key.toLowerCase() }}"/>
                         <div id="domains-list">
-                            <ul class="list-group list-group-flush">
-                                <g:each var="d" in="${grailsApplication.domainClasses.toList().sort { it.shortName }}">
-                                    <li class="list-group-item px-2 d-flex align-items-center justify-content-between gap-2" data-name="${d.shortName}">
-                                        <span class="fw-semibold text-body text-truncate">${d.shortName}</span>
-                                        <span class="small text-body-secondary text-truncate">${d.packageName}</span>
-                                    </li>
-                                </g:each>
-                            </ul>
+                            <g:each var="pEntry" in="${domainsByPlugin}" status="pIndex">
+                                <div class="${pIndex > 0 ? 'mt-4' : ''}" data-filter-group>
+                                    <div class="px-2 py-2 bg-body-tertiary">
+                                        <div class="small text-uppercase text-body-secondary fw-semibold"
+                                             style="letter-spacing: .04em;">
+                                            <g:if test="${pEntry.key}">
+                                                ${pEntry.key
+                                                        .replaceAll(/([A-Z]+)([A-Z][a-z])/, '$1 $2')
+                                                        .replaceAll(/([a-z0-9])([A-Z])/, '$1 $2')
+                                                        .replaceAll(/[_-]+/, ' ')
+                                                        .trim()
+                                                        .capitalize()}
+                                            </g:if>
+                                            <g:else>
+                                                <g:message code="welcome.application"/>
+                                            </g:else>
+                                        </div>
+                                    </div>
+                                    <ul class="list-group list-group-flush">
+                                        <g:each var="d" in="${pEntry.value.sort { it.shortName }}">
+                                            <li class="list-group-item px-2 d-flex align-items-center justify-content-between gap-2" data-name="${d.shortName}">
+                                                <span class="d-flex align-items-center gap-2 min-w-0">
+                                                    <span class="fw-semibold text-body text-truncate">${d.shortName}</span>
+                                                    <g:if test="${showDomainCounts}">
+                                                        <span class="badge bg-body-tertiary text-body border" style="font-variant-numeric: tabular-nums;">${ { ->
+                                                            try { g.formatNumber(number: d.clazz.count(), type: 'number') }
+                                                            catch (Throwable ignored) { '?' }
+                                                        }() }</span>
+                                                    </g:if>
+                                                </span>
+                                                <span class="small text-body-secondary text-truncate">${d.packageName}</span>
+                                            </li>
+                                        </g:each>
+                                    </ul>
+                                </div>
+                            </g:each>
                         </div>
                         <g:if test="${numDomains != 0}">
                             <p id="domains-empty" class="small text-body-secondary d-none mb-0"><g:message code="welcome.filter.none"/></p>

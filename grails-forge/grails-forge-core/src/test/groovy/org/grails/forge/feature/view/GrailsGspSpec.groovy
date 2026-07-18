@@ -158,9 +158,10 @@ class GrailsGspSpec extends ApplicationContextSpec implements CommandOutputFixtu
         final def output = generate(ApplicationType.WEB, new Options(DevelopmentReloading.DEVTOOLS))
         final String index = output["grails-app/views/index.gsp"]
 
-        then: "all four artefact panels are server-rendered, with only controllers visible by default"
-        index.contains('<div data-switch-for="controllers">')
-        index.contains('<div data-switch-for="domains" class="d-none">')
+        then: "all four artefact panels are server-rendered, with the active panel computed server-side"
+        index.contains('''<g:set var="artefactPanel" value="${params.domainCounts != null ? 'domains' : 'controllers'}"/>''')
+        index.contains('''<div data-switch-for="controllers" class="${artefactPanel == 'controllers' ? '' : 'd-none'}">''')
+        index.contains('''<div data-switch-for="domains" class="${artefactPanel == 'domains' ? '' : 'd-none'}">''')
         index.contains('<div data-switch-for="services" class="d-none">')
         index.contains('<div data-switch-for="taglibs" class="d-none">')
 
@@ -176,6 +177,12 @@ class GrailsGspSpec extends ApplicationContextSpec implements CommandOutputFixtu
         index.contains('data-switch-type="taglibs"')
         index.contains("message(code: 'welcome.artefacts.switch')")
         index.contains('<g:message code="welcome.artefact.domains"/>')
+
+        and: "domains group by providing plugin with opt-in per-request row counts"
+        index.contains('pluginManager.getPluginForClass(dc.clazz)')
+        index.contains('d.clazz.count()')
+        index.contains('bi bi-123')
+        index.contains("message(code: 'welcome.domains.counts')")
 
         and: "framework tag libraries link to their published groovydoc, plugin ones stay plain"
         index.contains('''<g:if test="${t.packageName?.startsWith('org.grails.')}">''')

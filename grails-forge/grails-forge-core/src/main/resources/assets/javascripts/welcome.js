@@ -238,14 +238,15 @@
     });
 })();
 
-// The URL-mappings resolve and clear round-trips land on the #runtime-beans
-// fragment, but the browser anchors before late layout settles; re-align once
-// the page has fully loaded so the card tops the viewport. The fragment alone
-// remains the no-JS fallback.
+// Server round-trips (the URL-mappings resolve/clear, the domain-counts
+// toggle) land on their card's fragment, but the browser anchors before late
+// layout settles; re-align once the page has fully loaded so the card tops
+// the viewport. The fragment alone remains the no-JS fallback.
 (function () {
     window.addEventListener('load', () => {
-        if (window.location.hash === '#runtime-beans') {
-            const card = document.getElementById('runtime-beans');
+        const hash = window.location.hash;
+        if (hash === '#runtime-beans' || hash === '#available-artefacts') {
+            const card = document.querySelector(hash);
             if (card) card.scrollIntoView({ block: 'start' });
         }
     });
