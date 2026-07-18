@@ -1183,6 +1183,12 @@ ${importStatements}
                     'info.app.grailsVersion': grailsVersion
             ]
 
+            // Filter parameters are not part of Gradle's up-to-date checks (gradle/gradle#1191),
+            // so the token values must be declared as inputs — otherwise bumping grailsVersion or
+            // the app version leaves processResources UP-TO-DATE and stale substituted values
+            // (e.g. info.app.grailsVersion in application.yml) are repackaged into every build.
+            task.inputs.properties(replaceTokens)
+
             task.from(project.relativePath('src/main/templates')) { spec ->
                 spec.into('META-INF/templates')
             }
