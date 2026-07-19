@@ -17,23 +17,21 @@
 package org.apache.grails.core.cli
 
 import groovy.transform.CompileStatic
+import groovy.util.logging.Slf4j
 
 import org.apache.grails.core.cli.compat.LegacyApplicationCommandAdapter
 import org.grails.core.io.support.GrailsFactoriesLoader
 import org.grails.io.support.FactoriesLoaderSupport
-import org.slf4j.Logger
-import org.slf4j.LoggerFactory
 
 /**
  * A registry of {@link org.apache.grails.core.cli.ApplicationCommand} instances
  *
  * @since 3.0
  */
+@Slf4j
 @CompileStatic
 @Singleton(strict = false)
 class ApplicationContextCommandRegistry {
-
-    private static final Logger LOG = LoggerFactory.getLogger(ApplicationContextCommandRegistry)
 
     private final Map<String, ApplicationCommand> commands = [:]
     private boolean legacyCommandWarningLogged
@@ -93,12 +91,12 @@ class ApplicationContextCommandRegistry {
                 }
                 commands[name] = command
                 if (!legacyCommandWarningLogged) {
-                    LOG.warn("Command '{}' from a Grails 7 plugin was loaded through the deprecated grails.dev.commands compatibility layer. Ask the plugin author to migrate to the org.apache.grails.core.cli command API and publish a -cli companion artifact; this compatibility path will be removed in a future major release.", name)
+                    log.warn("Command '{}' from a Grails 7 plugin was loaded through the deprecated grails.dev.commands compatibility layer. Ask the plugin author to migrate to the org.apache.grails.core.cli command API and publish a -cli companion artifact; this compatibility path will be removed in a future major release.", name)
                     legacyCommandWarningLogged = true
                 }
             }
             catch (Throwable e) {
-                LOG.warn("Failed to load a Grails 7 legacy command from class '{}' through the deprecated grails.dev.commands compatibility layer; skipping it.",
+                log.warn("Failed to load a Grails 7 legacy command from class '{}' through the deprecated grails.dev.commands compatibility layer; skipping it.",
                         legacyClass?.name, e)
             }
         }
