@@ -484,14 +484,42 @@ ${importStatements}
                     project.dependencies.add(it.name, platformDependency)
                 }
             }
-
-            // Delegate property-based version overrides to the bundled plugin.
-            // Auto-detect picks up the platform()/enforcedPlatform() declaration (whether we
-            // injected it above or the build declared it by hand), plus any additional
-            // platform()/enforcedPlatform() the user declares. Users can extend the override
-            // surface by declaring their own platforms - no extra configuration is required here.
-            project.plugins.apply(BomPropertyOverridesPlugin)
         }
+
+        // Delegate property-based version overrides to the bundled plugin. Auto-detect picks up
+        // the platform()/enforcedPlatform() declaration (whether injected above or declared by
+        // hand), plus any additional platform()/enforcedPlatform() the user declares. Users can
+        // extend the override surface by declaring their own platforms - no extra configuration
+        // is required here.
+        //
+        // Applied unconditionally, as its own top-level statement here - NOT nested inside the
+        // afterEvaluate{} above, and NOT gated on grails.bom being set. Two things depend on that:
+        //
+        // 1. Ordering: BomPropertyOverridesPlugin.apply() registers its own project.afterEvaluate{}
+        //    for the actual override-application logic. Gradle appends a newly-registered
+        //    afterEvaluate listener to the END of the notification queue it's currently
+        //    processing - so calling project.plugins.apply(BomPropertyOverridesPlugin) from INSIDE
+        //    the afterEvaluate{} above (as this method used to) pushes that registration behind
+        //    every afterEvaluate callback other plugins registered synchronously during apply() -
+        //    including GrailsCliGradlePlugin's CLI companion probe (configureApplicationCommands),
+        //    which eagerly resolves the api/implementation/runtimeOnly buckets via grailsCliDetect
+        //    and locks them against further mutation. In a multi-project build, resolving one
+        //    project's probe can force a dependency project to finish configuring mid-resolution,
+        //    landing squarely in that window - causing BomManagedVersions.applyTo() to throw
+        //    "Cannot mutate the dependencies of configuration ... after ... was resolved". Applying
+        //    the plugin here, synchronously and before GrailsCliGradlePlugin is applied further
+        //    down in this method, keeps both registrations in the same, race-free, apply()-time
+        //    queue position. project.plugins.apply() is also idempotent, so this stays safe even
+        //    if the build separately applies org.apache.grails.gradle.bom-property-overrides itself.
+        //
+        // 2. Unconditional application: whether grails.bom ends up null is only known once the
+        //    afterEvaluate{} above runs, which - per point 1 - is too late to gate this call
+        //    without reintroducing the same race. This is safe: when there's no BOM (grails.bom
+        //    null and no platform() declared by hand), BomPropertyOverridesPlugin's own
+        //    auto-detection finds no declared platform and applyOverrides() is a no-op - so
+        //    opting out of the BOM still results in zero constraints being added, only
+        //    project.plugins.findPlugin(...) now reports it as applied.
+        project.plugins.apply(BomPropertyOverridesPlugin)
     }
 
     /**
