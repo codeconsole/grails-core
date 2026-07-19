@@ -18,8 +18,6 @@
  */
 package grails.util
 
-import grails.config.Config
-import grails.core.GrailsApplication
 import org.grails.exceptions.reporting.DefaultStackTraceFilterer
 import org.grails.exceptions.reporting.StackTraceFilterer
 import spock.lang.Specification
@@ -27,10 +25,13 @@ import spock.lang.Specification
 import java.lang.reflect.Field
 
 /**
- * Verifies that {@link GrailsUtil#initializeStackFilterer} resolves the configured filterer class
- * from the application's config and propagates {@code grails.exceptionresolver.logFullStackTraceOnFilter}
- * to {@link DefaultStackTraceFilterer} instances. Before initialization the FALLBACK_FILTERER
- * (a {@link DefaultStackTraceFilterer} singleton) is used so CLI/test/main paths work unchanged.
+ * Verifies that {@link GrailsUtil#initializeStackFilterer(StackTraceFilterer)} installs the given
+ * filterer for {@link GrailsUtil#deepSanitize}, {@link GrailsUtil#sanitizeRootCause} and
+ * {@link GrailsUtil#printSanitizedStackTrace}, and that the pre-initialization fallback (a
+ * {@link DefaultStackTraceFilterer}) is used until then. Config-driven resolution (the configured
+ * class + {@code logFullStackTraceOnFilter}) now happens in
+ * {@code org.apache.grails.core.GrailsBootstrapRegistryInitializer}, covered separately by
+ * {@code GrailsBootstrapRegistryInitializerSpec}.
  */
 class GrailsUtilStackFiltererSpec extends Specification {
 
@@ -45,16 +46,15 @@ class GrailsUtilStackFiltererSpec extends Specification {
         setFilterer(previous)
     }
 
-    def 'deepSanitize uses the fallback filterer before initializeStackFilterer is called'() {
+    def 'deepSanitize does not throw before initializeStackFilterer is called'() {
         when:
         GrailsUtil.deepSanitize(new RuntimeException('boom'))
 
         then:
         noExceptionThrown()
-        currentFilterer().is(fallbackFilterer())
     }
 
-    def 'initializeStackFilterer is a no-op when application is null'() {
+    def 'initializeStackFilterer is a no-op when filterer is null'() {
         when:
         GrailsUtil.initializeStackFilterer(null)
 
@@ -62,68 +62,82 @@ class GrailsUtilStackFiltererSpec extends Specification {
         currentFilterer().is(fallbackFilterer())
     }
 
-    def 'initializeStackFilterer wires the class declared by grails.logging.stackTraceFiltererClass'() {
+    def 'initializeStackFilterer installs the given filterer'() {
         given:
-        def application = Mock(GrailsApplication)
-        def config = Mock(Config)
-        config.getProperty('grails.logging.stackTraceFiltererClass', Class, DefaultStackTraceFilterer) >> RecordingStackTraceFilterer
-        config.getProperty('grails.exceptionresolver.logFullStackTraceOnFilter', Boolean, true) >> true
-        application.getConfig() >> config
+        def filterer = new RecordingStackTraceFilterer()
 
         when:
-        GrailsUtil.initializeStackFilterer(application)
+        GrailsUtil.initializeStackFilterer(filterer)
         GrailsUtil.deepSanitize(new RuntimeException('boom'))
 
         then:
-        currentFilterer() instanceof RecordingStackTraceFilterer
-        RecordingStackTraceFilterer.lastInstance.recursiveCalls == 1
-    }
-
-    def 'initializeStackFilterer propagates logFullStackTraceOnFilter to DefaultStackTraceFilterer instances'() {
-        given:
-        def application = Mock(GrailsApplication)
-        def config = Mock(Config)
-        config.getProperty('grails.logging.stackTraceFiltererClass', Class, DefaultStackTraceFilterer) >> DefaultStackTraceFilterer
-        config.getProperty('grails.exceptionresolver.logFullStackTraceOnFilter', Boolean, true) >> false
-        application.getConfig() >> config
-
-        and: 'captured StackTrace logger output'
-        def originalErr = System.err
-        def baos = new ByteArrayOutputStream()
-        System.setErr(new PrintStream(baos, true))
-
-        when:
-        GrailsUtil.initializeStackFilterer(application)
-        GrailsUtil.deepSanitize(new RuntimeException('boom'))
-
-        then:
-        System.err.flush()
-        !baos.toString().contains('ERROR StackTrace')
-
-        cleanup:
-        System.setErr(originalErr)
+        currentFilterer().is(filterer)
+        filterer.recursiveCalls == 1
     }
 
     def 'last initializeStackFilterer call wins when invoked more than once'() {
         given:
-        def first = mockApplicationFor(RecordingStackTraceFilterer)
-        def second = mockApplicationFor(SecondRecordingStackTraceFilterer)
+        def first = new RecordingStackTraceFilterer()
+        def second = new RecordingStackTraceFilterer()
 
         when:
         GrailsUtil.initializeStackFilterer(first)
         GrailsUtil.initializeStackFilterer(second)
 
         then:
-        currentFilterer() instanceof SecondRecordingStackTraceFilterer
+        currentFilterer().is(second)
     }
 
-    private GrailsApplication mockApplicationFor(Class<? extends StackTraceFilterer> filtererClass) {
-        def application = Mock(GrailsApplication)
-        def config = Mock(Config)
-        config.getProperty('grails.logging.stackTraceFiltererClass', Class, DefaultStackTraceFilterer) >> filtererClass
-        config.getProperty('grails.exceptionresolver.logFullStackTraceOnFilter', Boolean, true) >> true
-        application.getConfig() >> config
-        application
+    def 'installed DefaultStackTraceFilterer honours logFullStackTraceOnFilter=false'() {
+        given: 'captured System.err'
+        def originalErr = System.err
+        def baos = new ByteArrayOutputStream()
+        System.setErr(new PrintStream(baos, true))
+
+        and: 'a filterer with the side-effect emission disabled'
+        def quietFilterer = new DefaultStackTraceFilterer()
+        quietFilterer.logFullStackTraceOnFilter = false
+
+        when:
+        GrailsUtil.initializeStackFilterer(quietFilterer)
+        GrailsUtil.deepSanitize(exceptionWithApplicationFrame())
+
+        then: "no 'Full Stack Trace:' entry is emitted"
+        System.err.flush()
+        !baos.toString().contains(StackTraceFilterer.FULL_STACK_TRACE_MESSAGE)
+
+        cleanup:
+        System.setErr(originalErr)
+    }
+
+    def 'installed DefaultStackTraceFilterer emits Full Stack Trace by default'() {
+        given: 'captured System.err'
+        def originalErr = System.err
+        def baos = new ByteArrayOutputStream()
+        System.setErr(new PrintStream(baos, true))
+
+        and: 'a filterer with the default (enabled) side-effect emission'
+        def loudFilterer = new DefaultStackTraceFilterer()
+
+        when:
+        GrailsUtil.initializeStackFilterer(loudFilterer)
+        GrailsUtil.deepSanitize(exceptionWithApplicationFrame())
+
+        then: "a 'Full Stack Trace:' entry is emitted -- the positive control proving the negative case above is meaningful"
+        System.err.flush()
+        baos.toString().contains(StackTraceFilterer.FULL_STACK_TRACE_MESSAGE)
+
+        cleanup:
+        System.setErr(originalErr)
+    }
+
+    private static RuntimeException exceptionWithApplicationFrame() {
+        def exception = new RuntimeException('boom')
+        exception.stackTrace = [
+                new StackTraceElement('test.FooController', 'show', 'FooController.groovy', 6),
+                new StackTraceElement('java.lang.reflect.Method', 'invoke', 'Method.java', 580)
+        ] as StackTraceElement[]
+        exception
     }
 
     private static StackTraceFilterer currentFilterer() {
@@ -147,24 +161,11 @@ class GrailsUtilStackFiltererSpec extends Specification {
     }
 
     static class RecordingStackTraceFilterer implements StackTraceFilterer {
-        static RecordingStackTraceFilterer lastInstance
         int singleCalls = 0
         int recursiveCalls = 0
 
-        RecordingStackTraceFilterer() {
-            lastInstance = this
-        }
-
         Throwable filter(Throwable source) { singleCalls++; source }
         Throwable filter(Throwable source, boolean recursive) { recursiveCalls++; source }
-        void addInternalPackage(String name) {}
-        void setCutOffPackage(String cutOffPackage) {}
-        void setShouldFilter(boolean shouldFilter) {}
-    }
-
-    static class SecondRecordingStackTraceFilterer implements StackTraceFilterer {
-        Throwable filter(Throwable source) { source }
-        Throwable filter(Throwable source, boolean recursive) { source }
         void addInternalPackage(String name) {}
         void setCutOffPackage(String cutOffPackage) {}
         void setShouldFilter(boolean shouldFilter) {}

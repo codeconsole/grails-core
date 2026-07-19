@@ -36,6 +36,16 @@ public interface StackTraceFilterer {
     String SYS_PROP_DISPLAY_FULL_STACKTRACE = "grails.full.stacktrace";
 
     /**
+     * Name under which the {@link org.apache.grails.core.GrailsBootstrapRegistryInitializer}
+     * promotes the config-resolved filterer as an {@code ApplicationContext} singleton bean,
+     * so later-lifecycle consumers (e.g. {@code GrailsExceptionResolver}) reuse the same
+     * instance instead of instantiating a second copy from config.
+     *
+     * @since 8.0
+     */
+    String BEAN_NAME = "stackTraceFilterer";
+
+    /**
      * Adds a package name that should be filtered
      *
      * @param name The name of the package

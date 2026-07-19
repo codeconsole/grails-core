@@ -38,6 +38,8 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
 import org.springframework.beans.BeanUtils;
+import org.springframework.beans.factory.NoSuchBeanDefinitionException;
+import org.springframework.context.ApplicationContext;
 import org.springframework.web.context.ServletContextAware;
 import org.springframework.web.servlet.ModelAndView;
 import org.springframework.web.servlet.View;
@@ -49,7 +51,6 @@ import grails.config.Settings;
 import grails.core.GrailsApplication;
 import grails.core.support.GrailsApplicationAware;
 import grails.util.Environment;
-import grails.util.GrailsUtil;
 import grails.web.mapping.UrlMappingInfo;
 import grails.web.mapping.UrlMappingsHolder;
 import grails.web.mapping.exceptions.UrlMappingException;
@@ -132,7 +133,6 @@ public class GrailsExceptionResolver extends SimpleMappingExceptionResolver impl
     public void setGrailsApplication(GrailsApplication grailsApplication) {
         this.grailsApplication = grailsApplication;
         createStackFilterer();
-        GrailsUtil.initializeStackFilterer(grailsApplication);
         this.auditorAwareLookup = new AuditorAwareLookup(grailsApplication.getMainContext());
     }
 
@@ -444,6 +444,11 @@ public class GrailsExceptionResolver extends SimpleMappingExceptionResolver impl
     }
 
     protected void createStackFilterer() {
+        StackTraceFilterer promoted = resolvePromotedStackTraceFilterer();
+        if (promoted != null) {
+            stackFilterer = promoted;
+            return;
+        }
         try {
             Class filtererClass = grailsApplication.getConfig().getProperty(Settings.SETTING_LOGGING_STACKTRACE_FILTER_CLASS, Class.class, DefaultStackTraceFilterer.class);
             stackFilterer = BeanUtils.instantiateClass(filtererClass, StackTraceFilterer.class);
@@ -453,6 +458,28 @@ public class GrailsExceptionResolver extends SimpleMappingExceptionResolver impl
             stackFilterer = new DefaultStackTraceFilterer();
         }
         applyLogFullStackTraceOnFilter();
+    }
+
+    /**
+     * Looks up the {@link StackTraceFilterer} that
+     * {@link org.apache.grails.core.GrailsBootstrapRegistryInitializer} promoted to the
+     * {@code ApplicationContext} during bootstrap, so this resolver reuses that instance instead
+     * of instantiating a second copy from config. Returns {@code null} when no such bean is
+     * registered — e.g. a {@code GrailsApplication} wired up outside the normal Spring Boot
+     * bootstrap sequence — in which case {@link #createStackFilterer()} falls back to its own
+     * construction.
+     */
+    protected StackTraceFilterer resolvePromotedStackTraceFilterer() {
+        ApplicationContext context = grailsApplication.getMainContext();
+        if (context == null) {
+            return null;
+        }
+        try {
+            return context.getBean(StackTraceFilterer.BEAN_NAME, StackTraceFilterer.class);
+        }
+        catch (NoSuchBeanDefinitionException e) {
+            return null;
+        }
     }
 
     /**

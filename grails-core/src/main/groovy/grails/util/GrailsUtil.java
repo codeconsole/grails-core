@@ -23,11 +23,6 @@ import java.io.PrintWriter;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
-import org.springframework.beans.BeanUtils;
-
-import grails.config.Config;
-import grails.config.Settings;
-import grails.core.GrailsApplication;
 import org.grails.exceptions.reporting.DefaultStackTraceFilterer;
 import org.grails.exceptions.reporting.StackTraceFilterer;
 
@@ -43,7 +38,7 @@ public class GrailsUtil {
     private static final boolean LOG_DEPRECATED = Boolean.valueOf(System.getProperty("grails.log.deprecated", String.valueOf(Environment.isDevelopmentMode())));
 
     /**
-     * Default filterer used before {@link #initializeStackFilterer(GrailsApplication)} runs (CLI,
+     * Default filterer used before {@link #initializeStackFilterer(StackTraceFilterer)} runs (CLI,
      * tests that don't boot a context, plain {@code main()} usage). Preserves the pre-PR behaviour
      * of a single hardcoded {@link DefaultStackTraceFilterer} instance for the JVM lifetime when no
      * application is wired.
@@ -53,7 +48,7 @@ public class GrailsUtil {
     /**
      * Active filterer for {@link #printSanitizedStackTrace}, {@link #sanitizeRootCause} and
      * {@link #deepSanitize}. Starts as {@link #FALLBACK_FILTERER} and is replaced with a
-     * config-driven instance when {@link #initializeStackFilterer(GrailsApplication)} runs during
+     * config-driven instance when {@link #initializeStackFilterer(StackTraceFilterer)} runs during
      * Grails bootstrap. Volatile so the bootstrap-time write publishes safely to the request
      * threads that read it later.
      */
@@ -63,26 +58,24 @@ public class GrailsUtil {
     }
 
     /**
-     * Installs a {@link StackTraceFilterer} resolved from the given application's config, replacing
-     * the default fallback. Reads {@link Settings#SETTING_LOGGING_STACKTRACE_FILTER_CLASS} for the
-     * filterer class and propagates {@link Settings#SETTING_LOG_FULL_STACKTRACE_ON_FILTER} to
-     * instances of {@link DefaultStackTraceFilterer}. Called by {@code GrailsExceptionResolver}
-     * during Spring bean wiring (which is the same point the resolver consults these keys for its
-     * own filterer), so request-time callers of the static {@code sanitize}/{@code deepSanitize}
-     * methods see the configured instance.
+     * Installs the given {@link StackTraceFilterer}, replacing the default fallback, so that
+     * request-time callers of the static {@code sanitize}/{@code deepSanitize} methods see the
+     * configured instance. Called by {@link org.apache.grails.core.GrailsBootstrapRegistryInitializer}
+     * once the config-resolved filterer is available — before the {@code ApplicationContext}
+     * refreshes, so every app type (web or not) is covered, not just apps that wire a
+     * {@code GrailsExceptionResolver} bean.
      *
-     * <p>No-ops when {@code application} is null. Safe to call more than once — the last successful
-     * invocation wins.
+     * <p>{@code GrailsUtil} intentionally has no dependency on {@code GrailsApplication} or Spring's
+     * {@code Environment} here — the caller is responsible for resolving the configured class and
+     * {@code logFullStackTraceOnFilter} flag and handing over a ready-to-use instance.
      *
-     * @since 7.1.5
+     * <p>No-ops when {@code filterer} is null. Safe to call more than once — the last call wins.
+     *
+     * @since 8.0
      */
-    public static void initializeStackFilterer(GrailsApplication application) {
-        if (application == null) {
-            return;
-        }
-        StackTraceFilterer instance = createConfiguredFilterer(application);
-        if (instance != null) {
-            stackFilterer = instance;
+    public static void initializeStackFilterer(StackTraceFilterer filterer) {
+        if (filterer != null) {
+            stackFilterer = filterer;
         }
     }
 
@@ -200,39 +193,6 @@ public class GrailsUtil {
      */
     public static Throwable deepSanitize(Throwable t) {
         return stackFilterer.filter(t, true);
-    }
-
-    private static StackTraceFilterer createConfiguredFilterer(GrailsApplication application) {
-        Class<? extends StackTraceFilterer> filtererClass = DefaultStackTraceFilterer.class;
-        boolean logOnFilter = true;
-        Config config = application.getConfig();
-        if (config != null) {
-            Class<? extends StackTraceFilterer> configuredFiltererClass = config.getProperty(
-                    Settings.SETTING_LOGGING_STACKTRACE_FILTER_CLASS,
-                    Class.class, DefaultStackTraceFilterer.class);
-            if (configuredFiltererClass != null) {
-                filtererClass = configuredFiltererClass;
-            }
-            Boolean configuredLogOnFilter = config.getProperty(
-                    Settings.SETTING_LOG_FULL_STACKTRACE_ON_FILTER,
-                    Boolean.class, Boolean.TRUE);
-            if (configuredLogOnFilter != null) {
-                logOnFilter = configuredLogOnFilter;
-            }
-        }
-        StackTraceFilterer filterer;
-        try {
-            filterer = BeanUtils.instantiateClass(filtererClass, StackTraceFilterer.class);
-        }
-        catch (Throwable t) {
-            LOG.warn("Problem instantiating configured StackTraceFilterer [" + filtererClass.getName() +
-                    "], falling back to default: " + t.getMessage());
-            filterer = new DefaultStackTraceFilterer();
-        }
-        if (filterer instanceof DefaultStackTraceFilterer) {
-            ((DefaultStackTraceFilterer) filterer).setLogFullStackTraceOnFilter(logOnFilter);
-        }
-        return filterer;
     }
 
 }
