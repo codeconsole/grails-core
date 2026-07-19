@@ -62,20 +62,28 @@ class ApplicationContextCommandRegistry {
             }
         }
 
-        loadLegacyCommands(registryClassLoader)
-        if (contextClassLoader != registryClassLoader) {
-            loadLegacyCommands(contextClassLoader)
-        }
+        loadLegacyCommands(registryClassLoader, contextClassLoader)
     }
 
     @SuppressWarnings('deprecation')
-    private void loadLegacyCommands(ClassLoader classLoader) {
-        // Instantiate each legacy command in isolation: a single stale Grails 7 command whose
-        // no-arg constructor (or getName()) throws under Grails 8 must be skipped with a warning,
-        // never abort the whole registry and take valid legacy and new-contract commands down with it.
-        List<Class<grails.dev.commands.ApplicationCommand>> legacyClasses = GrailsFactoriesLoader.loadFactoryClasses(
-                grails.dev.commands.ApplicationCommand, classLoader, FactoriesLoaderSupport.FACTORIES_RESOURCE_LOCATION)
-        for (Class<grails.dev.commands.ApplicationCommand> legacyClass : legacyClasses) {
+    private void loadLegacyCommands(ClassLoader registryClassLoader, ClassLoader contextClassLoader) {
+        // Gather the legacy command classes from the registry classloader and, when it is a distinct
+        // classloader, the thread context classloader, de-duplicated by Class identity before any are
+        // instantiated. A child context classloader delegates to its parent, so it also reports the
+        // parent's grails.factories entries; de-duplicating by the resolved Class avoids instantiating a
+        // parent-visible legacy command twice (its constructor may have side effects) only to discard the
+        // duplicate on the name-collision check below.
+        Set<Class<? extends grails.dev.commands.ApplicationCommand>> legacyClasses = new LinkedHashSet<>()
+        legacyClasses.addAll(GrailsFactoriesLoader.loadFactoryClasses(
+                grails.dev.commands.ApplicationCommand, registryClassLoader, FactoriesLoaderSupport.FACTORIES_RESOURCE_LOCATION))
+        if (contextClassLoader != null && contextClassLoader != registryClassLoader) {
+            legacyClasses.addAll(GrailsFactoriesLoader.loadFactoryClasses(
+                    grails.dev.commands.ApplicationCommand, contextClassLoader, FactoriesLoaderSupport.FACTORIES_RESOURCE_LOCATION))
+        }
+        // Instantiate each in isolation: a single stale Grails 7 command whose no-arg constructor (or
+        // getName()) throws under Grails 8 must be skipped with a warning, never abort the whole registry
+        // and take valid legacy and new-contract commands down with it.
+        for (Class<? extends grails.dev.commands.ApplicationCommand> legacyClass : legacyClasses) {
             try {
                 grails.dev.commands.ApplicationCommand legacyCommand = legacyClass.getDeclaredConstructor().newInstance()
                 ApplicationCommand command = new LegacyApplicationCommandAdapter(legacyCommand)
