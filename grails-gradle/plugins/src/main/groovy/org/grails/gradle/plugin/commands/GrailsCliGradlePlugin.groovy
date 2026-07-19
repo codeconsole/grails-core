@@ -62,6 +62,14 @@ class GrailsCliGradlePlugin implements Plugin<Project> {
     public static final String APPLICATION_CONTEXT_COMMAND_CLASS = 'org.apache.grails.core.cli.ApplicationCommand'
 
     /**
+     * The deprecated Grails 7 command contract. Unchanged Grails 7 plugins register their commands
+     * under this key in {@code META-INF/grails.factories} inside their runtime jar (rather than the
+     * Grails 8 {@code META-INF/grails-cli.factories}); scanning for it lets those legacy commands
+     * keep their per-command Gradle tasks without a plugin re-release.
+     */
+    public static final String LEGACY_APPLICATION_CONTEXT_COMMAND_CLASS = 'grails.dev.commands.ApplicationCommand'
+
+    /**
      * The dependency bucket carrying CLI-only dependencies (Grails commands and their libraries):
      * compile-visible so `grails-app/commands` sources compile against the cli-only contract, on
      * the command-runner classpath, but never on `runtimeClasspath`, `bootRun`, or packaged
@@ -300,6 +308,11 @@ class GrailsCliGradlePlugin implements Plugin<Project> {
             if (grails.cliAutoProvision.get()) {
                 commandClassNames.addAll(loadCommandNamesFromCliClasspath(project))
             }
+            // Unchanged Grails 7 command plugins ship their commands in their normal runtime jar and
+            // register them under the deprecated grails.dev.commands.ApplicationCommand key. Register
+            // per-command tasks for those too, so `grails <command>` (routed through a Gradle task)
+            // keeps working for a legacy plugin without a re-release.
+            commandClassNames.addAll(loadLegacyCommandNamesFromRuntimeClasspath(project))
             for (ctxCommand in commandClassNames) {
                 String taskName = GrailsNameUtils.getLogicalPropertyName(ctxCommand, 'Command')
                 String commandName = GrailsNameUtils.getScriptName(GrailsNameUtils.getLogicalName(ctxCommand, 'Command'))
@@ -359,7 +372,63 @@ class GrailsCliGradlePlugin implements Plugin<Project> {
                 }
             }
             catch (IOException ignored) {
-                // unreadable jar — skip
+                // unreadable jar - skip
+            }
+        }
+        names
+    }
+
+    /**
+     * Loads legacy command class names from the {@code META-INF/grails.factories} files of the
+     * resolved {@code runtimeClasspath} jars, registered under the deprecated
+     * {@code grails.dev.commands.ApplicationCommand} key. Unchanged Grails 7 command plugins ship
+     * their commands (and this registration) in their normal runtime jar, so this backwards-compat
+     * scan registers their per-command Gradle tasks without requiring the plugin to be re-released
+     * or split into a {@code -cli} companion. Resolution is lenient; unreadable or unbuilt jars are
+     * skipped (the generic {@code runCommand} task can always execute those commands regardless).
+     */
+    @CompileDynamic
+    protected Collection<String> loadLegacyCommandNamesFromRuntimeClasspath(Project project) {
+        Set<String> names = new LinkedHashSet<String>()
+        Configuration runtimeClasspath = project.configurations.findByName('runtimeClasspath')
+        if (runtimeClasspath == null) {
+            return names
+        }
+        // Resolving runtimeClasspath at configuration time can race with the configuration of
+        // sibling source projects in a large multi-project build ("components not calculated yet").
+        // A real application resolves this against the module cache without that race and still
+        // gets its legacy per-command tasks; degrade gracefully (the generic runCommand task can
+        // always execute the command) rather than failing the whole build if resolution is not yet
+        // possible - matching the lenient, skip-on-failure handling used for the cli classpath.
+        Collection<File> files
+        try {
+            files = runtimeClasspath.incoming.artifactView { it.lenient(true) }.files.files
+        }
+        catch (Throwable t) {
+            project.logger.info('Skipping legacy command task discovery for project {}: runtimeClasspath is not resolvable at configuration time ({}). Legacy commands remain runnable via the runCommand task.',
+                    project.name, t.message)
+            return names
+        }
+        for (File file : files) {
+            if (!file.isFile() || !file.name.endsWith('.jar')) {
+                continue
+            }
+            try (JarFile jarFile = new JarFile(file)) {
+                def entry = jarFile.getEntry(FactoriesLoaderSupport.FACTORIES_RESOURCE_LOCATION)
+                if (entry == null) {
+                    continue
+                }
+                Properties properties = new Properties()
+                jarFile.getInputStream(entry).withCloseable { input ->
+                    properties.load(input)
+                }
+                String factoryNames = properties.getProperty(LEGACY_APPLICATION_CONTEXT_COMMAND_CLASS)
+                if (factoryNames) {
+                    names.addAll(factoryNames.split(',').toList()*.trim())
+                }
+            }
+            catch (IOException ignored) {
+                // unreadable jar - skip
             }
         }
         names

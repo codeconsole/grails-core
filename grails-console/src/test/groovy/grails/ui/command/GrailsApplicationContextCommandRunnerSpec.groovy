@@ -16,6 +16,7 @@
  */
 package grails.ui.command
 
+import org.apache.grails.core.cli.LegacyApplicationCommandAware
 import spock.lang.Specification
 import spock.lang.Unroll
 
@@ -132,5 +133,30 @@ class GrailsApplicationContextCommandRunnerSpec extends Specification {
         ['s2-quickstart', 'com.example', 'User', 'Role', '--groupClassName=RoleGroup'] | ['s2-quickstart', 'com.example', 'User', 'Role']
         // Custom ApplicationCommand with arbitrary --options
         ['my-command', '--customFlag', '--anotherOption=value']              | ['my-command']
+    }
+
+    def "resolveAutowireTarget unwraps a legacy command adapter"() {
+        given:
+        Object legacyCommand = new Object()
+        LegacyApplicationCommandAware adapter = Stub() {
+            getLegacyCommand() >> legacyCommand
+        }
+
+        when:
+        Object autowireTarget = GrailsApplicationContextCommandRunner.resolveAutowireTarget(adapter)
+
+        then:
+        autowireTarget.is(legacyCommand)
+    }
+
+    def "resolveAutowireTarget preserves a new-contract command"() {
+        given:
+        Object command = new Object()
+
+        when:
+        Object autowireTarget = GrailsApplicationContextCommandRunner.resolveAutowireTarget(command)
+
+        then:
+        autowireTarget.is(command)
     }
 }

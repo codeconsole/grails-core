@@ -565,6 +565,8 @@ include(
         'grails-test-examples-undertow',
         'grails-test-examples-views-functional-tests',
         'grails-test-examples-views-functional-tests-plugin',
+        'grails-test-examples-legacy-commands',
+        'grails-test-examples-legacy-commands-plugin',
 )
 project(':grails-test-examples-async-events-pubsub-demo').projectDir = file('grails-test-examples/async-events-pubsub-demo')
 project(':grails-test-examples-app1').projectDir = file('grails-test-examples/app1')
@@ -603,6 +605,8 @@ project(':grails-test-examples-scaffolding').projectDir = file('grails-test-exam
 project(':grails-test-examples-scaffolding-fields').projectDir = file('grails-test-examples/scaffolding-fields')
 project(':grails-test-examples-views-functional-tests').projectDir = file('grails-test-examples/views-functional-tests')
 project(':grails-test-examples-views-functional-tests-plugin').projectDir = file('grails-test-examples/views-functional-tests-plugin')
+project(':grails-test-examples-legacy-commands').projectDir = file('grails-test-examples/legacy-commands')
+project(':grails-test-examples-legacy-commands-plugin').projectDir = file('grails-test-examples/legacy-commands-plugin')
 project(':grails-test-examples-test-phases').projectDir = file('grails-test-examples/test-phases')
 project(':grails-test-examples-jetty').projectDir = file('grails-test-examples/jetty')
 project(':grails-test-examples-undertow').projectDir = file('grails-test-examples/undertow')

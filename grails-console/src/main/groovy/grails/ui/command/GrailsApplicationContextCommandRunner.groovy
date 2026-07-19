@@ -24,6 +24,7 @@ import org.springframework.context.ConfigurableApplicationContext
 import grails.config.Settings
 import org.apache.grails.core.cli.ApplicationContextCommandRegistry
 import org.apache.grails.core.cli.ExecutionContext
+import org.apache.grails.core.cli.LegacyApplicationCommandAware
 import grails.ui.support.DevelopmentGrailsApplication
 import org.grails.build.parsing.CommandLine
 import org.grails.build.parsing.CommandLineParser
@@ -45,8 +46,9 @@ class GrailsApplicationContextCommandRunner extends DevelopmentGrailsApplication
     ConfigurableApplicationContext run(String... args) {
         def command = ApplicationContextCommandRegistry.instance.findCommand(commandName)
         if (command) {
+            Object autowireTarget = resolveAutowireTarget(command)
 
-            Object skipBootstrap = command.hasProperty('skipBootstrap')?.getProperty(command)
+            Object skipBootstrap = autowireTarget.hasProperty('skipBootstrap')?.getProperty(autowireTarget)
             if (skipBootstrap instanceof Boolean && !System.getProperty(Settings.SETTING_SKIP_BOOTSTRAP)) {
                 System.setProperty(Settings.SETTING_SKIP_BOOTSTRAP, skipBootstrap.toString())
             }
@@ -73,7 +75,7 @@ class GrailsApplicationContextCommandRunner extends DevelopmentGrailsApplication
             try {
                 // Parse the FULL args (including --options) for the command
                 CommandLine commandLine = new CommandLineParser().parse(args)
-                ctx.autowireCapableBeanFactory.autowireBeanProperties(command, AutowireCapableBeanFactory.AUTOWIRE_BY_TYPE, false)
+                ctx.autowireCapableBeanFactory.autowireBeanProperties(autowireTarget, AutowireCapableBeanFactory.AUTOWIRE_BY_TYPE, false)
                 command.applicationContext = ctx
                 def result = command.handle(new ExecutionContext(commandLine))
                 result ? System.exit(0) : System.exit(1)
@@ -114,6 +116,22 @@ class GrailsApplicationContextCommandRunner extends DevelopmentGrailsApplication
      */
     static String[] filterCommandOptions(String[] args) {
         args.findAll { it != null && !it.startsWith('--') } as String[]
+    }
+
+    /**
+     * Resolves the object that Spring should autowire and inspect for the {@code skipBootstrap}
+     * property. For a command loaded through the deprecated Grails 7 compatibility layer the
+     * registry returns a {@link LegacyApplicationCommandAware} adapter; the real legacy command it
+     * wraps - not the adapter - is what must be autowired and queried, because the adapter forwards
+     * {@code applicationContext} and {@code handle} to that same instance. Any other command is
+     * returned unchanged.
+     *
+     * @param command the command resolved from the registry
+     * @return the legacy target when {@code command} is a {@link LegacyApplicationCommandAware}, otherwise {@code command}
+     */
+    static Object resolveAutowireTarget(Object command) {
+        command instanceof LegacyApplicationCommandAware ?
+            ((LegacyApplicationCommandAware) command).legacyCommand : command
     }
 
     /**

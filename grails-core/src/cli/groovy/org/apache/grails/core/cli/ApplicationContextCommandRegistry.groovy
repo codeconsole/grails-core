@@ -18,7 +18,11 @@ package org.apache.grails.core.cli
 
 import groovy.transform.CompileStatic
 
+import org.apache.grails.core.cli.compat.LegacyApplicationCommandAdapter
 import org.grails.core.io.support.GrailsFactoriesLoader
+import org.grails.io.support.FactoriesLoaderSupport
+import org.slf4j.Logger
+import org.slf4j.LoggerFactory
 
 /**
  * A registry of {@link org.apache.grails.core.cli.ApplicationCommand} instances
@@ -29,7 +33,10 @@ import org.grails.core.io.support.GrailsFactoriesLoader
 @Singleton(strict = false)
 class ApplicationContextCommandRegistry {
 
+    private static final Logger LOG = LoggerFactory.getLogger(ApplicationContextCommandRegistry)
+
     private final Map<String, ApplicationCommand> commands = [:]
+    private boolean legacyCommandWarningLogged
 
     ApplicationContextCommandRegistry() {
         for (ApplicationCommand cmd : GrailsFactoriesLoader.loadFactories(ApplicationCommand,
@@ -44,6 +51,37 @@ class ApplicationContextCommandRegistry {
                 Thread.currentThread().contextClassLoader, GrailsFactoriesLoader.CLI_FACTORIES_RESOURCE_LOCATION)) {
             if (!commands.containsKey(cmd.name)) {
                 commands[cmd.name] = cmd
+            }
+        }
+
+        loadLegacyCommands(ApplicationContextCommandRegistry.classLoader)
+        loadLegacyCommands(Thread.currentThread().contextClassLoader)
+    }
+
+    @SuppressWarnings('deprecation')
+    private void loadLegacyCommands(ClassLoader classLoader) {
+        // Instantiate each legacy command in isolation: a single stale Grails 7 command whose
+        // no-arg constructor (or getName()) throws under Grails 8 must be skipped with a warning,
+        // never abort the whole registry and take valid legacy and new-contract commands down with it.
+        List<Class<grails.dev.commands.ApplicationCommand>> legacyClasses = GrailsFactoriesLoader.loadFactoryClasses(
+                grails.dev.commands.ApplicationCommand, classLoader, FactoriesLoaderSupport.FACTORIES_RESOURCE_LOCATION)
+        for (Class<grails.dev.commands.ApplicationCommand> legacyClass : legacyClasses) {
+            try {
+                grails.dev.commands.ApplicationCommand legacyCommand = legacyClass.getDeclaredConstructor().newInstance()
+                ApplicationCommand command = new LegacyApplicationCommandAdapter(legacyCommand)
+                String name = command.name
+                if (commands.containsKey(name)) {
+                    continue
+                }
+                commands[name] = command
+                if (!legacyCommandWarningLogged) {
+                    LOG.warn("Command '{}' from a Grails 7 plugin was loaded through the deprecated grails.dev.commands compatibility layer. Ask the plugin author to migrate to the org.apache.grails.core.cli command API and publish a -cli companion artifact; this compatibility path will be removed in a future major release.", name)
+                    legacyCommandWarningLogged = true
+                }
+            }
+            catch (Throwable e) {
+                LOG.warn("Failed to load a Grails 7 legacy command from class '{}' through the deprecated grails.dev.commands compatibility layer; skipping it. Cause: {}",
+                        legacyClass?.name, e.message)
             }
         }
     }
