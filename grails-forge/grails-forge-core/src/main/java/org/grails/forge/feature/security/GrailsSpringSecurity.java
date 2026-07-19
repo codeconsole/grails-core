@@ -23,6 +23,7 @@ import jakarta.inject.Singleton;
 import org.grails.forge.application.generator.GeneratorContext;
 import org.grails.forge.build.dependencies.Dependency;
 import org.grails.forge.feature.security.template.securityApplicationGroovy;
+import org.grails.forge.feature.security.template.userClassicService;
 import org.grails.forge.feature.security.template.userController;
 import org.grails.forge.feature.view.Scaffolding;
 import org.grails.forge.template.RockerTemplate;
@@ -76,6 +77,9 @@ public class GrailsSpringSecurity extends SecurityFeature {
                 .implementation());
 
         applyClassicDomainModel(generatorContext);
+        generatorContext.addTemplate("securityUserService",
+                new RockerTemplate("grails-app/services/{packagePath}/UserService.groovy",
+                        userClassicService.template(generatorContext.getProject())));
         generatorContext.addTemplate("securityUserController",
                 new RockerTemplate("grails-app/controllers/{packagePath}/UserController.groovy",
                         userController.template(generatorContext.getProject())));

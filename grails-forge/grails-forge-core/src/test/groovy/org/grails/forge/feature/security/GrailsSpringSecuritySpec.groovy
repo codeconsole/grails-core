@@ -40,13 +40,14 @@ class GrailsSpringSecuritySpec extends ApplicationContextSpec implements Command
 
         and: 'the classic User/Role/UserRole triple is generated, matching the UI flavor'
         output['grails-app/domain/example/grails/User.groovy'].contains('Set<Role> getAuthorities()')
-        output['grails-app/domain/example/grails/User.groovy'].contains('transient springSecurityService')
+        !output['grails-app/domain/example/grails/User.groovy'].contains('springSecurityService')
         output['grails-app/domain/example/grails/Role.groovy'].contains('String authority')
         output['grails-app/domain/example/grails/UserRole.groovy'].contains('static UserRole create(User user, Role role')
 
-        and: 'the user admin stays scaffolded, served by the plugin GORM UserDetailsService'
+        and: 'the user admin stays scaffolded with a plain data service, authentication served by the plugin GORM UserDetailsService'
         output['grails-app/controllers/example/grails/UserController.groovy'].contains('@Scaffold(RestfulServiceController<User>)')
-        !output.containsKey('grails-app/services/example/grails/UserService.groovy')
+        output['grails-app/services/example/grails/UserService.groovy'].contains('@Scaffold(User)')
+        !output['grails-app/services/example/grails/UserService.groovy'].contains('UserDetailsService')
         output['grails-app/conf/spring/resources.groovy'].contains('// Place your Spring DSL code here')
 
         and: 'the config wires the classic model and guards the user admin'
@@ -59,8 +60,10 @@ class GrailsSpringSecuritySpec extends ApplicationContextSpec implements Command
         !config.contains('/register/**')
         !config.contains('/role/**')
 
-        and: 'BootStrap seeds the admin through the role join, the domain encoding the password'
+        and: 'BootStrap seeds the admin through the role join inside a transaction, encoding explicitly'
         def bootStrap = output['grails-app/init/example/grails/BootStrap.groovy']
+        bootStrap.contains('User.withTransaction')
+        bootStrap.contains('springSecurityService.encodePassword(password)')
         bootStrap.contains("new Role('ROLE_ADMIN').save(failOnError: true)")
         bootStrap.contains('UserRole.create(admin, adminRole, true)')
         bootStrap.contains('Generated admin credentials: admin')

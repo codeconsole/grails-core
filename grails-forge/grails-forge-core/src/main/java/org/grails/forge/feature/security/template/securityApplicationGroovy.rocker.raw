@@ -26,6 +26,9 @@ under the License.
 grails.plugin.springsecurity.userLookup.userDomainClassName = '@(project.getPackageName()).User'
 grails.plugin.springsecurity.userLookup.authorityJoinClassName = '@(project.getPackageName()).UserRole'
 grails.plugin.springsecurity.authority.className = '@(project.getPackageName()).Role'
+@if(ui) {
+grails.plugin.springsecurity.ui.encodePassword = true
+}
 grails.plugin.springsecurity.controllerAnnotations.staticRules = [
     [pattern: '/',                    access: ['permitAll']],
     [pattern: '/error',               access: ['permitAll']],

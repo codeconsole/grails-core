@@ -107,11 +107,10 @@ class UserRole implements Serializable {
 
     static constraints = {
         user nullable: false
-        role nullable: false
+        role nullable: false, unique: 'user'
     }
 
     static mapping = {
-        id composite: ['user', 'role']
         version false
     }
 }

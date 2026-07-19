@@ -29,19 +29,27 @@ import org.springframework.security.crypto.factory.PasswordEncoderFactories
 
 }
 class BootStrap {
+@if(features.contains("grails-spring-security") || features.contains("grails-spring-security-ui")) {
+
+    def springSecurityService
+}
 
     def init = {
 @if(features.contains("spring-boot-starter-security")) {
-        def password = UUID.randomUUID().toString()
-        new User(username: 'admin', password: PasswordEncoderFactories.createDelegatingPasswordEncoder().encode(password), roles: ['ROLE_ADMIN']).save(failOnError: true)
-        log.warn "Generated admin credentials: admin / $password"
+        User.withTransaction {
+            def password = UUID.randomUUID().toString()
+            new User(username: 'admin', password: PasswordEncoderFactories.createDelegatingPasswordEncoder().encode(password), roles: ['ROLE_ADMIN']).save(failOnError: true)
+            log.warn "Generated admin credentials: admin / $password"
+        }
 }
 @if(features.contains("grails-spring-security") || features.contains("grails-spring-security-ui")) {
-        def password = UUID.randomUUID().toString()
-        def adminRole = new Role('ROLE_ADMIN').save(failOnError: true)
-        def admin = new User('admin', password).save(failOnError: true)
-        UserRole.create(admin, adminRole, true)
-        log.warn "Generated admin credentials: admin / $password"
+        User.withTransaction {
+            def password = UUID.randomUUID().toString()
+            def adminRole = new Role('ROLE_ADMIN').save(failOnError: true)
+            def admin = new User('admin', springSecurityService.encodePassword(password)).save(failOnError: true)
+            UserRole.create(admin, adminRole, true)
+            log.warn "Generated admin credentials: admin / $password"
+        }
 }
     }
 

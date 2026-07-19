@@ -41,7 +41,7 @@ class GrailsSpringSecurityUiSpec extends ApplicationContextSpec implements Comma
 
         and: 'the classic User/Role/UserRole triple is generated instead of the shared user artifacts'
         output['grails-app/domain/example/grails/User.groovy'].contains('Set<Role> getAuthorities()')
-        output['grails-app/domain/example/grails/User.groovy'].contains('transient springSecurityService')
+        !output['grails-app/domain/example/grails/User.groovy'].contains('springSecurityService')
         output['grails-app/domain/example/grails/Role.groovy'].contains('String authority')
         output['grails-app/domain/example/grails/UserRole.groovy'].contains('static UserRole create(User user, Role role')
         !output.containsKey('grails-app/controllers/example/grails/UserController.groovy')
@@ -56,9 +56,11 @@ class GrailsSpringSecurityUiSpec extends ApplicationContextSpec implements Comma
         config.contains("[pattern: '/register/**',         access: ['permitAll']]")
         config.contains("[pattern: '/user/**',             access: ['ROLE_ADMIN']]")
         config.contains("[pattern: '/role/**',             access: ['ROLE_ADMIN']]")
+        config.contains('grails.plugin.springsecurity.ui.encodePassword = true')
 
-        and: 'BootStrap seeds the admin through the role join, letting the domain encode the password'
+        and: 'BootStrap seeds the admin through the role join, encoding explicitly'
         def bootStrap = output['grails-app/init/example/grails/BootStrap.groovy']
+        bootStrap.contains('springSecurityService.encodePassword(password)')
         bootStrap.contains("new Role('ROLE_ADMIN').save(failOnError: true)")
         bootStrap.contains('UserRole.create(admin, adminRole, true)')
         bootStrap.contains('Generated admin credentials: admin')
