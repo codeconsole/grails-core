@@ -39,7 +39,7 @@ import org.grails.forge.template.RockerTemplate;
  * @since 8.0
  */
 @Singleton
-public class SpringBootStarterSecurity extends SecurityFeature {
+public class SpringBootStarterSecurity extends SecurityFeature implements PrimarySecurityFeature {
 
     public SpringBootStarterSecurity(Scaffolding scaffolding) {
         super(scaffolding);

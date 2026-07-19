@@ -22,24 +22,26 @@ import jakarta.inject.Singleton;
 
 import org.grails.forge.application.generator.GeneratorContext;
 import org.grails.forge.build.dependencies.Dependency;
-import org.grails.forge.feature.security.template.securityApplicationGroovy;
+import org.grails.forge.feature.FeatureContext;
 import org.grails.forge.feature.view.Scaffolding;
-import org.grails.forge.template.RockerTemplate;
 
 /**
- * Secures the application with the Grails Spring Security Core plugin plus the
- * Spring Security UI plugin's administration screens, over the same classic
- * User/Role/UserRole domain model the core-plugin flavor generates. The UI
- * plugin ships its own user and role admin controllers, so no scaffolded
- * controller is generated.
+ * Supplements the Grails Spring Security Core plugin - added automatically when
+ * this feature is selected - with the Spring Security UI plugin's administration
+ * screens. All domain artifacts, the scaffolded user admin and the security
+ * config come from the core feature, which widens its static rules and enables
+ * service-level password encoding when this feature is present.
  *
  * @since 8.0
  */
 @Singleton
 public class GrailsSpringSecurityUi extends SecurityFeature {
 
-    public GrailsSpringSecurityUi(Scaffolding scaffolding) {
+    private final GrailsSpringSecurity grailsSpringSecurity;
+
+    public GrailsSpringSecurityUi(GrailsSpringSecurity grailsSpringSecurity, Scaffolding scaffolding) {
         super(scaffolding);
+        this.grailsSpringSecurity = grailsSpringSecurity;
     }
 
     @Override
@@ -54,10 +56,10 @@ public class GrailsSpringSecurityUi extends SecurityFeature {
 
     @Override
     public String getDescription() {
-        return "Secures the application with the Grails Spring Security Core plugin and adds the Spring Security UI plugin's " +
-                "administration screens, rendered through the application's own layout: user and role CRUD, registration and " +
-                "forgot-password flows (sending mail requires SMTP configuration), and the classic User/Role/UserRole domain " +
-                "model with a bootstrapped ROLE_ADMIN account.";
+        return "Supplements the Grails Spring Security Core plugin - added automatically when selected - with the Spring " +
+                "Security UI plugin's administration screens, rendered through the application's own layout: user and role " +
+                "CRUD, registration and forgot-password flows (sending mail requires SMTP configuration), all on the same " +
+                "classic User/Role/UserRole domain model.";
     }
 
     @Override
@@ -66,11 +68,15 @@ public class GrailsSpringSecurityUi extends SecurityFeature {
     }
 
     @Override
+    public void processSelectedFeatures(FeatureContext featureContext) {
+        super.processSelectedFeatures(featureContext);
+        if (!featureContext.isPresent(GrailsSpringSecurity.class) && grailsSpringSecurity != null) {
+            featureContext.addFeature(grailsSpringSecurity);
+        }
+    }
+
+    @Override
     public void apply(GeneratorContext generatorContext) {
-        generatorContext.addDependency(Dependency.builder()
-                .groupId("org.apache.grails")
-                .artifactId("grails-spring-security")
-                .implementation());
         generatorContext.addDependency(Dependency.builder()
                 .groupId("org.apache.grails")
                 .artifactId("grails-spring-security-ui")
@@ -79,11 +85,6 @@ public class GrailsSpringSecurityUi extends SecurityFeature {
                 .groupId("org.apache.grails")
                 .artifactId("grails-mail")
                 .implementation());
-
-        applyClassicDomainModel(generatorContext);
-        generatorContext.addTemplate("securityApplicationGroovy",
-                new RockerTemplate("grails-app/conf/application.groovy",
-                        securityApplicationGroovy.template(generatorContext.getProject(), true)));
 
         generatorContext.getConfiguration().put("grails.mail.default.from", "do.not.reply@localhost");
     }

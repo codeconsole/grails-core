@@ -23,8 +23,8 @@ import org.grails.forge.application.Project;
 import org.grails.forge.application.generator.GeneratorContext;
 import org.grails.forge.feature.Category;
 import org.grails.forge.feature.FeatureContext;
+import org.grails.forge.feature.Feature;
 import org.grails.forge.feature.FeaturePhase;
-import org.grails.forge.feature.OneOfFeature;
 import org.grails.forge.feature.security.template.role;
 import org.grails.forge.feature.security.template.userClassic;
 import org.grails.forge.feature.security.template.userClassicSpec;
@@ -33,24 +33,19 @@ import org.grails.forge.feature.view.Scaffolding;
 import org.grails.forge.template.RockerTemplate;
 
 /**
- * Base of the mutually exclusive security features. The two plugin flavors share the
- * classic User/Role/UserRole domain model so an application generated with the core
- * plugin can adopt the UI plugin later without restructuring; the plain-starter
- * flavor generates its own lighter artifacts.
+ * Common ground of the security features: category, WEB-only support, the ordering
+ * that lets them override default templates while still preceding the build-file
+ * rendering, and the classic User/Role/UserRole domain model shared by the plugin
+ * flavors so the UI plugin composes with (and can be adopted after) the core plugin.
  *
  * @since 8.0
  */
-public abstract class SecurityFeature implements OneOfFeature {
+public abstract class SecurityFeature implements Feature {
 
     private final Scaffolding scaffolding;
 
     protected SecurityFeature(Scaffolding scaffolding) {
         this.scaffolding = scaffolding;
-    }
-
-    @Override
-    public Class<?> getFeatureClass() {
-        return SecurityFeature.class;
     }
 
     @Override

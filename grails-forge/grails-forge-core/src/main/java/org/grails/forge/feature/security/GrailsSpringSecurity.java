@@ -40,7 +40,7 @@ import org.grails.forge.template.RockerTemplate;
  * @since 8.0
  */
 @Singleton
-public class GrailsSpringSecurity extends SecurityFeature {
+public class GrailsSpringSecurity extends SecurityFeature implements PrimarySecurityFeature {
 
     public GrailsSpringSecurity(Scaffolding scaffolding) {
         super(scaffolding);
@@ -83,8 +83,9 @@ public class GrailsSpringSecurity extends SecurityFeature {
         generatorContext.addTemplate("securityUserController",
                 new RockerTemplate("grails-app/controllers/{packagePath}/UserController.groovy",
                         userController.template(generatorContext.getProject())));
+        boolean ui = generatorContext.getFeatures().contains("grails-spring-security-ui");
         generatorContext.addTemplate("securityApplicationGroovy",
                 new RockerTemplate("grails-app/conf/application.groovy",
-                        securityApplicationGroovy.template(generatorContext.getProject(), false)));
+                        securityApplicationGroovy.template(generatorContext.getProject(), ui)));
     }
 }

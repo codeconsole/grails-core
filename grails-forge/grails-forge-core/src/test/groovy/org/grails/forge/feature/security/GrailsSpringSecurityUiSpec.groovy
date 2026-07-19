@@ -39,13 +39,13 @@ class GrailsSpringSecurityUiSpec extends ApplicationContextSpec implements Comma
         buildGradle.contains('implementation "org.apache.grails:grails-spring-security-ui"')
         buildGradle.contains('implementation "org.apache.grails:grails-mail"')
 
-        and: 'the classic User/Role/UserRole triple is generated instead of the shared user artifacts'
+        and: 'the core feature is pulled in automatically, contributing the classic model and the scaffolded admin'
         output['grails-app/domain/example/grails/User.groovy'].contains('Set<Role> getAuthorities()')
         !output['grails-app/domain/example/grails/User.groovy'].contains('springSecurityService')
         output['grails-app/domain/example/grails/Role.groovy'].contains('String authority')
         output['grails-app/domain/example/grails/UserRole.groovy'].contains('static UserRole create(User user, Role role')
-        !output.containsKey('grails-app/controllers/example/grails/UserController.groovy')
-        !output.containsKey('grails-app/services/example/grails/UserService.groovy')
+        output['grails-app/controllers/example/grails/UserController.groovy'].contains('@Scaffold(RestfulServiceController<User>)')
+        output['grails-app/services/example/grails/UserService.groovy'].contains('@Scaffold(User)')
         !output.containsKey('src/main/groovy/example/grails/SecurityConfig.groovy')
 
         and: 'the config wires the classic model and guards the UI administration screens'
@@ -80,16 +80,28 @@ class GrailsSpringSecurityUiSpec extends ApplicationContextSpec implements Comma
         feature.description.contains('Spring Security UI plugin')
     }
 
-    @Unroll
-    void 'the ui feature is exclusive with #other'(String other) {
+    void 'the ui feature composes with an explicitly selected core feature'() {
         when:
-        generate(ApplicationType.WEB, new Options(DevelopmentReloading.DEVTOOLS), ['grails-spring-security-ui', other])
+        def output = generate(ApplicationType.WEB, new Options(DevelopmentReloading.DEVTOOLS),
+                ['grails-spring-security', 'grails-spring-security-ui'])
+
+        then: 'one coherent application results, with the UI screens configured'
+        output['build.gradle'].contains('implementation "org.apache.grails:grails-spring-security-ui"')
+        output['grails-app/conf/application.groovy'].contains("[pattern: '/role/**',             access: ['ROLE_ADMIN']]")
+
+        and: 'the shared templates render once, without duplication'
+        output['grails-app/domain/example/grails/User.groovy'].count('class User') == 1
+    }
+
+    void 'the ui feature remains transitively exclusive with the plain starter'() {
+        when:
+        generate(ApplicationType.WEB, new Options(DevelopmentReloading.DEVTOOLS),
+                ['grails-spring-security-ui', 'spring-boot-starter-security'])
 
         then:
         def e = thrown(IllegalArgumentException)
         e.message.startsWith('There can only be one of the following features selected:')
-
-        where:
-        other << ['grails-spring-security', 'spring-boot-starter-security']
+        e.message.contains('grails-spring-security')
+        e.message.contains('spring-boot-starter-security')
     }
 }
