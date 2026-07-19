@@ -19,9 +19,7 @@ package org.apache.grails.core.cli
 import groovy.transform.CompileStatic
 import groovy.util.logging.Slf4j
 
-import org.apache.grails.core.cli.compat.LegacyApplicationCommandAdapter
 import org.grails.core.io.support.GrailsFactoriesLoader
-import org.grails.io.support.FactoriesLoaderSupport
 
 /**
  * A registry of {@link org.apache.grails.core.cli.ApplicationCommand} instances
@@ -34,8 +32,6 @@ import org.grails.io.support.FactoriesLoaderSupport
 class ApplicationContextCommandRegistry {
 
     private final Map<String, ApplicationCommand> commands = [:]
-    private boolean legacyCommandWarningLogged
-
     ApplicationContextCommandRegistry() {
         ClassLoader registryClassLoader = ApplicationContextCommandRegistry.classLoader
         ClassLoader contextClassLoader = Thread.currentThread().contextClassLoader
@@ -51,7 +47,7 @@ class ApplicationContextCommandRegistry {
         // also used to pull any commands that are loaded from the gradle classpath. Only when it is a distinct
         // classloader: repeating the scan for the same classloader would re-instantiate every command (whose
         // constructor may have side effects) just to discard it on the name-collision check below.
-        if (contextClassLoader != registryClassLoader) {
+        if (contextClassLoader != null && contextClassLoader != registryClassLoader) {
             for (ApplicationCommand cmd : GrailsFactoriesLoader.loadFactories(ApplicationCommand,
                     contextClassLoader, GrailsFactoriesLoader.CLI_FACTORIES_RESOURCE_LOCATION)) {
                 if (!commands.containsKey(cmd.name)) {
@@ -60,44 +56,37 @@ class ApplicationContextCommandRegistry {
             }
         }
 
-        loadLegacyCommands(registryClassLoader, contextClassLoader)
+        loadCommandProviders(registryClassLoader, contextClassLoader)
     }
 
-    @SuppressWarnings('deprecation')
-    private void loadLegacyCommands(ClassLoader registryClassLoader, ClassLoader contextClassLoader) {
-        // Gather the legacy command classes from the registry classloader and, when it is a distinct
-        // classloader, the thread context classloader, de-duplicated by Class identity before any are
-        // instantiated. A child context classloader delegates to its parent, so it also reports the
-        // parent's grails.factories entries; de-duplicating by the resolved Class avoids instantiating a
-        // parent-visible legacy command twice (its constructor may have side effects) only to discard the
-        // duplicate on the name-collision check below.
-        Set<Class<? extends grails.dev.commands.ApplicationCommand>> legacyClasses = new LinkedHashSet<>()
-        legacyClasses.addAll(GrailsFactoriesLoader.loadFactoryClasses(
-                grails.dev.commands.ApplicationCommand, registryClassLoader, FactoriesLoaderSupport.FACTORIES_RESOURCE_LOCATION))
+    private void loadCommandProviders(ClassLoader registryClassLoader, ClassLoader contextClassLoader) {
+        Set<Class<? extends ApplicationCommandProvider>> providerClasses = new LinkedHashSet<>()
+        providerClasses.addAll(GrailsFactoriesLoader.loadFactoryClasses(
+                ApplicationCommandProvider, registryClassLoader, GrailsFactoriesLoader.CLI_FACTORIES_RESOURCE_LOCATION))
         if (contextClassLoader != null && contextClassLoader != registryClassLoader) {
-            legacyClasses.addAll(GrailsFactoriesLoader.loadFactoryClasses(
-                    grails.dev.commands.ApplicationCommand, contextClassLoader, FactoriesLoaderSupport.FACTORIES_RESOURCE_LOCATION))
+            providerClasses.addAll(GrailsFactoriesLoader.loadFactoryClasses(
+                    ApplicationCommandProvider, contextClassLoader, GrailsFactoriesLoader.CLI_FACTORIES_RESOURCE_LOCATION))
         }
-        // Instantiate each in isolation: a single stale Grails 7 command whose no-arg constructor (or
-        // getName()) throws under Grails 8 must be skipped with a warning, never abort the whole registry
-        // and take valid legacy and new-contract commands down with it.
-        for (Class<? extends grails.dev.commands.ApplicationCommand> legacyClass : legacyClasses) {
-            try {
-                grails.dev.commands.ApplicationCommand legacyCommand = legacyClass.getDeclaredConstructor().newInstance()
-                ApplicationCommand command = new LegacyApplicationCommandAdapter(legacyCommand)
+
+        ApplicationCommandRegistrar registrar = new ApplicationCommandRegistrar() {
+            @Override
+            boolean register(ApplicationCommand command) {
                 String name = command.name
                 if (commands.containsKey(name)) {
-                    continue
+                    return false
                 }
                 commands[name] = command
-                if (!legacyCommandWarningLogged) {
-                    log.warn("Command '{}' from a Grails 7 plugin was loaded through the deprecated grails.dev.commands compatibility layer. Ask the plugin author to migrate to the org.apache.grails.core.cli command API and publish a -cli companion artifact; this compatibility path will be removed in a future major release.", name)
-                    legacyCommandWarningLogged = true
-                }
+                true
+            }
+        }
+
+        for (Class<? extends ApplicationCommandProvider> providerClass : providerClasses) {
+            try {
+                ApplicationCommandProvider provider = providerClass.getDeclaredConstructor().newInstance()
+                provider.contributeCommands(registryClassLoader, contextClassLoader, registrar)
             }
             catch (Throwable e) {
-                log.warn("Failed to load a Grails 7 legacy command from class '{}' through the deprecated grails.dev.commands compatibility layer; skipping it.",
-                        legacyClass?.name, e)
+                log.warn("Failed to load application commands from provider '{}'; skipping it.", providerClass?.name, e)
             }
         }
     }

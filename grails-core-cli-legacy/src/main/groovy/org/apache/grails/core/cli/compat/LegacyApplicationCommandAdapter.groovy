@@ -21,8 +21,8 @@ package org.apache.grails.core.cli.compat
 import groovy.transform.CompileStatic
 
 import org.apache.grails.core.cli.ApplicationCommand
+import org.apache.grails.core.cli.ApplicationCommandTargetAware
 import org.apache.grails.core.cli.ExecutionContext
-import org.apache.grails.core.cli.LegacyApplicationCommandAware
 import org.springframework.context.ConfigurableApplicationContext
 
 /**
@@ -30,7 +30,7 @@ import org.springframework.context.ConfigurableApplicationContext
  */
 @SuppressWarnings('deprecation')
 @CompileStatic
-class LegacyApplicationCommandAdapter implements ApplicationCommand, LegacyApplicationCommandAware {
+class LegacyApplicationCommandAdapter implements ApplicationCommand, ApplicationCommandTargetAware {
 
     private final grails.dev.commands.ApplicationCommand legacyCommand
 
@@ -39,7 +39,7 @@ class LegacyApplicationCommandAdapter implements ApplicationCommand, LegacyAppli
     }
 
     @Override
-    Object getLegacyCommand() {
+    Object getTarget() {
         legacyCommand
     }
 

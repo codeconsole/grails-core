@@ -24,7 +24,7 @@ import org.springframework.context.ConfigurableApplicationContext
 import grails.config.Settings
 import org.apache.grails.core.cli.ApplicationContextCommandRegistry
 import org.apache.grails.core.cli.ExecutionContext
-import org.apache.grails.core.cli.LegacyApplicationCommandAware
+import org.apache.grails.core.cli.ApplicationCommandTargetAware
 import grails.ui.support.DevelopmentGrailsApplication
 import org.grails.build.parsing.CommandLine
 import org.grails.build.parsing.CommandLineParser
@@ -121,17 +121,17 @@ class GrailsApplicationContextCommandRunner extends DevelopmentGrailsApplication
     /**
      * Resolves the object that Spring should autowire and inspect for the {@code skipBootstrap}
      * property. For a command loaded through the deprecated Grails 7 compatibility layer the
-     * registry returns a {@link LegacyApplicationCommandAware} adapter; the real legacy command it
-     * wraps - not the adapter - is what must be autowired and queried, because the adapter forwards
+     * registry returns an {@link ApplicationCommandTargetAware} adapter; the target it wraps - not
+     * the adapter - is what must be autowired and queried, because the adapter forwards
      * {@code applicationContext} and {@code handle} to that same instance. Any other command is
      * returned unchanged.
      *
      * @param command the command resolved from the registry
-     * @return the legacy target when {@code command} is a {@link LegacyApplicationCommandAware}, otherwise {@code command}
+     * @return the adapter target when {@code command} is {@link ApplicationCommandTargetAware}, otherwise {@code command}
      */
     static Object resolveAutowireTarget(Object command) {
-        command instanceof LegacyApplicationCommandAware ?
-            ((LegacyApplicationCommandAware) command).legacyCommand : command
+        command instanceof ApplicationCommandTargetAware ?
+            ((ApplicationCommandTargetAware) command).target : command
     }
 
     /**

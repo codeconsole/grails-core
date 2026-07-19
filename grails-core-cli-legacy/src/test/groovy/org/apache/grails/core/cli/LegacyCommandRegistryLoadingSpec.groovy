@@ -18,9 +18,14 @@
  */
 package org.apache.grails.core.cli
 
+import ch.qos.logback.classic.Logger
+import ch.qos.logback.classic.spi.ILoggingEvent
+import ch.qos.logback.core.read.ListAppender
 import grails.dev.commands.ExecutionContext as LegacyExecutionContext
 import org.apache.grails.core.cli.compat.LegacyApplicationCommandAdapter
+import org.apache.grails.core.cli.compat.LegacyApplicationCommandProvider
 import org.grails.build.parsing.CommandLine
+import org.slf4j.LoggerFactory
 import org.springframework.context.ConfigurableApplicationContext
 import spock.lang.Specification
 import spock.lang.TempDir
@@ -32,10 +37,13 @@ class LegacyCommandRegistryLoadingSpec extends Specification {
 
     private ClassLoader originalContextClassLoader
     private URLClassLoader factoryClassLoader
+    private Logger providerLogger
+    private ListAppender<ILoggingEvent> providerAppender
 
     def cleanup() {
         Thread.currentThread().contextClassLoader = originalContextClassLoader
         factoryClassLoader?.close()
+        providerLogger?.detachAppender(providerAppender)
     }
 
     def "discovers adapts and executes a command registered under the legacy factory key"() {
@@ -49,10 +57,10 @@ class LegacyCommandRegistryLoadingSpec extends Specification {
 
         then:
         command instanceof LegacyApplicationCommandAdapter
-        command instanceof LegacyApplicationCommandAware
+        command instanceof ApplicationCommandTargetAware
         LegacyApplicationCommandAdapter adapter = command as LegacyApplicationCommandAdapter
-        LegacyRegistryTestCommand legacyCommand = ((LegacyApplicationCommandAware) command).legacyCommand as LegacyRegistryTestCommand
-        adapter.legacyCommand.is(legacyCommand)
+        LegacyRegistryTestCommand legacyCommand = ((ApplicationCommandTargetAware) command).target as LegacyRegistryTestCommand
+        adapter.target.is(legacyCommand)
 
         when:
         adapter.applicationContext = applicationContext
@@ -76,10 +84,10 @@ class LegacyCommandRegistryLoadingSpec extends Specification {
 
         then:
         command instanceof LegacyApplicationCommandAdapter
-        command instanceof LegacyApplicationCommandAware
+        command instanceof ApplicationCommandTargetAware
         LegacyApplicationCommandAdapter adapter = command as LegacyApplicationCommandAdapter
-        LegacyRegistryGrailsApplicationTestCommand legacyCommand = ((LegacyApplicationCommandAware) command).legacyCommand as LegacyRegistryGrailsApplicationTestCommand
-        adapter.legacyCommand.is(legacyCommand)
+        LegacyRegistryGrailsApplicationTestCommand legacyCommand = ((ApplicationCommandTargetAware) command).target as LegacyRegistryGrailsApplicationTestCommand
+        adapter.target.is(legacyCommand)
 
         when:
         boolean result = adapter.handle(new ExecutionContext(commandLine))
@@ -121,10 +129,51 @@ class LegacyCommandRegistryLoadingSpec extends Specification {
 
         and:
         ApplicationCommand legacyCommand = registry.findCommand('legacy-registry-command')
-        legacyCommand instanceof LegacyApplicationCommandAware
+        legacyCommand instanceof ApplicationCommandTargetAware
 
         and:
         registry.findCommand('config-report') instanceof ConfigReportCommand
+    }
+
+    def "does not warn when every legacy command collides with a modern command"() {
+        given:
+        attachProviderAppender()
+        useFactoryResources(
+                'grails.dev.commands.ApplicationCommand=org.apache.grails.core.cli.LegacyRegistryCollisionCommand',
+                'org.apache.grails.core.cli.ApplicationCommand=org.apache.grails.core.cli.ConfigReportCommand')
+
+        when:
+        new ApplicationContextCommandRegistry()
+
+        then:
+        deprecationWarnings.empty
+    }
+
+    def "warns once when multiple legacy commands are installed"() {
+        given:
+        attachProviderAppender()
+        useFactoryResources('grails.dev.commands.ApplicationCommand=org.apache.grails.core.cli.LegacyRegistryTestCommand,org.apache.grails.core.cli.LegacyRegistryGrailsApplicationTestCommand')
+
+        when:
+        ApplicationContextCommandRegistry registry = new ApplicationContextCommandRegistry()
+
+        then:
+        registry.findCommand('legacy-registry-command') != null
+        registry.findCommand('legacy-registry-grails-application-command') != null
+        deprecationWarnings.size() == 1
+    }
+
+    private void attachProviderAppender() {
+        providerLogger = LoggerFactory.getLogger(LegacyApplicationCommandProvider) as Logger
+        providerAppender = new ListAppender<>()
+        providerAppender.start()
+        providerLogger.addAppender(providerAppender)
+    }
+
+    private List<ILoggingEvent> getDeprecationWarnings() {
+        providerAppender.list.findAll { ILoggingEvent event ->
+            event.formattedMessage.contains('deprecated grails.dev.commands compatibility layer')
+        }
     }
 
     private void useFactoryResources(String legacyFactories, String cliFactories = null) {

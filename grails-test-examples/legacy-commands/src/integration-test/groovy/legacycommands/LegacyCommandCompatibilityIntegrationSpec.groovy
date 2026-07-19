@@ -26,7 +26,7 @@ import grails.testing.mixin.integration.Integration
 import org.apache.grails.core.cli.ApplicationCommand
 import org.apache.grails.core.cli.ApplicationContextCommandRegistry
 import org.apache.grails.core.cli.ExecutionContext
-import org.apache.grails.core.cli.LegacyApplicationCommandAware
+import org.apache.grails.core.cli.ApplicationCommandTargetAware
 import org.grails.build.parsing.CommandLine
 import spock.lang.Specification
 
@@ -51,9 +51,9 @@ class LegacyCommandCompatibilityIntegrationSpec extends Specification {
 
         expect: 'both legacy factory registrations are discovered and adapted'
         applicationCommand != null
-        applicationCommand instanceof LegacyApplicationCommandAware
+        applicationCommand instanceof ApplicationCommandTargetAware
         grailsApplicationCommand != null
-        grailsApplicationCommand instanceof LegacyApplicationCommandAware
+        grailsApplicationCommand instanceof ApplicationCommandTargetAware
 
         when: 'the legacy ApplicationCommand runs through its Grails 8 adapter'
         applicationCommand.applicationContext = applicationContext
@@ -80,8 +80,8 @@ class LegacyCommandCompatibilityIntegrationSpec extends Specification {
     def "autowires the legacy command unwrapped from its Grails 8 adapter"() {
         given: 'a legacy command adapter and its wrapped target'
         ApplicationCommand applicationCommand = ApplicationContextCommandRegistry.instance.findCommand('hello-legacy-app')
-        LegacyApplicationCommandAware adapter = (LegacyApplicationCommandAware) applicationCommand
-        Object legacyCommand = adapter.legacyCommand
+        ApplicationCommandTargetAware adapter = (ApplicationCommandTargetAware) applicationCommand
+        Object legacyCommand = adapter.target
         ExecutionContext executionContext = new ExecutionContext(Mock(CommandLine))
         File applicationMarkerFile = new File(executionContext.baseDir, 'hello-legacy-app.txt')
         applicationMarkerFile.delete()

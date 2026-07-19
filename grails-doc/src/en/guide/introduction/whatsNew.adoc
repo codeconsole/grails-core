@@ -118,6 +118,11 @@ dependencies {
 The auto-provisioning can be disabled with `grails { cliAutoProvision = false }`, in which case
 `grailsCli` dependencies are declared explicitly.
 
+The plugin also provisions `grails-core-cli-legacy` into a separate execution-only
+`grailsCliLegacy` bucket. That bucket contributes to `grailsCliClasspath`, never to application or
+plugin compile classpaths. This keeps unchanged Grails 7 command plugins working by default with
+zero user action without leaking `grails.dev.commands.*` into the Grails 8 command-authoring ABI.
+
 Plugin authors get the whole publishing side from the new
 `org.apache.grails.gradle.grails-plugin-cli` Gradle plugin: it creates the `cli` source set as a
 feature variant, wires the command contract onto its compile classpath, advertises the companion
@@ -133,7 +138,9 @@ commands is unaffected, and a command-bearing plugin that has not yet been rebui
 keeps its runtime functionality. Its legacy `grails.dev.commands.ApplicationCommand` registrations
 also continue to work through a deprecated compatibility layer, so those commands remain available
 without a re-release; publishing a companion `-cli` artifact is recommended when migrating to the
-Grails 8 command API. See the xref:upgrading#upgrading80x[upgrade guide] for the migration steps and
+Grails 8 command API. New commands should use `org.apache.grails.core.cli.*`. A plugin that still
+authors legacy commands must explicitly compile against `grails-core-cli-legacy`; consumers of an
+already-published legacy plugin need no declaration. See the xref:upgrading#upgrading80x[upgrade guide] for the migration steps and
 the full upgrade-impact breakdown.
 
 ==== GSP Tag Library Improvements

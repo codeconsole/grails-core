@@ -42,7 +42,7 @@ class LegacyApplicationCommandAdapterSpec extends Specification {
         adapter.name == 'legacy-command'
         adapter.description == 'Legacy command description'
         adapter.applicationContext.is(applicationContext)
-        adapter.legacyCommand.is(legacyCommand)
+        adapter.target.is(legacyCommand)
         result
         legacyCommand.applicationContext.is(applicationContext)
         legacyCommand.executionContext instanceof LegacyExecutionContext

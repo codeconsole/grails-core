@@ -19,10 +19,11 @@
 package org.apache.grails.core.cli
 
 /**
- * Implemented by adapters that wrap a legacy {@code grails.dev.commands.ApplicationCommand}.
- * Lets a launcher unwrap the real command for Spring autowiring and property inspection.
+ * Implemented by command adapters whose underlying target should be autowired and inspected.
+ *
+ * @since 8.0
  */
-interface LegacyApplicationCommandAware {
+interface ApplicationCommandTargetAware {
 
-    Object getLegacyCommand()
+    Object getTarget()
 }

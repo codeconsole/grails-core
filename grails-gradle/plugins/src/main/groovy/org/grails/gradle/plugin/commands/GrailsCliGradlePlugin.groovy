@@ -77,6 +77,9 @@ class GrailsCliGradlePlugin implements Plugin<Project> {
      */
     public static final String GRAILS_CLI_CONFIGURATION = 'grailsCli'
 
+    /** Execution-only dependencies used by the command compatibility layer */
+    public static final String GRAILS_CLI_LEGACY_CONFIGURATION = 'grailsCliLegacy'
+
     /** The resolvable view of {@link #GRAILS_CLI_CONFIGURATION} used by the command-runner tasks */
     public static final String GRAILS_CLI_CLASSPATH_CONFIGURATION = 'grailsCliClasspath'
 
@@ -127,6 +130,17 @@ class GrailsCliGradlePlugin implements Plugin<Project> {
         grailsCli.canBeConsumed = false
         grailsCli.description = 'CLI-only dependencies (Grails commands and the libraries they need); compile-visible and on the command-runner classpath, but never on runtimeClasspath, bootRun, or packaged artifacts.'
 
+        Configuration grailsCliLegacy = configurations.create(GRAILS_CLI_LEGACY_CONFIGURATION)
+        grailsCliLegacy.canBeResolved = false
+        grailsCliLegacy.canBeConsumed = false
+        grailsCliLegacy.description = 'Execution-only compatibility dependencies used by the command runner; never compile-visible.'
+
+        configurations.matching { Configuration it ->
+            it.name in ['testRuntimeClasspath', 'integrationTestRuntimeClasspath']
+        }.configureEach { Configuration it ->
+            it.extendsFrom(grailsCliLegacy)
+        }
+
         // compile visibility for grails-app/commands sources plus the TEST classpaths (tests
         // exercise commands inside the test JVM), while the main runtimeClasspath — and therefore
         // bootRun, bootJar, and bootWar — never sees the cli tier; matching configurations that
@@ -139,7 +153,7 @@ class GrailsCliGradlePlugin implements Plugin<Project> {
         }
 
         Configuration grailsCliClasspath = configurations.create(GRAILS_CLI_CLASSPATH_CONFIGURATION)
-        grailsCliClasspath.extendsFrom(grailsCli)
+        grailsCliClasspath.extendsFrom(grailsCli, grailsCliLegacy)
         grailsCliClasspath.canBeResolved = true
         grailsCliClasspath.canBeConsumed = false
         grailsCliClasspath.description = 'Resolvable view of grailsCli used by the command-runner tasks.'
@@ -159,6 +173,9 @@ class GrailsCliGradlePlugin implements Plugin<Project> {
         // extension configuration) declared by the build script is visible
         grailsCli.withDependencies { DependencySet dependencies ->
             autoProvisionCliDependencies(project, dependencies)
+        }
+        grailsCliLegacy.withDependencies { DependencySet dependencies ->
+            autoProvisionLegacyCliDependencies(project, dependencies)
         }
     }
 
@@ -210,6 +227,13 @@ class GrailsCliGradlePlugin implements Plugin<Project> {
                         entry.key, GRAILS_CLI_CONFIGURATION, project.name)
                 dependencies.add(companion)
             }
+        }
+    }
+
+    protected void autoProvisionLegacyCliDependencies(Project project, DependencySet dependencies) {
+        GrailsExtension grails = project.extensions.getByType(GrailsExtension)
+        if (grails.cliAutoProvision.get()) {
+            dependencies.add(project.dependencies.create('org.apache.grails:grails-core-cli-legacy'))
         }
     }
 

@@ -16,7 +16,7 @@
  */
 package grails.ui.command
 
-import org.apache.grails.core.cli.LegacyApplicationCommandAware
+import org.apache.grails.core.cli.ApplicationCommandTargetAware
 import spock.lang.Specification
 import spock.lang.Unroll
 
@@ -138,8 +138,8 @@ class GrailsApplicationContextCommandRunnerSpec extends Specification {
     def "resolveAutowireTarget unwraps a legacy command adapter"() {
         given:
         Object legacyCommand = new Object()
-        LegacyApplicationCommandAware adapter = Stub() {
-            getLegacyCommand() >> legacyCommand
+        ApplicationCommandTargetAware adapter = Stub() {
+            getTarget() >> legacyCommand
         }
 
         when:

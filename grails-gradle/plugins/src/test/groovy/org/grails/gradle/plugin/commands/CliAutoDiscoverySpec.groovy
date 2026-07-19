@@ -39,7 +39,7 @@ class CliAutoDiscoverySpec extends GradleSpecification {
         setupTestResourceProject('cli-companion-autodiscovery')
 
         when: 'the app resolves its grailsCli dependencies'
-        def result = executeTask(':app:inspectGrailsCli')
+        def result = executeTask(':app:inspectGrailsCli', [':app:inspectGrailsCliLegacy', ':app:inspectClasspathWiring'])
 
         then: 'the companion is a project dependency requesting the plugin cli capability'
         result.output.contains('GRAILSCLI_DEP: project path=:my-plugin capabilities=[org.example.test:my-plugin-cli]')
@@ -50,6 +50,17 @@ class CliAutoDiscoverySpec extends GradleSpecification {
         and: 'the command contract and runner are auto-provisioned as well'
         result.output.contains('GRAILSCLI_DEP: module org.apache.grails:grails-core-cli')
         result.output.contains('GRAILSCLI_DEP: module org.apache.grails:grails-console')
+
+        and: 'the legacy bridge is execution-only'
+        result.output.contains('GRAILSCLILEGACY_DEP: module org.apache.grails:grails-core-cli-legacy')
+        !result.output.contains('GRAILSCLI_DEP: module org.apache.grails:grails-core-cli-legacy')
+        result.output.contains('CLASSPATH_EXTENDS_GRAILSCLILEGACY=true')
+        result.output.contains('COMPILE_EXTENDS_GRAILSCLILEGACY=false')
+        result.output.contains('COMPILE_HAS_GRAILSCLILEGACY=false')
+        result.output.contains('TEST_COMPILE_HAS_GRAILSCLILEGACY=false')
+        result.output.contains('INTEGRATION_TEST_COMPILE_HAS_GRAILSCLILEGACY=false')
+        result.output.contains('TEST_RUNTIME_HAS_GRAILSCLILEGACY=true')
+        result.output.contains('INTEGRATION_TEST_RUNTIME_HAS_GRAILSCLILEGACY=true')
     }
 
     def "a companion with a customized artifactId is discovered and resolves through its advertised capability"() {
@@ -77,6 +88,13 @@ class CliAutoDiscoverySpec extends GradleSpecification {
         then: 'grailsCli extends the compile classpath but not the runtime classpath'
         result.output.contains('COMPILE_EXTENDS_GRAILSCLI=true')
         result.output.contains('RUNTIME_EXTENDS_GRAILSCLI=false')
+        result.output.contains('COMPILE_EXTENDS_GRAILSCLILEGACY=false')
+        result.output.contains('CLASSPATH_EXTENDS_GRAILSCLILEGACY=true')
+        result.output.contains('COMPILE_HAS_GRAILSCLILEGACY=false')
+        result.output.contains('TEST_COMPILE_HAS_GRAILSCLILEGACY=false')
+        result.output.contains('INTEGRATION_TEST_COMPILE_HAS_GRAILSCLILEGACY=false')
+        result.output.contains('TEST_RUNTIME_HAS_GRAILSCLILEGACY=true')
+        result.output.contains('INTEGRATION_TEST_RUNTIME_HAS_GRAILSCLILEGACY=true')
 
         and: 'no companion (-cli) jar reaches the resolved runtime classpath'
         !result.output.readLines().any { it.startsWith('RUNTIME_ARTIFACT:') && it.contains('-cli') }
@@ -87,9 +105,15 @@ class CliAutoDiscoverySpec extends GradleSpecification {
         setupTestResourceProject('cli-companion-autodiscovery')
 
         when:
-        def result = executeTask(':app:inspectGrailsCli', ['-PgrailsCliAutoProvision=false'])
+        def result = executeTask(':app:inspectGrailsCli', [':app:inspectGrailsCliLegacy', ':app:inspectClasspathWiring', '-PgrailsCliAutoProvision=false'])
 
         then: 'nothing is provisioned onto grailsCli — neither the companion nor the contract/runner'
         !result.output.contains('GRAILSCLI_DEP:')
+        !result.output.contains('GRAILSCLILEGACY_DEP:')
+        result.output.contains('COMPILE_HAS_GRAILSCLILEGACY=false')
+        result.output.contains('TEST_COMPILE_HAS_GRAILSCLILEGACY=false')
+        result.output.contains('INTEGRATION_TEST_COMPILE_HAS_GRAILSCLILEGACY=false')
+        result.output.contains('TEST_RUNTIME_HAS_GRAILSCLILEGACY=false')
+        result.output.contains('INTEGRATION_TEST_RUNTIME_HAS_GRAILSCLILEGACY=false')
     }
 }

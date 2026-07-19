@@ -1655,6 +1655,12 @@ The `console` and `shell` tasks also draw from the provisioned cli tier, so the
 `build.gradle` is no longer needed and can be removed (the `console` configuration itself remains
 for additional console-only dependencies).
 
+The deprecated Grails 7 command contract is isolated in
+`org.apache.grails:grails-core-cli-legacy`. While `cliAutoProvision` is enabled, the plugin adds
+this artifact to the execution-only `grailsCliLegacy` bucket. `grailsCliClasspath` includes that
+bucket, but application and plugin compile classpaths do not. Existing Grails 7 command plugins
+therefore keep working by default without exposing the deprecated API to new command sources.
+
 Disable the discovery with `grails { cliAutoProvision = false }` and declare the cli tier
 explicitly when full control over the command classpath is preferred:
 
@@ -1670,6 +1676,7 @@ dependencies {
     grailsCli 'org.apache.grails:grails-core-cli'
     grailsCli 'org.apache.grails:grails-console'
     grailsCli 'org.apache.grails:grails-data-hibernate7-dbmigration-cli'
+    grailsCliLegacy 'org.apache.grails:grails-core-cli-legacy'
 }
 ----
 
@@ -1699,16 +1706,23 @@ The renamed framework command packages are:
 
 ===== 35.1 Backwards Compatibility for Existing Command Plugins
 
-Grails 8 provides a deprecated compatibility layer for already-published Grails 7 command
+Grails 8 provides a deprecated, execution-only compatibility layer for already-published Grails 7 command
 plugins. Application commands created with `create-command` that implement
 `grails.dev.commands.ApplicationCommand` or `grails.dev.commands.GrailsApplicationCommand` remain
-available without a plugin re-release. The deprecated `grails.dev.commands.*` types are retained,
+available without a plugin re-release. The deprecated `grails.dev.commands.*` types are retained in
+`org.apache.grails:grails-core-cli-legacy`, which is provisioned by default only on the command
+runner classpath,
 and registrations in `META-INF/grails.factories` under
 `grails.dev.commands.ApplicationCommand` continue to be discovered at runtime.
 
 Grails logs a one-time deprecation warning when it uses this compatibility layer. It is intended
 to keep existing published plugins working while plugin authors migrate; it is deprecated and will
 be removed in a future major release.
+
+New and migrated commands should always compile against `org.apache.grails.core.cli.*` from
+`grails-core-cli`. A plugin that intentionally continues to author commands against the deprecated
+contract must declare `compileOnly 'org.apache.grails:grails-core-cli-legacy'` explicitly; normal
+consumers still need no declaration or other action.
 
 **What just works:**
 

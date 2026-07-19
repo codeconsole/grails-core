@@ -31,12 +31,12 @@ group = 'legacy.commands.plugin'
 dependencies {
     implementation platform(project(':grails-bom'))
 
-    // This fixture recompiles legacy command sources against Grails 8's grails-core-cli to
+    // This fixture recompiles legacy command sources against Grails 8's grails-core-cli-legacy to
     // validate discovery, adapter, registry, and runner wiring end-to-end. It does not
     // re-validate a pre-compiled Grails 7 binary's Groovy-trait ABI. That relies on Groovy's
     // stable trait encoding across 4->5 and could be strengthened later with a prebuilt Grails 7
     // fixture jar.
-    compileOnly 'org.apache.grails:grails-core-cli'
+    compileOnly 'org.apache.grails:grails-core-cli-legacy'
 }
 
 apply {
