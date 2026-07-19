@@ -18,3 +18,16 @@
  */
 
 //= require spring-security-ui-ajaxLogin.js
+
+// Show/hide toggle for the password fields on the standalone login page and
+// the ajax login modal: flips the field type and the eye icon, and reports
+// the state through aria-pressed.
+function s2uiTogglePassword(button, fieldId) {
+    var field = document.getElementById(fieldId);
+    var icon = button.querySelector('i');
+    var hiding = field.type === 'text';
+    field.type = hiding ? 'password' : 'text';
+    icon.classList.toggle('bi-eye', hiding);
+    icon.classList.toggle('bi-eye-slash', !hiding);
+    button.setAttribute('aria-pressed', String(!hiding));
+}

@@ -36,8 +36,15 @@
 					</div>
 					<div class="mb-3">
 						<label class="form-label" for="password"><g:message code='spring.security.ui.login.password'/></label>
-						<input type="password" class="form-control" name="${securityConfig.apf.passwordParameter}" id="password"
-						       autocomplete="current-password"/>
+						<div class="input-group">
+							<input type="password" class="form-control" name="${securityConfig.apf.passwordParameter}" id="password"
+							       autocomplete="current-password"/>
+							<button class="btn btn-outline-secondary" type="button" aria-pressed="false"
+							        onclick="s2uiTogglePassword(this, 'password')"
+							        aria-label="${message(code: 'springSecurity.login.password.toggle', default: 'Show or hide password')}">
+								<i class="bi bi-eye" aria-hidden="true"></i>
+							</button>
+						</div>
 					</div>
 					<div class="mb-3 form-check">
 						<input type="checkbox" class="form-check-input" name="${securityConfig.rememberMe.parameter}" id="remember_me" checked="checked"/>

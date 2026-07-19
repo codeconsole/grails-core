@@ -47,7 +47,7 @@
                                 <button class="btn btn-outline-secondary" type="button" id="passwordToggler"
                                         onclick="passwordDisplayToggle()" aria-pressed="false"
                                         aria-label="${message(code: 'springSecurity.login.password.toggle', default: 'Show or hide password')}">
-                                    <span id="passwordTogglerIcon" aria-hidden="true">&#128065;</span>
+                                    <i id="passwordTogglerIcon" class="bi bi-eye" aria-hidden="true"></i>
                                 </button>
                             </div>
                         </div>
@@ -77,10 +77,11 @@
         var button = document.getElementById("passwordToggler");
         var icon = document.getElementById("passwordTogglerIcon");
         var field = document.getElementById("password");
-        var revealing = field.type === "text";
-        field.type = revealing ? "password" : "text";
-        icon.innerHTML = revealing ? '\u{1F441}' : '\u{2715}';
-        button.setAttribute("aria-pressed", String(!revealing));
+        var hiding = field.type === "text";
+        field.type = hiding ? "password" : "text";
+        icon.classList.toggle("bi-eye", hiding);
+        icon.classList.toggle("bi-eye-slash", !hiding);
+        button.setAttribute("aria-pressed", String(!hiding));
     }
 </script>
 </body>
