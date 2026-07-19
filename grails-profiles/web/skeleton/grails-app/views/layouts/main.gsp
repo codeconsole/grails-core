@@ -88,9 +88,6 @@
             <g:pageProperty name="page.nav"/>
         </ul>
         <ul class="navbar-nav ms-auto">
-            <%-- Right-aligned navbar items contributed by the rendered page
-                 through a <content tag="navActions"> block of <li> elements. --%>
-            <g:pageProperty name="page.navActions"/>
             <g:set var="availableLocales" value="${application.getAttribute('availableLocales')}"/>
             <g:if test="${availableLocales && availableLocales.size() > 1}">
                 <g:set var="currentLocale" value="${org.springframework.web.servlet.support.RequestContextUtils.getLocale(request)}"/>
@@ -136,6 +133,11 @@
                     </li>
                 </ul>
             </li>
+            <%-- Right-aligned navbar items contributed by the rendered page through a
+                 <content tag="navActions"> block of <li> elements (e.g. a security
+                 plugin's account menu). Rendered after language and theme so account
+                 controls sit rightmost, matching the built-in sign-in block below. --%>
+            <g:pageProperty name="page.navActions"/>
             <%-- Sign-in affordance, rendered whenever Spring Security is on the classpath -
                  the plain starter or the security plugin alike, resolved without a hard class
                  reference. POST /logout is Spring Security's default LogoutFilter URL and the
