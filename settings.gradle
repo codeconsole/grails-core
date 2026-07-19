@@ -107,6 +107,8 @@ def skipMicronautProjects = explicitlySkipMicronaut || (!buildJdkSupportsMicrona
 
 include(
         'grails-bootstrap',
+        'grails-beans-dsl',
+        'grails-beans-dsl-example',
         'grails-cache',
         'grails-codecs-core',
         'grails-codecs',

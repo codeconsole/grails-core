@@ -119,6 +119,55 @@ class I18nGrailsPlugin extends Plugin {
 A plugin may override either `doWithSpring()` or `doWithSpring(BeanBuilder)`, but not both. The closure-returning `doWithSpring()` remains fully supported for backwards compatibility. Defining both forms in the same plugin is an error: the plugin will fail to load with an exception, since the two forms are alternatives and defining both indicates an incomplete migration between them. Consolidate the bean definitions into a single form.
 
 
+==== Compiling Bean Definitions into a Spring Boot AutoConfiguration
+
+
+`beanRegistrar()` and `doWithSpring` register beans at a single, fixed point in startup: before Spring Boot processes any `{springbootapi}org/springframework/boot/autoconfigure/AutoConfiguration.html[AutoConfiguration]`. That is enough for a bean to win against a Boot default guarded by `@ConditionalOnMissingBean`, but it cannot express ordering *relative to a specific* auto-configuration — running before `WebMvcAutoConfiguration` but after `MessageSourceAutoConfiguration`, say, regardless of where those two land in Boot's overall sort. Only a real `AutoConfiguration` class can declare that ordering, via `@AutoConfiguration(before = ..., after = ...)`.
+
+The link:{api}grails/compiler/beans/GrailsBeans.html[GrailsBeans] annotation lets you author bean definitions with DSL syntax similar to the classic Beans DSL, while compiling them at build time into genuine `@Bean` factory methods on a plain `AutoConfiguration` class — no closures, and nothing DSL-specific, survive into the compiled bytecode. Add `org.apache.grails:grails-beans-dsl` as a dependency and annotate a class whose `beans` property is a closure of `bean(Type[, "name"]) { ... }` statements:
+
+[source,groovy]
+----
+import grails.compiler.beans.GrailsBeans
+import org.springframework.boot.autoconfigure.AutoConfiguration
+import org.springframework.boot.autoconfigure.context.MessageSourceAutoConfiguration
+import org.springframework.boot.webmvc.autoconfigure.WebMvcAutoConfiguration
+import org.springframework.context.MessageSource
+import org.springframework.context.support.ReloadableResourceBundleMessageSource
+import org.springframework.web.servlet.i18n.CookieLocaleResolver
+import org.springframework.web.servlet.i18n.LocaleChangeInterceptor
+
+@GrailsBeans
+@AutoConfiguration(before = [MessageSourceAutoConfiguration, WebMvcAutoConfiguration])
+class I18nBeans {
+
+    def beans = {
+        bean(ReloadableResourceBundleMessageSource, 'messageSource') {
+            new ReloadableResourceBundleMessageSource(basename: 'WEB-INF/grails-app/i18n/messages')
+        }
+
+        bean(CookieLocaleResolver, 'localeResolver').conditionalOnMissingBean(CookieLocaleResolver) {
+            new CookieLocaleResolver('locale')
+        }
+
+        bean(LocaleChangeInterceptor, 'localeChangeInterceptor') { MessageSource messageSource ->
+            new LocaleChangeInterceptor(paramName: 'lang')
+        }
+    }
+}
+----
+
+Each `bean(Type[, "name"])` statement compiles to a public method named after the bean, returning the declared type and annotated `@Bean("name")`:
+
+* The bean name defaults to the decapitalized simple class name when omitted.
+* Chaining `.conditionalOnMissingBean(Type...)` adds a `@ConditionalOnMissingBean` annotation to the generated method, matching Spring Boot's usual back-off semantics.
+* Typed closure parameters (`{ MessageSource messageSource -> ... }`) become the generated method's parameters, so other beans are injected the same way a hand-written `@Bean` method would declare them.
+
+Because the result is an ordinary `AutoConfiguration` class, it must be registered the same way any Spring Boot auto-configuration is: listed in `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports`. Modules built as part of this project can apply the `org.apache.grails.buildsrc.autoconfiguration-imports` Gradle convention plugin to generate that file automatically, by scanning the module's own compiled classes for `@AutoConfiguration` at build time. Projects outside this build register the class the same way any hand-written `AutoConfiguration` is registered — by listing it in that file directly.
+
+NOTE: `@GrailsBeans` is unrelated to `Plugin.beanRegistrar()`/`doWithSpring` and does not require extending `Plugin` at all — it produces a plain Spring Boot `AutoConfiguration`, so it can be used by any Spring Boot module, not just a Grails plugin descriptor. Reach for it specifically when a bean's registration needs to be ordered against a particular other auto-configuration; otherwise `beanRegistrar()` remains the recommended way to register beans from a `Plugin`.
+
+
 ==== Customizing the Servlet Environment
 
 

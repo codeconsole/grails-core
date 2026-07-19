@@ -44,6 +44,10 @@ dependencies {
     testImplementation "org.spockframework:spock-core:${gradleBomDependencyVersions['gradle-spock.version']}"
     testImplementation gradleTestKit()
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+
+    // Fixture sources compiled by GenerateAutoConfigurationImportsTaskSpec need the real
+    // annotation on their classpath so it resolves as a genuine annotation type when scanned.
+    testImplementation "org.springframework.boot:spring-boot-autoconfigure:${gradleBomDependencyVersions['spring-boot.version']}"
 }
 
 tasks.named('test') {
@@ -107,6 +111,10 @@ gradlePlugin {
         register('vulnerabilityScanPlugin') {
             id = 'org.apache.grails.buildsrc.vulnerability-scan'
             implementationClass = 'org.apache.grails.buildsrc.VulnerabilityScanPlugin'
+        }
+        register('autoConfigurationImportsPlugin') {
+            id = 'org.apache.grails.buildsrc.autoconfiguration-imports'
+            implementationClass = 'org.apache.grails.buildsrc.AutoConfigurationImportsPlugin'
         }
     }
 }
