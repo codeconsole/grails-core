@@ -19,6 +19,7 @@
 package legacycommands
 
 import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.beans.factory.config.AutowireCapableBeanFactory
 import org.springframework.context.ConfigurableApplicationContext
 
 import grails.testing.mixin.integration.Integration
@@ -43,8 +44,10 @@ class LegacyCommandCompatibilityIntegrationSpec extends Specification {
         ExecutionContext executionContext = new ExecutionContext(Mock(CommandLine))
         File applicationMarkerFile = new File(executionContext.baseDir, 'hello-legacy-app.txt')
         File grailsApplicationMarkerFile = new File(executionContext.baseDir, 'hello-legacy-grails.txt')
+        File generatedFile = new File(executionContext.baseDir, 'build/legacy-grails-command-output.txt')
         applicationMarkerFile.delete()
         grailsApplicationMarkerFile.delete()
+        generatedFile.delete()
 
         expect: 'both legacy factory registrations are discovered and adapted'
         applicationCommand != null
@@ -70,6 +73,56 @@ class LegacyCommandCompatibilityIntegrationSpec extends Specification {
 
         cleanup:
         applicationMarkerFile.delete()
+        grailsApplicationMarkerFile.delete()
+        generatedFile.delete()
+    }
+
+    def "autowires the legacy command unwrapped from its Grails 8 adapter"() {
+        given: 'a legacy command adapter and its wrapped target'
+        ApplicationCommand applicationCommand = ApplicationContextCommandRegistry.instance.findCommand('hello-legacy-app')
+        LegacyApplicationCommandAware adapter = (LegacyApplicationCommandAware) applicationCommand
+        Object legacyCommand = adapter.legacyCommand
+        ExecutionContext executionContext = new ExecutionContext(Mock(CommandLine))
+        File applicationMarkerFile = new File(executionContext.baseDir, 'hello-legacy-app.txt')
+        applicationMarkerFile.delete()
+
+        when: 'the command runner autowires the real legacy command before invoking the adapter'
+        applicationContext.autowireCapableBeanFactory.autowireBeanProperties(
+            legacyCommand,
+            AutowireCapableBeanFactory.AUTOWIRE_BY_TYPE,
+            false
+        )
+        adapter.applicationContext = applicationContext
+        boolean result = applicationCommand.handle(executionContext)
+
+        then: 'the wrapped command observes the application service injected by Spring'
+        result
+        applicationMarkerFile.text == 'INJECTED'
+
+        cleanup:
+        legacyCommand.greetingService = null
+        applicationMarkerFile.delete()
+    }
+
+    def "runs the legacy GrailsApplicationCommand file DSL through its Grails 8 adapter"() {
+        given: 'a legacy GrailsApplicationCommand adapter and execution context'
+        ApplicationCommand applicationCommand = ApplicationContextCommandRegistry.instance.findCommand('hello-legacy-grails')
+        ExecutionContext executionContext = new ExecutionContext(Mock(CommandLine))
+        File generatedFile = new File(executionContext.baseDir, 'build/legacy-grails-command-output.txt')
+        File grailsApplicationMarkerFile = new File(executionContext.baseDir, 'hello-legacy-grails.txt')
+        generatedFile.delete()
+        grailsApplicationMarkerFile.delete()
+
+        when: 'the adapted legacy command runs with its legacy execution context'
+        applicationCommand.applicationContext = applicationContext
+        boolean result = applicationCommand.handle(executionContext)
+
+        then: 'the inherited file DSL writes below the execution context base directory'
+        result
+        generatedFile.text == 'GENERATED'
+
+        cleanup:
+        generatedFile.delete()
         grailsApplicationMarkerFile.delete()
     }
 

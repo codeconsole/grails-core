@@ -16,30 +16,25 @@
  *  specific language governing permissions and limitations
  *  under the License.
  */
-package legacy.commands.plugin
+package org.example.legacy
 
-import grails.dev.commands.GrailsApplicationCommand
+import grails.dev.commands.ApplicationCommand
+import grails.dev.commands.ExecutionContext
 
-@SuppressWarnings('deprecation')
-class HelloLegacyGrailsCommand implements GrailsApplicationCommand {
+class HelloLegacyAppCommand implements ApplicationCommand {
 
     @Override
     String getName() {
-        'hello-legacy-grails'
+        'hello-legacy-app'
     }
 
     @Override
     String getDescription() {
-        'Runs a legacy Grails application command'
+        'Runs a legacy application command'
     }
 
     @Override
-    boolean handle() {
-        File generatedFile = file('build/legacy-grails-command-output.txt')
-        generatedFile.parentFile.mkdirs()
-        generatedFile.text = 'GENERATED'
-        new File(executionContext.baseDir, 'hello-legacy-grails.txt').text = 'RAN'
+    boolean handle(ExecutionContext executionContext) {
         true
     }
-
 }

@@ -39,23 +39,33 @@ class ApplicationContextCommandRegistry {
     private boolean legacyCommandWarningLogged
 
     ApplicationContextCommandRegistry() {
+        ClassLoader registryClassLoader = ApplicationContextCommandRegistry.classLoader
+        ClassLoader contextClassLoader = Thread.currentThread().contextClassLoader
+
         for (ApplicationCommand cmd : GrailsFactoriesLoader.loadFactories(ApplicationCommand,
-                ApplicationContextCommandRegistry.classLoader, GrailsFactoriesLoader.CLI_FACTORIES_RESOURCE_LOCATION)) {
+                registryClassLoader, GrailsFactoriesLoader.CLI_FACTORIES_RESOURCE_LOCATION)) {
             if (!commands.containsKey(cmd.name)) {
                 commands[cmd.name] = cmd
             }
         }
 
-        // If this is reflectively loaded from the delegating cli, we need to make sure the context class loader is also used to pull any commands that are loaded from the gradle classpath
-        for (ApplicationCommand cmd : GrailsFactoriesLoader.loadFactories(ApplicationCommand,
-                Thread.currentThread().contextClassLoader, GrailsFactoriesLoader.CLI_FACTORIES_RESOURCE_LOCATION)) {
-            if (!commands.containsKey(cmd.name)) {
-                commands[cmd.name] = cmd
+        // If this is reflectively loaded from the delegating cli, we need to make sure the context class loader is
+        // also used to pull any commands that are loaded from the gradle classpath. Only when it is a distinct
+        // classloader: repeating the scan for the same classloader would re-instantiate every command (whose
+        // constructor may have side effects) just to discard it on the name-collision check below.
+        if (contextClassLoader != registryClassLoader) {
+            for (ApplicationCommand cmd : GrailsFactoriesLoader.loadFactories(ApplicationCommand,
+                    contextClassLoader, GrailsFactoriesLoader.CLI_FACTORIES_RESOURCE_LOCATION)) {
+                if (!commands.containsKey(cmd.name)) {
+                    commands[cmd.name] = cmd
+                }
             }
         }
 
-        loadLegacyCommands(ApplicationContextCommandRegistry.classLoader)
-        loadLegacyCommands(Thread.currentThread().contextClassLoader)
+        loadLegacyCommands(registryClassLoader)
+        if (contextClassLoader != registryClassLoader) {
+            loadLegacyCommands(contextClassLoader)
+        }
     }
 
     @SuppressWarnings('deprecation')
@@ -80,8 +90,8 @@ class ApplicationContextCommandRegistry {
                 }
             }
             catch (Throwable e) {
-                LOG.warn("Failed to load a Grails 7 legacy command from class '{}' through the deprecated grails.dev.commands compatibility layer; skipping it. Cause: {}",
-                        legacyClass?.name, e.message)
+                LOG.warn("Failed to load a Grails 7 legacy command from class '{}' through the deprecated grails.dev.commands compatibility layer; skipping it.",
+                        legacyClass?.name, e)
             }
         }
     }

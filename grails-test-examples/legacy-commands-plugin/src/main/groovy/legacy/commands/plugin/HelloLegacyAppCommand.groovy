@@ -20,12 +20,17 @@ package legacy.commands.plugin
 
 import groovy.transform.CompileStatic
 
+import org.springframework.beans.factory.annotation.Autowired
+
 import grails.dev.commands.ApplicationCommand
 import grails.dev.commands.ExecutionContext
 
 @SuppressWarnings('deprecation')
 @CompileStatic
 class HelloLegacyAppCommand implements ApplicationCommand {
+
+    @Autowired
+    GreetingService greetingService
 
     @Override
     String getName() {
@@ -39,7 +44,7 @@ class HelloLegacyAppCommand implements ApplicationCommand {
 
     @Override
     boolean handle(ExecutionContext executionContext) {
-        new File(executionContext.baseDir, 'hello-legacy-app.txt').text = 'RAN'
+        new File(executionContext.baseDir, 'hello-legacy-app.txt').text = greetingService?.greet() ?: 'RAN'
         true
     }
 

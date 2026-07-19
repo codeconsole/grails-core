@@ -18,28 +18,7 @@
  */
 package legacy.commands.plugin
 
-import grails.dev.commands.GrailsApplicationCommand
+interface GreetingService {
 
-@SuppressWarnings('deprecation')
-class HelloLegacyGrailsCommand implements GrailsApplicationCommand {
-
-    @Override
-    String getName() {
-        'hello-legacy-grails'
-    }
-
-    @Override
-    String getDescription() {
-        'Runs a legacy Grails application command'
-    }
-
-    @Override
-    boolean handle() {
-        File generatedFile = file('build/legacy-grails-command-output.txt')
-        generatedFile.parentFile.mkdirs()
-        generatedFile.text = 'GENERATED'
-        new File(executionContext.baseDir, 'hello-legacy-grails.txt').text = 'RAN'
-        true
-    }
-
+    String greet()
 }
