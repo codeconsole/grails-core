@@ -1453,6 +1453,8 @@ Several Grails framework beans that were previously registered unconditionally a
 
 * i18n: `localeResolver`, `localeChangeInterceptor` and `messageSource`
 * URL mappings: `grailsCorsFilter`, `urlMappingsErrorPageCustomizer` and `urlMappingsInfoHandlerAdapter`
+* Controllers: `exceptionHandler`
+* Cache: `grailsCacheManager` and `customCacheKeyGenerator`
 
 **No action is required.**
 The framework beans still register by default; this only changes what happens when you define your own.
@@ -1727,3 +1729,38 @@ be removed in a future major release.
 NOTE: The compatibility layer applies only to the legacy application-command contract. Independently
 of it, a Grails 7 plugin that relies on APIs removed in Grails 8, Spring Boot 4, or other Grails 8
 changes still requires an update.
+
+==== 36. jQuery Webjar Upgraded to 4.0.0
+
+The jQuery webjar managed by the `grails-bom` (`org.webjars.npm:jquery`) moves from 3.7.1 to 4.0.0.
+jQuery 4 is a major release: it drops Internet Explorer and other legacy browsers and removes long-deprecated utilities such as `jQuery.trim`, `jQuery.type`, `jQuery.isArray`, `jQuery.isFunction`, `jQuery.proxy`, and `jQuery.isWindow`.
+See the https://jquery.com/upgrade-guide/4.0/[jQuery 4.0 Upgrade Guide] for the complete list of changes.
+
+Because the version is managed by the BOM, any application that references the jQuery webjar without an explicit version picks up 4.0.0 automatically once it adopts the Grails 8 BOM.
+This includes the generated create-app welcome page, whose assets have been verified against 4.0.0.
+
+If your application's own JavaScript relies on the removed APIs, migrate those call sites.
+If you are not ready to migrate, pin the previous version in your gradle build:
+
+[source,properties]
+.gradle.properties
+----
+jquery.version=3.7.1
+----
+
+==== 37. spring-security-ui Rewritten on Bootstrap 5
+
+The `spring-security-ui` plugin's screens are rewritten on Bootstrap 5 with no bundled styling of their own.
+The plugin no longer ships or depends on jQuery UI, jquery-form, jGrowl, DataTables, bgiframe or the bundled jdMenu/positionBy plugins, and every plugin stylesheet and image has been removed — dialogs are Bootstrap modals, tabs are nav-tabs, notifications render through `g:flashMessages`, and the autocomplete search uses a native `datalist`.
+jQuery (4.x) and Bootstrap are expected from the host application, as provided by the create-app layout.
+
+Plugin pages now render through the host application's own layout — configured with `grails.plugin.springsecurity.ui.gsp.parentLayout` (default `main`) — inheriting its theme, including Bootstrap dark mode, locale selector and branding.
+The security menu and login state are contributed to the host navbar through `nav` and `navActions` content blocks, which the create-app layout renders with `<g:pageProperty name="page.nav"/>` and `<g:pageProperty name="page.navActions"/>`; a custom layout that wants the menu in its navbar renders the same page properties.
+
+If you upgrade an application that customized the plugin:
+
+* Views previously copied into the application with `s2ui-override` reference removed stylesheets and rely on the old table-based markup of the `s2ui` field-row tags, which now emit Bootstrap form groups; regenerate or update those copies.
+* CSS written against the old `s2ui_*` and `jd_menu` classes no longer has anything to match; restyle against Bootstrap classes.
+* Applications that used the plugin's transitive webjars (jQuery UI, jGrowl, DataTables, jquery-form) must now declare those dependencies themselves.
+* The `grails.plugin.springsecurity.ui.Constants` class and the `spring-security-ui-register.js` and `spring-security-ui-*` stylesheet assets have been removed.
+* `LogoutController` now declares a computed `allowedMethods` restricting its action to POST while `logout.postOnly` is active (the default), making the restriction visible to tooling such as the create-app welcome page.
