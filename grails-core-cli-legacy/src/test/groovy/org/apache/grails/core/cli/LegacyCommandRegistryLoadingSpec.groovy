@@ -18,6 +18,7 @@
  */
 package org.apache.grails.core.cli
 
+import ch.qos.logback.classic.Level
 import ch.qos.logback.classic.Logger
 import ch.qos.logback.classic.spi.ILoggingEvent
 import ch.qos.logback.core.read.ListAppender
@@ -163,6 +164,37 @@ class LegacyCommandRegistryLoadingSpec extends Specification {
         deprecationWarnings.size() == 1
     }
 
+    def "resolves a legacy command name once while installing and warning"() {
+        given:
+        attachProviderAppender()
+        useFactoryResources('grails.dev.commands.ApplicationCommand=org.apache.grails.core.cli.SingleAccessNameLegacyCommand')
+
+        when:
+        ApplicationCommand command = new ApplicationContextCommandRegistry().findCommand('single-access-name')
+
+        then:
+        command instanceof ApplicationCommandTargetAware
+        (((ApplicationCommandTargetAware) command).target as SingleAccessNameLegacyCommand).nameCalls == 1
+        deprecationWarnings.size() == 1
+        deprecationWarnings.first().formattedMessage.contains("Command 'single-access-name'")
+    }
+
+    def "logs linkage failures at error and continues loading legacy commands"() {
+        given:
+        attachProviderAppender()
+        useFactoryResources('grails.dev.commands.ApplicationCommand=org.apache.grails.core.cli.LinkageErrorLegacyCommand,org.apache.grails.core.cli.LegacyRegistryTestCommand')
+
+        when:
+        ApplicationContextCommandRegistry registry = new ApplicationContextCommandRegistry()
+
+        then:
+        registry.findCommand('legacy-registry-command') != null
+        List<ILoggingEvent> errors = providerAppender.list.findAll { ILoggingEvent event -> event.level == Level.ERROR }
+        errors.size() == 1
+        errors.first().formattedMessage.contains(LinkageErrorLegacyCommand.name)
+        errors.first().formattedMessage.contains('does not link against the restored grails.dev.commands contract')
+    }
+
     private void attachProviderAppender() {
         providerLogger = LoggerFactory.getLogger(LegacyApplicationCommandProvider) as Logger
         providerAppender = new ListAppender<>()
@@ -265,6 +297,51 @@ class ThrowingLegacyCommand implements grails.dev.commands.ApplicationCommand {
     @Override
     String getDescription() {
         'Throwing legacy command'
+    }
+
+    @Override
+    boolean handle(LegacyExecutionContext executionContext) {
+        true
+    }
+}
+
+class SingleAccessNameLegacyCommand implements grails.dev.commands.ApplicationCommand {
+
+    int nameCalls
+
+    @Override
+    String getName() {
+        if (++nameCalls > 1) {
+            throw new IllegalStateException('name accessed more than once')
+        }
+        'single-access-name'
+    }
+
+    @Override
+    String getDescription() {
+        'Single access name legacy command'
+    }
+
+    @Override
+    boolean handle(LegacyExecutionContext executionContext) {
+        true
+    }
+}
+
+class LinkageErrorLegacyCommand implements grails.dev.commands.ApplicationCommand {
+
+    LinkageErrorLegacyCommand() {
+        throw new NoClassDefFoundError('simulated missing command dependency')
+    }
+
+    @Override
+    String getName() {
+        'linkage-error-legacy-command'
+    }
+
+    @Override
+    String getDescription() {
+        'Linkage error legacy command'
     }
 
     @Override

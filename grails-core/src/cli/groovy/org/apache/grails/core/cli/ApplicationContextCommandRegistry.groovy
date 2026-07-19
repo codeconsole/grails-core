@@ -70,13 +70,13 @@ class ApplicationContextCommandRegistry {
 
         ApplicationCommandRegistrar registrar = new ApplicationCommandRegistrar() {
             @Override
-            boolean register(ApplicationCommand command) {
+            String register(ApplicationCommand command) {
                 String name = command.name
                 if (commands.containsKey(name)) {
-                    return false
+                    return null
                 }
                 commands[name] = command
-                true
+                name
             }
         }
 

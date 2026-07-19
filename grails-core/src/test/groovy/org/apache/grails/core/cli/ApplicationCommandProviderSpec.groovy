@@ -51,6 +51,23 @@ class ApplicationCommandProviderSpec extends Specification {
         then:
         command instanceof ProviderTestCommand
     }
+
+    def "instantiates the same provider class once across registry and context classloaders"() {
+        given:
+        ConstructorCountingCommandProvider.constructorCalls = 0
+        File metaInf = new File(tempDir.toFile(), 'META-INF')
+        assert metaInf.mkdirs()
+        new File(metaInf, 'grails-cli.factories').text = "${ApplicationCommandProvider.name}=${ConstructorCountingCommandProvider.name}"
+        originalContextClassLoader = Thread.currentThread().contextClassLoader
+        factoryClassLoader = new URLClassLoader([tempDir.toUri().toURL()] as URL[], getClass().classLoader)
+        Thread.currentThread().contextClassLoader = factoryClassLoader
+
+        when:
+        new ApplicationContextCommandRegistry()
+
+        then:
+        ConstructorCountingCommandProvider.constructorCalls == 1
+    }
 }
 
 class ThrowingCommandProvider implements ApplicationCommandProvider {
@@ -82,5 +99,18 @@ class ProviderTestCommand implements ApplicationCommand {
     @Override
     boolean handle(ExecutionContext executionContext) {
         true
+    }
+}
+
+class ConstructorCountingCommandProvider implements ApplicationCommandProvider {
+
+    static int constructorCalls
+
+    ConstructorCountingCommandProvider() {
+        constructorCalls++
+    }
+
+    @Override
+    void contributeCommands(ClassLoader registryClassLoader, ClassLoader contextClassLoader, ApplicationCommandRegistrar registrar) {
     }
 }

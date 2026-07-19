@@ -25,5 +25,8 @@ package org.apache.grails.core.cli
  */
 interface ApplicationCommandRegistrar {
 
-    boolean register(ApplicationCommand command)
+    /**
+     * @return the installed command name, or {@code null} when that name was already registered
+     */
+    String register(ApplicationCommand command)
 }
