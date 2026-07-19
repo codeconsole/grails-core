@@ -18,6 +18,8 @@
  */
 package org.grails.forge.feature.security;
 
+import java.util.List;
+
 import jakarta.inject.Singleton;
 
 import org.grails.forge.application.generator.GeneratorContext;
@@ -65,6 +67,11 @@ public class GrailsSpringSecurityUi extends SecurityFeature {
     @Override
     public String getDocumentation() {
         return "https://grails.apache.org/docs/latest/grails-spring-security-ui/";
+    }
+
+    @Override
+    public List<String> getDependentFeatures() {
+        return List.of("grails-spring-security");
     }
 
     @Override
