@@ -18,6 +18,7 @@
  */
 package org.grails.gradle.plugin.core
 
+import java.util.function.Function
 import java.util.zip.ZipFile
 
 import grails.util.BuildSettings
@@ -59,6 +60,7 @@ import org.gradle.jvm.toolchain.JavaToolchainService
 import org.gradle.language.jvm.tasks.ProcessResources
 import org.gradle.process.JavaForkOptions
 import org.gradle.tooling.provider.model.ToolingModelBuilderRegistry
+import org.grails.gradle.plugin.bom.BomPropertyOverridesExtension
 import org.grails.gradle.plugin.bom.BomPropertyOverridesPlugin
 import org.grails.gradle.plugin.commands.GrailsCliGradlePlugin
 import org.grails.gradle.plugin.exploded.ExplodedCompatibilityRule
@@ -418,6 +420,25 @@ ${importStatements}
         // same configuration phase can rely on the configuration existing.
         project.configurations.maybeCreate('developmentOnly')
 
+        // Register the bom-property-overrides extension eagerly (not via
+        // project.plugins.apply(BomPropertyOverridesPlugin) inside the afterEvaluate below) so it's
+        // configurable from the user's build.gradle. Applying the plugin class itself there would
+        // register a SECOND, nested project.afterEvaluate{} for the override-application logic -
+        // and because Gradle appends a newly-registered afterEvaluate listener to the END of the
+        // notification queue that's currently being processed, that nested registration jumps
+        // behind every afterEvaluate callback other plugins registered synchronously during
+        // apply() - including GrailsCliGradlePlugin's CLI companion probe (configureApplicationCommands),
+        // which eagerly resolves the api/implementation/runtimeOnly buckets via grailsCliDetect and
+        // locks them against further mutation. That race is what made BomManagedVersions.applyTo()
+        // throw "Cannot mutate the dependencies of configuration ... after ... was resolved" in
+        // multi-project builds. Calling BomPropertyOverridesPlugin.applyOverrides() directly, in the
+        // SAME already-correctly-ordered afterEvaluate below, avoids the extra deferral hop entirely.
+        def bomPropertyOverrides = project.extensions.create(
+                BomPropertyOverridesExtension.EXTENSION_NAME,
+                BomPropertyOverridesExtension,
+                project.objects
+        )
+
         // The BOM selection `grails { bom = ... }` is set in the user's build.gradle,
         // which runs AFTER plugin apply. We therefore wait until afterEvaluate to read
         // it and apply the BOM accordingly. By that point all declarable configurations
@@ -485,12 +506,20 @@ ${importStatements}
                 }
             }
 
-            // Delegate property-based version overrides to the bundled plugin.
+            // Delegate property-based version overrides to the bundled plugin's core logic.
             // Auto-detect picks up the platform()/enforcedPlatform() declaration (whether we
             // injected it above or the build declared it by hand), plus any additional
             // platform()/enforcedPlatform() the user declares. Users can extend the override
             // surface by declaring their own platforms - no extra configuration is required here.
-            project.plugins.apply(BomPropertyOverridesPlugin)
+            // Called directly (not via project.plugins.apply()) so it runs synchronously in this
+            // callback, right after the platform is injected above - see the comment where
+            // bomPropertyOverrides is created for why a second afterEvaluate hop is unsafe here.
+            BomPropertyOverridesPlugin.applyOverrides(
+                    project.configurations,
+                    project.dependencies,
+                    { String name -> project.hasProperty(name) ? project.property(name)?.toString() : null } as Function<String, String>,
+                    bomPropertyOverrides
+            )
         }
     }
 
