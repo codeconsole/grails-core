@@ -177,7 +177,7 @@ class SbomPlugin implements Plugin<Project> {
         configureCliSbom(project)
     }
 
-    private static Provider<RegularFile> sbomOutputLocationFor(Project project, Provider<String> artifactId) {
+    static Provider<RegularFile> sbomOutputLocationFor(Project project, Provider<String> artifactId) {
         project.layout.buildDirectory.file(project.provider {
             "${artifactId.get()}-${project.findProperty('projectVersion')}-sbom.json" as String
         })
@@ -403,7 +403,7 @@ class SbomPlugin implements Plugin<Project> {
      * does not compile against the cli-artifact plugin.
      */
     @CompileDynamic
-    private static Provider<String> cliCompanionArtifactId(Project project) {
+    static Provider<String> cliCompanionArtifactId(Project project) {
         project.extensions.getByName('cliArtifact').artifactId
     }
 
