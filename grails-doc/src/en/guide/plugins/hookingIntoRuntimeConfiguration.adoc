@@ -171,7 +171,7 @@ NOTE: `@GrailsBeans` does not require extending `Plugin` at all — it produces 
 The DSL deliberately covers a narrower surface than `doWithSpring(BeanBuilder)`:
 
 * Each statement inside `beans { }` must be exactly `bean(Type[, "name"]) { ... }`, optionally chained with any combination of `.conditionalOnMissingBean(Type...)`, `.primary()`, `.lazy()`, and `.scope("name")` — an `if`, a `for` loop, or any other imperative Groovy is a compile-time error, not a runtime one.
-* Those four are the only per-bean qualifiers. There is no way to attach `@ConditionalOnProperty`, `@ConditionalOnClass`, `@ConditionalOnBean`, or a custom `Condition` to a single bean — those only apply if written on the whole `AutoConfiguration` class, which then gates every bean it declares, not just one.
+* Those four are the only per-bean qualifiers the DSL recognises today. A hand-written `@AutoConfiguration` class can freely put `@ConditionalOnProperty`, `@ConditionalOnClass`, `@ConditionalOnBean`, or a custom `Condition` directly on an individual `@Bean` method — that's standard Spring Boot practice, not something confined to the whole class — but this DSL has no chained syntax for it yet.
 * Dependencies on other beans are expressed only through typed closure parameters (autowired by type), not by name — there is no `ref('beanName')` lookup.
 
 ===== Using @GrailsBeans directly on a *GrailsPlugin.groovy class
