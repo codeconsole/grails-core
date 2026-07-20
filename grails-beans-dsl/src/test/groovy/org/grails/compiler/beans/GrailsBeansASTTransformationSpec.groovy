@@ -402,10 +402,12 @@ class GrailsBeansASTTransformationSpec extends Specification {
         }
     '''
 
-    private File compileToRealClassFiles(String template, boolean compileStatic, String fileName, String subDir) {
+    private File compileToRealClassFiles(String template, String staticAnnotation, String fileName, String subDir) {
+        String annotationImport = staticAnnotation == 'GrailsCompileStatic' ?
+                'import grails.compiler.GrailsCompileStatic' : 'import groovy.transform.CompileStatic'
         String source = String.format(template,
-                compileStatic ? 'import groovy.transform.CompileStatic' : '',
-                compileStatic ? '@CompileStatic' : '')
+                staticAnnotation ? annotationImport : '',
+                staticAnnotation ? "@${staticAnnotation}" : '')
         File destDir = new File(tempDir, subDir)
         CompilerConfiguration config = new CompilerConfiguration()
         config.targetDirectory = destDir
@@ -424,22 +426,31 @@ class GrailsBeansASTTransformationSpec extends Specification {
 
     def "the standalone form's @Bean methods are statically dispatched when @CompileStatic is present"() {
         given: "the same DSL compiled with and without @CompileStatic on the annotated class"
-        File staticDir = compileToRealClassFiles(STANDALONE_FIXTURE_TEMPLATE, true, 'Static.groovy', 'standalone-static')
-        File dynamicDir = compileToRealClassFiles(STANDALONE_FIXTURE_TEMPLATE, false, 'Dynamic.groovy', 'standalone-dynamic')
+        File staticDir = compileToRealClassFiles(STANDALONE_FIXTURE_TEMPLATE, 'CompileStatic', 'Static.groovy', 'standalone-static')
+        File dynamicDir = compileToRealClassFiles(STANDALONE_FIXTURE_TEMPLATE, null, 'Dynamic.groovy', 'standalone-dynamic')
 
         expect: "the generated greeting() method is compiled the same way as everything else on the class"
         !usesInvokeDynamic(new File(staticDir, 'DispatchFixtureStandalone.class'))
         usesInvokeDynamic(new File(dynamicDir, 'DispatchFixtureStandalone.class'))
     }
 
-    def "the Plugin-subclass sibling's @Bean methods are always dynamically dispatched, even under @CompileStatic (known limitation)"() {
+    def "the Plugin-subclass sibling's @Bean methods are statically dispatched when @CompileStatic is present"() {
         given: "the same DSL compiled with and without @CompileStatic on the Plugin subclass"
-        File staticDir = compileToRealClassFiles(PLUGIN_FIXTURE_TEMPLATE, true, 'StaticPlugin.groovy', 'plugin-static')
-        File dynamicDir = compileToRealClassFiles(PLUGIN_FIXTURE_TEMPLATE, false, 'DynamicPlugin.groovy', 'plugin-dynamic')
+        File staticDir = compileToRealClassFiles(PLUGIN_FIXTURE_TEMPLATE, 'CompileStatic', 'StaticPlugin.groovy', 'plugin-static')
+        File dynamicDir = compileToRealClassFiles(PLUGIN_FIXTURE_TEMPLATE, null, 'DynamicPlugin.groovy', 'plugin-dynamic')
 
-        expect: "the sibling is created after Groovy's static-compilation scheduling already ran, so it pins this known boundary"
-        usesInvokeDynamic(new File(staticDir, 'DispatchFixturePluginAutoConfiguration.class'))
+        expect: "the transform explicitly applies static compilation after generating the sibling"
+        !usesInvokeDynamic(new File(staticDir, 'DispatchFixturePluginAutoConfiguration.class'))
         usesInvokeDynamic(new File(dynamicDir, 'DispatchFixturePluginAutoConfiguration.class'))
+    }
+
+    def "the Plugin-subclass sibling's @Bean methods are statically dispatched under @GrailsCompileStatic"() {
+        given:
+        File staticDir = compileToRealClassFiles(
+                PLUGIN_FIXTURE_TEMPLATE, 'GrailsCompileStatic', 'GrailsStaticPlugin.groovy', 'plugin-grails-static')
+
+        expect:
+        !usesInvokeDynamic(new File(staticDir, 'DispatchFixturePluginAutoConfiguration.class'))
     }
 
 }

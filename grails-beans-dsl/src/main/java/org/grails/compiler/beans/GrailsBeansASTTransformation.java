@@ -22,6 +22,8 @@ import java.lang.reflect.Modifier;
 import java.util.ArrayList;
 import java.util.List;
 
+import groovy.transform.CompilationUnitAware;
+import groovy.transform.CompileStatic;
 import org.codehaus.groovy.ast.ASTNode;
 import org.codehaus.groovy.ast.AnnotationNode;
 import org.codehaus.groovy.ast.ClassHelper;
@@ -38,11 +40,13 @@ import org.codehaus.groovy.ast.expr.MethodCallExpression;
 import org.codehaus.groovy.ast.stmt.BlockStatement;
 import org.codehaus.groovy.ast.stmt.ExpressionStatement;
 import org.codehaus.groovy.ast.stmt.Statement;
+import org.codehaus.groovy.control.CompilationUnit;
 import org.codehaus.groovy.control.CompilePhase;
 import org.codehaus.groovy.control.SourceUnit;
 import org.codehaus.groovy.syntax.SyntaxException;
 import org.codehaus.groovy.transform.ASTTransformation;
 import org.codehaus.groovy.transform.GroovyASTTransformation;
+import org.codehaus.groovy.transform.sc.StaticCompileTransformation;
 
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -70,23 +74,27 @@ import org.springframework.context.annotation.Bean;
  * plugin class - {@code doWithApplicationContext}, {@code onChange}, {@code watchedResources},
  * etc. - continues to work exactly as it does today.
  *
- * <p>{@code @CompileStatic}/{@code @GrailsCompileStatic} on the plugin class is fully supported -
- * the class compiles cleanly and every other member is genuinely statically compiled - but it is
- * <strong>not</strong> propagated to the generated sibling: the sibling is a new class created
- * after Groovy's own static-compilation scheduling has already run, so its {@code @Bean} methods
- * are always compiled using Groovy's normal dynamic dispatch, regardless of {@code @CompileStatic}
- * on the plugin class. The standalone-class form of {@code @GrailsBeans} does not have this
- * limitation, since its generated methods share the same class node as {@code @CompileStatic}
- * from the start.
+ * <p>{@code @CompileStatic}/{@code @GrailsCompileStatic} on the plugin class is propagated to the
+ * generated sibling. Since the sibling is created after Groovy schedules local annotation
+ * transforms, this transformation invokes Groovy's static-compilation transform directly after
+ * generating the sibling's methods. This is the same approach used by other Grails AST transforms
+ * that generate code after local transform discovery.
  */
 @GroovyASTTransformation(phase = CompilePhase.CANONICALIZATION)
-public class GrailsBeansASTTransformation implements ASTTransformation {
+public class GrailsBeansASTTransformation implements ASTTransformation, CompilationUnitAware {
 
     private static final String BEANS_PROPERTY = "beans";
     private static final String BEAN_CALL = "bean";
     private static final String CONDITIONAL_ON_MISSING_BEAN_CALL = "conditionalOnMissingBean";
     private static final String PLUGIN_SUPERCLASS_NAME = "grails.plugins.Plugin";
     private static final String AUTO_CONFIGURATION_SUFFIX = "AutoConfiguration";
+
+    private CompilationUnit compilationUnit;
+
+    @Override
+    public void setCompilationUnit(CompilationUnit compilationUnit) {
+        this.compilationUnit = compilationUnit;
+    }
 
     @Override
     public void visit(ASTNode[] nodes, SourceUnit source) {
@@ -108,6 +116,10 @@ public class GrailsBeansASTTransformation implements ASTTransformation {
 
         for (Statement statement : beanStatements((ClosureExpression) initialExpression)) {
             processBeanStatement(beanMethodHost, statement, source);
+        }
+
+        if (beanMethodHost != classNode) {
+            applyStaticCompilation(classNode, beanMethodHost, source);
         }
 
         classNode.getProperties().remove(beansProperty);
@@ -138,17 +150,26 @@ public class GrailsBeansASTTransformation implements ASTTransformation {
 
         // @AutoConfiguration is meaningless on a Plugin subclass (Spring never processes it as
         // a bean), so it moves to the sibling entirely rather than being merely copied.
-        //
-        // @CompileStatic is deliberately NOT propagated here. Groovy schedules static compilation
-        // by scanning for @CompileStatic before this transform's own CANONICALIZATION-phase
-        // callback runs, so a class created here is never a candidate for it regardless of what
-        // annotations it carries - copying the annotation onto the sibling would claim static
-        // compilation without actually producing it. Verified empirically: see
-        // GrailsBeansASTTransformationSpec's dispatch-mode tests.
         sibling.addAnnotations(autoConfigurationAnnotations);
         pluginClass.getAnnotations().removeAll(autoConfigurationAnnotations);
 
         return sibling;
+    }
+
+    private void applyStaticCompilation(ClassNode pluginClass, ClassNode sibling, SourceUnit source) {
+        List<AnnotationNode> annotations = pluginClass.getAnnotations(ClassHelper.make(CompileStatic.class));
+        if (annotations.isEmpty() || compilationUnit == null) {
+            return;
+        }
+
+        AnnotationNode sourceAnnotation = annotations.get(0);
+        AnnotationNode siblingAnnotation = new AnnotationNode(ClassHelper.make(CompileStatic.class));
+        sourceAnnotation.getMembers().forEach(siblingAnnotation::setMember);
+        sibling.addAnnotation(siblingAnnotation);
+
+        StaticCompileTransformation transformation = new StaticCompileTransformation();
+        transformation.setCompilationUnit(compilationUnit);
+        transformation.visit(new ASTNode[] { siblingAnnotation, sibling }, source);
     }
 
     private List<Statement> beanStatements(ClosureExpression dsl) {
