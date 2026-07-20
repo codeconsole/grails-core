@@ -21,7 +21,9 @@ package org.grails.datastore.gorm.query.transform
 import org.codehaus.groovy.control.MultipleCompilationErrorsException
 
 import spock.lang.Specification
+import spock.util.environment.RestoreSystemProperties
 
+@RestoreSystemProperties
 class GlobalGormQuerySafetyASTTransformationSpec extends Specification {
 
     private static final String UNSAFE_CLASS_SOURCE = '''
@@ -37,10 +39,6 @@ class Book {
     }
 }
 '''
-
-    void cleanup() {
-        System.clearProperty(GlobalGormQuerySafetyASTTransformation.PROTECT_SQL_INJECTION_ATTACKS_PROPERTY)
-    }
 
     void "check runs by default with no system property set"() {
         given:
