@@ -146,4 +146,28 @@ class GenerateAutoConfigurationImportsTaskSpec extends Specification {
                 [new File(tempDir, 'does-not-exist')] as Set, [springBootAutoconfigureClasspathEntry()] as Set).isEmpty()
     }
 
+    def "reports classes that fail to load instead of silently dropping them"() {
+        given: "a compiled class whose superclass is deliberately removed from the classpath afterwards"
+        File srcDir = new File(tempDir, 'src')
+        srcDir.mkdirs()
+        new File(srcDir, 'Missing.groovy').text = 'class Missing {}'
+        new File(srcDir, 'Broken.groovy').text = 'class Broken extends Missing {}'
+        File destDir = new File(tempDir, 'classes')
+        destDir.mkdirs()
+        compileFixtures(srcDir, destDir)
+        assert new File(destDir, 'Missing.class').delete()
+
+        when:
+        List<String> reportedFailures = []
+        SortedSet<String> found = GenerateAutoConfigurationImportsTask.scan(
+                [destDir] as Set, testClasspath(destDir)) { String className, Throwable failure ->
+            reportedFailures << className
+            assert failure != null
+        }
+
+        then: "the unloadable class is excluded from the result but not silently - the callback fires for it"
+        found.isEmpty()
+        reportedFailures == ['Broken']
+    }
+
 }

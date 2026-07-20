@@ -66,7 +66,11 @@ abstract class GenerateAutoConfigurationImportsTask extends DefaultTask {
 
     @TaskAction
     void generate() {
-        SortedSet<String> discovered = scan(classesDirs.files, scanClasspath.files)
+        SortedSet<String> discovered = scan(classesDirs.files, scanClasspath.files) { String className, Throwable failure ->
+            logger.warn('generateAutoConfigurationImports: could not inspect {} - it will be excluded from ' +
+                    'the generated imports file even if it is genuinely annotated @AutoConfiguration. Cause: {}',
+                    className, failure.toString())
+        }
         File importsFile = outputDirectory.file(IMPORTS_RESOURCE_PATH).get().asFile
         importsFile.parentFile.mkdirs()
         importsFile.text = discovered.isEmpty() ? '' : discovered.join('\n') + '\n'
@@ -79,16 +83,23 @@ abstract class GenerateAutoConfigurationImportsTask extends DefaultTask {
      * output only - dependency jars on {@code classpathFiles} are never scanned for candidates)
      * @param classpathFiles the classpath the scratch classloader resolves supertypes/annotations
      * against; must include {@code classesDirs} plus every runtime dependency
+     * @param onUnresolvable invoked with (className, failure) for every candidate class that could
+     * not be loaded against {@code classpathFiles}. Defaults to a no-op so existing callers are
+     * unaffected; {@link #generate()} passes a callback that logs a build warning, since a class
+     * that fails to load here is silently excluded from the generated imports file - which, if it
+     * was genuinely a real {@code @AutoConfiguration}, means its beans would never be registered
+     * with no other signal that anything went wrong.
      * @return the fully-qualified names of every top-level class annotated {@code @AutoConfiguration},
      * sorted for a deterministic, diff-friendly output file
      */
-    static SortedSet<String> scan(Set<File> classesDirs, Set<File> classpathFiles) {
+    static SortedSet<String> scan(Set<File> classesDirs, Set<File> classpathFiles,
+            Closure<?> onUnresolvable = { String className, Throwable failure -> }) {
         URL[] urls = classpathFiles.collect { it.toURI().toURL() } as URL[]
         URLClassLoader scanLoader = new URLClassLoader(urls, ClassLoader.systemClassLoader.parent)
         try {
             Class<?> autoConfigurationAnnotation = Class.forName(AUTO_CONFIGURATION_ANNOTATION, false, scanLoader)
             SortedSet<String> discovered = new TreeSet<>()
-            classesDirs.each { dir -> scanDirectory(dir, scanLoader, autoConfigurationAnnotation, discovered) }
+            classesDirs.each { dir -> scanDirectory(dir, scanLoader, autoConfigurationAnnotation, discovered, onUnresolvable) }
             discovered
         }
         finally {
@@ -97,7 +108,7 @@ abstract class GenerateAutoConfigurationImportsTask extends DefaultTask {
     }
 
     private static void scanDirectory(File dir, URLClassLoader scanLoader, Class<?> autoConfigurationAnnotation,
-            SortedSet<String> discovered) {
+            SortedSet<String> discovered, Closure<?> onUnresolvable) {
         if (!dir.exists()) {
             return
         }
@@ -114,7 +125,7 @@ abstract class GenerateAutoConfigurationImportsTask extends DefaultTask {
                 }
             }
             catch (Throwable unresolvable) {
-                // not resolvable in isolation against the supplied classpath - not a scan candidate
+                onUnresolvable.call(className, unresolvable)
             }
         }
     }

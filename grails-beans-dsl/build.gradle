@@ -23,6 +23,8 @@ plugins {
     id 'org.apache.grails.buildsrc.properties'
     id 'org.apache.grails.buildsrc.dependency-validator'
     id 'org.apache.grails.buildsrc.compile'
+    id 'org.apache.grails.buildsrc.publish'
+    id 'org.apache.grails.buildsrc.sbom'
     id 'org.apache.grails.buildsrc.vulnerability-scan'
     id 'org.apache.grails.gradle.grails-code-style'
     id 'org.apache.grails.gradle.grails-jacoco'
@@ -30,6 +32,13 @@ plugins {
 
 version = projectVersion
 group = 'org.apache.grails'
+
+ext {
+    pomTitle = 'Grails Bean DSL Compiler Support'
+    pomDescription =
+            'A Groovy AST transformation (@GrailsBeans) that compiles a bean-definition DSL into ' +
+            'real Spring @Bean methods on a plain Spring Boot @AutoConfiguration class at compile time.'
+}
 
 dependencies {
 
@@ -57,5 +66,6 @@ dependencies {
 }
 
 apply {
+    from rootProject.layout.projectDirectory.file('gradle/docs-config.gradle')
     from rootProject.layout.projectDirectory.file('gradle/test-config.gradle')
 }

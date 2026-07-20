@@ -69,6 +69,15 @@ import org.springframework.context.annotation.Bean;
  * definitions in the familiar {@code *GrailsPlugin.groovy} file while everything else about the
  * plugin class - {@code doWithApplicationContext}, {@code onChange}, {@code watchedResources},
  * etc. - continues to work exactly as it does today.
+ *
+ * <p>{@code @CompileStatic}/{@code @GrailsCompileStatic} on the plugin class is fully supported -
+ * the class compiles cleanly and every other member is genuinely statically compiled - but it is
+ * <strong>not</strong> propagated to the generated sibling: the sibling is a new class created
+ * after Groovy's own static-compilation scheduling has already run, so its {@code @Bean} methods
+ * are always compiled using Groovy's normal dynamic dispatch, regardless of {@code @CompileStatic}
+ * on the plugin class. The standalone-class form of {@code @GrailsBeans} does not have this
+ * limitation, since its generated methods share the same class node as {@code @CompileStatic}
+ * from the start.
  */
 @GroovyASTTransformation(phase = CompilePhase.CANONICALIZATION)
 public class GrailsBeansASTTransformation implements ASTTransformation {
@@ -127,6 +136,15 @@ public class GrailsBeansASTTransformation implements ASTTransformation {
                 Modifier.PUBLIC, ClassHelper.OBJECT_TYPE);
         source.getAST().addClass(sibling);
 
+        // @AutoConfiguration is meaningless on a Plugin subclass (Spring never processes it as
+        // a bean), so it moves to the sibling entirely rather than being merely copied.
+        //
+        // @CompileStatic is deliberately NOT propagated here. Groovy schedules static compilation
+        // by scanning for @CompileStatic before this transform's own CANONICALIZATION-phase
+        // callback runs, so a class created here is never a candidate for it regardless of what
+        // annotations it carries - copying the annotation onto the sibling would claim static
+        // compilation without actually producing it. Verified empirically: see
+        // GrailsBeansASTTransformationSpec's dispatch-mode tests.
         sibling.addAnnotations(autoConfigurationAnnotations);
         pluginClass.getAnnotations().removeAll(autoConfigurationAnnotations);
 
@@ -169,16 +187,6 @@ public class GrailsBeansASTTransformation implements ASTTransformation {
             return;
         }
 
-        List<Expression> baseArgs = flatten(baseCall.getArguments());
-        if (baseArgs.isEmpty() || !(baseArgs.get(0) instanceof ClassExpression)) {
-            addError(baseCall, source, "bean(...) requires a bean type as its first argument, e.g. bean(Greeter)");
-            return;
-        }
-        ClassExpression beanType = (ClassExpression) baseArgs.get(0);
-        String beanName = baseArgs.size() > 1 && baseArgs.get(1) instanceof ConstantExpression ?
-                String.valueOf(((ConstantExpression) baseArgs.get(1)).getValue()) :
-                decapitalize(beanType.getType().getNameWithoutPackage());
-
         MethodCallExpression callCarryingClosure = qualifierCall != null ? qualifierCall : baseCall;
         List<Expression> closureCallArgs = flatten(callCarryingClosure.getArguments());
         if (closureCallArgs.isEmpty() || !(closureCallArgs.get(closureCallArgs.size() - 1) instanceof ClosureExpression)) {
@@ -186,6 +194,41 @@ public class GrailsBeansASTTransformation implements ASTTransformation {
             return;
         }
         ClosureExpression factory = (ClosureExpression) closureCallArgs.get(closureCallArgs.size() - 1);
+
+        // When there is no .conditionalOnMissingBean(...) qualifier, bean(...) itself carries the
+        // trailing closure as its own last argument - exclude it before validating the Type[, name]
+        // shape, since it was already validated above.
+        List<Expression> baseArgs = flatten(baseCall.getArguments());
+        if (qualifierCall == null && !baseArgs.isEmpty()) {
+            baseArgs = baseArgs.subList(0, baseArgs.size() - 1);
+        }
+
+        if (baseArgs.isEmpty() || baseArgs.size() > 2 || !(baseArgs.get(0) instanceof ClassExpression)) {
+            addError(baseCall, source, "bean(...) requires a bean type as its first argument and at most " +
+                    "one bean name, e.g. bean(Greeter) or bean(Greeter, \"myGreeter\")");
+            return;
+        }
+        ClassExpression beanType = (ClassExpression) baseArgs.get(0);
+
+        String beanName;
+        if (baseArgs.size() == 1) {
+            beanName = decapitalize(beanType.getType().getNameWithoutPackage());
+        }
+        else {
+            Expression nameArg = baseArgs.get(1);
+            Object nameValue = nameArg instanceof ConstantExpression ? ((ConstantExpression) nameArg).getValue() : null;
+            if (!(nameValue instanceof String)) {
+                addError(nameArg, source, "bean(Type, name) requires name to be a String literal, " +
+                        "e.g. bean(Greeter, \"myGreeter\")");
+                return;
+            }
+            beanName = (String) nameValue;
+            if (!isValidJavaIdentifier(beanName)) {
+                addError(nameArg, source, "\"" + beanName + "\" is not a valid bean name: it becomes the " +
+                        "generated method's name, so it must be a valid Java identifier");
+                return;
+            }
+        }
 
         MethodNode beanMethod = new MethodNode(
                 beanName,
@@ -244,6 +287,18 @@ public class GrailsBeansASTTransformation implements ASTTransformation {
             return name;
         }
         return Character.toLowerCase(name.charAt(0)) + name.substring(1);
+    }
+
+    private boolean isValidJavaIdentifier(String name) {
+        if (name.isEmpty() || !Character.isJavaIdentifierStart(name.charAt(0))) {
+            return false;
+        }
+        for (int i = 1; i < name.length(); i++) {
+            if (!Character.isJavaIdentifierPart(name.charAt(i))) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private void addError(ASTNode node, SourceUnit source, String message) {

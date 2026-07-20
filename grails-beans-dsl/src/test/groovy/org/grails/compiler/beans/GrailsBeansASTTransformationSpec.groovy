@@ -18,17 +18,24 @@
  */
 package org.grails.compiler.beans
 
+import org.codehaus.groovy.control.CompilationUnit
+import org.codehaus.groovy.control.CompilerConfiguration
 import org.codehaus.groovy.control.MultipleCompilationErrorsException
+import org.codehaus.groovy.control.Phases
 import org.springframework.boot.autoconfigure.AutoConfiguration
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.boot.autoconfigure.context.MessageSourceAutoConfiguration
 import org.springframework.context.annotation.Bean
 import spock.lang.Specification
+import spock.lang.TempDir
 import spock.lang.Unroll
 
 import grails.plugins.Plugin
 
 class GrailsBeansASTTransformationSpec extends Specification {
+
+    @TempDir
+    File tempDir
 
     private static final String FIXTURE = '''
         import grails.compiler.beans.GrailsBeans
@@ -190,6 +197,10 @@ class GrailsBeansASTTransformationSpec extends Specification {
         'conditionalOnMissingBean(...) with a non-type argument' |
                 "bean(String, 'x').conditionalOnMissingBean('not a type') { 'x' }" |
                 'conditionalOnMissingBean(...) arguments must be types'
+        'bean(...) with a non-constant name argument'  | "bean(String, someVariable) { 'x' }"                              | 'requires name to be a String literal'
+        'bean(...) with a non-String constant name'    | 'bean(String, 42) { \'x\' }'                                       | 'requires name to be a String literal'
+        'bean(...) with an unexpected third argument'  | "bean(String, 'x', 'unexpected') { 'y' }"                          | 'at most one bean name'
+        'bean(...) with a name that is not a valid identifier' | "bean(String, '123 not valid!') { 'x' }"                   | 'is not a valid bean name'
     }
 
     private static final String FIXTURE_PLUGIN = '''
@@ -352,6 +363,83 @@ class GrailsBeansASTTransformationSpec extends Specification {
 
         then:
         autoConfigClass.getDeclaredConstructor().newInstance().greeting() == 'hello'
+    }
+
+    private static final String PLUGIN_FIXTURE_TEMPLATE = '''
+        import grails.compiler.beans.GrailsBeans
+        import grails.plugins.Plugin
+        import org.springframework.boot.autoconfigure.AutoConfiguration
+        %s
+
+        @GrailsBeans
+        %s
+        @AutoConfiguration
+        class DispatchFixturePlugin extends Plugin {
+            String version = '1.0'
+
+            def beans = {
+                bean(String, 'greeting') {
+                    'hello'.toUpperCase()
+                }
+            }
+        }
+    '''
+
+    private static final String STANDALONE_FIXTURE_TEMPLATE = '''
+        import grails.compiler.beans.GrailsBeans
+        import org.springframework.boot.autoconfigure.AutoConfiguration
+        %s
+
+        @GrailsBeans
+        %s
+        @AutoConfiguration
+        class DispatchFixtureStandalone {
+            def beans = {
+                bean(String, 'greeting') {
+                    'hello'.toUpperCase()
+                }
+            }
+        }
+    '''
+
+    private File compileToRealClassFiles(String template, boolean compileStatic, String fileName, String subDir) {
+        String source = String.format(template,
+                compileStatic ? 'import groovy.transform.CompileStatic' : '',
+                compileStatic ? '@CompileStatic' : '')
+        File destDir = new File(tempDir, subDir)
+        CompilerConfiguration config = new CompilerConfiguration()
+        config.targetDirectory = destDir
+        CompilationUnit unit = new CompilationUnit(config, null, new GroovyClassLoader(getClass().classLoader))
+        unit.addSource(fileName, source)
+        unit.compile(Phases.OUTPUT)
+        destDir
+    }
+
+    private boolean usesInvokeDynamic(File classFile) {
+        String javap = "${System.getProperty('java.home')}/bin/javap"
+        Process process = [javap, '-c', '-p', classFile.absolutePath].execute()
+        process.waitFor()
+        process.text.contains('invokedynamic')
+    }
+
+    def "the standalone form's @Bean methods are statically dispatched when @CompileStatic is present"() {
+        given: "the same DSL compiled with and without @CompileStatic on the annotated class"
+        File staticDir = compileToRealClassFiles(STANDALONE_FIXTURE_TEMPLATE, true, 'Static.groovy', 'standalone-static')
+        File dynamicDir = compileToRealClassFiles(STANDALONE_FIXTURE_TEMPLATE, false, 'Dynamic.groovy', 'standalone-dynamic')
+
+        expect: "the generated greeting() method is compiled the same way as everything else on the class"
+        !usesInvokeDynamic(new File(staticDir, 'DispatchFixtureStandalone.class'))
+        usesInvokeDynamic(new File(dynamicDir, 'DispatchFixtureStandalone.class'))
+    }
+
+    def "the Plugin-subclass sibling's @Bean methods are always dynamically dispatched, even under @CompileStatic (known limitation)"() {
+        given: "the same DSL compiled with and without @CompileStatic on the Plugin subclass"
+        File staticDir = compileToRealClassFiles(PLUGIN_FIXTURE_TEMPLATE, true, 'StaticPlugin.groovy', 'plugin-static')
+        File dynamicDir = compileToRealClassFiles(PLUGIN_FIXTURE_TEMPLATE, false, 'DynamicPlugin.groovy', 'plugin-dynamic')
+
+        expect: "the sibling is created after Groovy's static-compilation scheduling already ran, so it pins this known boundary"
+        usesInvokeDynamic(new File(staticDir, 'DispatchFixturePluginAutoConfiguration.class'))
+        usesInvokeDynamic(new File(dynamicDir, 'DispatchFixturePluginAutoConfiguration.class'))
     }
 
 }
