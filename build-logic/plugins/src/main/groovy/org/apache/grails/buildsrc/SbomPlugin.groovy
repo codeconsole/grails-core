@@ -150,6 +150,10 @@ class SbomPlugin implements Plugin<Project> {
             'grails-data-hibernate5-dbmigration': [
                     'pkg:maven/javax.xml.bind/jaxb-api@2.3.1?type=jar': 'CDDL-1.1', // api export
             ],
+            'grails-data-hibernate5-dbmigration-cli': [
+                    'pkg:maven/org.hibernate.common/hibernate-commons-annotations@5.1.2.Final?type=jar': 'LGPL-2.1-only', // hibernate 5 is LGPL, we are migrating to ASF license in hibernate 7
+                    'pkg:maven/org.hibernate/hibernate-core-jakarta@5.6.15.Final?type=jar'             : 'LGPL-2.1-only', // hibernate 5 is LGPL, we are migrating to ASF license in hibernate 7
+            ],
             'grails-data-hibernate7-dbmigration-core': [
                     'pkg:maven/javax.xml.bind/jaxb-api@2.3.1?type=jar': 'CDDL-1.1', // api export
             ],
@@ -278,6 +282,7 @@ class SbomPlugin implements Plugin<Project> {
                 def projectName = project.name
                 def projectPath = project.path
                 Provider<RegularFile> bomOutput = jsonOutput
+                Provider<String> sbomComponent = componentName
                 Provider<Boolean> isReproducibleBuildProvider = project.provider { lookupProperty(project, 'isReproducibleBuild') as boolean }
                 Provider<ZonedDateTime> buildDateProvider = project.provider { lookupProperty(project, 'buildDate') as ZonedDateTime }
                 doLast {
@@ -299,7 +304,7 @@ class SbomPlugin implements Plugin<Project> {
                         comps.each { c ->
                             // .licenses => choose a license that is compatible with ASF policy if multiple licensed
                             if (c instanceof Map && c.licenses instanceof List && !(c.licenses as List).empty) {
-                                def chosen = pickLicense(logger, projectName, c['bom-ref'] as String, c.licenses as List)
+                                def chosen = pickLicense(logger, projectName, sbomComponent.get(), c['bom-ref'] as String, c.licenses as List)
                                 if (chosen != null) {
                                     c.licenses = [chosen]
                                 }
@@ -445,14 +450,15 @@ class SbomPlugin implements Plugin<Project> {
      *
      * @param logger the logger to use for logging
      * @param projectName the name of the project (captured at configuration time)
+     * @param sbomComponent the artifact the SBOM describes (the primary or cli companion coordinate)
      * @param bomRef the bom reference for the dependency
      * @param licenseChoices the list of license choices
      * @return the chosen license
      */
     @CompileDynamic
-    private static Object pickLicense(org.gradle.api.logging.Logger logger, String projectName, String bomRef, List licenseChoices) {
+    static Object pickLicense(org.gradle.api.logging.Logger logger, String projectName, String sbomComponent, String bomRef, List licenseChoices) {
         if (!bomRef) {
-            throw new GradleException("No bomRef found for a dependency of ${projectName}, cannot pick license")
+            throw new GradleException("No bomRef found for a dependency of ${sbomComponent}, cannot pick license")
         }
 
         logger.info('Picking license for {} from {} choices', bomRef, licenseChoices.size())
@@ -464,14 +470,14 @@ class SbomPlugin implements Plugin<Project> {
 
             def licenseBlock = LICENSES[licenseId]
             if (!licenseBlock) {
-                throw new GradleException("Cannot find license information for id ${licenseId} to use for bomRef ${bomRef} in project ${projectName}")
+                throw new GradleException("Cannot find license information for id ${licenseId} to use for bomRef ${bomRef} in ${sbomComponent}")
             }
 
             return licenseBlock
         }
 
         if (!(licenseChoices instanceof List) || licenseChoices.isEmpty()) {
-            throw new GradleException("No License was found for dependency: ${bomRef} in project ${projectName}")
+            throw new GradleException("No License was found for dependency: ${bomRef} in ${sbomComponent}")
         }
 
         def licenseIds = licenseChoices.findAll { it instanceof Map && it.license instanceof Map && it.license.id }
@@ -483,13 +489,15 @@ class SbomPlugin implements Plugin<Project> {
         def defaultLicense = licenseChoices[0] // pick the first one found
         def defaultLicenseId = defaultLicense.license.id as String
         if (defaultLicenseId == null) {
-            throw new GradleException("Could not determine License id for dependency: ${bomRef} in project ${projectName} for value ${defaultLicense}")
+            throw new GradleException("Could not determine License id for dependency: ${bomRef} in ${sbomComponent} for value ${defaultLicense}")
         }
         if (!(defaultLicenseId in PREFERRED_LICENSES)) {
-            def projectLicenseExemptions = LICENSE_EXCEPTIONS[projectName] ?: [:]
-            def permittedLicense = projectLicenseExemptions.get(bomRef) == defaultLicenseId
+            // an exemption may be declared against the project or the specific SBOM component (e.g. a
+            // cli companion whose runtime classpath differs from the primary jar)
+            def exemptions = (LICENSE_EXCEPTIONS[projectName] ?: [:]) + (LICENSE_EXCEPTIONS[sbomComponent] ?: [:])
+            def permittedLicense = exemptions.get(bomRef) == defaultLicenseId
             if (!permittedLicense) {
-                throw new GradleException("Unpermitted License found for bom dependency: ${bomRef} in project ${projectName} : ${defaultLicenseId}")
+                throw new GradleException("Unpermitted License found for bom dependency: ${bomRef} in ${sbomComponent} : ${defaultLicenseId}")
             }
         }
 
