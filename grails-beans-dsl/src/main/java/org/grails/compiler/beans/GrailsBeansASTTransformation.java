@@ -20,7 +20,9 @@ package org.grails.compiler.beans;
 
 import java.lang.reflect.Modifier;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 import groovy.transform.CompilationUnitAware;
 import groovy.transform.CompileStatic;
@@ -51,17 +53,22 @@ import org.codehaus.groovy.transform.sc.StaticCompileTransformation;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Lazy;
+import org.springframework.context.annotation.Primary;
+import org.springframework.context.annotation.Scope;
 
 /**
  * Rewrites the {@code beans} closure DSL on a {@link grails.compiler.beans.GrailsBeans}-annotated
  * class into real {@code @Bean} factory methods, at compile time.
  *
- * <p>Recognises statements shaped as {@code bean(Type[, "name"]) { ... }}, optionally chained
- * with {@code .conditionalOnMissingBean(Type...)}. For each one it synthesises a public method
- * named after the bean, returning the declared type, annotated {@code @org.springframework.
- * context.annotation.Bean} (and {@code @ConditionalOnMissingBean} when chained), whose body and
- * parameters are lifted directly from the DSL closure. The {@code beans} property itself is
- * removed so no closure survives into the compiled class.
+ * <p>Recognises statements shaped as {@code bean(Type[, "name"]) { ... }}, optionally chained with
+ * any combination of {@code .conditionalOnMissingBean(Type...)}, {@code .primary()},
+ * {@code .lazy()}, and {@code .scope("name")}. For each one it synthesises a public method named
+ * after the bean, returning the declared type, annotated {@code @org.springframework.context.
+ * annotation.Bean} plus whichever of {@code @ConditionalOnMissingBean}, {@code @Primary},
+ * {@code @Lazy}, and {@code @Scope} were chained, whose body and parameters are lifted directly
+ * from the DSL closure. The {@code beans} property itself is removed so no closure survives into
+ * the compiled class.
  *
  * <p>When the annotated class extends {@code grails.plugins.Plugin}, the generated methods land
  * on a new sibling {@code <PluginClassName>AutoConfiguration} class in the same package instead
@@ -86,6 +93,11 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
     private static final String BEANS_PROPERTY = "beans";
     private static final String BEAN_CALL = "bean";
     private static final String CONDITIONAL_ON_MISSING_BEAN_CALL = "conditionalOnMissingBean";
+    private static final String PRIMARY_CALL = "primary";
+    private static final String LAZY_CALL = "lazy";
+    private static final String SCOPE_CALL = "scope";
+    private static final Set<String> QUALIFIER_CALL_NAMES = Set.of(
+            CONDITIONAL_ON_MISSING_BEAN_CALL, PRIMARY_CALL, LAZY_CALL, SCOPE_CALL);
     private static final String PLUGIN_SUPERCLASS_NAME = "grails.plugins.Plugin";
     private static final String AUTO_CONFIGURATION_SUFFIX = "AutoConfiguration";
 
@@ -191,36 +203,43 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
 
         MethodCallExpression outerCall = (MethodCallExpression) ((ExpressionStatement) statement).getExpression();
 
-        MethodCallExpression qualifierCall = null;
-        MethodCallExpression baseCall;
-        if (BEAN_CALL.equals(outerCall.getMethodAsString())) {
-            baseCall = outerCall;
-        }
-        else if (CONDITIONAL_ON_MISSING_BEAN_CALL.equals(outerCall.getMethodAsString()) &&
-                outerCall.getObjectExpression() instanceof MethodCallExpression &&
-                BEAN_CALL.equals(((MethodCallExpression) outerCall.getObjectExpression()).getMethodAsString())) {
-            qualifierCall = outerCall;
-            baseCall = (MethodCallExpression) outerCall.getObjectExpression();
-        }
-        else {
-            addError(statement, source, "Expected bean(Type[, \"name\"]) { ... } " +
-                    "optionally chained with .conditionalOnMissingBean(Type...)");
-            return;
+        // Walk from the outermost (last-written) call back to the bean(...) call at the root,
+        // collecting any chained qualifiers - .conditionalOnMissingBean(...), .primary(), .lazy(),
+        // .scope(...) - in source order along the way.
+        List<MethodCallExpression> qualifierCalls = new ArrayList<>();
+        MethodCallExpression baseCall = outerCall;
+        while (!BEAN_CALL.equals(baseCall.getMethodAsString())) {
+            if (!QUALIFIER_CALL_NAMES.contains(baseCall.getMethodAsString()) ||
+                    !(baseCall.getObjectExpression() instanceof MethodCallExpression)) {
+                addError(statement, source, "Expected bean(Type[, \"name\"]) { ... } optionally chained with " +
+                        ".conditionalOnMissingBean(Type...), .primary(), .lazy(), and/or .scope(\"name\")");
+                return;
+            }
+            qualifierCalls.add(0, baseCall);
+            baseCall = (MethodCallExpression) baseCall.getObjectExpression();
         }
 
-        MethodCallExpression callCarryingClosure = qualifierCall != null ? qualifierCall : baseCall;
-        List<Expression> closureCallArgs = flatten(callCarryingClosure.getArguments());
+        Set<String> seenQualifiers = new HashSet<>();
+        for (MethodCallExpression qualifierCall : qualifierCalls) {
+            if (!seenQualifiers.add(qualifierCall.getMethodAsString())) {
+                addError(qualifierCall, source, "." + qualifierCall.getMethodAsString() +
+                        "(...) may only be chained once per bean(...)");
+                return;
+            }
+        }
+
+        List<Expression> closureCallArgs = flatten(outerCall.getArguments());
         if (closureCallArgs.isEmpty() || !(closureCallArgs.get(closureCallArgs.size() - 1) instanceof ClosureExpression)) {
-            addError(callCarryingClosure, source, "bean(...) must end with a factory closure: bean(Type) { ... }");
+            addError(outerCall, source, "bean(...) must end with a factory closure: bean(Type) { ... }");
             return;
         }
         ClosureExpression factory = (ClosureExpression) closureCallArgs.get(closureCallArgs.size() - 1);
 
-        // When there is no .conditionalOnMissingBean(...) qualifier, bean(...) itself carries the
+        // When bean(...) is itself the outermost call (no qualifiers chained), it carries the
         // trailing closure as its own last argument - exclude it before validating the Type[, name]
         // shape, since it was already validated above.
         List<Expression> baseArgs = flatten(baseCall.getArguments());
-        if (qualifierCall == null && !baseArgs.isEmpty()) {
+        if (baseCall == outerCall && !baseArgs.isEmpty()) {
             baseArgs = baseArgs.subList(0, baseArgs.size() - 1);
         }
 
@@ -260,14 +279,52 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
                 factory.getCode());
         beanMethod.addAnnotation(beanAnnotation(beanName));
 
-        if (qualifierCall != null) {
+        for (MethodCallExpression qualifierCall : qualifierCalls) {
             List<Expression> qualifierArgs = flatten(qualifierCall.getArguments());
-            // drop the trailing factory closure, keep the conditional's own Type... arguments
-            List<Expression> conditionalTypes = qualifierArgs.subList(0, qualifierArgs.size() - 1);
-            beanMethod.addAnnotation(conditionalOnMissingBeanAnnotation(conditionalTypes, source, qualifierCall));
+            if (qualifierCall == outerCall) {
+                // only the outermost call in the chain can carry the trailing factory closure
+                qualifierArgs = qualifierArgs.subList(0, qualifierArgs.size() - 1);
+            }
+            if (!applyQualifier(beanMethod, qualifierCall, qualifierArgs, source)) {
+                return;
+            }
         }
 
         classNode.addMethod(beanMethod);
+    }
+
+    private boolean applyQualifier(MethodNode beanMethod, MethodCallExpression qualifierCall,
+            List<Expression> args, SourceUnit source) {
+        String name = qualifierCall.getMethodAsString();
+        if (CONDITIONAL_ON_MISSING_BEAN_CALL.equals(name)) {
+            beanMethod.addAnnotation(conditionalOnMissingBeanAnnotation(args, source, qualifierCall));
+            return true;
+        }
+        if (PRIMARY_CALL.equals(name) || LAZY_CALL.equals(name)) {
+            if (!args.isEmpty()) {
+                addError(qualifierCall, source, "." + name + "() takes no arguments");
+                return false;
+            }
+            Class<?> annotationType = PRIMARY_CALL.equals(name) ? Primary.class : Lazy.class;
+            beanMethod.addAnnotation(new AnnotationNode(ClassHelper.make(annotationType)));
+            return true;
+        }
+        return applyScopeQualifier(beanMethod, qualifierCall, args, source);
+    }
+
+    private boolean applyScopeQualifier(MethodNode beanMethod, MethodCallExpression qualifierCall,
+            List<Expression> args, SourceUnit source) {
+        Expression scopeArg = args.size() == 1 ? args.get(0) : null;
+        Object scopeValue = scopeArg instanceof ConstantExpression ? ((ConstantExpression) scopeArg).getValue() : null;
+        if (!(scopeValue instanceof String) || ((String) scopeValue).isEmpty()) {
+            addError(qualifierCall, source, ".scope(...) requires exactly one non-empty String argument, " +
+                    "e.g. .scope(\"prototype\")");
+            return false;
+        }
+        AnnotationNode scopeAnnotation = new AnnotationNode(ClassHelper.make(Scope.class));
+        scopeAnnotation.setMember("value", scopeArg);
+        beanMethod.addAnnotation(scopeAnnotation);
+        return true;
     }
 
     private List<Expression> flatten(Expression arguments) {

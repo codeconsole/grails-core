@@ -26,6 +26,9 @@ import org.springframework.boot.autoconfigure.AutoConfiguration
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.boot.autoconfigure.context.MessageSourceAutoConfiguration
 import org.springframework.context.annotation.Bean
+import org.springframework.context.annotation.Lazy
+import org.springframework.context.annotation.Primary
+import org.springframework.context.annotation.Scope
 import spock.lang.Specification
 import spock.lang.TempDir
 import spock.lang.Unroll
@@ -55,6 +58,22 @@ class GrailsBeansASTTransformationSpec extends Specification {
 
                 bean(String, 'shout') { String input ->
                     input.toUpperCase()
+                }
+
+                bean(String, 'primaryGreeting').primary() {
+                    'primary hello'
+                }
+
+                bean(String, 'lazyGreeting').lazy() {
+                    'lazy hello'
+                }
+
+                bean(String, 'scopedGreeting').scope('prototype') {
+                    'scoped hello'
+                }
+
+                bean(String, 'combinedGreeting').primary().lazy().scope('prototype').conditionalOnMissingBean(String) {
+                    'combined hello'
                 }
             }
         }
@@ -99,6 +118,73 @@ class GrailsBeansASTTransformationSpec extends Specification {
 
         and:
         fixtureBeans.getDeclaredConstructor().newInstance().answer() == 42
+    }
+
+    def "compiles primary() into a @Primary annotation"() {
+        given:
+        Class<?> fixtureBeans = compile()
+
+        when:
+        def method = fixtureBeans.getDeclaredMethod('primaryGreeting')
+
+        then:
+        method.isAnnotationPresent(Bean)
+        method.isAnnotationPresent(Primary)
+
+        and:
+        fixtureBeans.getDeclaredConstructor().newInstance().primaryGreeting() == 'primary hello'
+    }
+
+    def "compiles lazy() into a @Lazy annotation"() {
+        given:
+        Class<?> fixtureBeans = compile()
+
+        when:
+        def method = fixtureBeans.getDeclaredMethod('lazyGreeting')
+
+        then:
+        method.isAnnotationPresent(Bean)
+        method.isAnnotationPresent(Lazy)
+        method.getAnnotation(Lazy).value()
+
+        and:
+        fixtureBeans.getDeclaredConstructor().newInstance().lazyGreeting() == 'lazy hello'
+    }
+
+    def "compiles scope(...) into a @Scope annotation"() {
+        given:
+        Class<?> fixtureBeans = compile()
+
+        when:
+        def method = fixtureBeans.getDeclaredMethod('scopedGreeting')
+
+        then:
+        method.isAnnotationPresent(Bean)
+        method.isAnnotationPresent(Scope)
+        method.getAnnotation(Scope).value() == 'prototype'
+
+        and:
+        fixtureBeans.getDeclaredConstructor().newInstance().scopedGreeting() == 'scoped hello'
+    }
+
+    def "chains primary(), lazy(), scope(...), and conditionalOnMissingBean(...) together on one bean"() {
+        given:
+        Class<?> fixtureBeans = compile()
+
+        when:
+        def method = fixtureBeans.getDeclaredMethod('combinedGreeting')
+
+        then:
+        method.isAnnotationPresent(Bean)
+        method.isAnnotationPresent(Primary)
+        method.isAnnotationPresent(Lazy)
+        method.isAnnotationPresent(Scope)
+        method.getAnnotation(Scope).value() == 'prototype'
+        method.isAnnotationPresent(ConditionalOnMissingBean)
+        method.getAnnotation(ConditionalOnMissingBean).value() as List == [String]
+
+        and:
+        fixtureBeans.getDeclaredConstructor().newInstance().combinedGreeting() == 'combined hello'
     }
 
     def "closure parameters become method parameters for constructor-style injection"() {
@@ -201,6 +287,12 @@ class GrailsBeansASTTransformationSpec extends Specification {
         'bean(...) with a non-String constant name'    | 'bean(String, 42) { \'x\' }'                                       | 'requires name to be a String literal'
         'bean(...) with an unexpected third argument'  | "bean(String, 'x', 'unexpected') { 'y' }"                          | 'at most one bean name'
         'bean(...) with a name that is not a valid identifier' | "bean(String, '123 not valid!') { 'x' }"                   | 'is not a valid bean name'
+        'an unrecognised qualifier chained after bean(...)' | "bean(String, 'x').unknownQualifier() { 'y' }"                | 'Expected bean(Type[, "name"]) { ... }'
+        'the same qualifier chained twice'             | "bean(String, 'x').primary().primary() { 'y' }"                    | 'may only be chained once'
+        'primary() given an argument'                  | "bean(String, 'x').primary('oops') { 'y' }"                        | '.primary() takes no arguments'
+        'lazy() given an argument'                      | "bean(String, 'x').lazy(true) { 'y' }"                             | '.lazy() takes no arguments'
+        'scope(...) with no argument'                   | "bean(String, 'x').scope() { 'y' }"                                | '.scope(...) requires exactly one non-empty String argument'
+        'scope(...) with a non-String argument'         | "bean(String, 'x').scope(42) { 'y' }"                              | '.scope(...) requires exactly one non-empty String argument'
     }
 
     private static final String FIXTURE_PLUGIN = '''

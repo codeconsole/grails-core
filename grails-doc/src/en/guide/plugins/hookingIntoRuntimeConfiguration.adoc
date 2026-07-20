@@ -161,6 +161,7 @@ Each `bean(Type[, "name"])` statement compiles to a public method named after th
 
 * The bean name defaults to the decapitalized simple class name when omitted.
 * Chaining `.conditionalOnMissingBean(Type...)` adds a `@ConditionalOnMissingBean` annotation to the generated method, matching Spring Boot's usual back-off semantics.
+* Chaining `.primary()`, `.lazy()`, and/or `.scope("name")` adds `@Primary`, `@Lazy`, and `@Scope("name")` respectively. Any combination can be chained together, in any order, alongside `.conditionalOnMissingBean(...)` — for example `bean(SlowGreeter, 'slowGreeter').lazy().scope('prototype') { ... }`.
 * Typed closure parameters (`{ MessageSource messageSource -> ... }`) become the generated method's parameters, so other beans are injected the same way a hand-written `@Bean` method would declare them.
 
 Because the result is an ordinary `AutoConfiguration` class, it must be registered the same way any Spring Boot auto-configuration is: listed in `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports`. Modules built as part of this project can apply the `org.apache.grails.buildsrc.autoconfiguration-imports` Gradle convention plugin to generate that file automatically, by scanning the module's own compiled classes for `@AutoConfiguration` at build time. Projects outside this build register the class the same way any hand-written `AutoConfiguration` is registered — by listing it in that file directly.
@@ -169,8 +170,8 @@ NOTE: `@GrailsBeans` does not require extending `Plugin` at all — it produces 
 
 The DSL deliberately covers a narrower surface than `doWithSpring(BeanBuilder)`:
 
-* Each statement inside `beans { }` must be exactly `bean(Type[, "name"]) { ... }`, optionally chained with `.conditionalOnMissingBean(Type...)` — an `if`, a `for` loop, or any other imperative Groovy is a compile-time error, not a runtime one.
-* `.conditionalOnMissingBean(Type...)` is the only per-bean qualifier. There is no `.primary()`, `.lazy()`, or `.scope()`, and no way to attach `@ConditionalOnProperty`, `@ConditionalOnClass`, `@ConditionalOnBean`, or a custom `Condition` to a single bean — those only apply if written on the whole `AutoConfiguration` class, which then gates every bean it declares, not just one.
+* Each statement inside `beans { }` must be exactly `bean(Type[, "name"]) { ... }`, optionally chained with any combination of `.conditionalOnMissingBean(Type...)`, `.primary()`, `.lazy()`, and `.scope("name")` — an `if`, a `for` loop, or any other imperative Groovy is a compile-time error, not a runtime one.
+* Those four are the only per-bean qualifiers. There is no way to attach `@ConditionalOnProperty`, `@ConditionalOnClass`, `@ConditionalOnBean`, or a custom `Condition` to a single bean — those only apply if written on the whole `AutoConfiguration` class, which then gates every bean it declares, not just one.
 * Dependencies on other beans are expressed only through typed closure parameters (autowired by type), not by name — there is no `ref('beanName')` lookup.
 
 ===== Using @GrailsBeans directly on a *GrailsPlugin.groovy class
