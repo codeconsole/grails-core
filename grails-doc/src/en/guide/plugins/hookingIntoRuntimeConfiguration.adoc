@@ -165,7 +165,55 @@ Each `bean(Type[, "name"])` statement compiles to a public method named after th
 
 Because the result is an ordinary `AutoConfiguration` class, it must be registered the same way any Spring Boot auto-configuration is: listed in `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports`. Modules built as part of this project can apply the `org.apache.grails.buildsrc.autoconfiguration-imports` Gradle convention plugin to generate that file automatically, by scanning the module's own compiled classes for `@AutoConfiguration` at build time. Projects outside this build register the class the same way any hand-written `AutoConfiguration` is registered — by listing it in that file directly.
 
-NOTE: `@GrailsBeans` is unrelated to `Plugin.beanRegistrar()`/`doWithSpring` and does not require extending `Plugin` at all — it produces a plain Spring Boot `AutoConfiguration`, so it can be used by any Spring Boot module, not just a Grails plugin descriptor. Reach for it specifically when a bean's registration needs to be ordered against a particular other auto-configuration; otherwise `beanRegistrar()` remains the recommended way to register beans from a `Plugin`.
+NOTE: `@GrailsBeans` does not require extending `Plugin` at all — it produces a plain Spring Boot `AutoConfiguration`, so it can be used by any Spring Boot module, not just a Grails plugin descriptor. Reach for it specifically when a bean's registration needs to be ordered against a particular other auto-configuration; otherwise `beanRegistrar()` remains the recommended way to register beans from a `Plugin`.
+
+===== Using @GrailsBeans directly on a *GrailsPlugin.groovy class
+
+`@GrailsBeans` may also be applied directly to a `Plugin` subclass, so bean definitions can live in the familiar `*GrailsPlugin.groovy` file instead of a separate class:
+
+[source,groovy]
+----
+import grails.compiler.beans.GrailsBeans
+import grails.plugins.Plugin
+import grails.util.GrailsUtil
+import org.springframework.boot.autoconfigure.AutoConfiguration
+import org.springframework.boot.autoconfigure.context.MessageSourceAutoConfiguration
+import org.springframework.boot.webmvc.autoconfigure.WebMvcAutoConfiguration
+import org.springframework.context.MessageSource
+import org.springframework.context.support.ReloadableResourceBundleMessageSource
+import org.springframework.web.servlet.i18n.CookieLocaleResolver
+import org.springframework.web.servlet.i18n.LocaleChangeInterceptor
+
+@GrailsBeans
+@AutoConfiguration(before = [MessageSourceAutoConfiguration, WebMvcAutoConfiguration])
+class I18nGrailsPlugin extends Plugin {
+
+    def version = GrailsUtil.getGrailsVersion()
+
+    def beans = {
+        bean(ReloadableResourceBundleMessageSource, 'messageSource') {
+            new ReloadableResourceBundleMessageSource(basename: 'WEB-INF/grails-app/i18n/messages')
+        }
+
+        bean(CookieLocaleResolver, 'localeResolver').conditionalOnMissingBean(CookieLocaleResolver) {
+            new CookieLocaleResolver('locale')
+        }
+
+        bean(LocaleChangeInterceptor, 'localeChangeInterceptor') { MessageSource messageSource ->
+            new LocaleChangeInterceptor(paramName: 'lang')
+        }
+    }
+
+    @Override
+    void doWithApplicationContext() {
+        // other Plugin lifecycle hooks work exactly as they do without @GrailsBeans
+    }
+}
+----
+
+A `Plugin` subclass is instantiated by `DefaultGrailsPlugin` via plain reflection, never as a Spring bean, so it cannot itself carry `@Bean` methods or a meaningful `@AutoConfiguration` annotation. When `@GrailsBeans` is applied to a `Plugin` subclass, the compiled `@Bean` methods land on a generated sibling class named `<PluginClassName>AutoConfiguration` in the same package instead, and any `@AutoConfiguration` annotation on the plugin class moves onto that sibling — the example above produces both `I18nGrailsPlugin` (with `beans` and `@AutoConfiguration` stripped, `doWithApplicationContext` untouched) and a separate `I18nGrailsPluginAutoConfiguration` class carrying the three `@Bean` methods. Everything else about the plugin class — `version`, `watchedResources`, `doWithApplicationContext`, `onChange`, and so on — works exactly as it does without `@GrailsBeans`.
+
+The `@AutoConfiguration` annotation is required whenever `@GrailsBeans` is applied to a `Plugin` subclass, even with no `before=`/`after=`: without it, the generated sibling would carry no annotation telling Spring Boot to process it, and its beans would silently never be registered. Omitting it is a compile-time error rather than a silent runtime gap.
 
 
 ==== Customizing the Servlet Environment

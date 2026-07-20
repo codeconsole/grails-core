@@ -19,10 +19,14 @@
 package org.grails.compiler.beans
 
 import org.codehaus.groovy.control.MultipleCompilationErrorsException
+import org.springframework.boot.autoconfigure.AutoConfiguration
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
+import org.springframework.boot.autoconfigure.context.MessageSourceAutoConfiguration
 import org.springframework.context.annotation.Bean
 import spock.lang.Specification
 import spock.lang.Unroll
+
+import grails.plugins.Plugin
 
 class GrailsBeansASTTransformationSpec extends Specification {
 
@@ -186,6 +190,77 @@ class GrailsBeansASTTransformationSpec extends Specification {
         'conditionalOnMissingBean(...) with a non-type argument' |
                 "bean(String, 'x').conditionalOnMissingBean('not a type') { 'x' }" |
                 'conditionalOnMissingBean(...) arguments must be types'
+    }
+
+    private static final String FIXTURE_PLUGIN = '''
+        import grails.compiler.beans.GrailsBeans
+        import grails.plugins.Plugin
+        import org.springframework.boot.autoconfigure.AutoConfiguration
+        import org.springframework.boot.autoconfigure.context.MessageSourceAutoConfiguration
+
+        @GrailsBeans
+        @AutoConfiguration(before = [MessageSourceAutoConfiguration])
+        class FixturePlugin extends Plugin {
+
+            String version = '1.0'
+
+            def beans = {
+                bean(String, 'greeting') {
+                    'hello from plugin'
+                }
+            }
+
+            String stillHere() {
+                'plugin lifecycle members are untouched'
+            }
+        }
+    '''
+
+    def "applying @GrailsBeans to a Plugin subclass generates a sibling AutoConfiguration class"() {
+        given:
+        GroovyClassLoader loader = new GroovyClassLoader(getClass().classLoader)
+        loader.parseClass(FIXTURE_PLUGIN)
+
+        when:
+        Class<?> pluginClass = loader.loadClass('FixturePlugin')
+        Class<?> autoConfigClass = loader.loadClass('FixturePluginAutoConfiguration')
+
+        then: "the plugin class keeps its own identity and members, minus the DSL"
+        Plugin.isAssignableFrom(pluginClass)
+        pluginClass.getDeclaredMethod('stillHere').invoke(pluginClass.getDeclaredConstructor().newInstance()) ==
+                'plugin lifecycle members are untouched'
+        pluginClass.declaredFields*.name.every { it != 'beans' }
+        !pluginClass.isAnnotationPresent(AutoConfiguration)
+
+        and: "the generated sibling carries the compiled bean and the moved @AutoConfiguration annotation"
+        autoConfigClass.isAnnotationPresent(AutoConfiguration)
+        autoConfigClass.getAnnotation(AutoConfiguration).before().toList() == [MessageSourceAutoConfiguration]
+        autoConfigClass.getDeclaredMethod('greeting').isAnnotationPresent(Bean)
+        autoConfigClass.getDeclaredConstructor().newInstance().greeting() == 'hello from plugin'
+    }
+
+    def "a Plugin subclass using @GrailsBeans without @AutoConfiguration fails to compile"() {
+        given:
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import grails.plugins.Plugin
+
+            @GrailsBeans
+            class PluginWithoutAutoConfiguration extends Plugin {
+                def beans = {
+                    bean(String, 'greeting') {
+                        'hello'
+                    }
+                }
+            }
+        '''
+
+        when:
+        compile(source)
+
+        then:
+        MultipleCompilationErrorsException e = thrown(MultipleCompilationErrorsException)
+        e.message.contains('must also be annotated @AutoConfiguration')
     }
 
 }

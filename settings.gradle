@@ -109,6 +109,7 @@ include(
         'grails-bootstrap',
         'grails-beans-dsl',
         'grails-beans-dsl-example',
+        'grails-beans-dsl-plugin-example',
         'grails-cache',
         'grails-codecs-core',
         'grails-codecs',

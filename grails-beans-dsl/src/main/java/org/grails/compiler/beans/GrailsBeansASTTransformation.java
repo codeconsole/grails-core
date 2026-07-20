@@ -44,6 +44,7 @@ import org.codehaus.groovy.syntax.SyntaxException;
 import org.codehaus.groovy.transform.ASTTransformation;
 import org.codehaus.groovy.transform.GroovyASTTransformation;
 
+import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
 
@@ -57,6 +58,17 @@ import org.springframework.context.annotation.Bean;
  * context.annotation.Bean} (and {@code @ConditionalOnMissingBean} when chained), whose body and
  * parameters are lifted directly from the DSL closure. The {@code beans} property itself is
  * removed so no closure survives into the compiled class.
+ *
+ * <p>When the annotated class extends {@code grails.plugins.Plugin}, the generated methods land
+ * on a new sibling {@code <PluginClassName>AutoConfiguration} class in the same package instead
+ * of on the plugin class itself - a {@code Plugin} subclass is instantiated by
+ * {@code DefaultGrailsPlugin} via plain reflection, never as a Spring bean, so it cannot carry
+ * {@code @Bean} methods or a meaningful {@code @AutoConfiguration} annotation of its own. Any
+ * {@code @AutoConfiguration} annotation found on the plugin class is moved onto the generated
+ * sibling, since that is the only place it has any effect. This lets a plugin author keep bean
+ * definitions in the familiar {@code *GrailsPlugin.groovy} file while everything else about the
+ * plugin class - {@code doWithApplicationContext}, {@code onChange}, {@code watchedResources},
+ * etc. - continues to work exactly as it does today.
  */
 @GroovyASTTransformation(phase = CompilePhase.CANONICALIZATION)
 public class GrailsBeansASTTransformation implements ASTTransformation {
@@ -64,6 +76,8 @@ public class GrailsBeansASTTransformation implements ASTTransformation {
     private static final String BEANS_PROPERTY = "beans";
     private static final String BEAN_CALL = "bean";
     private static final String CONDITIONAL_ON_MISSING_BEAN_CALL = "conditionalOnMissingBean";
+    private static final String PLUGIN_SUPERCLASS_NAME = "grails.plugins.Plugin";
+    private static final String AUTO_CONFIGURATION_SUFFIX = "AutoConfiguration";
 
     @Override
     public void visit(ASTNode[] nodes, SourceUnit source) {
@@ -80,12 +94,43 @@ public class GrailsBeansASTTransformation implements ASTTransformation {
             return;
         }
 
+        ClassNode beanMethodHost = extendsGrailsPlugin(classNode) ?
+                createAutoConfigurationSibling(classNode, source) : classNode;
+
         for (Statement statement : beanStatements((ClosureExpression) initialExpression)) {
-            processBeanStatement(classNode, statement, source);
+            processBeanStatement(beanMethodHost, statement, source);
         }
 
         classNode.getProperties().remove(beansProperty);
         classNode.getFields().removeIf(field -> field.getName().equals(BEANS_PROPERTY));
+    }
+
+    private boolean extendsGrailsPlugin(ClassNode classNode) {
+        for (ClassNode current = classNode.getSuperClass(); current != null; current = current.getSuperClass()) {
+            if (PLUGIN_SUPERCLASS_NAME.equals(current.getName())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private ClassNode createAutoConfigurationSibling(ClassNode pluginClass, SourceUnit source) {
+        List<AnnotationNode> autoConfigurationAnnotations = pluginClass.getAnnotations(ClassHelper.make(AutoConfiguration.class));
+        if (autoConfigurationAnnotations.isEmpty()) {
+            addError(pluginClass, source, "A Plugin class using @GrailsBeans must also be annotated " +
+                    "@AutoConfiguration (even with no before=/after=) - otherwise the generated " +
+                    pluginClass.getNameWithoutPackage() + AUTO_CONFIGURATION_SUFFIX +
+                    " class would never be processed by Spring Boot");
+        }
+
+        ClassNode sibling = new ClassNode(pluginClass.getName() + AUTO_CONFIGURATION_SUFFIX,
+                Modifier.PUBLIC, ClassHelper.OBJECT_TYPE);
+        source.getAST().addClass(sibling);
+
+        sibling.addAnnotations(autoConfigurationAnnotations);
+        pluginClass.getAnnotations().removeAll(autoConfigurationAnnotations);
+
+        return sibling;
     }
 
     private List<Statement> beanStatements(ClosureExpression dsl) {

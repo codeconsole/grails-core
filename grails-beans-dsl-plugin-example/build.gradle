@@ -24,6 +24,7 @@ plugins {
     id 'org.apache.grails.buildsrc.dependency-validator'
     id 'org.apache.grails.buildsrc.compile'
     id 'org.apache.grails.buildsrc.vulnerability-scan'
+    id 'org.apache.grails.buildsrc.autoconfiguration-imports'
     id 'org.apache.grails.gradle.grails-code-style'
     id 'org.apache.grails.gradle.grails-jacoco'
 }
@@ -35,18 +36,20 @@ dependencies {
 
     implementation platform(project(':grails-bom'))
 
-    api 'org.apache.groovy:groovy'
+    implementation project(':grails-beans-dsl')
 
-    // The transformation resolves @Bean/@ConditionalOnMissingBean against these real
-    // classes (not by name) so Groovy recognises them as genuine annotation types when
-    // it validates AnnotationNodes added after semantic analysis has already run.
-    api 'org.springframework:spring-context'
+    // Kept separate from grails-beans-dsl-example: pulling grails-core onto a module's
+    // classpath at all activates Grails' own plugin-bootstrap ApplicationContextInitializer
+    // (registered unconditionally via spring.factories) for any SpringApplication.run() in
+    // that module, which would have changed the other example's existing test behaviour.
+    implementation project(':grails-core')
+
     api 'org.springframework.boot:spring-boot-autoconfigure'
+    api 'org.springframework:spring-context'
 
-    // Only needed so fixture sources compiled by the tests can genuinely extend
-    // grails.plugins.Plugin; the transformation itself detects a Plugin superclass by
-    // fully-qualified name, not by type, so the main sourceSet has no such dependency.
-    testImplementation project(':grails-core')
+    testImplementation 'org.springframework.boot:spring-boot-test'
+    testImplementation 'org.springframework:spring-test'
+    testImplementation 'org.assertj:assertj-core'
 
     testImplementation 'org.apache.groovy:groovy-test-junit5'
     testImplementation 'org.junit.jupiter:junit-jupiter-api'

@@ -35,6 +35,12 @@ import org.codehaus.groovy.transform.GroovyASTTransformationClass;
  * with {@code .conditionalOnMissingBean(Type...)}. The closure body becomes the generated
  * method's body verbatim, and closure parameters become the generated method's parameters
  * (for constructor-style bean injection).
+ *
+ * <p>May also be applied to a {@code grails.plugins.Plugin} subclass, letting bean definitions
+ * live in the familiar {@code *GrailsPlugin.groovy} file. In that case the generated methods land
+ * on a new sibling {@code <PluginClassName>AutoConfiguration} class instead - a {@code Plugin}
+ * subclass is never processed by Spring as a bean - and any {@code @AutoConfiguration} annotation
+ * on the plugin class moves onto that sibling, since it has no effect where the author wrote it.
  */
 @Retention(RetentionPolicy.RUNTIME)
 @Target(ElementType.TYPE)
