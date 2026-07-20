@@ -215,6 +215,8 @@ A `Plugin` subclass is instantiated by `DefaultGrailsPlugin` via plain reflectio
 
 The `@AutoConfiguration` annotation is required whenever `@GrailsBeans` is applied to a `Plugin` subclass, even with no `before=`/`after=`: without it, the generated sibling would carry no annotation telling Spring Boot to process it, and its beans would silently never be registered. Omitting it is a compile-time error rather than a silent runtime gap.
 
+`@GrailsBeans` is compatible with `@CompileStatic`/`@GrailsCompileStatic` on the same class, standalone or `Plugin` subclass alike. The `beans` closure is rewritten into real `@Bean` methods during `CompilePhase.CANONICALIZATION`, which runs before static type checking (`CompilePhase.INSTRUCTION_SELECTION`) ever examines the class, so the type checker only ever sees the generated, concretely-typed methods - never the `bean(...)` DSL calls themselves.
+
 
 ==== Customizing the Servlet Environment
 

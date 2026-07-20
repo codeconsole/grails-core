@@ -263,4 +263,95 @@ class GrailsBeansASTTransformationSpec extends Specification {
         e.message.contains('must also be annotated @AutoConfiguration')
     }
 
+    def "compiles under @CompileStatic"() {
+        given:
+        String source = '''
+            import groovy.transform.CompileStatic
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @GrailsBeans
+            @CompileStatic
+            @AutoConfiguration
+            class CompileStaticFixture {
+                def beans = {
+                    bean(String, 'greeting') {
+                        'hello'
+                    }
+                }
+            }
+        '''
+
+        when:
+        Class<?> fixture = compile(source)
+
+        then:
+        fixture.getDeclaredConstructor().newInstance().greeting() == 'hello'
+    }
+
+    def "compiles under @CompileStatic on a Plugin subclass"() {
+        given:
+        String source = '''
+            import groovy.transform.CompileStatic
+            import grails.compiler.beans.GrailsBeans
+            import grails.plugins.Plugin
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @GrailsBeans
+            @CompileStatic
+            @AutoConfiguration
+            class CompileStaticPluginFixture extends Plugin {
+                String version = '1.0'
+
+                def beans = {
+                    bean(String, 'greeting') {
+                        'hello'
+                    }
+                }
+
+                @Override
+                void doWithApplicationContext() {
+                    String x = 'statically typed local'
+                }
+            }
+        '''
+
+        when:
+        Class<?> pluginClass = compile(source)
+        Class<?> autoConfigClass = new GroovyClassLoader(pluginClass.classLoader).loadClass('CompileStaticPluginFixtureAutoConfiguration')
+
+        then:
+        autoConfigClass.getDeclaredConstructor().newInstance().greeting() == 'hello'
+    }
+
+    def "compiles under @GrailsCompileStatic on a Plugin subclass"() {
+        given:
+        String source = '''
+            import grails.compiler.GrailsCompileStatic
+            import grails.compiler.beans.GrailsBeans
+            import grails.plugins.Plugin
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @GrailsBeans
+            @GrailsCompileStatic
+            @AutoConfiguration
+            class GrailsCompileStaticPluginFixture extends Plugin {
+                String version = '1.0'
+
+                def beans = {
+                    bean(String, 'greeting') {
+                        'hello'
+                    }
+                }
+            }
+        '''
+
+        when:
+        Class<?> pluginClass = compile(source)
+        Class<?> autoConfigClass = new GroovyClassLoader(pluginClass.classLoader).loadClass('GrailsCompileStaticPluginFixtureAutoConfiguration')
+
+        then:
+        autoConfigClass.getDeclaredConstructor().newInstance().greeting() == 'hello'
+    }
+
 }
