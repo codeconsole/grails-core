@@ -36,12 +36,31 @@ import org.apache.grails.common.compiler.GroovyTransformOrder;
  * in every Grails application that has {@code grails-datamapping-core} on its compile classpath,
  * with no developer configuration required.
  *
+ * <p>Since this check is intraprocedural and does not cover every possible way query text can be
+ * built (see {@link GormQuerySafetyTransformer}'s documented limitations), a build that hits a
+ * false positive it can't otherwise work around may need to disable it entirely rather than per
+ * call site. Setting the {@value #PROTECT_SQL_INJECTION_ATTACKS_PROPERTY} system property to
+ * {@code false} skips this transformation for the whole compilation unit - this is a global kill
+ * switch of last resort, not a substitute for {@link GormQuerySafetyTransformer#SUPPRESS_WARNINGS_VALUE}.
+ *
  * @since 8.1
  */
 @GroovyASTTransformation(phase = CompilePhase.CANONICALIZATION)
 public class GlobalGormQuerySafetyASTTransformation implements ASTTransformation, TransformWithPriority {
 
+    /**
+     * System property that enables this check; defaults to {@code true}. There is no fully
+     * accurate way to guarantee protection against SQL/HQL/Cypher injection at compile time (this
+     * check has documented gaps), so the name describes intent, not a guarantee. Set to
+     * {@code false} only as a last resort, e.g. a false positive blocking a build with no other
+     * workaround.
+     */
+    public static final String PROTECT_SQL_INJECTION_ATTACKS_PROPERTY = "protectSqlInjectionAttacks";
+
     public void visit(ASTNode[] nodes, SourceUnit source) {
+        if (!Boolean.parseBoolean(System.getProperty(PROTECT_SQL_INJECTION_ATTACKS_PROPERTY, "true"))) {
+            return;
+        }
         GormQuerySafetyTransformer transformer = new GormQuerySafetyTransformer(source);
         ModuleNode ast = source.getAST();
         List<ClassNode> classes = ast.getClasses();

@@ -1530,7 +1530,7 @@ This is flagged because passing the `GString` *directly* to `executeQuery` is sa
 
 If your application has this pattern, fix it by keeping the query a `GString` all the way to the call, or by using named/positional parameters instead. For a call site that has been reviewed and is genuinely safe, add `@SuppressWarnings("GormUnsafeQueryString")` to the enclosing method rather than restructuring the code.
 
-This check runs automatically wherever `grails-datamapping-core` is on the compile classpath — no opt-in configuration is required or possible beyond the per-call-site suppression above.
+This check runs automatically wherever `grails-datamapping-core` is on the compile classpath, with no opt-in configuration required. If it produces a false positive with no workaround, the whole check can be disabled by setting the `protectSqlInjectionAttacks` system property to `false` (it defaults to `true`) — this is a last-resort, build-wide kill switch, not a substitute for the per-call-site `@SuppressWarnings` above.
 
 The same check also emits (non-build-breaking) **compile-time warnings**, not errors, for two related but lower-confidence patterns: a `String`-typed field assigned an interpolated `GString` and later read through `this.field` in a query call, and query text built with `+` concatenation from a non-constant value with no `GString` involved. Neither of these fails the build, but both are worth reviewing — see <<sqlInjection,SQL injection>> for examples of both.
 
