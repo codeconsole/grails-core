@@ -71,7 +71,6 @@ class PersistenceContextInterceptorExecutor {
             try {
                 i.destroy()
             } catch (ignored) {
-                // ignore exception
             }
         }
     }

@@ -95,7 +95,6 @@ abstract class CachedGradleOperation<T> implements Callable<T> {
                 writeToCache(writer, data)
             }
         } catch (Throwable ignored) {
-            // ignore
         }
     }
 }

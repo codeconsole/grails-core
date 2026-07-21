@@ -150,7 +150,6 @@ enum Environment {
                             try {
                                 inputStream.close()
                             } catch (IOException ignored) {
-                                // ignore
                             }
                         }
                         String implTitle = mf.getMainAttributes().getValue(Attributes.Name.IMPLEMENTATION_TITLE)
@@ -295,7 +294,6 @@ enum Environment {
                 env = valueOf(envName.toUpperCase())
             }
             catch (IllegalArgumentException ignored) {
-                // ignore
             }
         }
         if (env == null) {

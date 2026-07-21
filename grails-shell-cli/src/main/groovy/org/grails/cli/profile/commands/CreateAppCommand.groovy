@@ -782,7 +782,7 @@ class CreateAppCommand extends ArgumentCompletingCommand implements ProfileRepos
         try {
             directory?.deleteDir()
         } catch (Throwable ignored) {
-            // Ignore error deleting temporal directory
+            // Ignore error deleting temporary directory
         }
     }
 

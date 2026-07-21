@@ -421,7 +421,6 @@ trait ResponseRenderer extends WebAttributes {
                         try {
                             ((InputStream) input).close()
                         } catch (IOException ignored) {
-                            // ignore
                         }
                     }
                 }

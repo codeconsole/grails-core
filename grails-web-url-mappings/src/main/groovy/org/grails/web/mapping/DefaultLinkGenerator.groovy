@@ -438,7 +438,7 @@ class DefaultLinkGenerator implements LinkGenerator, PluginManagerAware {
                     if (str) {
                         absolute = Boolean.parseBoolean(str)
                     }
-                } catch (e) {
+                } catch (Exception e) {
                     log.debug('Unable to parse absolute link attribute', e)
                 }
             }

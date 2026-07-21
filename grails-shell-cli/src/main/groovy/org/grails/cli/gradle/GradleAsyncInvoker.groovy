@@ -43,7 +43,6 @@ class GradleAsyncInvoker {
                     }
                 }.join(1000)
             } catch (Throwable ignored) {
-                // ignore
             }
         }
     }

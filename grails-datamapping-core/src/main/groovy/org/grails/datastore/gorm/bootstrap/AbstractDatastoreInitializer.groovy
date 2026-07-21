@@ -208,7 +208,6 @@ abstract class AbstractDatastoreInitializer implements ResourceLoaderAware {
                 try {
                     persistentClasses << classLoader.loadClass(entityName)
                 } catch (ClassNotFoundException ignored) {
-                    // ignore
                 }
             }
         }

@@ -65,7 +65,6 @@ class WatchPattern {
                 def absolutePath = new File(path).canonicalPath.replaceAll('\\\\', '/')
                 return absolutePath ==~ matchPath
             } catch (ignored) {
-                // ignore
             }
         }
     }

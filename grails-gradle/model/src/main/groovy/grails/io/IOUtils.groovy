@@ -369,9 +369,7 @@ class IOUtils extends SpringIOUtils {
             }
 
         } catch (ClassNotFoundException ignored) {
-            // ignore
         } catch (IOException ignored) {
-            // ignore
         }
         applicationDirectory = location
         return location

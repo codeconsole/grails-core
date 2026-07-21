@@ -439,7 +439,6 @@ class AstUtils {
                     return true
                 }
             } catch (MalformedURLException ignored) {
-                // ignore
             }
         }
         List<AnnotationNode> annotations = classNode.getAnnotations()
