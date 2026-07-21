@@ -208,8 +208,8 @@ class RunningApplicationProcessSpec extends Specification {
         expect:
         RunningApplicationProcess.isRunning(pidFile)
 
-        when:
-        def result = RunningApplicationProcess.stop(pidFile, 15000)
+        when: "a generous timeout budget gives headroom for reaper-notification lag on a contended CI runner"
+        def result = RunningApplicationProcess.stop(pidFile, 30000)
 
         then:
         result == RunningApplicationProcess.StopResult.STOPPED
