@@ -19,6 +19,7 @@
 package grails.plugin.json.view
 
 import tools.jackson.databind.json.JsonMapper
+import grails.persistence.Entity
 import grails.plugin.json.view.test.JsonRenderResult
 import grails.plugin.json.view.test.JsonViewTest
 import org.grails.datastore.mapping.core.Session
@@ -32,23 +33,23 @@ class ExpandSpec extends Specification implements JsonViewTest, GrailsUnitTest {
     JsonMapper objectMapper = JsonMapper.builder().build()
 
     void setup() {
-        mappingContext.addPersistentEntities(Team, Player)
+        mappingContext.addPersistentEntities(ExpandTeam, ExpandPlayer)
     }
 
     void 'Test expand parameter allows expansion of child associations'() {
         given: 'An entity with a proxy association'
         def mockSession = Mock(Session)
         mockSession.getMappingContext() >> mappingContext
-        mockSession.retrieve(Team, 1L) >> new Team(name: 'Manchester United')
-        def teamProxy = mappingContext.proxyFactory.createProxy(mockSession, Team, 1L)
+        mockSession.retrieve(ExpandTeam, 1L) >> new ExpandTeam(name: 'Manchester United')
+        def teamProxy = mappingContext.proxyFactory.createProxy(mockSession, ExpandTeam, 1L)
 
-        def player = new Player(name: 'Cantona', team: teamProxy)
+        def player = new ExpandPlayer(name: 'Cantona', team: teamProxy)
 
         def templateText = '''
-            import grails.plugin.json.view.*
-            
+            import grails.plugin.json.view.ExpandPlayer as Player
+
             @Field Player player
-            
+
             json g.render(player)
         '''
 
@@ -84,15 +85,13 @@ class ExpandSpec extends Specification implements JsonViewTest, GrailsUnitTest {
         given: 'An entity with a proxy association'
         def mockSession = Mock(Session)
         mockSession.getMappingContext() >> mappingContext
-        mockSession.retrieve(Team, 1L) >> new Team(name: 'Manchester United')
-        def teamProxy = mappingContext.proxyFactory.createProxy(mockSession, Team, 1L)
+        mockSession.retrieve(ExpandTeam, 1L) >> new ExpandTeam(name: 'Manchester United')
+        def teamProxy = mappingContext.proxyFactory.createProxy(mockSession, ExpandTeam, 1L)
 
-        def player = new Player(name: 'Cantona', team: teamProxy)
+        def player = new ExpandPlayer(name: 'Cantona', team: teamProxy)
         def templateText = '''
-            import grails.plugin.json.view.*
-            
             @Field Map map
-            
+
             json g.render(map)
         '''
 
@@ -119,13 +118,13 @@ class ExpandSpec extends Specification implements JsonViewTest, GrailsUnitTest {
         given: 'An entity with a proxy association'
         def mockSession = Mock(Session)
         mockSession.getMappingContext() >> mappingContext
-        mockSession.retrieve(Team, 1L) >> new Team(name: 'Manchester United')
-        def teamProxy = mappingContext.proxyFactory.createProxy(mockSession, Team, 1L)
+        mockSession.retrieve(ExpandTeam, 1L) >> new ExpandTeam(name: 'Manchester United')
+        def teamProxy = mappingContext.proxyFactory.createProxy(mockSession, ExpandTeam, 1L)
 
-        def player = new Player(name: 'Cantona', team: teamProxy)
+        def player = new ExpandPlayer(name: 'Cantona', team: teamProxy)
 
         def templateText = '''
-            import grails.plugin.json.view.*
+            import grails.plugin.json.view.ExpandPlayer as Player
             model {
                 Player player
             }
@@ -140,7 +139,7 @@ class ExpandSpec extends Specification implements JsonViewTest, GrailsUnitTest {
             {
                 "_links": {
                     "self": {
-                        "href": "http://localhost:8080/player",
+                        "href": "http://localhost:8080/expandPlayer",
                         "hreflang": "en",
                         "type": "application/hal+json"
                     }
@@ -161,7 +160,7 @@ class ExpandSpec extends Specification implements JsonViewTest, GrailsUnitTest {
                     "team": {
                         "_links": {
                             "self": {
-                                "href": "http://localhost:8080/team/1",
+                                "href": "http://localhost:8080/expandTeam/1",
                                 "hreflang": "en",
                                 "type": "application/hal+json"
                             }
@@ -171,7 +170,7 @@ class ExpandSpec extends Specification implements JsonViewTest, GrailsUnitTest {
                 },
                 "_links": {
                     "self": {
-                        "href": "http://localhost:8080/player",
+                        "href": "http://localhost:8080/expandPlayer",
                         "hreflang": "en",
                         "type": "application/hal+json"
                     }
@@ -185,18 +184,18 @@ class ExpandSpec extends Specification implements JsonViewTest, GrailsUnitTest {
         given: 'An entity with a proxy association'
         def mockSession = Mock(Session)
         mockSession.getMappingContext() >> mappingContext
-        mockSession.retrieve(Team, 9L) >> new Team(name: 'Manchester United')
-        def teamProxy = mappingContext.proxyFactory.createProxy(mockSession, Team, 9L)
-        def player = new Player(name: 'Cantona', team: teamProxy)
+        mockSession.retrieve(ExpandTeam, 9L) >> new ExpandTeam(name: 'Manchester United')
+        def teamProxy = mappingContext.proxyFactory.createProxy(mockSession, ExpandTeam, 9L)
+        def player = new ExpandPlayer(name: 'Cantona', team: teamProxy)
         player.id = 3
 
         when: 'The domain is rendered with expand parameters'
         JsonRenderResult result = render('''
-            import grails.plugin.json.view.*
+            import grails.plugin.json.view.ExpandPlayer as Player
             model {
                 Player player
             }
-            
+
             json jsonapi.render(player, [expand: 'team'])
         ''', [player: player])
 
@@ -204,7 +203,7 @@ class ExpandSpec extends Specification implements JsonViewTest, GrailsUnitTest {
         objectMapper.readTree(result.jsonText) == objectMapper.readTree('''
             {
                 "data": {
-                    "type": "player",
+                    "type": "expandPlayer",
                     "id": "3",
                     "attributes": {
                         "name": "Cantona"
@@ -212,21 +211,21 @@ class ExpandSpec extends Specification implements JsonViewTest, GrailsUnitTest {
                     "relationships": {
                         "team": {
                             "links": {
-                                "self": "/team/9"
+                                "self": "/expandTeam/9"
                             },
                             "data": {
-                                "type": "team",
+                                "type": "expandTeam",
                                 "id": "9"
                             }
                         }
                     }
                 },
                 "links": {
-                    "self": "/player/3"
+                    "self": "/expandPlayer/3"
                 },
                 "included": [
                     {
-                        "type":"team",
+                        "type":"expandTeam",
                         "id": "9",
                         "attributes": {
                             "titles": null,
@@ -241,11 +240,33 @@ class ExpandSpec extends Specification implements JsonViewTest, GrailsUnitTest {
                             }
                         },
                         "links": {
-                            "self": "/team/9"
+                            "self": "/expandTeam/9"
                         }
                     }
                 ]
             }
         ''')
+    }
+}
+
+@Entity
+class ExpandTeam {
+    String name
+    ExpandPlayer captain
+    List players
+    List<String> titles
+    @SuppressWarnings('unused')
+    static hasMany = [players: ExpandPlayer]
+}
+
+@Entity
+class ExpandPlayer {
+    Long version
+    String name
+    @SuppressWarnings('unused')
+    static belongsTo = [team: ExpandTeam]
+
+    static constraints = {
+        name nullable: false
     }
 }

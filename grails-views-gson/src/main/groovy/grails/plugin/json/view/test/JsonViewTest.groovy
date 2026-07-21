@@ -21,6 +21,7 @@ package grails.plugin.json.view.test
 
 import groovy.json.JsonSlurper
 import groovy.text.Template
+import groovy.transform.CompileDynamic
 import groovy.transform.CompileStatic
 
 import org.springframework.beans.factory.annotation.Autowired
@@ -41,6 +42,7 @@ import grails.web.mapping.LinkGenerator
 import grails.web.mime.MimeUtility
 import org.grails.datastore.mapping.keyvalue.mapping.config.KeyValueMappingContext
 import org.grails.datastore.mapping.model.MappingContext
+import org.grails.validation.ConstraintEvalUtils
 
 /**
  * A trait that test classes can implement to add support for easily testing JSON views
@@ -103,6 +105,43 @@ trait JsonViewTest {
         templateEngine.setJsonApiIdRenderStrategy(jsonApiIdRenderStrategy)
         return templateEngine
     }()
+
+    /**
+     * Resets the {@link ConstraintEvalUtils} default-constraints cache after every feature
+     * method so state from one test cannot leak into the next test that happens to run in the
+     * same JVM/fork.
+     *
+     * <p>{@link ConstraintEvalUtils} memoizes the default GORM constraints map in a single
+     * JVM-wide static field keyed by the identity of the last {@code Config} seen. Since each
+     * spec implementing this trait typically builds its own {@code GrailsApplication}/{@code
+     * Config}, a stale entry left behind by one spec can otherwise be picked up by another.
+     * This is cheap to recompute, so it is safe to clear after every feature.</p>
+     */
+    void cleanup() {
+        ConstraintEvalUtils.clearDefaultConstraints()
+    }
+
+    /**
+     * Tears down any {@code GrailsApplication} cached by {@code org.grails.testing.GrailsUnitTest}
+     * once the whole spec has finished, so a later spec running in the same JVM/fork always starts
+     * from a clean application context.
+     *
+     * <p>This is deliberately a {@code cleanupSpec()} (once per spec class), not a per-feature
+     * {@code cleanup()}: {@code GrailsUnitTest} intentionally builds its {@code GrailsApplication}
+     * lazily and reuses it across every feature of a spec (it is expensive to build and some
+     * traits, e.g. {@code DataTest}, register beans into it once per spec). Tearing it down after
+     * every feature would rebuild it before the next feature could see those spec-scoped beans.</p>
+     *
+     * <p>{@code GrailsUnitTest} lives in {@code grails-testing-support-core}, a test-only
+     * dependency this trait cannot reference directly since it ships as part of the main
+     * {@code grails-views-gson} artifact, so the call is made dynamically only when present.</p>
+     */
+    @CompileDynamic
+    void cleanupSpec() {
+        if (metaClass.respondsTo(this, 'cleanupGrailsApplication')) {
+            cleanupGrailsApplication()
+        }
+    }
 
     /**
      * Render a template for the given source

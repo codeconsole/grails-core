@@ -24,37 +24,21 @@ import grails.plugin.json.view.test.JsonRenderResult
 import grails.plugin.json.view.test.JsonViewTest
 import grails.validation.Validateable
 import org.grails.testing.GrailsUnitTest
-import org.grails.validation.ConstraintEvalUtils
 import spock.lang.Shared
 import spock.lang.Specification
 
 class JsonApiSpec extends Specification implements JsonViewTest, GrailsUnitTest {
 
-    // Cache the static field helper interface for performance
-    private static final Class<?> STATIC_FIELD_HELPER = Class.forName('grails.validation.Validateable$Trait$StaticFieldHelper')
-
     @Shared
     JsonMapper objectMapper = JsonMapper.builder().build()
 
     void setup() {
-        ConstraintEvalUtils.clearDefaultConstraints()
-        clearConstraintsMapCache(SuperHero)
+        // Resets SuperHero's own cached constraints map (see Validateable#clearConstraintsMapCache).
+        // JsonViewTest#cleanup() already resets the shared ConstraintEvalUtils cache after every
+        // feature, but SuperHero's cache is specific to this spec's own Validateable command
+        // object, so it is reset here too.
+        SuperHero.clearConstraintsMapCache()
         mappingContext.addPersistentEntities(Widget, Author, Book, ResearchPaper)
-    }
-
-    void cleanup() {
-        ConstraintEvalUtils.clearDefaultConstraints()
-        clearConstraintsMapCache(SuperHero)
-    }
-
-    /**
-     * Clears the private static constraintsMapInternal field in the Validateable trait.
-     */
-    private static void clearConstraintsMapCache(Class<?> clazz) {
-        if (STATIC_FIELD_HELPER.isAssignableFrom(clazz)) {
-            def setterMethod = clazz.getMethod('grails_validation_Validateable__constraintsMapInternal$set', Map)
-            setterMethod.invoke(null, (Map) null)
-        }
     }
 
     void 'test simple case'() {
