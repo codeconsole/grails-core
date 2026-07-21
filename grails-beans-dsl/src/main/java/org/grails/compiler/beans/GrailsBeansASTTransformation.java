@@ -27,9 +27,11 @@ import java.util.Set;
 import groovy.transform.CompilationUnitAware;
 import groovy.transform.CompileStatic;
 import org.codehaus.groovy.ast.ASTNode;
+import org.codehaus.groovy.ast.AnnotatedNode;
 import org.codehaus.groovy.ast.AnnotationNode;
 import org.codehaus.groovy.ast.ClassHelper;
 import org.codehaus.groovy.ast.ClassNode;
+import org.codehaus.groovy.ast.FieldNode;
 import org.codehaus.groovy.ast.MethodNode;
 import org.codehaus.groovy.ast.Parameter;
 import org.codehaus.groovy.ast.PropertyNode;
@@ -63,18 +65,29 @@ import org.springframework.context.annotation.Scope;
  * Rewrites the {@code beans} closure DSL on a {@link grails.compiler.beans.GrailsBeans}-annotated
  * class into real {@code @Bean} factory methods, at compile time.
  *
- * <p>Recognises statements shaped as {@code bean(Type[, "name"]) { ... }}, optionally chained with
- * any combination of {@code .conditionalOnMissingBean(Type...)}, {@code .primary()},
- * {@code .lazy()}, {@code .scope("name")}, and {@code .annotate(AnnotationType[, attr: value, ...])}
- * (repeatable, for any other single-valued annotation - conditional or not - that a hand-written
- * {@code @Bean} method could otherwise carry). For each one it synthesises a public method named
- * after the bean, returning the declared type, annotated {@code @org.springframework.context.
- * annotation.Bean} plus whichever of {@code @ConditionalOnMissingBean}, {@code @Primary},
- * {@code @Lazy}, {@code @Scope}, and arbitrary {@code .annotate(...)} annotations were chained,
- * whose body and parameters are lifted directly from the DSL closure. The {@code beans} property
- * itself is removed so no closure survives into the compiled class.
+ * <p>Recognises three kinds of top-level statement inside the {@code beans} closure:
+ * <ul>
+ * <li>{@code bean(Type[, "name"]) { ... }}, optionally chained with any combination of
+ * {@code .conditionalOnMissingBean(Type...)}, {@code .primary()}, {@code .lazy()},
+ * {@code .scope("name")}, and (repeatably) {@code .annotate(AnnotationType[, attr: value, ...])}.
+ * Synthesises a public method named after the bean, returning the declared type, annotated
+ * {@code @org.springframework.context.annotation.Bean} plus whichever qualifiers were chained,
+ * whose body and parameters are lifted directly from the DSL closure.</li>
+ * <li>{@code field(Type[, "name"])}, optionally chained (repeatably) with
+ * {@code .annotate(AnnotationType[, attr: value, ...])} - typically {@code .annotate(Value, value:
+ * "${...}")}. Declares a private field on the generated class, for state shared across bean
+ * methods (e.g. injected configuration).</li>
+ * <li>{@code method(Type[, "name"]) { ... }}, with the same chaining as {@code field(...)}.
+ * Declares a private helper method on the generated class, for logic shared across bean methods,
+ * lifted from the DSL closure the same way {@code bean(...)} is.</li>
+ * </ul>
  *
- * <p>When the annotated class extends {@code grails.plugins.Plugin}, the generated methods land
+ * <p>Fields and helper methods declared this way are ordinary private members of the generated
+ * class - {@code bean(...)} closures reference them the same way a hand-written {@code @Bean}
+ * method would reference a sibling field or method on its {@code @Configuration} class. The
+ * {@code beans} property itself is removed so no closure survives into the compiled class.
+ *
+ * <p>When the annotated class extends {@code grails.plugins.Plugin}, the generated members land
  * on a new sibling {@code <PluginClassName>AutoConfiguration} class in the same package instead
  * of on the plugin class itself - a {@code Plugin} subclass is instantiated by
  * {@code DefaultGrailsPlugin} via plain reflection, never as a Spring bean, so it cannot carry
@@ -88,7 +101,7 @@ import org.springframework.context.annotation.Scope;
  * <p>{@code @CompileStatic}/{@code @GrailsCompileStatic} on the plugin class is propagated to the
  * generated sibling. Since the sibling is created after Groovy schedules local annotation
  * transforms, this transformation invokes Groovy's static-compilation transform directly after
- * generating the sibling's methods. This is the same approach used by other Grails AST transforms
+ * generating the sibling's members. This is the same approach used by other Grails AST transforms
  * that generate code after local transform discovery.
  */
 @GroovyASTTransformation(phase = CompilePhase.CANONICALIZATION)
@@ -96,6 +109,9 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
 
     private static final String BEANS_PROPERTY = "beans";
     private static final String BEAN_CALL = "bean";
+    private static final String FIELD_CALL = "field";
+    private static final String METHOD_CALL = "method";
+    private static final Set<String> ROOT_STATEMENT_CALL_NAMES = Set.of(BEAN_CALL, FIELD_CALL, METHOD_CALL);
     private static final String CONDITIONAL_ON_MISSING_BEAN_CALL = "conditionalOnMissingBean";
     private static final String PRIMARY_CALL = "primary";
     private static final String LAZY_CALL = "lazy";
@@ -103,6 +119,9 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
     private static final String ANNOTATE_CALL = "annotate";
     private static final Set<String> QUALIFIER_CALL_NAMES = Set.of(
             CONDITIONAL_ON_MISSING_BEAN_CALL, PRIMARY_CALL, LAZY_CALL, SCOPE_CALL, ANNOTATE_CALL);
+    // field(...) and method(...) declare plain class members, not beans - only .annotate(...)
+    // (attaching an arbitrary annotation, e.g. @Value) makes sense on them.
+    private static final Set<String> MEMBER_QUALIFIER_CALL_NAMES = Set.of(ANNOTATE_CALL);
     private static final String PLUGIN_SUPERCLASS_NAME = "grails.plugins.Plugin";
     private static final String AUTO_CONFIGURATION_SUFFIX = "AutoConfiguration";
 
@@ -132,7 +151,7 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
                 createAutoConfigurationSibling(classNode, source) : classNode;
 
         for (Statement statement : beanStatements((ClosureExpression) initialExpression)) {
-            processBeanStatement(beanMethodHost, statement, source);
+            processStatement(beanMethodHost, statement, source);
         }
 
         if (beanMethodHost != classNode) {
@@ -199,30 +218,39 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
         return single;
     }
 
-    private void processBeanStatement(ClassNode classNode, Statement statement, SourceUnit source) {
+    private void processStatement(ClassNode classNode, Statement statement, SourceUnit source) {
         if (!(statement instanceof ExpressionStatement) ||
                 !(((ExpressionStatement) statement).getExpression() instanceof MethodCallExpression)) {
-            addError(statement, source, "Each 'beans' statement must be a bean(...) call");
+            addError(statement, source, "Each 'beans' statement must be a bean(...), field(...), or method(...) call");
             return;
         }
 
         MethodCallExpression outerCall = (MethodCallExpression) ((ExpressionStatement) statement).getExpression();
 
-        // Walk from the outermost (last-written) call back to the bean(...) call at the root,
-        // collecting any chained qualifiers - .conditionalOnMissingBean(...), .primary(), .lazy(),
-        // .scope(...), .annotate(...) - in source order along the way.
+        // Walk from the outermost (last-written) call back to the bean(...)/field(...)/method(...)
+        // call at the root, collecting any chained qualifiers along the way.
         List<MethodCallExpression> qualifierCalls = new ArrayList<>();
         MethodCallExpression baseCall = outerCall;
-        while (!BEAN_CALL.equals(baseCall.getMethodAsString())) {
+        while (!ROOT_STATEMENT_CALL_NAMES.contains(baseCall.getMethodAsString())) {
             if (!QUALIFIER_CALL_NAMES.contains(baseCall.getMethodAsString()) ||
                     !(baseCall.getObjectExpression() instanceof MethodCallExpression)) {
-                addError(statement, source, "Expected bean(Type[, \"name\"]) { ... } optionally chained with " +
-                        ".conditionalOnMissingBean(Type...), .primary(), .lazy(), .scope(\"name\"), " +
-                        "and/or (repeatably) .annotate(AnnotationType[, attr: value, ...])");
+                addError(statement, source, "Expected bean(Type[, \"name\"]) { ... }, field(Type[, \"name\"]), " +
+                        "or method(Type[, \"name\"]) { ... }, optionally chained with qualifiers");
                 return;
             }
             qualifierCalls.add(0, baseCall);
             baseCall = (MethodCallExpression) baseCall.getObjectExpression();
+        }
+
+        String rootName = baseCall.getMethodAsString();
+        boolean isBean = BEAN_CALL.equals(rootName);
+        Set<String> allowedQualifiers = isBean ? QUALIFIER_CALL_NAMES : MEMBER_QUALIFIER_CALL_NAMES;
+        for (MethodCallExpression qualifierCall : qualifierCalls) {
+            if (!allowedQualifiers.contains(qualifierCall.getMethodAsString())) {
+                addError(qualifierCall, source, "." + qualifierCall.getMethodAsString() + "(...) cannot be " +
+                        "chained onto " + rootName + "(...) - only .annotate(...) can be");
+                return;
+            }
         }
 
         // .annotate(...) is repeatable (once per distinct annotation type, enforced when the
@@ -231,11 +259,25 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
         for (MethodCallExpression qualifierCall : qualifierCalls) {
             String qualifierName = qualifierCall.getMethodAsString();
             if (!ANNOTATE_CALL.equals(qualifierName) && !seenQualifiers.add(qualifierName)) {
-                addError(qualifierCall, source, "." + qualifierName + "(...) may only be chained once per bean(...)");
+                addError(qualifierCall, source, "." + qualifierName + "(...) may only be chained once per " +
+                        rootName + "(...)");
                 return;
             }
         }
 
+        if (isBean) {
+            processBeanStatement(classNode, outerCall, baseCall, qualifierCalls, source);
+        }
+        else if (FIELD_CALL.equals(rootName)) {
+            processFieldStatement(classNode, baseCall, qualifierCalls, source);
+        }
+        else {
+            processMethodStatement(classNode, outerCall, baseCall, qualifierCalls, source);
+        }
+    }
+
+    private void processBeanStatement(ClassNode classNode, MethodCallExpression outerCall, MethodCallExpression baseCall,
+            List<MethodCallExpression> qualifierCalls, SourceUnit source) {
         List<Expression> closureCallArgs = flatten(outerCall.getArguments());
         if (closureCallArgs.isEmpty() || !(closureCallArgs.get(closureCallArgs.size() - 1) instanceof ClosureExpression)) {
             addError(outerCall, source, "bean(...) must end with a factory closure: bean(Type) { ... }");
@@ -251,41 +293,19 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
             baseArgs = baseArgs.subList(0, baseArgs.size() - 1);
         }
 
-        if (baseArgs.isEmpty() || baseArgs.size() > 2 || !(baseArgs.get(0) instanceof ClassExpression)) {
-            addError(baseCall, source, "bean(...) requires a bean type as its first argument and at most " +
-                    "one bean name, e.g. bean(Greeter) or bean(Greeter, \"myGreeter\")");
+        TypeAndName typeAndName = parseTypeAndName(baseArgs, baseCall, source, BEAN_CALL);
+        if (typeAndName == null) {
             return;
-        }
-        ClassExpression beanType = (ClassExpression) baseArgs.get(0);
-
-        String beanName;
-        if (baseArgs.size() == 1) {
-            beanName = decapitalize(beanType.getType().getNameWithoutPackage());
-        }
-        else {
-            Expression nameArg = baseArgs.get(1);
-            Object nameValue = nameArg instanceof ConstantExpression ? ((ConstantExpression) nameArg).getValue() : null;
-            if (!(nameValue instanceof String)) {
-                addError(nameArg, source, "bean(Type, name) requires name to be a String literal, " +
-                        "e.g. bean(Greeter, \"myGreeter\")");
-                return;
-            }
-            beanName = (String) nameValue;
-            if (!isValidJavaIdentifier(beanName)) {
-                addError(nameArg, source, "\"" + beanName + "\" is not a valid bean name: it becomes the " +
-                        "generated method's name, so it must be a valid Java identifier");
-                return;
-            }
         }
 
         MethodNode beanMethod = new MethodNode(
-                beanName,
+                typeAndName.name,
                 Modifier.PUBLIC,
-                beanType.getType(),
+                typeAndName.type.getType(),
                 factory.getParameters() == null ? Parameter.EMPTY_ARRAY : factory.getParameters(),
                 ClassNode.EMPTY_ARRAY,
                 factory.getCode());
-        beanMethod.addAnnotation(beanAnnotation(beanName));
+        beanMethod.addAnnotation(beanAnnotation(typeAndName.name));
 
         for (MethodCallExpression qualifierCall : qualifierCalls) {
             List<Expression> qualifierArgs = flatten(qualifierCall.getArguments());
@@ -299,6 +319,104 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
         }
 
         classNode.addMethod(beanMethod);
+    }
+
+    private void processFieldStatement(ClassNode classNode, MethodCallExpression baseCall,
+            List<MethodCallExpression> qualifierCalls, SourceUnit source) {
+        List<Expression> baseArgs = flatten(baseCall.getArguments());
+        TypeAndName typeAndName = parseTypeAndName(baseArgs, baseCall, source, FIELD_CALL);
+        if (typeAndName == null) {
+            return;
+        }
+
+        FieldNode field = classNode.addField(typeAndName.name, Modifier.PRIVATE, typeAndName.type.getType(), null);
+
+        for (MethodCallExpression qualifierCall : qualifierCalls) {
+            List<Expression> qualifierArgs = flatten(qualifierCall.getArguments());
+            if (!applyGenericAnnotation(field, qualifierCall, qualifierArgs, source)) {
+                return;
+            }
+        }
+    }
+
+    private void processMethodStatement(ClassNode classNode, MethodCallExpression outerCall, MethodCallExpression baseCall,
+            List<MethodCallExpression> qualifierCalls, SourceUnit source) {
+        List<Expression> closureCallArgs = flatten(outerCall.getArguments());
+        if (closureCallArgs.isEmpty() || !(closureCallArgs.get(closureCallArgs.size() - 1) instanceof ClosureExpression)) {
+            addError(outerCall, source, "method(...) must end with a body closure: method(Type, \"name\") { ... }");
+            return;
+        }
+        ClosureExpression body = (ClosureExpression) closureCallArgs.get(closureCallArgs.size() - 1);
+
+        List<Expression> baseArgs = flatten(baseCall.getArguments());
+        if (baseCall == outerCall && !baseArgs.isEmpty()) {
+            baseArgs = baseArgs.subList(0, baseArgs.size() - 1);
+        }
+
+        TypeAndName typeAndName = parseTypeAndName(baseArgs, baseCall, source, METHOD_CALL);
+        if (typeAndName == null) {
+            return;
+        }
+
+        MethodNode helperMethod = new MethodNode(
+                typeAndName.name,
+                Modifier.PRIVATE,
+                typeAndName.type.getType(),
+                body.getParameters() == null ? Parameter.EMPTY_ARRAY : body.getParameters(),
+                ClassNode.EMPTY_ARRAY,
+                body.getCode());
+
+        for (MethodCallExpression qualifierCall : qualifierCalls) {
+            List<Expression> qualifierArgs = flatten(qualifierCall.getArguments());
+            if (qualifierCall == outerCall) {
+                qualifierArgs = qualifierArgs.subList(0, qualifierArgs.size() - 1);
+            }
+            if (!applyGenericAnnotation(helperMethod, qualifierCall, qualifierArgs, source)) {
+                return;
+            }
+        }
+
+        classNode.addMethod(helperMethod);
+    }
+
+    private static final class TypeAndName {
+        private final ClassExpression type;
+        private final String name;
+
+        TypeAndName(ClassExpression type, String name) {
+            this.type = type;
+            this.name = name;
+        }
+    }
+
+    private TypeAndName parseTypeAndName(List<Expression> args, MethodCallExpression call, SourceUnit source, String callName) {
+        if (args.isEmpty() || args.size() > 2 || !(args.get(0) instanceof ClassExpression)) {
+            addError(call, source, callName + "(...) requires a type as its first argument and at most one " +
+                    "name, e.g. " + callName + "(Greeter) or " + callName + "(Greeter, \"myGreeter\")");
+            return null;
+        }
+        ClassExpression type = (ClassExpression) args.get(0);
+
+        String name;
+        if (args.size() == 1) {
+            name = decapitalize(type.getType().getNameWithoutPackage());
+        }
+        else {
+            Expression nameArg = args.get(1);
+            Object nameValue = nameArg instanceof ConstantExpression ? ((ConstantExpression) nameArg).getValue() : null;
+            if (!(nameValue instanceof String)) {
+                addError(nameArg, source, callName + "(Type, name) requires name to be a String literal, " +
+                        "e.g. " + callName + "(Greeter, \"myGreeter\")");
+                return null;
+            }
+            name = (String) nameValue;
+            if (!isValidJavaIdentifier(name)) {
+                addError(nameArg, source, "\"" + name + "\" is not a valid name: it becomes the generated " +
+                        "member's name, so it must be a valid Java identifier");
+                return null;
+            }
+        }
+        return new TypeAndName(type, name);
     }
 
     private boolean applyQualifier(MethodNode beanMethod, MethodCallExpression qualifierCall,
@@ -337,7 +455,7 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
         return addAnnotationIfAbsent(beanMethod, qualifierCall, scopeAnnotation, source);
     }
 
-    private boolean applyGenericAnnotation(MethodNode beanMethod, MethodCallExpression qualifierCall,
+    private boolean applyGenericAnnotation(AnnotatedNode target, MethodCallExpression qualifierCall,
             List<Expression> args, SourceUnit source) {
         MapExpression members = !args.isEmpty() && args.get(0) instanceof MapExpression ? (MapExpression) args.get(0) : null;
         List<Expression> remaining = members != null ? args.subList(1, args.size()) : args;
@@ -366,18 +484,18 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
                 annotation.setMember((String) keyValue, entry.getValueExpression());
             }
         }
-        return addAnnotationIfAbsent(beanMethod, qualifierCall, annotation, source);
+        return addAnnotationIfAbsent(target, qualifierCall, annotation, source);
     }
 
-    private boolean addAnnotationIfAbsent(MethodNode beanMethod, MethodCallExpression qualifierCall,
+    private boolean addAnnotationIfAbsent(AnnotatedNode target, MethodCallExpression qualifierCall,
             AnnotationNode annotation, SourceUnit source) {
         ClassNode type = annotation.getClassNode();
-        if (!beanMethod.getAnnotations(type).isEmpty()) {
-            addError(qualifierCall, source, "@" + type.getNameWithoutPackage() + " is already attached to " +
-                    "this bean, via an earlier qualifier or .annotate(...)");
+        if (!target.getAnnotations(type).isEmpty()) {
+            addError(qualifierCall, source, "@" + type.getNameWithoutPackage() + " is already attached " +
+                    "here, via an earlier qualifier or .annotate(...)");
             return false;
         }
-        beanMethod.addAnnotation(annotation);
+        target.addAnnotation(annotation);
         return true;
     }
 

@@ -166,13 +166,33 @@ Each `bean(Type[, "name"])` statement compiles to a public method named after th
 * Any combination of the above can be chained together, in any order — for example `bean(SlowGreeter, 'slowGreeter').lazy().scope('prototype') { ... }`.
 * Typed closure parameters (`{ MessageSource messageSource -> ... }`) become the generated method's parameters, so other beans are injected the same way a hand-written `@Bean` method would declare them — and a parameter-level annotation such as `{ @Qualifier('special') Greeter g -> ... }` carries straight through too, since the closure's own parameters become the generated method's parameters directly.
 
+Two more statement kinds can appear inside `beans { }` alongside `bean(...)`, for state and logic shared across bean methods — the same role a hand-written `@Configuration` class's own fields and private methods play:
+
+* `field(Type[, "name"])`, optionally chained (repeatably) with `.annotate(AnnotationType[, attr: value, ...])`, declares a private field on the generated class. The usual case is injected configuration: `field(String, 'encoding').annotate(Value, value: '${grails.gsp.view.encoding:UTF-8}')`.
+* `method(Type[, "name"]) { ... }`, with the same chaining, declares a private helper method the same way `bean(...)` declares a public one — typed closure parameters become method parameters, and the closure body becomes the method body.
+
+Both are ordinary private members of the generated class, so a `bean(...)` closure reads a `field(...)` or calls a `method(...)` exactly like a hand-written `@Bean` method would reference a sibling field or method on its own class:
+
+[source,groovy]
+----
+field(String, 'suffix').annotate(Value, value: '${myapp.greeting-suffix:!}')
+
+method(String, 'buildGreeting') { String name ->
+    "Hello, ${name}${suffix}"
+}
+
+bean(Greeting, 'greeting') {
+    new Greeting(buildGreeting('World'))
+}
+----
+
 Because the result is an ordinary `AutoConfiguration` class, it must be registered the same way any Spring Boot auto-configuration is: listed in `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports`. Modules built as part of this project can apply the `org.apache.grails.buildsrc.autoconfiguration-imports` Gradle convention plugin to generate that file automatically, by scanning the module's own compiled classes for `@AutoConfiguration` at build time. Projects outside this build register the class the same way any hand-written `AutoConfiguration` is registered — by listing it in that file directly.
 
 NOTE: `@GrailsBeans` does not require extending `Plugin` at all — it produces a plain Spring Boot `AutoConfiguration`, so it can be used by any Spring Boot module, not just a Grails plugin descriptor. Reach for it specifically when a bean's registration needs to be ordered against a particular other auto-configuration; otherwise `beanRegistrar()` remains the recommended way to register beans from a `Plugin`.
 
 The DSL still covers a narrower surface than `doWithSpring(BeanBuilder)`:
 
-* Each statement inside `beans { }` must be exactly `bean(Type[, "name"]) { ... }`, optionally chained with any combination of `.conditionalOnMissingBean(Type...)`, `.primary()`, `.lazy()`, `.scope("name")`, and (repeatably) `.annotate(AnnotationType[, attr: value, ...])` — an `if`, a `for` loop, or any other imperative Groovy is a compile-time error, not a runtime one.
+* Each top-level statement inside `beans { }` must be exactly `bean(...)`, `field(...)`, or `method(...)`, with their respective chaining — an `if`, a `for` loop, or any other imperative Groovy directly inside `beans { }` is a compile-time error, not a runtime one. Note that this is about the DSL's own top-level statements, not the bodies of `bean(...)`/`method(...)` closures themselves, which accept arbitrary Groovy — and `field(...)`/`method(...)` already cover the common reasons to want shared state or logic in the first place.
 * `.annotate(...)` attribute values must be simple compile-time constants (strings, numbers, booleans, class literals, enum constants, or arrays of these) — an annotation attribute that itself takes a nested annotation as a value isn't supported.
 * Dependencies on other beans are expressed only through typed closure parameters (autowired by type), not by name — there is no `ref('beanName')` lookup.
 

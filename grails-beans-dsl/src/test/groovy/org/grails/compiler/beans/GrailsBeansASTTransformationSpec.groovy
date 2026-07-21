@@ -19,15 +19,18 @@
 package org.grails.compiler.beans
 
 import java.lang.annotation.Annotation
+import java.lang.reflect.Modifier
 
 import org.codehaus.groovy.control.CompilationUnit
 import org.codehaus.groovy.control.CompilerConfiguration
 import org.codehaus.groovy.control.MultipleCompilationErrorsException
 import org.codehaus.groovy.control.Phases
 import org.springframework.beans.factory.annotation.Qualifier
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.boot.autoconfigure.AutoConfiguration
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication
+import org.springframework.boot.autoconfigure.condition.SearchStrategy
 import org.springframework.boot.autoconfigure.context.MessageSourceAutoConfiguration
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Lazy
@@ -47,6 +50,7 @@ class GrailsBeansASTTransformationSpec extends Specification {
 
     private static final String FIXTURE = '''
         import grails.compiler.beans.GrailsBeans
+        import org.springframework.beans.factory.annotation.Value
         import org.springframework.boot.autoconfigure.AutoConfiguration
         import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication
         import org.springframework.core.annotation.Order
@@ -93,6 +97,16 @@ class GrailsBeansASTTransformationSpec extends Specification {
 
                 bean(String, 'multiAnnotatedGreeting').primary().annotate(Order, value: 2).annotate(ConditionalOnWebApplication) {
                     'multi hello'
+                }
+
+                field(String, 'suffix').annotate(Value, value: '${greeting.suffix:!!!}')
+
+                method(String, 'yell') { String input ->
+                    input.toUpperCase() + (suffix ?: '')
+                }
+
+                bean(String, 'yelledGreeting') {
+                    yell('hello')
                 }
             }
         }
@@ -255,6 +269,42 @@ class GrailsBeansASTTransformationSpec extends Specification {
         fixtureBeans.getDeclaredConstructor().newInstance().multiAnnotatedGreeting() == 'multi hello'
     }
 
+    def "field(Type, name).annotate(...) declares a private annotated field"() {
+        given:
+        Class<?> fixtureBeans = compile()
+
+        when:
+        def field = fixtureBeans.getDeclaredField('suffix')
+
+        then:
+        field.type == String
+        Modifier.isPrivate(field.modifiers)
+        field.isAnnotationPresent(Value)
+        field.getAnnotation(Value).value() == '${greeting.suffix:!!!}'
+    }
+
+    def "method(Type, name) declares a private helper method usable from bean(...) and field(...)"() {
+        given:
+        Class<?> fixtureBeans = compile()
+
+        when:
+        def helperMethod = fixtureBeans.getDeclaredMethod('yell', String)
+
+        then: "it is a plain private member, not itself a @Bean"
+        helperMethod.returnType == String
+        Modifier.isPrivate(helperMethod.modifiers)
+        !helperMethod.isAnnotationPresent(Bean)
+
+        when: "a bean() closure calls it, and it reads a sibling field(...)"
+        def instance = fixtureBeans.getDeclaredConstructor().newInstance()
+        def suffixField = fixtureBeans.getDeclaredField('suffix')
+        suffixField.accessible = true
+        suffixField.set(instance, '!!!')
+
+        then:
+        instance.yelledGreeting() == 'HELLO!!!'
+    }
+
     def "closure parameters become method parameters for constructor-style injection"() {
         given:
         Class<?> fixtureBeans = compile()
@@ -379,17 +429,17 @@ class GrailsBeansASTTransformationSpec extends Specification {
 
         where:
         description                                  | statement                                                          | expectedMessage
-        'a statement that is not a method call'       | 'def notACall = 1'                                                 | "Each 'beans' statement must be a bean(...) call"
+        'a statement that is not a method call'       | 'def notACall = 1'                                                 | "Each 'beans' statement must be a bean(...), field(...), or method(...) call"
         'a method call that is not bean(...)'         | "someOtherMethod(String) { 'x' }"                                  | 'Expected bean(Type[, "name"]) { ... }'
-        'bean(...) with a non-type first argument'    | "bean('NotAType') { 'x' }"                                         | 'bean(...) requires a bean type as its first argument'
+        'bean(...) with a non-type first argument'    | "bean('NotAType') { 'x' }"                                         | 'bean(...) requires a type as its first argument'
         'bean(...) with no trailing factory closure'  | "bean(String, 'x')"                                                | 'bean(...) must end with a factory closure'
         'conditionalOnMissingBean(...) with a non-type argument' |
                 "bean(String, 'x').conditionalOnMissingBean('not a type') { 'x' }" |
                 'conditionalOnMissingBean(...) arguments must be types'
         'bean(...) with a non-constant name argument'  | "bean(String, someVariable) { 'x' }"                              | 'requires name to be a String literal'
         'bean(...) with a non-String constant name'    | 'bean(String, 42) { \'x\' }'                                       | 'requires name to be a String literal'
-        'bean(...) with an unexpected third argument'  | "bean(String, 'x', 'unexpected') { 'y' }"                          | 'at most one bean name'
-        'bean(...) with a name that is not a valid identifier' | "bean(String, '123 not valid!') { 'x' }"                   | 'is not a valid bean name'
+        'bean(...) with an unexpected third argument'  | "bean(String, 'x', 'unexpected') { 'y' }"                          | 'at most one name'
+        'bean(...) with a name that is not a valid identifier' | "bean(String, '123 not valid!') { 'x' }"                   | 'is not a valid name'
         'an unrecognised qualifier chained after bean(...)' | "bean(String, 'x').unknownQualifier() { 'y' }"                | 'Expected bean(Type[, "name"]) { ... }'
         'the same qualifier chained twice'             | "bean(String, 'x').primary().primary() { 'y' }"                    | 'may only be chained once'
         'primary() given an argument'                  | "bean(String, 'x').primary('oops') { 'y' }"                        | '.primary() takes no arguments'
@@ -403,6 +453,10 @@ class GrailsBeansASTTransformationSpec extends Specification {
                 "bean(String, 'x').annotate(Order, value: 1).annotate(Order, value: 2) { 'y' }" |
                 'already attached'
         'annotate(...) colliding with a named qualifier' | "bean(String, 'x').primary().annotate(Primary) { 'y' }"          | 'already attached'
+        'field(...) with a non-type first argument'      | "field('NotAType')"                                               | 'field(...) requires a type as its first argument'
+        'field(...) chained with a bean-only qualifier'   | "field(String, 'x').primary()"                                    | 'cannot be chained onto field(...)'
+        'method(...) without a body closure'              | "method(String, 'x')"                                             | 'method(...) must end with a body closure'
+        'method(...) chained with a bean-only qualifier'  | "method(String, 'x').conditionalOnMissingBean(String) { 'y' }"    | 'cannot be chained onto method(...)'
     }
 
     private static final String FIXTURE_PLUGIN = '''
@@ -564,6 +618,175 @@ class GrailsBeansASTTransformationSpec extends Specification {
 
         then:
         autoConfigClass.getDeclaredConstructor().newInstance().greeting() == 'hello'
+    }
+
+    def "field(...) and method(...) resolve correctly from a bean() closure under @CompileStatic"() {
+        given: "a field and a private helper method are relocated from the DSL closure into the " +
+                "generated class's own members, and this proves a sibling bean() referencing them " +
+                "by simple name still resolves once static type checking examines the final class"
+        String source = '''
+            import groovy.transform.CompileStatic
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.beans.factory.annotation.Value
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @GrailsBeans
+            @CompileStatic
+            @AutoConfiguration
+            class CompileStaticMembersFixture {
+                def beans = {
+                    field(String, 'suffix').annotate(Value, value: '${greeting.suffix:!!!}')
+
+                    method(String, 'yell') { String input ->
+                        input.toUpperCase() + (suffix ?: '')
+                    }
+
+                    bean(String, 'yelledGreeting') {
+                        yell('hello')
+                    }
+                }
+            }
+        '''
+
+        when:
+        Class<?> fixture = compile(source)
+        def instance = fixture.getDeclaredConstructor().newInstance()
+        def suffixField = fixture.getDeclaredField('suffix')
+        suffixField.accessible = true
+        suffixField.set(instance, '!!!')
+
+        then:
+        instance.yelledGreeting() == 'HELLO!!!'
+    }
+
+    def "field(...) and method(...) resolve correctly on the Plugin-subclass sibling under @CompileStatic"() {
+        given:
+        String source = '''
+            import groovy.transform.CompileStatic
+            import grails.compiler.beans.GrailsBeans
+            import grails.plugins.Plugin
+            import org.springframework.beans.factory.annotation.Value
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @GrailsBeans
+            @CompileStatic
+            @AutoConfiguration
+            class CompileStaticMembersPluginFixture extends Plugin {
+                String version = '1.0'
+
+                def beans = {
+                    field(String, 'suffix').annotate(Value, value: '${greeting.suffix:!!!}')
+
+                    method(String, 'yell') { String input ->
+                        input.toUpperCase() + (suffix ?: '')
+                    }
+
+                    bean(String, 'yelledGreeting') {
+                        yell('hello')
+                    }
+                }
+            }
+        '''
+
+        when:
+        Class<?> pluginClass = compile(source)
+        Class<?> autoConfigClass = new GroovyClassLoader(pluginClass.classLoader)
+                .loadClass('CompileStaticMembersPluginFixtureAutoConfiguration')
+        def instance = autoConfigClass.getDeclaredConstructor().newInstance()
+        def suffixField = autoConfigClass.getDeclaredField('suffix')
+        suffixField.accessible = true
+        suffixField.set(instance, '!!!')
+
+        then:
+        instance.yelledGreeting() == 'HELLO!!!'
+    }
+
+    def "a realistic i18n-plugin-shaped conversion compiles and behaves correctly"() {
+        given: "field(...)/method(...)/bean(...) together, modelled on the real " +
+                "org.grails.plugins.i18n.I18nAutoConfiguration - injected config fields feeding a " +
+                "strategy-selecting helper method and a multi-field-dependent bean, each bean backing " +
+                "off an existing same-named bean the way the real plugin does. LocaleResolver stands " +
+                "in for org.springframework.web.servlet.LocaleResolver (spring-webmvc isn't a " +
+                "dependency of this module) but the DSL usage is identical either way"
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import grails.plugins.Plugin
+            import org.springframework.beans.factory.annotation.Value
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+            import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
+            import org.springframework.boot.autoconfigure.condition.SearchStrategy
+            import org.springframework.boot.autoconfigure.context.MessageSourceAutoConfiguration
+            import org.springframework.context.support.ReloadableResourceBundleMessageSource
+
+            interface LocaleResolver {
+                String describe()
+            }
+
+            class CookieLocaleResolver implements LocaleResolver {
+                String describe() { 'cookie' }
+            }
+
+            class SessionLocaleResolver implements LocaleResolver {
+                String describe() { 'session' }
+            }
+
+            @GrailsBeans
+            @AutoConfiguration(before = MessageSourceAutoConfiguration)
+            class I18nStylePlugin extends Plugin {
+
+                String version = "1.0"
+
+                def beans = {
+                    field(String, "encoding").annotate(Value, value: \'${grails.gsp.view.encoding:UTF-8}\')
+                    field(String, "localeResolverType").annotate(Value, value: \'${grails.i18n.locale.resolver:session}\')
+
+                    method(LocaleResolver, "buildLocaleResolver") {
+                        localeResolverType?.toLowerCase() == "cookie" ? new CookieLocaleResolver() : new SessionLocaleResolver()
+                    }
+
+                    bean(LocaleResolver, "localeResolver")
+                            .annotate(ConditionalOnMissingBean, name: "localeResolver", search: SearchStrategy.CURRENT) {
+                        buildLocaleResolver()
+                    }
+
+                    method(ReloadableResourceBundleMessageSource, "buildMessageSource") {
+                        def source = new ReloadableResourceBundleMessageSource(basename: "WEB-INF/grails-app/i18n/messages")
+                        source.defaultEncoding = encoding
+                        source
+                    }
+
+                    bean(ReloadableResourceBundleMessageSource, "messageSource")
+                            .annotate(ConditionalOnMissingBean, name: "messageSource", search: SearchStrategy.CURRENT) {
+                        buildMessageSource()
+                    }
+                }
+
+                @Override
+                void doWithApplicationContext() {
+                }
+            }
+        '''
+
+        when:
+        Class<?> pluginClass = compile(source)
+        Class<?> autoConfigClass = new GroovyClassLoader(pluginClass.classLoader).loadClass('I18nStylePluginAutoConfiguration')
+        def instance = autoConfigClass.getDeclaredConstructor().newInstance()
+        def localeResolverTypeField = autoConfigClass.getDeclaredField('localeResolverType')
+        localeResolverTypeField.accessible = true
+        localeResolverTypeField.set(instance, 'cookie')
+        def encodingField = autoConfigClass.getDeclaredField('encoding')
+        encodingField.accessible = true
+        encodingField.set(instance, 'ISO-8859-1')
+
+        then: "the strategy-selecting helper, driven by an injected field, picks the right resolver"
+        instance.localeResolver().describe() == 'cookie'
+
+        and: "the second bean, built from a different helper reading a different field, also works"
+        instance.messageSource().defaultEncoding == 'ISO-8859-1'
+
+        and: "every bean backs off an existing same-named bean, matching the real plugin's semantics"
+        autoConfigClass.getDeclaredMethod('localeResolver')
+                .getAnnotation(ConditionalOnMissingBean).search() == SearchStrategy.CURRENT
     }
 
     def "compiles under @GrailsCompileStatic on a Plugin subclass"() {
