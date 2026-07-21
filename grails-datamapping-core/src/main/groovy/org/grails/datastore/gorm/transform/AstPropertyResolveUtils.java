@@ -20,7 +20,9 @@
 package org.grails.datastore.gorm.transform;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -47,7 +49,28 @@ import org.grails.datastore.mapping.reflect.NameUtils;
  * @since 6.1
  */
 public class AstPropertyResolveUtils {
-    protected static Map<String, Map<String, ClassNode>> cachedClassProperties = new HashMap<>();
+
+    /**
+     * Cache of resolved properties per {@link ClassNode}.
+     * <p>
+     * Keyed by {@code ClassNode} identity rather than name. {@link ClassNode#equals(Object)} and
+     * {@link ClassNode#hashCode()} compare by {@link ClassNode#getText()} (essentially the class
+     * name), so a {@code Map} keyed by name - or even by {@code ClassNode} itself as the map key -
+     * treats any two distinct {@code ClassNode} instances that happen to share a name as the same
+     * cache entry. That collision is a real hazard for classes compiled without a package (common
+     * in tests and dynamically generated sources), and for the same source compiled more than once
+     * in separate {@code GroovyClassLoader}s: each compilation produces its own {@code ClassNode}
+     * instance that must never share cached property data with another compilation's instance of a
+     * same-named class. An {@link IdentityHashMap} avoids that collision entirely by comparing keys
+     * with {@code ==} instead of {@code equals()}.
+     * <p>
+     * Wrapped in {@link Collections#synchronizedMap(Map)} because AST transforms that populate and
+     * read this cache can run concurrently on multiple threads (e.g. parallel test execution within
+     * one JVM/fork); a plain, unsynchronized {@link HashMap} is not safe for concurrent structural
+     * modification and can corrupt its internal state under concurrent {@code put()} calls.
+     */
+    protected static final Map<ClassNode, Map<String, ClassNode>> cachedClassProperties =
+            Collections.synchronizedMap(new IdentityHashMap<>());
 
     /**
      * Resolves the type of of the given property
@@ -94,22 +117,25 @@ public class AstPropertyResolveUtils {
     }
 
     private static Map<String, ClassNode> getPropertiesFromCache(ClassNode classNode) {
-        String className = classNode.getName();
-        Map<String, ClassNode> cachedProperties = cachedClassProperties.get(className);
+        Map<String, ClassNode> cachedProperties = cachedClassProperties.get(classNode);
         if (cachedProperties == null) {
-            cachedProperties = new HashMap<>();
+            Map<String, ClassNode> newProperties = new HashMap<>();
             boolean isDomainClass = AstUtils.isDomainClass(classNode);
             if (isDomainClass) {
-                cachedProperties.put(GormProperties.IDENTITY, new ClassNode(Long.class));
-                cachedProperties.put(GormProperties.VERSION, new ClassNode(Long.class));
+                newProperties.put(GormProperties.IDENTITY, new ClassNode(Long.class));
+                newProperties.put(GormProperties.VERSION, new ClassNode(Long.class));
             }
-            cachedClassProperties.put(className, cachedProperties);
             ClassNode currentNode = classNode;
             while (currentNode != null && !currentNode.equals(ClassHelper.OBJECT_TYPE)) {
-                populatePropertiesForClassNode(currentNode, cachedProperties, isDomainClass, !isDomainClass);
+                populatePropertiesForClassNode(currentNode, newProperties, isDomainClass, !isDomainClass);
                 currentNode = currentNode.getSuperClass();
             }
-        } return cachedProperties;
+            // Publish only once fully populated so a concurrent reader can never observe a
+            // partially-populated entry for this ClassNode.
+            cachedProperties = newProperties;
+            cachedClassProperties.put(classNode, cachedProperties);
+        }
+        return cachedProperties;
     }
 
     private static void populatePropertiesForClassNode(ClassNode classNode, Map<String, ClassNode> cachedProperties, boolean isDomainClass, boolean allowAbstract) {
