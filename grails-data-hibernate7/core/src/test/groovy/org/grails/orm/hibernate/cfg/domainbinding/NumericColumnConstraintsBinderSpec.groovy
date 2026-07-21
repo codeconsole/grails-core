@@ -117,6 +117,23 @@ class NumericColumnConstraintsBinderSpec extends Specification {
         column.precision == null
     }
 
+    def "should leave Float/Double precision unset even when min/max constraints are present"() {
+        given:
+        def cc = new ColumnConfig()
+        def pc = new PropertyConfig()
+        pc.min = -100
+        pc.max = 1000
+
+        when:
+        binder.bindNumericColumnConstraints(column, cc, pc, propertyType)
+
+        then: 'min/max only drives decimal precision - it must not leak into float/double precision'
+        column.precision == null
+
+        where:
+        propertyType << [Float, Double]
+    }
+
     def "should still honor an explicit column-config precision for Float/Double"() {
         given:
         def cc = new ColumnConfig()

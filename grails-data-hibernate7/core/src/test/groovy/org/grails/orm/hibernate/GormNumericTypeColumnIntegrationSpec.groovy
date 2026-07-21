@@ -49,9 +49,6 @@ class GormNumericTypeColumnIntegrationSpec extends HibernateGormDatastoreSpec {
 
     void "a Float/Double/BigDecimal property with no explicit precision produces creatable DDL on #db"() {
         given:
-        if (!container.isRunning()) {
-            container.start()
-        }
         // Ensure a completely fresh datastore per dialect, as in RLikeHibernate7Spec.
         manager.destroy()
         manager.grailsConfig = [
