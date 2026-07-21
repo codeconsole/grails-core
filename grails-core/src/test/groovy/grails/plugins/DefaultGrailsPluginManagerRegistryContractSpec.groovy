@@ -78,14 +78,14 @@ class DefaultGrailsPluginManagerRegistryContractSpec extends Specification {
         def manager = createManager(discovery)
 
         when:
-        def tailPlugins = manager.getAllPlugins().findAll { it.name == 'registryOrderingTail' }
-        def expectedTailPlugin = tailPlugins.first()
+        def allPlugins = manager.getAllPlugins()
+        def expectedTailPlugin = allPlugins.find { it.name == 'registryOrderingTail' }
         def pluginByName = manager.getGrailsPlugin('registryOrderingTail')
         def pluginByClassName = manager.getGrailsPluginForClassName(tailPluginClass.name)
         def pluginByVersion = manager.getGrailsPlugin('registryOrderingTail', '1.0.0')
 
         then:
-        tailPlugins.size() == 1
+        allPlugins.count { it.name == 'registryOrderingTail' } == 1
         expectedTailPlugin != null
         manager.hasGrailsPlugin('registryOrderingTail')
         pluginByName != null
