@@ -18,17 +18,22 @@
  */
 package org.grails.compiler.beans
 
+import java.lang.annotation.Annotation
+
 import org.codehaus.groovy.control.CompilationUnit
 import org.codehaus.groovy.control.CompilerConfiguration
 import org.codehaus.groovy.control.MultipleCompilationErrorsException
 import org.codehaus.groovy.control.Phases
+import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.boot.autoconfigure.AutoConfiguration
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
+import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication
 import org.springframework.boot.autoconfigure.context.MessageSourceAutoConfiguration
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Lazy
 import org.springframework.context.annotation.Primary
 import org.springframework.context.annotation.Scope
+import org.springframework.core.annotation.Order
 import spock.lang.Specification
 import spock.lang.TempDir
 import spock.lang.Unroll
@@ -43,6 +48,8 @@ class GrailsBeansASTTransformationSpec extends Specification {
     private static final String FIXTURE = '''
         import grails.compiler.beans.GrailsBeans
         import org.springframework.boot.autoconfigure.AutoConfiguration
+        import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication
+        import org.springframework.core.annotation.Order
 
         @GrailsBeans
         @AutoConfiguration
@@ -74,6 +81,18 @@ class GrailsBeansASTTransformationSpec extends Specification {
 
                 bean(String, 'combinedGreeting').primary().lazy().scope('prototype').conditionalOnMissingBean(String) {
                     'combined hello'
+                }
+
+                bean(String, 'orderedGreeting').annotate(Order, value: 1) {
+                    'ordered hello'
+                }
+
+                bean(String, 'webOnlyGreeting').annotate(ConditionalOnWebApplication) {
+                    'web hello'
+                }
+
+                bean(String, 'multiAnnotatedGreeting').primary().annotate(Order, value: 2).annotate(ConditionalOnWebApplication) {
+                    'multi hello'
                 }
             }
         }
@@ -187,6 +206,55 @@ class GrailsBeansASTTransformationSpec extends Specification {
         fixtureBeans.getDeclaredConstructor().newInstance().combinedGreeting() == 'combined hello'
     }
 
+    def "compiles annotate(Type, attr: value) into that annotation with its members set"() {
+        given:
+        Class<?> fixtureBeans = compile()
+
+        when:
+        def method = fixtureBeans.getDeclaredMethod('orderedGreeting')
+
+        then:
+        method.isAnnotationPresent(Bean)
+        method.isAnnotationPresent(Order)
+        method.getAnnotation(Order).value() == 1
+
+        and:
+        fixtureBeans.getDeclaredConstructor().newInstance().orderedGreeting() == 'ordered hello'
+    }
+
+    def "compiles annotate(Type) with no members into a bare annotation"() {
+        given:
+        Class<?> fixtureBeans = compile()
+
+        when:
+        def method = fixtureBeans.getDeclaredMethod('webOnlyGreeting')
+
+        then:
+        method.isAnnotationPresent(Bean)
+        method.isAnnotationPresent(ConditionalOnWebApplication)
+
+        and:
+        fixtureBeans.getDeclaredConstructor().newInstance().webOnlyGreeting() == 'web hello'
+    }
+
+    def "chains multiple different annotate(...) calls alongside a named qualifier"() {
+        given:
+        Class<?> fixtureBeans = compile()
+
+        when:
+        def method = fixtureBeans.getDeclaredMethod('multiAnnotatedGreeting')
+
+        then:
+        method.isAnnotationPresent(Bean)
+        method.isAnnotationPresent(Primary)
+        method.isAnnotationPresent(Order)
+        method.getAnnotation(Order).value() == 2
+        method.isAnnotationPresent(ConditionalOnWebApplication)
+
+        and:
+        fixtureBeans.getDeclaredConstructor().newInstance().multiAnnotatedGreeting() == 'multi hello'
+    }
+
     def "closure parameters become method parameters for constructor-style injection"() {
         given:
         Class<?> fixtureBeans = compile()
@@ -199,6 +267,39 @@ class GrailsBeansASTTransformationSpec extends Specification {
 
         and:
         fixtureBeans.getDeclaredConstructor().newInstance().shout('hi') == 'HI'
+    }
+
+    def "a @Qualifier on a closure parameter carries through to the generated method's parameter"() {
+        given: "Groovy captures annotations on closure parameters at parse time, and the DSL " +
+                "reuses the closure's own Parameter AST nodes directly on the generated method, " +
+                "so no dedicated DSL syntax is needed for this - it already works"
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.beans.factory.annotation.Qualifier
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @GrailsBeans
+            @AutoConfiguration
+            class QualifiedParamFixture {
+                def beans = {
+                    bean(String, 'special') {
+                        'special value'
+                    }
+
+                    bean(String, 'shout') { @Qualifier('special') String input ->
+                        input.toUpperCase()
+                    }
+                }
+            }
+        '''
+
+        when:
+        Class<?> fixture = compile(source)
+        def method = fixture.getDeclaredMethod('shout', String)
+        Annotation[] paramAnnotations = method.parameterAnnotations[0]
+
+        then:
+        paramAnnotations.any { it instanceof Qualifier && it.value() == 'special' }
     }
 
     def "the beans closure property does not survive compilation"() {
@@ -257,6 +358,8 @@ class GrailsBeansASTTransformationSpec extends Specification {
         String source = """
             import grails.compiler.beans.GrailsBeans
             import org.springframework.boot.autoconfigure.AutoConfiguration
+            import org.springframework.context.annotation.Primary
+            import org.springframework.core.annotation.Order
 
             @GrailsBeans
             @AutoConfiguration
@@ -293,6 +396,13 @@ class GrailsBeansASTTransformationSpec extends Specification {
         'lazy() given an argument'                      | "bean(String, 'x').lazy(true) { 'y' }"                             | '.lazy() takes no arguments'
         'scope(...) with no argument'                   | "bean(String, 'x').scope() { 'y' }"                                | '.scope(...) requires exactly one non-empty String argument'
         'scope(...) with a non-String argument'         | "bean(String, 'x').scope(42) { 'y' }"                              | '.scope(...) requires exactly one non-empty String argument'
+        'annotate(...) with no arguments'                | "bean(String, 'x').annotate() { 'y' }"                            | 'requires an annotation type'
+        'annotate(...) with a non-type argument'         | "bean(String, 'x').annotate('NotAType') { 'y' }"                  | 'requires an annotation type'
+        'annotate(...) with a non-annotation type'       | "bean(String, 'x').annotate(String) { 'y' }"                      | 'is not an annotation type'
+        'the same annotation attached twice via annotate(...)' |
+                "bean(String, 'x').annotate(Order, value: 1).annotate(Order, value: 2) { 'y' }" |
+                'already attached'
+        'annotate(...) colliding with a named qualifier' | "bean(String, 'x').primary().annotate(Primary) { 'y' }"          | 'already attached'
     }
 
     private static final String FIXTURE_PLUGIN = '''
@@ -389,6 +499,35 @@ class GrailsBeansASTTransformationSpec extends Specification {
         Class<?> fixture = compile(source)
 
         then:
+        fixture.getDeclaredConstructor().newInstance().greeting() == 'hello'
+    }
+
+    def "annotate(...)'s named-argument syntax compiles under @CompileStatic"() {
+        given: "the beans property is stripped before static type-checking ever runs, so the " +
+                "DSL's Map-literal named-args never reach the type checker"
+        String source = '''
+            import groovy.transform.CompileStatic
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+            import org.springframework.core.annotation.Order
+
+            @GrailsBeans
+            @CompileStatic
+            @AutoConfiguration
+            class AnnotateCompileStaticFixture {
+                def beans = {
+                    bean(String, 'greeting').annotate(Order, value: 1) {
+                        'hello'
+                    }
+                }
+            }
+        '''
+
+        when:
+        Class<?> fixture = compile(source)
+
+        then:
+        fixture.getDeclaredMethod('greeting').getAnnotation(Order).value() == 1
         fixture.getDeclaredConstructor().newInstance().greeting() == 'hello'
     }
 
