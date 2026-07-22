@@ -24,7 +24,6 @@ import groovy.util.logging.Slf4j
 
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.boot.autoconfigure.AutoConfiguration
-import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication
 import org.springframework.boot.autoconfigure.condition.SearchStrategy
 import org.springframework.boot.autoconfigure.context.MessageSourceAutoConfiguration
@@ -59,7 +58,7 @@ import org.grails.web.i18n.ParamsAwareLocaleChangeInterceptor
  * @since 0.4
  */
 @Slf4j
-@GrailsBeans(autoConfigurationName = 'I18nAutoConfiguration')
+@GrailsBeans
 @AutoConfiguration(before = [MessageSourceAutoConfiguration, WebMvcAutoConfiguration])
 @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
 class I18nGrailsPlugin extends Plugin {
@@ -76,14 +75,14 @@ class I18nGrailsPlugin extends Plugin {
     static final String AVAILABLE_LOCALES_ATTRIBUTE = 'availableLocales'
 
     def beans = {
-        field(String, 'encoding').annotate(Value, value: '${' + Settings.GSP_VIEW_ENCODING + ':UTF-8}')
-        field(boolean, 'gspEnableReload').annotate(Value, value: '${' + Settings.GSP_ENABLE_RELOAD + ':false}')
-        field(int, 'cacheSeconds').annotate(Value, value: '${' + Settings.I18N_CACHE_SECONDS + ':5}')
-        field(int, 'fileCacheSeconds').annotate(Value, value: '${' + Settings.I18N_FILE_CACHE_SECONDS + ':5}')
-        field(String, 'localeResolverType').annotate(Value, value: '${' + Settings.I18N_LOCALE_RESOLVER + ':session}')
+        field(String, 'encoding').value(Settings.GSP_VIEW_ENCODING, 'UTF-8')
+        field(boolean, 'gspEnableReload').value(Settings.GSP_ENABLE_RELOAD, 'false')
+        field(int, 'cacheSeconds').value(Settings.I18N_CACHE_SECONDS, '5')
+        field(int, 'fileCacheSeconds').value(Settings.I18N_FILE_CACHE_SECONDS, '5')
+        field(String, 'localeResolverType').value(Settings.I18N_LOCALE_RESOLVER, 'session')
         // Default locale for the read-only 'fixed' resolver; empty falls back to the JVM default.
         // No Settings constant exists for this key - the original file didn't use one either.
-        field(String, 'defaultLocale').annotate(Value, value: '${grails.i18n.default.locale:}')
+        field(String, 'defaultLocale').value('grails.i18n.default.locale', '')
 
         // Shared by localeResolver (the 'fixed' case) and availableLocaleResolver below - the only
         // helper the original file needed too, everything else lives directly in its bean method.
@@ -102,7 +101,7 @@ class I18nGrailsPlugin extends Plugin {
         // bean in a parent context must not make the child context's bean back off.
 
         // Normalizes the configured strategy, ignoring case and separators (e.g. 'accept-header').
-        bean(LocaleResolver, 'localeResolver').annotate(ConditionalOnMissingBean, name: 'localeResolver', search: SearchStrategy.CURRENT) {
+        bean(LocaleResolver, 'localeResolver').conditionalOnMissingBean(name: 'localeResolver', search: SearchStrategy.CURRENT) {
             String normalized = localeResolverType == null ? '' :
                     localeResolverType.toLowerCase(Locale.ROOT).replaceAll('[^a-z]', '')
             switch (normalized) {
@@ -126,11 +125,11 @@ class I18nGrailsPlugin extends Plugin {
         // The name stays explicit (unlike availableLocaleResolver below): the ConditionalOnMissingBean
         // check and grails-test-suite-uber's PluginTests both reference this bean by the literal string,
         // with no compile-time link to a convention-derived name.
-        bean(LocaleChangeInterceptor, 'localeChangeInterceptor').annotate(ConditionalOnMissingBean, name: 'localeChangeInterceptor', search: SearchStrategy.CURRENT) {
+        bean(LocaleChangeInterceptor, 'localeChangeInterceptor').conditionalOnMissingBean(name: 'localeChangeInterceptor', search: SearchStrategy.CURRENT) {
             new ParamsAwareLocaleChangeInterceptor(paramName: 'lang')
         }
 
-        bean(MessageSource, 'messageSource').annotate(ConditionalOnMissingBean, name: 'messageSource', search: SearchStrategy.CURRENT) { GrailsApplication grailsApplication, GrailsPluginManager pluginManager ->
+        bean(MessageSource, 'messageSource').conditionalOnMissingBean(name: 'messageSource', search: SearchStrategy.CURRENT) { GrailsApplication grailsApplication, GrailsPluginManager pluginManager ->
             def source = new PluginAwareResourceBundleMessageSource(grailsApplication, pluginManager)
             source.defaultEncoding = encoding
             source.fallbackToSystemLocale = false
@@ -143,7 +142,7 @@ class I18nGrailsPlugin extends Plugin {
 
         // Discovers the locales the application is translated into so a language selector can list
         // only real translations; see AvailableLocaleResolver's own class docs for the full contract.
-        bean(AvailableLocaleResolver).conditionalOnMissingBean(AvailableLocaleResolver) { GrailsApplication grailsApplication,
+        bean(AvailableLocaleResolver).conditionalOnMissingBean() { GrailsApplication grailsApplication,
                 @Value('${grails.i18n.availableLocales.includePlugins:true}') boolean includePlugins ->
             new AvailableLocaleResolver(grailsApplication.classLoader, fixedLocale(), includePlugins)
         }
