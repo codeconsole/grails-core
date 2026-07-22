@@ -871,6 +871,72 @@ class GrailsBeansASTTransformationSpec extends Specification {
         autoConfigClass.getDeclaredMethod('string$0').getAnnotation(Bean).value() == ['toString'] as String[]
     }
 
+    def "a bean named after a default method from a directly implemented interface does not override it"() {
+        given:
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            interface Described {
+                default String description() { 'interface behavior' }
+            }
+
+            @GrailsBeans
+            @AutoConfiguration
+            class InterfaceDefaultFixture implements Described {
+                def beans = {
+                    bean(String, 'description') {
+                        'bean value'
+                    }
+                }
+            }
+        '''
+
+        when:
+        GroovyClassLoader loader = new GroovyClassLoader(getClass().classLoader)
+        loader.parseClass(source)
+        Class<?> fixtureBeans = loader.loadClass('InterfaceDefaultFixture')
+
+        then: "the interface's default behavior is preserved"
+        fixtureBeans.getDeclaredConstructor().newInstance().description() == 'interface behavior'
+
+        and: "the bean method synthesized around it, keeping the Spring name"
+        fixtureBeans.getDeclaredMethod('string$0').getAnnotation(Bean).value() == ['description'] as String[]
+    }
+
+    def "a bean named after a default method from a parent interface further up the graph does not override it either"() {
+        given:
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            interface Labeled {
+                default String label() { 'parent interface behavior' }
+            }
+
+            interface ChildLabeled extends Labeled { }
+
+            @GrailsBeans
+            @AutoConfiguration
+            class ParentInterfaceFixture implements ChildLabeled {
+                def beans = {
+                    bean(String, 'label') {
+                        'bean value'
+                    }
+                }
+            }
+        '''
+
+        when:
+        GroovyClassLoader loader = new GroovyClassLoader(getClass().classLoader)
+        loader.parseClass(source)
+        Class<?> fixtureBeans = loader.loadClass('ParentInterfaceFixture')
+
+        then:
+        fixtureBeans.getDeclaredConstructor().newInstance().label() == 'parent interface behavior'
+        fixtureBeans.getDeclaredMethod('string$0').getAnnotation(Bean).value() == ['label'] as String[]
+    }
+
     def "an explicit method(...) name colliding with a method the standalone class already declares is a compile error"() {
         given: "method(...) declares a real private member, so unlike a bean it cannot silently adapt"
         String source = '''

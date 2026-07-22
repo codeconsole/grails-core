@@ -383,23 +383,32 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
 
     // Generated names must not collide with anything the host class already has: its own fields
     // and methods (in the standalone form the host is a real user-written class), every method
-    // inherited through its hierarchy (a bean named 'toString' must synthesize, not override
-    // Object.toString() with the factory body), and the GroovyObject methods Groovy itself adds
-    // at class generation.
+    // inherited through its full type graph - superclasses AND interfaces, including parent
+    // interfaces, since a bean named after an interface's default method must synthesize rather
+    // than override it, exactly as one named 'toString' must not override Object.toString() -
+    // and the GroovyObject methods Groovy itself adds at class generation.
     private Set<String> existingMemberNames(ClassNode host) {
         Set<String> names = new HashSet<>();
         for (FieldNode field : host.getFields()) {
             names.add(field.getName());
         }
-        for (ClassNode current = host; current != null; current = current.getSuperClass()) {
-            for (MethodNode method : current.getMethods()) {
-                names.add(method.getName());
-            }
+        Set<String> visited = new HashSet<>();
+        collectMethodNames(host, names, visited);
+        collectMethodNames(ClassHelper.GROOVY_OBJECT_TYPE, names, visited);
+        return names;
+    }
+
+    private void collectMethodNames(ClassNode type, Set<String> names, Set<String> visited) {
+        if (type == null || !visited.add(type.getName())) {
+            return;
         }
-        for (MethodNode method : ClassHelper.GROOVY_OBJECT_TYPE.getMethods()) {
+        for (MethodNode method : type.getMethods()) {
             names.add(method.getName());
         }
-        return names;
+        collectMethodNames(type.getSuperClass(), names, visited);
+        for (ClassNode implemented : type.getInterfaces()) {
+            collectMethodNames(implemented, names, visited);
+        }
     }
 
     // Silent classification counterpart of processStatement's qualifier-chain walk: descends to
