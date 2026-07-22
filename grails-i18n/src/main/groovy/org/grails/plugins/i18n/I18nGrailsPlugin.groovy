@@ -122,7 +122,7 @@ class I18nGrailsPlugin extends Plugin {
         // The ?lang= interceptor is always registered. When the configured LocaleResolver is read-only
         // (accept-header or fixed), ParamsAwareLocaleChangeInterceptor detects that the resolver cannot
         // change and ignores the parameter, so ?lang= simply has no effect.
-        bean(LocaleChangeInterceptor, 'localeChangeInterceptor').annotate(ConditionalOnMissingBean, name: 'localeChangeInterceptor', search: SearchStrategy.CURRENT) {
+        bean(LocaleChangeInterceptor).annotate(ConditionalOnMissingBean, name: 'localeChangeInterceptor', search: SearchStrategy.CURRENT) {
             new ParamsAwareLocaleChangeInterceptor(paramName: 'lang')
         }
 
@@ -139,7 +139,7 @@ class I18nGrailsPlugin extends Plugin {
 
         // Discovers the locales the application is translated into so a language selector can list
         // only real translations; see AvailableLocaleResolver's own class docs for the full contract.
-        bean(AvailableLocaleResolver, 'availableLocaleResolver').conditionalOnMissingBean(AvailableLocaleResolver) { GrailsApplication grailsApplication,
+        bean(AvailableLocaleResolver).conditionalOnMissingBean(AvailableLocaleResolver) { GrailsApplication grailsApplication,
                 @Value('${grails.i18n.availableLocales.includePlugins:true}') boolean includePlugins ->
             new AvailableLocaleResolver(grailsApplication.classLoader, fixedLocale(), includePlugins)
         }
