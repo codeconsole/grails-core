@@ -25,6 +25,8 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
+import javax.lang.model.SourceVersion;
+
 import groovy.transform.CompilationUnitAware;
 import groovy.transform.CompileStatic;
 import org.codehaus.groovy.ast.ASTNode;
@@ -65,6 +67,7 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Conditional;
 import org.springframework.context.annotation.Import;
+import org.springframework.context.annotation.ImportResource;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.context.annotation.Primary;
 import org.springframework.context.annotation.PropertySource;
@@ -78,12 +81,12 @@ import org.springframework.context.annotation.Scope;
  * <ul>
  * <li>{@code bean(Type[, "name"]) { ... }}, optionally chained with any combination of
  * {@code .conditionalOnMissingBean(Type...)}, {@code .primary()}, {@code .lazy()},
- * {@code .scope("name")}, {@code .named("...")}, and (repeatably)
+ * {@code .scope("name")}, {@code .methodNamed("...")}, and (repeatably)
  * {@code .annotate(AnnotationType[, attr: value, ...])}. Synthesises a public method, returning
  * the declared type, annotated {@code @org.springframework.context.annotation.Bean("name")} plus
  * whichever qualifiers were chained, whose body and parameters are lifted directly from the DSL
  * closure. The method is named after the bean by default; when the bean name isn't a valid Java
- * identifier (e.g. {@code "my-service"}), {@code .named("...")} supplies the method's name
+ * identifier (e.g. {@code "my-service"}), {@code .methodNamed("...")} supplies the method's name
  * explicitly, and omitting it falls back to a synthesized {@code <type>$N} name instead.</li>
  * <li>{@code field(Type[, "name"])}, optionally chained (repeatably) with
  * {@code .annotate(AnnotationType[, attr: value, ...])} - typically {@code .annotate(Value, value:
@@ -132,9 +135,9 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
     private static final String LAZY_CALL = "lazy";
     private static final String SCOPE_CALL = "scope";
     private static final String ANNOTATE_CALL = "annotate";
-    private static final String NAMED_CALL = "named";
+    private static final String METHOD_NAMED_CALL = "methodNamed";
     private static final Set<String> QUALIFIER_CALL_NAMES = Set.of(
-            CONDITIONAL_ON_MISSING_BEAN_CALL, PRIMARY_CALL, LAZY_CALL, SCOPE_CALL, ANNOTATE_CALL, NAMED_CALL);
+            CONDITIONAL_ON_MISSING_BEAN_CALL, PRIMARY_CALL, LAZY_CALL, SCOPE_CALL, ANNOTATE_CALL, METHOD_NAMED_CALL);
     // field(...) and method(...) declare plain class members, not beans - only .annotate(...)
     // (attaching an arbitrary annotation, e.g. @Value) makes sense on them.
     private static final Set<String> MEMBER_QUALIFIER_CALL_NAMES = Set.of(ANNOTATE_CALL);
@@ -208,7 +211,7 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
     private static final Set<String> SIBLING_ONLY_ANNOTATION_NAMES = Set.of(
             AutoConfiguration.class.getName(), AutoConfigureOrder.class.getName(),
             AutoConfigureBefore.class.getName(), AutoConfigureAfter.class.getName(),
-            Import.class.getName(), ImportAutoConfiguration.class.getName(),
+            Import.class.getName(), ImportAutoConfiguration.class.getName(), ImportResource.class.getName(),
             EnableConfigurationProperties.class.getName(), PropertySource.class.getName(),
             Conditional.class.getName());
 
@@ -255,10 +258,16 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
             return defaultName;
         }
         Object nameValue = nameArg instanceof ConstantExpression ? ((ConstantExpression) nameArg).getValue() : null;
-        if (!(nameValue instanceof String) || ((String) nameValue).isEmpty()) {
+        if (!(nameValue instanceof String)) {
+            addError(nameArg, source, "@GrailsBeans(autoConfigurationName = ...) requires a String literal");
             return defaultName;
         }
         String name = (String) nameValue;
+        if (name.isBlank()) {
+            addError(nameArg, source, "@GrailsBeans(autoConfigurationName = \"" + name + "\") must not be " +
+                    "blank - omit the attribute entirely to use the default " + defaultName + " instead");
+            return defaultName;
+        }
         if (!isValidJavaIdentifier(name)) {
             addError(nameArg, source, "@GrailsBeans(autoConfigurationName = \"" + name + "\") is not a valid " +
                     "name: it becomes the generated sibling's simple class name, so it must be a valid Java identifier");
@@ -413,15 +422,15 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
             return;
         }
 
-        MethodCallExpression namedQualifier = null;
+        MethodCallExpression methodNamedQualifier = null;
         for (MethodCallExpression qualifierCall : qualifierCalls) {
-            if (NAMED_CALL.equals(qualifierCall.getMethodAsString())) {
-                namedQualifier = qualifierCall;
+            if (METHOD_NAMED_CALL.equals(qualifierCall.getMethodAsString())) {
+                methodNamedQualifier = qualifierCall;
                 break;
             }
         }
 
-        String javaMethodName = resolveBeanMethodName(typeAndName, namedQualifier, outerCall, usedNames, source);
+        String javaMethodName = resolveBeanMethodName(typeAndName, methodNamedQualifier, outerCall, usedNames, source);
         if (javaMethodName == null) {
             return;
         }
@@ -441,8 +450,8 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
         beanMethod.addAnnotation(beanAnnotation(typeAndName.name));
 
         for (MethodCallExpression qualifierCall : qualifierCalls) {
-            if (qualifierCall == namedQualifier) {
-                // already consumed above - .named(...) names the method, it doesn't add an annotation
+            if (qualifierCall == methodNamedQualifier) {
+                // already consumed above - .methodNamed(...) names the method, it doesn't add an annotation
                 continue;
             }
             List<Expression> qualifierArgs = flatten(qualifierCall.getArguments());
@@ -460,28 +469,28 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
 
     // bean(...)'s name is a Spring bean name, which may not be a valid Java identifier (e.g.
     // "my-service"). When it already is one, it doubles as the generated method's name, exactly as
-    // before. When it isn't, .named("...") supplies the method's name explicitly if given; omitting
-    // it falls back to a synthesized <type>$N name instead, disambiguated with the bean's own type
-    // for a little more context than a bare counter would give a reader of a stack trace or
-    // decompiled bytecode.
-    private String resolveBeanMethodName(TypeAndName typeAndName, MethodCallExpression namedQualifier,
+    // before. When it isn't, .methodNamed("...") supplies the method's name explicitly if given;
+    // omitting it falls back to a synthesized <type>$N name instead, disambiguated with the bean's
+    // own type for a little more context than a bare counter would give a reader of a stack trace
+    // or decompiled bytecode.
+    private String resolveBeanMethodName(TypeAndName typeAndName, MethodCallExpression methodNamedQualifier,
             MethodCallExpression outerCall, Set<String> usedNames, SourceUnit source) {
-        if (namedQualifier == null) {
+        if (methodNamedQualifier == null) {
             if (isValidJavaIdentifier(typeAndName.name)) {
                 return typeAndName.name;
             }
             return syntheticBeanMethodName(typeAndName.type.getType(), usedNames);
         }
 
-        List<Expression> namedArgs = flatten(namedQualifier.getArguments());
-        if (namedQualifier == outerCall) {
-            namedArgs = namedArgs.subList(0, namedArgs.size() - 1);
+        List<Expression> methodNamedArgs = flatten(methodNamedQualifier.getArguments());
+        if (methodNamedQualifier == outerCall) {
+            methodNamedArgs = methodNamedArgs.subList(0, methodNamedArgs.size() - 1);
         }
-        Expression nameArg = namedArgs.size() == 1 ? namedArgs.get(0) : null;
+        Expression nameArg = methodNamedArgs.size() == 1 ? methodNamedArgs.get(0) : null;
         Object nameValue = nameArg instanceof ConstantExpression ? ((ConstantExpression) nameArg).getValue() : null;
         if (!(nameValue instanceof String)) {
-            addError(namedQualifier, source, ".named(...) requires exactly one String argument, " +
-                    "e.g. .named(\"myService\")");
+            addError(methodNamedQualifier, source, ".methodNamed(...) requires exactly one String argument, " +
+                    "e.g. .methodNamed(\"myService\")");
             return null;
         }
         String methodName = (String) nameValue;
@@ -610,6 +619,14 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
                         "member's name, so it must be a valid Java identifier");
                 return null;
             }
+            // Even bean(...), which otherwise allows a non-identifier Spring name (see
+            // .methodNamed(...)), must reject a blank one: Spring treats a blank @Bean name as
+            // absent and falls back to the method name, so the name actually written would be
+            // silently discarded.
+            if (!requireValidIdentifier && name.isBlank()) {
+                addError(nameArg, source, callName + "(Type, name) requires a non-blank name");
+                return null;
+            }
         }
         return new TypeAndName(type, name);
     }
@@ -732,15 +749,7 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
     }
 
     private boolean isValidJavaIdentifier(String name) {
-        if (name.isEmpty() || !Character.isJavaIdentifierStart(name.charAt(0))) {
-            return false;
-        }
-        for (int i = 1; i < name.length(); i++) {
-            if (!Character.isJavaIdentifierPart(name.charAt(i))) {
-                return false;
-            }
-        }
-        return true;
+        return SourceVersion.isIdentifier(name) && !SourceVersion.isKeyword(name);
     }
 
     private void addError(ASTNode node, SourceUnit source, String message) {

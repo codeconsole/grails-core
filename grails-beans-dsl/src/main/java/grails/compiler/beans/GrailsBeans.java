@@ -35,14 +35,14 @@ import org.codehaus.groovy.transform.GroovyASTTransformationClass;
  * <ul>
  * <li>{@code bean(Type[, "name"]) { ... }}, optionally chained with any combination of
  * {@code .conditionalOnMissingBean(Type...)}, {@code .primary()}, {@code .lazy()},
- * {@code .scope("name")}, {@code .named("...")}, and (repeatably)
+ * {@code .scope("name")}, {@code .methodNamed("...")}, and (repeatably)
  * {@code .annotate(AnnotationType[, attr: value, ...])} - the last a generic escape hatch
  * attaching any other single-valued annotation. The closure body becomes the generated method's
  * body verbatim, and closure parameters become the generated method's parameters (for
  * constructor-style bean injection). The bean name doubles as the generated method's name by
  * default; when it isn't a valid Java identifier (e.g. {@code "my-service"}), chain
- * {@code .named("...")} to give the method a different, valid name explicitly, or omit it to fall
- * back to a synthesized {@code <type>$N} name.</li>
+ * {@code .methodNamed("...")} to give the method a different, valid name explicitly, or omit it
+ * to fall back to a synthesized {@code <type>$N} name.</li>
  * <li>{@code field(Type[, "name"])}, optionally chained (repeatably) with
  * {@code .annotate(AnnotationType[, attr: value, ...])} - typically {@code .annotate(Value, value:
  * "${...}")}. Declares a private field on the generated class, for state shared across bean
