@@ -85,6 +85,8 @@ class I18nGrailsPlugin extends Plugin {
         // No Settings constant exists for this key - the original file didn't use one either.
         field(String, 'defaultLocale').annotate(Value, value: '${grails.i18n.default.locale:}')
 
+        // Shared by localeResolver (the 'fixed' case) and availableLocaleResolver below - the only
+        // helper the original file needed too, everything else lives directly in its bean method.
         method(Locale, 'fixedLocale') {
             if (StringUtils.hasText(defaultLocale)) {
                 Locale parsed = StringUtils.parseLocale(defaultLocale)
@@ -95,8 +97,11 @@ class I18nGrailsPlugin extends Plugin {
             Locale.getDefault()
         }
 
+        // SearchStrategy.CURRENT on all three guards: DispatcherServlet resolves these beans from its
+        // own context, and Boot's MessageSourceAutoConfiguration uses the same scoping - a bean in a
+        // parent context must not make the child context's bean back off.
         // Normalizes the configured strategy, ignoring case and separators (e.g. 'accept-header').
-        method(LocaleResolver, 'buildLocaleResolver') {
+        bean(LocaleResolver, 'localeResolver').annotate(ConditionalOnMissingBean, name: 'localeResolver', search: SearchStrategy.CURRENT) {
             String normalized = localeResolverType == null ? '' :
                     localeResolverType.toLowerCase(Locale.ROOT).replaceAll('[^a-z]', '')
             switch (normalized) {
@@ -113,24 +118,6 @@ class I18nGrailsPlugin extends Plugin {
             }
         }
 
-        method(MessageSource, 'buildMessageSource') { GrailsApplication grailsApplication, GrailsPluginManager pluginManager ->
-            def source = new PluginAwareResourceBundleMessageSource(grailsApplication, pluginManager)
-            source.defaultEncoding = encoding
-            source.fallbackToSystemLocale = false
-            if (Environment.getCurrent().isReloadEnabled() || gspEnableReload) {
-                source.cacheSeconds = cacheSeconds
-                source.fileCacheSeconds = fileCacheSeconds
-            }
-            source
-        }
-
-        // SearchStrategy.CURRENT on all three guards: DispatcherServlet resolves these beans from its
-        // own context, and Boot's MessageSourceAutoConfiguration uses the same scoping - a bean in a
-        // parent context must not make the child context's bean back off.
-        bean(LocaleResolver, 'localeResolver').annotate(ConditionalOnMissingBean, name: 'localeResolver', search: SearchStrategy.CURRENT) {
-            buildLocaleResolver()
-        }
-
         // The ?lang= interceptor is always registered. When the configured LocaleResolver is read-only
         // (accept-header or fixed), ParamsAwareLocaleChangeInterceptor detects that the resolver cannot
         // change and ignores the parameter, so ?lang= simply has no effect.
@@ -139,7 +126,14 @@ class I18nGrailsPlugin extends Plugin {
         }
 
         bean(MessageSource, 'messageSource').annotate(ConditionalOnMissingBean, name: 'messageSource', search: SearchStrategy.CURRENT) { GrailsApplication grailsApplication, GrailsPluginManager pluginManager ->
-            buildMessageSource(grailsApplication, pluginManager)
+            def source = new PluginAwareResourceBundleMessageSource(grailsApplication, pluginManager)
+            source.defaultEncoding = encoding
+            source.fallbackToSystemLocale = false
+            if (Environment.getCurrent().isReloadEnabled() || gspEnableReload) {
+                source.cacheSeconds = cacheSeconds
+                source.fileCacheSeconds = fileCacheSeconds
+            }
+            source
         }
 
         // Discovers the locales the application is translated into so a language selector can list
