@@ -123,10 +123,9 @@ class I18nGrailsPlugin extends Plugin {
         // (accept-header or fixed), ParamsAwareLocaleChangeInterceptor detects that the resolver cannot
         // change and ignores the parameter, so ?lang= simply has no effect.
         //
-        // Kept explicit (unlike availableLocaleResolver below) because the ConditionalOnMissingBean
-        // check here is name-based, not type-based, so nothing else ties this string to the bean's
-        // actual name - and grails-test-suite-uber's PluginTests.java references this exact bean by
-        // the hardcoded string "localeChangeInterceptor" with no compile-time link either.
+        // The name stays explicit (unlike availableLocaleResolver below): the ConditionalOnMissingBean
+        // check and grails-test-suite-uber's PluginTests both reference this bean by the literal string,
+        // with no compile-time link to a convention-derived name.
         bean(LocaleChangeInterceptor, 'localeChangeInterceptor').annotate(ConditionalOnMissingBean, name: 'localeChangeInterceptor', search: SearchStrategy.CURRENT) {
             new ParamsAwareLocaleChangeInterceptor(paramName: 'lang')
         }

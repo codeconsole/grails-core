@@ -259,12 +259,8 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
         ClassNode sibling = new ClassNode(siblingName, Modifier.PUBLIC, ClassHelper.OBJECT_TYPE);
         source.getAST().addClass(sibling);
 
-        // @AutoConfiguration and every annotation that gates or configures it - @Conditional* (all
-        // of which are meta-annotated @Conditional, e.g. @ConditionalOnWebApplication), @Import*,
-        // @ComponentScan*, @EnableConfigurationProperties, @PropertySource*,
-        // @AutoConfigureOrder/Before/After - are equally meaningless on a Plugin subclass, so they
-        // all move to the sibling entirely rather than being merely copied. moveAnnotations extends
-        // the recognised set for annotations this transform cannot know about.
+        // Matching annotations move entirely rather than being merely copied - they have no effect
+        // where the author wrote them (see SIBLING_ONLY_ANNOTATION_NAMES).
         Set<String> moveAnnotationNames = parseMoveAnnotations(grailsBeansAnnotation, source);
         List<AnnotationNode> siblingAnnotations = new ArrayList<>();
         for (AnnotationNode annotation : pluginClass.getAnnotations()) {
@@ -302,9 +298,6 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
         return names;
     }
 
-    // Defaults to <PluginClassName>AutoConfiguration; @GrailsBeans(autoConfigurationName = "...")
-    // overrides it, for converting an existing public @AutoConfiguration class without changing
-    // its identity (exclude = ... references, before=/after= ordering from other modules, tests).
     private String siblingSimpleName(ClassNode pluginClass, AnnotationNode grailsBeansAnnotation, SourceUnit source) {
         String defaultName = pluginClass.getNameWithoutPackage() + AUTO_CONFIGURATION_SUFFIX;
         Expression nameArg = grailsBeansAnnotation.getMember(AUTO_CONFIGURATION_NAME_MEMBER);
@@ -384,9 +377,8 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
 
     // Generated names must not collide with anything the host class already has: its own fields
     // and methods (in the standalone form the host is a real user-written class), every method
-    // inherited through its full type graph - superclasses AND interfaces, including parent
-    // interfaces, since a bean named after an interface's default method must synthesize rather
-    // than override it, exactly as one named 'toString' must not override Object.toString() -
+    // inherited through its full type graph - superclasses and interfaces alike, since a bean
+    // named 'toString' or after an interface's default method must synthesize, not override -
     // and the GroovyObject methods Groovy itself adds at class generation.
     private Set<String> existingMemberNames(ClassNode host) {
         Set<String> names = new HashSet<>();
@@ -524,8 +516,6 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
             baseArgs = baseArgs.subList(0, baseArgs.size() - 1);
         }
 
-        // Unlike field(...)/method(...), a bean's given name need not be a valid Java identifier -
-        // it's the Spring bean name, not necessarily the generated method's name (see below).
         TypeAndName typeAndName = parseTypeAndName(baseArgs, baseCall, source, BEAN_CALL, false);
         if (typeAndName == null) {
             return;
@@ -535,13 +525,10 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
             return;
         }
 
-        // The generated method's name is an implementation detail - Spring resolves the bean by
-        // its @Bean("name") value, never by the factory method's name. It matches the bean name
-        // when that happens to be a usable Java identifier (readable in stack traces and
-        // decompiled bytecode); otherwise - non-identifier name, reserved keyword, or a collision
-        // with a declared field(...)/method(...) member - a synthesized <type>$N name is used
-        // instead. Beans are processed after all explicit members (see visit()), so this adapts
-        // to a colliding member wherever it appears in the block, not just to earlier statements.
+        // The method name is an implementation detail - Spring resolves the bean by its
+        // @Bean("name") value, never by the factory method's name - so a bean name that isn't a
+        // usable Java identifier, or is already taken by an existing member, synthesizes instead
+        // of erroring.
         String javaMethodName = isValidJavaIdentifier(typeAndName.name) && !usedNames.contains(typeAndName.name) ?
                 typeAndName.name :
                 syntheticBeanMethodName(typeAndName.type.getType(), usedNames);
@@ -687,10 +674,9 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
                         "member's name, so it must be a valid Java identifier");
                 return null;
             }
-            // Even bean(...), which otherwise allows a non-identifier Spring name (a synthesized
-            // method name covers it), must reject a blank one: Spring treats a blank @Bean name as
-            // absent and falls back to the method name, so the name actually written would be
-            // silently discarded.
+            // Even bean(...), which otherwise allows any Spring name, must reject a blank one:
+            // Spring treats a blank @Bean name as absent and falls back to the method name, so
+            // the name actually written would be silently discarded.
             if (!requireValidIdentifier && name.isBlank()) {
                 addError(nameArg, source, callName + "(Type, name) requires a non-blank name");
                 return null;
