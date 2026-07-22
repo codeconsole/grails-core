@@ -20,6 +20,7 @@ package org.grails.plugins.i18n
 
 import java.nio.file.Files
 
+import groovy.transform.CompileStatic
 import groovy.util.logging.Slf4j
 
 import org.springframework.beans.factory.annotation.Value
@@ -58,6 +59,7 @@ import org.grails.web.i18n.ParamsAwareLocaleChangeInterceptor
  * @since 0.4
  */
 @Slf4j
+@CompileStatic
 @GrailsBeans
 @AutoConfiguration(before = [MessageSourceAutoConfiguration, WebMvcAutoConfiguration])
 @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)

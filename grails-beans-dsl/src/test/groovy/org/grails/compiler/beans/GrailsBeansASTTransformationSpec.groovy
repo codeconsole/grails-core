@@ -637,6 +637,42 @@ class GrailsBeansASTTransformationSpec extends Specification {
         fixtureBeans.getDeclaredField('defaultLocale').getAnnotation(Value).value() == '${app.default.locale:}'
     }
 
+    def "field(...).value(...) with a bare constant key folds under @CompileStatic on a Plugin subclass"() {
+        given: "the exact shape that used to fail: the static compiler rewrites '+' into .plus() calls " +
+                "before Groovy's annotation folding runs, so the placeholder must be folded at transform time"
+        String source = '''
+            import groovy.transform.CompileStatic
+            import grails.compiler.beans.GrailsBeans
+            import grails.plugins.Plugin
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            class StaticConfigKeys {
+                static final String ENCODING_KEY = 'app.encoding'
+            }
+
+            @CompileStatic
+            @GrailsBeans
+            @AutoConfiguration
+            class StaticValuePlugin extends Plugin {
+                def beans = {
+                    field(String, 'encoding').value(StaticConfigKeys.ENCODING_KEY, 'UTF-8')
+
+                    bean(String, 'greeting') {
+                        encoding
+                    }
+                }
+            }
+        '''
+
+        when:
+        GroovyClassLoader loader = new GroovyClassLoader(getClass().classLoader)
+        loader.parseClass(source)
+        Class<?> autoConfigClass = loader.loadClass('StaticValuePluginAutoConfiguration')
+
+        then:
+        autoConfigClass.getDeclaredField('encoding').getAnnotation(Value).value() == '${app.encoding:UTF-8}'
+    }
+
     def "field(...).value(placeholder) passes a single complete placeholder through verbatim"() {
         given:
         String source = '''

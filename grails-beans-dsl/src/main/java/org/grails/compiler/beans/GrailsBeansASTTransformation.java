@@ -48,6 +48,7 @@ import org.codehaus.groovy.ast.expr.ListExpression;
 import org.codehaus.groovy.ast.expr.MapEntryExpression;
 import org.codehaus.groovy.ast.expr.MapExpression;
 import org.codehaus.groovy.ast.expr.MethodCallExpression;
+import org.codehaus.groovy.ast.expr.PropertyExpression;
 import org.codehaus.groovy.ast.stmt.BlockStatement;
 import org.codehaus.groovy.ast.stmt.ExpressionStatement;
 import org.codehaus.groovy.ast.stmt.Statement;
@@ -55,7 +56,6 @@ import org.codehaus.groovy.control.CompilationUnit;
 import org.codehaus.groovy.control.CompilePhase;
 import org.codehaus.groovy.control.SourceUnit;
 import org.codehaus.groovy.syntax.SyntaxException;
-import org.codehaus.groovy.syntax.Token;
 import org.codehaus.groovy.syntax.Types;
 import org.codehaus.groovy.transform.ASTTransformation;
 import org.codehaus.groovy.transform.GroovyASTTransformation;
@@ -636,23 +636,79 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
                     ".value(Settings.GSP_VIEW_ENCODING, \"UTF-8\") - or a single complete placeholder/SpEL string");
             return null;
         }
-        Expression member;
+        // The pieces are resolved and folded HERE, into a plain constant, rather than being left
+        // as a concatenation for Groovy's own annotation folding: under @CompileStatic the static
+        // compiler rewrites '+' into .plus() calls before that folding runs, which would reject
+        // the member as a non-constant.
+        String memberValue;
         if (args.size() == 1) {
-            member = args.get(0);
+            String placeholder = resolveStringConstant(args.get(0));
+            if (placeholder == null) {
+                addError(args.get(0), source, ".value(...) arguments must be compile-time String constants " +
+                        "(a literal, a static final constant reference, or a concatenation of those)");
+                return null;
+            }
+            memberValue = placeholder;
         }
         else {
-            member = concat(new ConstantExpression("${"), args.get(0));
-            member = concat(member, new ConstantExpression(":"));
-            member = concat(member, args.get(1));
-            member = concat(member, new ConstantExpression("}"));
+            String key = resolveStringConstant(args.get(0));
+            String defaultValue = resolveStringConstant(args.get(1));
+            if (key == null || defaultValue == null) {
+                addError(key == null ? args.get(0) : args.get(1), source, ".value(...) arguments must be " +
+                        "compile-time String constants (a literal, a static final constant reference, or a " +
+                        "concatenation of those)");
+                return null;
+            }
+            memberValue = "${" + key + ":" + defaultValue + "}";
         }
         AnnotationNode annotation = new AnnotationNode(ClassHelper.make(Value.class));
-        annotation.setMember("value", member);
+        annotation.setMember("value", new ConstantExpression(memberValue));
         return annotation;
     }
 
-    private Expression concat(Expression left, Expression right) {
-        return new BinaryExpression(left, Token.newSymbol(Types.PLUS, -1, -1), right);
+    // Resolves an expression to its compile-time String value: literals directly; a static final
+    // constant reference either from its AST initial expression (a constant declared in the same
+    // compilation unit) or reflectively from the already-compiled class on the classpath; and
+    // concatenations of resolvable pieces recursively.
+    private String resolveStringConstant(Expression expression) {
+        if (expression instanceof ConstantExpression) {
+            Object value = ((ConstantExpression) expression).getValue();
+            return value instanceof String ? (String) value : null;
+        }
+        if (expression instanceof BinaryExpression) {
+            BinaryExpression binary = (BinaryExpression) expression;
+            if (binary.getOperation().getType() != Types.PLUS) {
+                return null;
+            }
+            String left = resolveStringConstant(binary.getLeftExpression());
+            String right = resolveStringConstant(binary.getRightExpression());
+            return left != null && right != null ? left + right : null;
+        }
+        if (expression instanceof PropertyExpression) {
+            PropertyExpression property = (PropertyExpression) expression;
+            if (!(property.getObjectExpression() instanceof ClassExpression)) {
+                return null;
+            }
+            ClassNode owner = property.getObjectExpression().getType();
+            String fieldName = property.getPropertyAsString();
+            if (fieldName == null) {
+                return null;
+            }
+            FieldNode field = owner.getField(fieldName);
+            if (field != null && field.isStatic() && field.isFinal() &&
+                    field.getInitialExpression() instanceof ConstantExpression) {
+                Object value = ((ConstantExpression) field.getInitialExpression()).getValue();
+                return value instanceof String ? (String) value : null;
+            }
+            try {
+                Object value = owner.getTypeClass().getField(fieldName).get(null);
+                return value instanceof String ? (String) value : null;
+            }
+            catch (ReflectiveOperationException | RuntimeException | LinkageError ignored) {
+                return null;
+            }
+        }
+        return null;
     }
 
     private void processMethodStatement(ClassNode classNode, MethodCallExpression outerCall, MethodCallExpression baseCall,
