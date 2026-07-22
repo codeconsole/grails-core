@@ -89,9 +89,11 @@ import org.springframework.context.annotation.Scope;
  * the declared type, annotated {@code @org.springframework.context.annotation.Bean("name")} plus
  * whichever qualifiers were chained, whose body and parameters are lifted directly from the DSL
  * closure. The generated method's name is an implementation detail: it matches the bean name when
- * that is a usable Java identifier, and falls back to a synthesized {@code <type>$N} name for a
- * non-identifier bean name (e.g. {@code "my-service"}) - Spring resolves the bean by its
- * {@code @Bean("name")} value either way, never by the method name.</li>
+ * that is a usable Java identifier not already taken by an existing or generated member, and
+ * falls back to a synthesized {@code <type>$N} name otherwise (a non-identifier name like
+ * {@code "my-service"}, a reserved keyword, or a collision - a bean named {@code toString} never
+ * overrides {@code Object.toString()}) - Spring resolves the bean by its {@code @Bean("name")}
+ * value either way, never by the method name.</li>
  * <li>{@code field(Type[, "name"])}, optionally chained (repeatably) with
  * {@code .annotate(AnnotationType[, attr: value, ...])} - typically {@code .annotate(Value, value:
  * "${...}")}. Declares a private field on the generated class, for state shared across bean
@@ -188,7 +190,7 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
         ClassNode beanMethodHost = isPlugin ?
                 createAutoConfigurationSibling(classNode, grailsBeansAnnotation, source) : classNode;
 
-        Set<String> usedNames = new HashSet<>();
+        Set<String> usedNames = existingMemberNames(beanMethodHost);
         Set<String> usedBeanNames = new HashSet<>();
         List<Statement> statements = beanStatements((ClosureExpression) initialExpression);
         // Two passes: field(...)/method(...) declare explicit member names, so they are processed
@@ -379,6 +381,27 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
         return single;
     }
 
+    // Generated names must not collide with anything the host class already has: its own fields
+    // and methods (in the standalone form the host is a real user-written class), every method
+    // inherited through its hierarchy (a bean named 'toString' must synthesize, not override
+    // Object.toString() with the factory body), and the GroovyObject methods Groovy itself adds
+    // at class generation.
+    private Set<String> existingMemberNames(ClassNode host) {
+        Set<String> names = new HashSet<>();
+        for (FieldNode field : host.getFields()) {
+            names.add(field.getName());
+        }
+        for (ClassNode current = host; current != null; current = current.getSuperClass()) {
+            for (MethodNode method : current.getMethods()) {
+                names.add(method.getName());
+            }
+        }
+        for (MethodNode method : ClassHelper.GROOVY_OBJECT_TYPE.getMethods()) {
+            names.add(method.getName());
+        }
+        return names;
+    }
+
     // Silent classification counterpart of processStatement's qualifier-chain walk: descends to
     // the root call without reporting anything, so malformed statements are classified (not
     // validated) here and still produce their usual errors when actually processed.
@@ -545,7 +568,7 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
             return;
         }
         if (!registerName(typeAndName.name, baseCall, source, usedNames,
-                "is already used by another field(...)/method(...) statement in this beans block - " +
+                "is already used by another member of the class (declared, inherited, or another field(...)/method(...) statement) - " +
                         "generated member names must be unique")) {
             return;
         }
@@ -579,7 +602,7 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
             return;
         }
         if (!registerName(typeAndName.name, baseCall, source, usedNames,
-                "is already used by another field(...)/method(...) statement in this beans block - " +
+                "is already used by another member of the class (declared, inherited, or another field(...)/method(...) statement) - " +
                         "generated member names must be unique")) {
             return;
         }

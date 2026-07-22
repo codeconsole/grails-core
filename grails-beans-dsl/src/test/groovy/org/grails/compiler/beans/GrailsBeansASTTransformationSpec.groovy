@@ -785,6 +785,119 @@ class GrailsBeansASTTransformationSpec extends Specification {
         fixtureBeans.getDeclaredMethod('integer$0').getAnnotation(Bean).value() == ['helper'] as String[]
     }
 
+    def "a bean colliding with a method the standalone class already declares gets a synthesized method name"() {
+        given: "a hand-written greeting() method outside the DSL, and a bean named 'greeting'"
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @GrailsBeans
+            @AutoConfiguration
+            class ExistingMemberFixture {
+                String greeting() { 'existing' }
+
+                def beans = {
+                    bean(String, 'greeting') {
+                        'bean'
+                    }
+                }
+            }
+        '''
+
+        when:
+        Class<?> fixtureBeans = compile(source)
+
+        then: "the hand-written method is untouched"
+        fixtureBeans.getDeclaredConstructor().newInstance().greeting() == 'existing'
+        !fixtureBeans.getDeclaredMethod('greeting').isAnnotationPresent(Bean)
+
+        and: "the bean method synthesized around it, keeping the Spring name"
+        fixtureBeans.getDeclaredMethod('string$0').getAnnotation(Bean).value() == ['greeting'] as String[]
+        fixtureBeans.getDeclaredConstructor().newInstance().'string$0'() == 'bean'
+    }
+
+    def "a bean named after an inherited Object method does not override it"() {
+        given: "a bean whose Spring name is 'toString' - legal for Spring, lethal as a method override"
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @GrailsBeans
+            @AutoConfiguration
+            class ToStringBeanFixture {
+                def beans = {
+                    bean(String, 'toString') {
+                        'the bean'
+                    }
+                }
+            }
+        '''
+
+        when:
+        Class<?> fixtureBeans = compile(source)
+
+        then: "toString() still behaves as Object's, not as the bean factory"
+        fixtureBeans.getDeclaredConstructor().newInstance().toString() != 'the bean'
+
+        and: "the bean method synthesized instead"
+        fixtureBeans.getDeclaredMethod('string$0').getAnnotation(Bean).value() == ['toString'] as String[]
+    }
+
+    def "a bean named after an inherited Object method on the Plugin-subclass sibling does not override it either"() {
+        given:
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import grails.plugins.Plugin
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @GrailsBeans
+            @AutoConfiguration
+            class ToStringBeanPlugin extends Plugin {
+                def beans = {
+                    bean(String, 'toString') {
+                        'the bean'
+                    }
+                }
+            }
+        '''
+
+        when:
+        GroovyClassLoader loader = new GroovyClassLoader(getClass().classLoader)
+        loader.parseClass(source)
+        Class<?> autoConfigClass = loader.loadClass('ToStringBeanPluginAutoConfiguration')
+
+        then:
+        autoConfigClass.getDeclaredConstructor().newInstance().toString() != 'the bean'
+        autoConfigClass.getDeclaredMethod('string$0').getAnnotation(Bean).value() == ['toString'] as String[]
+    }
+
+    def "an explicit method(...) name colliding with a method the standalone class already declares is a compile error"() {
+        given: "method(...) declares a real private member, so unlike a bean it cannot silently adapt"
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @GrailsBeans
+            @AutoConfiguration
+            class ExistingMemberClashFixture {
+                String helper() { 'existing' }
+
+                def beans = {
+                    method(String, 'helper') {
+                        'duplicate'
+                    }
+                }
+            }
+        '''
+
+        when:
+        compile(source)
+
+        then:
+        MultipleCompilationErrorsException e = thrown(MultipleCompilationErrorsException)
+        e.message.contains('is already used by another')
+    }
+
     private static final String FIXTURE_PLUGIN = '''
         import grails.compiler.beans.GrailsBeans
         import grails.plugins.Plugin

@@ -157,7 +157,7 @@ class I18nBeans {
 }
 ----
 
-Each `bean(Type[, "name"])` statement compiles to a public method returning the declared type and annotated `@Bean("name")`. The generated method's name is an implementation detail — Spring resolves the bean by its `@Bean("name")` value, never by the method name. It matches the bean name when that is a valid Java identifier; otherwise (a hyphenated or dotted name like `my-service`, or a reserved keyword) a synthesized `<type>$N` name (`service$0`, `service$1`, ...) is used instead, so any legal, non-blank Spring bean name compiles:
+Each `bean(Type[, "name"])` statement compiles to a public method returning the declared type and annotated `@Bean("name")`. The generated method's name is an implementation detail — Spring resolves the bean by its `@Bean("name")` value, never by the method name. It matches the bean name when that is a valid Java identifier not already taken by an existing member (declared, inherited, or defined elsewhere in the DSL — a bean named `toString` will not override `Object.toString()`); otherwise a synthesized `<type>$N` name (`service$0`, `service$1`, ...) is used instead, so any legal, non-blank Spring bean name compiles:
 
 * The bean name defaults to the decapitalized simple class name when omitted.
 * Chaining `.conditionalOnMissingBean(Type...)` adds a `@ConditionalOnMissingBean` annotation to the generated method, matching Spring Boot's usual back-off semantics.
