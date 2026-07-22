@@ -35,6 +35,7 @@ import org.springframework.boot.autoconfigure.context.MessageSourceAutoConfigura
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Lazy
 import org.springframework.context.annotation.Primary
+import org.springframework.context.annotation.PropertySource
 import org.springframework.context.annotation.Scope
 import org.springframework.core.annotation.Order
 import spock.lang.Specification
@@ -134,6 +135,40 @@ class GrailsBeansASTTransformationSpec extends Specification {
 
         and: "the closure body became the real method body"
         fixtureBeans.getDeclaredConstructor().newInstance().greeting() == 'hello'
+    }
+
+    def "bean(Type) with no explicit name derives the JavaBeans-conventional property name, including for acronym-prefixed types"() {
+        given:
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @GrailsBeans
+            @AutoConfiguration
+            class DecapitalizeFixtureBeans {
+                def beans = {
+                    bean(String) {
+                        'unnamed'
+                    }
+
+                    bean(URLHelper) {
+                        new URLHelper()
+                    }
+                }
+            }
+
+            class URLHelper { }
+        '''
+
+        when:
+        Class<?> fixtureBeans = compile(source)
+
+        then: "an ordinary type name is decapitalized the usual way"
+        fixtureBeans.getDeclaredMethod('string') != null
+
+        and: "a type whose name starts with two-or-more uppercase letters (an acronym) is left as-is, " +
+                "per java.beans.Introspector.decapitalize's convention - not naively lowercased to uRLHelper"
+        fixtureBeans.getDeclaredMethod('URLHelper') != null
     }
 
     def "compiles conditionalOnMissingBean(...) into a @ConditionalOnMissingBean annotation"() {
@@ -484,16 +519,26 @@ class GrailsBeansASTTransformationSpec extends Specification {
         'field(...) chained with a bean-only qualifier'   | "field(String, 'x').primary()"                                    | 'cannot be chained onto field(...)'
         'method(...) without a body closure'              | "method(String, 'x')"                                             | 'method(...) must end with a body closure'
         'method(...) chained with a bean-only qualifier'  | "method(String, 'x').conditionalOnMissingBean(String) { 'y' }"    | 'cannot be chained onto method(...)'
+        'two bean(...) statements sharing the same explicit name' |
+                "bean(String, 'x') { 'a' }; bean(Integer, 'x') { 1 }" | 'is already used by another'
+        'a field(...) and a bean(...) sharing the same name' |
+                "field(String, 'x'); bean(Integer, 'x') { 1 }" | 'is already used by another'
+        'a field(...) and a method(...) sharing the same name' |
+                "field(String, 'x'); method(Integer, 'x') { 1 }" | 'is already used by another'
     }
 
     private static final String FIXTURE_PLUGIN = '''
         import grails.compiler.beans.GrailsBeans
         import grails.plugins.Plugin
         import org.springframework.boot.autoconfigure.AutoConfiguration
+        import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication
         import org.springframework.boot.autoconfigure.context.MessageSourceAutoConfiguration
+        import org.springframework.context.annotation.PropertySource
 
         @GrailsBeans
         @AutoConfiguration(before = [MessageSourceAutoConfiguration])
+        @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
+        @PropertySource('classpath:fixture-plugin.properties')
         class FixturePlugin extends Plugin {
 
             String version = '1.0'
@@ -526,9 +571,18 @@ class GrailsBeansASTTransformationSpec extends Specification {
         pluginClass.declaredFields*.name.every { it != 'beans' }
         !pluginClass.isAnnotationPresent(AutoConfiguration)
 
-        and: "the generated sibling carries the compiled bean and the moved @AutoConfiguration annotation"
+        and: "@ConditionalOnWebApplication and @PropertySource are meaningless on a Plugin subclass " +
+                "(Spring never processes it as a bean), so they move too, not just @AutoConfiguration"
+        !pluginClass.isAnnotationPresent(ConditionalOnWebApplication)
+        !pluginClass.isAnnotationPresent(PropertySource)
+
+        and: "the generated sibling carries the compiled bean and every moved annotation"
         autoConfigClass.isAnnotationPresent(AutoConfiguration)
         autoConfigClass.getAnnotation(AutoConfiguration).before().toList() == [MessageSourceAutoConfiguration]
+        autoConfigClass.isAnnotationPresent(ConditionalOnWebApplication)
+        autoConfigClass.getAnnotation(ConditionalOnWebApplication).type() == ConditionalOnWebApplication.Type.SERVLET
+        autoConfigClass.isAnnotationPresent(PropertySource)
+        autoConfigClass.getAnnotation(PropertySource).value().toList() == ['classpath:fixture-plugin.properties']
         autoConfigClass.getDeclaredMethod('greeting').isAnnotationPresent(Bean)
         autoConfigClass.getDeclaredConstructor().newInstance().greeting() == 'hello from plugin'
     }

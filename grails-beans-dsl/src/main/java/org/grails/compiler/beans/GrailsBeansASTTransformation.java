@@ -18,6 +18,7 @@
  */
 package org.grails.compiler.beans;
 
+import java.beans.Introspector;
 import java.lang.reflect.Modifier;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -55,10 +56,18 @@ import org.codehaus.groovy.transform.GroovyASTTransformation;
 import org.codehaus.groovy.transform.sc.StaticCompileTransformation;
 
 import org.springframework.boot.autoconfigure.AutoConfiguration;
+import org.springframework.boot.autoconfigure.AutoConfigureAfter;
+import org.springframework.boot.autoconfigure.AutoConfigureBefore;
+import org.springframework.boot.autoconfigure.AutoConfigureOrder;
+import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Conditional;
+import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.context.annotation.Primary;
+import org.springframework.context.annotation.PropertySource;
 import org.springframework.context.annotation.Scope;
 
 /**
@@ -91,12 +100,15 @@ import org.springframework.context.annotation.Scope;
  * on a new sibling {@code <PluginClassName>AutoConfiguration} class in the same package instead
  * of on the plugin class itself - a {@code Plugin} subclass is instantiated by
  * {@code DefaultGrailsPlugin} via plain reflection, never as a Spring bean, so it cannot carry
- * {@code @Bean} methods or a meaningful {@code @AutoConfiguration} annotation of its own. Any
- * {@code @AutoConfiguration} annotation found on the plugin class is moved onto the generated
- * sibling, since that is the only place it has any effect. This lets a plugin author keep bean
- * definitions in the familiar {@code *GrailsPlugin.groovy} file while everything else about the
- * plugin class - {@code doWithApplicationContext}, {@code onChange}, {@code watchedResources},
- * etc. - continues to work exactly as it does today.
+ * {@code @Bean} methods or a meaningful {@code @AutoConfiguration} annotation of its own.
+ * {@code @AutoConfiguration} and every annotation that gates or configures it - the
+ * {@code @Conditional*} family, {@code @Import}/{@code @ImportAutoConfiguration},
+ * {@code @EnableConfigurationProperties}, {@code @PropertySource}, and
+ * {@code @AutoConfigureOrder}/{@code Before}/{@code After} - found on the plugin class are moved
+ * onto the generated sibling, since that is the only place any of them has any effect. This lets a
+ * plugin author keep bean definitions in the familiar {@code *GrailsPlugin.groovy} file while
+ * everything else about the plugin class - {@code doWithApplicationContext}, {@code onChange},
+ * {@code watchedResources}, etc. - continues to work exactly as it does today.
  *
  * <p>{@code @CompileStatic}/{@code @GrailsCompileStatic} on the plugin class is propagated to the
  * generated sibling. Since the sibling is created after Groovy schedules local annotation
@@ -150,8 +162,9 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
         ClassNode beanMethodHost = extendsGrailsPlugin(classNode) ?
                 createAutoConfigurationSibling(classNode, source) : classNode;
 
+        Set<String> usedNames = new HashSet<>();
         for (Statement statement : beanStatements((ClosureExpression) initialExpression)) {
-            processStatement(beanMethodHost, statement, source);
+            processStatement(beanMethodHost, statement, source, usedNames);
         }
 
         if (beanMethodHost != classNode) {
@@ -171,6 +184,15 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
         return false;
     }
 
+    // Annotations that only make sense on whatever class Spring Boot actually evaluates as an
+    // auto-configuration - meaningless on a Plugin subclass, which is instantiated by
+    // DefaultGrailsPlugin via plain reflection and never processed by Spring as a bean.
+    private static final Set<String> SIBLING_ONLY_ANNOTATION_NAMES = Set.of(
+            AutoConfiguration.class.getName(), AutoConfigureOrder.class.getName(),
+            AutoConfigureBefore.class.getName(), AutoConfigureAfter.class.getName(),
+            Import.class.getName(), ImportAutoConfiguration.class.getName(),
+            EnableConfigurationProperties.class.getName(), PropertySource.class.getName());
+
     private ClassNode createAutoConfigurationSibling(ClassNode pluginClass, SourceUnit source) {
         List<AnnotationNode> autoConfigurationAnnotations = pluginClass.getAnnotations(ClassHelper.make(AutoConfiguration.class));
         if (autoConfigurationAnnotations.isEmpty()) {
@@ -184,12 +206,28 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
                 Modifier.PUBLIC, ClassHelper.OBJECT_TYPE);
         source.getAST().addClass(sibling);
 
-        // @AutoConfiguration is meaningless on a Plugin subclass (Spring never processes it as
-        // a bean), so it moves to the sibling entirely rather than being merely copied.
-        sibling.addAnnotations(autoConfigurationAnnotations);
-        pluginClass.getAnnotations().removeAll(autoConfigurationAnnotations);
+        // @AutoConfiguration and every annotation that gates or configures it - @Conditional* (all
+        // of which are meta-annotated @Conditional, e.g. @ConditionalOnWebApplication), @Import*,
+        // @EnableConfigurationProperties, @PropertySource, @AutoConfigureOrder/Before/After - are
+        // equally meaningless on a Plugin subclass, so they all move to the sibling entirely rather
+        // than being merely copied.
+        List<AnnotationNode> siblingAnnotations = new ArrayList<>();
+        for (AnnotationNode annotation : pluginClass.getAnnotations()) {
+            if (belongsOnSibling(annotation.getClassNode())) {
+                siblingAnnotations.add(annotation);
+            }
+        }
+        sibling.addAnnotations(siblingAnnotations);
+        pluginClass.getAnnotations().removeAll(siblingAnnotations);
 
         return sibling;
+    }
+
+    private boolean belongsOnSibling(ClassNode annotationType) {
+        if (SIBLING_ONLY_ANNOTATION_NAMES.contains(annotationType.getName())) {
+            return true;
+        }
+        return !annotationType.getAnnotations(ClassHelper.make(Conditional.class)).isEmpty();
     }
 
     private void applyStaticCompilation(ClassNode pluginClass, ClassNode sibling, SourceUnit source) {
@@ -218,7 +256,7 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
         return single;
     }
 
-    private void processStatement(ClassNode classNode, Statement statement, SourceUnit source) {
+    private void processStatement(ClassNode classNode, Statement statement, SourceUnit source, Set<String> usedNames) {
         if (!(statement instanceof ExpressionStatement) ||
                 !(((ExpressionStatement) statement).getExpression() instanceof MethodCallExpression)) {
             addError(statement, source, "Each 'beans' statement must be a bean(...), field(...), or method(...) call");
@@ -266,18 +304,27 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
         }
 
         if (isBean) {
-            processBeanStatement(classNode, outerCall, baseCall, qualifierCalls, source);
+            processBeanStatement(classNode, outerCall, baseCall, qualifierCalls, source, usedNames);
         }
         else if (FIELD_CALL.equals(rootName)) {
-            processFieldStatement(classNode, baseCall, qualifierCalls, source);
+            processFieldStatement(classNode, baseCall, qualifierCalls, source, usedNames);
         }
         else {
-            processMethodStatement(classNode, outerCall, baseCall, qualifierCalls, source);
+            processMethodStatement(classNode, outerCall, baseCall, qualifierCalls, source, usedNames);
         }
     }
 
+    private boolean registerName(String name, ASTNode location, SourceUnit source, Set<String> usedNames) {
+        if (!usedNames.add(name)) {
+            addError(location, source, "\"" + name + "\" is already used by another bean(...)/field(...)/" +
+                    "method(...) statement in this beans block - generated member names must be unique");
+            return false;
+        }
+        return true;
+    }
+
     private void processBeanStatement(ClassNode classNode, MethodCallExpression outerCall, MethodCallExpression baseCall,
-            List<MethodCallExpression> qualifierCalls, SourceUnit source) {
+            List<MethodCallExpression> qualifierCalls, SourceUnit source, Set<String> usedNames) {
         List<Expression> closureCallArgs = flatten(outerCall.getArguments());
         if (closureCallArgs.isEmpty() || !(closureCallArgs.get(closureCallArgs.size() - 1) instanceof ClosureExpression)) {
             addError(outerCall, source, "bean(...) must end with a factory closure: bean(Type) { ... }");
@@ -295,6 +342,9 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
 
         TypeAndName typeAndName = parseTypeAndName(baseArgs, baseCall, source, BEAN_CALL);
         if (typeAndName == null) {
+            return;
+        }
+        if (!registerName(typeAndName.name, baseCall, source, usedNames)) {
             return;
         }
 
@@ -322,10 +372,13 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
     }
 
     private void processFieldStatement(ClassNode classNode, MethodCallExpression baseCall,
-            List<MethodCallExpression> qualifierCalls, SourceUnit source) {
+            List<MethodCallExpression> qualifierCalls, SourceUnit source, Set<String> usedNames) {
         List<Expression> baseArgs = flatten(baseCall.getArguments());
         TypeAndName typeAndName = parseTypeAndName(baseArgs, baseCall, source, FIELD_CALL);
         if (typeAndName == null) {
+            return;
+        }
+        if (!registerName(typeAndName.name, baseCall, source, usedNames)) {
             return;
         }
 
@@ -340,7 +393,7 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
     }
 
     private void processMethodStatement(ClassNode classNode, MethodCallExpression outerCall, MethodCallExpression baseCall,
-            List<MethodCallExpression> qualifierCalls, SourceUnit source) {
+            List<MethodCallExpression> qualifierCalls, SourceUnit source, Set<String> usedNames) {
         List<Expression> closureCallArgs = flatten(outerCall.getArguments());
         if (closureCallArgs.isEmpty() || !(closureCallArgs.get(closureCallArgs.size() - 1) instanceof ClosureExpression)) {
             addError(outerCall, source, "method(...) must end with a body closure: method(Type, \"name\") { ... }");
@@ -355,6 +408,9 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
 
         TypeAndName typeAndName = parseTypeAndName(baseArgs, baseCall, source, METHOD_CALL);
         if (typeAndName == null) {
+            return;
+        }
+        if (!registerName(typeAndName.name, baseCall, source, usedNames)) {
             return;
         }
 
@@ -533,10 +589,7 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
     }
 
     private String decapitalize(String name) {
-        if (name.isEmpty()) {
-            return name;
-        }
-        return Character.toLowerCase(name.charAt(0)) + name.substring(1);
+        return Introspector.decapitalize(name);
     }
 
     private boolean isValidJavaIdentifier(String name) {
