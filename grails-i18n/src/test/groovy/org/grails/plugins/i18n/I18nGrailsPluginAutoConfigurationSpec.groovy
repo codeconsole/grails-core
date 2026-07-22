@@ -45,7 +45,7 @@ import org.grails.web.i18n.ParamsAwareLocaleChangeInterceptor
 
 import spock.lang.Specification
 
-class I18nAutoConfigurationSpec extends Specification {
+class I18nGrailsPluginAutoConfigurationSpec extends Specification {
 
     private WebApplicationContextRunner contextRunner() {
         // A real instance: PluginAwareResourceBundleMessageSource casts its GrailsApplication
@@ -59,7 +59,7 @@ class I18nAutoConfigurationSpec extends Specification {
         new WebApplicationContextRunner()
                 .withBean(GrailsApplication, grailsApplicationSupplier)
                 .withBean(GrailsPluginManager, pluginManagerSupplier)
-                .withConfiguration(AutoConfigurations.of(PropertyPlaceholderAutoConfiguration, I18nAutoConfiguration))
+                .withConfiguration(AutoConfigurations.of(PropertyPlaceholderAutoConfiguration, I18nGrailsPluginAutoConfiguration))
     }
 
     void 'the Grails i18n beans register by default'() {

@@ -58,7 +58,7 @@ class GrailsLocaleResolverAutoConfigurationSpec extends Specification {
                 .withConfiguration(AutoConfigurations.of(
                         PropertyPlaceholderAutoConfiguration,
                         GrailsLocaleResolverAutoConfiguration,
-                        I18nAutoConfiguration))
+                        I18nGrailsPluginAutoConfiguration))
     }
 
     void 'under @EnableWebMvc the WebMvcConfigurationSupport localeResolver is removed and the Grails session resolver wins'() {

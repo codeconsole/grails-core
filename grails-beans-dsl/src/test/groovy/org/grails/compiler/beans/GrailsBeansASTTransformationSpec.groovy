@@ -702,8 +702,8 @@ class GrailsBeansASTTransformationSpec extends Specification {
     }
 
     def "a realistic i18n-plugin-shaped conversion compiles and behaves correctly"() {
-        given: "field(...)/method(...)/bean(...) together, modelled on the real " +
-                "org.grails.plugins.i18n.I18nAutoConfiguration - injected config fields feeding a " +
+        given: "field(...)/method(...)/bean(...) together, modelled on the real conversion now " +
+                "live in org.grails.plugins.i18n.I18nGrailsPlugin - injected config fields feeding a " +
                 "strategy-selecting helper method and a multi-field-dependent bean, each bean backing " +
                 "off an existing same-named bean the way the real plugin does. LocaleResolver stands " +
                 "in for org.springframework.web.servlet.LocaleResolver (spring-webmvc isn't a " +

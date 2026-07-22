@@ -36,11 +36,12 @@ import org.grails.datastore.mapping.model.MappingContext
 import org.grails.plugins.domain.support.DefaultConstraintEvaluatorFactoryBean
 import org.grails.plugins.domain.support.DefaultMappingContextFactoryBean
 import org.grails.plugins.domain.support.ValidatorRegistryFactoryBean
-import org.grails.plugins.i18n.I18nAutoConfiguration
 
 @CompileStatic
 // TODO: datasource plugin is supposed to always load after this (currently will because this is a configuration)
-@AutoConfiguration(after = [I18nAutoConfiguration])
+// Ordered by name, not by class literal: I18nGrailsPlugin's @GrailsBeans-generated
+// I18nGrailsPluginAutoConfiguration doesn't exist as a compilable class for this class to reference.
+@AutoConfiguration(afterName = ['org.grails.plugins.i18n.I18nGrailsPluginAutoConfiguration'])
 @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
 class GrailsDomainClassAutoConfiguration {
 
