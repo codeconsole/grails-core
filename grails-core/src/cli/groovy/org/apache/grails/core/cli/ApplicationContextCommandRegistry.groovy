@@ -86,7 +86,7 @@ class ApplicationContextCommandRegistry {
                 provider.contributeCommands(registryClassLoader, contextClassLoader, registrar)
             }
             catch (Throwable e) {
-                log.warn("Failed to load application commands from provider '{}'; skipping it.", providerClass?.name, e)
+                log.warn('Failed to load application commands from provider \'{}\'; skipping it.', providerClass.name, e)
             }
         }
     }

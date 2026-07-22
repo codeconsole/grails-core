@@ -59,17 +59,17 @@ class LegacyApplicationCommandProvider implements ApplicationCommandProvider {
                 ApplicationCommand command = new LegacyApplicationCommandAdapter(legacyCommand)
                 String installedName = registrar.register(command)
                 if (installedName != null && !warningLogged) {
-                    log.warn("Command '{}' from a Grails 7 plugin was loaded through the deprecated grails.dev.commands compatibility layer. Ask the plugin author to migrate to the org.apache.grails.core.cli command API and publish a -cli companion artifact; this compatibility path will be removed in a future major release.", installedName)
+                    log.warn('Command \'{}\' from a Grails 7 plugin was loaded through the deprecated grails.dev.commands compatibility layer. Ask the plugin author to migrate to the org.apache.grails.core.cli command API and publish a -cli companion artifact; this compatibility path will be removed in a future major release.', installedName)
                     warningLogged = true
                 }
             }
             catch (LinkageError e) {
-                log.error("Grails 7 legacy command '{}' does not link against the restored grails.dev.commands contract (the plugin is likely binary-incompatible with this Grails version and must be recompiled or migrated); the command is unavailable.",
-                        legacyClass?.name, e)
+                log.error('Grails 7 legacy command \'{}\' does not link against the restored grails.dev.commands contract (the plugin is likely binary-incompatible with this Grails version and must be recompiled or migrated); the command is unavailable.',
+                        legacyClass.name, e)
             }
             catch (Throwable e) {
-                log.warn("Failed to load a Grails 7 legacy command from class '{}' through the deprecated grails.dev.commands compatibility layer; skipping it.",
-                        legacyClass?.name, e)
+                log.warn('Failed to load a Grails 7 legacy command from class \'{}\' through the deprecated grails.dev.commands compatibility layer; skipping it.',
+                        legacyClass.name, e)
             }
         }
     }
