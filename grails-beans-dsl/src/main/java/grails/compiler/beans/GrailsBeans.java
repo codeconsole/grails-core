@@ -36,7 +36,9 @@ import org.codehaus.groovy.transform.GroovyASTTransformationClass;
  * <li>{@code bean(Type[, "name"]) { ... }}, optionally chained with any combination of
  * {@code .conditionalOnMissingBean(...)} (positional types, the annotation's own named
  * attributes such as {@code name:}/{@code search:}, or no arguments at all to let Spring infer
- * the back-off type from the return type), {@code .primary()}, {@code .lazy()},
+ * the back-off type from the return type), {@code .conditionalOnMissingBeanName(...)} (backs off
+ * by this bean's own name - set automatically, stated once - accepting the annotation's other
+ * attributes but rejecting {@code name:} and types), {@code .primary()}, {@code .lazy()},
  * {@code .scope("name")}, and (repeatably)
  * {@code .annotate(AnnotationType[, attr: value, ...])} - the last a generic escape hatch
  * attaching any other single-valued annotation. The closure body becomes the generated method's

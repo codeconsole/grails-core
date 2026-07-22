@@ -89,7 +89,8 @@ import org.springframework.context.annotation.Scope;
  * <ul>
  * <li>{@code bean(Type[, "name"]) { ... }}, optionally chained with any combination of
  * {@code .conditionalOnMissingBean(...)} (positional types, named annotation attributes, or bare),
- * {@code .primary()}, {@code .lazy()},
+ * {@code .conditionalOnMissingBeanName(...)} (backs off by this bean's own name, set
+ * automatically), {@code .primary()}, {@code .lazy()},
  * {@code .scope("name")}, and (repeatably)
  * {@code .annotate(AnnotationType[, attr: value, ...])}. Synthesises a public method, returning
  * the declared type, annotated {@code @org.springframework.context.annotation.Bean("name")} plus
@@ -146,19 +147,22 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
     private static final String METHOD_CALL = "method";
     private static final Set<String> ROOT_STATEMENT_CALL_NAMES = Set.of(BEAN_CALL, FIELD_CALL, METHOD_CALL);
     private static final String CONDITIONAL_ON_MISSING_BEAN_CALL = "conditionalOnMissingBean";
+    private static final String CONDITIONAL_ON_MISSING_BEAN_NAME_CALL = "conditionalOnMissingBeanName";
     private static final String PRIMARY_CALL = "primary";
     private static final String LAZY_CALL = "lazy";
     private static final String SCOPE_CALL = "scope";
     private static final String ANNOTATE_CALL = "annotate";
     private static final String VALUE_CALL = "value";
     private static final Set<String> BEAN_QUALIFIER_CALL_NAMES = Set.of(
-            CONDITIONAL_ON_MISSING_BEAN_CALL, PRIMARY_CALL, LAZY_CALL, SCOPE_CALL, ANNOTATE_CALL);
+            CONDITIONAL_ON_MISSING_BEAN_CALL, CONDITIONAL_ON_MISSING_BEAN_NAME_CALL,
+            PRIMARY_CALL, LAZY_CALL, SCOPE_CALL, ANNOTATE_CALL);
     // field(...) and method(...) declare plain class members, not beans - bean-specific
     // qualifiers don't apply; .value(...) (@Value config injection) is field-only.
     private static final Set<String> FIELD_QUALIFIER_CALL_NAMES = Set.of(ANNOTATE_CALL, VALUE_CALL);
     private static final Set<String> METHOD_QUALIFIER_CALL_NAMES = Set.of(ANNOTATE_CALL);
     private static final Set<String> ALL_QUALIFIER_CALL_NAMES = Set.of(
-            CONDITIONAL_ON_MISSING_BEAN_CALL, PRIMARY_CALL, LAZY_CALL, SCOPE_CALL, ANNOTATE_CALL, VALUE_CALL);
+            CONDITIONAL_ON_MISSING_BEAN_CALL, CONDITIONAL_ON_MISSING_BEAN_NAME_CALL,
+            PRIMARY_CALL, LAZY_CALL, SCOPE_CALL, ANNOTATE_CALL, VALUE_CALL);
     private static final String PLUGIN_SUPERCLASS_NAME = "grails.plugins.Plugin";
     private static final String GRAILS_PLUGIN_SUFFIX = "GrailsPlugin";
     private static final String AUTO_CONFIGURATION_SUFFIX = "AutoConfiguration";
@@ -572,7 +576,7 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
                 // only the outermost call in the chain can carry the trailing factory closure
                 qualifierArgs = qualifierArgs.subList(0, qualifierArgs.size() - 1);
             }
-            if (!applyQualifier(beanMethod, qualifierCall, qualifierArgs, source)) {
+            if (!applyQualifier(beanMethod, typeAndName.name, qualifierCall, qualifierArgs, source)) {
                 return;
             }
         }
@@ -743,11 +747,15 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
         return new TypeAndName(type, name);
     }
 
-    private boolean applyQualifier(MethodNode beanMethod, MethodCallExpression qualifierCall,
+    private boolean applyQualifier(MethodNode beanMethod, String beanName, MethodCallExpression qualifierCall,
             List<Expression> args, SourceUnit source) {
         String name = qualifierCall.getMethodAsString();
         if (CONDITIONAL_ON_MISSING_BEAN_CALL.equals(name)) {
             AnnotationNode annotation = conditionalOnMissingBeanAnnotation(args, qualifierCall, source);
+            return annotation != null && addAnnotationIfAbsent(beanMethod, qualifierCall, annotation, source);
+        }
+        if (CONDITIONAL_ON_MISSING_BEAN_NAME_CALL.equals(name)) {
+            AnnotationNode annotation = conditionalOnMissingBeanNameAnnotation(args, beanName, qualifierCall, source);
             return annotation != null && addAnnotationIfAbsent(beanMethod, qualifierCall, annotation, source);
         }
         if (PRIMARY_CALL.equals(name) || LAZY_CALL.equals(name)) {
@@ -873,6 +881,39 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
             }
             annotation.setMember("value", typeList);
         }
+        return annotation;
+    }
+
+    // "Register this bean unless a bean with THIS bean's name already exists" - the name member is
+    // set from the bean's own (explicit or convention-derived) name, so the two strings the plain
+    // form would have to keep in sync cannot diverge. name:/value:/positional types are rejected:
+    // supplying them contradicts the qualifier's purpose, and the fully-explicit forms remain
+    // available on .conditionalOnMissingBean(...).
+    private AnnotationNode conditionalOnMissingBeanNameAnnotation(List<Expression> args, String beanName,
+            MethodCallExpression qualifierCall, SourceUnit source) {
+        MapExpression members = !args.isEmpty() && args.get(0) instanceof MapExpression ? (MapExpression) args.get(0) : null;
+        if (args.size() > (members != null ? 1 : 0)) {
+            addError(qualifierCall, source, "conditionalOnMissingBeanName(...) takes only named attributes " +
+                    "(e.g. search: SearchStrategy.CURRENT) - it always backs off by this bean's own name; " +
+                    "use conditionalOnMissingBean(...) for type-based or fully explicit conditions");
+            return null;
+        }
+        if (members != null) {
+            for (MapEntryExpression entry : members.getMapEntryExpressions()) {
+                Object keyValue = entry.getKeyExpression() instanceof ConstantExpression ?
+                        ((ConstantExpression) entry.getKeyExpression()).getValue() : null;
+                if ("name".equals(keyValue) || "value".equals(keyValue)) {
+                    addError(qualifierCall, source, "conditionalOnMissingBeanName(...) sets name automatically " +
+                            "from this bean's own name - use conditionalOnMissingBean(...) to spell out name: or types");
+                    return null;
+                }
+            }
+        }
+        AnnotationNode annotation = new AnnotationNode(ClassHelper.make(ConditionalOnMissingBean.class));
+        if (members != null && !addMembersFromMap(annotation, members, qualifierCall, source)) {
+            return null;
+        }
+        annotation.setMember("name", new ConstantExpression(beanName));
         return annotation;
     }
 

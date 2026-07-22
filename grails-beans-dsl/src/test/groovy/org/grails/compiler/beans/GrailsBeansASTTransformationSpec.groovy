@@ -251,6 +251,63 @@ class GrailsBeansASTTransformationSpec extends Specification {
         annotation.search() == SearchStrategy.CURRENT
     }
 
+    def "conditionalOnMissingBeanName(...) backs off by the bean's convention-derived name, stated once"() {
+        given:
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+            import org.springframework.boot.autoconfigure.condition.SearchStrategy
+            import org.springframework.context.MessageSource
+            import org.springframework.context.support.StaticMessageSource
+
+            @GrailsBeans
+            @AutoConfiguration
+            class DerivedNameConditionFixture {
+                def beans = {
+                    bean(MessageSource).conditionalOnMissingBeanName(search: SearchStrategy.CURRENT) {
+                        new StaticMessageSource()
+                    }
+                }
+            }
+        '''
+
+        when:
+        Class<?> fixtureBeans = compile(source)
+        def method = fixtureBeans.getDeclaredMethod('messageSource')
+        def annotation = method.getAnnotation(ConditionalOnMissingBean)
+
+        then: "the derived bean name feeds both @Bean and the condition - one statement of truth"
+        method.getAnnotation(Bean).value() == ['messageSource'] as String[]
+        annotation.name() == ['messageSource'] as String[]
+        annotation.search() == SearchStrategy.CURRENT
+        annotation.value().length == 0
+    }
+
+    def "conditionalOnMissingBeanName() uses an explicitly-supplied bean name, even a non-identifier one"() {
+        given:
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @GrailsBeans
+            @AutoConfiguration
+            class ExplicitNameConditionFixture {
+                def beans = {
+                    bean(String, 'my-source').conditionalOnMissingBeanName() {
+                        'hello'
+                    }
+                }
+            }
+        '''
+
+        when:
+        Class<?> fixtureBeans = compile(source)
+        def annotation = fixtureBeans.getDeclaredMethod('string$0').getAnnotation(ConditionalOnMissingBean)
+
+        then:
+        annotation.name() == ['my-source'] as String[]
+    }
+
     def "zero-argument conditionalOnMissingBean() compiles to a bare annotation, letting Spring infer the return type"() {
         given:
         String source = '''
@@ -818,6 +875,16 @@ class GrailsBeansASTTransformationSpec extends Specification {
         '.value(...) with too many arguments'               | "field(String, 'x').value('k', 'd', 'extra')"                    | 'requires a config key'
         '.value(...) chained twice'                          | "field(String, 'x').value('a', 'b').value('c', 'd')"            | 'may only be chained once'
         '.value(...) combined with .annotate(Value, ...)'    | "field(String, 'x').value('k', 'd').annotate(Value, value: 'v')" | 'already attached'
+        'conditionalOnMissingBeanName(...) given a name: attribute' |
+                "bean(String, 'x').conditionalOnMissingBeanName(name: 'other') { 'y' }" | 'sets name automatically'
+        'conditionalOnMissingBeanName(...) given a value: attribute' |
+                "bean(String, 'x').conditionalOnMissingBeanName(value: String) { 'y' }" | 'sets name automatically'
+        'conditionalOnMissingBeanName(...) given a positional type' |
+                "bean(String, 'x').conditionalOnMissingBeanName(String) { 'y' }" | 'takes only named attributes'
+        'conditionalOnMissingBeanName(...) chained onto field(...)' |
+                "field(String, 'x').conditionalOnMissingBeanName()" | 'cannot be chained onto field(...)'
+        'conditionalOnMissingBeanName(...) combined with conditionalOnMissingBean(...)' |
+                "bean(String, 'x').conditionalOnMissingBean(String).conditionalOnMissingBeanName() { 'y' }" | 'already attached'
         'method(...) without a body closure'              | "method(String, 'x')"                                             | 'method(...) must end with a body closure'
         'method(...) chained with a bean-only qualifier'  | "method(String, 'x').conditionalOnMissingBean(String) { 'y' }"    | 'cannot be chained onto method(...)'
         'two bean(...) statements sharing the same explicit name' |
@@ -1995,8 +2062,7 @@ class GrailsBeansASTTransformationSpec extends Specification {
                         localeResolverType?.toLowerCase() == "cookie" ? new CookieLocaleResolver() : new SessionLocaleResolver()
                     }
 
-                    bean(LocaleResolver, "localeResolver")
-                            .conditionalOnMissingBean(name: "localeResolver", search: SearchStrategy.CURRENT) {
+                    bean(LocaleResolver).conditionalOnMissingBeanName(search: SearchStrategy.CURRENT) {
                         buildLocaleResolver()
                     }
 
@@ -2007,7 +2073,7 @@ class GrailsBeansASTTransformationSpec extends Specification {
                     }
 
                     bean(ReloadableResourceBundleMessageSource, "messageSource")
-                            .conditionalOnMissingBean(name: "messageSource", search: SearchStrategy.CURRENT) {
+                            .conditionalOnMissingBeanName(search: SearchStrategy.CURRENT) {
                         buildMessageSource()
                     }
                 }

@@ -101,7 +101,7 @@ class I18nGrailsPlugin extends Plugin {
         // bean in a parent context must not make the child context's bean back off.
 
         // Normalizes the configured strategy, ignoring case and separators (e.g. 'accept-header').
-        bean(LocaleResolver, 'localeResolver').conditionalOnMissingBean(name: 'localeResolver', search: SearchStrategy.CURRENT) {
+        bean(LocaleResolver).conditionalOnMissingBeanName(search: SearchStrategy.CURRENT) {
             String normalized = localeResolverType == null ? '' :
                     localeResolverType.toLowerCase(Locale.ROOT).replaceAll('[^a-z]', '')
             switch (normalized) {
@@ -122,14 +122,14 @@ class I18nGrailsPlugin extends Plugin {
         // (accept-header or fixed), ParamsAwareLocaleChangeInterceptor detects that the resolver cannot
         // change and ignores the parameter, so ?lang= simply has no effect.
         //
-        // The name stays explicit (unlike availableLocaleResolver below): the ConditionalOnMissingBean
-        // check and grails-test-suite-uber's PluginTests both reference this bean by the literal string,
-        // with no compile-time link to a convention-derived name.
-        bean(LocaleChangeInterceptor, 'localeChangeInterceptor').conditionalOnMissingBean(name: 'localeChangeInterceptor', search: SearchStrategy.CURRENT) {
+        // The derived bean names on all three guarded beans are contractual: external code (e.g.
+        // grails-test-suite-uber's PluginTests) references them by literal string, so renaming a
+        // bean's type changes its derived name and breaks those references.
+        bean(LocaleChangeInterceptor).conditionalOnMissingBeanName(search: SearchStrategy.CURRENT) {
             new ParamsAwareLocaleChangeInterceptor(paramName: 'lang')
         }
 
-        bean(MessageSource, 'messageSource').conditionalOnMissingBean(name: 'messageSource', search: SearchStrategy.CURRENT) { GrailsApplication grailsApplication, GrailsPluginManager pluginManager ->
+        bean(MessageSource).conditionalOnMissingBeanName(search: SearchStrategy.CURRENT) { GrailsApplication grailsApplication, GrailsPluginManager pluginManager ->
             def source = new PluginAwareResourceBundleMessageSource(grailsApplication, pluginManager)
             source.defaultEncoding = encoding
             source.fallbackToSystemLocale = false
