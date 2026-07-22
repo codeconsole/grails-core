@@ -105,7 +105,8 @@ import org.springframework.context.annotation.Scope;
  * injection: key + default, or one verbatim placeholder/SpEL string) and/or (repeatably)
  * {@code .annotate(AnnotationType[, attr: value, ...])}. Declares a private field on the
  * generated class, for state shared across bean methods.</li>
- * <li>{@code method(Type[, "name"]) { ... }}, with the same chaining as {@code field(...)}.
+ * <li>{@code method(Type[, "name"]) { ... }}, chainable with {@code .annotate(...)} only
+ * ({@code .value(...)} is field-specific).
  * Declares a private helper method on the generated class, for logic shared across bean methods,
  * lifted from the DSL closure the same way {@code bean(...)} is.</li>
  * </ul>
@@ -865,6 +866,17 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
         AnnotationNode annotation = new AnnotationNode(ClassHelper.make(ConditionalOnMissingBean.class));
         MapExpression members = !args.isEmpty() && args.get(0) instanceof MapExpression ? (MapExpression) args.get(0) : null;
         List<Expression> types = members != null ? args.subList(1, args.size()) : args;
+        if (members != null && !types.isEmpty()) {
+            for (MapEntryExpression entry : members.getMapEntryExpressions()) {
+                Object keyValue = entry.getKeyExpression() instanceof ConstantExpression ?
+                        ((ConstantExpression) entry.getKeyExpression()).getValue() : null;
+                if ("value".equals(keyValue)) {
+                    addError(qualifierCall, source, "conditionalOnMissingBean(...) was given types both " +
+                            "positionally and via value: - use one or the other");
+                    return null;
+                }
+            }
+        }
         if (members != null && !addMembersFromMap(annotation, members, qualifierCall, source)) {
             return null;
         }

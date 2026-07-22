@@ -847,6 +847,9 @@ class GrailsBeansASTTransformationSpec extends Specification {
         'conditionalOnMissingBean(...) with a non-type argument' |
                 "bean(String, 'x').conditionalOnMissingBean('not a type') { 'x' }" |
                 'conditionalOnMissingBean(...) arguments must be types'
+        'conditionalOnMissingBean(...) with types given both positionally and via value:' |
+                "bean(String, 'x').conditionalOnMissingBean(String, value: Integer) { 'y' }" |
+                'use one or the other'
         'bean(...) with a non-constant name argument'  | "bean(String, someVariable) { 'x' }"                              | 'requires name to be a String literal'
         'bean(...) with a non-String constant name'    | 'bean(String, 42) { \'x\' }'                                       | 'requires name to be a String literal'
         'bean(...) with an unexpected third argument'  | "bean(String, 'x', 'unexpected') { 'y' }"                          | 'at most one name'

@@ -54,7 +54,8 @@ import org.codehaus.groovy.transform.GroovyASTTransformationClass;
  * compiles to {@code @Value("${grails.views.gsp.encoding:UTF-8}")} - the two-argument form takes
  * a config key (a literal or a bare constant reference) plus default, and the one-argument form
  * passes a complete placeholder or SpEL string through verbatim.</li>
- * <li>{@code method(Type[, "name"]) { ... }}, with the same chaining as {@code field(...)}.
+ * <li>{@code method(Type[, "name"]) { ... }}, chainable with {@code .annotate(...)} only
+ * ({@code .value(...)} is field-specific).
  * Declares a private helper method on the generated class, for logic shared across bean methods,
  * lifted from the closure the same way {@code bean(...)} is.</li>
  * </ul>
