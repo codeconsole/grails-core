@@ -119,9 +119,12 @@ The auto-provisioning can be disabled with `grails { cliAutoProvision = false }`
 `grailsCli` dependencies are declared explicitly.
 
 The plugin also provisions `grails-core-cli-legacy` into a separate execution-only
-`grailsCliLegacy` bucket. That bucket contributes to `grailsCliClasspath`, never to application or
-plugin compile classpaths. This keeps unchanged Grails 7 command plugins working by default with
-zero user action without leaking `grails.dev.commands.*` into the Grails 8 command-authoring ABI.
+`grailsCliLegacy` bucket when both `cliAutoProvision` and `legacyCommandSupport` are enabled
+(the defaults). That bucket contributes to `grailsCliClasspath`, never to application or plugin
+compile classpaths. This keeps unchanged Grails 7 command plugins working by default with zero user
+action without leaking `grails.dev.commands.*` into the Grails 8 command-authoring ABI. Disable only
+the bridge with `grails { legacyCommandSupport = false }` while leaving modern companion
+auto-provisioning alone.
 
 Plugin authors get the whole publishing side from the new
 `org.apache.grails.gradle.grails-plugin-cli` Gradle plugin: it creates the `cli` source set as a

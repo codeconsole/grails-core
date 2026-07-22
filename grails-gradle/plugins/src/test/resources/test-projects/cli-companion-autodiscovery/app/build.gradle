@@ -25,7 +25,7 @@ tasks.register('inspectGrailsCli') {
                 println "GRAILSCLI_DEP: project path=${dep.path} capabilities=[${caps}]"
             }
             else {
-                println "GRAILSCLI_DEP: module ${dep.group}:${dep.name}"
+                println "GRAILSCLI_DEP: module ${dep.group}:${dep.name}:${dep.version}"
             }
         }
     }
@@ -54,7 +54,7 @@ tasks.register('inspectGrailsCliLegacy') {
     def grailsCliLegacy = configurations.grailsCliLegacy
     doLast {
         grailsCliLegacy.dependencies.each { dep ->
-            println "GRAILSCLILEGACY_DEP: module ${dep.group}:${dep.name}"
+            println "GRAILSCLILEGACY_DEP: module ${dep.group}:${dep.name}:${dep.version}"
         }
     }
 }

@@ -1656,12 +1656,20 @@ The `console` and `shell` tasks also draw from the provisioned cli tier, so the
 for additional console-only dependencies).
 
 The deprecated Grails 7 command contract is isolated in
-`org.apache.grails:grails-core-cli-legacy`. While `cliAutoProvision` is enabled, the plugin adds
-this artifact to the execution-only `grailsCliLegacy` bucket. `grailsCliClasspath` includes that
-bucket, but application and plugin compile classpaths do not. Existing Grails 7 command plugins
-therefore keep working by default without exposing the deprecated API to new command sources.
+`org.apache.grails:grails-core-cli-legacy`. While both `cliAutoProvision` and
+`legacyCommandSupport` are enabled (the defaults), the plugin adds this artifact to the
+execution-only `grailsCliLegacy` bucket. `grailsCliClasspath` includes that bucket, but application
+and plugin compile classpaths do not. Existing Grails 7 command plugins therefore keep working by
+default without exposing the deprecated API to new command sources.
 
-Disable the discovery with `grails { cliAutoProvision = false }` and declare the cli tier
+Two flags control auto-provisioning:
+
+* `cliAutoProvision` (default `true`) controls the modern CLI tier: `grails-core-cli`,
+  `grails-console`, and discovered companion `-cli` artifacts.
+* `legacyCommandSupport` (default `true`) controls only the Grails 7 application-command bridge.
+  It is consulted only when `cliAutoProvision` is also enabled.
+
+Disable the modern CLI tier with `grails { cliAutoProvision = false }` and declare dependencies
 explicitly when full control over the command classpath is preferred:
 
 [source,groovy]
@@ -1677,6 +1685,16 @@ dependencies {
     grailsCli 'org.apache.grails:grails-console'
     grailsCli 'org.apache.grails:grails-data-hibernate7-dbmigration-cli'
     grailsCliLegacy 'org.apache.grails:grails-core-cli-legacy'
+}
+----
+
+Keep modern companion auto-provisioning while turning off only the Grails 7 bridge:
+
+[source,groovy]
+.build.gradle
+----
+grails {
+    legacyCommandSupport = false
 }
 ----
 
@@ -1711,13 +1729,13 @@ plugins. Application commands created with `create-command` that implement
 `grails.dev.commands.ApplicationCommand` or `grails.dev.commands.GrailsApplicationCommand` remain
 available without a plugin re-release. The deprecated `grails.dev.commands.*` types are retained in
 `org.apache.grails:grails-core-cli-legacy`, which is provisioned by default only on the command
-runner classpath,
+runner classpath when both `cliAutoProvision` and `legacyCommandSupport` are enabled,
 and registrations in `META-INF/grails.factories` under
 `grails.dev.commands.ApplicationCommand` continue to be discovered at runtime.
 
 Grails logs a one-time deprecation warning when it uses this compatibility layer. It is intended
-to keep existing published plugins working while plugin authors migrate; it is deprecated and will
-be removed in a future major release.
+to keep existing published plugins working while plugin authors migrate; it is deprecated and may
+be removed in a future major release. No removal major has been announced.
 
 New and migrated commands should always compile against `org.apache.grails.core.cli.*` from
 `grails-core-cli`. A plugin that intentionally continues to author commands against the deprecated

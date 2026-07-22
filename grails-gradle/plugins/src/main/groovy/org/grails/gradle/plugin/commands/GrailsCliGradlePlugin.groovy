@@ -30,6 +30,7 @@ import org.gradle.api.artifacts.Configuration
 import org.gradle.api.artifacts.ConfigurationContainer
 import org.gradle.api.artifacts.Dependency
 import org.gradle.api.artifacts.DependencySet
+import org.gradle.api.artifacts.component.ModuleComponentIdentifier
 import org.gradle.api.artifacts.component.ProjectComponentIdentifier
 import org.gradle.api.artifacts.result.ResolvedArtifactResult
 import org.gradle.api.file.FileCollection
@@ -38,6 +39,7 @@ import org.gradle.api.tasks.SourceSet
 import org.gradle.api.tasks.TaskContainer
 import org.gradle.api.tasks.TaskProvider
 
+import grails.util.BuildSettings
 import grails.util.Environment
 import grails.util.GrailsNameUtils
 import org.grails.gradle.plugin.core.GrailsExtension
@@ -96,6 +98,13 @@ class GrailsCliGradlePlugin implements Plugin<Project> {
      * {@code grails { cliAutoProvision = false }}.
      */
     public static final String GRAILS_CLI_AUTO_PROVISION_PROPERTY = 'grailsCliAutoProvision'
+
+    /**
+     * Set this project property to {@code false} to stop the plugin from auto-provisioning the
+     * Grails 7 command compatibility bridge onto {@link #GRAILS_CLI_LEGACY_CONFIGURATION};
+     * equivalent to {@code grails { legacyCommandSupport = false }}.
+     */
+    public static final String GRAILS_LEGACY_COMMAND_SUPPORT_PROPERTY = 'grailsLegacyCommandSupport'
 
     /** The internal probe configuration used to detect companion `-cli` modules */
     public static final String GRAILS_CLI_DETECT_CONFIGURATION = 'grailsCliDetect'
@@ -203,8 +212,9 @@ class GrailsCliGradlePlugin implements Plugin<Project> {
         }
 
         // command authoring and execution work out of the box: the command contract + the runner
-        dependencies.add(project.dependencies.create('org.apache.grails:grails-core-cli'))
-        dependencies.add(project.dependencies.create('org.apache.grails:grails-console'))
+        String grailsVersion = resolveGrailsVersion(project)
+        dependencies.add(project.dependencies.create("org.apache.grails:grails-core-cli:${grailsVersion}"))
+        dependencies.add(project.dependencies.create("org.apache.grails:grails-console:${grailsVersion}"))
 
         Configuration probe = project.configurations.getByName(GRAILS_CLI_DETECT_CONFIGURATION)
         def probeArtifacts = probe.incoming.artifactView { it.lenient(true) }.artifacts
@@ -239,9 +249,17 @@ class GrailsCliGradlePlugin implements Plugin<Project> {
 
     protected void autoProvisionLegacyCliDependencies(Project project, DependencySet dependencies) {
         GrailsExtension grails = project.extensions.getByType(GrailsExtension)
-        if (grails.cliAutoProvision.get()) {
-            dependencies.add(project.dependencies.create('org.apache.grails:grails-core-cli-legacy'))
+        // Modern CLI auto-provisioning is the master switch; legacyCommandSupport is the finer
+        // opt-out for only the Grails 7 application-command bridge.
+        if (grails.cliAutoProvision.get() && grails.legacyCommandSupport.get()) {
+            String grailsVersion = resolveGrailsVersion(project)
+            dependencies.add(project.dependencies.create(
+                    "org.apache.grails:grails-core-cli-legacy:${grailsVersion}"))
         }
+    }
+
+    protected static String resolveGrailsVersion(Project project) {
+        (project.findProperty('grailsVersion') ?: BuildSettings.grailsVersion) as String
     }
 
     /**
@@ -286,7 +304,38 @@ class GrailsCliGradlePlugin implements Plugin<Project> {
                     GrailsCliArtifactGradlePlugin.CLI_ARTIFACT_MANIFEST_ATTRIBUTE, advertised, project.name)
             return null
         }
-        project.dependencies.create(advertised)
+        // Manifests advertise group:artifact only. Prefer the producer module's own version so
+        // third-party plugins (versioned independently of Grails) resolve their matching companion.
+        // Fall back to the current Grails version for framework modules / unversioned components.
+        String companionVersion = resolveAdvertisedCompanionVersion(artifact, advertised, project)
+        project.dependencies.create("${advertised}:${companionVersion}")
+    }
+
+    protected static String resolveAdvertisedCompanionVersion(
+            ResolvedArtifactResult artifact, String advertised, Project project) {
+        def componentIdentifier = artifact.id.componentIdentifier
+        if (componentIdentifier instanceof ModuleComponentIdentifier) {
+            String moduleVersion = ((ModuleComponentIdentifier) componentIdentifier).version
+            if (moduleVersion) {
+                return moduleVersion
+            }
+        }
+        // Included-build / project components have no module version. The resolved file is usually
+        // the producer runtime jar (my-plugin-1.2.0-SNAPSHOT.jar), not the companion jar, so peel a
+        // trailing Maven-style version from whatever jar we have rather than assuming the companion
+        // artifactId is the filename prefix.
+        File file = artifact.file
+        if (file != null && file.name.endsWith('.jar')) {
+            String baseName = file.name.substring(0, file.name.length() - 4)
+            // First "-<digit>..." from the left is the version start, so
+            // my-plugin-1.2.0-rc-1 and my-plugin-cli-1.0.0-SNAPSHOT both work.
+            for (int i = 0; i < baseName.length() - 1; i++) {
+                if (baseName.charAt(i) == '-' && Character.isDigit(baseName.charAt(i + 1))) {
+                    return baseName.substring(i + 1)
+                }
+            }
+        }
+        resolveGrailsVersion(project)
     }
 
     /**
@@ -343,7 +392,9 @@ class GrailsCliGradlePlugin implements Plugin<Project> {
             // register them under the deprecated grails.dev.commands.ApplicationCommand key. Register
             // per-command tasks for those too, so `grails <command>` (routed through a Gradle task)
             // keeps working for a legacy plugin without a re-release.
-            commandClassNames.addAll(loadLegacyCommandNamesFromRuntimeClasspath(project))
+            if (grails.cliAutoProvision.get() && grails.legacyCommandSupport.get()) {
+                commandClassNames.addAll(loadLegacyCommandNamesFromRuntimeClasspath(project))
+            }
             for (ctxCommand in commandClassNames) {
                 String taskName = GrailsNameUtils.getLogicalPropertyName(ctxCommand, 'Command')
                 String commandName = GrailsNameUtils.getScriptName(GrailsNameUtils.getLogicalName(ctxCommand, 'Command'))

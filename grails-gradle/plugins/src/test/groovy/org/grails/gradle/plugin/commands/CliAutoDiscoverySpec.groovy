@@ -47,12 +47,12 @@ class CliAutoDiscoverySpec extends GradleSpecification {
         and: 'it is NOT an external module coordinate (the bug this regression pins)'
         !result.output.contains('GRAILSCLI_DEP: module org.example.test:my-plugin-cli')
 
-        and: 'the command contract and runner are auto-provisioned as well'
-        result.output.contains('GRAILSCLI_DEP: module org.apache.grails:grails-core-cli')
-        result.output.contains('GRAILSCLI_DEP: module org.apache.grails:grails-console')
+        and: 'the command contract and runner are auto-provisioned at the current Grails version'
+        result.output.contains("GRAILSCLI_DEP: module org.apache.grails:grails-core-cli:${PROJECT_VERSION}")
+        result.output.contains("GRAILSCLI_DEP: module org.apache.grails:grails-console:${PROJECT_VERSION}")
 
-        and: 'the legacy bridge is execution-only'
-        result.output.contains('GRAILSCLILEGACY_DEP: module org.apache.grails:grails-core-cli-legacy')
+        and: 'the legacy bridge is execution-only and versioned to the current Grails version'
+        result.output.contains("GRAILSCLILEGACY_DEP: module org.apache.grails:grails-core-cli-legacy:${PROJECT_VERSION}")
         !result.output.contains('GRAILSCLI_DEP: module org.apache.grails:grails-core-cli-legacy')
         result.output.contains('CLASSPATH_EXTENDS_GRAILSCLILEGACY=true')
         result.output.contains('COMPILE_EXTENDS_GRAILSCLILEGACY=false')
@@ -109,6 +109,31 @@ class CliAutoDiscoverySpec extends GradleSpecification {
 
         then: 'nothing is provisioned onto grailsCli — neither the companion nor the contract/runner'
         !result.output.contains('GRAILSCLI_DEP:')
+        !result.output.contains('GRAILSCLILEGACY_DEP:')
+        result.output.contains('COMPILE_HAS_GRAILSCLILEGACY=false')
+        result.output.contains('TEST_COMPILE_HAS_GRAILSCLILEGACY=false')
+        result.output.contains('INTEGRATION_TEST_COMPILE_HAS_GRAILSCLILEGACY=false')
+        result.output.contains('TEST_RUNTIME_HAS_GRAILSCLILEGACY=false')
+        result.output.contains('INTEGRATION_TEST_RUNTIME_HAS_GRAILSCLILEGACY=false')
+    }
+
+    def "legacyCommandSupport = false disables only the Grails 7 command bridge"() {
+        given:
+        setupTestResourceProject('cli-companion-autodiscovery')
+
+        when:
+        def result = executeTask(':app:inspectGrailsCli', [
+                ':app:inspectGrailsCliLegacy',
+                ':app:inspectClasspathWiring',
+                '-PgrailsLegacyCommandSupport=false'
+        ])
+
+        then: 'the modern CLI tier is still auto-provisioned'
+        result.output.contains("GRAILSCLI_DEP: module org.apache.grails:grails-core-cli:${PROJECT_VERSION}")
+        result.output.contains("GRAILSCLI_DEP: module org.apache.grails:grails-console:${PROJECT_VERSION}")
+        result.output.contains('GRAILSCLI_DEP: project path=:my-plugin capabilities=[org.example.test:my-plugin-cli]')
+
+        and: 'the legacy bridge is not provisioned'
         !result.output.contains('GRAILSCLILEGACY_DEP:')
         result.output.contains('COMPILE_HAS_GRAILSCLILEGACY=false')
         result.output.contains('TEST_COMPILE_HAS_GRAILSCLILEGACY=false')
