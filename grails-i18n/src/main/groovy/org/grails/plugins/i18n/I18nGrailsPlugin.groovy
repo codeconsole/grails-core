@@ -97,9 +97,10 @@ class I18nGrailsPlugin extends Plugin {
             Locale.getDefault()
         }
 
-        // SearchStrategy.CURRENT on all three guards: DispatcherServlet resolves these beans from its
-        // own context, and Boot's MessageSourceAutoConfiguration uses the same scoping - a bean in a
-        // parent context must not make the child context's bean back off.
+        // SearchStrategy.CURRENT on all three guards below: DispatcherServlet resolves these beans
+        // from its own context, and Boot's MessageSourceAutoConfiguration uses the same scoping - a
+        // bean in a parent context must not make the child context's bean back off.
+
         // Normalizes the configured strategy, ignoring case and separators (e.g. 'accept-header').
         bean(LocaleResolver, 'localeResolver').annotate(ConditionalOnMissingBean, name: 'localeResolver', search: SearchStrategy.CURRENT) {
             String normalized = localeResolverType == null ? '' :
