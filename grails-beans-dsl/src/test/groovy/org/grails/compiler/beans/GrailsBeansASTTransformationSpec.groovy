@@ -283,6 +283,33 @@ class GrailsBeansASTTransformationSpec extends Specification {
         field.getAnnotation(Value).value() == '${greeting.suffix:!!!}'
     }
 
+    def "annotate(...) attribute values may reference a shared String constant, not just a literal"() {
+        given: "an @Value placeholder built the same way the real I18nGrailsPlugin conversion builds " +
+                "its property keys from grails.config.Settings, proving .annotate(...)'s member values " +
+                "aren't restricted to literals the way bean(Type, name)'s own name is"
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import grails.config.Settings
+            import org.springframework.beans.factory.annotation.Value
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @GrailsBeans
+            @AutoConfiguration
+            class SharedConstantFixture {
+                def beans = {
+                    field(String, 'localeResolverType').annotate(Value, value: '${' + Settings.I18N_LOCALE_RESOLVER + ':session}')
+                }
+            }
+        '''
+
+        when:
+        Class<?> fixture = compile(source)
+        def field = fixture.getDeclaredField('localeResolverType')
+
+        then:
+        field.getAnnotation(Value).value() == '${grails.i18n.localeResolver:session}'
+    }
+
     def "method(Type, name) declares a private helper method usable from bean(...) and field(...)"() {
         given:
         Class<?> fixtureBeans = compile()

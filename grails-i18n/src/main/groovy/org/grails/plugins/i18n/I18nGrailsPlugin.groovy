@@ -42,6 +42,7 @@ import org.springframework.web.servlet.i18n.LocaleChangeInterceptor
 import org.springframework.web.servlet.i18n.SessionLocaleResolver
 
 import grails.compiler.beans.GrailsBeans
+import grails.config.Settings
 import grails.core.GrailsApplication
 import grails.plugins.GrailsPluginManager
 import grails.plugins.Plugin
@@ -75,12 +76,13 @@ class I18nGrailsPlugin extends Plugin {
     static final String AVAILABLE_LOCALES_ATTRIBUTE = 'availableLocales'
 
     def beans = {
-        field(String, 'encoding').annotate(Value, value: '${grails.views.gsp.encoding:UTF-8}')
-        field(boolean, 'gspEnableReload').annotate(Value, value: '${grails.gsp.enable.reload:false}')
-        field(int, 'cacheSeconds').annotate(Value, value: '${grails.i18n.cache.seconds:5}')
-        field(int, 'fileCacheSeconds').annotate(Value, value: '${grails.i18n.filecache.seconds:5}')
-        field(String, 'localeResolverType').annotate(Value, value: '${grails.i18n.localeResolver:session}')
+        field(String, 'encoding').annotate(Value, value: '${' + Settings.GSP_VIEW_ENCODING + ':UTF-8}')
+        field(boolean, 'gspEnableReload').annotate(Value, value: '${' + Settings.GSP_ENABLE_RELOAD + ':false}')
+        field(int, 'cacheSeconds').annotate(Value, value: '${' + Settings.I18N_CACHE_SECONDS + ':5}')
+        field(int, 'fileCacheSeconds').annotate(Value, value: '${' + Settings.I18N_FILE_CACHE_SECONDS + ':5}')
+        field(String, 'localeResolverType').annotate(Value, value: '${' + Settings.I18N_LOCALE_RESOLVER + ':session}')
         // Default locale for the read-only 'fixed' resolver; empty falls back to the JVM default.
+        // No Settings constant exists for this key - the original file didn't use one either.
         field(String, 'defaultLocale').annotate(Value, value: '${grails.i18n.default.locale:}')
 
         method(Locale, 'fixedLocale') {
