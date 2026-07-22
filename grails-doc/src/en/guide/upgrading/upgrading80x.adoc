@@ -1737,6 +1737,17 @@ Grails logs a one-time deprecation warning when it uses this compatibility layer
 to keep existing published plugins working while plugin authors migrate; it is deprecated and may
 be removed in a future major release. No removal major has been announced.
 
+Legacy application commands do not receive a dedicated Gradle task. Run them through the generic
+`runCommand` task (or the shell, which routes legacy adapters there), for example:
+
+[source,bash]
+----
+./gradlew runCommand "-Pargs=generate-controller example.Book"
+----
+
+Named per-command Gradle tasks remain available only for migrated commands published in a
+companion `-cli` artifact.
+
 New and migrated commands should always compile against `org.apache.grails.core.cli.*` from
 `grails-core-cli`. A plugin that intentionally continues to author commands against the deprecated
 contract must declare `compileOnly 'org.apache.grails:grails-core-cli-legacy'` explicitly; normal

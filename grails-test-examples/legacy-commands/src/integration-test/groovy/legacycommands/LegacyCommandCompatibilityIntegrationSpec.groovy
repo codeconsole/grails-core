@@ -132,4 +132,32 @@ class LegacyCommandCompatibilityIntegrationSpec extends Specification {
         getClass().classLoader.getResource('META-INF/commands/hello-legacy-script.groovy') != null
     }
 
+    def "discovers adapts and executes a Grails 7 Groovy 4 precompiled application command"() {
+        given: 'the registry and a precompiled Grails 7 command binary'
+        ApplicationCommand applicationCommand = ApplicationContextCommandRegistry.instance.findCommand('hello-g7-precompiled')
+        ApplicationCommandTargetAware adapter = (ApplicationCommandTargetAware) applicationCommand
+        Object legacyCommand = adapter.target
+        File publishedArtifact = new File(legacyCommand.class.protectionDomain.codeSource.location.toURI())
+        ExecutionContext executionContext = new ExecutionContext(Mock(CommandLine))
+        File markerFile = new File(executionContext.baseDir, 'hello-g7-precompiled.txt')
+        markerFile.delete()
+
+        expect: 'the adapter targets the included-build Grails 7 / Groovy 4 binary'
+        applicationCommand != null
+        applicationCommand instanceof ApplicationCommandTargetAware
+        legacyCommand.class.name == 'legacy.g7.commands.HelloG7PrecompiledCommand'
+        publishedArtifact.name.contains('legacy-g7-command-plugin')
+
+        when: 'the precompiled command runs through the public Grails 8 adapter'
+        applicationCommand.applicationContext = applicationContext
+        boolean result = applicationCommand.handle(executionContext)
+
+        then: 'the Grails 7 bytecode links and executes against the restored contract'
+        result
+        markerFile.text == 'G7-RAN'
+
+        cleanup:
+        markerFile.delete()
+    }
+
 }

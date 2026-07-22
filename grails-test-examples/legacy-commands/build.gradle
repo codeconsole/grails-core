@@ -29,10 +29,22 @@ group = 'legacycommands'
 apply plugin: 'groovy'
 apply plugin: 'org.apache.grails.gradle.grails-web'
 
+// Standalone Grails 7 / Groovy 4 fixture build (not part of the monorepo dependency graph).
+def legacyG7FixtureDir = rootProject.layout.projectDirectory.dir('grails-test-examples/legacy-g7-command-plugin')
+def legacyG7FixtureJar = legacyG7FixtureDir.file('build/libs/legacy-g7-command-plugin-0.0.1.jar')
+tasks.register('buildLegacyG7CommandFixture', GradleBuild) {
+    dir = legacyG7FixtureDir.asFile
+    tasks = ['clean', 'jar']
+}
+
 dependencies {
     implementation platform(project(':grails-bom'))
 
     implementation project(':grails-test-examples-legacy-commands-plugin')
+    // Real Grails 7.0.10 / Groovy 4.0.30 precompiled ApplicationCommand binary.
+    implementation files(legacyG7FixtureJar) {
+        builtBy tasks.named('buildLegacyG7CommandFixture')
+    }
     implementation 'org.apache.grails:grails-core'
     implementation 'org.apache.grails:grails-logging'
     implementation 'org.apache.grails:grails-databinding'
