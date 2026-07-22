@@ -92,9 +92,9 @@ class GrailsCliGradlePlugin implements Plugin<Project> {
     public static final String GRAILS_CLI_AUTO_PROVISION_PROPERTY = 'grailsCliAutoProvision'
 
     /**
-     * Set this project property to {@code false} to stop the plugin from auto-provisioning the
-     * Grails 7 command compatibility bridge onto {@link #GRAILS_CLI_LEGACY_CONFIGURATION};
-     * equivalent to {@code grails { legacyCommandSupport = false }}.
+     * Set this project property to {@code true} to auto-provision the Grails 7 command
+     * compatibility bridge onto {@link #GRAILS_CLI_LEGACY_CONFIGURATION}; equivalent to
+     * {@code grails { legacyCommandSupport = true }}. The bridge is off by default.
      */
     public static final String GRAILS_LEGACY_COMMAND_SUPPORT_PROPERTY = 'grailsLegacyCommandSupport'
 
@@ -242,7 +242,7 @@ class GrailsCliGradlePlugin implements Plugin<Project> {
     protected void autoProvisionLegacyCliDependencies(Project project, DependencySet dependencies) {
         GrailsExtension grails = project.extensions.getByType(GrailsExtension)
         // Modern CLI auto-provisioning is the master switch; legacyCommandSupport is the finer
-        // opt-out for only the Grails 7 application-command bridge.
+        // opt-in for only the Grails 7 application-command bridge (off by default).
         if (grails.cliAutoProvision.get() && grails.legacyCommandSupport.get()) {
             String grailsVersion = resolveGrailsVersion(project)
             dependencies.add(project.dependencies.create(

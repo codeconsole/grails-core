@@ -76,3 +76,8 @@ apply {
     from rootProject.layout.projectDirectory.file('gradle/functional-test-config.gradle')
     from rootProject.layout.projectDirectory.file('gradle/grails-extension-gradle-config.gradle')
 }
+
+// Opt in to the Grails 7 application-command bridge (off by default on Grails 8).
+grails {
+    legacyCommandSupport = true
+}
