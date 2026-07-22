@@ -312,62 +312,7 @@ class GrailsBeansASTTransformationSpec extends Specification {
         fixtureBeans.getDeclaredConstructor().newInstance().multiAnnotatedGreeting() == 'multi hello'
     }
 
-    def "bean(...).methodName(...) lets a Spring bean name that isn't a valid Java identifier compile"() {
-        given:
-        String source = '''
-            import grails.compiler.beans.GrailsBeans
-            import org.springframework.boot.autoconfigure.AutoConfiguration
-
-            @GrailsBeans
-            @AutoConfiguration
-            class HyphenBeanNameFixture {
-                def beans = {
-                    bean(String, 'my-service').methodName('myService') {
-                        'hello'
-                    }
-                }
-            }
-        '''
-
-        when:
-        Class<?> fixtureBeans = compile(source)
-        def method = fixtureBeans.getDeclaredMethod('myService')
-
-        then: "the @Bean annotation carries the real (hyphenated) Spring bean name"
-        method.isAnnotationPresent(Bean)
-        method.getAnnotation(Bean).value() == ['my-service'] as String[]
-
-        and: "the closure body became the real method body, under the .methodName(...) method name"
-        fixtureBeans.getDeclaredConstructor().newInstance().myService() == 'hello'
-    }
-
-    def "bean(...).methodName(...) can override the method name even when the given bean name is already a valid identifier"() {
-        given:
-        String source = '''
-            import grails.compiler.beans.GrailsBeans
-            import org.springframework.boot.autoconfigure.AutoConfiguration
-
-            @GrailsBeans
-            @AutoConfiguration
-            class OverrideBeanNameFixture {
-                def beans = {
-                    bean(String, 'myService').methodName('differentMethodName') {
-                        'hello'
-                    }
-                }
-            }
-        '''
-
-        when:
-        Class<?> fixtureBeans = compile(source)
-        def method = fixtureBeans.getDeclaredMethod('differentMethodName')
-
-        then:
-        method.isAnnotationPresent(Bean)
-        method.getAnnotation(Bean).value() == ['myService'] as String[]
-    }
-
-    def "bean(...).methodName(...) combines with other qualifiers on the same bean"() {
+    def "a non-identifier bean name combines with other qualifiers on the same bean"() {
         given:
         String source = '''
             import grails.compiler.beans.GrailsBeans
@@ -378,7 +323,7 @@ class GrailsBeansASTTransformationSpec extends Specification {
             @AutoConfiguration
             class CombinedNamedFixture {
                 def beans = {
-                    bean(String, 'my-service').methodName('myService').primary().annotate(Order, value: 1) {
+                    bean(String, 'my-service').primary().annotate(Order, value: 1) {
                         'hello'
                     }
                 }
@@ -387,7 +332,7 @@ class GrailsBeansASTTransformationSpec extends Specification {
 
         when:
         Class<?> fixtureBeans = compile(source)
-        def method = fixtureBeans.getDeclaredMethod('myService')
+        def method = fixtureBeans.getDeclaredMethod('string$0')
 
         then:
         method.isAnnotationPresent(Bean)
@@ -397,7 +342,7 @@ class GrailsBeansASTTransformationSpec extends Specification {
         method.getAnnotation(Order).value() == 1
     }
 
-    def "two beans with different non-identifier names, each given a different .methodName(...) method name, both compile"() {
+    def "a reserved-keyword bean name is a legal Spring bean name and gets a synthesized method name"() {
         given:
         String source = '''
             import grails.compiler.beans.GrailsBeans
@@ -405,13 +350,10 @@ class GrailsBeansASTTransformationSpec extends Specification {
 
             @GrailsBeans
             @AutoConfiguration
-            class TwoNamedBeansFixture {
+            class KeywordBeanNameFixture {
                 def beans = {
-                    bean(String, 'my-service').methodName('myService') {
-                        'a'
-                    }
-                    bean(String, 'plugin.messageSource').methodName('pluginMessageSource') {
-                        'b'
+                    bean(String, 'int') {
+                        'hello'
                     }
                 }
             }
@@ -420,12 +362,11 @@ class GrailsBeansASTTransformationSpec extends Specification {
         when:
         Class<?> fixtureBeans = compile(source)
 
-        then:
-        fixtureBeans.getDeclaredMethod('myService').getAnnotation(Bean).value() == ['my-service'] as String[]
-        fixtureBeans.getDeclaredMethod('pluginMessageSource').getAnnotation(Bean).value() == ['plugin.messageSource'] as String[]
+        then: "'int' can't be a Java method name, but it's a perfectly legal Spring bean name"
+        fixtureBeans.getDeclaredMethod('string$0').getAnnotation(Bean).value() == ['int'] as String[]
     }
 
-    def "bean(...) with a non-identifier name and no .methodName(...) falls back to a synthesized <type>\$N method name"() {
+    def "bean(...) with a non-identifier name falls back to a synthesized <type>\$N method name"() {
         given:
         String source = '''
             import grails.compiler.beans.GrailsBeans
@@ -705,8 +646,6 @@ class GrailsBeansASTTransformationSpec extends Specification {
         'bean(...) with an unexpected third argument'  | "bean(String, 'x', 'unexpected') { 'y' }"                          | 'at most one name'
         'bean(...) with an empty explicit name'         | "bean(String, '') { 'y' }"                                        | 'requires a non-blank name'
         'bean(...) with a whitespace-only explicit name' | "bean(String, '   ') { 'y' }"                                    | 'requires a non-blank name'
-        'bean(...) with a reserved-keyword explicit name, no .methodName(...) to supply a real one' |
-                "bean(String, 'x').methodName('int') { 'y' }" | 'is not a valid name'
         'field(...) with a reserved-keyword name'        | "field(String, 'class')"                                          | 'is not a valid name'
         'method(...) with a reserved-keyword name'        | "method(String, 'return') { 'y' }"                               | 'is not a valid name'
         'an unrecognised qualifier chained after bean(...)' | "bean(String, 'x').unknownQualifier() { 'y' }"                | 'Expected bean(Type[, "name"]) { ... }'
@@ -728,21 +667,12 @@ class GrailsBeansASTTransformationSpec extends Specification {
         'method(...) chained with a bean-only qualifier'  | "method(String, 'x').conditionalOnMissingBean(String) { 'y' }"    | 'cannot be chained onto method(...)'
         'two bean(...) statements sharing the same explicit name' |
                 "bean(String, 'x') { 'a' }; bean(Integer, 'x') { 1 }" | 'is already used as the Spring bean name'
-        'a field(...) and a bean(...) sharing the same name' |
-                "field(String, 'x'); bean(Integer, 'x') { 1 }" | 'is already used by another'
+        'two bean(...) statements sharing the same non-identifier Spring bean name' |
+                "bean(String, 'my-service') { 'x' }; bean(Integer, 'my-service') { 1 }" |
+                'is already used as the Spring bean name'
         'a field(...) and a method(...) sharing the same name' |
                 "field(String, 'x'); method(Integer, 'x') { 1 }" | 'is already used by another'
-        '.methodName(...) that is not a valid identifier'      | "bean(String, 'my-service').methodName('not valid!') { 'x' }" | 'is not a valid name'
-        '.methodName(...) with no arguments'                   | "bean(String, 'my-service').methodName() { 'x' }"              | 'requires exactly one String argument'
-        '.methodName(...) with a non-String argument'          | "bean(String, 'my-service').methodName(42) { 'x' }"            | 'requires exactly one String argument'
-        '.methodName(...) chained onto field(...)'              | "field(String, 'x').methodName('y')"                          | 'cannot be chained onto field(...)'
-        '.methodName(...) chained onto method(...)'              | "method(String, 'x').methodName('y') { 'z' }"                 | 'cannot be chained onto method(...)'
-        'two bean(...) statements sharing the same Spring bean name via different .methodName(...) method names' |
-                "bean(String, 'my-service').methodName('a') { 'x' }; bean(Integer, 'my-service').methodName('b') { 1 }" |
-                'is already used as the Spring bean name'
-        'two bean(...) statements with different Spring bean names sharing the same .methodName(...) method name' |
-                "bean(String, 'my-service').methodName('x') { 'a' }; bean(Integer, 'my-other-service').methodName('x') { 1 }" |
-                'is already used by another'
+        'the removed .methodName(...) qualifier'          | "bean(String, 'x').methodName('y') { 'z' }"                      | 'Expected bean(Type[, "name"]) { ... }'
     }
 
     def "a synthesized method name that would collide with a pre-existing field(...) name skips forward to the next free slot"() {
@@ -770,6 +700,33 @@ class GrailsBeansASTTransformationSpec extends Specification {
         then: "string\$0 was already taken by the field, so the bean skips forward to string\$1"
         fixtureBeans.getDeclaredField('string$0') != null
         fixtureBeans.getDeclaredMethod('string$1').getAnnotation(Bean).value() == ['my-service'] as String[]
+    }
+
+    def "a bean whose valid-identifier name collides with a declared field gets a synthesized method name instead of an error"() {
+        given: "a private field and a Spring bean legitimately sharing the name 'config'"
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @GrailsBeans
+            @AutoConfiguration
+            class FieldBeanNameOverlapFixture {
+                def beans = {
+                    field(String, 'config')
+
+                    bean(Integer, 'config') {
+                        42
+                    }
+                }
+            }
+        '''
+
+        when:
+        Class<?> fixtureBeans = compile(source)
+
+        then: "the Java member namespace resolves via synthesis - method names are an implementation detail"
+        fixtureBeans.getDeclaredField('config') != null
+        fixtureBeans.getDeclaredMethod('integer$0').getAnnotation(Bean).value() == ['config'] as String[]
     }
 
     private static final String FIXTURE_PLUGIN = '''

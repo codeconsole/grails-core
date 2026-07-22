@@ -84,13 +84,14 @@ import org.springframework.context.annotation.Scope;
  * <ul>
  * <li>{@code bean(Type[, "name"]) { ... }}, optionally chained with any combination of
  * {@code .conditionalOnMissingBean(Type...)}, {@code .primary()}, {@code .lazy()},
- * {@code .scope("name")}, {@code .methodName("...")}, and (repeatably)
+ * {@code .scope("name")}, and (repeatably)
  * {@code .annotate(AnnotationType[, attr: value, ...])}. Synthesises a public method, returning
  * the declared type, annotated {@code @org.springframework.context.annotation.Bean("name")} plus
  * whichever qualifiers were chained, whose body and parameters are lifted directly from the DSL
- * closure. The method is named after the bean by default; when the bean name isn't a valid Java
- * identifier (e.g. {@code "my-service"}), {@code .methodName("...")} supplies the method's name
- * explicitly, and omitting it falls back to a synthesized {@code <type>$N} name instead.</li>
+ * closure. The generated method's name is an implementation detail: it matches the bean name when
+ * that is a usable Java identifier, and falls back to a synthesized {@code <type>$N} name for a
+ * non-identifier bean name (e.g. {@code "my-service"}) - Spring resolves the bean by its
+ * {@code @Bean("name")} value either way, never by the method name.</li>
  * <li>{@code field(Type[, "name"])}, optionally chained (repeatably) with
  * {@code .annotate(AnnotationType[, attr: value, ...])} - typically {@code .annotate(Value, value:
  * "${...}")}. Declares a private field on the generated class, for state shared across bean
@@ -140,9 +141,8 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
     private static final String LAZY_CALL = "lazy";
     private static final String SCOPE_CALL = "scope";
     private static final String ANNOTATE_CALL = "annotate";
-    private static final String METHOD_NAME_CALL = "methodName";
     private static final Set<String> QUALIFIER_CALL_NAMES = Set.of(
-            CONDITIONAL_ON_MISSING_BEAN_CALL, PRIMARY_CALL, LAZY_CALL, SCOPE_CALL, ANNOTATE_CALL, METHOD_NAME_CALL);
+            CONDITIONAL_ON_MISSING_BEAN_CALL, PRIMARY_CALL, LAZY_CALL, SCOPE_CALL, ANNOTATE_CALL);
     // field(...) and method(...) declare plain class members, not beans - only .annotate(...)
     // (attaching an arbitrary annotation, e.g. @Value) makes sense on them.
     private static final Set<String> MEMBER_QUALIFIER_CALL_NAMES = Set.of(ANNOTATE_CALL);
@@ -461,23 +461,15 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
             return;
         }
 
-        MethodCallExpression methodNameQualifier = null;
-        for (MethodCallExpression qualifierCall : qualifierCalls) {
-            if (METHOD_NAME_CALL.equals(qualifierCall.getMethodAsString())) {
-                methodNameQualifier = qualifierCall;
-                break;
-            }
-        }
-
-        String javaMethodName = resolveBeanMethodName(typeAndName, methodNameQualifier, outerCall, usedNames, source);
-        if (javaMethodName == null) {
-            return;
-        }
-        if (!registerName(javaMethodName, baseCall, source, usedNames,
-                "is already used by another bean(...)/field(...)/method(...) statement in this beans block - " +
-                        "generated member names must be unique")) {
-            return;
-        }
+        // The generated method's name is an implementation detail - Spring resolves the bean by
+        // its @Bean("name") value, never by the factory method's name. It matches the bean name
+        // when that happens to be a usable Java identifier (readable in stack traces and
+        // decompiled bytecode); otherwise - non-identifier name, reserved keyword, or a collision
+        // with an already-declared member - a synthesized <type>$N name is used instead.
+        String javaMethodName = isValidJavaIdentifier(typeAndName.name) && !usedNames.contains(typeAndName.name) ?
+                typeAndName.name :
+                syntheticBeanMethodName(typeAndName.type.getType(), usedNames);
+        usedNames.add(javaMethodName);
 
         MethodNode beanMethod = new MethodNode(
                 javaMethodName,
@@ -489,10 +481,6 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
         beanMethod.addAnnotation(beanAnnotation(typeAndName.name));
 
         for (MethodCallExpression qualifierCall : qualifierCalls) {
-            if (qualifierCall == methodNameQualifier) {
-                // already consumed above - .methodName(...) names the method, it doesn't add an annotation
-                continue;
-            }
             List<Expression> qualifierArgs = flatten(qualifierCall.getArguments());
             if (qualifierCall == outerCall) {
                 // only the outermost call in the chain can carry the trailing factory closure
@@ -504,41 +492,6 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
         }
 
         classNode.addMethod(beanMethod);
-    }
-
-    // bean(...)'s name is a Spring bean name, which may not be a valid Java identifier (e.g.
-    // "my-service"). When it already is one, it doubles as the generated method's name, exactly as
-    // before. When it isn't, .methodName("...") supplies the method's name explicitly if given;
-    // omitting it falls back to a synthesized <type>$N name instead, disambiguated with the bean's
-    // own type for a little more context than a bare counter would give a reader of a stack trace
-    // or decompiled bytecode.
-    private String resolveBeanMethodName(TypeAndName typeAndName, MethodCallExpression methodNameQualifier,
-            MethodCallExpression outerCall, Set<String> usedNames, SourceUnit source) {
-        if (methodNameQualifier == null) {
-            if (isValidJavaIdentifier(typeAndName.name)) {
-                return typeAndName.name;
-            }
-            return syntheticBeanMethodName(typeAndName.type.getType(), usedNames);
-        }
-
-        List<Expression> methodNameArgs = flatten(methodNameQualifier.getArguments());
-        if (methodNameQualifier == outerCall) {
-            methodNameArgs = methodNameArgs.subList(0, methodNameArgs.size() - 1);
-        }
-        Expression nameArg = methodNameArgs.size() == 1 ? methodNameArgs.get(0) : null;
-        Object nameValue = nameArg instanceof ConstantExpression ? ((ConstantExpression) nameArg).getValue() : null;
-        if (!(nameValue instanceof String)) {
-            addError(methodNameQualifier, source, ".methodName(...) requires exactly one String argument, " +
-                    "e.g. .methodName(\"myService\")");
-            return null;
-        }
-        String methodName = (String) nameValue;
-        if (!isValidJavaIdentifier(methodName)) {
-            addError(nameArg, source, "\"" + methodName + "\" is not a valid name: it becomes the generated " +
-                    "method's name, so it must be a valid Java identifier");
-            return null;
-        }
-        return methodName;
     }
 
     private String syntheticBeanMethodName(ClassNode beanType, Set<String> usedNames) {
@@ -658,8 +611,8 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
                         "member's name, so it must be a valid Java identifier");
                 return null;
             }
-            // Even bean(...), which otherwise allows a non-identifier Spring name (see
-            // .methodName(...)), must reject a blank one: Spring treats a blank @Bean name as
+            // Even bean(...), which otherwise allows a non-identifier Spring name (a synthesized
+            // method name covers it), must reject a blank one: Spring treats a blank @Bean name as
             // absent and falls back to the method name, so the name actually written would be
             // silently discarded.
             if (!requireValidIdentifier && name.isBlank()) {
