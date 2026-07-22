@@ -184,6 +184,11 @@ class I18nAutoConfigurationSpec extends Specification {
     void 'the availableLocaleResolver bean registers by default and includes plugin bundles'() {
         expect:
         contextRunner().run { context ->
+            // bean(AvailableLocaleResolver) has no explicit name in the DSL - pins down that
+            // Introspector.decapitalize really does derive 'availableLocaleResolver', not just that
+            // some bean of the right type exists under an unrelated name
+            assert context.containsBean('availableLocaleResolver')
+
             def resolver = context.getBean(AvailableLocaleResolver)
             // without grails.i18n.default.locale the JVM default is included (same fallback the
             // fixed localeResolver uses), and includePlugins defaults to true so the
