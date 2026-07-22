@@ -35,13 +35,13 @@ import org.codehaus.groovy.transform.GroovyASTTransformationClass;
  * <ul>
  * <li>{@code bean(Type[, "name"]) { ... }}, optionally chained with any combination of
  * {@code .conditionalOnMissingBean(Type...)}, {@code .primary()}, {@code .lazy()},
- * {@code .scope("name")}, {@code .methodNamed("...")}, and (repeatably)
+ * {@code .scope("name")}, {@code .methodName("...")}, and (repeatably)
  * {@code .annotate(AnnotationType[, attr: value, ...])} - the last a generic escape hatch
  * attaching any other single-valued annotation. The closure body becomes the generated method's
  * body verbatim, and closure parameters become the generated method's parameters (for
  * constructor-style bean injection). The bean name doubles as the generated method's name by
  * default; when it isn't a valid Java identifier (e.g. {@code "my-service"}), chain
- * {@code .methodNamed("...")} to give the method a different, valid name explicitly, or omit it
+ * {@code .methodName("...")} to give the method a different, valid name explicitly, or omit it
  * to fall back to a synthesized {@code <type>$N} name.</li>
  * <li>{@code field(Type[, "name"])}, optionally chained (repeatably) with
  * {@code .annotate(AnnotationType[, attr: value, ...])} - typically {@code .annotate(Value, value:
@@ -59,11 +59,13 @@ import org.codehaus.groovy.transform.GroovyASTTransformationClass;
  * on a new sibling {@code <PluginClassName>AutoConfiguration} class instead (or
  * {@link #autoConfigurationName} if given) - a {@code Plugin} subclass is never processed by
  * Spring as a bean - and {@code @AutoConfiguration} together with every annotation that gates or
- * configures it (the {@code @Conditional*} family, {@code @Import}/{@code @ImportAutoConfiguration},
- * {@code @EnableConfigurationProperties}, {@code @PropertySource},
+ * configures it (the {@code @Conditional*} family, {@code @Import}/{@code @ImportAutoConfiguration}/
+ * {@code @ImportResource}, {@code @ComponentScan}, {@code @EnableConfigurationProperties},
+ * {@code @PropertySource}/{@code @PropertySources},
  * {@code @AutoConfigureOrder}/{@code Before}/{@code After} - including any composed annotation
  * meta-annotated with one of these) found on the plugin class moves onto that sibling, since none
- * of them has any effect where the author wrote them.
+ * of them has any effect where the author wrote them. Annotations outside that set can be moved
+ * explicitly via {@link #moveAnnotations}.
  */
 @Retention(RetentionPolicy.RUNTIME)
 @Target(ElementType.TYPE)
@@ -78,5 +80,16 @@ public @interface GrailsBeans {
      * ordering from other modules, or tests that import it by name).
      */
     String autoConfigurationName() default "";
+
+    /**
+     * Additional annotation types to move from a {@code grails.plugins.Plugin} subclass onto its
+     * generated sibling, beyond the ones recognised automatically. The automatic set covers the
+     * common Spring configuration annotations (and anything meta-annotated with them), but it is
+     * a closed list - an annotation outside it that Spring reads off the configuration class
+     * (rather than one this DSL happens to know about) would otherwise silently stay on the
+     * plugin class, where Spring never sees it. E.g.
+     * {@code @GrailsBeans(moveAnnotations = [SomeVendorAnnotation])}.
+     */
+    Class<?>[] moveAnnotations() default {};
 
 }

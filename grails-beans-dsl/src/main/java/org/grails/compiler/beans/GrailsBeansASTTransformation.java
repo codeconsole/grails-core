@@ -65,12 +65,15 @@ import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.ComponentScan;
+import org.springframework.context.annotation.ComponentScans;
 import org.springframework.context.annotation.Conditional;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.ImportResource;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.context.annotation.Primary;
 import org.springframework.context.annotation.PropertySource;
+import org.springframework.context.annotation.PropertySources;
 import org.springframework.context.annotation.Scope;
 
 /**
@@ -81,12 +84,12 @@ import org.springframework.context.annotation.Scope;
  * <ul>
  * <li>{@code bean(Type[, "name"]) { ... }}, optionally chained with any combination of
  * {@code .conditionalOnMissingBean(Type...)}, {@code .primary()}, {@code .lazy()},
- * {@code .scope("name")}, {@code .methodNamed("...")}, and (repeatably)
+ * {@code .scope("name")}, {@code .methodName("...")}, and (repeatably)
  * {@code .annotate(AnnotationType[, attr: value, ...])}. Synthesises a public method, returning
  * the declared type, annotated {@code @org.springframework.context.annotation.Bean("name")} plus
  * whichever qualifiers were chained, whose body and parameters are lifted directly from the DSL
  * closure. The method is named after the bean by default; when the bean name isn't a valid Java
- * identifier (e.g. {@code "my-service"}), {@code .methodNamed("...")} supplies the method's name
+ * identifier (e.g. {@code "my-service"}), {@code .methodName("...")} supplies the method's name
  * explicitly, and omitting it falls back to a synthesized {@code <type>$N} name instead.</li>
  * <li>{@code field(Type[, "name"])}, optionally chained (repeatably) with
  * {@code .annotate(AnnotationType[, attr: value, ...])} - typically {@code .annotate(Value, value:
@@ -108,10 +111,12 @@ import org.springframework.context.annotation.Scope;
  * {@code DefaultGrailsPlugin} via plain reflection, never as a Spring bean, so it cannot carry
  * {@code @Bean} methods or a meaningful {@code @AutoConfiguration} annotation of its own.
  * {@code @AutoConfiguration} and every annotation that gates or configures it - the
- * {@code @Conditional*} family, {@code @Import}/{@code @ImportAutoConfiguration},
- * {@code @EnableConfigurationProperties}, {@code @PropertySource}, and
+ * {@code @Conditional*} family, {@code @Import}/{@code @ImportAutoConfiguration}/
+ * {@code @ImportResource}, {@code @ComponentScan}, {@code @EnableConfigurationProperties},
+ * {@code @PropertySource}/{@code @PropertySources}, and
  * {@code @AutoConfigureOrder}/{@code Before}/{@code After} - found on the plugin class are moved
- * onto the generated sibling, since that is the only place any of them has any effect. This lets a
+ * onto the generated sibling, since that is the only place any of them has any effect; annotations
+ * outside that set can be named explicitly via {@code @GrailsBeans(moveAnnotations = ...)}. This lets a
  * plugin author keep bean definitions in the familiar {@code *GrailsPlugin.groovy} file while
  * everything else about the plugin class - {@code doWithApplicationContext}, {@code onChange},
  * {@code watchedResources}, etc. - continues to work exactly as it does today.
@@ -135,15 +140,16 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
     private static final String LAZY_CALL = "lazy";
     private static final String SCOPE_CALL = "scope";
     private static final String ANNOTATE_CALL = "annotate";
-    private static final String METHOD_NAMED_CALL = "methodNamed";
+    private static final String METHOD_NAME_CALL = "methodName";
     private static final Set<String> QUALIFIER_CALL_NAMES = Set.of(
-            CONDITIONAL_ON_MISSING_BEAN_CALL, PRIMARY_CALL, LAZY_CALL, SCOPE_CALL, ANNOTATE_CALL, METHOD_NAMED_CALL);
+            CONDITIONAL_ON_MISSING_BEAN_CALL, PRIMARY_CALL, LAZY_CALL, SCOPE_CALL, ANNOTATE_CALL, METHOD_NAME_CALL);
     // field(...) and method(...) declare plain class members, not beans - only .annotate(...)
     // (attaching an arbitrary annotation, e.g. @Value) makes sense on them.
     private static final Set<String> MEMBER_QUALIFIER_CALL_NAMES = Set.of(ANNOTATE_CALL);
     private static final String PLUGIN_SUPERCLASS_NAME = "grails.plugins.Plugin";
     private static final String AUTO_CONFIGURATION_SUFFIX = "AutoConfiguration";
     private static final String AUTO_CONFIGURATION_NAME_MEMBER = "autoConfigurationName";
+    private static final String MOVE_ANNOTATIONS_MEMBER = "moveAnnotations";
 
     private CompilationUnit compilationUnit;
 
@@ -169,10 +175,14 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
         }
 
         boolean isPlugin = extendsGrailsPlugin(classNode);
-        if (!isPlugin && grailsBeansAnnotation.getMember(AUTO_CONFIGURATION_NAME_MEMBER) != null) {
-            addError(grailsBeansAnnotation, source, "autoConfigurationName has no effect here: it only applies " +
-                    "when @GrailsBeans is applied to a grails.plugins.Plugin subclass, where the compiled beans " +
-                    "land on a generated sibling class rather than on " + classNode.getNameWithoutPackage() + " itself");
+        if (!isPlugin) {
+            for (String pluginOnlyMember : new String[] { AUTO_CONFIGURATION_NAME_MEMBER, MOVE_ANNOTATIONS_MEMBER }) {
+                if (grailsBeansAnnotation.getMember(pluginOnlyMember) != null) {
+                    addError(grailsBeansAnnotation, source, pluginOnlyMember + " has no effect here: it only applies " +
+                            "when @GrailsBeans is applied to a grails.plugins.Plugin subclass, where the compiled beans " +
+                            "land on a generated sibling class rather than on " + classNode.getNameWithoutPackage() + " itself");
+                }
+            }
         }
 
         ClassNode beanMethodHost = isPlugin ?
@@ -212,7 +222,9 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
             AutoConfiguration.class.getName(), AutoConfigureOrder.class.getName(),
             AutoConfigureBefore.class.getName(), AutoConfigureAfter.class.getName(),
             Import.class.getName(), ImportAutoConfiguration.class.getName(), ImportResource.class.getName(),
-            EnableConfigurationProperties.class.getName(), PropertySource.class.getName(),
+            ComponentScan.class.getName(), ComponentScans.class.getName(),
+            EnableConfigurationProperties.class.getName(),
+            PropertySource.class.getName(), PropertySources.class.getName(),
             Conditional.class.getName());
 
     private ClassNode createAutoConfigurationSibling(ClassNode pluginClass, AnnotationNode grailsBeansAnnotation, SourceUnit source) {
@@ -233,12 +245,14 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
 
         // @AutoConfiguration and every annotation that gates or configures it - @Conditional* (all
         // of which are meta-annotated @Conditional, e.g. @ConditionalOnWebApplication), @Import*,
-        // @EnableConfigurationProperties, @PropertySource, @AutoConfigureOrder/Before/After - are
-        // equally meaningless on a Plugin subclass, so they all move to the sibling entirely rather
-        // than being merely copied.
+        // @ComponentScan*, @EnableConfigurationProperties, @PropertySource*,
+        // @AutoConfigureOrder/Before/After - are equally meaningless on a Plugin subclass, so they
+        // all move to the sibling entirely rather than being merely copied. moveAnnotations extends
+        // the recognised set for annotations this transform cannot know about.
+        Set<String> moveAnnotationNames = parseMoveAnnotations(grailsBeansAnnotation, source);
         List<AnnotationNode> siblingAnnotations = new ArrayList<>();
         for (AnnotationNode annotation : pluginClass.getAnnotations()) {
-            if (belongsOnSibling(annotation.getClassNode())) {
+            if (belongsOnSibling(annotation.getClassNode(), moveAnnotationNames)) {
                 siblingAnnotations.add(annotation);
             }
         }
@@ -246,6 +260,30 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
         pluginClass.getAnnotations().removeAll(siblingAnnotations);
 
         return sibling;
+    }
+
+    private Set<String> parseMoveAnnotations(AnnotationNode grailsBeansAnnotation, SourceUnit source) {
+        Expression member = grailsBeansAnnotation.getMember(MOVE_ANNOTATIONS_MEMBER);
+        if (member == null) {
+            return Set.of();
+        }
+        List<Expression> entries = member instanceof ListExpression ?
+                ((ListExpression) member).getExpressions() : List.of(member);
+        Set<String> names = new HashSet<>();
+        for (Expression entry : entries) {
+            if (!(entry instanceof ClassExpression)) {
+                addError(entry, source, "moveAnnotations entries must be annotation class literals, " +
+                        "e.g. @GrailsBeans(moveAnnotations = [ComponentScan])");
+                continue;
+            }
+            ClassNode annotationType = ((ClassExpression) entry).getType();
+            if (!annotationType.isAnnotationDefinition()) {
+                addError(entry, source, "\"" + annotationType.getName() + "\" is not an annotation type");
+                continue;
+            }
+            names.add(annotationType.getName());
+        }
+        return names;
     }
 
     // Defaults to <PluginClassName>AutoConfiguration; @GrailsBeans(autoConfigurationName = "...")
@@ -276,8 +314,8 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
         return name;
     }
 
-    private boolean belongsOnSibling(ClassNode annotationType) {
-        return belongsOnSibling(annotationType, new HashSet<>());
+    private boolean belongsOnSibling(ClassNode annotationType, Set<String> moveAnnotationNames) {
+        return belongsOnSibling(annotationType, moveAnnotationNames, new HashSet<>());
     }
 
     // Recurses through meta-annotations rather than checking only one level, since Spring's own
@@ -286,15 +324,16 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
     // meta-annotated @Conditional), not with @Conditional directly. `visited` guards against cycles
     // and, since every annotation type transitively reaches common JDK meta-annotations
     // (@Retention, @Target, @Documented) from multiple paths, avoids redundant re-exploration.
-    private boolean belongsOnSibling(ClassNode annotationType, Set<String> visited) {
+    private boolean belongsOnSibling(ClassNode annotationType, Set<String> moveAnnotationNames, Set<String> visited) {
         if (!visited.add(annotationType.getName())) {
             return false;
         }
-        if (SIBLING_ONLY_ANNOTATION_NAMES.contains(annotationType.getName())) {
+        if (SIBLING_ONLY_ANNOTATION_NAMES.contains(annotationType.getName()) ||
+                moveAnnotationNames.contains(annotationType.getName())) {
             return true;
         }
         for (AnnotationNode metaAnnotation : annotationType.getAnnotations()) {
-            if (belongsOnSibling(metaAnnotation.getClassNode(), visited)) {
+            if (belongsOnSibling(metaAnnotation.getClassNode(), moveAnnotationNames, visited)) {
                 return true;
             }
         }
@@ -422,15 +461,15 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
             return;
         }
 
-        MethodCallExpression methodNamedQualifier = null;
+        MethodCallExpression methodNameQualifier = null;
         for (MethodCallExpression qualifierCall : qualifierCalls) {
-            if (METHOD_NAMED_CALL.equals(qualifierCall.getMethodAsString())) {
-                methodNamedQualifier = qualifierCall;
+            if (METHOD_NAME_CALL.equals(qualifierCall.getMethodAsString())) {
+                methodNameQualifier = qualifierCall;
                 break;
             }
         }
 
-        String javaMethodName = resolveBeanMethodName(typeAndName, methodNamedQualifier, outerCall, usedNames, source);
+        String javaMethodName = resolveBeanMethodName(typeAndName, methodNameQualifier, outerCall, usedNames, source);
         if (javaMethodName == null) {
             return;
         }
@@ -450,8 +489,8 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
         beanMethod.addAnnotation(beanAnnotation(typeAndName.name));
 
         for (MethodCallExpression qualifierCall : qualifierCalls) {
-            if (qualifierCall == methodNamedQualifier) {
-                // already consumed above - .methodNamed(...) names the method, it doesn't add an annotation
+            if (qualifierCall == methodNameQualifier) {
+                // already consumed above - .methodName(...) names the method, it doesn't add an annotation
                 continue;
             }
             List<Expression> qualifierArgs = flatten(qualifierCall.getArguments());
@@ -469,28 +508,28 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
 
     // bean(...)'s name is a Spring bean name, which may not be a valid Java identifier (e.g.
     // "my-service"). When it already is one, it doubles as the generated method's name, exactly as
-    // before. When it isn't, .methodNamed("...") supplies the method's name explicitly if given;
+    // before. When it isn't, .methodName("...") supplies the method's name explicitly if given;
     // omitting it falls back to a synthesized <type>$N name instead, disambiguated with the bean's
     // own type for a little more context than a bare counter would give a reader of a stack trace
     // or decompiled bytecode.
-    private String resolveBeanMethodName(TypeAndName typeAndName, MethodCallExpression methodNamedQualifier,
+    private String resolveBeanMethodName(TypeAndName typeAndName, MethodCallExpression methodNameQualifier,
             MethodCallExpression outerCall, Set<String> usedNames, SourceUnit source) {
-        if (methodNamedQualifier == null) {
+        if (methodNameQualifier == null) {
             if (isValidJavaIdentifier(typeAndName.name)) {
                 return typeAndName.name;
             }
             return syntheticBeanMethodName(typeAndName.type.getType(), usedNames);
         }
 
-        List<Expression> methodNamedArgs = flatten(methodNamedQualifier.getArguments());
-        if (methodNamedQualifier == outerCall) {
-            methodNamedArgs = methodNamedArgs.subList(0, methodNamedArgs.size() - 1);
+        List<Expression> methodNameArgs = flatten(methodNameQualifier.getArguments());
+        if (methodNameQualifier == outerCall) {
+            methodNameArgs = methodNameArgs.subList(0, methodNameArgs.size() - 1);
         }
-        Expression nameArg = methodNamedArgs.size() == 1 ? methodNamedArgs.get(0) : null;
+        Expression nameArg = methodNameArgs.size() == 1 ? methodNameArgs.get(0) : null;
         Object nameValue = nameArg instanceof ConstantExpression ? ((ConstantExpression) nameArg).getValue() : null;
         if (!(nameValue instanceof String)) {
-            addError(methodNamedQualifier, source, ".methodNamed(...) requires exactly one String argument, " +
-                    "e.g. .methodNamed(\"myService\")");
+            addError(methodNameQualifier, source, ".methodName(...) requires exactly one String argument, " +
+                    "e.g. .methodName(\"myService\")");
             return null;
         }
         String methodName = (String) nameValue;
@@ -620,7 +659,7 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
                 return null;
             }
             // Even bean(...), which otherwise allows a non-identifier Spring name (see
-            // .methodNamed(...)), must reject a blank one: Spring treats a blank @Bean name as
+            // .methodName(...)), must reject a blank one: Spring treats a blank @Bean name as
             // absent and falls back to the method name, so the name actually written would be
             // silently discarded.
             if (!requireValidIdentifier && name.isBlank()) {

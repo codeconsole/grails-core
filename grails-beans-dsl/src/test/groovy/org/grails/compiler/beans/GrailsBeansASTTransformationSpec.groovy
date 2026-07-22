@@ -38,10 +38,12 @@ import org.springframework.boot.autoconfigure.condition.SearchStrategy
 import org.springframework.boot.autoconfigure.context.MessageSourceAutoConfiguration
 import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean
+import org.springframework.context.annotation.ComponentScan
 import org.springframework.context.annotation.ImportResource
 import org.springframework.context.annotation.Lazy
 import org.springframework.context.annotation.Primary
 import org.springframework.context.annotation.PropertySource
+import org.springframework.context.annotation.PropertySources
 import org.springframework.context.annotation.Scope
 import org.springframework.core.annotation.Order
 import spock.lang.Specification
@@ -310,7 +312,7 @@ class GrailsBeansASTTransformationSpec extends Specification {
         fixtureBeans.getDeclaredConstructor().newInstance().multiAnnotatedGreeting() == 'multi hello'
     }
 
-    def "bean(...).methodNamed(...) lets a Spring bean name that isn't a valid Java identifier compile"() {
+    def "bean(...).methodName(...) lets a Spring bean name that isn't a valid Java identifier compile"() {
         given:
         String source = '''
             import grails.compiler.beans.GrailsBeans
@@ -320,7 +322,7 @@ class GrailsBeansASTTransformationSpec extends Specification {
             @AutoConfiguration
             class HyphenBeanNameFixture {
                 def beans = {
-                    bean(String, 'my-service').methodNamed('myService') {
+                    bean(String, 'my-service').methodName('myService') {
                         'hello'
                     }
                 }
@@ -335,11 +337,11 @@ class GrailsBeansASTTransformationSpec extends Specification {
         method.isAnnotationPresent(Bean)
         method.getAnnotation(Bean).value() == ['my-service'] as String[]
 
-        and: "the closure body became the real method body, under the .methodNamed(...) method name"
+        and: "the closure body became the real method body, under the .methodName(...) method name"
         fixtureBeans.getDeclaredConstructor().newInstance().myService() == 'hello'
     }
 
-    def "bean(...).methodNamed(...) can override the method name even when the given bean name is already a valid identifier"() {
+    def "bean(...).methodName(...) can override the method name even when the given bean name is already a valid identifier"() {
         given:
         String source = '''
             import grails.compiler.beans.GrailsBeans
@@ -349,7 +351,7 @@ class GrailsBeansASTTransformationSpec extends Specification {
             @AutoConfiguration
             class OverrideBeanNameFixture {
                 def beans = {
-                    bean(String, 'myService').methodNamed('differentMethodName') {
+                    bean(String, 'myService').methodName('differentMethodName') {
                         'hello'
                     }
                 }
@@ -365,7 +367,7 @@ class GrailsBeansASTTransformationSpec extends Specification {
         method.getAnnotation(Bean).value() == ['myService'] as String[]
     }
 
-    def "bean(...).methodNamed(...) combines with other qualifiers on the same bean"() {
+    def "bean(...).methodName(...) combines with other qualifiers on the same bean"() {
         given:
         String source = '''
             import grails.compiler.beans.GrailsBeans
@@ -376,7 +378,7 @@ class GrailsBeansASTTransformationSpec extends Specification {
             @AutoConfiguration
             class CombinedNamedFixture {
                 def beans = {
-                    bean(String, 'my-service').methodNamed('myService').primary().annotate(Order, value: 1) {
+                    bean(String, 'my-service').methodName('myService').primary().annotate(Order, value: 1) {
                         'hello'
                     }
                 }
@@ -395,7 +397,7 @@ class GrailsBeansASTTransformationSpec extends Specification {
         method.getAnnotation(Order).value() == 1
     }
 
-    def "two beans with different non-identifier names, each given a different .methodNamed(...) method name, both compile"() {
+    def "two beans with different non-identifier names, each given a different .methodName(...) method name, both compile"() {
         given:
         String source = '''
             import grails.compiler.beans.GrailsBeans
@@ -405,10 +407,10 @@ class GrailsBeansASTTransformationSpec extends Specification {
             @AutoConfiguration
             class TwoNamedBeansFixture {
                 def beans = {
-                    bean(String, 'my-service').methodNamed('myService') {
+                    bean(String, 'my-service').methodName('myService') {
                         'a'
                     }
-                    bean(String, 'plugin.messageSource').methodNamed('pluginMessageSource') {
+                    bean(String, 'plugin.messageSource').methodName('pluginMessageSource') {
                         'b'
                     }
                 }
@@ -423,7 +425,7 @@ class GrailsBeansASTTransformationSpec extends Specification {
         fixtureBeans.getDeclaredMethod('pluginMessageSource').getAnnotation(Bean).value() == ['plugin.messageSource'] as String[]
     }
 
-    def "bean(...) with a non-identifier name and no .methodNamed(...) falls back to a synthesized <type>\$N method name"() {
+    def "bean(...) with a non-identifier name and no .methodName(...) falls back to a synthesized <type>\$N method name"() {
         given:
         String source = '''
             import grails.compiler.beans.GrailsBeans
@@ -703,8 +705,8 @@ class GrailsBeansASTTransformationSpec extends Specification {
         'bean(...) with an unexpected third argument'  | "bean(String, 'x', 'unexpected') { 'y' }"                          | 'at most one name'
         'bean(...) with an empty explicit name'         | "bean(String, '') { 'y' }"                                        | 'requires a non-blank name'
         'bean(...) with a whitespace-only explicit name' | "bean(String, '   ') { 'y' }"                                    | 'requires a non-blank name'
-        'bean(...) with a reserved-keyword explicit name, no .methodNamed(...) to supply a real one' |
-                "bean(String, 'x').methodNamed('int') { 'y' }" | 'is not a valid name'
+        'bean(...) with a reserved-keyword explicit name, no .methodName(...) to supply a real one' |
+                "bean(String, 'x').methodName('int') { 'y' }" | 'is not a valid name'
         'field(...) with a reserved-keyword name'        | "field(String, 'class')"                                          | 'is not a valid name'
         'method(...) with a reserved-keyword name'        | "method(String, 'return') { 'y' }"                               | 'is not a valid name'
         'an unrecognised qualifier chained after bean(...)' | "bean(String, 'x').unknownQualifier() { 'y' }"                | 'Expected bean(Type[, "name"]) { ... }'
@@ -730,16 +732,16 @@ class GrailsBeansASTTransformationSpec extends Specification {
                 "field(String, 'x'); bean(Integer, 'x') { 1 }" | 'is already used by another'
         'a field(...) and a method(...) sharing the same name' |
                 "field(String, 'x'); method(Integer, 'x') { 1 }" | 'is already used by another'
-        '.methodNamed(...) that is not a valid identifier'      | "bean(String, 'my-service').methodNamed('not valid!') { 'x' }" | 'is not a valid name'
-        '.methodNamed(...) with no arguments'                   | "bean(String, 'my-service').methodNamed() { 'x' }"              | 'requires exactly one String argument'
-        '.methodNamed(...) with a non-String argument'          | "bean(String, 'my-service').methodNamed(42) { 'x' }"            | 'requires exactly one String argument'
-        '.methodNamed(...) chained onto field(...)'              | "field(String, 'x').methodNamed('y')"                          | 'cannot be chained onto field(...)'
-        '.methodNamed(...) chained onto method(...)'              | "method(String, 'x').methodNamed('y') { 'z' }"                 | 'cannot be chained onto method(...)'
-        'two bean(...) statements sharing the same Spring bean name via different .methodNamed(...) method names' |
-                "bean(String, 'my-service').methodNamed('a') { 'x' }; bean(Integer, 'my-service').methodNamed('b') { 1 }" |
+        '.methodName(...) that is not a valid identifier'      | "bean(String, 'my-service').methodName('not valid!') { 'x' }" | 'is not a valid name'
+        '.methodName(...) with no arguments'                   | "bean(String, 'my-service').methodName() { 'x' }"              | 'requires exactly one String argument'
+        '.methodName(...) with a non-String argument'          | "bean(String, 'my-service').methodName(42) { 'x' }"            | 'requires exactly one String argument'
+        '.methodName(...) chained onto field(...)'              | "field(String, 'x').methodName('y')"                          | 'cannot be chained onto field(...)'
+        '.methodName(...) chained onto method(...)'              | "method(String, 'x').methodName('y') { 'z' }"                 | 'cannot be chained onto method(...)'
+        'two bean(...) statements sharing the same Spring bean name via different .methodName(...) method names' |
+                "bean(String, 'my-service').methodName('a') { 'x' }; bean(Integer, 'my-service').methodName('b') { 1 }" |
                 'is already used as the Spring bean name'
-        'two bean(...) statements with different Spring bean names sharing the same .methodNamed(...) method name' |
-                "bean(String, 'my-service').methodNamed('x') { 'a' }; bean(Integer, 'my-other-service').methodNamed('x') { 1 }" |
+        'two bean(...) statements with different Spring bean names sharing the same .methodName(...) method name' |
+                "bean(String, 'my-service').methodName('x') { 'a' }; bean(Integer, 'my-other-service').methodName('x') { 1 }" |
                 'is already used by another'
     }
 
@@ -972,6 +974,147 @@ class GrailsBeansASTTransformationSpec extends Specification {
         and: "moved to the sibling"
         autoConfigClass.isAnnotationPresent(ImportResource)
         autoConfigClass.getAnnotation(ImportResource).value() == ['classpath:foo.xml'] as String[]
+    }
+
+    def "@ComponentScan and an explicit @PropertySources container also move to the sibling"() {
+        given:
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import grails.plugins.Plugin
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+            import org.springframework.context.annotation.ComponentScan
+            import org.springframework.context.annotation.PropertySource
+            import org.springframework.context.annotation.PropertySources
+
+            @GrailsBeans
+            @AutoConfiguration
+            @ComponentScan('com.example.scanned')
+            @PropertySources([
+                @PropertySource('classpath:one.properties'),
+                @PropertySource('classpath:two.properties')
+            ])
+            class ScanningPlugin extends Plugin {
+                def beans = {
+                    bean(String, 'greeting') {
+                        'hello'
+                    }
+                }
+            }
+        '''
+
+        when:
+        GroovyClassLoader loader = new GroovyClassLoader(getClass().classLoader)
+        loader.parseClass(source)
+        Class<?> pluginClass = loader.loadClass('ScanningPlugin')
+        Class<?> autoConfigClass = loader.loadClass('ScanningPluginAutoConfiguration')
+
+        then: "neither is left behind on the Plugin class Spring never processes as a bean"
+        !pluginClass.isAnnotationPresent(ComponentScan)
+        !pluginClass.isAnnotationPresent(PropertySources)
+
+        and: "both moved to the sibling - @PropertySources matters because the repeatable-container " +
+                "form would otherwise be treated differently from writing @PropertySource twice"
+        autoConfigClass.isAnnotationPresent(ComponentScan)
+        autoConfigClass.getAnnotation(ComponentScan).value() == ['com.example.scanned'] as String[]
+        autoConfigClass.isAnnotationPresent(PropertySources)
+        autoConfigClass.getAnnotation(PropertySources).value()*.value()*.toList().flatten() ==
+                ['classpath:one.properties', 'classpath:two.properties']
+    }
+
+    def "moveAnnotations moves an annotation the transform has no automatic knowledge of; without it the annotation stays put"() {
+        given: "a marker annotation meta-annotated with nothing the transform recognises"
+        String sourceTemplate = '''
+            import grails.compiler.beans.GrailsBeans
+            import grails.plugins.Plugin
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+            import java.lang.annotation.ElementType
+            import java.lang.annotation.Retention
+            import java.lang.annotation.RetentionPolicy
+            import java.lang.annotation.Target
+
+            @Target(ElementType.TYPE)
+            @Retention(RetentionPolicy.RUNTIME)
+            @interface VendorMarker { }
+
+            %s
+            @AutoConfiguration
+            @VendorMarker
+            class VendorPlugin extends Plugin {
+                def beans = {
+                    bean(String, 'greeting') {
+                        'hello'
+                    }
+                }
+            }
+        '''
+
+        when: "compiled WITHOUT moveAnnotations"
+        GroovyClassLoader strandedLoader = new GroovyClassLoader(getClass().classLoader)
+        strandedLoader.parseClass(String.format(sourceTemplate, '@GrailsBeans'))
+
+        then: "the marker stays on the plugin class - the automatic set can't know about it"
+        strandedLoader.loadClass('VendorPlugin').annotations*.annotationType()*.simpleName.contains('VendorMarker')
+        !strandedLoader.loadClass('VendorPluginAutoConfiguration').annotations*.annotationType()*.simpleName.contains('VendorMarker')
+
+        when: "compiled WITH moveAnnotations naming it"
+        GroovyClassLoader movedLoader = new GroovyClassLoader(getClass().classLoader)
+        movedLoader.parseClass(String.format(sourceTemplate, '@GrailsBeans(moveAnnotations = [VendorMarker])'))
+
+        then: "the marker moves to the sibling like the automatically-recognised annotations do"
+        !movedLoader.loadClass('VendorPlugin').annotations*.annotationType()*.simpleName.contains('VendorMarker')
+        movedLoader.loadClass('VendorPluginAutoConfiguration').annotations*.annotationType()*.simpleName.contains('VendorMarker')
+    }
+
+    def "moveAnnotations rejects a non-annotation class"() {
+        given:
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import grails.plugins.Plugin
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @GrailsBeans(moveAnnotations = [String])
+            @AutoConfiguration
+            class BadMoveAnnotationsPlugin extends Plugin {
+                def beans = {
+                    bean(String, 'greeting') {
+                        'hello'
+                    }
+                }
+            }
+        '''
+
+        when:
+        compile(source)
+
+        then:
+        MultipleCompilationErrorsException e = thrown(MultipleCompilationErrorsException)
+        e.message.contains('is not an annotation type')
+    }
+
+    def "moveAnnotations is rejected on a standalone (non-Plugin) class, where it can have no effect"() {
+        given:
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+            import org.springframework.context.annotation.ComponentScan
+
+            @GrailsBeans(moveAnnotations = [ComponentScan])
+            @AutoConfiguration
+            class StandaloneWithMoveAnnotations {
+                def beans = {
+                    bean(String, 'greeting') {
+                        'hello'
+                    }
+                }
+            }
+        '''
+
+        when:
+        compile(source)
+
+        then:
+        MultipleCompilationErrorsException e = thrown(MultipleCompilationErrorsException)
+        e.message.contains('moveAnnotations has no effect here')
     }
 
     def "GrailsBeans(autoConfigurationName = ...) names the generated sibling instead of the default <PluginClassName>AutoConfiguration"() {
