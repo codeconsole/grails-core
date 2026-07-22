@@ -196,6 +196,88 @@ class GrailsBeansASTTransformationSpec extends Specification {
         fixtureBeans.getDeclaredConstructor().newInstance().answer() == 42
     }
 
+    def "conditionalOnMissingBean(...) accepts the annotation's named attributes"() {
+        given:
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+            import org.springframework.boot.autoconfigure.condition.SearchStrategy
+
+            @GrailsBeans
+            @AutoConfiguration
+            class NamedAttributesFixture {
+                def beans = {
+                    bean(String, 'greeting').conditionalOnMissingBean(name: 'greeting', search: SearchStrategy.CURRENT) {
+                        'hello'
+                    }
+                }
+            }
+        '''
+
+        when:
+        Class<?> fixtureBeans = compile(source)
+        def annotation = fixtureBeans.getDeclaredMethod('greeting').getAnnotation(ConditionalOnMissingBean)
+
+        then:
+        annotation.name() == ['greeting'] as String[]
+        annotation.search() == SearchStrategy.CURRENT
+        annotation.value().length == 0
+    }
+
+    def "conditionalOnMissingBean(...) accepts positional types mixed with named attributes"() {
+        given:
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+            import org.springframework.boot.autoconfigure.condition.SearchStrategy
+
+            @GrailsBeans
+            @AutoConfiguration
+            class MixedAttributesFixture {
+                def beans = {
+                    bean(CharSequence, 'greeting').conditionalOnMissingBean(CharSequence, search: SearchStrategy.CURRENT) {
+                        'hello'
+                    }
+                }
+            }
+        '''
+
+        when:
+        Class<?> fixtureBeans = compile(source)
+        def annotation = fixtureBeans.getDeclaredMethod('greeting').getAnnotation(ConditionalOnMissingBean)
+
+        then:
+        annotation.value() as List == [CharSequence]
+        annotation.search() == SearchStrategy.CURRENT
+    }
+
+    def "zero-argument conditionalOnMissingBean() compiles to a bare annotation, letting Spring infer the return type"() {
+        given:
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @GrailsBeans
+            @AutoConfiguration
+            class BareConditionFixture {
+                def beans = {
+                    bean(String, 'greeting').conditionalOnMissingBean() {
+                        'hello'
+                    }
+                }
+            }
+        '''
+
+        when:
+        Class<?> fixtureBeans = compile(source)
+        def annotation = fixtureBeans.getDeclaredMethod('greeting').getAnnotation(ConditionalOnMissingBean)
+
+        then: "no members set - identical to writing bare @ConditionalOnMissingBean by hand"
+        annotation.value().length == 0
+        annotation.name().length == 0
+        annotation.type().length == 0
+    }
+
     def "compiles primary() into a @Primary annotation"() {
         given:
         Class<?> fixtureBeans = compile()
@@ -461,6 +543,72 @@ class GrailsBeansASTTransformationSpec extends Specification {
         field.getAnnotation(Value).value() == '${greeting.suffix:!!!}'
     }
 
+    def "field(...).value(key, default) builds the @Value placeholder, accepting a bare constant key"() {
+        given: "keys given as a String literal, a BARE static-final constant reference (the shape a " +
+                "directly-written annotation value rejects), and an empty default"
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            class ConfigKeys {
+                static final String ENCODING_KEY = 'app.encoding'
+            }
+
+            @GrailsBeans
+            @AutoConfiguration
+            class ValueSugarFixture {
+                def beans = {
+                    field(String, 'encoding').value(ConfigKeys.ENCODING_KEY, 'UTF-8')
+                    field(int, 'cacheSeconds').value('app.cache.seconds', '5')
+                    field(String, 'defaultLocale').value('app.default.locale', '')
+
+                    bean(String, 'greeting') {
+                        encoding
+                    }
+                }
+            }
+        '''
+
+        when:
+        GroovyClassLoader loader = new GroovyClassLoader(getClass().classLoader)
+        loader.parseClass(source)
+        Class<?> fixtureBeans = loader.loadClass('ValueSugarFixture')
+
+        then:
+        fixtureBeans.getDeclaredField('encoding').getAnnotation(Value).value() == '${app.encoding:UTF-8}'
+        fixtureBeans.getDeclaredField('cacheSeconds').getAnnotation(Value).value() == '${app.cache.seconds:5}'
+        fixtureBeans.getDeclaredField('defaultLocale').getAnnotation(Value).value() == '${app.default.locale:}'
+    }
+
+    def "field(...).value(placeholder) passes a single complete placeholder through verbatim"() {
+        given:
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @GrailsBeans
+            @AutoConfiguration
+            class VerbatimValueFixture {
+                def beans = {
+                    field(String, 'encoding').value('${app.encoding:UTF-8}')
+                    field(int, 'poolSize').value('#{T(java.lang.Runtime).getRuntime().availableProcessors()}')
+
+                    bean(String, 'greeting') {
+                        encoding
+                    }
+                }
+            }
+        '''
+
+        when:
+        Class<?> fixtureBeans = compile(source)
+
+        then:
+        fixtureBeans.getDeclaredField('encoding').getAnnotation(Value).value() == '${app.encoding:UTF-8}'
+        fixtureBeans.getDeclaredField('poolSize').getAnnotation(Value).value() ==
+                '#{T(java.lang.Runtime).getRuntime().availableProcessors()}'
+    }
+
     def "annotate(...) attribute values may reference a shared String constant, not just a literal"() {
         given: "an @Value placeholder built the same way the real I18nGrailsPlugin conversion builds " +
                 "its property keys from grails.config.Settings, proving .annotate(...)'s member values " +
@@ -612,6 +760,7 @@ class GrailsBeansASTTransformationSpec extends Specification {
         given:
         String source = """
             import grails.compiler.beans.GrailsBeans
+            import org.springframework.beans.factory.annotation.Value
             import org.springframework.boot.autoconfigure.AutoConfiguration
             import org.springframework.context.annotation.Primary
             import org.springframework.core.annotation.Order
@@ -663,6 +812,12 @@ class GrailsBeansASTTransformationSpec extends Specification {
         'annotate(...) colliding with a named qualifier' | "bean(String, 'x').primary().annotate(Primary) { 'y' }"          | 'already attached'
         'field(...) with a non-type first argument'      | "field('NotAType')"                                               | 'field(...) requires a type as its first argument'
         'field(...) chained with a bean-only qualifier'   | "field(String, 'x').primary()"                                    | 'cannot be chained onto field(...)'
+        '.value(...) chained onto bean(...)'               | "bean(String, 'x').value('k', 'd') { 'y' }"                      | 'cannot be chained onto bean(...)'
+        '.value(...) chained onto method(...)'              | "method(String, 'x').value('k', 'd') { 'y' }"                    | 'cannot be chained onto method(...)'
+        '.value(...) with no arguments'                     | "field(String, 'x').value()"                                     | 'requires a config key'
+        '.value(...) with too many arguments'               | "field(String, 'x').value('k', 'd', 'extra')"                    | 'requires a config key'
+        '.value(...) chained twice'                          | "field(String, 'x').value('a', 'b').value('c', 'd')"            | 'may only be chained once'
+        '.value(...) combined with .annotate(Value, ...)'    | "field(String, 'x').value('k', 'd').annotate(Value, value: 'v')" | 'already attached'
         'method(...) without a body closure'              | "method(String, 'x')"                                             | 'method(...) must end with a body closure'
         'method(...) chained with a bean-only qualifier'  | "method(String, 'x').conditionalOnMissingBean(String) { 'y' }"    | 'cannot be chained onto method(...)'
         'two bean(...) statements sharing the same explicit name' |
@@ -1374,6 +1529,64 @@ class GrailsBeansASTTransformationSpec extends Specification {
         e.message.contains('moveAnnotations has no effect here')
     }
 
+    def "a *GrailsPlugin class derives its sibling name by replacing the suffix with AutoConfiguration"() {
+        given: "the convention that made the real I18nGrailsPlugin regenerate I18nAutoConfiguration with no attribute"
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import grails.plugins.Plugin
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @GrailsBeans
+            @AutoConfiguration
+            class FooGrailsPlugin extends Plugin {
+                def beans = {
+                    bean(String, 'greeting') {
+                        'hello'
+                    }
+                }
+            }
+        '''
+
+        when:
+        GroovyClassLoader loader = new GroovyClassLoader(getClass().classLoader)
+        loader.parseClass(source)
+
+        then: "FooGrailsPlugin -> FooAutoConfiguration, not FooGrailsPluginAutoConfiguration"
+        loader.loadClass('FooAutoConfiguration').getDeclaredMethod('greeting') != null
+
+        when:
+        loader.loadClass('FooGrailsPluginAutoConfiguration')
+
+        then:
+        thrown(ClassNotFoundException)
+    }
+
+    def "autoConfigurationName overrides the *GrailsPlugin suffix convention too"() {
+        given:
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import grails.plugins.Plugin
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @GrailsBeans(autoConfigurationName = 'CustomName')
+            @AutoConfiguration
+            class BarGrailsPlugin extends Plugin {
+                def beans = {
+                    bean(String, 'greeting') {
+                        'hello'
+                    }
+                }
+            }
+        '''
+
+        when:
+        GroovyClassLoader loader = new GroovyClassLoader(getClass().classLoader)
+        loader.parseClass(source)
+
+        then:
+        loader.loadClass('CustomName').getDeclaredMethod('greeting') != null
+    }
+
     def "GrailsBeans(autoConfigurationName = ...) names the generated sibling instead of the default <PluginClassName>AutoConfiguration"() {
         given:
         String source = '''
@@ -1750,7 +1963,6 @@ class GrailsBeansASTTransformationSpec extends Specification {
         String source = '''
             import grails.compiler.beans.GrailsBeans
             import grails.plugins.Plugin
-            import org.springframework.beans.factory.annotation.Value
             import org.springframework.boot.autoconfigure.AutoConfiguration
             import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
             import org.springframework.boot.autoconfigure.condition.SearchStrategy
@@ -1771,20 +1983,20 @@ class GrailsBeansASTTransformationSpec extends Specification {
 
             @GrailsBeans
             @AutoConfiguration(before = MessageSourceAutoConfiguration)
-            class I18nStylePlugin extends Plugin {
+            class I18nStyleGrailsPlugin extends Plugin {
 
                 String version = "1.0"
 
                 def beans = {
-                    field(String, "encoding").annotate(Value, value: \'${grails.gsp.view.encoding:UTF-8}\')
-                    field(String, "localeResolverType").annotate(Value, value: \'${grails.i18n.locale.resolver:session}\')
+                    field(String, "encoding").value("grails.gsp.view.encoding", "UTF-8")
+                    field(String, "localeResolverType").value("grails.i18n.locale.resolver", "session")
 
                     method(LocaleResolver, "buildLocaleResolver") {
                         localeResolverType?.toLowerCase() == "cookie" ? new CookieLocaleResolver() : new SessionLocaleResolver()
                     }
 
                     bean(LocaleResolver, "localeResolver")
-                            .annotate(ConditionalOnMissingBean, name: "localeResolver", search: SearchStrategy.CURRENT) {
+                            .conditionalOnMissingBean(name: "localeResolver", search: SearchStrategy.CURRENT) {
                         buildLocaleResolver()
                     }
 
@@ -1795,7 +2007,7 @@ class GrailsBeansASTTransformationSpec extends Specification {
                     }
 
                     bean(ReloadableResourceBundleMessageSource, "messageSource")
-                            .annotate(ConditionalOnMissingBean, name: "messageSource", search: SearchStrategy.CURRENT) {
+                            .conditionalOnMissingBean(name: "messageSource", search: SearchStrategy.CURRENT) {
                         buildMessageSource()
                     }
                 }
@@ -1806,9 +2018,9 @@ class GrailsBeansASTTransformationSpec extends Specification {
             }
         '''
 
-        when:
+        when: "the *GrailsPlugin suffix derives the sibling name, exactly as the real conversion relies on"
         Class<?> pluginClass = compile(source)
-        Class<?> autoConfigClass = new GroovyClassLoader(pluginClass.classLoader).loadClass('I18nStylePluginAutoConfiguration')
+        Class<?> autoConfigClass = new GroovyClassLoader(pluginClass.classLoader).loadClass('I18nStyleAutoConfiguration')
         def instance = autoConfigClass.getDeclaredConstructor().newInstance()
         def localeResolverTypeField = autoConfigClass.getDeclaredField('localeResolverType')
         localeResolverTypeField.accessible = true

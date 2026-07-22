@@ -34,7 +34,9 @@ import org.codehaus.groovy.transform.GroovyASTTransformationClass;
  * statements are one of:
  * <ul>
  * <li>{@code bean(Type[, "name"]) { ... }}, optionally chained with any combination of
- * {@code .conditionalOnMissingBean(Type...)}, {@code .primary()}, {@code .lazy()},
+ * {@code .conditionalOnMissingBean(...)} (positional types, the annotation's own named
+ * attributes such as {@code name:}/{@code search:}, or no arguments at all to let Spring infer
+ * the back-off type from the return type), {@code .primary()}, {@code .lazy()},
  * {@code .scope("name")}, and (repeatably)
  * {@code .annotate(AnnotationType[, attr: value, ...])} - the last a generic escape hatch
  * attaching any other single-valued annotation. The closure body becomes the generated method's
@@ -43,10 +45,13 @@ import org.codehaus.groovy.transform.GroovyASTTransformationClass;
  * Spring resolves the bean by its {@code @Bean("name")} value, so a bean name that isn't a valid
  * Java identifier (e.g. {@code "my-service"}) simply gets a synthesized {@code <type>$N} method
  * name behind the scenes.</li>
- * <li>{@code field(Type[, "name"])}, optionally chained (repeatably) with
- * {@code .annotate(AnnotationType[, attr: value, ...])} - typically {@code .annotate(Value, value:
- * "${...}")}. Declares a private field on the generated class, for state shared across bean
- * methods (e.g. injected configuration).</li>
+ * <li>{@code field(Type[, "name"])}, optionally chained with {@code .value(...)} and/or
+ * (repeatably) {@code .annotate(AnnotationType[, attr: value, ...])}. Declares a private field on
+ * the generated class, for state shared across bean methods. The usual case is injected
+ * configuration: {@code field(String, "encoding").value(Settings.GSP_VIEW_ENCODING, "UTF-8")}
+ * compiles to {@code @Value("${grails.views.gsp.encoding:UTF-8}")} - the two-argument form takes
+ * a config key (a literal or a bare constant reference) plus default, and the one-argument form
+ * passes a complete placeholder or SpEL string through verbatim.</li>
  * <li>{@code method(Type[, "name"]) { ... }}, with the same chaining as {@code field(...)}.
  * Declares a private helper method on the generated class, for logic shared across bean methods,
  * lifted from the closure the same way {@code bean(...)} is.</li>
@@ -56,9 +61,11 @@ import org.codehaus.groovy.transform.GroovyASTTransformationClass;
  *
  * <p>May also be applied to a {@code grails.plugins.Plugin} subclass, letting bean definitions
  * live in the familiar {@code *GrailsPlugin.groovy} file. In that case the generated methods land
- * on a new sibling {@code <PluginClassName>AutoConfiguration} class instead (or
- * {@link #autoConfigurationName} if given) - a {@code Plugin} subclass is never processed by
- * Spring as a bean - and {@code @AutoConfiguration} together with every annotation that gates or
+ * on a new sibling class instead, named by the plugin-descriptor convention - a {@code *GrailsPlugin}
+ * name swaps that suffix for {@code AutoConfiguration} ({@code I18nGrailsPlugin} ->
+ * {@code I18nAutoConfiguration}), any other name appends it - or {@link #autoConfigurationName}
+ * if given. A {@code Plugin} subclass is never processed by
+ * Spring as a bean, so {@code @AutoConfiguration} together with every annotation that gates or
  * configures it (the {@code @Conditional*} family, {@code @Import}/{@code @ImportAutoConfiguration}/
  * {@code @ImportResource}, {@code @ComponentScan}, {@code @EnableConfigurationProperties},
  * {@code @PropertySource}/{@code @PropertySources},
@@ -74,10 +81,12 @@ public @interface GrailsBeans {
 
     /**
      * The simple name of the generated sibling class, for a {@code grails.plugins.Plugin}
-     * subclass. Defaults to {@code <PluginClassName>AutoConfiguration}; set this when converting
-     * an existing public {@code @AutoConfiguration} class into the DSL and its class identity
-     * must be preserved (e.g. for {@code exclude =} references, {@code before=}/{@code after=}
-     * ordering from other modules, or tests that import it by name).
+     * subclass. The default derives from the plugin's own name - a {@code *GrailsPlugin} class
+     * swaps that suffix for {@code AutoConfiguration}, any other name appends it. Set this when
+     * converting an existing public {@code @AutoConfiguration} class whose name doesn't follow
+     * that convention and whose class identity must be preserved (e.g. for {@code exclude =}
+     * references, {@code before=}/{@code after=} ordering from other modules, or tests that
+     * import it by name).
      */
     String autoConfigurationName() default "";
 

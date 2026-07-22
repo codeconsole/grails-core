@@ -26,7 +26,7 @@ import grails.plugins.Plugin
 /**
  * Demonstrates {@code @GrailsBeans} applied directly to a {@code *GrailsPlugin.groovy}-style
  * class. The {@code beans} block below compiles onto a generated sibling
- * {@code FarewellGrailsPluginAutoConfiguration} class rather than onto this one - a
+ * {@code FarewellAutoConfiguration} class rather than onto this one - a
  * {@code Plugin} subclass is instantiated by {@code DefaultGrailsPlugin} via plain reflection,
  * never as a Spring bean, so it cannot itself carry {@code @Bean} methods. Everything else about
  * this class - the {@code Plugin} lifecycle hooks, {@code version}, etc. - works exactly as it

@@ -30,7 +30,7 @@ import spock.lang.Specification
 
 /**
  * End-to-end proof that a {@code beans} block written directly inside a {@code Plugin} subclass
- * is discovered purely via the generated {@code FarewellGrailsPluginAutoConfiguration} sibling -
+ * is discovered purely via the generated {@code FarewellAutoConfiguration} sibling -
  * nothing here references that generated class by name, only {@code Farewell} itself.
  *
  * <p>{@code AopAutoConfiguration} is excluded because grails-core being on the classpath at all
@@ -68,7 +68,7 @@ class FarewellGrailsPluginAutoDiscoverySpec extends Specification {
         !FarewellGrailsPlugin.isAnnotationPresent(AutoConfiguration)
 
         and: "the generated sibling exists as a genuinely separate class"
-        Class.forName('beandsl.example.plugin.FarewellGrailsPluginAutoConfiguration').isAnnotationPresent(AutoConfiguration)
+        Class.forName('beandsl.example.plugin.FarewellAutoConfiguration').isAnnotationPresent(AutoConfiguration)
     }
 
 }
