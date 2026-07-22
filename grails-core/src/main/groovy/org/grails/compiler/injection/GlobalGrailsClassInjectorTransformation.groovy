@@ -16,7 +16,6 @@
  *  specific language governing permissions and limitations
  *  under the License.
  */
-
 package org.grails.compiler.injection
 
 import java.lang.reflect.Modifier
@@ -27,13 +26,11 @@ import groovy.transform.CompileDynamic
 import groovy.transform.CompileStatic
 import groovy.xml.MarkupBuilder
 import groovy.xml.StreamingMarkupBuilder
-import groovy.xml.XmlSlurper
 import groovy.xml.slurpersupport.GPathResult
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.AnnotationNode
 import org.codehaus.groovy.ast.ClassHelper
 import org.codehaus.groovy.ast.ClassNode
-import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.ast.PropertyNode
 import org.codehaus.groovy.ast.expr.ConstantExpression
 import org.codehaus.groovy.control.CompilationUnit
@@ -56,118 +53,18 @@ import org.grails.io.support.GrailsResourceUtils
 import org.grails.io.support.UrlResource
 
 /**
- * A global transformation that applies Grails' transformations to classes within a Grails project
+ * Global AST transformation that applies Grails compiler injection to project sources.
  *
- * @author Graeme Rocher
+ * <p>It identifies Grails artefacts, applies the relevant {@link ClassInjector} and
+ * {@link grails.compiler.traits.TraitInjector} implementations, registers
+ * artefact handlers and trait injectors, and generates the
+ * {@code META-INF/grails-plugin.xml} descriptor for compiled plugins.</p>
+ *
  * @since 3.0
  */
-@GroovyASTTransformation(phase = CompilePhase.CANONICALIZATION)
 @CompileStatic
+@GroovyASTTransformation(phase = CompilePhase.CANONICALIZATION)
 class GlobalGrailsClassInjectorTransformation implements ASTTransformation, CompilationUnitAware, TransformWithPriority {
-
-    public static final ClassNode ARTEFACT_HANDLER_CLASS = ClassHelper.make('grails.core.ArtefactHandler')
-    public static final ClassNode TRAIT_INJECTOR_CLASS = ClassHelper.make('grails.compiler.traits.TraitInjector')
-
-    @Override
-    int priority() {
-        return GroovyTransformOrder.GLOBAL_GRAILS_TRANSFORM_ORDER
-    }
-
-    @Override
-    void visit(ASTNode[] nodes, SourceUnit source) {
-
-        ModuleNode ast = source.getAST()
-        List<ClassNode> classes = new ArrayList<>(ast.getClasses())
-
-        URL url = GrailsASTUtils.getSourceUrl(source)
-
-        if (url == null) return
-        if (!GrailsResourceUtils.isProjectSource(new UrlResource(url))) return
-
-        List<ArtefactHandler> artefactHandlers = GrailsFactoriesLoader.loadFactories(ArtefactHandler)
-        ClassInjector[] classInjectors = GrailsAwareInjectionOperation.getClassInjectors()
-
-        Map<String, List<ClassInjector>> cache = new LinkedHashMap<String, List<ClassInjector>>().withDefault { String key ->
-            ArtefactTypeAstTransformation.findInjectors(key, classInjectors)
-        }
-
-        LinkedHashSet<String> transformedClasses = []
-        String pluginVersion = null
-        ClassNode pluginClassNode = null
-        def compilationTargetDirectory = resolveCompilationTargetDirectory(source)
-        def pluginXmlFile = new File(compilationTargetDirectory, 'META-INF/grails-plugin.xml')
-
-        for (ClassNode classNode : classes) {
-            def projectName = classNode.getNodeMetaData('projectName')
-            def projectVersion = classNode.getNodeMetaData('projectVersion')
-            if (projectVersion == null) {
-                projectVersion = getClass().getPackage().getImplementationVersion()
-            }
-
-            pluginVersion = projectVersion
-
-            def classNodeName = classNode.name
-
-            if (classNodeName.endsWith('GrailsPlugin') && !classNode.isAbstract()) {
-                pluginClassNode = classNode
-
-                if (!classNode.getProperty('version')) {
-                    classNode.addProperty(new PropertyNode('version', Modifier.PUBLIC, ClassHelper.make(Object), classNode, new ConstantExpression(projectVersion.toString()), null, null))
-                }
-
-                continue
-            }
-
-            if (updateGrailsFactoriesWithType(classNode, ARTEFACT_HANDLER_CLASS, compilationTargetDirectory)) {
-                continue
-            }
-            if (updateGrailsFactoriesWithType(classNode, TRAIT_INJECTOR_CLASS, compilationTargetDirectory)) {
-                continue
-            }
-
-            if (!GrailsResourceUtils.isGrailsResource(new UrlResource(url))) continue
-
-            if (projectName && projectVersion) {
-                GrailsASTUtils.addAnnotationOrGetExisting(classNode, GrailsPlugin, [name: GrailsNameUtils.getPropertyNameForLowerCaseHyphenSeparatedName(projectName.toString()), version: projectVersion])
-            }
-
-            classNode.getModule().addImport('Autowired', ClassHelper.make('org.springframework.beans.factory.annotation.Autowired'))
-
-            for (ArtefactHandler handler in artefactHandlers) {
-                if (handler.isArtefact(classNode)) {
-                    if (!classNode.getAnnotations(ARTEFACT_CLASS_NODE)) {
-                        transformedClasses.add(classNodeName)
-                        def annotationNode = new AnnotationNode(new ClassNode(Artefact))
-                        annotationNode.addMember('value', new ConstantExpression(handler.getType()))
-                        classNode.addAnnotation(annotationNode)
-
-                        List<ClassInjector> injectors = cache[handler.type]
-                        for (ClassInjector injector : injectors) {
-                            if (injector instanceof CompilationUnitAware) {
-                                ((CompilationUnitAware) injector).compilationUnit = compilationUnit
-                            }
-                        }
-                        ArtefactTypeAstTransformation.performInjection(source, classNode, injectors)
-                        TraitInjectionUtils.processTraitsForNode(source, classNode, handler.getType(), compilationUnit)
-                    }
-                }
-            }
-
-            if (!transformedClasses.contains(classNodeName)) {
-                def globalClassInjectors = GrailsAwareInjectionOperation.globalClassInjectors
-
-                for (ClassInjector injector in globalClassInjectors) {
-                    injector.performInjection(source, classNode)
-                }
-            }
-        }
-
-        // now create or update grails-plugin.xml
-        // first check if plugin.xml exists
-        pluginXmlFile.parentFile.mkdirs()
-
-        generatePluginXml(pluginClassNode, pluginVersion, transformedClasses, pluginXmlFile)
-    }
 
     /**
      * The system property signalling that each project compiles into its own isolated output
@@ -175,6 +72,93 @@ class GlobalGrailsClassInjectorTransformation implements ASTTransformation, Comp
      * leak one module's generated metadata into another.
      */
     public static final String ISOLATED_BUILD_PROPERTY = 'grails.isolated.build'
+
+    public static final ClassNode ARTEFACT_CLASS_NODE = new ClassNode(Artefact)
+    public static final ClassNode ARTEFACT_HANDLER_CLASS = ClassHelper.make('grails.core.ArtefactHandler')
+    public static final ClassNode TRAIT_INJECTOR_CLASS = ClassHelper.make('grails.compiler.traits.TraitInjector')
+
+    static LinkedHashSet<String> pendingPluginClasses = []
+    static Collection<String> pluginExcludes = []
+
+    CompilationUnit compilationUnit
+
+    @Override
+    int priority() {
+        GroovyTransformOrder.GLOBAL_GRAILS_TRANSFORM_ORDER
+    }
+
+    @Override
+    void visit(ASTNode[] nodes, SourceUnit source) {
+        def url = GrailsASTUtils.getSourceUrl(source)
+        if (!shouldVisit(url)) {
+            return
+        }
+
+        ClassNode pluginClassNode = null
+        def pluginVersion = null
+        def transformedClasses = new LinkedHashSet<String>()
+        def compilationTargetDirectory = resolveCompilationTargetDirectory(source)
+        def pluginXmlFile = new File(compilationTargetDirectory, 'META-INF/grails-plugin.xml')
+        def artefactHandlers = GrailsFactoriesLoader.loadFactories(ArtefactHandler)
+        def injectorCache = new LinkedHashMap<String, List<ClassInjector>>().withDefault { String key ->
+            ArtefactTypeAstTransformation.findInjectors(
+                    key,
+                    GrailsAwareInjectionOperation.classInjectors
+            )
+        }
+
+        for (def classNode : source.AST.classes.toList()) { // toList() to avoid concurrent modification exception
+            def projectName = resolveProjectName(classNode)
+            def projectVersion = resolveProjectVersion(classNode)
+            pluginVersion = projectVersion
+            if (isGrailsPluginDescriptorClass(classNode)) {
+                pluginClassNode = classNode
+                addPluginVersionProperty(classNode, pluginVersion)
+                continue
+            }
+            if (updateGrailsFactoriesWithType(classNode, ARTEFACT_HANDLER_CLASS, compilationTargetDirectory)) {
+                continue
+            }
+            if (updateGrailsFactoriesWithType(classNode, TRAIT_INJECTOR_CLASS, compilationTargetDirectory)) {
+                continue
+            }
+            if (!GrailsResourceUtils.isGrailsResource(new UrlResource(url))) {
+                continue
+            }
+            if (projectName && projectVersion) {
+                addPluginAnnotation(classNode, projectName, projectVersion)
+            }
+
+            addImport(classNode, 'org.springframework.beans.factory.annotation.Autowired')
+
+            for (def handler : artefactHandlers) {
+                if (handler.isArtefact(classNode)) {
+                    if (!classNode.getAnnotations(ARTEFACT_CLASS_NODE)) {
+                        transformedClasses.add(classNode.name)
+                        addArtefactAnnotation(classNode, handler.type)
+                        def injectors = injectorCache[handler.type]
+                        for (def injector : injectors) {
+                            if (injector instanceof CompilationUnitAware) {
+                                ((CompilationUnitAware) injector).compilationUnit = compilationUnit
+                            }
+                        }
+                        ArtefactTypeAstTransformation.performInjection(source, classNode, injectors)
+                        TraitInjectionUtils.processTraitsForNode(source, classNode, handler.type, compilationUnit)
+                    }
+                }
+            }
+
+            if (!transformedClasses.contains(classNode.name)) {
+                def globalClassInjectors = GrailsAwareInjectionOperation.globalClassInjectors
+                for (def injector : globalClassInjectors) {
+                    injector.performInjection(source, classNode)
+                }
+            }
+        }
+
+        // now create or update grails-plugin.xml
+        generatePluginXml(pluginClassNode, pluginVersion, transformedClasses, pluginXmlFile)
+    }
 
     /**
      * @return {@code true} when the {@code grails.isolated.build} system property is {@code true}.
@@ -188,8 +172,8 @@ class GlobalGrailsClassInjectorTransformation implements ASTTransformation, Comp
     }
 
     static File resolveCompilationTargetDirectory(SourceUnit source, boolean isolatedBuild) {
-        File targetDirectory = null
-        if (source.getClass().name == 'org.codehaus.jdt.groovy.control.EclipseSourceUnit') {
+        File targetDirectory
+        if (source.class.name == 'org.codehaus.jdt.groovy.control.EclipseSourceUnit') {
             targetDirectory = GroovyEclipseCompilationHelper.resolveEclipseCompilationTargetDirectory(source)
         } else {
             targetDirectory = source.configuration.targetDirectory
@@ -212,14 +196,18 @@ class GlobalGrailsClassInjectorTransformation implements ASTTransformation, Comp
     }
 
     static boolean updateGrailsFactoriesWithType(ClassNode classNode, ClassNode superType, File compilationTargetDirectory) {
-        FactoriesFileWriter.updateFactoriesWithType(classNode, superType, compilationTargetDirectory,
-                'META-INF/grails.factories', ['src/main/resources/META-INF/grails.factories'])
+        FactoriesFileWriter.updateFactoriesWithType(
+                classNode,
+                superType,
+                compilationTargetDirectory,
+                'META-INF/grails.factories',
+                ['src/main/resources/META-INF/grails.factories']
+        )
     }
 
-    static LinkedHashSet<String> pendingPluginClasses = []
-    static Collection<String> pluginExcludes = []
-
-    protected static void generatePluginXml(ClassNode pluginClassNode, String pluginVersion, Set<String> transformedClasses, File pluginXmlFile) {
+    protected static void generatePluginXml(ClassNode pluginClassNode, Object pluginVersion, Set<String> transformedClasses, File pluginXmlFile) {
+        // first check if plugin.xml exists
+        pluginXmlFile.parentFile.mkdirs()
         def pluginXmlExists = pluginXmlFile.exists()
         LinkedHashSet<String> pluginClasses = []
         pluginClasses.addAll(transformedClasses)
@@ -243,7 +231,7 @@ class GlobalGrailsClassInjectorTransformation implements ASTTransformation, Comp
     }
 
     @CompileDynamic
-    static void writePluginXml(ClassNode pluginClassNode, String pluginVersion, File pluginXml, Collection<String> artefactClasses) {
+    static void writePluginXml(ClassNode pluginClassNode, Object pluginVersion, File pluginXml, Collection<String> artefactClasses) {
         if (pluginClassNode) {
             PluginAstReader pluginAstReader = new PluginAstReader()
             def info = pluginAstReader.readPluginInfo(pluginClassNode)
@@ -259,8 +247,8 @@ class GlobalGrailsClassInjectorTransformation implements ASTTransformation, Comp
                     pluginExcludes.addAll(excludes)
                 }
 
-                def grailsVersion = pluginProperties['grailsVersion'] ?: getClass().getPackage().getImplementationVersion() + ' > *'
-                mkp.plugin(name: pluginName, version: pluginVersion, grailsVersion: grailsVersion) {
+                def grailsVersion = pluginProperties['grailsVersion'] ?: getClass().package.implementationVersion + ' > *'
+                mkp.plugin(name: pluginName, version: pluginVersion, grailsVersion: grailsVersion.toString()) {
                     type(pluginClassNode.name)
 
                     for (entry in pluginProperties) {
@@ -285,60 +273,28 @@ class GlobalGrailsClassInjectorTransformation implements ASTTransformation, Comp
         }
     }
 
-    @CompileDynamic
-    static void updatePluginXml(ClassNode pluginClassNode, String pluginVersion, File pluginXmlFile, Collection<String> artefactClasses) {
+    static void updatePluginXml(ClassNode pluginClassNode, Object pluginVersion, File pluginXmlFile, Collection<String> artefactClasses) {
         if (!artefactClasses) return
-
         try {
-            XmlSlurper xmlSlurper = IOUtils.createXmlSlurper()
-
-            def pluginXml = xmlSlurper.parse(pluginXmlFile)
+            def pluginXml = IOUtils.createXmlSlurper().parse(pluginXmlFile)
             if (pluginClassNode) {
-                def pluginName = GrailsNameUtils.getLogicalPropertyName(pluginClassNode.name, 'GrailsPlugin')
-                pluginXml.@name = pluginName
-                pluginXml.@version = pluginVersion
-                pluginXml.type = pluginClassNode.name
-
-                PluginAstReader pluginAstReader = new PluginAstReader()
-                def info = pluginAstReader.readPluginInfo(pluginClassNode)
-
-                def pluginProperties = info.getProperties()
-                def grailsVersion = pluginProperties['grailsVersion'] ?: getClass().getPackage().getImplementationVersion() + ' > *'
-                pluginXml.@grailsVersion = grailsVersion
-                for (entry in pluginProperties) {
-                    pluginXml."$entry.key" = entry.value
-                }
-
+                def pluginProperties = writePluginXmlProperties(pluginClassNode, pluginVersion.toString(), pluginXml)
                 def excludes = pluginProperties.get('pluginExcludes')
                 if (excludes instanceof List) {
                     pluginExcludes.clear()
-                    pluginExcludes.addAll(excludes)
+                    pluginExcludes.addAll(excludes as List<String>)
                 }
             }
-
-            def resources = pluginXml.resources
-
-            for (String cn in artefactClasses) {
-                if (!resources.resource.find { it.text() == cn }) {
-                    resources.appendNode {
-                        resource(cn)
-                    }
-                }
-            }
-
+            writePluginXmlResources(pluginXml, artefactClasses)
             handleExcludes(pluginXml)
 
-            Writable writable = new StreamingMarkupBuilder().bind {
-                mkp.yield(pluginXml)
-            }
-
-            pluginXmlFile.withWriter(StandardCharsets.UTF_8.name()) { Writer writer ->
-                writable.writeTo(writer)
+            pluginXmlFile.withWriter(StandardCharsets.UTF_8.name()) {
+                createMarkup(pluginXml).writeTo(it)
             }
 
             pendingPluginClasses.clear()
 
-        } catch (e) {
+        } catch (ignored) {
             // corrupt, recreate
             writePluginXml(pluginClassNode, pluginVersion, pluginXmlFile, artefactClasses)
         }
@@ -347,17 +303,104 @@ class GlobalGrailsClassInjectorTransformation implements ASTTransformation, Comp
     @CompileDynamic
     protected static void handleExcludes(GPathResult pluginXml) {
         if (pluginExcludes) {
-
             def antPathMatcher = new AntPathMatcher()
-            pluginXml.resources.resource.each { res ->
-                if (pluginExcludes.any() { String exc -> antPathMatcher.match(exc, res.text().replace('.', '/')) }) {
-                    res.replaceNode {}
+            pluginXml.resources.resource.each {
+                def resourceNode = it as GPathResult
+                if (pluginExcludes.any() { antPathMatcher.match(it, resourceNode.text().replace('.', '/')) }) {
+                    resourceNode.replaceNode {}
                 }
             }
         }
     }
 
-    public static final ClassNode ARTEFACT_CLASS_NODE = new ClassNode(Artefact)
+    @CompileDynamic
+    private static Writable createMarkup(GPathResult node) {
+        new StreamingMarkupBuilder().mkp.yield(node)
+    }
 
-    CompilationUnit compilationUnit
+    private static Object resolveProjectVersion(ClassNode classNode) {
+        def projectVersion = classNode.getNodeMetaData('projectVersion')
+        if (projectVersion == null) {
+            projectVersion = getClass().package.implementationVersion
+        }
+        projectVersion
+    }
+
+    private static Object resolveProjectName(ClassNode classNode) {
+        classNode.getNodeMetaData('projectName')
+    }
+
+    private static boolean shouldVisit(URL url) {
+        url != null && GrailsResourceUtils.isProjectSource(new UrlResource(url))
+    }
+
+    private static boolean isGrailsPluginDescriptorClass(ClassNode classNode) {
+        classNode.name.endsWith('GrailsPlugin') && !classNode.abstract
+    }
+
+    private static void addPluginVersionProperty(ClassNode classNode, Object pluginVersion) {
+        if (!classNode.getProperty('version')) {
+            classNode.addProperty(
+                    new PropertyNode(
+                            'version',
+                            Modifier.PUBLIC,
+                            ClassHelper.make(Object),
+                            classNode,
+                            new ConstantExpression(pluginVersion.toString()),
+                            null,
+                            null
+                    )
+            )
+        }
+    }
+
+    private static void addPluginAnnotation(ClassNode classNode, Object projectName, Object projectVersion) {
+        GrailsASTUtils.addAnnotationOrGetExisting(
+                classNode,
+                GrailsPlugin,
+                [
+                        name: GrailsNameUtils.getPropertyNameForLowerCaseHyphenSeparatedName(projectName.toString()),
+                        version: projectVersion.toString()
+                ] as Map<String, Object>
+        )
+    }
+
+    private static void addImport(ClassNode classNode, String className) {
+        classNode.module.addImport(
+                className.tokenize('.')[-1],
+                ClassHelper.make(className)
+        )
+    }
+
+    private static void addArtefactAnnotation(ClassNode classNode, String handlerType) {
+        def annotationNode = new AnnotationNode(new ClassNode(Artefact))
+        annotationNode.addMember('value', new ConstantExpression(handlerType))
+        classNode.addAnnotation(annotationNode)
+    }
+
+    @CompileDynamic
+    private static Map writePluginXmlProperties(ClassNode pluginClassNode, Object pluginVersion, GPathResult pluginXml) {
+        def pluginProperties = new PluginAstReader().readPluginInfo(pluginClassNode).getProperties()
+        def grailsVersion = pluginProperties['grailsVersion'] ?: getClass().package.implementationVersion + ' > *'
+        pluginXml.@name = GrailsNameUtils.getLogicalPropertyName(pluginClassNode.name, 'GrailsPlugin')
+        pluginXml.@version = pluginVersion.toString()
+        pluginXml.type = pluginClassNode.name
+        pluginXml.@grailsVersion = grailsVersion.toString()
+        for (def entry : pluginProperties) {
+            pluginXml."$entry.key" = entry.value
+        }
+        pluginProperties
+    }
+
+    @CompileDynamic
+    private static void writePluginXmlResources(GPathResult pluginXml, Collection<String> artefactClasses) {
+        def resources = pluginXml.resources
+        for (def className : artefactClasses) {
+            if (!resources.resource.find { it.text() == className }) {
+                resources.appendNode {
+                    resource(className)
+                }
+            }
+        }
+    }
 }
