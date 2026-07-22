@@ -190,8 +190,21 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
 
         Set<String> usedNames = new HashSet<>();
         Set<String> usedBeanNames = new HashSet<>();
-        for (Statement statement : beanStatements((ClosureExpression) initialExpression)) {
-            processStatement(beanMethodHost, statement, source, usedNames, usedBeanNames);
+        List<Statement> statements = beanStatements((ClosureExpression) initialExpression);
+        // Two passes: field(...)/method(...) declare explicit member names, so they are processed
+        // first (along with anything malformed, so every statement is still processed exactly
+        // once) and bean(...) statements second. A bean's derived method name then adapts to every
+        // explicitly-named member wherever it appears in the block - reordering equivalent DSL
+        // statements must never change validity.
+        for (Statement statement : statements) {
+            if (!isBeanRootedStatement(statement)) {
+                processStatement(beanMethodHost, statement, source, usedNames, usedBeanNames);
+            }
+        }
+        for (Statement statement : statements) {
+            if (isBeanRootedStatement(statement)) {
+                processStatement(beanMethodHost, statement, source, usedNames, usedBeanNames);
+            }
         }
 
         if (beanMethodHost != classNode) {
@@ -366,6 +379,22 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
         return single;
     }
 
+    // Silent classification counterpart of processStatement's qualifier-chain walk: descends to
+    // the root call without reporting anything, so malformed statements are classified (not
+    // validated) here and still produce their usual errors when actually processed.
+    private boolean isBeanRootedStatement(Statement statement) {
+        if (!(statement instanceof ExpressionStatement) ||
+                !(((ExpressionStatement) statement).getExpression() instanceof MethodCallExpression)) {
+            return false;
+        }
+        MethodCallExpression call = (MethodCallExpression) ((ExpressionStatement) statement).getExpression();
+        while (!ROOT_STATEMENT_CALL_NAMES.contains(call.getMethodAsString()) &&
+                call.getObjectExpression() instanceof MethodCallExpression) {
+            call = (MethodCallExpression) call.getObjectExpression();
+        }
+        return BEAN_CALL.equals(call.getMethodAsString());
+    }
+
     private void processStatement(ClassNode classNode, Statement statement, SourceUnit source, Set<String> usedNames,
             Set<String> usedBeanNames) {
         if (!(statement instanceof ExpressionStatement) ||
@@ -465,7 +494,9 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
         // its @Bean("name") value, never by the factory method's name. It matches the bean name
         // when that happens to be a usable Java identifier (readable in stack traces and
         // decompiled bytecode); otherwise - non-identifier name, reserved keyword, or a collision
-        // with an already-declared member - a synthesized <type>$N name is used instead.
+        // with a declared field(...)/method(...) member - a synthesized <type>$N name is used
+        // instead. Beans are processed after all explicit members (see visit()), so this adapts
+        // to a colliding member wherever it appears in the block, not just to earlier statements.
         String javaMethodName = isValidJavaIdentifier(typeAndName.name) && !usedNames.contains(typeAndName.name) ?
                 typeAndName.name :
                 syntheticBeanMethodName(typeAndName.type.getType(), usedNames);
@@ -514,7 +545,7 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
             return;
         }
         if (!registerName(typeAndName.name, baseCall, source, usedNames,
-                "is already used by another bean(...)/field(...)/method(...) statement in this beans block - " +
+                "is already used by another field(...)/method(...) statement in this beans block - " +
                         "generated member names must be unique")) {
             return;
         }
@@ -548,7 +579,7 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
             return;
         }
         if (!registerName(typeAndName.name, baseCall, source, usedNames,
-                "is already used by another bean(...)/field(...)/method(...) statement in this beans block - " +
+                "is already used by another field(...)/method(...) statement in this beans block - " +
                         "generated member names must be unique")) {
             return;
         }

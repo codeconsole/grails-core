@@ -729,6 +729,62 @@ class GrailsBeansASTTransformationSpec extends Specification {
         fixtureBeans.getDeclaredMethod('integer$0').getAnnotation(Bean).value() == ['config'] as String[]
     }
 
+    def "declaration order does not matter: a field declared after a same-named bean still wins the member name"() {
+        given: "the same DSL as the field-first overlap test, with the statements reversed"
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @GrailsBeans
+            @AutoConfiguration
+            class ReversedFieldBeanNameOverlapFixture {
+                def beans = {
+                    bean(Integer, 'config') {
+                        42
+                    }
+
+                    field(String, 'config')
+                }
+            }
+        '''
+
+        when:
+        Class<?> fixtureBeans = compile(source)
+
+        then: "identical outcome to declaring the field first - reordering must never change validity"
+        fixtureBeans.getDeclaredField('config') != null
+        fixtureBeans.getDeclaredMethod('integer$0').getAnnotation(Bean).value() == ['config'] as String[]
+    }
+
+    def "declaration order does not matter: a helper method declared after a same-named bean still wins the member name"() {
+        given:
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @GrailsBeans
+            @AutoConfiguration
+            class ReversedMethodBeanNameOverlapFixture {
+                def beans = {
+                    bean(Integer, 'helper') {
+                        42
+                    }
+
+                    method(String, 'helper') {
+                        'x'
+                    }
+                }
+            }
+        '''
+
+        when:
+        Class<?> fixtureBeans = compile(source)
+
+        then:
+        fixtureBeans.getDeclaredMethod('helper').returnType == String
+        fixtureBeans.getDeclaredMethod('integer$0').getAnnotation(Bean).value() == ['helper'] as String[]
+    }
+
     private static final String FIXTURE_PLUGIN = '''
         import grails.compiler.beans.GrailsBeans
         import grails.plugins.Plugin
