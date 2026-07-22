@@ -676,6 +676,91 @@ class GrailsBeansASTTransformationSpec extends Specification {
         thrown(ClassNotFoundException)
     }
 
+    def "autoConfigurationName is rejected on a standalone (non-Plugin) class, where it can have no effect"() {
+        given:
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @GrailsBeans(autoConfigurationName = 'Ignored')
+            @AutoConfiguration
+            class StandaloneWithAutoConfigurationName {
+                def beans = {
+                    bean(String, 'greeting') {
+                        'hello'
+                    }
+                }
+            }
+        '''
+
+        when:
+        compile(source)
+
+        then:
+        MultipleCompilationErrorsException e = thrown(MultipleCompilationErrorsException)
+        e.message.contains('autoConfigurationName has no effect here')
+    }
+
+    def "autoConfigurationName that is not a valid Java identifier falls back to the default sibling name with an error"() {
+        given:
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import grails.plugins.Plugin
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @GrailsBeans(autoConfigurationName = 'not a valid name!')
+            @AutoConfiguration
+            class InvalidAutoConfigurationNamePlugin extends Plugin {
+                def beans = {
+                    bean(String, 'greeting') {
+                        'hello'
+                    }
+                }
+            }
+        '''
+
+        when:
+        compile(source)
+
+        then:
+        MultipleCompilationErrorsException e = thrown(MultipleCompilationErrorsException)
+        e.message.contains('is not a valid name')
+    }
+
+    @Unroll
+    def "autoConfigurationName colliding with #description is a plain Groovy duplicate-class compile error"() {
+        given:
+        String source = """
+            import grails.compiler.beans.GrailsBeans
+            import grails.plugins.Plugin
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            $extraClass
+
+            @GrailsBeans(autoConfigurationName = '$collidingName')
+            @AutoConfiguration
+            class $pluginName extends Plugin {
+                def beans = {
+                    bean(String, 'greeting') {
+                        'hello'
+                    }
+                }
+            }
+        """
+
+        when:
+        compile(source)
+
+        then:
+        MultipleCompilationErrorsException e = thrown(MultipleCompilationErrorsException)
+        e.message.contains('duplicate class')
+
+        where:
+        description                        | extraClass               | collidingName    | pluginName
+        "the plugin's own simple name"     | ''                       | 'SelfCollision'  | 'SelfCollision'
+        'another class in the same source' | 'class Existing { }'     | 'Existing'       | 'OtherCollisionPlugin'
+    }
+
     def "a Plugin subclass using @GrailsBeans without @AutoConfiguration fails to compile"() {
         given:
         String source = '''

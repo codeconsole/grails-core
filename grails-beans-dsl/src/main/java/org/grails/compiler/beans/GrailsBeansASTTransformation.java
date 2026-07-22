@@ -161,7 +161,14 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
             return;
         }
 
-        ClassNode beanMethodHost = extendsGrailsPlugin(classNode) ?
+        boolean isPlugin = extendsGrailsPlugin(classNode);
+        if (!isPlugin && grailsBeansAnnotation.getMember(AUTO_CONFIGURATION_NAME_MEMBER) != null) {
+            addError(grailsBeansAnnotation, source, "autoConfigurationName has no effect here: it only applies " +
+                    "when @GrailsBeans is applied to a grails.plugins.Plugin subclass, where the compiled beans " +
+                    "land on a generated sibling class rather than on " + classNode.getNameWithoutPackage() + " itself");
+        }
+
+        ClassNode beanMethodHost = isPlugin ?
                 createAutoConfigurationSibling(classNode, grailsBeansAnnotation, source) : classNode;
 
         Set<String> usedNames = new HashSet<>();
