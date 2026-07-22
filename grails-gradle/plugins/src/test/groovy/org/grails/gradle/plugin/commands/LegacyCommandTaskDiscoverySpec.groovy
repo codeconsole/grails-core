@@ -22,7 +22,7 @@ import org.grails.gradle.plugin.core.GradleSpecification
 
 class LegacyCommandTaskDiscoverySpec extends GradleSpecification {
 
-    def "a legacy runtime command registers a per-command task in a consuming application"() {
+    def "a legacy runtime command does not register a named task while runCommand remains available"() {
         given: 'a Grails 7-style command plugin and a consuming application'
         setupTestResourceProject('legacy-command-discovery')
 
@@ -35,7 +35,10 @@ class LegacyCommandTaskDiscoverySpec extends GradleSpecification {
         then: 'the runtime jar is available for legacy discovery'
         assertTaskSuccess('jar', jarResult)
 
-        and: 'the command class logical name is registered as a Gradle task'
-        tasksResult.output.contains('LEGACY_COMMAND_TASK_PRESENT=true')
+        and: 'no configuration-time named task is invented from runtimeClasspath'
+        tasksResult.output.contains('LEGACY_COMMAND_TASK_PRESENT=false')
+
+        and: 'the generic runCommand task remains available'
+        tasksResult.output.contains('RUN_COMMAND_TASK_PRESENT=true')
     }
 }
