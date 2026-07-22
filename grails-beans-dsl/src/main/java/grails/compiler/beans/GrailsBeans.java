@@ -52,16 +52,27 @@ import org.codehaus.groovy.transform.GroovyASTTransformationClass;
  *
  * <p>May also be applied to a {@code grails.plugins.Plugin} subclass, letting bean definitions
  * live in the familiar {@code *GrailsPlugin.groovy} file. In that case the generated methods land
- * on a new sibling {@code <PluginClassName>AutoConfiguration} class instead - a {@code Plugin}
- * subclass is never processed by Spring as a bean - and {@code @AutoConfiguration} together with
- * every annotation that gates or configures it (the {@code @Conditional*} family,
- * {@code @Import}/{@code @ImportAutoConfiguration}, {@code @EnableConfigurationProperties},
- * {@code @PropertySource}, {@code @AutoConfigureOrder}/{@code Before}/{@code After}) found on the
- * plugin class moves onto that sibling, since none of them has any effect where the author wrote
- * them.
+ * on a new sibling {@code <PluginClassName>AutoConfiguration} class instead (or
+ * {@link #autoConfigurationName} if given) - a {@code Plugin} subclass is never processed by
+ * Spring as a bean - and {@code @AutoConfiguration} together with every annotation that gates or
+ * configures it (the {@code @Conditional*} family, {@code @Import}/{@code @ImportAutoConfiguration},
+ * {@code @EnableConfigurationProperties}, {@code @PropertySource},
+ * {@code @AutoConfigureOrder}/{@code Before}/{@code After} - including any composed annotation
+ * meta-annotated with one of these) found on the plugin class moves onto that sibling, since none
+ * of them has any effect where the author wrote them.
  */
 @Retention(RetentionPolicy.RUNTIME)
 @Target(ElementType.TYPE)
 @GroovyASTTransformationClass("org.grails.compiler.beans.GrailsBeansASTTransformation")
 public @interface GrailsBeans {
+
+    /**
+     * The simple name of the generated sibling class, for a {@code grails.plugins.Plugin}
+     * subclass. Defaults to {@code <PluginClassName>AutoConfiguration}; set this when converting
+     * an existing public {@code @AutoConfiguration} class into the DSL and its class identity
+     * must be preserved (e.g. for {@code exclude =} references, {@code before=}/{@code after=}
+     * ordering from other modules, or tests that import it by name).
+     */
+    String autoConfigurationName() default "";
+
 }

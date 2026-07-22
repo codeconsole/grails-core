@@ -136,6 +136,7 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
     private static final Set<String> MEMBER_QUALIFIER_CALL_NAMES = Set.of(ANNOTATE_CALL);
     private static final String PLUGIN_SUPERCLASS_NAME = "grails.plugins.Plugin";
     private static final String AUTO_CONFIGURATION_SUFFIX = "AutoConfiguration";
+    private static final String AUTO_CONFIGURATION_NAME_MEMBER = "autoConfigurationName";
 
     private CompilationUnit compilationUnit;
 
@@ -146,6 +147,7 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
 
     @Override
     public void visit(ASTNode[] nodes, SourceUnit source) {
+        AnnotationNode grailsBeansAnnotation = (AnnotationNode) nodes[0];
         ClassNode classNode = (ClassNode) nodes[1];
         PropertyNode beansProperty = classNode.getProperty(BEANS_PROPERTY);
         if (beansProperty == null) {
@@ -160,7 +162,7 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
         }
 
         ClassNode beanMethodHost = extendsGrailsPlugin(classNode) ?
-                createAutoConfigurationSibling(classNode, source) : classNode;
+                createAutoConfigurationSibling(classNode, grailsBeansAnnotation, source) : classNode;
 
         Set<String> usedNames = new HashSet<>();
         for (Statement statement : beanStatements((ClosureExpression) initialExpression)) {
@@ -186,14 +188,19 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
 
     // Annotations that only make sense on whatever class Spring Boot actually evaluates as an
     // auto-configuration - meaningless on a Plugin subclass, which is instantiated by
-    // DefaultGrailsPlugin via plain reflection and never processed by Spring as a bean.
+    // DefaultGrailsPlugin via plain reflection and never processed by Spring as a bean. Matching
+    // is transitive through meta-annotations (see belongsOnSibling), so this list only needs the
+    // "root" annotations - a composed annotation built on top of any of these (e.g. a custom
+    // @ConditionalOnFeature meta-annotated with Spring Boot's own @ConditionalOnProperty, or a
+    // custom @EnableSomething meta-annotated with @Import) is found automatically.
     private static final Set<String> SIBLING_ONLY_ANNOTATION_NAMES = Set.of(
             AutoConfiguration.class.getName(), AutoConfigureOrder.class.getName(),
             AutoConfigureBefore.class.getName(), AutoConfigureAfter.class.getName(),
             Import.class.getName(), ImportAutoConfiguration.class.getName(),
-            EnableConfigurationProperties.class.getName(), PropertySource.class.getName());
+            EnableConfigurationProperties.class.getName(), PropertySource.class.getName(),
+            Conditional.class.getName());
 
-    private ClassNode createAutoConfigurationSibling(ClassNode pluginClass, SourceUnit source) {
+    private ClassNode createAutoConfigurationSibling(ClassNode pluginClass, AnnotationNode grailsBeansAnnotation, SourceUnit source) {
         List<AnnotationNode> autoConfigurationAnnotations = pluginClass.getAnnotations(ClassHelper.make(AutoConfiguration.class));
         if (autoConfigurationAnnotations.isEmpty()) {
             addError(pluginClass, source, "A Plugin class using @GrailsBeans must also be annotated " +
@@ -202,8 +209,11 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
                     " class would never be processed by Spring Boot");
         }
 
-        ClassNode sibling = new ClassNode(pluginClass.getName() + AUTO_CONFIGURATION_SUFFIX,
-                Modifier.PUBLIC, ClassHelper.OBJECT_TYPE);
+        String siblingSimpleName = siblingSimpleName(pluginClass, grailsBeansAnnotation, source);
+        String packageName = pluginClass.getPackageName();
+        String siblingName = (packageName == null || packageName.isEmpty()) ?
+                siblingSimpleName : packageName + "." + siblingSimpleName;
+        ClassNode sibling = new ClassNode(siblingName, Modifier.PUBLIC, ClassHelper.OBJECT_TYPE);
         source.getAST().addClass(sibling);
 
         // @AutoConfiguration and every annotation that gates or configures it - @Conditional* (all
@@ -223,11 +233,51 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
         return sibling;
     }
 
+    // Defaults to <PluginClassName>AutoConfiguration; @GrailsBeans(autoConfigurationName = "...")
+    // overrides it, for converting an existing public @AutoConfiguration class without changing
+    // its identity (exclude = ... references, before=/after= ordering from other modules, tests).
+    private String siblingSimpleName(ClassNode pluginClass, AnnotationNode grailsBeansAnnotation, SourceUnit source) {
+        String defaultName = pluginClass.getNameWithoutPackage() + AUTO_CONFIGURATION_SUFFIX;
+        Expression nameArg = grailsBeansAnnotation.getMember(AUTO_CONFIGURATION_NAME_MEMBER);
+        if (nameArg == null) {
+            return defaultName;
+        }
+        Object nameValue = nameArg instanceof ConstantExpression ? ((ConstantExpression) nameArg).getValue() : null;
+        if (!(nameValue instanceof String) || ((String) nameValue).isEmpty()) {
+            return defaultName;
+        }
+        String name = (String) nameValue;
+        if (!isValidJavaIdentifier(name)) {
+            addError(nameArg, source, "@GrailsBeans(autoConfigurationName = \"" + name + "\") is not a valid " +
+                    "name: it becomes the generated sibling's simple class name, so it must be a valid Java identifier");
+            return defaultName;
+        }
+        return name;
+    }
+
     private boolean belongsOnSibling(ClassNode annotationType) {
+        return belongsOnSibling(annotationType, new HashSet<>());
+    }
+
+    // Recurses through meta-annotations rather than checking only one level, since Spring's own
+    // composed-annotation convention is arbitrarily deep - e.g. a project-specific
+    // @ConditionalOnFeature is typically meta-annotated with an existing @ConditionalOnXxx (itself
+    // meta-annotated @Conditional), not with @Conditional directly. `visited` guards against cycles
+    // and, since every annotation type transitively reaches common JDK meta-annotations
+    // (@Retention, @Target, @Documented) from multiple paths, avoids redundant re-exploration.
+    private boolean belongsOnSibling(ClassNode annotationType, Set<String> visited) {
+        if (!visited.add(annotationType.getName())) {
+            return false;
+        }
         if (SIBLING_ONLY_ANNOTATION_NAMES.contains(annotationType.getName())) {
             return true;
         }
-        return !annotationType.getAnnotations(ClassHelper.make(Conditional.class)).isEmpty();
+        for (AnnotationNode metaAnnotation : annotationType.getAnnotations()) {
+            if (belongsOnSibling(metaAnnotation.getClassNode(), visited)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private void applyStaticCompilation(ClassNode pluginClass, ClassNode sibling, SourceUnit source) {

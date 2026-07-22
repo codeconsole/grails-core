@@ -587,6 +587,95 @@ class GrailsBeansASTTransformationSpec extends Specification {
         autoConfigClass.getDeclaredConstructor().newInstance().greeting() == 'hello from plugin'
     }
 
+    def "a composed condition/import annotation - meta-annotated with an existing @ConditionalOnXxx or @Import, not directly - also moves to the sibling"() {
+        given:
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import grails.plugins.Plugin
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+            import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
+            import org.springframework.context.annotation.Import
+            import java.lang.annotation.ElementType
+            import java.lang.annotation.Retention
+            import java.lang.annotation.RetentionPolicy
+            import java.lang.annotation.Target
+
+            class ImportedConfig { }
+
+            @Target(ElementType.TYPE)
+            @Retention(RetentionPolicy.RUNTIME)
+            @ConditionalOnProperty(prefix = "feature", name = "enabled")
+            @interface ConditionalOnFeature { }
+
+            @Target(ElementType.TYPE)
+            @Retention(RetentionPolicy.RUNTIME)
+            @Import(ImportedConfig)
+            @interface EnableImportedConfig { }
+
+            @GrailsBeans
+            @AutoConfiguration
+            @ConditionalOnFeature
+            @EnableImportedConfig
+            class ComposedAnnotationPlugin extends Plugin {
+                def beans = {
+                    bean(String, "greeting") {
+                        "hello"
+                    }
+                }
+            }
+        '''
+
+        when:
+        GroovyClassLoader loader = new GroovyClassLoader(getClass().classLoader)
+        loader.parseClass(source)
+        Class<?> pluginClass = loader.loadClass('ComposedAnnotationPlugin')
+        Class<?> autoConfigClass = loader.loadClass('ComposedAnnotationPluginAutoConfiguration')
+        Class<?> conditionalOnFeature = loader.loadClass('ConditionalOnFeature')
+        Class<?> enableImportedConfig = loader.loadClass('EnableImportedConfig')
+
+        then: "neither composed annotation is left behind on the Plugin class Spring never processes as a bean"
+        !pluginClass.isAnnotationPresent(conditionalOnFeature)
+        !pluginClass.isAnnotationPresent(enableImportedConfig)
+
+        and: "both moved to the sibling, found via their meta-annotations rather than by exact name"
+        autoConfigClass.isAnnotationPresent(conditionalOnFeature)
+        autoConfigClass.isAnnotationPresent(enableImportedConfig)
+    }
+
+    def "GrailsBeans(autoConfigurationName = ...) names the generated sibling instead of the default <PluginClassName>AutoConfiguration"() {
+        given:
+        String source = '''
+            package com.example.plugins
+
+            import grails.compiler.beans.GrailsBeans
+            import grails.plugins.Plugin
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @GrailsBeans(autoConfigurationName = 'LegacyName')
+            @AutoConfiguration
+            class RenamedSiblingPlugin extends Plugin {
+                def beans = {
+                    bean(String, 'greeting') {
+                        'hello'
+                    }
+                }
+            }
+        '''
+
+        and:
+        GroovyClassLoader loader = new GroovyClassLoader(getClass().classLoader)
+        loader.parseClass(source)
+
+        expect: "the sibling takes the given simple name, in the plugin's own package, not the default suffix form"
+        loader.loadClass('com.example.plugins.LegacyName').getDeclaredMethod('greeting') != null
+
+        when: "the default-suffix name is looked up instead"
+        loader.loadClass('com.example.plugins.RenamedSiblingPluginAutoConfiguration')
+
+        then: "it was never generated"
+        thrown(ClassNotFoundException)
+    }
+
     def "a Plugin subclass using @GrailsBeans without @AutoConfiguration fails to compile"() {
         given:
         String source = '''
