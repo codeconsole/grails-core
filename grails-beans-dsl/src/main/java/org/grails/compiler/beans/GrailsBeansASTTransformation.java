@@ -83,8 +83,8 @@ import org.springframework.context.annotation.Scope;
  * the declared type, annotated {@code @org.springframework.context.annotation.Bean("name")} plus
  * whichever qualifiers were chained, whose body and parameters are lifted directly from the DSL
  * closure. The method is named after the bean by default; when the bean name isn't a valid Java
- * identifier (e.g. {@code "my-service"}), {@code .named("...")} must supply the method's name
- * explicitly instead.</li>
+ * identifier (e.g. {@code "my-service"}), {@code .named("...")} supplies the method's name
+ * explicitly, and omitting it falls back to a synthesized {@code <type>$N} name instead.</li>
  * <li>{@code field(Type[, "name"])}, optionally chained (repeatably) with
  * {@code .annotate(AnnotationType[, attr: value, ...])} - typically {@code .annotate(Value, value:
  * "${...}")}. Declares a private field on the generated class, for state shared across bean
@@ -421,7 +421,7 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
             }
         }
 
-        String javaMethodName = resolveBeanMethodName(typeAndName, namedQualifier, outerCall, baseCall, source);
+        String javaMethodName = resolveBeanMethodName(typeAndName, namedQualifier, outerCall, usedNames, source);
         if (javaMethodName == null) {
             return;
         }
@@ -460,22 +460,17 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
 
     // bean(...)'s name is a Spring bean name, which may not be a valid Java identifier (e.g.
     // "my-service"). When it already is one, it doubles as the generated method's name, exactly as
-    // before. When it isn't, .named("...") must supply the method's name explicitly instead of the
-    // transform inventing one - an invented name (e.g. a positional counter) would read as
-    // meaningless in a stack trace or decompiled bytecode, where every other generated method is
-    // named after what it does.
+    // before. When it isn't, .named("...") supplies the method's name explicitly if given; omitting
+    // it falls back to a synthesized <type>$N name instead, disambiguated with the bean's own type
+    // for a little more context than a bare counter would give a reader of a stack trace or
+    // decompiled bytecode.
     private String resolveBeanMethodName(TypeAndName typeAndName, MethodCallExpression namedQualifier,
-            MethodCallExpression outerCall, MethodCallExpression baseCall, SourceUnit source) {
+            MethodCallExpression outerCall, Set<String> usedNames, SourceUnit source) {
         if (namedQualifier == null) {
             if (isValidJavaIdentifier(typeAndName.name)) {
                 return typeAndName.name;
             }
-            addError(baseCall, source, "\"" + typeAndName.name + "\" is not a valid name: it becomes the " +
-                    "generated method's name unless overridden, so it must be a valid Java identifier - chain " +
-                    ".named(\"...\") to give the generated method a different, valid name, e.g. bean(" +
-                    typeAndName.type.getType().getNameWithoutPackage() + ", \"" + typeAndName.name +
-                    "\").named(\"someIdentifier\") { ... }");
-            return null;
+            return syntheticBeanMethodName(typeAndName.type.getType(), usedNames);
         }
 
         List<Expression> namedArgs = flatten(namedQualifier.getArguments());
@@ -496,6 +491,18 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
             return null;
         }
         return methodName;
+    }
+
+    private String syntheticBeanMethodName(ClassNode beanType, Set<String> usedNames) {
+        String base = decapitalize(beanType.getNameWithoutPackage());
+        String candidate;
+        int index = 0;
+        do {
+            candidate = base + "$" + index;
+            index++;
+        }
+        while (usedNames.contains(candidate));
+        return candidate;
     }
 
     private void processFieldStatement(ClassNode classNode, MethodCallExpression baseCall,

@@ -417,6 +417,87 @@ class GrailsBeansASTTransformationSpec extends Specification {
         fixtureBeans.getDeclaredMethod('pluginMessageSource').getAnnotation(Bean).value() == ['plugin.messageSource'] as String[]
     }
 
+    def "bean(...) with a non-identifier name and no .named(...) falls back to a synthesized <type>\$N method name"() {
+        given:
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @GrailsBeans
+            @AutoConfiguration
+            class SynthesizedNameFixture {
+                def beans = {
+                    bean(String, 'my-service') {
+                        'hello'
+                    }
+                }
+            }
+        '''
+
+        when:
+        Class<?> fixtureBeans = compile(source)
+        def method = fixtureBeans.getDeclaredMethod('string$0')
+
+        then: "the @Bean annotation still carries the real (hyphenated) Spring bean name"
+        method.isAnnotationPresent(Bean)
+        method.getAnnotation(Bean).value() == ['my-service'] as String[]
+
+        and:
+        fixtureBeans.getDeclaredConstructor().newInstance().'string$0'() == 'hello'
+    }
+
+    def "multiple beans of the same type with non-identifier names get distinct synthesized method names"() {
+        given:
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @GrailsBeans
+            @AutoConfiguration
+            class MultipleSynthesizedNamesFixture {
+                def beans = {
+                    bean(String, 'my-service') {
+                        'a'
+                    }
+                    bean(String, 'my-other-service') {
+                        'b'
+                    }
+                }
+            }
+        '''
+
+        when:
+        Class<?> fixtureBeans = compile(source)
+
+        then:
+        fixtureBeans.getDeclaredMethod('string$0').getAnnotation(Bean).value() == ['my-service'] as String[]
+        fixtureBeans.getDeclaredMethod('string$1').getAnnotation(Bean).value() == ['my-other-service'] as String[]
+    }
+
+    def "an arbitrary, not-even-identifier-like bean name also falls back to a synthesized method name"() {
+        given:
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @GrailsBeans
+            @AutoConfiguration
+            class WeirdNameFixture {
+                def beans = {
+                    bean(String, '123 not valid!') {
+                        'hello'
+                    }
+                }
+            }
+        '''
+
+        when:
+        Class<?> fixtureBeans = compile(source)
+
+        then:
+        fixtureBeans.getDeclaredMethod('string$0').getAnnotation(Bean).value() == ['123 not valid!'] as String[]
+    }
+
     def "field(Type, name).annotate(...) declares a private annotated field"() {
         given:
         Class<?> fixtureBeans = compile()
@@ -614,7 +695,6 @@ class GrailsBeansASTTransformationSpec extends Specification {
         'bean(...) with a non-constant name argument'  | "bean(String, someVariable) { 'x' }"                              | 'requires name to be a String literal'
         'bean(...) with a non-String constant name'    | 'bean(String, 42) { \'x\' }'                                       | 'requires name to be a String literal'
         'bean(...) with an unexpected third argument'  | "bean(String, 'x', 'unexpected') { 'y' }"                          | 'at most one name'
-        'bean(...) with a name that is not a valid identifier' | "bean(String, '123 not valid!') { 'x' }"                   | 'is not a valid name'
         'an unrecognised qualifier chained after bean(...)' | "bean(String, 'x').unknownQualifier() { 'y' }"                | 'Expected bean(Type[, "name"]) { ... }'
         'the same qualifier chained twice'             | "bean(String, 'x').primary().primary() { 'y' }"                    | 'may only be chained once'
         'primary() given an argument'                  | "bean(String, 'x').primary('oops') { 'y' }"                        | '.primary() takes no arguments'
@@ -638,8 +718,6 @@ class GrailsBeansASTTransformationSpec extends Specification {
                 "field(String, 'x'); bean(Integer, 'x') { 1 }" | 'is already used by another'
         'a field(...) and a method(...) sharing the same name' |
                 "field(String, 'x'); method(Integer, 'x') { 1 }" | 'is already used by another'
-        'a bean name that is not a valid identifier, with no .named(...) to supply one' |
-                "bean(String, 'my-service') { 'x' }" | 'chain .named("...")'
         '.named(...) that is not a valid identifier'      | "bean(String, 'my-service').named('not valid!') { 'x' }" | 'is not a valid name'
         '.named(...) with no arguments'                   | "bean(String, 'my-service').named() { 'x' }"              | 'requires exactly one String argument'
         '.named(...) with a non-String argument'          | "bean(String, 'my-service').named(42) { 'x' }"            | 'requires exactly one String argument'
