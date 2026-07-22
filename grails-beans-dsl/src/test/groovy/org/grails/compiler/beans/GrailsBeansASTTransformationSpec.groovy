@@ -937,6 +937,71 @@ class GrailsBeansASTTransformationSpec extends Specification {
         fixtureBeans.getDeclaredMethod('string$0').getAnnotation(Bean).value() == ['label'] as String[]
     }
 
+    def "beans named after a property's accessors do not become the accessors"() {
+        given: "a Groovy property whose getter/setter are synthesized only at class generation, after this transform"
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @GrailsBeans
+            @AutoConfiguration
+            class PropertyAccessorFixture {
+                String description
+
+                def beans = {
+                    bean(String, 'getDescription') {
+                        'bean value'
+                    }
+
+                    bean(String, 'setDescription') { String value ->
+                        value
+                    }
+                }
+            }
+        '''
+
+        when:
+        Class<?> fixtureBeans = compile(source)
+        def instance = fixtureBeans.getDeclaredConstructor().newInstance()
+        instance.description = 'set value'
+
+        then: "the property reads and writes normally - neither accessor was displaced by a bean method"
+        instance.description == 'set value'
+
+        and: "both beans synthesized around the reserved accessor names, keeping their Spring names"
+        fixtureBeans.getDeclaredMethod('string$0').getAnnotation(Bean).value() == ['getDescription'] as String[]
+        fixtureBeans.getDeclaredMethod('string$1', String).getAnnotation(Bean).value() == ['setDescription'] as String[]
+    }
+
+    def "a bean named after a boolean property's is-accessor does not become the accessor"() {
+        given:
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @GrailsBeans
+            @AutoConfiguration
+            class BooleanAccessorFixture {
+                boolean enabled
+
+                def beans = {
+                    bean(String, 'isEnabled') {
+                        'bean value'
+                    }
+                }
+            }
+        '''
+
+        when:
+        Class<?> fixtureBeans = compile(source)
+        def instance = fixtureBeans.getDeclaredConstructor().newInstance()
+        instance.enabled = true
+
+        then:
+        instance.isEnabled() == true
+        fixtureBeans.getDeclaredMethod('string$0').getAnnotation(Bean).value() == ['isEnabled'] as String[]
+    }
+
     def "an explicit method(...) name colliding with a method the standalone class already declares is a compile error"() {
         given: "method(...) declares a real private member, so unlike a bean it cannot silently adapt"
         String source = '''

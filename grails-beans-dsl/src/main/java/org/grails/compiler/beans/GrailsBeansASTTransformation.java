@@ -29,6 +29,7 @@ import javax.lang.model.SourceVersion;
 
 import groovy.transform.CompilationUnitAware;
 import groovy.transform.CompileStatic;
+import org.apache.groovy.util.BeanUtils;
 import org.codehaus.groovy.ast.ASTNode;
 import org.codehaus.groovy.ast.AnnotatedNode;
 import org.codehaus.groovy.ast.AnnotationNode;
@@ -404,6 +405,18 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
         }
         for (MethodNode method : type.getMethods()) {
             names.add(method.getName());
+        }
+        // A Groovy property's accessors are synthesized by the Verifier at class generation, AFTER
+        // this transform runs, so they are not in getMethods() yet - reserve the names they will
+        // occupy, or a same-named bean method would displace the real accessor.
+        for (PropertyNode property : type.getProperties()) {
+            String capitalized = BeanUtils.capitalize(property.getName());
+            names.add("get" + capitalized);
+            names.add("set" + capitalized);
+            if (ClassHelper.boolean_TYPE.equals(property.getType()) ||
+                    ClassHelper.Boolean_TYPE.equals(property.getType())) {
+                names.add("is" + capitalized);
+            }
         }
         collectMethodNames(type.getSuperClass(), names, visited);
         for (ClassNode implemented : type.getInterfaces()) {
