@@ -31,16 +31,34 @@ import org.codehaus.groovy.transform.GroovyASTTransformationClass;
  * {@code @AutoConfiguration} with no closure DSL surviving into the compiled bytecode.
  *
  * <p>The annotated class must declare a {@code beans} property initialised to a closure whose
- * statements are calls of the form {@code bean(Type[, "name"]) { ... }}, optionally qualified
- * with {@code .conditionalOnMissingBean(Type...)}. The closure body becomes the generated
- * method's body verbatim, and closure parameters become the generated method's parameters
- * (for constructor-style bean injection).
+ * statements are one of:
+ * <ul>
+ * <li>{@code bean(Type[, "name"]) { ... }}, optionally chained with any combination of
+ * {@code .conditionalOnMissingBean(Type...)}, {@code .primary()}, {@code .lazy()},
+ * {@code .scope("name")}, and (repeatably) {@code .annotate(AnnotationType[, attr: value, ...])}
+ * - the last a generic escape hatch attaching any other single-valued annotation. The closure
+ * body becomes the generated method's body verbatim, and closure parameters become the generated
+ * method's parameters (for constructor-style bean injection).</li>
+ * <li>{@code field(Type[, "name"])}, optionally chained (repeatably) with
+ * {@code .annotate(AnnotationType[, attr: value, ...])} - typically {@code .annotate(Value, value:
+ * "${...}")}. Declares a private field on the generated class, for state shared across bean
+ * methods (e.g. injected configuration).</li>
+ * <li>{@code method(Type[, "name"]) { ... }}, with the same chaining as {@code field(...)}.
+ * Declares a private helper method on the generated class, for logic shared across bean methods,
+ * lifted from the closure the same way {@code bean(...)} is.</li>
+ * </ul>
+ * When no name is given, one is derived from the type name following the JavaBeans convention
+ * ({@link java.beans.Introspector#decapitalize(String)}).
  *
  * <p>May also be applied to a {@code grails.plugins.Plugin} subclass, letting bean definitions
  * live in the familiar {@code *GrailsPlugin.groovy} file. In that case the generated methods land
  * on a new sibling {@code <PluginClassName>AutoConfiguration} class instead - a {@code Plugin}
- * subclass is never processed by Spring as a bean - and any {@code @AutoConfiguration} annotation
- * on the plugin class moves onto that sibling, since it has no effect where the author wrote it.
+ * subclass is never processed by Spring as a bean - and {@code @AutoConfiguration} together with
+ * every annotation that gates or configures it (the {@code @Conditional*} family,
+ * {@code @Import}/{@code @ImportAutoConfiguration}, {@code @EnableConfigurationProperties},
+ * {@code @PropertySource}, {@code @AutoConfigureOrder}/{@code Before}/{@code After}) found on the
+ * plugin class moves onto that sibling, since none of them has any effect where the author wrote
+ * them.
  */
 @Retention(RetentionPolicy.RUNTIME)
 @Target(ElementType.TYPE)
