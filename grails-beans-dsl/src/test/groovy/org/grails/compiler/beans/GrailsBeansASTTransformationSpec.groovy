@@ -304,6 +304,119 @@ class GrailsBeansASTTransformationSpec extends Specification {
         fixtureBeans.getDeclaredConstructor().newInstance().multiAnnotatedGreeting() == 'multi hello'
     }
 
+    def "bean(...).named(...) lets a Spring bean name that isn't a valid Java identifier compile"() {
+        given:
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @GrailsBeans
+            @AutoConfiguration
+            class HyphenBeanNameFixture {
+                def beans = {
+                    bean(String, 'my-service').named('myService') {
+                        'hello'
+                    }
+                }
+            }
+        '''
+
+        when:
+        Class<?> fixtureBeans = compile(source)
+        def method = fixtureBeans.getDeclaredMethod('myService')
+
+        then: "the @Bean annotation carries the real (hyphenated) Spring bean name"
+        method.isAnnotationPresent(Bean)
+        method.getAnnotation(Bean).value() == ['my-service'] as String[]
+
+        and: "the closure body became the real method body, under the .named(...) method name"
+        fixtureBeans.getDeclaredConstructor().newInstance().myService() == 'hello'
+    }
+
+    def "bean(...).named(...) can override the method name even when the given bean name is already a valid identifier"() {
+        given:
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @GrailsBeans
+            @AutoConfiguration
+            class OverrideBeanNameFixture {
+                def beans = {
+                    bean(String, 'myService').named('differentMethodName') {
+                        'hello'
+                    }
+                }
+            }
+        '''
+
+        when:
+        Class<?> fixtureBeans = compile(source)
+        def method = fixtureBeans.getDeclaredMethod('differentMethodName')
+
+        then:
+        method.isAnnotationPresent(Bean)
+        method.getAnnotation(Bean).value() == ['myService'] as String[]
+    }
+
+    def "bean(...).named(...) combines with other qualifiers on the same bean"() {
+        given:
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+            import org.springframework.core.annotation.Order
+
+            @GrailsBeans
+            @AutoConfiguration
+            class CombinedNamedFixture {
+                def beans = {
+                    bean(String, 'my-service').named('myService').primary().annotate(Order, value: 1) {
+                        'hello'
+                    }
+                }
+            }
+        '''
+
+        when:
+        Class<?> fixtureBeans = compile(source)
+        def method = fixtureBeans.getDeclaredMethod('myService')
+
+        then:
+        method.isAnnotationPresent(Bean)
+        method.getAnnotation(Bean).value() == ['my-service'] as String[]
+        method.isAnnotationPresent(Primary)
+        method.isAnnotationPresent(Order)
+        method.getAnnotation(Order).value() == 1
+    }
+
+    def "two beans with different non-identifier names, each given a different .named(...) method name, both compile"() {
+        given:
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @GrailsBeans
+            @AutoConfiguration
+            class TwoNamedBeansFixture {
+                def beans = {
+                    bean(String, 'my-service').named('myService') {
+                        'a'
+                    }
+                    bean(String, 'plugin.messageSource').named('pluginMessageSource') {
+                        'b'
+                    }
+                }
+            }
+        '''
+
+        when:
+        Class<?> fixtureBeans = compile(source)
+
+        then:
+        fixtureBeans.getDeclaredMethod('myService').getAnnotation(Bean).value() == ['my-service'] as String[]
+        fixtureBeans.getDeclaredMethod('pluginMessageSource').getAnnotation(Bean).value() == ['plugin.messageSource'] as String[]
+    }
+
     def "field(Type, name).annotate(...) declares a private annotated field"() {
         given:
         Class<?> fixtureBeans = compile()
@@ -520,11 +633,21 @@ class GrailsBeansASTTransformationSpec extends Specification {
         'method(...) without a body closure'              | "method(String, 'x')"                                             | 'method(...) must end with a body closure'
         'method(...) chained with a bean-only qualifier'  | "method(String, 'x').conditionalOnMissingBean(String) { 'y' }"    | 'cannot be chained onto method(...)'
         'two bean(...) statements sharing the same explicit name' |
-                "bean(String, 'x') { 'a' }; bean(Integer, 'x') { 1 }" | 'is already used by another'
+                "bean(String, 'x') { 'a' }; bean(Integer, 'x') { 1 }" | 'is already used as the Spring bean name'
         'a field(...) and a bean(...) sharing the same name' |
                 "field(String, 'x'); bean(Integer, 'x') { 1 }" | 'is already used by another'
         'a field(...) and a method(...) sharing the same name' |
                 "field(String, 'x'); method(Integer, 'x') { 1 }" | 'is already used by another'
+        'a bean name that is not a valid identifier, with no .named(...) to supply one' |
+                "bean(String, 'my-service') { 'x' }" | 'chain .named("...")'
+        '.named(...) that is not a valid identifier'      | "bean(String, 'my-service').named('not valid!') { 'x' }" | 'is not a valid name'
+        '.named(...) with no arguments'                   | "bean(String, 'my-service').named() { 'x' }"              | 'requires exactly one String argument'
+        '.named(...) with a non-String argument'          | "bean(String, 'my-service').named(42) { 'x' }"            | 'requires exactly one String argument'
+        '.named(...) chained onto field(...)'              | "field(String, 'x').named('y')"                          | 'cannot be chained onto field(...)'
+        '.named(...) chained onto method(...)'              | "method(String, 'x').named('y') { 'z' }"                 | 'cannot be chained onto method(...)'
+        'two bean(...) statements sharing the same Spring bean name via different .named(...) method names' |
+                "bean(String, 'my-service').named('a') { 'x' }; bean(Integer, 'my-service').named('b') { 1 }" |
+                'is already used as the Spring bean name'
     }
 
     private static final String FIXTURE_PLUGIN = '''

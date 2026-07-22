@@ -78,10 +78,13 @@ import org.springframework.context.annotation.Scope;
  * <ul>
  * <li>{@code bean(Type[, "name"]) { ... }}, optionally chained with any combination of
  * {@code .conditionalOnMissingBean(Type...)}, {@code .primary()}, {@code .lazy()},
- * {@code .scope("name")}, and (repeatably) {@code .annotate(AnnotationType[, attr: value, ...])}.
- * Synthesises a public method named after the bean, returning the declared type, annotated
- * {@code @org.springframework.context.annotation.Bean} plus whichever qualifiers were chained,
- * whose body and parameters are lifted directly from the DSL closure.</li>
+ * {@code .scope("name")}, {@code .named("...")}, and (repeatably)
+ * {@code .annotate(AnnotationType[, attr: value, ...])}. Synthesises a public method, returning
+ * the declared type, annotated {@code @org.springframework.context.annotation.Bean("name")} plus
+ * whichever qualifiers were chained, whose body and parameters are lifted directly from the DSL
+ * closure. The method is named after the bean by default; when the bean name isn't a valid Java
+ * identifier (e.g. {@code "my-service"}), {@code .named("...")} must supply the method's name
+ * explicitly instead.</li>
  * <li>{@code field(Type[, "name"])}, optionally chained (repeatably) with
  * {@code .annotate(AnnotationType[, attr: value, ...])} - typically {@code .annotate(Value, value:
  * "${...}")}. Declares a private field on the generated class, for state shared across bean
@@ -129,8 +132,9 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
     private static final String LAZY_CALL = "lazy";
     private static final String SCOPE_CALL = "scope";
     private static final String ANNOTATE_CALL = "annotate";
+    private static final String NAMED_CALL = "named";
     private static final Set<String> QUALIFIER_CALL_NAMES = Set.of(
-            CONDITIONAL_ON_MISSING_BEAN_CALL, PRIMARY_CALL, LAZY_CALL, SCOPE_CALL, ANNOTATE_CALL);
+            CONDITIONAL_ON_MISSING_BEAN_CALL, PRIMARY_CALL, LAZY_CALL, SCOPE_CALL, ANNOTATE_CALL, NAMED_CALL);
     // field(...) and method(...) declare plain class members, not beans - only .annotate(...)
     // (attaching an arbitrary annotation, e.g. @Value) makes sense on them.
     private static final Set<String> MEMBER_QUALIFIER_CALL_NAMES = Set.of(ANNOTATE_CALL);
@@ -172,8 +176,9 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
                 createAutoConfigurationSibling(classNode, grailsBeansAnnotation, source) : classNode;
 
         Set<String> usedNames = new HashSet<>();
+        Set<String> usedBeanNames = new HashSet<>();
         for (Statement statement : beanStatements((ClosureExpression) initialExpression)) {
-            processStatement(beanMethodHost, statement, source, usedNames);
+            processStatement(beanMethodHost, statement, source, usedNames, usedBeanNames);
         }
 
         if (beanMethodHost != classNode) {
@@ -313,7 +318,8 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
         return single;
     }
 
-    private void processStatement(ClassNode classNode, Statement statement, SourceUnit source, Set<String> usedNames) {
+    private void processStatement(ClassNode classNode, Statement statement, SourceUnit source, Set<String> usedNames,
+            Set<String> usedBeanNames) {
         if (!(statement instanceof ExpressionStatement) ||
                 !(((ExpressionStatement) statement).getExpression() instanceof MethodCallExpression)) {
             addError(statement, source, "Each 'beans' statement must be a bean(...), field(...), or method(...) call");
@@ -361,7 +367,7 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
         }
 
         if (isBean) {
-            processBeanStatement(classNode, outerCall, baseCall, qualifierCalls, source, usedNames);
+            processBeanStatement(classNode, outerCall, baseCall, qualifierCalls, source, usedNames, usedBeanNames);
         }
         else if (FIELD_CALL.equals(rootName)) {
             processFieldStatement(classNode, baseCall, qualifierCalls, source, usedNames);
@@ -371,17 +377,16 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
         }
     }
 
-    private boolean registerName(String name, ASTNode location, SourceUnit source, Set<String> usedNames) {
+    private boolean registerName(String name, ASTNode location, SourceUnit source, Set<String> usedNames, String errorSuffix) {
         if (!usedNames.add(name)) {
-            addError(location, source, "\"" + name + "\" is already used by another bean(...)/field(...)/" +
-                    "method(...) statement in this beans block - generated member names must be unique");
+            addError(location, source, "\"" + name + "\" " + errorSuffix);
             return false;
         }
         return true;
     }
 
     private void processBeanStatement(ClassNode classNode, MethodCallExpression outerCall, MethodCallExpression baseCall,
-            List<MethodCallExpression> qualifierCalls, SourceUnit source, Set<String> usedNames) {
+            List<MethodCallExpression> qualifierCalls, SourceUnit source, Set<String> usedNames, Set<String> usedBeanNames) {
         List<Expression> closureCallArgs = flatten(outerCall.getArguments());
         if (closureCallArgs.isEmpty() || !(closureCallArgs.get(closureCallArgs.size() - 1) instanceof ClosureExpression)) {
             addError(outerCall, source, "bean(...) must end with a factory closure: bean(Type) { ... }");
@@ -397,16 +402,37 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
             baseArgs = baseArgs.subList(0, baseArgs.size() - 1);
         }
 
-        TypeAndName typeAndName = parseTypeAndName(baseArgs, baseCall, source, BEAN_CALL);
+        // Unlike field(...)/method(...), a bean's given name need not be a valid Java identifier -
+        // it's the Spring bean name, not necessarily the generated method's name (see below).
+        TypeAndName typeAndName = parseTypeAndName(baseArgs, baseCall, source, BEAN_CALL, false);
         if (typeAndName == null) {
             return;
         }
-        if (!registerName(typeAndName.name, baseCall, source, usedNames)) {
+        if (!registerName(typeAndName.name, baseCall, source, usedBeanNames,
+                "is already used as the Spring bean name of another bean(...) statement")) {
+            return;
+        }
+
+        MethodCallExpression namedQualifier = null;
+        for (MethodCallExpression qualifierCall : qualifierCalls) {
+            if (NAMED_CALL.equals(qualifierCall.getMethodAsString())) {
+                namedQualifier = qualifierCall;
+                break;
+            }
+        }
+
+        String javaMethodName = resolveBeanMethodName(typeAndName, namedQualifier, outerCall, baseCall, source);
+        if (javaMethodName == null) {
+            return;
+        }
+        if (!registerName(javaMethodName, baseCall, source, usedNames,
+                "is already used by another bean(...)/field(...)/method(...) statement in this beans block - " +
+                        "generated member names must be unique")) {
             return;
         }
 
         MethodNode beanMethod = new MethodNode(
-                typeAndName.name,
+                javaMethodName,
                 Modifier.PUBLIC,
                 typeAndName.type.getType(),
                 factory.getParameters() == null ? Parameter.EMPTY_ARRAY : factory.getParameters(),
@@ -415,6 +441,10 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
         beanMethod.addAnnotation(beanAnnotation(typeAndName.name));
 
         for (MethodCallExpression qualifierCall : qualifierCalls) {
+            if (qualifierCall == namedQualifier) {
+                // already consumed above - .named(...) names the method, it doesn't add an annotation
+                continue;
+            }
             List<Expression> qualifierArgs = flatten(qualifierCall.getArguments());
             if (qualifierCall == outerCall) {
                 // only the outermost call in the chain can carry the trailing factory closure
@@ -428,14 +458,56 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
         classNode.addMethod(beanMethod);
     }
 
+    // bean(...)'s name is a Spring bean name, which may not be a valid Java identifier (e.g.
+    // "my-service"). When it already is one, it doubles as the generated method's name, exactly as
+    // before. When it isn't, .named("...") must supply the method's name explicitly instead of the
+    // transform inventing one - an invented name (e.g. a positional counter) would read as
+    // meaningless in a stack trace or decompiled bytecode, where every other generated method is
+    // named after what it does.
+    private String resolveBeanMethodName(TypeAndName typeAndName, MethodCallExpression namedQualifier,
+            MethodCallExpression outerCall, MethodCallExpression baseCall, SourceUnit source) {
+        if (namedQualifier == null) {
+            if (isValidJavaIdentifier(typeAndName.name)) {
+                return typeAndName.name;
+            }
+            addError(baseCall, source, "\"" + typeAndName.name + "\" is not a valid name: it becomes the " +
+                    "generated method's name unless overridden, so it must be a valid Java identifier - chain " +
+                    ".named(\"...\") to give the generated method a different, valid name, e.g. bean(" +
+                    typeAndName.type.getType().getNameWithoutPackage() + ", \"" + typeAndName.name +
+                    "\").named(\"someIdentifier\") { ... }");
+            return null;
+        }
+
+        List<Expression> namedArgs = flatten(namedQualifier.getArguments());
+        if (namedQualifier == outerCall) {
+            namedArgs = namedArgs.subList(0, namedArgs.size() - 1);
+        }
+        Expression nameArg = namedArgs.size() == 1 ? namedArgs.get(0) : null;
+        Object nameValue = nameArg instanceof ConstantExpression ? ((ConstantExpression) nameArg).getValue() : null;
+        if (!(nameValue instanceof String)) {
+            addError(namedQualifier, source, ".named(...) requires exactly one String argument, " +
+                    "e.g. .named(\"myService\")");
+            return null;
+        }
+        String methodName = (String) nameValue;
+        if (!isValidJavaIdentifier(methodName)) {
+            addError(nameArg, source, "\"" + methodName + "\" is not a valid name: it becomes the generated " +
+                    "method's name, so it must be a valid Java identifier");
+            return null;
+        }
+        return methodName;
+    }
+
     private void processFieldStatement(ClassNode classNode, MethodCallExpression baseCall,
             List<MethodCallExpression> qualifierCalls, SourceUnit source, Set<String> usedNames) {
         List<Expression> baseArgs = flatten(baseCall.getArguments());
-        TypeAndName typeAndName = parseTypeAndName(baseArgs, baseCall, source, FIELD_CALL);
+        TypeAndName typeAndName = parseTypeAndName(baseArgs, baseCall, source, FIELD_CALL, true);
         if (typeAndName == null) {
             return;
         }
-        if (!registerName(typeAndName.name, baseCall, source, usedNames)) {
+        if (!registerName(typeAndName.name, baseCall, source, usedNames,
+                "is already used by another bean(...)/field(...)/method(...) statement in this beans block - " +
+                        "generated member names must be unique")) {
             return;
         }
 
@@ -463,11 +535,13 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
             baseArgs = baseArgs.subList(0, baseArgs.size() - 1);
         }
 
-        TypeAndName typeAndName = parseTypeAndName(baseArgs, baseCall, source, METHOD_CALL);
+        TypeAndName typeAndName = parseTypeAndName(baseArgs, baseCall, source, METHOD_CALL, true);
         if (typeAndName == null) {
             return;
         }
-        if (!registerName(typeAndName.name, baseCall, source, usedNames)) {
+        if (!registerName(typeAndName.name, baseCall, source, usedNames,
+                "is already used by another bean(...)/field(...)/method(...) statement in this beans block - " +
+                        "generated member names must be unique")) {
             return;
         }
 
@@ -502,7 +576,8 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
         }
     }
 
-    private TypeAndName parseTypeAndName(List<Expression> args, MethodCallExpression call, SourceUnit source, String callName) {
+    private TypeAndName parseTypeAndName(List<Expression> args, MethodCallExpression call, SourceUnit source,
+            String callName, boolean requireValidIdentifier) {
         if (args.isEmpty() || args.size() > 2 || !(args.get(0) instanceof ClassExpression)) {
             addError(call, source, callName + "(...) requires a type as its first argument and at most one " +
                     "name, e.g. " + callName + "(Greeter) or " + callName + "(Greeter, \"myGreeter\")");
@@ -523,7 +598,7 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
                 return null;
             }
             name = (String) nameValue;
-            if (!isValidJavaIdentifier(name)) {
+            if (requireValidIdentifier && !isValidJavaIdentifier(name)) {
                 addError(nameArg, source, "\"" + name + "\" is not a valid name: it becomes the generated " +
                         "member's name, so it must be a valid Java identifier");
                 return null;
