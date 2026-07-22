@@ -40,8 +40,8 @@ import org.grails.plugins.domain.support.ValidatorRegistryFactoryBean
 @CompileStatic
 // TODO: datasource plugin is supposed to always load after this (currently will because this is a configuration)
 // Ordered by name, not by class literal: I18nGrailsPlugin's @GrailsBeans-generated
-// I18nGrailsPluginAutoConfiguration doesn't exist as a compilable class for this class to reference.
-@AutoConfiguration(afterName = ['org.grails.plugins.i18n.I18nGrailsPluginAutoConfiguration'])
+// I18nAutoConfiguration doesn't exist as a compilable class for this class to reference.
+@AutoConfiguration(afterName = ['org.grails.plugins.i18n.I18nAutoConfiguration'])
 @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
 class GrailsDomainClassAutoConfiguration {
 

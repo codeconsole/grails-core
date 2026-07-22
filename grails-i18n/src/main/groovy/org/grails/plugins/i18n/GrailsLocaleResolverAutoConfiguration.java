@@ -36,7 +36,7 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurationSupp
 /**
  * When an application declares {@code @EnableWebMvc}, Spring's {@link WebMvcConfigurationSupport}
  * contributes its own {@code localeResolver} bean (an {@code AcceptHeaderLocaleResolver}). That bean
- * exists before {@link I18nGrailsPlugin}'s generated {@code I18nGrailsPluginAutoConfiguration} is
+ * exists before {@link I18nGrailsPlugin}'s generated {@code I18nAutoConfiguration} is
  * evaluated, so its {@code @ConditionalOnMissingBean(name = "localeResolver")} backs off and Grails'
  * configured resolver (a {@code SessionLocaleResolver} by default) never registers — silently
  * disabling {@code ?lang=} switching. This was not the case before {@code WebMvcConfigurationSupport}
@@ -51,7 +51,7 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurationSupp
  * it does not exist as a compilable class for this class to reference directly) so the removal
  * happens before its condition is evaluated.
  */
-@AutoConfiguration(beforeName = "org.grails.plugins.i18n.I18nGrailsPluginAutoConfiguration")
+@AutoConfiguration(beforeName = "org.grails.plugins.i18n.I18nAutoConfiguration")
 @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
 @Import(GrailsLocaleResolverAutoConfiguration.RemoveWebMvcSupportLocaleResolverRegistrar.class)
 public class GrailsLocaleResolverAutoConfiguration {

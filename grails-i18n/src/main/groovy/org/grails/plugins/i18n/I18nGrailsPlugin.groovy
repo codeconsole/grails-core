@@ -59,7 +59,7 @@ import org.grails.web.i18n.ParamsAwareLocaleChangeInterceptor
  * @since 0.4
  */
 @Slf4j
-@GrailsBeans
+@GrailsBeans(autoConfigurationName = 'I18nAutoConfiguration')
 @AutoConfiguration(before = [MessageSourceAutoConfiguration, WebMvcAutoConfiguration])
 @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
 class I18nGrailsPlugin extends Plugin {
