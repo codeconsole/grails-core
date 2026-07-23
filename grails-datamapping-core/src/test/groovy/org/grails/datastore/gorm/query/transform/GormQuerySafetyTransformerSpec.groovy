@@ -87,6 +87,33 @@ class Book {
     }
 
     @Unroll
+    void "test inline #description at the call site fails to compile"() {
+        when:
+        new GroovyClassLoader().parseClass("""
+import grails.gorm.annotation.Entity
+
+@Entity
+class Book {
+    String title
+
+    static List byTitle(String title) {
+        executeQuery($argument)
+    }
+}
+""")
+
+        then:
+        def e = thrown(MultipleCompilationErrorsException)
+        e.message.contains('GormUnsafeQueryString')
+
+        where:
+        description     | argument
+        '.toString()'   | '"from Book where title = ${title}".toString()'
+        '(String) cast' | '(String) "from Book where title = ${title}"'
+        'as String'     | '("from Book where title = ${title}" as String)'
+    }
+
+    @Unroll
     void "test aliasing via #description before find fails to compile"() {
         when:
         new GroovyClassLoader().parseClass("""

@@ -120,7 +120,7 @@ import org.grails.datastore.mapping.reflect.AstUtils;
  *     methods use names outside {@link #CANDIDATE_METHODS}.</li>
  * </ul>
  *
- * @since 8.1
+ * @since 8.0
  */
 public class GormQuerySafetyTransformer extends ClassCodeVisitorSupport {
 
@@ -571,6 +571,18 @@ public class GormQuerySafetyTransformer extends ClassCodeVisitorSupport {
         }
         if (isThisFieldReference(argument) && flattenedFields.containsKey(fieldNameOf(argument))) {
             return Finding.FLATTENED_FIELD;
+        }
+        if (argument instanceof CastExpression) {
+            CastExpression cast = (CastExpression) argument;
+            if (ClassHelper.STRING_TYPE.equals(cast.getType()) && isUnsafeSource(cast.getExpression())) {
+                return Finding.FLATTENED_GSTRING;
+            }
+        }
+        if (argument instanceof MethodCallExpression) {
+            MethodCallExpression flatteningCall = (MethodCallExpression) argument;
+            if ("toString".equals(flatteningCall.getMethodAsString()) && isUnsafeSource(flatteningCall.getObjectExpression())) {
+                return Finding.FLATTENED_GSTRING;
+            }
         }
         Origin concatOrigin = classifyConcatenation(argument);
         if (concatOrigin == Origin.FLATTENED) {

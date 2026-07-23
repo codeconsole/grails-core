@@ -43,7 +43,7 @@ import org.apache.grails.common.compiler.GroovyTransformOrder;
  * {@code false} skips this transformation for the whole compilation unit - this is a global kill
  * switch of last resort, not a substitute for {@link GormQuerySafetyTransformer#SUPPRESS_WARNINGS_VALUE}.
  *
- * @since 8.1
+ * @since 8.0
  */
 @GroovyASTTransformation(phase = CompilePhase.CANONICALIZATION)
 public class GlobalGormQuerySafetyASTTransformation implements ASTTransformation, TransformWithPriority {
