@@ -20,30 +20,26 @@ package legacy.g7.commands
 
 import groovy.transform.CompileStatic
 
-import grails.dev.commands.ApplicationCommand
-import grails.dev.commands.ExecutionContext
+import grails.dev.commands.GrailsApplicationCommand
 
-/**
- * Precompiled against Grails 7 / Groovy 4 so the monorepo can prove that an unchanged
- * published Grails 7 application-command binary still links and runs through the Grails 8
- * compatibility bridge.
- */
 @CompileStatic
-class HelloG7PrecompiledCommand implements ApplicationCommand {
+class HelloG7PrecompiledGrailsCommand implements GrailsApplicationCommand {
 
     @Override
     String getName() {
-        'hello-g7-precompiled'
+        'hello-g7-precompiled-grails'
     }
 
     @Override
     String getDescription() {
-        'Runs a Grails 7 / Groovy 4 precompiled application command'
+        'Runs a Grails 7 / Groovy 4 precompiled Grails application command'
     }
 
     @Override
-    boolean handle(ExecutionContext executionContext) {
-        new File(executionContext.baseDir, 'hello-g7-precompiled.txt').text = "G7-CONTEXT-${applicationContext != null}"
+    boolean handle() {
+        File outputDirectory = file('build/hello-g7-precompiled-grails')
+        mkdir(outputDirectory)
+        render("G7-CONTEXT-${applicationContext != null}", new File(outputDirectory, 'rendered.txt'))
         true
     }
 }

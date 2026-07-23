@@ -126,6 +126,12 @@ The plugin can also provision `grails-core-cli-legacy` into a separate execution
 without a re-release, without leaking `grails.dev.commands.*` into the Grails 8
 command-authoring ABI.
 
+When that bridge is disabled, runtime command discovery still detects plugins that publish legacy
+`grails.dev.commands.ApplicationCommand` factories without loading their command classes. Grails
+logs the originating plugin artifact and appends the exact opt-in or upgrade remediation when an
+unknown command is requested. The detection remains on the resolved command runtime classpath and
+does not add a Gradle configuration-time dependency scan.
+
 Plugin authors get the whole publishing side from the new
 `org.apache.grails.gradle.grails-plugin-cli` Gradle plugin: it creates the `cli` source set as a
 feature variant, wires the command contract onto its compile classpath, advertises the companion

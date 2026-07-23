@@ -1746,6 +1746,12 @@ grails {
 
 Or set the project property `grailsLegacyCommandSupport=true`.
 
+When the bridge is disabled, Grails still inspects legacy `META-INF/grails.factories` resources at
+command runtime without loading their command classes. If a plugin still publishes
+`grails.dev.commands.ApplicationCommand` entries, Grails logs an error naming the plugin artifact.
+An unknown command also includes the remediation to enable `legacyCommandSupport` or upgrade the
+plugin. This detection does not resolve application dependencies during Gradle configuration.
+
 Grails logs a one-time deprecation warning when it uses this compatibility layer. It is intended
 to keep existing published plugins working while plugin authors migrate; it is deprecated and may
 be removed in a future major release. No removal major has been announced.

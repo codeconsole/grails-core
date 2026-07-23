@@ -29,6 +29,21 @@ import spock.lang.Unroll
  */
 class GrailsApplicationContextCommandRunnerSpec extends Specification {
 
+    private static final String LEGACY_COMMAND_HINT =
+            'Grails 7 commands were detected; set grails { legacyCommandSupport = true } or upgrade the plugin.'
+
+    def "unknown command output appends the legacy command hint"() {
+        expect:
+        GrailsApplicationContextCommandRunner.unknownCommandMessage('missing-command', LEGACY_COMMAND_HINT) ==
+                "Command not found for name: missing-command\n${LEGACY_COMMAND_HINT}"
+    }
+
+    def "unknown command output remains unchanged without a legacy command hint"() {
+        expect:
+        GrailsApplicationContextCommandRunner.unknownCommandMessage('missing-command', null) ==
+                'Command not found for name: missing-command'
+    }
+
     @Unroll
     def "filterCommandOptions filters '#description'"() {
         expect:

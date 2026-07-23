@@ -37,6 +37,7 @@ class CliAutoDiscoverySpec extends GradleSpecification {
     def "a companion advertised by a same-build project dependency is wired to its cli capability, not an external module"() {
         given: 'an app that depends on an in-build command-bearing plugin'
         setupTestResourceProject('cli-companion-autodiscovery')
+        executeTask(':app:prepareDigitBearingPlugin')
 
         when: 'the app resolves its grailsCli dependencies'
         def result = executeTask(':app:inspectGrailsCli', [
@@ -50,6 +51,12 @@ class CliAutoDiscoverySpec extends GradleSpecification {
 
         and: 'it is NOT an external module coordinate (the bug this regression pins)'
         !result.output.contains('GRAILSCLI_DEP: module org.example.test:my-plugin-cli')
+
+        and: 'digit-bearing composite-build artifacts use their resolved producer versions'
+        result.output.contains('GRAILSCLI_DEP: module org.example.test:my-plugin-2fa-one-cli:1')
+        result.output.contains('GRAILSCLI_DEP: module org.example.test:my-plugin-2fa-snapshot-cli:1-SNAPSHOT')
+        result.output.contains('GRAILSCLI_DEP: module org.example.test:my-plugin-2fa-timestamp-cli:1-20260101.123456-1')
+        result.output.contains("GRAILSCLI_DEP: module org.example.test:my-plugin-2fa-unspecified-cli:${PROJECT_VERSION}")
 
         and: 'the command contract and runner are auto-provisioned at the current Grails version'
         result.output.contains("GRAILSCLI_DEP: module org.apache.grails:grails-core-cli:${PROJECT_VERSION}")

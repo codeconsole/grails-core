@@ -9,9 +9,20 @@ sourceSets {
     integrationTest
 }
 
+tasks.register('prepareDigitBearingPlugin') {
+    dependsOn gradle.includedBuild('included-digit-bearing-plugin').task(':my-plugin-2fa-one:jar')
+    dependsOn gradle.includedBuild('included-digit-bearing-plugin').task(':my-plugin-2fa-snapshot:jar')
+    dependsOn gradle.includedBuild('included-digit-bearing-plugin').task(':my-plugin-2fa-timestamp:jar')
+    dependsOn gradle.includedBuild('included-digit-bearing-plugin').task(':my-plugin-2fa-unspecified:jar')
+}
+
 dependencies {
     implementation project(':my-plugin')
     implementation project(':renamed-plugin')
+    implementation 'org.example.test:my-plugin-2fa-one:1'
+    implementation 'org.example.test:my-plugin-2fa-snapshot:1-SNAPSHOT'
+    implementation 'org.example.test:my-plugin-2fa-timestamp:1-20260101.123456-1'
+    implementation 'org.example.test:my-plugin-2fa-unspecified:1.0.0'
 }
 
 tasks.register('inspectGrailsCli') {

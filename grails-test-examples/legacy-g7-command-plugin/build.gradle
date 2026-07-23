@@ -17,7 +17,7 @@
  *  under the License.
  */
 
-// Standalone composite-build fixture compiled against published Grails 7.0.10 / Groovy 4.0.30.
+// Standalone composite-build fixture compiled against published Grails 7 / Groovy 4.
 // Included by the monorepo root so grails-test-examples-legacy-commands can consume a real
 // precompiled Grails 7 ApplicationCommand binary instead of recompiling sources under Grails 8.
 plugins {
@@ -39,18 +39,37 @@ repositories {
 }
 
 dependencies {
-    implementation platform('org.apache.grails:grails-bom:7.0.10')
+    implementation enforcedPlatform('org.apache.grails:grails-bom:7.0.14')
     implementation 'org.apache.groovy:groovy'
     compileOnly 'org.apache.grails:grails-core'
 }
 
+def resolvedCompileVersion = { String group, String name ->
+    def component = configurations.compileClasspath.incoming.resolutionResult.allComponents.find {
+        it.moduleVersion?.group == group && it.moduleVersion?.name == name
+    }
+    if (component == null) {
+        throw new GradleException("Could not resolve ${group}:${name} for the legacy command fixture")
+    }
+    component.moduleVersion.version
+}
+
+def grailsCompileVersion = providers.provider {
+    resolvedCompileVersion('org.apache.grails', 'grails-core')
+}
+def groovyCompileVersion = providers.provider {
+    resolvedCompileVersion('org.apache.groovy', 'groovy')
+}
+
 tasks.named('jar', Jar).configure {
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-    manifest {
-        attributes(
+    inputs.property('grailsCompileVersion', grailsCompileVersion)
+    inputs.property('groovyCompileVersion', groovyCompileVersion)
+    doFirst {
+        manifest.attributes(
                 'Grails-Legacy-Command-Fixture': 'true',
-                'Grails-Compile-Version': '7.0.10',
-                'Groovy-Compile-Version': '4.0.30'
+                'Grails-Compile-Version': grailsCompileVersion.get(),
+                'Groovy-Compile-Version': groovyCompileVersion.get()
         )
     }
 }

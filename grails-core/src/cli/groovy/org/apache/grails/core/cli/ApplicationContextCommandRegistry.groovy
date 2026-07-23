@@ -16,8 +16,13 @@
  */
 package org.apache.grails.core.cli
 
+import java.lang.reflect.InvocationTargetException
+
 import groovy.transform.CompileStatic
 import groovy.util.logging.Slf4j
+
+import org.springframework.core.OrderComparator
+import org.springframework.util.ClassUtils
 
 import org.grails.core.io.support.GrailsFactoriesLoader
 
@@ -32,40 +37,84 @@ import org.grails.core.io.support.GrailsFactoriesLoader
 class ApplicationContextCommandRegistry {
 
     private final Map<String, ApplicationCommand> commands = [:]
+    private final String missingCommandHint
+
     ApplicationContextCommandRegistry() {
         ClassLoader registryClassLoader = ApplicationContextCommandRegistry.classLoader
         ClassLoader contextClassLoader = Thread.currentThread().contextClassLoader
 
-        for (ApplicationCommand cmd : GrailsFactoriesLoader.loadFactories(ApplicationCommand,
-                registryClassLoader, GrailsFactoriesLoader.CLI_FACTORIES_RESOURCE_LOCATION)) {
-            if (!commands.containsKey(cmd.name)) {
-                commands[cmd.name] = cmd
-            }
-        }
+        addApplicationCommands(registryClassLoader)
 
         // If this is reflectively loaded from the delegating cli, we need to make sure the context class loader is
         // also used to pull any commands that are loaded from the gradle classpath. Only when it is a distinct
         // classloader: repeating the scan for the same classloader would re-instantiate every command (whose
         // constructor may have side effects) just to discard it on the name-collision check below.
         if (contextClassLoader != null && contextClassLoader != registryClassLoader) {
-            for (ApplicationCommand cmd : GrailsFactoriesLoader.loadFactories(ApplicationCommand,
-                    contextClassLoader, GrailsFactoriesLoader.CLI_FACTORIES_RESOURCE_LOCATION)) {
-                if (!commands.containsKey(cmd.name)) {
-                    commands[cmd.name] = cmd
-                }
+            addApplicationCommands(contextClassLoader)
+        }
+
+        Set<String> handledFactoryKeys = loadCommandProviders(registryClassLoader, contextClassLoader)
+        missingCommandHint = ApplicationCommandDiagnostics.detectMissingCommandHint(
+                registryClassLoader, contextClassLoader, handledFactoryKeys)
+    }
+
+    private void addApplicationCommands(ClassLoader classLoader) {
+        Map<String, List<String>> declarations
+        try {
+            declarations = GrailsFactoriesLoader.loadFactoryDeclarations(
+                    ApplicationCommand, classLoader, GrailsFactoriesLoader.CLI_FACTORIES_RESOURCE_LOCATION)
+        }
+        catch (Throwable e) {
+            rethrowIfFatal(e)
+            log.warn('Unable to enumerate application command factories; skipping classloader {}.', classLoader, e)
+            return
+        }
+
+        Map<String, String> commandOrigins = new LinkedHashMap<>()
+        for (Map.Entry<String, List<String>> entry : declarations) {
+            for (String commandName : entry.value) {
+                commandOrigins.putIfAbsent(commandName, entry.key)
             }
         }
 
-        loadCommandProviders(registryClassLoader, contextClassLoader)
+        List<ApplicationCommand> discoveredCommands = []
+        for (Map.Entry<String, String> entry : commandOrigins) {
+            try {
+                Class<?> commandClass = ClassUtils.forName(entry.key, classLoader)
+                if (!ApplicationCommand.isAssignableFrom(commandClass)) {
+                    throw new IllegalArgumentException(
+                            "Class [${entry.key}] is not assignable to [${ApplicationCommand.name}]")
+                }
+                discoveredCommands.add(instantiateCommand((Class<? extends ApplicationCommand>) commandClass))
+            }
+            catch (LinkageError e) {
+                rethrowIfFatal(e)
+                log.error('Unable to link application command \'{}\' declared in \'{}\'. This is a Grails binary-compatibility issue; please report it to the Grails framework. The command is unavailable.',
+                        entry.key, entry.value, e)
+            }
+            catch (Throwable e) {
+                rethrowIfFatal(e)
+                log.warn('Failed to load application command \'{}\' declared in \'{}\'; skipping it.',
+                        entry.key, entry.value, e)
+            }
+        }
+
+        discoveredCommands.sort { ApplicationCommand first, ApplicationCommand second ->
+            first.class.name <=> second.class.name
+        }
+        OrderComparator.sort(discoveredCommands)
+        for (ApplicationCommand command : discoveredCommands) {
+            if (!commands.containsKey(command.name)) {
+                commands[command.name] = command
+            }
+        }
     }
 
-    private void loadCommandProviders(ClassLoader registryClassLoader, ClassLoader contextClassLoader) {
+    private Set<String> loadCommandProviders(ClassLoader registryClassLoader, ClassLoader contextClassLoader) {
         Set<Class<? extends ApplicationCommandProvider>> providerClasses = new LinkedHashSet<>()
-        providerClasses.addAll(GrailsFactoriesLoader.loadFactoryClasses(
-                ApplicationCommandProvider, registryClassLoader, GrailsFactoriesLoader.CLI_FACTORIES_RESOURCE_LOCATION))
+        addCommandProviderClasses(providerClasses, registryClassLoader)
         if (contextClassLoader != null && contextClassLoader != registryClassLoader) {
-            providerClasses.addAll(GrailsFactoriesLoader.loadFactoryClasses(
-                    ApplicationCommandProvider, contextClassLoader, GrailsFactoriesLoader.CLI_FACTORIES_RESOURCE_LOCATION))
+            addCommandProviderClasses(providerClasses, contextClassLoader)
         }
 
         ApplicationCommandRegistrar registrar = new ApplicationCommandRegistrar() {
@@ -80,15 +129,111 @@ class ApplicationContextCommandRegistry {
             }
         }
 
+        Set<String> handledFactoryKeys = new LinkedHashSet<>()
         for (Class<? extends ApplicationCommandProvider> providerClass : providerClasses) {
             try {
-                ApplicationCommandProvider provider = providerClass.getDeclaredConstructor().newInstance()
+                ApplicationCommandProvider provider = instantiate(providerClass)
+                if (provider instanceof ApplicationCommandFactoryKeyProvider) {
+                    handledFactoryKeys.addAll(((ApplicationCommandFactoryKeyProvider) provider).handledFactoryKeys)
+                }
                 provider.contributeCommands(registryClassLoader, contextClassLoader, registrar)
             }
+            catch (LinkageError e) {
+                rethrowIfFatal(e)
+                log.error('Unable to link application command provider \'{}\' from \'{}\'. This is a Grails binary-compatibility issue; please report it to the Grails framework. The provider is unavailable.',
+                        providerClass.name, codeSourceLocation(providerClass), e)
+            }
             catch (Throwable e) {
+                rethrowIfFatal(e)
                 log.warn('Failed to load application commands from provider \'{}\'; skipping it.', providerClass.name, e)
             }
         }
+        handledFactoryKeys
+    }
+
+    private static void addCommandProviderClasses(
+            Set<Class<? extends ApplicationCommandProvider>> providerClasses,
+            ClassLoader classLoader) {
+        Map<String, List<String>> declarations
+        try {
+            declarations = GrailsFactoriesLoader.loadFactoryDeclarations(
+                    ApplicationCommandProvider, classLoader, GrailsFactoriesLoader.CLI_FACTORIES_RESOURCE_LOCATION)
+        }
+        catch (Throwable e) {
+            rethrowIfFatal(e)
+            log.warn('Unable to enumerate application command provider factories; skipping classloader {}.',
+                    classLoader, e)
+            return
+        }
+
+        for (Map.Entry<String, List<String>> entry : declarations) {
+            for (String providerName : entry.value) {
+                try {
+                    Class<?> providerClass = ClassUtils.forName(providerName, classLoader)
+                    if (!ApplicationCommandProvider.isAssignableFrom(providerClass)) {
+                        throw new IllegalArgumentException(
+                                "Class [${providerName}] is not assignable to [${ApplicationCommandProvider.name}]")
+                    }
+                    providerClasses.add((Class<? extends ApplicationCommandProvider>) providerClass)
+                }
+                catch (LinkageError e) {
+                    rethrowIfFatal(e)
+                    log.error('Unable to link application command provider \'{}\' declared in \'{}\'. This is a Grails binary-compatibility issue; please report it to the Grails framework. The provider is unavailable.',
+                            providerName, entry.key, e)
+                }
+                catch (Throwable e) {
+                    rethrowIfFatal(e)
+                    log.warn('Failed to load application command provider \'{}\' declared in \'{}\'; skipping it.',
+                            providerName, entry.key, e)
+                }
+            }
+        }
+    }
+
+    private static ApplicationCommandProvider instantiate(Class<? extends ApplicationCommandProvider> providerClass) {
+        try {
+            providerClass.getDeclaredConstructor().newInstance()
+        }
+        catch (InvocationTargetException e) {
+            Throwable cause = e.cause
+            rethrowIfFatal(cause)
+            if (cause instanceof LinkageError) {
+                throw (LinkageError) cause
+            }
+            throw e
+        }
+    }
+
+    private static ApplicationCommand instantiateCommand(Class<? extends ApplicationCommand> commandClass) {
+        try {
+            commandClass.getDeclaredConstructor().newInstance()
+        }
+        catch (InvocationTargetException e) {
+            Throwable cause = e.cause
+            rethrowIfFatal(cause)
+            if (cause instanceof LinkageError) {
+                throw (LinkageError) cause
+            }
+            throw e
+        }
+    }
+
+    private static void rethrowIfFatal(Throwable e) {
+        Set<Throwable> seen = Collections.newSetFromMap(new IdentityHashMap<Throwable, Boolean>())
+        Throwable current = e
+        while (current != null && seen.add(current)) {
+            if (current instanceof VirtualMachineError) {
+                throw (VirtualMachineError) current
+            }
+            if (current instanceof ThreadDeath) {
+                throw (ThreadDeath) current
+            }
+            current = current.cause
+        }
+    }
+
+    private static String codeSourceLocation(Class<?> type) {
+        type.protectionDomain?.codeSource?.location?.toExternalForm() ?: 'unknown'
     }
 
     Collection<ApplicationCommand> findCommands() {
@@ -97,5 +242,9 @@ class ApplicationContextCommandRegistry {
 
     ApplicationCommand findCommand(String name) {
         commands[name]
+    }
+
+    String getMissingCommandHint() {
+        missingCommandHint
     }
 }

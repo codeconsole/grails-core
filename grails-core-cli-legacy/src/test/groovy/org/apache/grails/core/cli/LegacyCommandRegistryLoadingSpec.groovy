@@ -23,6 +23,7 @@ import ch.qos.logback.classic.Logger
 import ch.qos.logback.classic.spi.ILoggingEvent
 import ch.qos.logback.core.read.ListAppender
 import grails.dev.commands.ExecutionContext as LegacyExecutionContext
+import groovy.transform.CompileStatic
 import org.apache.grails.core.cli.compat.LegacyApplicationCommandAdapter
 import org.apache.grails.core.cli.compat.LegacyApplicationCommandProvider
 import org.grails.build.parsing.CommandLine
@@ -30,6 +31,7 @@ import org.slf4j.LoggerFactory
 import org.springframework.context.ConfigurableApplicationContext
 import spock.lang.Specification
 import spock.lang.TempDir
+import spock.lang.Unroll
 
 class LegacyCommandRegistryLoadingSpec extends Specification {
 
@@ -59,6 +61,7 @@ class LegacyCommandRegistryLoadingSpec extends Specification {
         then:
         command instanceof LegacyApplicationCommandAdapter
         command instanceof ApplicationCommandTargetAware
+        new ApplicationContextCommandRegistry().missingCommandHint == null
         LegacyApplicationCommandAdapter adapter = command as LegacyApplicationCommandAdapter
         LegacyRegistryTestCommand legacyCommand = ((ApplicationCommandTargetAware) command).target as LegacyRegistryTestCommand
         adapter.target.is(legacyCommand)
@@ -192,7 +195,82 @@ class LegacyCommandRegistryLoadingSpec extends Specification {
         List<ILoggingEvent> errors = providerAppender.list.findAll { ILoggingEvent event -> event.level == Level.ERROR }
         errors.size() == 1
         errors.first().formattedMessage.contains(LinkageErrorLegacyCommand.name)
-        errors.first().formattedMessage.contains('does not link against the restored grails.dev.commands contract')
+        errors.first().formattedMessage.contains(LinkageErrorLegacyCommand.protectionDomain.codeSource.location.toExternalForm())
+        errors.first().formattedMessage.contains('Grails binary-compatibility issue')
+        errors.first().formattedMessage.contains('report it to the Grails framework')
+    }
+
+    def "reports a legacy command load-time linkage error with its factory origin and continues discovery"() {
+        given:
+        attachProviderAppender()
+        useFactoryResources(
+                'grails.dev.commands.ApplicationCommand=missing.LoadTimeLinkageCommand,org.apache.grails.core.cli.LegacyRegistryTestCommand',
+                null,
+                ['missing.LoadTimeLinkageCommand': new NoClassDefFoundError('simulated missing command dependency')])
+
+        when:
+        ApplicationContextCommandRegistry registry = new ApplicationContextCommandRegistry()
+
+        then:
+        registry.findCommand('legacy-registry-command') != null
+        List<ILoggingEvent> errors = providerAppender.list.findAll { ILoggingEvent event -> event.level == Level.ERROR }
+        errors.size() == 1
+        errors.first().formattedMessage.contains('missing.LoadTimeLinkageCommand')
+        errors.first().formattedMessage.contains(tempDir.toURI().toString())
+        errors.first().formattedMessage.contains('report it to the Grails framework')
+    }
+
+    @Unroll
+    def "propagates load-time fatal error #failure.class.simpleName from legacy commands"() {
+        given:
+        useFactoryResources(
+                'grails.dev.commands.ApplicationCommand=missing.LoadTimeFatalCommand',
+                null,
+                ['missing.LoadTimeFatalCommand': failure])
+
+        when:
+        new ApplicationContextCommandRegistry()
+
+        then:
+        Throwable thrown = thrown(Throwable)
+        thrown.is(failure)
+
+        where:
+        failure << [new StackOverflowError(), new ThreadDeath()]
+    }
+
+    @Unroll
+    def "propagates direct fatal error #failure.class.simpleName from legacy commands"() {
+        given:
+        DirectFatalLegacyCommand.failure = failure
+        useFactoryResources('grails.dev.commands.ApplicationCommand=org.apache.grails.core.cli.DirectFatalLegacyCommand')
+
+        when:
+        new ApplicationContextCommandRegistry()
+
+        then:
+        Throwable thrown = thrown(Throwable)
+        thrown.is(failure)
+
+        where:
+        failure << [new StackOverflowError(), new ThreadDeath()]
+    }
+
+    @Unroll
+    def "propagates reflection-wrapped fatal error #failure.class.simpleName from legacy command constructors"() {
+        given:
+        ConstructorFatalLegacyCommand.failure = failure
+        useFactoryResources('grails.dev.commands.ApplicationCommand=org.apache.grails.core.cli.ConstructorFatalLegacyCommand')
+
+        when:
+        new ApplicationContextCommandRegistry()
+
+        then:
+        Throwable thrown = thrown(Throwable)
+        thrown.is(failure)
+
+        where:
+        failure << [new StackOverflowError(), new ThreadDeath()]
     }
 
     private void attachProviderAppender() {
@@ -208,7 +286,10 @@ class LegacyCommandRegistryLoadingSpec extends Specification {
         }
     }
 
-    private void useFactoryResources(String legacyFactories, String cliFactories = null) {
+    private void useFactoryResources(
+            String legacyFactories,
+            String cliFactories = null,
+            Map<String, Throwable> loadFailures = [:]) {
         File metaInf = new File(tempDir, 'META-INF')
         assert metaInf.mkdirs()
         new File(metaInf, 'grails.factories').text = legacyFactories
@@ -216,8 +297,29 @@ class LegacyCommandRegistryLoadingSpec extends Specification {
             new File(metaInf, 'grails-cli.factories').text = cliFactories
         }
         originalContextClassLoader = Thread.currentThread().contextClassLoader
-        factoryClassLoader = new URLClassLoader([tempDir.toURI().toURL()] as URL[], getClass().classLoader)
+        factoryClassLoader = new LegacyFactoryClassLoader(
+                [tempDir.toURI().toURL()] as URL[], getClass().classLoader, loadFailures)
         Thread.currentThread().contextClassLoader = factoryClassLoader
+    }
+}
+
+@CompileStatic
+class LegacyFactoryClassLoader extends URLClassLoader {
+
+    private final Map<String, Throwable> loadFailures
+
+    LegacyFactoryClassLoader(URL[] urls, ClassLoader parent, Map<String, Throwable> loadFailures) {
+        super(urls, parent)
+        this.loadFailures = loadFailures
+    }
+
+    @Override
+    protected Class<?> loadClass(String name, boolean resolve) throws ClassNotFoundException {
+        Throwable failure = loadFailures.get(name)
+        if (failure != null) {
+            throw failure
+        }
+        super.loadClass(name, resolve)
     }
 }
 
@@ -342,6 +444,50 @@ class LinkageErrorLegacyCommand implements grails.dev.commands.ApplicationComman
     @Override
     String getDescription() {
         'Linkage error legacy command'
+    }
+
+    @Override
+    boolean handle(LegacyExecutionContext executionContext) {
+        true
+    }
+}
+
+class DirectFatalLegacyCommand implements grails.dev.commands.ApplicationCommand {
+
+    static Throwable failure
+
+    @Override
+    String getName() {
+        throw failure
+    }
+
+    @Override
+    String getDescription() {
+        'Direct fatal legacy command'
+    }
+
+    @Override
+    boolean handle(LegacyExecutionContext executionContext) {
+        true
+    }
+}
+
+class ConstructorFatalLegacyCommand implements grails.dev.commands.ApplicationCommand {
+
+    static Throwable failure
+
+    ConstructorFatalLegacyCommand() {
+        throw failure
+    }
+
+    @Override
+    String getName() {
+        'constructor-fatal-legacy-command'
+    }
+
+    @Override
+    String getDescription() {
+        'Constructor fatal legacy command'
     }
 
     @Override

@@ -18,6 +18,8 @@
  */
 package legacycommands
 
+import java.util.jar.JarFile
+
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.beans.factory.config.AutowireCapableBeanFactory
 import org.springframework.context.ConfigurableApplicationContext
@@ -140,13 +142,25 @@ class LegacyCommandCompatibilityIntegrationSpec extends Specification {
         File publishedArtifact = new File(legacyCommand.class.protectionDomain.codeSource.location.toURI())
         ExecutionContext executionContext = new ExecutionContext(Mock(CommandLine))
         File markerFile = new File(executionContext.baseDir, 'hello-g7-precompiled.txt')
+        JarFile jarFile = new JarFile(publishedArtifact)
+        String grailsCompileVersion
+        String groovyCompileVersion
+        try {
+            grailsCompileVersion = jarFile.manifest.mainAttributes.getValue('Grails-Compile-Version')
+            groovyCompileVersion = jarFile.manifest.mainAttributes.getValue('Groovy-Compile-Version')
+        }
+        finally {
+            jarFile.close()
+        }
         markerFile.delete()
 
-        expect: 'the adapter targets the included-build Grails 7 / Groovy 4 binary'
+        expect: 'the adapter targets the included-build Grails 7 / Groovy 4 binary and its resolved compile versions'
         applicationCommand != null
         applicationCommand instanceof ApplicationCommandTargetAware
         legacyCommand.class.name == 'legacy.g7.commands.HelloG7PrecompiledCommand'
         publishedArtifact.name.contains('legacy-g7-command-plugin')
+        grailsCompileVersion == '7.0.14'
+        groovyCompileVersion.startsWith('4.')
 
         when: 'the precompiled command runs through the public Grails 8 adapter'
         applicationCommand.applicationContext = applicationContext
@@ -154,10 +168,40 @@ class LegacyCommandCompatibilityIntegrationSpec extends Specification {
 
         then: 'the Grails 7 bytecode links and executes against the restored contract'
         result
-        markerFile.text == 'G7-RAN'
+        markerFile.text == 'G7-CONTEXT-true'
 
         cleanup:
         markerFile.delete()
+    }
+
+    def "executes a Grails 7 Groovy 4 precompiled Grails application command through its DSL forwarders"() {
+        given: 'the registry and a precompiled GrailsApplicationCommand binary'
+        ApplicationCommand applicationCommand = ApplicationContextCommandRegistry.instance.findCommand('hello-g7-precompiled-grails')
+        ApplicationCommandTargetAware adapter = (ApplicationCommandTargetAware) applicationCommand
+        Object legacyCommand = adapter.target
+        ExecutionContext executionContext = new ExecutionContext(Mock(CommandLine))
+        File outputDirectory = new File(executionContext.baseDir, 'build/hello-g7-precompiled-grails')
+        File renderedFile = new File(outputDirectory, 'rendered.txt')
+        renderedFile.delete()
+        outputDirectory.delete()
+
+        expect: 'the registry adapts the precompiled GrailsApplicationCommand binary'
+        applicationCommand != null
+        applicationCommand instanceof ApplicationCommandTargetAware
+        legacyCommand.class.name == 'legacy.g7.commands.HelloG7PrecompiledGrailsCommand'
+
+        when: 'the command runs through the public Grails 8 adapter'
+        applicationCommand.applicationContext = applicationContext
+        boolean result = applicationCommand.handle(executionContext)
+
+        then: 'the restored application context, file, and template DSL ABI produces the expected output'
+        result
+        outputDirectory.directory
+        renderedFile.text == 'G7-CONTEXT-true'
+
+        cleanup:
+        renderedFile.delete()
+        outputDirectory.delete()
     }
 
 }

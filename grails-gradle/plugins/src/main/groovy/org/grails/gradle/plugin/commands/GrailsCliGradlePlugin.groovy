@@ -33,6 +33,7 @@ import org.gradle.api.artifacts.DependencySet
 import org.gradle.api.artifacts.component.ModuleComponentIdentifier
 import org.gradle.api.artifacts.component.ProjectComponentIdentifier
 import org.gradle.api.artifacts.result.ResolvedArtifactResult
+import org.gradle.api.artifacts.result.ResolvedComponentResult
 import org.gradle.api.file.FileCollection
 import org.gradle.api.tasks.JavaExec
 import org.gradle.api.tasks.SourceSet
@@ -312,19 +313,14 @@ class GrailsCliGradlePlugin implements Plugin<Project> {
                 return moduleVersion
             }
         }
-        // Included-build / project components have no module version. The resolved file is usually
-        // the producer runtime jar (my-plugin-1.2.0-SNAPSHOT.jar), not the companion jar, so peel a
-        // trailing Maven-style version from whatever jar we have rather than assuming the companion
-        // artifactId is the filename prefix.
-        File file = artifact.file
-        if (file != null && file.name.endsWith('.jar')) {
-            String baseName = file.name.substring(0, file.name.length() - 4)
-            // First "-<digit>..." from the left is the version start, so
-            // my-plugin-1.2.0-rc-1 and my-plugin-cli-1.0.0-SNAPSHOT both work.
-            for (int i = 0; i < baseName.length() - 1; i++) {
-                if (baseName.charAt(i) == '-' && Character.isDigit(baseName.charAt(i + 1))) {
-                    return baseName.substring(i + 1)
+        for (ResolvedComponentResult component : project.configurations
+                .getByName(GRAILS_CLI_DETECT_CONFIGURATION).incoming.resolutionResult.allComponents) {
+            if (component.id == componentIdentifier) {
+                String componentVersion = component.moduleVersion?.version
+                if (componentVersion && componentVersion != Project.DEFAULT_VERSION) {
+                    return componentVersion
                 }
+                break
             }
         }
         resolveGrailsVersion(project)

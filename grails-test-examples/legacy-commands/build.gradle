@@ -41,7 +41,7 @@ dependencies {
     implementation platform(project(':grails-bom'))
 
     implementation project(':grails-test-examples-legacy-commands-plugin')
-    // Real Grails 7.0.10 / Groovy 4.0.30 precompiled ApplicationCommand binary.
+    // Real Grails 7 / Groovy 4 precompiled ApplicationCommand binary.
     implementation files(legacyG7FixtureJar) {
         builtBy tasks.named('buildLegacyG7CommandFixture')
     }

@@ -44,7 +44,8 @@ class GrailsApplicationContextCommandRunner extends DevelopmentGrailsApplication
 
     @Override
     ConfigurableApplicationContext run(String... args) {
-        def command = ApplicationContextCommandRegistry.instance.findCommand(commandName)
+        ApplicationContextCommandRegistry commandRegistry = ApplicationContextCommandRegistry.instance
+        def command = commandRegistry.findCommand(commandName)
         if (command) {
             Object autowireTarget = resolveAutowireTarget(command)
 
@@ -91,7 +92,7 @@ class GrailsApplicationContextCommandRunner extends DevelopmentGrailsApplication
             }
         }
         else {
-            System.err.println("Command not found for name: $commandName")
+            System.err.println(unknownCommandMessage(commandName, commandRegistry.missingCommandHint))
             System.exit(1)
         }
         return null
@@ -115,6 +116,11 @@ class GrailsApplicationContextCommandRunner extends DevelopmentGrailsApplication
      */
     static String[] filterCommandOptions(String[] args) {
         args.findAll { it != null && !it.startsWith('--') } as String[]
+    }
+
+    static String unknownCommandMessage(String commandName, String missingCommandHint) {
+        String message = "Command not found for name: $commandName"
+        missingCommandHint ? "${message}\n${missingCommandHint}" : message
     }
 
     /**
