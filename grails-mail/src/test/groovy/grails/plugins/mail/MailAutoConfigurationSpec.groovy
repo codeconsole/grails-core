@@ -93,7 +93,10 @@ class MailAutoConfigurationSpec extends Specification {
                 .run { context ->
                     assert context.containsBean('mailSession')
                     assert context.getBean('mailSession').is(boundSession)
-                    assert context.getBean('mailSender', JavaMailSenderImpl).session.is(boundSession)
+                    JavaMailSenderImpl mailSender = context.getBean('mailSender', JavaMailSenderImpl)
+                    assert mailSender.session.is(boundSession)
+                    assert mailSender.host == null
+                    assert mailSender.defaultEncoding == null
                 }
 
         cleanup:

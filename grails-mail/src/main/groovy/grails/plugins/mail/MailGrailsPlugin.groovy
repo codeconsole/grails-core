@@ -89,20 +89,11 @@ class MailGrailsPlugin extends Plugin {
 
         bean('mailSender', JavaMailSender).conditionalOnMissingBean() { @Autowired(required = false) @Qualifier('mailSession') Session mailSession, MailConfigurationProperties mailProperties ->
             def mailSender = new JavaMailSenderImpl()
-            if (mailProperties.host) {
-                mailSender.host = mailProperties.host
-            } else if (!mailProperties.jndiName) {
-                def envHost = System.getenv()['SMTP_HOST']
-                if (envHost) {
-                    mailSender.host = envHost
-                } else {
-                    mailSender.host = 'localhost'
-                }
+            if (mailProperties.host || !mailProperties.jndiName) {
+                mailSender.host = mailProperties.host ?: System.getenv('SMTP_HOST') ?: 'localhost'
             }
-            if (mailProperties.encoding) {
-                mailSender.defaultEncoding = mailProperties.encoding
-            } else if (!mailProperties.jndiName) {
-                mailSender.defaultEncoding = 'utf-8'
+            if (mailProperties.encoding || !mailProperties.jndiName) {
+                mailSender.defaultEncoding = mailProperties.encoding ?: 'utf-8'
             }
             if (mailSession != null) {
                 mailSender.session = mailSession
