@@ -82,9 +82,9 @@ class MailGrailsPlugin extends Plugin {
 
     def beans = {
         bean('mailSession', JndiObjectFactoryBean).conditionalOnMissingBean().annotate(ConditionalOnProperty, prefix: 'grails.mail', name: 'jndiName') { MailConfigurationProperties mailProperties ->
-            def factory = new JndiObjectFactoryBean()
-            factory.jndiName = mailProperties.jndiName
-            return factory
+            new JndiObjectFactoryBean().tap {
+                jndiName = mailProperties.jndiName
+            }
         }
 
         bean('mailSender', JavaMailSender).conditionalOnMissingBean() { @Autowired(required = false) @Qualifier('mailSession') Session mailSession,

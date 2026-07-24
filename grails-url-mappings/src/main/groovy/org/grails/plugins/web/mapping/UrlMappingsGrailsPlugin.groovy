@@ -36,6 +36,7 @@ import org.springframework.web.filter.CorsFilter
 import grails.compiler.beans.GrailsBeans
 import grails.config.Settings
 import grails.plugins.Plugin
+import grails.util.Environment as GrailsEnvironment
 import grails.util.GrailsUtil
 import grails.web.CamelCaseUrlConverter
 import grails.web.HyphenatedUrlConverter
@@ -88,11 +89,9 @@ class UrlMappingsGrailsPlugin extends Plugin {
         }
 
         bean('grailsLinkGenerator', LinkGenerator).conditionalOnMissingBeanName() {
-            if (cacheUrls == null) {
-                cacheUrls = !grails.util.Environment.isDevelopmentMode() &&
-                        !grails.util.Environment.getCurrent().isReloadEnabled()
-            }
-            cacheUrls ? new CachingLinkGenerator(serverURL) : new DefaultLinkGenerator(serverURL)
+            boolean useCache = cacheUrls != null ? cacheUrls :
+                    !GrailsEnvironment.developmentMode && !GrailsEnvironment.current.reloadEnabled
+            useCache ? new CachingLinkGenerator(serverURL) : new DefaultLinkGenerator(serverURL)
         }
 
         // Guarded on CorsFilter (the Spring type GrailsCorsFilter extends), not GrailsCorsFilter:
@@ -103,9 +102,9 @@ class UrlMappingsGrailsPlugin extends Plugin {
         }
 
         bean(UrlMappingsErrorPageCustomizer).conditionalOnMissingBean() { ObjectProvider<UrlMappings> urlMappingsProvider ->
-            def errorPageCustomizer = new UrlMappingsErrorPageCustomizer()
-            errorPageCustomizer.setUrlMappings(urlMappingsProvider.getIfAvailable())
-            errorPageCustomizer
+            new UrlMappingsErrorPageCustomizer().tap {
+                urlMappings = urlMappingsProvider.ifAvailable
+            }
         }
 
         bean(UrlMappingsInfoHandlerAdapter).conditionalOnMissingBean() {
@@ -120,8 +119,8 @@ class UrlMappingsGrailsPlugin extends Plugin {
                 grailsApplication.addArtefact(UrlMappingsArtefactHandler.TYPE, DefaultUrlMappings)
             }
 
-            boolean reloadEnabled = grails.util.Environment.isDevelopmentMode() ||
-                    grails.util.Environment.current.isReloadEnabled()
+            boolean reloadEnabled = GrailsEnvironment.developmentMode ||
+                    GrailsEnvironment.current.reloadEnabled
             boolean corsFilterEnabled = environment.getProperty(Settings.SETTING_CORS_FILTER, Boolean, true)
 
             // The url-mapping holder is a ProxyFactoryBean (reload mode) whose produced UrlMappings

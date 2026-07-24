@@ -39,6 +39,7 @@ import grails.compiler.beans.GrailsBeans
 import grails.config.Config
 import grails.core.GrailsApplication
 import grails.plugins.Plugin
+import grails.util.Environment as GrailsEnvironment
 import grails.util.Metadata
 import org.grails.plugins.web.taglib.RenderSitemeshTagLib
 import org.grails.web.gsp.io.GrailsConventionGroovyPageLocator
@@ -139,13 +140,14 @@ class Sitemesh3GrailsPlugin extends Plugin {
             new CaptureAwareContentProcessor()
         }
 
-        bean('decoratorSelector', Sitemesh3LayoutFinder).annotate(ConditionalOnBean, value: DispatcherServlet).conditionalOnMissingBeanName() { ObjectProvider<GrailsConventionGroovyPageLocator> groovyPageLocator, GrailsApplication grailsApplication ->
+        bean('decoratorSelector', Sitemesh3LayoutFinder).annotate(ConditionalOnBean, value: DispatcherServlet).conditionalOnMissingBeanName() { ObjectProvider<GrailsConventionGroovyPageLocator> groovyPageLocator,
+                GrailsApplication grailsApplication ->
             Config config = grailsApplication.config
-            grails.util.Environment env = grails.util.Environment.current
+            GrailsEnvironment env = GrailsEnvironment.current
             boolean developmentMode = Metadata.current.isDevelopmentEnvironmentAvailable()
-            boolean reloadEnabled = env.isReloadEnabled() ||
+            boolean reloadEnabled = env.reloadEnabled ||
                     config.getProperty('grails.gsp.enable.reload', Boolean, false) ||
-                    (developmentMode && env == grails.util.Environment.DEVELOPMENT)
+                    (developmentMode && env == GrailsEnvironment.DEVELOPMENT)
 
             // The SiteMesh 3 specific key wins; fall back to the legacy
             // grails.views.layout.default key so existing apps keep their
@@ -153,11 +155,11 @@ class Sitemesh3GrailsPlugin extends Plugin {
             String defaultLayout = config.getProperty('grails.sitemesh.default.layout') ?:
                     config.getProperty('grails.views.layout.default')
 
-            Sitemesh3LayoutFinder finder = new Sitemesh3LayoutFinder(groovyPageLocator.getIfAvailable())
-            finder.gspReloadEnabled = reloadEnabled
-            finder.defaultDecoratorName = defaultLayout ?: null
-            finder.layoutCacheExpirationMillis = config.getProperty('grails.sitemesh.layout.cache.interval', Long, 5000L)
-            return finder
+            new Sitemesh3LayoutFinder(groovyPageLocator.ifAvailable).tap {
+                gspReloadEnabled = reloadEnabled
+                defaultDecoratorName = defaultLayout ?: null
+                layoutCacheExpirationMillis = config.getProperty('grails.sitemesh.layout.cache.interval', Long, 5000L)
+            }
         }
     }
 

@@ -132,14 +132,18 @@ class I18nGrailsPlugin extends Plugin {
         }
 
         bean(MessageSource).conditionalOnMissingBeanName(search: SearchStrategy.CURRENT) { GrailsApplication grailsApplication, GrailsPluginManager pluginManager ->
-            def source = new PluginAwareResourceBundleMessageSource(grailsApplication, pluginManager)
-            source.defaultEncoding = encoding
-            source.fallbackToSystemLocale = false
-            if (Environment.getCurrent().isReloadEnabled() || gspEnableReload) {
-                source.cacheSeconds = cacheSeconds
-                source.fileCacheSeconds = fileCacheSeconds
+            // Captured before tap: the message source has cacheSeconds/fileCacheSeconds
+            // properties of its own, which inside tap would shadow these injected fields.
+            int configuredCacheSeconds = cacheSeconds
+            int configuredFileCacheSeconds = fileCacheSeconds
+            new PluginAwareResourceBundleMessageSource(grailsApplication, pluginManager).tap {
+                defaultEncoding = encoding
+                fallbackToSystemLocale = false
+                if (Environment.current.reloadEnabled || gspEnableReload) {
+                    cacheSeconds = configuredCacheSeconds
+                    fileCacheSeconds = configuredFileCacheSeconds
+                }
             }
-            source
         }
 
         // Discovers the locales the application is translated into so a language selector can list
