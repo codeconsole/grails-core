@@ -43,6 +43,8 @@ dependencies {
     api 'org.apache.groovy:groovy'
     api 'org.springframework.boot:spring-boot-servlet'
 
+    implementation project(':grails-beans-dsl')
+
     testCompileOnly 'org.junit.jupiter:junit-jupiter-api'
 
     compileOnly 'jakarta.servlet:jakarta.servlet-api'

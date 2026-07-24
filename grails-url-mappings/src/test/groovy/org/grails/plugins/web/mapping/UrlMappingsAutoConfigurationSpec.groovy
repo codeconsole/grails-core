@@ -22,6 +22,9 @@ package org.grails.plugins.web.mapping
 import java.util.function.Supplier
 
 import grails.config.Settings
+import grails.web.CamelCaseUrlConverter
+import grails.web.HyphenatedUrlConverter
+import grails.web.UrlConverter
 import grails.web.mapping.UrlMappings
 import grails.web.mapping.cors.GrailsCorsConfiguration
 import grails.web.mapping.cors.GrailsCorsFilter
@@ -56,6 +59,36 @@ class UrlMappingsAutoConfigurationSpec extends Specification {
             assert context.containsBean('urlMappingsErrorPageCustomizer')
             assert context.containsBean('urlMappingsInfoHandlerAdapter')
         }
+    }
+
+    void 'the camelCase url converter registers by default'() {
+        expect:
+        contextRunner().run { context ->
+            assert context.getBean(UrlConverter.BEAN_NAME) instanceof CamelCaseUrlConverter
+        }
+    }
+
+    void 'the hyphenated url converter registers when selected by property'() {
+        expect:
+        contextRunner()
+                .withPropertyValues("${Settings.WEB_URL_CONVERTER}=hyphenated")
+                .run { context ->
+                    assert context.getBean(UrlConverter.BEAN_NAME) instanceof HyphenatedUrlConverter
+                }
+    }
+
+    void 'a user-defined grailsUrlConverter bean makes both auto-configured variants back off'() {
+        given:
+        UrlConverter userConverter = new HyphenatedUrlConverter()
+        Supplier<UrlConverter> userConverterSupplier = () -> userConverter
+
+        expect:
+        contextRunner()
+                .withBean(UrlConverter.BEAN_NAME, UrlConverter, userConverterSupplier)
+                .run { context ->
+                    assert context.getBeanNamesForType(UrlConverter).length == 1
+                    assert context.getBean(UrlConverter.BEAN_NAME).is(userConverter)
+                }
     }
 
     void 'the CORS filter is not registered when disabled by property'() {
