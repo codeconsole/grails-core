@@ -33,10 +33,12 @@ import org.springframework.boot.autoconfigure.AutoConfigureBefore
 import org.springframework.boot.autoconfigure.AutoConfigureOrder
 import org.springframework.boot.autoconfigure.ImportAutoConfiguration
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication
 import org.springframework.boot.autoconfigure.condition.SearchStrategy
 import org.springframework.boot.autoconfigure.context.MessageSourceAutoConfiguration
 import org.springframework.boot.context.properties.EnableConfigurationProperties
+import org.springframework.context.annotation.AnnotationConfigApplicationContext
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.ComponentScan
 import org.springframework.context.annotation.ImportResource
@@ -46,6 +48,7 @@ import org.springframework.context.annotation.PropertySource
 import org.springframework.context.annotation.PropertySources
 import org.springframework.context.annotation.Scope
 import org.springframework.core.annotation.Order
+import org.springframework.core.env.MapPropertySource
 import spock.lang.Specification
 import spock.lang.TempDir
 import spock.lang.Unroll
@@ -855,6 +858,7 @@ class GrailsBeansASTTransformationSpec extends Specification {
             import grails.compiler.beans.GrailsBeans
             import org.springframework.beans.factory.annotation.Value
             import org.springframework.boot.autoconfigure.AutoConfiguration
+            import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication
             import org.springframework.context.annotation.Primary
             import org.springframework.core.annotation.Order
 
@@ -932,9 +936,86 @@ class GrailsBeansASTTransformationSpec extends Specification {
         'two bean(...) statements sharing the same non-identifier Spring bean name' |
                 "bean('my-service', String) { 'x' }; bean('my-service', Integer) { 1 }" |
                 'is already used as the Spring bean name'
+        'same-named bean(...) statements where only one carries a discriminating condition' |
+                "bean('x', String).annotate(ConditionalOnWebApplication) { 'a' }; bean('x', Integer) { 1 }" |
+                'carries its own discriminating condition'
+        'same-named bean(...) statements guarded only by the shared-name back-off' |
+                "bean('x', String).conditionalOnMissingBeanName() { 'a' }; bean('x', Integer).conditionalOnMissingBeanName() { 1 }" |
+                'carries its own discriminating condition'
+        'same-named bean(...) statements guarded only by the bare return-type back-off' |
+                "bean('x', String).conditionalOnMissingBean() { 'a' }; bean('x', Integer).conditionalOnMissingBean() { 1 }" |
+                'carries its own discriminating condition'
         'a field(...) and a method(...) sharing the same name' |
                 "field('x', String); method('x', Integer) { 1 }" | 'is already used by another'
         'the removed .methodName(...) qualifier'          | "bean('x', String).methodName('y') { 'z' }"                      | 'Expected bean(["name", ] Type) { ... }'
+    }
+
+    private static final String SHARED_NAME_FIXTURE = '''
+        import grails.compiler.beans.GrailsBeans
+        import org.springframework.boot.autoconfigure.AutoConfiguration
+        import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
+
+        @GrailsBeans
+        @AutoConfiguration
+        class SharedNameFixtureBeans {
+            def beans = {
+                bean('converter', String).conditionalOnMissingBeanName().annotate(ConditionalOnProperty, name: 'app.converter', havingValue: 'camelCase', matchIfMissing: true) {
+                    'camel case converter'
+                }
+
+                bean('converter', String).conditionalOnMissingBeanName().annotate(ConditionalOnProperty, name: 'app.converter', havingValue: 'hyphenated') {
+                    'hyphenated converter'
+                }
+            }
+        }
+    '''
+
+    def "one bean name may be declared by several bean(...) statements when each carries its own discriminating condition"() {
+        given: "the standard autoconfiguration pattern for mutually exclusive variants of one bean - " +
+                "the exact shape of UrlMappingsAutoConfiguration's two grailsUrlConverter beans"
+        Class<?> fixture = compile(SHARED_NAME_FIXTURE)
+
+        when: "the first declaration claims the bean name as its method name and the second synthesizes"
+        def first = fixture.getDeclaredMethod('converter')
+        def second = fixture.getDeclaredMethod('string$0')
+
+        then: "both register under the same Spring bean name"
+        first.getAnnotation(Bean).value() == ['converter'] as String[]
+        second.getAnnotation(Bean).value() == ['converter'] as String[]
+
+        and: "each keeps its own guards"
+        first.getAnnotation(ConditionalOnProperty).havingValue() == 'camelCase'
+        first.getAnnotation(ConditionalOnProperty).matchIfMissing()
+        second.getAnnotation(ConditionalOnProperty).havingValue() == 'hyphenated'
+        !second.getAnnotation(ConditionalOnProperty).matchIfMissing()
+        first.getAnnotation(ConditionalOnMissingBean).name() == ['converter'] as String[]
+        second.getAnnotation(ConditionalOnMissingBean).name() == ['converter'] as String[]
+    }
+
+    @Unroll
+    def "at runtime the discriminating conditions select which of the same-named beans registers: #description"() {
+        given:
+        Class<?> fixture = compile(SHARED_NAME_FIXTURE)
+        def context = new AnnotationConfigApplicationContext()
+        if (configuredValue != null) {
+            context.environment.propertySources.addFirst(
+                    new MapPropertySource('test', ['app.converter': configuredValue]))
+        }
+        context.register(fixture)
+
+        when:
+        context.refresh()
+
+        then:
+        context.getBean('converter') == expectedBean
+
+        cleanup:
+        context.close()
+
+        where:
+        description               | configuredValue | expectedBean
+        'the matchIfMissing default' | null         | 'camel case converter'
+        'an explicit property value' | 'hyphenated' | 'hyphenated converter'
     }
 
     def "a synthesized method name that would collide with a pre-existing field(...) name skips forward to the next free slot"() {

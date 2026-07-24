@@ -22,7 +22,9 @@ import java.beans.Introspector;
 import java.lang.reflect.Modifier;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import javax.lang.model.SourceVersion;
@@ -100,7 +102,9 @@ import org.springframework.context.annotation.Scope;
  * falls back to a synthesized {@code <type>$N} name otherwise (a non-identifier name like
  * {@code "my-service"}, a reserved keyword, or a collision - a bean named {@code toString} never
  * overrides {@code Object.toString()}) - Spring resolves the bean by its {@code @Bean("name")}
- * value either way, never by the method name.</li>
+ * value either way, never by the method name. One bean name may be declared by several
+ * {@code bean(...)} statements when every declaration carries its own discriminating condition
+ * (see {@link #validateSharedBeanNames}).</li>
  * <li>{@code field(["name", ] Type)}, optionally chained with {@code .value(...)} (config
  * injection: key + default, or one verbatim placeholder/SpEL string) and/or (repeatably)
  * {@code .annotate(AnnotationType[, attr: value, ...])}. Declares a private field on the
@@ -208,8 +212,8 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
                 createAutoConfigurationSibling(classNode, grailsBeansAnnotation, source) : classNode;
 
         Set<String> usedNames = existingMemberNames(beanMethodHost);
-        Set<String> usedBeanNames = new HashSet<>();
         List<Statement> statements = beanStatements((ClosureExpression) initialExpression);
+        validateSharedBeanNames(statements, source);
         // Two passes: field(...)/method(...) declare explicit member names, so they are processed
         // first (along with anything malformed, so every statement is still processed exactly
         // once) and bean(...) statements second. A bean's derived method name then adapts to every
@@ -217,12 +221,12 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
         // statements must never change validity.
         for (Statement statement : statements) {
             if (!isBeanRootedStatement(statement)) {
-                processStatement(beanMethodHost, statement, source, usedNames, usedBeanNames);
+                processStatement(beanMethodHost, statement, source, usedNames);
             }
         }
         for (Statement statement : statements) {
             if (isBeanRootedStatement(statement)) {
-                processStatement(beanMethodHost, statement, source, usedNames, usedBeanNames);
+                processStatement(beanMethodHost, statement, source, usedNames);
             }
         }
 
@@ -459,8 +463,142 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
         return BEAN_CALL.equals(call.getMethodAsString());
     }
 
-    private void processStatement(ClassNode classNode, Statement statement, SourceUnit source, Set<String> usedNames,
-            Set<String> usedBeanNames) {
+    // A Spring bean name may be declared by more than one bean(...) statement - the standard
+    // autoconfiguration pattern for mutually exclusive variants of one bean, e.g. Grails' two
+    // "grailsUrlConverter" beans selected by @ConditionalOnProperty - but only when every
+    // statement sharing the name carries a condition of its own that could discriminate between
+    // them at runtime. Without one, the duplicates can never all take effect (Spring keeps the
+    // first definition from a configuration class and silently skips the rest), so the likeliest
+    // explanation is a copy-paste accident - rejected at compile time instead. The shared-name
+    // back-off (.conditionalOnMissingBeanName(), or .conditionalOnMissingBean() with no
+    // arguments) does not count: it is identical on every duplicate by construction, so it can
+    // never tell them apart.
+    private void validateSharedBeanNames(List<Statement> statements, SourceUnit source) {
+        Map<String, List<BeanNameUse>> usesByName = new LinkedHashMap<>();
+        for (Statement statement : statements) {
+            if (!isBeanRootedStatement(statement)) {
+                continue;
+            }
+            BeanNameUse use = parseBeanNameUse(
+                    (MethodCallExpression) ((ExpressionStatement) statement).getExpression());
+            if (use != null) {
+                usesByName.computeIfAbsent(use.beanName, key -> new ArrayList<>()).add(use);
+            }
+        }
+        for (List<BeanNameUse> uses : usesByName.values()) {
+            if (uses.size() < 2) {
+                continue;
+            }
+            for (BeanNameUse use : uses) {
+                if (!use.conditioned) {
+                    addError(use.baseCall, source, "\"" + use.beanName + "\" is already used as the Spring " +
+                            "bean name of another bean(...) statement - declaring it more than once is only " +
+                            "allowed when every declaration with the name carries its own discriminating " +
+                            "condition (e.g. .annotate(ConditionalOnProperty, ...)), so that at most one of " +
+                            "them registers at runtime");
+                }
+            }
+        }
+    }
+
+    private static final class BeanNameUse {
+        private final String beanName;
+        private final MethodCallExpression baseCall;
+        private final boolean conditioned;
+
+        BeanNameUse(String beanName, MethodCallExpression baseCall, boolean conditioned) {
+            this.beanName = beanName;
+            this.baseCall = baseCall;
+            this.conditioned = conditioned;
+        }
+    }
+
+    // Silent classification counterpart of processBeanStatement's parsing, in the same spirit as
+    // isBeanRootedStatement: extracts the bean name and whether the statement carries a
+    // discriminating condition, returning null for anything malformed - a malformed statement
+    // still produces its usual errors when actually processed.
+    private BeanNameUse parseBeanNameUse(MethodCallExpression outerCall) {
+        List<MethodCallExpression> qualifierCalls = new ArrayList<>();
+        MethodCallExpression baseCall = outerCall;
+        while (!ROOT_STATEMENT_CALL_NAMES.contains(baseCall.getMethodAsString())) {
+            if (!(baseCall.getObjectExpression() instanceof MethodCallExpression)) {
+                return null;
+            }
+            qualifierCalls.add(baseCall);
+            baseCall = (MethodCallExpression) baseCall.getObjectExpression();
+        }
+        if (!BEAN_CALL.equals(baseCall.getMethodAsString())) {
+            return null;
+        }
+
+        List<Expression> args = withoutTrailingClosure(flatten(baseCall.getArguments()), baseCall, outerCall);
+        if (args.isEmpty() || args.size() > 2 || !(args.get(args.size() - 1) instanceof ClassExpression)) {
+            return null;
+        }
+        String name;
+        if (args.size() == 1) {
+            name = decapitalize(((ClassExpression) args.get(0)).getType().getNameWithoutPackage());
+        }
+        else {
+            Object nameValue = args.get(0) instanceof ConstantExpression ?
+                    ((ConstantExpression) args.get(0)).getValue() : null;
+            if (!(nameValue instanceof String)) {
+                return null;
+            }
+            name = (String) nameValue;
+        }
+        return new BeanNameUse(name, baseCall, hasDiscriminatingCondition(qualifierCalls, outerCall));
+    }
+
+    private boolean hasDiscriminatingCondition(List<MethodCallExpression> qualifierCalls, MethodCallExpression outerCall) {
+        for (MethodCallExpression qualifierCall : qualifierCalls) {
+            String qualifierName = qualifierCall.getMethodAsString();
+            List<Expression> args = withoutTrailingClosure(flatten(qualifierCall.getArguments()), qualifierCall, outerCall);
+            if (CONDITIONAL_ON_MISSING_BEAN_CALL.equals(qualifierName) && !args.isEmpty()) {
+                return true;
+            }
+            if (ANNOTATE_CALL.equals(qualifierName)) {
+                for (Expression arg : args) {
+                    if (arg instanceof ClassExpression && isConditionalAnnotation(((ClassExpression) arg).getType())) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    private List<Expression> withoutTrailingClosure(List<Expression> args, MethodCallExpression call,
+            MethodCallExpression outerCall) {
+        if (call == outerCall && !args.isEmpty() && args.get(args.size() - 1) instanceof ClosureExpression) {
+            return args.subList(0, args.size() - 1);
+        }
+        return args;
+    }
+
+    private boolean isConditionalAnnotation(ClassNode annotationType) {
+        return isConditionalAnnotation(annotationType, new HashSet<>());
+    }
+
+    // The same transitive meta-annotation walk belongsOnSibling does, against @Conditional alone:
+    // every @ConditionalOnXxx - Spring Boot's own and arbitrarily-deeply composed custom ones -
+    // eventually reaches @Conditional through its meta-annotations.
+    private boolean isConditionalAnnotation(ClassNode annotationType, Set<String> visited) {
+        if (!visited.add(annotationType.getName())) {
+            return false;
+        }
+        if (Conditional.class.getName().equals(annotationType.getName())) {
+            return true;
+        }
+        for (AnnotationNode metaAnnotation : annotationType.getAnnotations()) {
+            if (isConditionalAnnotation(metaAnnotation.getClassNode(), visited)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void processStatement(ClassNode classNode, Statement statement, SourceUnit source, Set<String> usedNames) {
         if (!(statement instanceof ExpressionStatement) ||
                 !(((ExpressionStatement) statement).getExpression() instanceof MethodCallExpression)) {
             addError(statement, source, "Each 'beans' statement must be a bean(...), field(...), or method(...) call");
@@ -509,7 +647,7 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
         }
 
         if (isBean) {
-            processBeanStatement(classNode, outerCall, baseCall, qualifierCalls, source, usedNames, usedBeanNames);
+            processBeanStatement(classNode, outerCall, baseCall, qualifierCalls, source, usedNames);
         }
         else if (FIELD_CALL.equals(rootName)) {
             processFieldStatement(classNode, baseCall, qualifierCalls, source, usedNames);
@@ -528,7 +666,7 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
     }
 
     private void processBeanStatement(ClassNode classNode, MethodCallExpression outerCall, MethodCallExpression baseCall,
-            List<MethodCallExpression> qualifierCalls, SourceUnit source, Set<String> usedNames, Set<String> usedBeanNames) {
+            List<MethodCallExpression> qualifierCalls, SourceUnit source, Set<String> usedNames) {
         List<Expression> closureCallArgs = flatten(outerCall.getArguments());
         if (closureCallArgs.isEmpty() || !(closureCallArgs.get(closureCallArgs.size() - 1) instanceof ClosureExpression)) {
             addError(outerCall, source, "bean(...) must end with a factory closure: bean(Type) { ... }");
@@ -546,10 +684,6 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
 
         TypeAndName typeAndName = parseNameAndType(baseArgs, baseCall, source, BEAN_CALL, false);
         if (typeAndName == null) {
-            return;
-        }
-        if (!registerName(typeAndName.name, baseCall, source, usedBeanNames,
-                "is already used as the Spring bean name of another bean(...) statement")) {
             return;
         }
 

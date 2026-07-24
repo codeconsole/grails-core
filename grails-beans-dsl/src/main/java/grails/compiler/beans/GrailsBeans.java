@@ -46,7 +46,11 @@ import org.codehaus.groovy.transform.GroovyASTTransformationClass;
  * constructor-style bean injection). The generated method's name is an implementation detail:
  * Spring resolves the bean by its {@code @Bean("name")} value, so a bean name that isn't a valid
  * Java identifier (e.g. {@code "my-service"}) simply gets a synthesized {@code <type>$N} method
- * name behind the scenes.</li>
+ * name behind the scenes. The same bean name may even be declared by more than one
+ * {@code bean(...)} statement - the standard Spring Boot pattern for mutually exclusive variants
+ * of one bean - provided every declaration with the name carries its own discriminating
+ * condition (e.g. {@code .annotate(ConditionalOnProperty, ...)}) so that at most one of them
+ * registers at runtime.</li>
  * <li>{@code field(["name", ] Type)}, optionally chained with {@code .value(...)} and/or
  * (repeatably) {@code .annotate(AnnotationType[, attr: value, ...])}. Declares a private field on
  * the generated class, for state shared across bean methods. The usual case is injected
