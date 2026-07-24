@@ -205,3 +205,37 @@ class MyBeanImpl {
 Using `ref` (in XML or the DSL) is very powerful since it configures a runtime reference, so the referenced bean doesn't have to exist yet. As long as it's in place when the final application context configuration occurs, everything will be resolved correctly.
 
 For a full reference of the available beans see the plugin reference in the reference guide.
+
+
+==== Defining Beans at Compile Time with @GrailsBeans
+
+
+`resources.groovy` and `doWithSpring` wire their beans at runtime, every time the application starts. The link:{api}grails/compiler/beans/GrailsBeans.html[GrailsBeans] annotation is a compile-time alternative: a similar closure style of bean definition, compiled at build time into real `@Bean` factory methods — no closures, and nothing DSL-specific, survive into the bytecode.
+
+`@GrailsBeans` is not plugin-specific. It works on any class Spring Boot processes as a configuration source — including the application's own `Application` class, since Spring Boot reads `@Bean` methods directly off the class it is launched with. Add `org.apache.grails:grails-beans-dsl` as a dependency and declare a `beans` closure whose statements construct and return each bean:
+
+[source,groovy]
+----
+import grails.boot.GrailsApp
+import grails.boot.config.GrailsAutoConfiguration
+import grails.compiler.beans.GrailsBeans
+import my.company.MyBeanImpl
+
+@GrailsBeans
+class Application extends GrailsAutoConfiguration {
+
+    static void main(String[] args) {
+        GrailsApp.run(Application, args)
+    }
+
+    def beans = {
+        bean('myBean', MyBeanImpl) {
+            new MyBeanImpl(someProperty: 42, otherProperty: 'blue')
+        }
+    }
+}
+----
+
+No further registration is needed on the `Application` class — Spring Boot already processes it. A standalone class annotated with both `@GrailsBeans` and `@AutoConfiguration` must instead be listed in `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports`, like any other hand-written auto-configuration.
+
+The DSL's full surface — the `bean(...)` qualifiers such as `.conditionalOnMissingBean(...)`, `.primary()` and `.annotate(...)`, plus `field(...)` and `method(...)` for state and logic shared across bean methods — is documented in the link:plugins.html#hookingIntoRuntimeConfiguration[plugin development chapter], together with applying `@GrailsBeans` directly to a plugin descriptor.

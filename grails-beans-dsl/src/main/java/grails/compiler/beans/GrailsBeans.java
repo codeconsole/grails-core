@@ -66,6 +66,12 @@ import org.codehaus.groovy.transform.GroovyASTTransformationClass;
  * When no name is given, one is derived from the type name following the JavaBeans convention
  * ({@link java.beans.Introspector#decapitalize(String)}).
  *
+ * <p>The generated methods work on any class Spring processes as a configuration source: a
+ * registered {@code @AutoConfiguration} or {@code @Configuration} class, or the Spring Boot
+ * application class itself (e.g. a Grails {@code Application} class) - Spring Boot reads
+ * {@code @Bean} methods directly off the class it is launched with, so no further registration
+ * is needed there.
+ *
  * <p>May also be applied to a {@code grails.plugins.Plugin} subclass, letting bean definitions
  * live in the familiar {@code *GrailsPlugin.groovy} file. In that case the generated methods land
  * on a new sibling class instead, named by the plugin-descriptor convention - a {@code *GrailsPlugin}

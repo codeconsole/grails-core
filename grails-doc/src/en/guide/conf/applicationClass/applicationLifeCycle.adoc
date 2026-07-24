@@ -34,3 +34,5 @@ class Application extends GrailsAutoConfiguration {
     ...
 }
 ----
+
+The `Application` class can also define its beans at compile time instead, by annotating it with `@GrailsBeans` — see link:spring.html#springdslAdditional[Configuring Additional Beans].

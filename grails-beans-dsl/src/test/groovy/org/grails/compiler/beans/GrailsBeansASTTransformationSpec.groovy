@@ -1018,6 +1018,67 @@ class GrailsBeansASTTransformationSpec extends Specification {
         'an explicit property value' | 'hyphenated' | 'hyphenated converter'
     }
 
+    def "the standalone form works on an application class: a GrailsAutoConfiguration subclass, with no @AutoConfiguration"() {
+        given: "the shape of a Grails app's Application class, which needs no @AutoConfiguration and no " +
+                "AutoConfiguration.imports registration - Spring Boot reads @Bean methods directly off " +
+                "the application class it is launched with"
+        String source = '''
+            import grails.boot.config.GrailsAutoConfiguration
+            import grails.compiler.beans.GrailsBeans
+
+            @GrailsBeans
+            class Application extends GrailsAutoConfiguration {
+                def beans = {
+                    bean('applicationGreeting', String) {
+                        'hello from the application class'
+                    }
+                }
+            }
+        '''
+
+        when:
+        Class<?> application = compile(source)
+        def method = application.getDeclaredMethod('applicationGreeting')
+
+        then: "the @Bean factory method landed on the application class itself"
+        method.getAnnotation(Bean).value() == ['applicationGreeting'] as String[]
+        method.invoke(application.getDeclaredConstructor().newInstance()) == 'hello from the application class'
+
+        and: "no beans closure survives into the compiled application class"
+        application.declaredFields.every { it.name != 'beans' }
+    }
+
+    def "@Bean methods compiled onto an unannotated class register when the class is a configuration source"() {
+        given: "no @AutoConfiguration and no @Configuration - just a class registered as a source, " +
+                "the same way Spring Boot processes the application class (booting a full Grails " +
+                "GrailsAutoConfiguration subclass needs the framework runtime, so the source-class " +
+                "mechanism itself is exercised on a plain class here)"
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+
+            @GrailsBeans
+            class PlainSourceBeans {
+                def beans = {
+                    bean('plainGreeting', String) {
+                        'hello from a plain source class'
+                    }
+                }
+            }
+        '''
+        Class<?> plainSource = compile(source)
+
+        when:
+        def context = new AnnotationConfigApplicationContext()
+        context.register(plainSource)
+        context.refresh()
+
+        then:
+        context.getBean('plainGreeting') == 'hello from a plain source class'
+
+        cleanup:
+        context?.close()
+    }
+
     def "a synthesized method name that would collide with a pre-existing field(...) name skips forward to the next free slot"() {
         given:
         String source = '''
