@@ -17,6 +17,11 @@ package grails.plugins.mail
 
 import java.util.function.Supplier
 
+import javax.naming.Context
+import javax.naming.spi.InitialContextFactory
+
+import jakarta.mail.Session
+
 import grails.core.GrailsApplication
 import grails.plugins.GrailsPluginManager
 import grails.web.pages.GroovyPagesUriService
@@ -76,6 +81,37 @@ class MailAutoConfigurationSpec extends Specification {
         }
     }
 
+    void 'the JNDI mail session registers when grails.mail.jndiName is set and is injected into the mail sender'() {
+        given: 'a Session bound in JNDI under the configured name'
+        Session boundSession = Session.getInstance(new Properties())
+        TestMailSessionContextFactory.boundSession = boundSession
+
+        expect:
+        contextRunner()
+                .withSystemProperties("java.naming.factory.initial=${TestMailSessionContextFactory.name}")
+                .withPropertyValues('grails.mail.jndiName=mail/testSession')
+                .run { context ->
+                    assert context.containsBean('mailSession')
+                    assert context.getBean('mailSession').is(boundSession)
+                    assert context.getBean('mailSender', JavaMailSenderImpl).session.is(boundSession)
+                }
+
+        cleanup:
+        TestMailSessionContextFactory.boundSession = null
+    }
+
+    void 'a user-defined mailSession bean is injected into the mail sender through the qualified optional parameter'() {
+        given:
+        Session userSession = Session.getInstance(new Properties())
+        Supplier<Session> userSessionSupplier = () -> userSession
+
+        expect:
+        contextRunner().withBean('mailSession', Session, userSessionSupplier)
+                .run { context ->
+                    assert context.getBean('mailSender', JavaMailSenderImpl).session.is(userSession)
+                }
+    }
+
     void 'a user-defined mail sender makes the auto-configured one back off'() {
         given:
         JavaMailSender userMailSender = new JavaMailSenderImpl()
@@ -96,6 +132,16 @@ class MailAutoConfigurationSpec extends Specification {
             assert context.containsBean('mailMessageBuilderFactory')
             assert context.containsBean('mailService')
             assert context.getBean(MailService) != null
+        }
+    }
+
+    static class TestMailSessionContextFactory implements InitialContextFactory {
+
+        static Session boundSession
+
+        @Override
+        Context getInitialContext(Hashtable<?, ?> environment) {
+            [lookup: { String name -> boundSession }, close: { }] as Context
         }
     }
 }
