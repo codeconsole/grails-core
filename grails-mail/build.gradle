@@ -76,10 +76,14 @@ dependencies {
     compileOnly 'org.springframework.boot:spring-boot-autoconfigure' // @AutoConfiguration, @ConditionalOnProperty, @ConfigurationProperties
     compileOnly 'org.apache.groovy:groovy' // Provided as this is a Grails plugin
     compileOnly 'org.slf4j:slf4j-api' // @Slf4j
+    compileOnly project(':grails-beans-dsl') // comp: @GrailsBeans
 
     testImplementation project(':grails-testing-support-web')
     testImplementation 'jakarta.mail:jakarta.mail-api'
     testImplementation 'org.spockframework:spock-core'
+    testImplementation 'org.springframework.boot:spring-boot-autoconfigure'
+    testImplementation 'org.springframework.boot:spring-boot-test'
+    testRuntimeOnly 'org.assertj:assertj-core'
 
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
