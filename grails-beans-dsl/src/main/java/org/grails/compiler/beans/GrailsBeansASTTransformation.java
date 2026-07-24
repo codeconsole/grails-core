@@ -786,6 +786,11 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
                         "(a literal, a static final constant reference, or a concatenation of those)");
                 return null;
             }
+            if (placeholder.isBlank()) {
+                addError(args.get(0), source, ".value(...) requires a non-blank config key - a blank one " +
+                        "would compile to the unresolvable placeholder ${}");
+                return null;
+            }
             memberValue = placeholder.contains("${") || placeholder.contains("#{") ?
                     placeholder : "${" + placeholder + "}";
         }
@@ -796,6 +801,13 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
                 addError(key == null ? args.get(0) : args.get(1), source, ".value(...) arguments must be " +
                         "compile-time String constants (a literal, a static final constant reference, or a " +
                         "concatenation of those)");
+                return null;
+            }
+            // Only the KEY must be non-blank: a deliberately blank default ('${key:}') is legal
+            // and used (e.g. grails.i18n.default.locale falls back to the JVM default locale).
+            if (key.isBlank()) {
+                addError(args.get(0), source, ".value(key, default) requires a non-blank config key - " +
+                        "only the default may be blank");
                 return null;
             }
             memberValue = "${" + key + ":" + defaultValue + "}";

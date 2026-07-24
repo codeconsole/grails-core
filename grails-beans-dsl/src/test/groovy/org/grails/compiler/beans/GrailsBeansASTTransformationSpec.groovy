@@ -946,6 +946,10 @@ class GrailsBeansASTTransformationSpec extends Specification {
         '.value(...) chained onto method(...)'              | "method('x', String).value('k', 'd') { 'y' }"                    | 'cannot be chained onto method(...)'
         '.value(...) with no arguments'                     | "field('x', String).value()"                                     | 'requires a config key'
         '.value(...) with too many arguments'               | "field('x', String).value('k', 'd', 'extra')"                    | 'requires a config key'
+        '.value(...) with an empty single-argument key'      | "field('x', String).value('')"                                  | 'requires a non-blank config key'
+        '.value(...) with a whitespace-only single-argument key' | "field('x', String).value('   ')"                           | 'requires a non-blank config key'
+        '.value(key, default) with a blank key'              | "field('x', String).value('', 'fallback')"                      | 'requires a non-blank config key'
+        '.value(key, default) with a whitespace-only key'    | "field('x', String).value('   ', 'fallback')"                   | 'requires a non-blank config key'
         '.value(...) chained twice'                          | "field('x', String).value('a', 'b').value('c', 'd')"            | 'may only be chained once'
         '.value(...) combined with .annotate(Value, ...)'    | "field('x', String).value('k', 'd').annotate(Value, value: 'v')" | 'already attached'
         'conditionalOnMissingBeanName(...) given a name: attribute' |
