@@ -676,8 +676,8 @@ class GrailsBeansASTTransformationSpec extends Specification {
         autoConfigClass.getDeclaredField('encoding').getAnnotation(Value).value() == '${app.encoding:UTF-8}'
     }
 
-    def "field(...).value(placeholder) passes a single complete placeholder through verbatim"() {
-        given:
+    def "field(...).value(placeholder) passes a string already carrying a placeholder or SpEL expression through verbatim"() {
+        given: "a complete placeholder, a SpEL expression, and a mixed literal with an embedded placeholder"
         String source = '''
             import grails.compiler.beans.GrailsBeans
             import org.springframework.boot.autoconfigure.AutoConfiguration
@@ -688,6 +688,7 @@ class GrailsBeansASTTransformationSpec extends Specification {
                 def beans = {
                     field('encoding', String).value('${app.encoding:UTF-8}')
                     field('poolSize', int).value('#{T(java.lang.Runtime).getRuntime().availableProcessors()}')
+                    field('endpoint', String).value('http://${app.host}/api')
 
                     bean('greeting', String) {
                         encoding
@@ -703,6 +704,34 @@ class GrailsBeansASTTransformationSpec extends Specification {
         fixtureBeans.getDeclaredField('encoding').getAnnotation(Value).value() == '${app.encoding:UTF-8}'
         fixtureBeans.getDeclaredField('poolSize').getAnnotation(Value).value() ==
                 '#{T(java.lang.Runtime).getRuntime().availableProcessors()}'
+        fixtureBeans.getDeclaredField('endpoint').getAnnotation(Value).value() == 'http://${app.host}/api'
+    }
+
+    def "field(...).value(key) auto-wraps a bare config key into a placeholder"() {
+        given: "a bare key - which can only ever mean 'inject this property', never its literal text"
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @GrailsBeans
+            @AutoConfiguration
+            class BareKeyValueFixture {
+                def beans = {
+                    field('cacheUrls', Boolean).value('grails.web.linkGenerator.useCache')
+
+                    bean('greeting', String) {
+                        String.valueOf(cacheUrls)
+                    }
+                }
+            }
+        '''
+
+        when:
+        Class<?> fixtureBeans = compile(source)
+
+        then:
+        fixtureBeans.getDeclaredField('cacheUrls').getAnnotation(Value).value() ==
+                '${grails.web.linkGenerator.useCache}'
     }
 
     def "annotate(...) attribute values may reference a shared String constant, not just a literal"() {

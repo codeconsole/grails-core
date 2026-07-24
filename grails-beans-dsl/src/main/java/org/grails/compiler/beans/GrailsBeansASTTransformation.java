@@ -106,7 +106,7 @@ import org.springframework.context.annotation.Scope;
  * {@code bean(...)} statements when every declaration carries its own discriminating condition
  * (see {@link #validateSharedBeanNames}).</li>
  * <li>{@code field(["name", ] Type)}, optionally chained with {@code .value(...)} (config
- * injection: key + default, or one verbatim placeholder/SpEL string) and/or (repeatably)
+ * injection: key + default, a bare key, or a verbatim placeholder/SpEL string) and/or (repeatably)
  * {@code .annotate(AnnotationType[, attr: value, ...])}. Declares a private field on the
  * generated class, for state shared across bean methods.</li>
  * <li>{@code method(["name", ] Type) { ... }}, chainable with {@code .annotate(...)} only
@@ -762,12 +762,16 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
 
     // .value(key, default) builds the '${key:default}' placeholder itself, as a concatenation the
     // compiler folds into a constant - which is what lets the key be a bare static-final constant
-    // reference, the one shape a directly-written annotation value rejects. .value(placeholder)
-    // passes its single argument through verbatim, for SpEL or an already-complete placeholder.
+    // reference, the one shape a directly-written annotation value rejects. .value(single) is a
+    // bare config key with no default, auto-wrapped into '${key}' - injecting the key's literal
+    // text is never what .value(...) is for - unless the string already contains a '${'
+    // placeholder or '#{' SpEL expression, which passes through verbatim (including mixed
+    // literals like 'http://${app.host}/'). A genuine literal stays expressible via
+    // .annotate(Value, value: ...).
     private AnnotationNode valueAnnotation(List<Expression> args, MethodCallExpression qualifierCall, SourceUnit source) {
         if (args.isEmpty() || args.size() > 2) {
             addError(qualifierCall, source, ".value(...) requires a config key and default - e.g. " +
-                    ".value(Settings.GSP_VIEW_ENCODING, \"UTF-8\") - or a single complete placeholder/SpEL string");
+                    ".value(Settings.GSP_VIEW_ENCODING, \"UTF-8\") - or a single config key/placeholder/SpEL string");
             return null;
         }
         // The pieces are resolved and folded HERE, into a plain constant, rather than being left
@@ -782,7 +786,8 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
                         "(a literal, a static final constant reference, or a concatenation of those)");
                 return null;
             }
-            memberValue = placeholder;
+            memberValue = placeholder.contains("${") || placeholder.contains("#{") ?
+                    placeholder : "${" + placeholder + "}";
         }
         else {
             String key = resolveStringConstant(args.get(0));

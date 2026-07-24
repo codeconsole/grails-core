@@ -56,8 +56,10 @@ import org.codehaus.groovy.transform.GroovyASTTransformationClass;
  * the generated class, for state shared across bean methods. The usual case is injected
  * configuration: {@code field("encoding", String).value(Settings.GSP_VIEW_ENCODING, "UTF-8")}
  * compiles to {@code @Value("${grails.views.gsp.encoding:UTF-8}")} - the two-argument form takes
- * a config key (a literal or a bare constant reference) plus default, and the one-argument form
- * passes a complete placeholder or SpEL string through verbatim.</li>
+ * a config key (a literal or a bare constant reference) plus default. The one-argument form
+ * takes a bare config key with no default ({@code .value("app.encoding")} compiles to
+ * {@code @Value("${app.encoding}")}), while a string already containing a {@code ${...}}
+ * placeholder or {@code #{...}} SpEL expression passes through verbatim.</li>
  * <li>{@code method(["name", ] Type) { ... }}, chainable with {@code .annotate(...)} only
  * ({@code .value(...)} is field-specific).
  * Declares a private helper method on the generated class, for logic shared across bean methods,
