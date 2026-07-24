@@ -52,6 +52,7 @@ dependencies {
     api project(':grails-core')
 
     implementation 'org.apache.groovy:groovy'
+    implementation project(':grails-beans-dsl')
 
     compileOnly 'jakarta.servlet:jakarta.servlet-api'
 

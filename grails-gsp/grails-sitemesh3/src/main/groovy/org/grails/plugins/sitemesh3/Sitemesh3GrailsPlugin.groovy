@@ -20,12 +20,28 @@ package org.grails.plugins.sitemesh3
 
 import groovy.transform.CompileStatic
 
+import org.sitemesh.webmvc.SiteMeshViewResolverBeanPostProcessor
+import org.sitemesh.webmvc.SiteMeshViewResolverPostProcessor
+
 import org.springframework.beans.factory.BeanRegistrar
 import org.springframework.beans.factory.BeanRegistry
+import org.springframework.beans.factory.ObjectProvider
+import org.springframework.boot.autoconfigure.AutoConfiguration
+import org.springframework.boot.autoconfigure.AutoConfigureAfter
+import org.springframework.boot.autoconfigure.AutoConfigureBefore
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean
+import org.springframework.boot.autoconfigure.condition.ConditionalOnClass
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.core.env.Environment
+import org.springframework.web.servlet.DispatcherServlet
 
+import grails.compiler.beans.GrailsBeans
+import grails.config.Config
+import grails.core.GrailsApplication
 import grails.plugins.Plugin
+import grails.util.Metadata
 import org.grails.plugins.web.taglib.RenderSitemeshTagLib
+import org.grails.web.gsp.io.GrailsConventionGroovyPageLocator
 
 /**
  * Provides GSP layout decoration through SiteMesh 3's filter-less,
@@ -37,18 +53,58 @@ import org.grails.plugins.web.taglib.RenderSitemeshTagLib
  * keeps decorating and this module stands down) but warned about by
  * {@link Sitemesh3EnvironmentPostProcessor}, and support for it may be removed.
  *
- * <p>The heavy lifting lives outside this class: default configuration
- * properties are contributed by {@link Sitemesh3EnvironmentPostProcessor}
- * (registered in {@code META-INF/spring.factories}) and the view-resolver
- * decoration is applied by {@link Sitemesh3AutoConfiguration}. The only bean
- * this plugin itself contributes is registered through {@link #beanRegistrar()},
- * the modern replacement for the deprecated {@code doWithSpring()} bean DSL.</p>
+ * <p>Default configuration properties are contributed by
+ * {@link Sitemesh3EnvironmentPostProcessor} (registered in
+ * {@code META-INF/spring.factories}). The view-resolver decoration beans are
+ * declared in this class's {@code beans} block, which {@code @GrailsBeans}
+ * compiles into the generated {@code Sitemesh3AutoConfiguration} class — the
+ * Spring annotations above this class gate and order that auto-configuration,
+ * not the plugin itself, and move onto it at compile time. The only bean the
+ * plugin registers outside it goes through {@link #beanRegistrar()}.</p>
  *
- * <p>With no {@code doWithSpring()} bean-builder closure — whose dynamic
- * dispatch against the bean builder prevents static compilation of descriptor
- * classes — this plugin compiles statically as a whole.</p>
+ * <p>The decoration beans register ahead of the upstream auto-configuration:
+ * the {@link Sitemesh3ViewResolverDefinitionPostProcessor} (which rewrites the
+ * {@code jspViewResolver} definition into the decorating
+ * {@link GrailsSiteMeshViewResolver}), the
+ * {@link GrailsSiteMeshViewResolverBeanPostProcessor}, the
+ * {@link CaptureAwareContentProcessor} ({@code contentProcessor}) and the
+ * {@link Sitemesh3LayoutFinder} ({@code decoratorSelector}).</p>
+ *
+ * <p>The definition-level rewrite is what applies decoration: because it acts
+ * on the bean definition, the decorating resolver is what gets instantiated no
+ * matter how early a consumer forces the lazy {@code jspViewResolver} into
+ * existence (see {@link Sitemesh3ViewResolverDefinitionPostProcessor}, the
+ * Grails implementation of upstream's {@code bean-definition} wrap mode). The
+ * bean post-processor is the fallback tier: it decorates a
+ * {@code jspViewResolver} registered as an instance rather than a definition.
+ * Upstream's post-processor never re-wraps a resolver that is already a
+ * {@code SiteMeshViewResolver}, so the two tiers cannot double-decorate.</p>
+ *
+ * <p>Upstream's {@code SiteMeshViewResolverAutoConfiguration} declares its
+ * beans with {@code @ConditionalOnMissingBean} guards. By scheduling the
+ * generated configuration first (via {@link AutoConfigureBefore}) the Grails
+ * implementations are registered before those guards are evaluated, so the
+ * upstream defaults back off cleanly rather than being registered and then
+ * overridden after the fact. The two post-processors here cover all of
+ * upstream's registrations by type: the definition post-processor preempts the
+ * {@code bean-definition} mode bean, and the bean post-processor preempts both
+ * the wrap-all and {@code bean-instance} mode beans.</p>
+ *
+ * <p>The {@code contentProcessor} and {@code decoratorSelector} beans drive view
+ * decoration, which is only meaningful when Spring MVC is resolving views, so
+ * they are gated on a {@link DispatcherServlet} being present. This keeps them
+ * out of the lightweight unit-test contexts built by grails-testing-support,
+ * which have no dispatcher servlet — and because the definition post-processor
+ * only rewrites {@code jspViewResolver} when both of those beans are registered,
+ * it keeps decoration out of such contexts too.</p>
  */
 @CompileStatic
+@GrailsBeans
+@AutoConfiguration
+@AutoConfigureAfter(name = 'org.springframework.boot.webmvc.autoconfigure.DispatcherServletAutoConfiguration')
+@AutoConfigureBefore(name = 'org.sitemesh.autoconfigure.SiteMeshViewResolverAutoConfiguration')
+@ConditionalOnClass(SiteMeshViewResolverBeanPostProcessor)
+@ConditionalOnProperty(name = 'sitemesh.integration', havingValue = 'view-resolver', matchIfMissing = true)
 class Sitemesh3GrailsPlugin extends Plugin {
 
     def grailsVersion = '7.0.0-SNAPSHOT > *'
@@ -69,6 +125,41 @@ class Sitemesh3GrailsPlugin extends Plugin {
             RenderSitemeshTagLib,
             Sitemesh3LayoutTagLib,
     ]
+
+    def beans = {
+        bean('siteMeshViewResolverPostProcessor', Sitemesh3ViewResolverDefinitionPostProcessor).staticMethod().conditionalOnMissingBean(SiteMeshViewResolverPostProcessor) {
+            new Sitemesh3ViewResolverDefinitionPostProcessor()
+        }
+
+        bean('siteMeshViewResolverBeanPostProcessor', GrailsSiteMeshViewResolverBeanPostProcessor).staticMethod().conditionalOnMissingBean(SiteMeshViewResolverBeanPostProcessor) {
+            new GrailsSiteMeshViewResolverBeanPostProcessor()
+        }
+
+        bean('contentProcessor', CaptureAwareContentProcessor).annotate(ConditionalOnBean, value: DispatcherServlet).conditionalOnMissingBeanName() {
+            new CaptureAwareContentProcessor()
+        }
+
+        bean('decoratorSelector', Sitemesh3LayoutFinder).annotate(ConditionalOnBean, value: DispatcherServlet).conditionalOnMissingBeanName() { ObjectProvider<GrailsConventionGroovyPageLocator> groovyPageLocator, GrailsApplication grailsApplication ->
+            Config config = grailsApplication.config
+            grails.util.Environment env = grails.util.Environment.current
+            boolean developmentMode = Metadata.current.isDevelopmentEnvironmentAvailable()
+            boolean reloadEnabled = env.isReloadEnabled() ||
+                    config.getProperty('grails.gsp.enable.reload', Boolean, false) ||
+                    (developmentMode && env == grails.util.Environment.DEVELOPMENT)
+
+            // The SiteMesh 3 specific key wins; fall back to the legacy
+            // grails.views.layout.default key so existing apps keep their
+            // configured default layout when switching.
+            String defaultLayout = config.getProperty('grails.sitemesh.default.layout') ?:
+                    config.getProperty('grails.views.layout.default')
+
+            Sitemesh3LayoutFinder finder = new Sitemesh3LayoutFinder(groovyPageLocator.getIfAvailable())
+            finder.gspReloadEnabled = reloadEnabled
+            finder.defaultDecoratorName = defaultLayout ?: null
+            finder.layoutCacheExpirationMillis = config.getProperty('grails.sitemesh.layout.cache.interval', Long, 5000L)
+            return finder
+        }
+    }
 
     @Override
     BeanRegistrar beanRegistrar() {
