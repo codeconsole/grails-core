@@ -68,53 +68,53 @@ class GrailsBeansASTTransformationSpec extends Specification {
         @AutoConfiguration
         class FixtureBeans {
             def beans = {
-                bean(String, 'greeting') {
+                bean('greeting', String) {
                     'hello'
                 }
 
-                bean(Integer, 'answer').conditionalOnMissingBean(Integer) {
+                bean('answer', Integer).conditionalOnMissingBean(Integer) {
                     42
                 }
 
-                bean(String, 'shout') { String input ->
+                bean('shout', String) { String input ->
                     input.toUpperCase()
                 }
 
-                bean(String, 'primaryGreeting').primary() {
+                bean('primaryGreeting', String).primary() {
                     'primary hello'
                 }
 
-                bean(String, 'lazyGreeting').lazy() {
+                bean('lazyGreeting', String).lazy() {
                     'lazy hello'
                 }
 
-                bean(String, 'scopedGreeting').scope('prototype') {
+                bean('scopedGreeting', String).scope('prototype') {
                     'scoped hello'
                 }
 
-                bean(String, 'combinedGreeting').primary().lazy().scope('prototype').conditionalOnMissingBean(String) {
+                bean('combinedGreeting', String).primary().lazy().scope('prototype').conditionalOnMissingBean(String) {
                     'combined hello'
                 }
 
-                bean(String, 'orderedGreeting').annotate(Order, value: 1) {
+                bean('orderedGreeting', String).annotate(Order, value: 1) {
                     'ordered hello'
                 }
 
-                bean(String, 'webOnlyGreeting').annotate(ConditionalOnWebApplication) {
+                bean('webOnlyGreeting', String).annotate(ConditionalOnWebApplication) {
                     'web hello'
                 }
 
-                bean(String, 'multiAnnotatedGreeting').primary().annotate(Order, value: 2).annotate(ConditionalOnWebApplication) {
+                bean('multiAnnotatedGreeting', String).primary().annotate(Order, value: 2).annotate(ConditionalOnWebApplication) {
                     'multi hello'
                 }
 
-                field(String, 'suffix').annotate(Value, value: '${greeting.suffix:!!!}')
+                field('suffix', String).annotate(Value, value: '${greeting.suffix:!!!}')
 
-                method(String, 'yell') { String input ->
+                method('yell', String) { String input ->
                     input.toUpperCase() + (suffix ?: '')
                 }
 
-                bean(String, 'yelledGreeting') {
+                bean('yelledGreeting', String) {
                     yell('hello')
                 }
             }
@@ -207,7 +207,7 @@ class GrailsBeansASTTransformationSpec extends Specification {
             @AutoConfiguration
             class NamedAttributesFixture {
                 def beans = {
-                    bean(String, 'greeting').conditionalOnMissingBean(name: 'greeting', search: SearchStrategy.CURRENT) {
+                    bean('greeting', String).conditionalOnMissingBean(name: 'greeting', search: SearchStrategy.CURRENT) {
                         'hello'
                     }
                 }
@@ -235,7 +235,7 @@ class GrailsBeansASTTransformationSpec extends Specification {
             @AutoConfiguration
             class MixedAttributesFixture {
                 def beans = {
-                    bean(CharSequence, 'greeting').conditionalOnMissingBean(CharSequence, search: SearchStrategy.CURRENT) {
+                    bean('greeting', CharSequence).conditionalOnMissingBean(CharSequence, search: SearchStrategy.CURRENT) {
                         'hello'
                     }
                 }
@@ -293,7 +293,7 @@ class GrailsBeansASTTransformationSpec extends Specification {
             @AutoConfiguration
             class ExplicitNameConditionFixture {
                 def beans = {
-                    bean(String, 'my-source').conditionalOnMissingBeanName() {
+                    bean('my-source', String).conditionalOnMissingBeanName() {
                         'hello'
                     }
                 }
@@ -318,7 +318,7 @@ class GrailsBeansASTTransformationSpec extends Specification {
             @AutoConfiguration
             class BareConditionFixture {
                 def beans = {
-                    bean(String, 'greeting').conditionalOnMissingBean() {
+                    bean('greeting', String).conditionalOnMissingBean() {
                         'hello'
                     }
                 }
@@ -462,7 +462,7 @@ class GrailsBeansASTTransformationSpec extends Specification {
             @AutoConfiguration
             class CombinedNamedFixture {
                 def beans = {
-                    bean(String, 'my-service').primary().annotate(Order, value: 1) {
+                    bean('my-service', String).primary().annotate(Order, value: 1) {
                         'hello'
                     }
                 }
@@ -491,7 +491,7 @@ class GrailsBeansASTTransformationSpec extends Specification {
             @AutoConfiguration
             class KeywordBeanNameFixture {
                 def beans = {
-                    bean(String, 'int') {
+                    bean('int', String) {
                         'hello'
                     }
                 }
@@ -515,7 +515,7 @@ class GrailsBeansASTTransformationSpec extends Specification {
             @AutoConfiguration
             class SynthesizedNameFixture {
                 def beans = {
-                    bean(String, 'my-service') {
+                    bean('my-service', String) {
                         'hello'
                     }
                 }
@@ -544,10 +544,10 @@ class GrailsBeansASTTransformationSpec extends Specification {
             @AutoConfiguration
             class MultipleSynthesizedNamesFixture {
                 def beans = {
-                    bean(String, 'my-service') {
+                    bean('my-service', String) {
                         'a'
                     }
-                    bean(String, 'my-other-service') {
+                    bean('my-other-service', String) {
                         'b'
                     }
                 }
@@ -572,7 +572,7 @@ class GrailsBeansASTTransformationSpec extends Specification {
             @AutoConfiguration
             class WeirdNameFixture {
                 def beans = {
-                    bean(String, '123 not valid!') {
+                    bean('123 not valid!', String) {
                         'hello'
                     }
                 }
@@ -586,7 +586,7 @@ class GrailsBeansASTTransformationSpec extends Specification {
         fixtureBeans.getDeclaredMethod('string$0').getAnnotation(Bean).value() == ['123 not valid!'] as String[]
     }
 
-    def "field(Type, name).annotate(...) declares a private annotated field"() {
+    def "field(name, Type).annotate(...) declares a private annotated field"() {
         given:
         Class<?> fixtureBeans = compile()
 
@@ -615,11 +615,11 @@ class GrailsBeansASTTransformationSpec extends Specification {
             @AutoConfiguration
             class ValueSugarFixture {
                 def beans = {
-                    field(String, 'encoding').value(ConfigKeys.ENCODING_KEY, 'UTF-8')
-                    field(int, 'cacheSeconds').value('app.cache.seconds', '5')
-                    field(String, 'defaultLocale').value('app.default.locale', '')
+                    field('encoding', String).value(ConfigKeys.ENCODING_KEY, 'UTF-8')
+                    field('cacheSeconds', int).value('app.cache.seconds', '5')
+                    field('defaultLocale', String).value('app.default.locale', '')
 
-                    bean(String, 'greeting') {
+                    bean('greeting', String) {
                         encoding
                     }
                 }
@@ -655,9 +655,9 @@ class GrailsBeansASTTransformationSpec extends Specification {
             @AutoConfiguration
             class StaticValuePlugin extends Plugin {
                 def beans = {
-                    field(String, 'encoding').value(StaticConfigKeys.ENCODING_KEY, 'UTF-8')
+                    field('encoding', String).value(StaticConfigKeys.ENCODING_KEY, 'UTF-8')
 
-                    bean(String, 'greeting') {
+                    bean('greeting', String) {
                         encoding
                     }
                 }
@@ -683,10 +683,10 @@ class GrailsBeansASTTransformationSpec extends Specification {
             @AutoConfiguration
             class VerbatimValueFixture {
                 def beans = {
-                    field(String, 'encoding').value('${app.encoding:UTF-8}')
-                    field(int, 'poolSize').value('#{T(java.lang.Runtime).getRuntime().availableProcessors()}')
+                    field('encoding', String).value('${app.encoding:UTF-8}')
+                    field('poolSize', int).value('#{T(java.lang.Runtime).getRuntime().availableProcessors()}')
 
-                    bean(String, 'greeting') {
+                    bean('greeting', String) {
                         encoding
                     }
                 }
@@ -705,7 +705,7 @@ class GrailsBeansASTTransformationSpec extends Specification {
     def "annotate(...) attribute values may reference a shared String constant, not just a literal"() {
         given: "an @Value placeholder built the same way the real I18nGrailsPlugin conversion builds " +
                 "its property keys from grails.config.Settings, proving .annotate(...)'s member values " +
-                "aren't restricted to literals the way bean(Type, name)'s own name is"
+                "aren't restricted to literals the way bean(name, Type)'s own name is"
         String source = '''
             import grails.compiler.beans.GrailsBeans
             import grails.config.Settings
@@ -716,7 +716,7 @@ class GrailsBeansASTTransformationSpec extends Specification {
             @AutoConfiguration
             class SharedConstantFixture {
                 def beans = {
-                    field(String, 'localeResolverType').annotate(Value, value: '${' + Settings.I18N_LOCALE_RESOLVER + ':session}')
+                    field('localeResolverType', String).annotate(Value, value: '${' + Settings.I18N_LOCALE_RESOLVER + ':session}')
                 }
             }
         '''
@@ -729,7 +729,7 @@ class GrailsBeansASTTransformationSpec extends Specification {
         field.getAnnotation(Value).value() == '${grails.i18n.localeResolver:session}'
     }
 
-    def "method(Type, name) declares a private helper method usable from bean(...) and field(...)"() {
+    def "method(name, Type) declares a private helper method usable from bean(...) and field(...)"() {
         given:
         Class<?> fixtureBeans = compile()
 
@@ -778,11 +778,11 @@ class GrailsBeansASTTransformationSpec extends Specification {
             @AutoConfiguration
             class QualifiedParamFixture {
                 def beans = {
-                    bean(String, 'special') {
+                    bean('special', String) {
                         'special value'
                     }
 
-                    bean(String, 'shout') { @Qualifier('special') String input ->
+                    bean('shout', String) { @Qualifier('special') String input ->
                         input.toUpperCase()
                     }
                 }
@@ -877,63 +877,64 @@ class GrailsBeansASTTransformationSpec extends Specification {
         where:
         description                                  | statement                                                          | expectedMessage
         'a statement that is not a method call'       | 'def notACall = 1'                                                 | "Each 'beans' statement must be a bean(...), field(...), or method(...) call"
-        'a method call that is not bean(...)'         | "someOtherMethod(String) { 'x' }"                                  | 'Expected bean(Type[, "name"]) { ... }'
-        'bean(...) with a non-type first argument'    | "bean('NotAType') { 'x' }"                                         | 'bean(...) requires a type as its first argument'
-        'bean(...) with no trailing factory closure'  | "bean(String, 'x')"                                                | 'bean(...) must end with a factory closure'
+        'a method call that is not bean(...)'         | "someOtherMethod(String) { 'x' }"                                  | 'Expected bean(["name", ] Type) { ... }'
+        'bean(...) with a name but no type'           | "bean('NotAType') { 'x' }"                                         | 'bean(...) requires a type'
+        'bean(...) with the name and type in the old order' | "bean(String, 'x') { 'y' }"                                  | 'takes the name before the type'
+        'bean(...) with no trailing factory closure'  | "bean('x', String)"                                                | 'bean(...) must end with a factory closure'
         'conditionalOnMissingBean(...) with a non-type argument' |
-                "bean(String, 'x').conditionalOnMissingBean('not a type') { 'x' }" |
+                "bean('x', String).conditionalOnMissingBean('not a type') { 'x' }" |
                 'conditionalOnMissingBean(...) arguments must be types'
         'conditionalOnMissingBean(...) with types given both positionally and via value:' |
-                "bean(String, 'x').conditionalOnMissingBean(String, value: Integer) { 'y' }" |
+                "bean('x', String).conditionalOnMissingBean(String, value: Integer) { 'y' }" |
                 'use one or the other'
-        'bean(...) with a non-constant name argument'  | "bean(String, someVariable) { 'x' }"                              | 'requires name to be a String literal'
-        'bean(...) with a non-String constant name'    | 'bean(String, 42) { \'x\' }'                                       | 'requires name to be a String literal'
-        'bean(...) with an unexpected third argument'  | "bean(String, 'x', 'unexpected') { 'y' }"                          | 'at most one name'
-        'bean(...) with an empty explicit name'         | "bean(String, '') { 'y' }"                                        | 'requires a non-blank name'
-        'bean(...) with a whitespace-only explicit name' | "bean(String, '   ') { 'y' }"                                    | 'requires a non-blank name'
-        'field(...) with a reserved-keyword name'        | "field(String, 'class')"                                          | 'is not a valid name'
-        'method(...) with a reserved-keyword name'        | "method(String, 'return') { 'y' }"                               | 'is not a valid name'
-        'an unrecognised qualifier chained after bean(...)' | "bean(String, 'x').unknownQualifier() { 'y' }"                | 'Expected bean(Type[, "name"]) { ... }'
-        'the same qualifier chained twice'             | "bean(String, 'x').primary().primary() { 'y' }"                    | 'may only be chained once'
-        'primary() given an argument'                  | "bean(String, 'x').primary('oops') { 'y' }"                        | '.primary() takes no arguments'
-        'lazy() given an argument'                      | "bean(String, 'x').lazy(true) { 'y' }"                             | '.lazy() takes no arguments'
-        'scope(...) with no argument'                   | "bean(String, 'x').scope() { 'y' }"                                | '.scope(...) requires exactly one non-empty String argument'
-        'scope(...) with a non-String argument'         | "bean(String, 'x').scope(42) { 'y' }"                              | '.scope(...) requires exactly one non-empty String argument'
-        'annotate(...) with no arguments'                | "bean(String, 'x').annotate() { 'y' }"                            | 'requires an annotation type'
-        'annotate(...) with a non-type argument'         | "bean(String, 'x').annotate('NotAType') { 'y' }"                  | 'requires an annotation type'
-        'annotate(...) with a non-annotation type'       | "bean(String, 'x').annotate(String) { 'y' }"                      | 'is not an annotation type'
+        'bean(...) with a non-constant name argument'  | "bean(someVariable, String) { 'x' }"                              | 'requires the name to be a String literal'
+        'bean(...) with a non-String constant name'    | 'bean(42, String) { \'x\' }'                                       | 'requires the name to be a String literal'
+        'bean(...) with an unexpected third argument'  | "bean('x', String, 'unexpected') { 'y' }"                          | 'requires a type, optionally preceded by a name'
+        'bean(...) with an empty explicit name'         | "bean('', String) { 'y' }"                                        | 'requires a non-blank name'
+        'bean(...) with a whitespace-only explicit name' | "bean('   ', String) { 'y' }"                                    | 'requires a non-blank name'
+        'field(...) with a reserved-keyword name'        | "field('class', String)"                                          | 'is not a valid name'
+        'method(...) with a reserved-keyword name'        | "method('return', String) { 'y' }"                               | 'is not a valid name'
+        'an unrecognised qualifier chained after bean(...)' | "bean('x', String).unknownQualifier() { 'y' }"                | 'Expected bean(["name", ] Type) { ... }'
+        'the same qualifier chained twice'             | "bean('x', String).primary().primary() { 'y' }"                    | 'may only be chained once'
+        'primary() given an argument'                  | "bean('x', String).primary('oops') { 'y' }"                        | '.primary() takes no arguments'
+        'lazy() given an argument'                      | "bean('x', String).lazy(true) { 'y' }"                             | '.lazy() takes no arguments'
+        'scope(...) with no argument'                   | "bean('x', String).scope() { 'y' }"                                | '.scope(...) requires exactly one non-empty String argument'
+        'scope(...) with a non-String argument'         | "bean('x', String).scope(42) { 'y' }"                              | '.scope(...) requires exactly one non-empty String argument'
+        'annotate(...) with no arguments'                | "bean('x', String).annotate() { 'y' }"                            | 'requires an annotation type'
+        'annotate(...) with a non-type argument'         | "bean('x', String).annotate('NotAType') { 'y' }"                  | 'requires an annotation type'
+        'annotate(...) with a non-annotation type'       | "bean('x', String).annotate(String) { 'y' }"                      | 'is not an annotation type'
         'the same annotation attached twice via annotate(...)' |
-                "bean(String, 'x').annotate(Order, value: 1).annotate(Order, value: 2) { 'y' }" |
+                "bean('x', String).annotate(Order, value: 1).annotate(Order, value: 2) { 'y' }" |
                 'already attached'
-        'annotate(...) colliding with a named qualifier' | "bean(String, 'x').primary().annotate(Primary) { 'y' }"          | 'already attached'
-        'field(...) with a non-type first argument'      | "field('NotAType')"                                               | 'field(...) requires a type as its first argument'
-        'field(...) chained with a bean-only qualifier'   | "field(String, 'x').primary()"                                    | 'cannot be chained onto field(...)'
-        '.value(...) chained onto bean(...)'               | "bean(String, 'x').value('k', 'd') { 'y' }"                      | 'cannot be chained onto bean(...)'
-        '.value(...) chained onto method(...)'              | "method(String, 'x').value('k', 'd') { 'y' }"                    | 'cannot be chained onto method(...)'
-        '.value(...) with no arguments'                     | "field(String, 'x').value()"                                     | 'requires a config key'
-        '.value(...) with too many arguments'               | "field(String, 'x').value('k', 'd', 'extra')"                    | 'requires a config key'
-        '.value(...) chained twice'                          | "field(String, 'x').value('a', 'b').value('c', 'd')"            | 'may only be chained once'
-        '.value(...) combined with .annotate(Value, ...)'    | "field(String, 'x').value('k', 'd').annotate(Value, value: 'v')" | 'already attached'
+        'annotate(...) colliding with a named qualifier' | "bean('x', String).primary().annotate(Primary) { 'y' }"          | 'already attached'
+        'field(...) with a name but no type'             | "field('NotAType')"                                               | 'field(...) requires a type'
+        'field(...) chained with a bean-only qualifier'   | "field('x', String).primary()"                                    | 'cannot be chained onto field(...)'
+        '.value(...) chained onto bean(...)'               | "bean('x', String).value('k', 'd') { 'y' }"                      | 'cannot be chained onto bean(...)'
+        '.value(...) chained onto method(...)'              | "method('x', String).value('k', 'd') { 'y' }"                    | 'cannot be chained onto method(...)'
+        '.value(...) with no arguments'                     | "field('x', String).value()"                                     | 'requires a config key'
+        '.value(...) with too many arguments'               | "field('x', String).value('k', 'd', 'extra')"                    | 'requires a config key'
+        '.value(...) chained twice'                          | "field('x', String).value('a', 'b').value('c', 'd')"            | 'may only be chained once'
+        '.value(...) combined with .annotate(Value, ...)'    | "field('x', String).value('k', 'd').annotate(Value, value: 'v')" | 'already attached'
         'conditionalOnMissingBeanName(...) given a name: attribute' |
-                "bean(String, 'x').conditionalOnMissingBeanName(name: 'other') { 'y' }" | 'sets name automatically'
+                "bean('x', String).conditionalOnMissingBeanName(name: 'other') { 'y' }" | 'sets name automatically'
         'conditionalOnMissingBeanName(...) given a value: attribute' |
-                "bean(String, 'x').conditionalOnMissingBeanName(value: String) { 'y' }" | 'sets name automatically'
+                "bean('x', String).conditionalOnMissingBeanName(value: String) { 'y' }" | 'sets name automatically'
         'conditionalOnMissingBeanName(...) given a positional type' |
-                "bean(String, 'x').conditionalOnMissingBeanName(String) { 'y' }" | 'takes only named attributes'
+                "bean('x', String).conditionalOnMissingBeanName(String) { 'y' }" | 'takes only named attributes'
         'conditionalOnMissingBeanName(...) chained onto field(...)' |
-                "field(String, 'x').conditionalOnMissingBeanName()" | 'cannot be chained onto field(...)'
+                "field('x', String).conditionalOnMissingBeanName()" | 'cannot be chained onto field(...)'
         'conditionalOnMissingBeanName(...) combined with conditionalOnMissingBean(...)' |
-                "bean(String, 'x').conditionalOnMissingBean(String).conditionalOnMissingBeanName() { 'y' }" | 'already attached'
-        'method(...) without a body closure'              | "method(String, 'x')"                                             | 'method(...) must end with a body closure'
-        'method(...) chained with a bean-only qualifier'  | "method(String, 'x').conditionalOnMissingBean(String) { 'y' }"    | 'cannot be chained onto method(...)'
+                "bean('x', String).conditionalOnMissingBean(String).conditionalOnMissingBeanName() { 'y' }" | 'already attached'
+        'method(...) without a body closure'              | "method('x', String)"                                             | 'method(...) must end with a body closure'
+        'method(...) chained with a bean-only qualifier'  | "method('x', String).conditionalOnMissingBean(String) { 'y' }"    | 'cannot be chained onto method(...)'
         'two bean(...) statements sharing the same explicit name' |
-                "bean(String, 'x') { 'a' }; bean(Integer, 'x') { 1 }" | 'is already used as the Spring bean name'
+                "bean('x', String) { 'a' }; bean('x', Integer) { 1 }" | 'is already used as the Spring bean name'
         'two bean(...) statements sharing the same non-identifier Spring bean name' |
-                "bean(String, 'my-service') { 'x' }; bean(Integer, 'my-service') { 1 }" |
+                "bean('my-service', String) { 'x' }; bean('my-service', Integer) { 1 }" |
                 'is already used as the Spring bean name'
         'a field(...) and a method(...) sharing the same name' |
-                "field(String, 'x'); method(Integer, 'x') { 1 }" | 'is already used by another'
-        'the removed .methodName(...) qualifier'          | "bean(String, 'x').methodName('y') { 'z' }"                      | 'Expected bean(Type[, "name"]) { ... }'
+                "field('x', String); method('x', Integer) { 1 }" | 'is already used by another'
+        'the removed .methodName(...) qualifier'          | "bean('x', String).methodName('y') { 'z' }"                      | 'Expected bean(["name", ] Type) { ... }'
     }
 
     def "a synthesized method name that would collide with a pre-existing field(...) name skips forward to the next free slot"() {
@@ -946,9 +947,9 @@ class GrailsBeansASTTransformationSpec extends Specification {
             @AutoConfiguration
             class SyntheticSkipForwardFixture {
                 def beans = {
-                    field(String, 'string$0')
+                    field('string$0', String)
 
-                    bean(String, 'my-service') {
+                    bean('my-service', String) {
                         'hello'
                     }
                 }
@@ -973,9 +974,9 @@ class GrailsBeansASTTransformationSpec extends Specification {
             @AutoConfiguration
             class FieldBeanNameOverlapFixture {
                 def beans = {
-                    field(String, 'config')
+                    field('config', String)
 
-                    bean(Integer, 'config') {
+                    bean('config', Integer) {
                         42
                     }
                 }
@@ -1000,11 +1001,11 @@ class GrailsBeansASTTransformationSpec extends Specification {
             @AutoConfiguration
             class ReversedFieldBeanNameOverlapFixture {
                 def beans = {
-                    bean(Integer, 'config') {
+                    bean('config', Integer) {
                         42
                     }
 
-                    field(String, 'config')
+                    field('config', String)
                 }
             }
         '''
@@ -1027,11 +1028,11 @@ class GrailsBeansASTTransformationSpec extends Specification {
             @AutoConfiguration
             class ReversedMethodBeanNameOverlapFixture {
                 def beans = {
-                    bean(Integer, 'helper') {
+                    bean('helper', Integer) {
                         42
                     }
 
-                    method(String, 'helper') {
+                    method('helper', String) {
                         'x'
                     }
                 }
@@ -1058,7 +1059,7 @@ class GrailsBeansASTTransformationSpec extends Specification {
                 String greeting() { 'existing' }
 
                 def beans = {
-                    bean(String, 'greeting') {
+                    bean('greeting', String) {
                         'bean'
                     }
                 }
@@ -1087,7 +1088,7 @@ class GrailsBeansASTTransformationSpec extends Specification {
             @AutoConfiguration
             class ToStringBeanFixture {
                 def beans = {
-                    bean(String, 'toString') {
+                    bean('toString', String) {
                         'the bean'
                     }
                 }
@@ -1115,7 +1116,7 @@ class GrailsBeansASTTransformationSpec extends Specification {
             @AutoConfiguration
             class ToStringBeanPlugin extends Plugin {
                 def beans = {
-                    bean(String, 'toString') {
+                    bean('toString', String) {
                         'the bean'
                     }
                 }
@@ -1146,7 +1147,7 @@ class GrailsBeansASTTransformationSpec extends Specification {
             @AutoConfiguration
             class InterfaceDefaultFixture implements Described {
                 def beans = {
-                    bean(String, 'description') {
+                    bean('description', String) {
                         'bean value'
                     }
                 }
@@ -1181,7 +1182,7 @@ class GrailsBeansASTTransformationSpec extends Specification {
             @AutoConfiguration
             class ParentInterfaceFixture implements ChildLabeled {
                 def beans = {
-                    bean(String, 'label') {
+                    bean('label', String) {
                         'bean value'
                     }
                 }
@@ -1210,11 +1211,11 @@ class GrailsBeansASTTransformationSpec extends Specification {
                 String description
 
                 def beans = {
-                    bean(String, 'getDescription') {
+                    bean('getDescription', String) {
                         'bean value'
                     }
 
-                    bean(String, 'setDescription') { String value ->
+                    bean('setDescription', String) { String value ->
                         value
                     }
                 }
@@ -1246,7 +1247,7 @@ class GrailsBeansASTTransformationSpec extends Specification {
                 boolean enabled
 
                 def beans = {
-                    bean(String, 'isEnabled') {
+                    bean('isEnabled', String) {
                         'bean value'
                     }
                 }
@@ -1275,7 +1276,7 @@ class GrailsBeansASTTransformationSpec extends Specification {
                 String helper() { 'existing' }
 
                 def beans = {
-                    method(String, 'helper') {
+                    method('helper', String) {
                         'duplicate'
                     }
                 }
@@ -1307,7 +1308,7 @@ class GrailsBeansASTTransformationSpec extends Specification {
             String version = '1.0'
 
             def beans = {
-                bean(String, 'greeting') {
+                bean('greeting', String) {
                     'hello from plugin'
                 }
             }
@@ -1376,7 +1377,7 @@ class GrailsBeansASTTransformationSpec extends Specification {
             @EnableConfigurationProperties(SomeProperties)
             class ManyAnnotationsPlugin extends Plugin {
                 def beans = {
-                    bean(String, "greeting") {
+                    bean("greeting", String) {
                         "hello"
                     }
                 }
@@ -1436,7 +1437,7 @@ class GrailsBeansASTTransformationSpec extends Specification {
             @EnableImportedConfig
             class ComposedAnnotationPlugin extends Plugin {
                 def beans = {
-                    bean(String, "greeting") {
+                    bean("greeting", String) {
                         "hello"
                     }
                 }
@@ -1473,7 +1474,7 @@ class GrailsBeansASTTransformationSpec extends Specification {
             @ImportResource('classpath:foo.xml')
             class ImportResourcePlugin extends Plugin {
                 def beans = {
-                    bean(String, 'greeting') {
+                    bean('greeting', String) {
                         'hello'
                     }
                 }
@@ -1513,7 +1514,7 @@ class GrailsBeansASTTransformationSpec extends Specification {
             ])
             class ScanningPlugin extends Plugin {
                 def beans = {
-                    bean(String, 'greeting') {
+                    bean('greeting', String) {
                         'hello'
                     }
                 }
@@ -1559,7 +1560,7 @@ class GrailsBeansASTTransformationSpec extends Specification {
             @VendorMarker
             class VendorPlugin extends Plugin {
                 def beans = {
-                    bean(String, 'greeting') {
+                    bean('greeting', String) {
                         'hello'
                     }
                 }
@@ -1594,7 +1595,7 @@ class GrailsBeansASTTransformationSpec extends Specification {
             @AutoConfiguration
             class BadMoveAnnotationsPlugin extends Plugin {
                 def beans = {
-                    bean(String, 'greeting') {
+                    bean('greeting', String) {
                         'hello'
                     }
                 }
@@ -1620,7 +1621,7 @@ class GrailsBeansASTTransformationSpec extends Specification {
             @AutoConfiguration
             class StandaloneWithMoveAnnotations {
                 def beans = {
-                    bean(String, 'greeting') {
+                    bean('greeting', String) {
                         'hello'
                     }
                 }
@@ -1646,7 +1647,7 @@ class GrailsBeansASTTransformationSpec extends Specification {
             @AutoConfiguration
             class FooGrailsPlugin extends Plugin {
                 def beans = {
-                    bean(String, 'greeting') {
+                    bean('greeting', String) {
                         'hello'
                     }
                 }
@@ -1678,7 +1679,7 @@ class GrailsBeansASTTransformationSpec extends Specification {
             @AutoConfiguration
             class BarGrailsPlugin extends Plugin {
                 def beans = {
-                    bean(String, 'greeting') {
+                    bean('greeting', String) {
                         'hello'
                     }
                 }
@@ -1706,7 +1707,7 @@ class GrailsBeansASTTransformationSpec extends Specification {
             @AutoConfiguration
             class RenamedSiblingPlugin extends Plugin {
                 def beans = {
-                    bean(String, 'greeting') {
+                    bean('greeting', String) {
                         'hello'
                     }
                 }
@@ -1737,7 +1738,7 @@ class GrailsBeansASTTransformationSpec extends Specification {
             @AutoConfiguration
             class StandaloneWithAutoConfigurationName {
                 def beans = {
-                    bean(String, 'greeting') {
+                    bean('greeting', String) {
                         'hello'
                     }
                 }
@@ -1763,7 +1764,7 @@ class GrailsBeansASTTransformationSpec extends Specification {
             @AutoConfiguration
             class InvalidAutoConfigurationNamePlugin extends Plugin {
                 def beans = {
-                    bean(String, 'greeting') {
+                    bean('greeting', String) {
                         'hello'
                     }
                 }
@@ -1789,7 +1790,7 @@ class GrailsBeansASTTransformationSpec extends Specification {
             @AutoConfiguration
             class BlankAutoConfigurationNamePlugin extends Plugin {
                 def beans = {
-                    bean(String, 'greeting') {
+                    bean('greeting', String) {
                         'hello'
                     }
                 }
@@ -1815,7 +1816,7 @@ class GrailsBeansASTTransformationSpec extends Specification {
             @AutoConfiguration
             class KeywordAutoConfigurationNamePlugin extends Plugin {
                 def beans = {
-                    bean(String, 'greeting') {
+                    bean('greeting', String) {
                         'hello'
                     }
                 }
@@ -1844,7 +1845,7 @@ class GrailsBeansASTTransformationSpec extends Specification {
             @AutoConfiguration
             class $pluginName extends Plugin {
                 def beans = {
-                    bean(String, 'greeting') {
+                    bean('greeting', String) {
                         'hello'
                     }
                 }
@@ -1873,7 +1874,7 @@ class GrailsBeansASTTransformationSpec extends Specification {
             @GrailsBeans
             class PluginWithoutAutoConfiguration extends Plugin {
                 def beans = {
-                    bean(String, 'greeting') {
+                    bean('greeting', String) {
                         'hello'
                     }
                 }
@@ -1900,7 +1901,7 @@ class GrailsBeansASTTransformationSpec extends Specification {
             @AutoConfiguration
             class CompileStaticFixture {
                 def beans = {
-                    bean(String, 'greeting') {
+                    bean('greeting', String) {
                         'hello'
                     }
                 }
@@ -1928,7 +1929,7 @@ class GrailsBeansASTTransformationSpec extends Specification {
             @AutoConfiguration
             class AnnotateCompileStaticFixture {
                 def beans = {
-                    bean(String, 'greeting').annotate(Order, value: 1) {
+                    bean('greeting', String).annotate(Order, value: 1) {
                         'hello'
                     }
                 }
@@ -1958,7 +1959,7 @@ class GrailsBeansASTTransformationSpec extends Specification {
                 String version = '1.0'
 
                 def beans = {
-                    bean(String, 'greeting') {
+                    bean('greeting', String) {
                         'hello'
                     }
                 }
@@ -1993,13 +1994,13 @@ class GrailsBeansASTTransformationSpec extends Specification {
             @AutoConfiguration
             class CompileStaticMembersFixture {
                 def beans = {
-                    field(String, 'suffix').annotate(Value, value: '${greeting.suffix:!!!}')
+                    field('suffix', String).annotate(Value, value: '${greeting.suffix:!!!}')
 
-                    method(String, 'yell') { String input ->
+                    method('yell', String) { String input ->
                         input.toUpperCase() + (suffix ?: '')
                     }
 
-                    bean(String, 'yelledGreeting') {
+                    bean('yelledGreeting', String) {
                         yell('hello')
                     }
                 }
@@ -2033,13 +2034,13 @@ class GrailsBeansASTTransformationSpec extends Specification {
                 String version = '1.0'
 
                 def beans = {
-                    field(String, 'suffix').annotate(Value, value: '${greeting.suffix:!!!}')
+                    field('suffix', String).annotate(Value, value: '${greeting.suffix:!!!}')
 
-                    method(String, 'yell') { String input ->
+                    method('yell', String) { String input ->
                         input.toUpperCase() + (suffix ?: '')
                     }
 
-                    bean(String, 'yelledGreeting') {
+                    bean('yelledGreeting', String) {
                         yell('hello')
                     }
                 }
@@ -2094,10 +2095,10 @@ class GrailsBeansASTTransformationSpec extends Specification {
                 String version = "1.0"
 
                 def beans = {
-                    field(String, "encoding").value("grails.gsp.view.encoding", "UTF-8")
-                    field(String, "localeResolverType").value("grails.i18n.locale.resolver", "session")
+                    field("encoding", String).value("grails.gsp.view.encoding", "UTF-8")
+                    field("localeResolverType", String).value("grails.i18n.locale.resolver", "session")
 
-                    method(LocaleResolver, "buildLocaleResolver") {
+                    method("buildLocaleResolver", LocaleResolver) {
                         localeResolverType?.toLowerCase() == "cookie" ? new CookieLocaleResolver() : new SessionLocaleResolver()
                     }
 
@@ -2105,13 +2106,13 @@ class GrailsBeansASTTransformationSpec extends Specification {
                         buildLocaleResolver()
                     }
 
-                    method(ReloadableResourceBundleMessageSource, "buildMessageSource") {
+                    method("buildMessageSource", ReloadableResourceBundleMessageSource) {
                         def source = new ReloadableResourceBundleMessageSource(basename: "WEB-INF/grails-app/i18n/messages")
                         source.defaultEncoding = encoding
                         source
                     }
 
-                    bean(ReloadableResourceBundleMessageSource, "messageSource")
+                    bean("messageSource", ReloadableResourceBundleMessageSource)
                             .conditionalOnMissingBeanName(search: SearchStrategy.CURRENT) {
                         buildMessageSource()
                     }
@@ -2160,7 +2161,7 @@ class GrailsBeansASTTransformationSpec extends Specification {
                 String version = '1.0'
 
                 def beans = {
-                    bean(String, 'greeting') {
+                    bean('greeting', String) {
                         'hello'
                     }
                 }
@@ -2188,7 +2189,7 @@ class GrailsBeansASTTransformationSpec extends Specification {
             String version = '1.0'
 
             def beans = {
-                bean(String, 'greeting') {
+                bean('greeting', String) {
                     'hello'.toUpperCase()
                 }
             }
@@ -2205,7 +2206,7 @@ class GrailsBeansASTTransformationSpec extends Specification {
         @AutoConfiguration
         class DispatchFixtureStandalone {
             def beans = {
-                bean(String, 'greeting') {
+                bean('greeting', String) {
                     'hello'.toUpperCase()
                 }
             }

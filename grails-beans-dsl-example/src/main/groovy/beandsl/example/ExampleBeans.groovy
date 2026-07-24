@@ -32,15 +32,15 @@ import grails.compiler.beans.GrailsBeans
 class ExampleBeans {
 
     def beans = {
-        bean(Greeter, 'greeter') {
+        bean('greeter', Greeter) {
             new Greeter('hello from GrailsBeans')
         }
 
-        bean(FancyGreeter, 'fancyGreeter').conditionalOnMissingBean(FancyGreeter) {
+        bean('fancyGreeter', FancyGreeter).conditionalOnMissingBean(FancyGreeter) {
             new FancyGreeter()
         }
 
-        bean(LoudGreeter, 'loudGreeter') { Greeter greeter ->
+        bean('loudGreeter', LoudGreeter) { Greeter greeter ->
             new LoudGreeter(greeter)
         }
     }

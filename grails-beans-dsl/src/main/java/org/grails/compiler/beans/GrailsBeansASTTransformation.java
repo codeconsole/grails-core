@@ -87,7 +87,7 @@ import org.springframework.context.annotation.Scope;
  *
  * <p>Recognises three kinds of top-level statement inside the {@code beans} closure:
  * <ul>
- * <li>{@code bean(Type[, "name"]) { ... }}, optionally chained with any combination of
+ * <li>{@code bean(["name", ] Type) { ... }}, optionally chained with any combination of
  * {@code .conditionalOnMissingBean(...)} (positional types, named annotation attributes, or bare),
  * {@code .conditionalOnMissingBeanName(...)} (backs off by this bean's own name, set
  * automatically), {@code .primary()}, {@code .lazy()},
@@ -101,11 +101,11 @@ import org.springframework.context.annotation.Scope;
  * {@code "my-service"}, a reserved keyword, or a collision - a bean named {@code toString} never
  * overrides {@code Object.toString()}) - Spring resolves the bean by its {@code @Bean("name")}
  * value either way, never by the method name.</li>
- * <li>{@code field(Type[, "name"])}, optionally chained with {@code .value(...)} (config
+ * <li>{@code field(["name", ] Type)}, optionally chained with {@code .value(...)} (config
  * injection: key + default, or one verbatim placeholder/SpEL string) and/or (repeatably)
  * {@code .annotate(AnnotationType[, attr: value, ...])}. Declares a private field on the
  * generated class, for state shared across bean methods.</li>
- * <li>{@code method(Type[, "name"]) { ... }}, chainable with {@code .annotate(...)} only
+ * <li>{@code method(["name", ] Type) { ... }}, chainable with {@code .annotate(...)} only
  * ({@code .value(...)} is field-specific).
  * Declares a private helper method on the generated class, for logic shared across bean methods,
  * lifted from the DSL closure the same way {@code bean(...)} is.</li>
@@ -476,8 +476,8 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
         while (!ROOT_STATEMENT_CALL_NAMES.contains(baseCall.getMethodAsString())) {
             if (!ALL_QUALIFIER_CALL_NAMES.contains(baseCall.getMethodAsString()) ||
                     !(baseCall.getObjectExpression() instanceof MethodCallExpression)) {
-                addError(statement, source, "Expected bean(Type[, \"name\"]) { ... }, field(Type[, \"name\"]), " +
-                        "or method(Type[, \"name\"]) { ... }, optionally chained with qualifiers");
+                addError(statement, source, "Expected bean([\"name\", ] Type) { ... }, field([\"name\", ] Type), " +
+                        "or method([\"name\", ] Type) { ... }, optionally chained with qualifiers");
                 return;
             }
             qualifierCalls.add(0, baseCall);
@@ -537,14 +537,14 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
         ClosureExpression factory = (ClosureExpression) closureCallArgs.get(closureCallArgs.size() - 1);
 
         // When bean(...) is itself the outermost call (no qualifiers chained), it carries the
-        // trailing closure as its own last argument - exclude it before validating the Type[, name]
+        // trailing closure as its own last argument - exclude it before validating the [name, ] Type
         // shape, since it was already validated above.
         List<Expression> baseArgs = flatten(baseCall.getArguments());
         if (baseCall == outerCall && !baseArgs.isEmpty()) {
             baseArgs = baseArgs.subList(0, baseArgs.size() - 1);
         }
 
-        TypeAndName typeAndName = parseTypeAndName(baseArgs, baseCall, source, BEAN_CALL, false);
+        TypeAndName typeAndName = parseNameAndType(baseArgs, baseCall, source, BEAN_CALL, false);
         if (typeAndName == null) {
             return;
         }
@@ -600,7 +600,7 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
     private void processFieldStatement(ClassNode classNode, MethodCallExpression baseCall,
             List<MethodCallExpression> qualifierCalls, SourceUnit source, Set<String> usedNames) {
         List<Expression> baseArgs = flatten(baseCall.getArguments());
-        TypeAndName typeAndName = parseTypeAndName(baseArgs, baseCall, source, FIELD_CALL, true);
+        TypeAndName typeAndName = parseNameAndType(baseArgs, baseCall, source, FIELD_CALL, true);
         if (typeAndName == null) {
             return;
         }
@@ -715,7 +715,7 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
             List<MethodCallExpression> qualifierCalls, SourceUnit source, Set<String> usedNames) {
         List<Expression> closureCallArgs = flatten(outerCall.getArguments());
         if (closureCallArgs.isEmpty() || !(closureCallArgs.get(closureCallArgs.size() - 1) instanceof ClosureExpression)) {
-            addError(outerCall, source, "method(...) must end with a body closure: method(Type, \"name\") { ... }");
+            addError(outerCall, source, "method(...) must end with a body closure: method(\"name\", Type) { ... }");
             return;
         }
         ClosureExpression body = (ClosureExpression) closureCallArgs.get(closureCallArgs.size() - 1);
@@ -725,7 +725,7 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
             baseArgs = baseArgs.subList(0, baseArgs.size() - 1);
         }
 
-        TypeAndName typeAndName = parseTypeAndName(baseArgs, baseCall, source, METHOD_CALL, true);
+        TypeAndName typeAndName = parseNameAndType(baseArgs, baseCall, source, METHOD_CALL, true);
         if (typeAndName == null) {
             return;
         }
@@ -766,25 +766,31 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
         }
     }
 
-    private TypeAndName parseTypeAndName(List<Expression> args, MethodCallExpression call, SourceUnit source,
+    private TypeAndName parseNameAndType(List<Expression> args, MethodCallExpression call, SourceUnit source,
             String callName, boolean requireValidIdentifier) {
-        if (args.isEmpty() || args.size() > 2 || !(args.get(0) instanceof ClassExpression)) {
-            addError(call, source, callName + "(...) requires a type as its first argument and at most one " +
-                    "name, e.g. " + callName + "(Greeter) or " + callName + "(Greeter, \"myGreeter\")");
+        if (args.isEmpty() || args.size() > 2 || !(args.get(args.size() - 1) instanceof ClassExpression)) {
+            if (args.size() == 2 && args.get(0) instanceof ClassExpression) {
+                addError(call, source, callName + "(...) takes the name before the type: " +
+                        callName + "(\"myGreeter\", Greeter), not " + callName + "(Greeter, \"myGreeter\")");
+            }
+            else {
+                addError(call, source, callName + "(...) requires a type, optionally preceded by a name, " +
+                        "e.g. " + callName + "(Greeter) or " + callName + "(\"myGreeter\", Greeter)");
+            }
             return null;
         }
-        ClassExpression type = (ClassExpression) args.get(0);
+        ClassExpression type = (ClassExpression) args.get(args.size() - 1);
 
         String name;
         if (args.size() == 1) {
             name = decapitalize(type.getType().getNameWithoutPackage());
         }
         else {
-            Expression nameArg = args.get(1);
+            Expression nameArg = args.get(0);
             Object nameValue = nameArg instanceof ConstantExpression ? ((ConstantExpression) nameArg).getValue() : null;
             if (!(nameValue instanceof String)) {
-                addError(nameArg, source, callName + "(Type, name) requires name to be a String literal, " +
-                        "e.g. " + callName + "(Greeter, \"myGreeter\")");
+                addError(nameArg, source, callName + "(name, Type) requires the name to be a String literal, " +
+                        "e.g. " + callName + "(\"myGreeter\", Greeter)");
                 return null;
             }
             name = (String) nameValue;
@@ -797,7 +803,7 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
             // Spring treats a blank @Bean name as absent and falls back to the method name, so
             // the name actually written would be silently discarded.
             if (!requireValidIdentifier && name.isBlank()) {
-                addError(nameArg, source, callName + "(Type, name) requires a non-blank name");
+                addError(nameArg, source, callName + "(name, Type) requires a non-blank name");
                 return null;
             }
         }

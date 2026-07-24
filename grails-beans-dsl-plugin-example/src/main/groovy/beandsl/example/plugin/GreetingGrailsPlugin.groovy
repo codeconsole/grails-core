@@ -38,13 +38,13 @@ class GreetingGrailsPlugin extends Plugin {
     String version = '1.0'
 
     def beans = {
-        field(String, 'greetingSuffix').annotate(Value, value: '${beandsl.example.greeting-suffix:!}')
+        field('greetingSuffix', String).annotate(Value, value: '${beandsl.example.greeting-suffix:!}')
 
-        method(String, 'buildGreeting') { String name ->
+        method('buildGreeting', String) { String name ->
             "Hello, ${name}${greetingSuffix}"
         }
 
-        bean(Greeting, 'greeting') {
+        bean('greeting', Greeting) {
             new Greeting(buildGreeting('World'))
         }
     }

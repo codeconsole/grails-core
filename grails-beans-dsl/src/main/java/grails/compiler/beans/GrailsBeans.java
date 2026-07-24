@@ -33,7 +33,7 @@ import org.codehaus.groovy.transform.GroovyASTTransformationClass;
  * <p>The annotated class must declare a {@code beans} property initialised to a closure whose
  * statements are one of:
  * <ul>
- * <li>{@code bean(Type[, "name"]) { ... }}, optionally chained with any combination of
+ * <li>{@code bean(["name", ] Type) { ... }}, optionally chained with any combination of
  * {@code .conditionalOnMissingBean(...)} (positional types, the annotation's own named
  * attributes such as {@code name:}/{@code search:}, or no arguments at all to let Spring infer
  * the back-off type from the return type), {@code .conditionalOnMissingBeanName(...)} (backs off
@@ -47,14 +47,14 @@ import org.codehaus.groovy.transform.GroovyASTTransformationClass;
  * Spring resolves the bean by its {@code @Bean("name")} value, so a bean name that isn't a valid
  * Java identifier (e.g. {@code "my-service"}) simply gets a synthesized {@code <type>$N} method
  * name behind the scenes.</li>
- * <li>{@code field(Type[, "name"])}, optionally chained with {@code .value(...)} and/or
+ * <li>{@code field(["name", ] Type)}, optionally chained with {@code .value(...)} and/or
  * (repeatably) {@code .annotate(AnnotationType[, attr: value, ...])}. Declares a private field on
  * the generated class, for state shared across bean methods. The usual case is injected
- * configuration: {@code field(String, "encoding").value(Settings.GSP_VIEW_ENCODING, "UTF-8")}
+ * configuration: {@code field("encoding", String).value(Settings.GSP_VIEW_ENCODING, "UTF-8")}
  * compiles to {@code @Value("${grails.views.gsp.encoding:UTF-8}")} - the two-argument form takes
  * a config key (a literal or a bare constant reference) plus default, and the one-argument form
  * passes a complete placeholder or SpEL string through verbatim.</li>
- * <li>{@code method(Type[, "name"]) { ... }}, chainable with {@code .annotate(...)} only
+ * <li>{@code method(["name", ] Type) { ... }}, chainable with {@code .annotate(...)} only
  * ({@code .value(...)} is field-specific).
  * Declares a private helper method on the generated class, for logic shared across bean methods,
  * lifted from the closure the same way {@code bean(...)} is.</li>

@@ -124,7 +124,7 @@ A plugin may override either `doWithSpring()` or `doWithSpring(BeanBuilder)`, bu
 
 `beanRegistrar()` and `doWithSpring` register beans at a single, fixed point in startup: before Spring Boot processes any `{springbootapi}org/springframework/boot/autoconfigure/AutoConfiguration.html[AutoConfiguration]`. That is enough for a bean to win against a Boot default guarded by `@ConditionalOnMissingBean`, but it cannot express ordering *relative to a specific* auto-configuration — running before `WebMvcAutoConfiguration` but after `MessageSourceAutoConfiguration`, say, regardless of where those two land in Boot's overall sort. Only a real `AutoConfiguration` class can declare that ordering, via `@AutoConfiguration(before = ..., after = ...)`.
 
-The link:{api}grails/compiler/beans/GrailsBeans.html[GrailsBeans] annotation lets you author bean definitions with DSL syntax similar to the classic Beans DSL, while compiling them at build time into genuine `@Bean` factory methods on a plain `AutoConfiguration` class — no closures, and nothing DSL-specific, survive into the compiled bytecode. Add `org.apache.grails:grails-beans-dsl` as a dependency and annotate a class whose `beans` property is a closure of `bean(Type[, "name"]) { ... }` statements:
+The link:{api}grails/compiler/beans/GrailsBeans.html[GrailsBeans] annotation lets you author bean definitions with DSL syntax similar to the classic Beans DSL, while compiling them at build time into genuine `@Bean` factory methods on a plain `AutoConfiguration` class — no closures, and nothing DSL-specific, survive into the compiled bytecode. Add `org.apache.grails:grails-beans-dsl` as a dependency and annotate a class whose `beans` property is a closure of `bean(["name", ] Type) { ... }` statements:
 
 [source,groovy]
 ----
@@ -142,47 +142,47 @@ import org.springframework.web.servlet.i18n.LocaleChangeInterceptor
 class I18nBeans {
 
     def beans = {
-        bean(ReloadableResourceBundleMessageSource, 'messageSource') {
+        bean('messageSource', ReloadableResourceBundleMessageSource) {
             new ReloadableResourceBundleMessageSource(basename: 'WEB-INF/grails-app/i18n/messages')
         }
 
-        bean(CookieLocaleResolver, 'localeResolver').conditionalOnMissingBean(CookieLocaleResolver) {
+        bean('localeResolver', CookieLocaleResolver).conditionalOnMissingBean(CookieLocaleResolver) {
             new CookieLocaleResolver('locale')
         }
 
-        bean(LocaleChangeInterceptor, 'localeChangeInterceptor') { MessageSource messageSource ->
+        bean('localeChangeInterceptor', LocaleChangeInterceptor) { MessageSource messageSource ->
             new LocaleChangeInterceptor(paramName: 'lang')
         }
     }
 }
 ----
 
-Each `bean(Type[, "name"])` statement compiles to a public method returning the declared type and annotated `@Bean("name")`. The generated method's name is an implementation detail — Spring resolves the bean by its `@Bean("name")` value, never by the method name. It matches the bean name when that is a valid Java identifier not already taken by an existing member (declared, inherited, or defined elsewhere in the DSL — a bean named `toString` will not override `Object.toString()`); otherwise a synthesized `<type>$N` name (`service$0`, `service$1`, ...) is used instead, so any legal, non-blank Spring bean name compiles:
+Each `bean(["name", ] Type)` statement compiles to a public method returning the declared type and annotated `@Bean("name")`. The generated method's name is an implementation detail — Spring resolves the bean by its `@Bean("name")` value, never by the method name. It matches the bean name when that is a valid Java identifier not already taken by an existing member (declared, inherited, or defined elsewhere in the DSL — a bean named `toString` will not override `Object.toString()`); otherwise a synthesized `<type>$N` name (`service$0`, `service$1`, ...) is used instead, so any legal, non-blank Spring bean name compiles:
 
 * The bean name defaults to the decapitalized simple class name when omitted.
 * Chaining `.conditionalOnMissingBean(...)` adds a `@ConditionalOnMissingBean` annotation to the generated method, matching Spring Boot's usual back-off semantics. It takes positional types (`.conditionalOnMissingBean(Greeter)`), the annotation's own named attributes (`.conditionalOnMissingBean(name: 'localeResolver', search: SearchStrategy.CURRENT)`), or both. With no arguments at all it compiles to the bare annotation, letting Spring Boot infer the back-off type from the method's return type — the recommended form when a bean simply backs off its own type, since `bean(AvailableLocaleResolver).conditionalOnMissingBean()` already says everything `.conditionalOnMissingBean(AvailableLocaleResolver)` would repeat.
 * Chaining `.conditionalOnMissingBeanName(...)` is the name-based counterpart: "register this bean unless a bean with *this bean's name* already exists". The condition's `name` member is set from the bean's own (explicit or convention-derived) name, so `bean(MessageSource).conditionalOnMissingBeanName(search: SearchStrategy.CURRENT) { ... }` states `messageSource` once and it feeds both `@Bean` and the condition — the two strings the explicit form has to keep in sync cannot diverge. It accepts the annotation's other attributes (`search:`, `ignored:`, ...) but rejects `name:` and types, which would contradict its purpose; use `.conditionalOnMissingBean(...)` for those.
 * Chaining `.primary()`, `.lazy()`, and/or `.scope("name")` adds `@Primary`, `@Lazy`, and `@Scope("name")` respectively.
-* Chaining `.annotate(AnnotationType[, attr: value, ...])` attaches any other single-valued annotation directly — any `@Conditional*` (built-in or a custom `Condition`), `@Order`, `@DependsOn`, or anything else a hand-written `@Bean` method could carry. It's repeatable, so several different annotations can be chained onto the same bean: `bean(Special, 'special').annotate(Order, value: 1).annotate(ConditionalOnProperty, prefix: 'myapp', name: 'enabled', havingValue: 'true') { ... }`.
-* Any combination of the above can be chained together, in any order — for example `bean(SlowGreeter, 'slowGreeter').lazy().scope('prototype') { ... }`.
+* Chaining `.annotate(AnnotationType[, attr: value, ...])` attaches any other single-valued annotation directly — any `@Conditional*` (built-in or a custom `Condition`), `@Order`, `@DependsOn`, or anything else a hand-written `@Bean` method could carry. It's repeatable, so several different annotations can be chained onto the same bean: `bean('special', Special).annotate(Order, value: 1).annotate(ConditionalOnProperty, prefix: 'myapp', name: 'enabled', havingValue: 'true') { ... }`.
+* Any combination of the above can be chained together, in any order — for example `bean('slowGreeter', SlowGreeter).lazy().scope('prototype') { ... }`.
 * Typed closure parameters (`{ MessageSource messageSource -> ... }`) become the generated method's parameters, so other beans are injected the same way a hand-written `@Bean` method would declare them — and a parameter-level annotation such as `{ @Qualifier('special') Greeter g -> ... }` carries straight through too, since the closure's own parameters become the generated method's parameters directly.
 
 Two more statement kinds can appear inside `beans { }` alongside `bean(...)`, for state and logic shared across bean methods — the same role a hand-written `@Configuration` class's own fields and private methods play:
 
-* `field(Type[, "name"])`, optionally chained with `.value(...)` and/or (repeatably) `.annotate(AnnotationType[, attr: value, ...])`, declares a private field on the generated class. The usual case is injected configuration, and `.value(...)` covers it directly: `field(String, 'encoding').value('grails.gsp.view.encoding', 'UTF-8')` compiles to `@Value("${grails.gsp.view.encoding:UTF-8}")`. The two-argument form takes a config key and default — and because the DSL builds the placeholder itself, the key may be a bare constant reference (`.value(Settings.GSP_VIEW_ENCODING, 'UTF-8')`), the one shape a directly-written annotation value can't accept. The one-argument form passes a complete placeholder or SpEL expression through verbatim: `.value('#{T(java.lang.Runtime).getRuntime().availableProcessors()}')`.
-* `method(Type[, "name"]) { ... }`, chainable with `.annotate(...)` only (`.value(...)` is field-specific), declares a private helper method the same way `bean(...)` declares a public one — typed closure parameters become method parameters, and the closure body becomes the method body.
+* `field(["name", ] Type)`, optionally chained with `.value(...)` and/or (repeatably) `.annotate(AnnotationType[, attr: value, ...])`, declares a private field on the generated class. The usual case is injected configuration, and `.value(...)` covers it directly: `field('encoding', String).value('grails.gsp.view.encoding', 'UTF-8')` compiles to `@Value("${grails.gsp.view.encoding:UTF-8}")`. The two-argument form takes a config key and default — and because the DSL builds the placeholder itself, the key may be a bare constant reference (`.value(Settings.GSP_VIEW_ENCODING, 'UTF-8')`), the one shape a directly-written annotation value can't accept. The one-argument form passes a complete placeholder or SpEL expression through verbatim: `.value('#{T(java.lang.Runtime).getRuntime().availableProcessors()}')`.
+* `method(["name", ] Type) { ... }`, chainable with `.annotate(...)` only (`.value(...)` is field-specific), declares a private helper method the same way `bean(...)` declares a public one — typed closure parameters become method parameters, and the closure body becomes the method body.
 
 Both are ordinary private members of the generated class, so a `bean(...)` closure reads a `field(...)` or calls a `method(...)` exactly like a hand-written `@Bean` method would reference a sibling field or method on its own class:
 
 [source,groovy]
 ----
-field(String, 'suffix').value('myapp.greeting-suffix', '!')
+field('suffix', String).value('myapp.greeting-suffix', '!')
 
-method(String, 'buildGreeting') { String name ->
+method('buildGreeting', String) { String name ->
     "Hello, ${name}${suffix}"
 }
 
-bean(Greeting, 'greeting') {
+bean('greeting', Greeting) {
     new Greeting(buildGreeting('World'))
 }
 ----
@@ -221,15 +221,15 @@ class I18nGrailsPlugin extends Plugin {
     def version = GrailsUtil.getGrailsVersion()
 
     def beans = {
-        bean(ReloadableResourceBundleMessageSource, 'messageSource') {
+        bean('messageSource', ReloadableResourceBundleMessageSource) {
             new ReloadableResourceBundleMessageSource(basename: 'WEB-INF/grails-app/i18n/messages')
         }
 
-        bean(CookieLocaleResolver, 'localeResolver').conditionalOnMissingBean(CookieLocaleResolver) {
+        bean('localeResolver', CookieLocaleResolver).conditionalOnMissingBean(CookieLocaleResolver) {
             new CookieLocaleResolver('locale')
         }
 
-        bean(LocaleChangeInterceptor, 'localeChangeInterceptor') { MessageSource messageSource ->
+        bean('localeChangeInterceptor', LocaleChangeInterceptor) { MessageSource messageSource ->
             new LocaleChangeInterceptor(paramName: 'lang')
         }
     }

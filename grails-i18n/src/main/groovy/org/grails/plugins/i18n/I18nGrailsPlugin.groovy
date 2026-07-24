@@ -77,18 +77,18 @@ class I18nGrailsPlugin extends Plugin {
     static final String AVAILABLE_LOCALES_ATTRIBUTE = 'availableLocales'
 
     def beans = {
-        field(String, 'encoding').value(Settings.GSP_VIEW_ENCODING, 'UTF-8')
-        field(boolean, 'gspEnableReload').value(Settings.GSP_ENABLE_RELOAD, 'false')
-        field(int, 'cacheSeconds').value(Settings.I18N_CACHE_SECONDS, '5')
-        field(int, 'fileCacheSeconds').value(Settings.I18N_FILE_CACHE_SECONDS, '5')
-        field(String, 'localeResolverType').value(Settings.I18N_LOCALE_RESOLVER, 'session')
+        field('encoding', String).value(Settings.GSP_VIEW_ENCODING, 'UTF-8')
+        field('gspEnableReload', boolean).value(Settings.GSP_ENABLE_RELOAD, 'false')
+        field('cacheSeconds', int).value(Settings.I18N_CACHE_SECONDS, '5')
+        field('fileCacheSeconds', int).value(Settings.I18N_FILE_CACHE_SECONDS, '5')
+        field('localeResolverType', String).value(Settings.I18N_LOCALE_RESOLVER, 'session')
         // Default locale for the read-only 'fixed' resolver; empty falls back to the JVM default.
         // No Settings constant exists for this key - the original file didn't use one either.
-        field(String, 'defaultLocale').value('grails.i18n.default.locale', '')
+        field('defaultLocale', String).value('grails.i18n.default.locale', '')
 
         // Shared by localeResolver (the 'fixed' case) and availableLocaleResolver below - the only
         // helper the original file needed too, everything else lives directly in its bean method.
-        method(Locale, 'fixedLocale') {
+        method('fixedLocale', Locale) {
             if (StringUtils.hasText(defaultLocale)) {
                 Locale parsed = StringUtils.parseLocale(defaultLocale)
                 if (parsed != null) {

@@ -39,7 +39,7 @@ class FarewellGrailsPlugin extends Plugin {
     String version = '1.0'
 
     def beans = {
-        bean(Farewell, 'farewell') {
+        bean('farewell', Farewell) {
             new Farewell('goodbye from a Plugin')
         }
     }
