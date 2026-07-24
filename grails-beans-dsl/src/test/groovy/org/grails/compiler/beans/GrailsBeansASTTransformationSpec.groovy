@@ -931,6 +931,10 @@ class GrailsBeansASTTransformationSpec extends Specification {
         'the same qualifier chained twice'             | "bean('x', String).primary().primary() { 'y' }"                    | 'may only be chained once'
         'primary() given an argument'                  | "bean('x', String).primary('oops') { 'y' }"                        | '.primary() takes no arguments'
         'lazy() given an argument'                      | "bean('x', String).lazy(true) { 'y' }"                             | '.lazy() takes no arguments'
+        'staticMethod() given an argument'              | "bean('x', String).staticMethod(true) { 'y' }"                     | '.staticMethod() takes no arguments'
+        'staticMethod() chained twice'                  | "bean('x', String).staticMethod().staticMethod() { 'y' }"          | 'may only be chained once'
+        'staticMethod() chained onto field(...)'         | "field('x', String).staticMethod()"                                | 'cannot be chained onto field(...)'
+        'staticMethod() chained onto method(...)'        | "method('x', String).staticMethod() { 'y' }"                       | 'cannot be chained onto method(...)'
         'scope(...) with no argument'                   | "bean('x', String).scope() { 'y' }"                                | '.scope(...) requires exactly one non-empty String argument'
         'scope(...) with a non-String argument'         | "bean('x', String).scope(42) { 'y' }"                              | '.scope(...) requires exactly one non-empty String argument'
         'annotate(...) with no arguments'                | "bean('x', String).annotate() { 'y' }"                            | 'requires an annotation type'
@@ -981,6 +985,66 @@ class GrailsBeansASTTransformationSpec extends Specification {
         'a field(...) and a method(...) sharing the same name' |
                 "field('x', String); method('x', Integer) { 1 }" | 'is already used by another'
         'the removed .methodName(...) qualifier'          | "bean('x', String).methodName('y') { 'z' }"                      | 'Expected bean(["name", ] Type) { ... }'
+    }
+
+    def "a bean(...).staticMethod() compiles to a static @Bean factory method"() {
+        given: "the shape Spring recommends for BeanFactoryPostProcessor/BeanPostProcessor beans, " +
+                "which must be creatable without instantiating their declaring configuration class"
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @GrailsBeans
+            @AutoConfiguration
+            class StaticBeanFixture {
+                def beans = {
+                    bean('staticGreeting', String).staticMethod().conditionalOnMissingBean(String) {
+                        'created without an instance'
+                    }
+                }
+            }
+        '''
+
+        when:
+        Class<?> fixture = compile(source)
+        def method = fixture.getDeclaredMethod('staticGreeting')
+
+        then:
+        Modifier.isStatic(method.modifiers)
+        method.getAnnotation(Bean).value() == ['staticGreeting'] as String[]
+        method.isAnnotationPresent(ConditionalOnMissingBean)
+
+        and: "invocable with no instance, the way Spring invokes a static @Bean method"
+        method.invoke(null) == 'created without an instance'
+    }
+
+    def "a static bean body cannot reference instance field(...) state under @CompileStatic"() {
+        given: "field(...) members are instance members of the generated class, out of reach of a static method"
+        String source = '''
+            import groovy.transform.CompileStatic
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @CompileStatic
+            @GrailsBeans
+            @AutoConfiguration
+            class StaticBeanFieldFixture {
+                def beans = {
+                    field('suffix', String).value('app.suffix', '!')
+
+                    bean('greeting', String).staticMethod() {
+                        'hello' + suffix
+                    }
+                }
+            }
+        '''
+
+        when:
+        compile(source)
+
+        then:
+        MultipleCompilationErrorsException e = thrown(MultipleCompilationErrorsException)
+        e.message.contains('suffix')
     }
 
     private static final String SHARED_NAME_FIXTURE = '''

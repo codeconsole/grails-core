@@ -39,7 +39,9 @@ import org.codehaus.groovy.transform.GroovyASTTransformationClass;
  * the back-off type from the return type), {@code .conditionalOnMissingBeanName(...)} (backs off
  * by this bean's own name - set automatically, stated once - accepting the annotation's other
  * attributes but rejecting {@code name:} and types), {@code .primary()}, {@code .lazy()},
- * {@code .scope("name")}, and (repeatably)
+ * {@code .scope("name")}, {@code .staticMethod()} (a {@code static} factory method - Spring's
+ * recommended shape for {@code BeanFactoryPostProcessor}/{@code BeanPostProcessor} beans, which
+ * must be creatable without instantiating their declaring configuration class), and (repeatably)
  * {@code .annotate(AnnotationType[, attr: value, ...])} - the last a generic escape hatch
  * attaching any other single-valued annotation. The closure body becomes the generated method's
  * body verbatim, and closure parameters become the generated method's parameters (for

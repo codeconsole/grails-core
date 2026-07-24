@@ -93,7 +93,8 @@ import org.springframework.context.annotation.Scope;
  * {@code .conditionalOnMissingBean(...)} (positional types, named annotation attributes, or bare),
  * {@code .conditionalOnMissingBeanName(...)} (backs off by this bean's own name, set
  * automatically), {@code .primary()}, {@code .lazy()},
- * {@code .scope("name")}, and (repeatably)
+ * {@code .scope("name")}, {@code .staticMethod()} (a static factory method, for
+ * {@code BeanFactoryPostProcessor}/{@code BeanPostProcessor} beans), and (repeatably)
  * {@code .annotate(AnnotationType[, attr: value, ...])}. Synthesises a public method, returning
  * the declared type, annotated {@code @org.springframework.context.annotation.Bean("name")} plus
  * whichever qualifiers were chained, whose body and parameters are lifted directly from the DSL
@@ -156,18 +157,19 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
     private static final String PRIMARY_CALL = "primary";
     private static final String LAZY_CALL = "lazy";
     private static final String SCOPE_CALL = "scope";
+    private static final String STATIC_METHOD_CALL = "staticMethod";
     private static final String ANNOTATE_CALL = "annotate";
     private static final String VALUE_CALL = "value";
     private static final Set<String> BEAN_QUALIFIER_CALL_NAMES = Set.of(
             CONDITIONAL_ON_MISSING_BEAN_CALL, CONDITIONAL_ON_MISSING_BEAN_NAME_CALL,
-            PRIMARY_CALL, LAZY_CALL, SCOPE_CALL, ANNOTATE_CALL);
+            PRIMARY_CALL, LAZY_CALL, SCOPE_CALL, STATIC_METHOD_CALL, ANNOTATE_CALL);
     // field(...) and method(...) declare plain class members, not beans - bean-specific
     // qualifiers don't apply; .value(...) (@Value config injection) is field-only.
     private static final Set<String> FIELD_QUALIFIER_CALL_NAMES = Set.of(ANNOTATE_CALL, VALUE_CALL);
     private static final Set<String> METHOD_QUALIFIER_CALL_NAMES = Set.of(ANNOTATE_CALL);
     private static final Set<String> ALL_QUALIFIER_CALL_NAMES = Set.of(
             CONDITIONAL_ON_MISSING_BEAN_CALL, CONDITIONAL_ON_MISSING_BEAN_NAME_CALL,
-            PRIMARY_CALL, LAZY_CALL, SCOPE_CALL, ANNOTATE_CALL, VALUE_CALL);
+            PRIMARY_CALL, LAZY_CALL, SCOPE_CALL, STATIC_METHOD_CALL, ANNOTATE_CALL, VALUE_CALL);
     private static final String PLUGIN_SUPERCLASS_NAME = "grails.plugins.Plugin";
     private static final String GRAILS_PLUGIN_SUFFIX = "GrailsPlugin";
     private static final String AUTO_CONFIGURATION_SUFFIX = "AutoConfiguration";
@@ -980,6 +982,18 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
             Class<?> annotationType = PRIMARY_CALL.equals(name) ? Primary.class : Lazy.class;
             return addAnnotationIfAbsent(beanMethod, qualifierCall,
                     new AnnotationNode(ClassHelper.make(annotationType)), source);
+        }
+        // Generates a static factory method - Spring's recommended shape for a
+        // BeanFactoryPostProcessor/BeanPostProcessor bean, which must be creatable without
+        // instantiating its declaring configuration class. The body consequently cannot touch
+        // field(...)/method(...) members, which are instance members of that class.
+        if (STATIC_METHOD_CALL.equals(name)) {
+            if (!args.isEmpty()) {
+                addError(qualifierCall, source, ".staticMethod() takes no arguments");
+                return false;
+            }
+            beanMethod.setModifiers(beanMethod.getModifiers() | Modifier.STATIC);
+            return true;
         }
         if (SCOPE_CALL.equals(name)) {
             return applyScopeQualifier(beanMethod, qualifierCall, args, source);
