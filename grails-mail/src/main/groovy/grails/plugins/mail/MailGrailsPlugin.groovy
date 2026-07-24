@@ -87,33 +87,34 @@ class MailGrailsPlugin extends Plugin {
             return factory
         }
 
-        bean('mailSender', JavaMailSender).conditionalOnMissingBean() { @Autowired(required = false) @Qualifier('mailSession') Session mailSession, MailConfigurationProperties mailProperties ->
-            def mailSender = new JavaMailSenderImpl()
-            if (mailProperties.host || !mailProperties.jndiName) {
-                mailSender.host = mailProperties.host ?: System.getenv('SMTP_HOST') ?: 'localhost'
+        bean('mailSender', JavaMailSender).conditionalOnMissingBean() { @Autowired(required = false) @Qualifier('mailSession') Session mailSession,
+                MailConfigurationProperties mailProperties ->
+            new JavaMailSenderImpl().tap {
+                if (mailProperties.host || !mailProperties.jndiName) {
+                    host = mailProperties.host ?: System.getenv('SMTP_HOST') ?: 'localhost'
+                }
+                if (mailProperties.encoding || !mailProperties.jndiName) {
+                    defaultEncoding = mailProperties.encoding ?: 'utf-8'
+                }
+                if (mailSession) {
+                    session = mailSession
+                }
+                if (mailProperties.port) {
+                    port = mailProperties.port
+                }
+                if (mailProperties.username) {
+                    username = mailProperties.username
+                }
+                if (mailProperties.password) {
+                    password = mailProperties.password
+                }
+                if (mailProperties.protocol) {
+                    protocol = mailProperties.protocol
+                }
+                if (mailProperties.props) {
+                    javaMailProperties = mailProperties.props
+                }
             }
-            if (mailProperties.encoding || !mailProperties.jndiName) {
-                mailSender.defaultEncoding = mailProperties.encoding ?: 'utf-8'
-            }
-            if (mailSession != null) {
-                mailSender.session = mailSession
-            }
-            if (mailProperties.port) {
-                mailSender.port = mailProperties.port
-            }
-            if (mailProperties.username) {
-                mailSender.username = mailProperties.username
-            }
-            if (mailProperties.password) {
-                mailSender.password = mailProperties.password
-            }
-            if (mailProperties.protocol) {
-                mailSender.protocol = mailProperties.protocol
-            }
-            if (mailProperties.props) {
-                mailSender.javaMailProperties = mailProperties.props
-            }
-            return mailSender
         }
 
         bean(MailMessageBuilderFactory).conditionalOnMissingBean() { MailSender mailSender, MailMessageContentRenderer mailMessageContentRenderer ->
