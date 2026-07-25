@@ -1104,7 +1104,7 @@ class FormTagLib implements ApplicationContextAware, InitializingBean, TagLibrar
             String classAttr = styleClass ? " class=\"${styleClass.toString().encodeAsHTML()}\"" : ''
             locales.each { locale ->
                 String key = useTags ? locale.toLanguageTag() : localeKey(locale)
-                out << "<a href=\"?${param.encodeAsHTML()}=${key.encodeAsHTML()}\"${classAttr}>${label(locale).toString().encodeAsHTML()}</a>"
+                out << "<a href=\"${localeHref(param, key).encodeAsHTML()}\"${classAttr}>${label(locale).toString().encodeAsHTML()}</a>"
             }
             return
         }
@@ -1120,6 +1120,43 @@ class FormTagLib implements ApplicationContextAware, InitializingBean, TagLibrar
 
     private static String localeKey(Locale locale) {
         locale.country ? "${locale.language}_${locale.country}" : locale.language
+    }
+
+    /**
+     * A query-only href that switches the language and keeps everything else.
+     *
+     * A bare {@code ?lang=de} replaces the whole query component, so a visitor changing
+     * language on {@code /books?page=2&sort=title} would land on {@code /books?lang=de}
+     * with the paging and sorting silently discarded. The current query string is carried
+     * over, with any existing value for this parameter dropped rather than duplicated.
+     *
+     * Reading {@code request.queryString} rather than {@code params} is deliberate: params
+     * also holds values bound from the URL path by the mappings (an {@code id} in
+     * {@code /book/show/5}) and the controller and action names, none of which belong in a
+     * query string. The path itself needs no handling, since a query-only href resolves
+     * against the current URL.
+     */
+    private String localeHref(String param, String key) {
+        StringBuilder href = new StringBuilder('?')
+        String queryString = request.queryString
+        if (queryString) {
+            queryString.tokenize('&').each { String pair ->
+                int eq = pair.indexOf('=')
+                String name = eq == -1 ? pair : pair.substring(0, eq)
+                if (URLDecoder.decode(name, 'UTF-8') == param) {
+                    return
+                }
+                if (href.length() > 1) {
+                    href << '&'
+                }
+                href << pair
+            }
+        }
+        if (href.length() > 1) {
+            href << '&'
+        }
+        href << URLEncoder.encode(param, 'UTF-8') << '=' << URLEncoder.encode(key, 'UTF-8')
+        href.toString()
     }
 
     /**
@@ -1169,7 +1206,7 @@ class FormTagLib implements ApplicationContextAware, InitializingBean, TagLibrar
             }
             String cssClass = locale.is(activeEntry) ? "${itemClass} ${activeClass}" : itemClass
             out << "<li><a class=\"${cssClass.encodeAsHTML()}\" " +
-                    "href=\"?${param.encodeAsHTML()}=${locale.toLanguageTag().encodeAsHTML()}\">" +
+                    "href=\"${localeHref(param, locale.toLanguageTag()).encodeAsHTML()}\">" +
                     "${menuCase(locale.getDisplayName(locale), locale).encodeAsHTML()}</a></li>"
         }
         out << '</ul></li>'

@@ -263,6 +263,53 @@ class LocaleSelectRenderingSpec extends Specification implements TagLibUnitTest<
         !output.contains('<i class=')
     }
 
+    void 'links and dropdown keep the current query string, replacing only the language'() {
+        given: 'a visitor part-way through a paged, sorted listing'
+        publish([Locale.forLanguageTag('en'), Locale.forLanguageTag('it')])
+        request.queryString = 'page=2&sort=title'
+
+        when:
+        String links = applyTemplate('<g:localeSelect available="true" type="links"/>')
+        String dropdown = applyTemplate('<g:localeSelect available="true" type="dropdown"/>')
+
+        then: 'paging and sorting survive the switch in both modes'
+        links.contains('href="?page=2&amp;sort=title&amp;lang=it"')
+        dropdown.contains('href="?page=2&amp;sort=title&amp;lang=it"')
+
+        and: 'a bare ?lang= would have discarded them'
+        !links.contains('href="?lang=it"')
+        !dropdown.contains('href="?lang=it"')
+    }
+
+    void 'an existing language parameter is replaced rather than duplicated'() {
+        given: 'the visitor already switched language once, so lang is already in the URL'
+        publish([Locale.forLanguageTag('en'), Locale.forLanguageTag('it')])
+        request.queryString = 'lang=en&page=2'
+
+        when:
+        String output = applyTemplate('<g:localeSelect available="true" type="links"/>')
+
+        then: 'the stale value is dropped and the new one appended once, paging intact'
+        output.contains('href="?page=2&amp;lang=it"')
+        output.contains('href="?page=2&amp;lang=en"')
+
+        and: 'no href carries the parameter twice'
+        (output =~ /href="([^"]*)"/).collect { it[1] }.every { String href ->
+            href.count('lang=') == 1
+        }
+    }
+
+    void 'a request with no query string still yields a bare switch link'() {
+        given:
+        publish([Locale.forLanguageTag('en'), Locale.forLanguageTag('it')])
+
+        when:
+        String output = applyTemplate('<g:localeSelect available="true" type="links"/>')
+
+        then:
+        output.contains('href="?lang=it"')
+    }
+
     void 'type=dropdown renders nothing when the application has a single locale'() {
         given:
         publish([Locale.forLanguageTag('en')])
