@@ -81,12 +81,13 @@ class EnumTypeBinderSpec extends HibernateGormDatastoreSpec {
         def table = new Table("person_statuses")
         def property = setupProperty(PersonWithCollection, "statuses", table)
 
-        expect: "The property is a ToMany property"
+        expect: "The property is both a ToMany and an enum property"
         property instanceof HibernateBasicProperty == true
+        property instanceof HibernateEnumProperty == true
 
         when: "the enum is bound for the collection column"
         // This will now successfully call property.getComponentType() internally
-        def result = binder.bindEnumTypeForColumn(property as HibernateBasicProperty)
+        def result = binder.bindEnumType(property as HibernateEnumProperty, GrailsDomainBinder.EMPTY_PATH)
 
         then: "The BasicValue is configured correctly"
         result.getEnumerationStyle() == EnumType.STRING

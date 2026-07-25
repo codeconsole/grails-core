@@ -226,12 +226,14 @@ public interface HibernateToManyProperty extends PropertyWithMapping<PropertyCon
         String columnName;
         if (present) {
             columnName = joinColumnMappingOptional.get().getName();
+        } else if (referencedType.isEnum()) {
+            // Use the enum's simple name, not its fully-qualified name, so the column
+            // isn't named after the enum's package.
+            columnName = namingStrategy.resolveColumnName(referencedType.getSimpleName());
         } else {
             var clazz = namingStrategy.resolveColumnName(referencedType.getName());
             var prop = namingStrategy.resolveTableName(getName());
-            columnName = referencedType.isEnum() ?
-                    clazz :
-                    new BackticksRemover().apply(prop) + UNDERSCORE + new BackticksRemover().apply(clazz);
+            columnName = new BackticksRemover().apply(prop) + UNDERSCORE + new BackticksRemover().apply(clazz);
         }
         return columnName;
     }
