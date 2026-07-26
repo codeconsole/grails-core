@@ -37,9 +37,6 @@ import grails.plugins.metadata.GrailsPlugin
 import grails.util.GrailsNameUtils
 import org.apache.grails.common.compiler.GroovyTransformOrder
 
-/**
- * Created by graemerocher on 19/09/14.
- */
 class GlobalGrailsClassInjectorTransformationSpec extends Specification {
 
     void "Test that a correct plugin dot xml file is generated when the plugin dot xml doesn't exist"() {
