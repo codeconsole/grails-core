@@ -22,44 +22,32 @@ import org.grails.exceptions.reporting.DefaultStackTraceFilterer
 import org.grails.exceptions.reporting.StackTraceFilterer
 import spock.lang.Specification
 
-import java.lang.reflect.Field
-
 /**
  * Verifies that {@link GrailsUtil#initializeStackFilterer(StackTraceFilterer)} installs the given
  * filterer for {@link GrailsUtil#deepSanitize}, {@link GrailsUtil#sanitizeRootCause} and
- * {@link GrailsUtil#printSanitizedStackTrace}, and that the pre-initialization fallback (a
- * {@link DefaultStackTraceFilterer}) is used until then. Config-driven resolution (the configured
- * class + {@code logFullStackTraceOnFilter}) now happens in
+ * {@link GrailsUtil#printSanitizedStackTrace}. Config-driven resolution (the configured class +
+ * {@code logFullStackTraceOnFilter}) happens in
  * {@code org.apache.grails.core.GrailsBootstrapRegistryInitializer}, covered separately by
  * {@code GrailsBootstrapRegistryInitializerSpec}.
+ *
+ * <p>Every assertion here is behavioural — which filterer a public {@code GrailsUtil} sanitize call
+ * routes to, and what it emits — so nothing depends on the shape of the class's internal state.
  */
 class GrailsUtilStackFiltererSpec extends Specification {
 
-    StackTraceFilterer previous
-
-    def setup() {
-        previous = currentFilterer()
-        setFilterer(fallbackFilterer())
-    }
-
     def cleanup() {
-        setFilterer(previous)
+        GrailsUtil.initializeStackFilterer(new DefaultStackTraceFilterer())
     }
 
-    def 'deepSanitize does not throw before initializeStackFilterer is called'() {
+    def 'deepSanitize works with the default filterer installed'() {
+        given:
+        GrailsUtil.initializeStackFilterer(new DefaultStackTraceFilterer())
+
         when:
         GrailsUtil.deepSanitize(new RuntimeException('boom'))
 
         then:
         noExceptionThrown()
-    }
-
-    def 'initializeStackFilterer is a no-op when filterer is null'() {
-        when:
-        GrailsUtil.initializeStackFilterer(null)
-
-        then:
-        currentFilterer().is(fallbackFilterer())
     }
 
     def 'initializeStackFilterer installs the given filterer'() {
@@ -71,7 +59,32 @@ class GrailsUtilStackFiltererSpec extends Specification {
         GrailsUtil.deepSanitize(new RuntimeException('boom'))
 
         then:
-        currentFilterer().is(filterer)
+        filterer.recursiveCalls == 1
+    }
+
+    def 'the installed filterer also serves sanitizeRootCause and printSanitizedStackTrace'() {
+        given:
+        def filterer = new RecordingStackTraceFilterer()
+
+        when:
+        GrailsUtil.initializeStackFilterer(filterer)
+        GrailsUtil.sanitizeRootCause(new RuntimeException('boom'))
+        GrailsUtil.printSanitizedStackTrace(new RuntimeException('boom'), new PrintWriter(new StringWriter()))
+
+        then:
+        filterer.singleCalls == 2
+    }
+
+    def 'initializeStackFilterer is a no-op when filterer is null'() {
+        given:
+        def filterer = new RecordingStackTraceFilterer()
+        GrailsUtil.initializeStackFilterer(filterer)
+
+        when:
+        GrailsUtil.initializeStackFilterer(null)
+        GrailsUtil.deepSanitize(new RuntimeException('boom'))
+
+        then: 'the previously installed filterer is still the one in use'
         filterer.recursiveCalls == 1
     }
 
@@ -83,9 +96,11 @@ class GrailsUtilStackFiltererSpec extends Specification {
         when:
         GrailsUtil.initializeStackFilterer(first)
         GrailsUtil.initializeStackFilterer(second)
+        GrailsUtil.deepSanitize(new RuntimeException('boom'))
 
         then:
-        currentFilterer().is(second)
+        second.recursiveCalls == 1
+        first.recursiveCalls == 0
     }
 
     def 'installed DefaultStackTraceFilterer honours logFullStackTraceOnFilter=false'() {
@@ -138,26 +153,6 @@ class GrailsUtilStackFiltererSpec extends Specification {
                 new StackTraceElement('java.lang.reflect.Method', 'invoke', 'Method.java', 580)
         ] as StackTraceElement[]
         exception
-    }
-
-    private static StackTraceFilterer currentFilterer() {
-        filtererField().get(null) as StackTraceFilterer
-    }
-
-    private static void setFilterer(StackTraceFilterer filterer) {
-        filtererField().set(null, filterer)
-    }
-
-    private static StackTraceFilterer fallbackFilterer() {
-        Field field = GrailsUtil.getDeclaredField('FALLBACK_FILTERER')
-        field.accessible = true
-        field.get(null) as StackTraceFilterer
-    }
-
-    private static Field filtererField() {
-        Field field = GrailsUtil.getDeclaredField('stackFilterer')
-        field.accessible = true
-        field
     }
 
     static class RecordingStackTraceFilterer implements StackTraceFilterer {

@@ -27,27 +27,24 @@ import org.springframework.context.support.GenericApplicationContext
 import org.springframework.core.env.MapPropertySource
 import spock.lang.Specification
 
-import java.lang.reflect.Field
-
 /**
  * Verifies that {@link GrailsBootstrapRegistryInitializer} resolves a {@link StackTraceFilterer} from
  * the {@code ApplicationContext} environment -- honouring
  * {@link Settings#SETTING_LOGGING_STACKTRACE_FILTER_CLASS} and
  * {@link Settings#SETTING_LOG_FULL_STACKTRACE_ON_FILTER} -- promotes it as a singleton bean under
- * {@link StackTraceFilterer#BEAN_NAME}, and installs it in {@link GrailsUtil} before the context
- * refreshes. Exercised through the public {@link org.springframework.boot.bootstrap.BootstrapRegistryInitializer#initialize}
- * entry point, the same way Spring Boot invokes it during a real bootstrap.
+ * {@link GrailsBootstrapRegistryInitializer#STACK_TRACE_FILTERER_BEAN_NAME}, and installs it in
+ * {@link GrailsUtil} before the context refreshes. Exercised through the public
+ * {@link org.springframework.boot.bootstrap.BootstrapRegistryInitializer#initialize} entry point, the
+ * same way Spring Boot invokes it during a real bootstrap.
+ *
+ * <p>Installation into {@code GrailsUtil} is asserted behaviourally -- by sanitizing through the public
+ * {@link GrailsUtil#deepSanitize} and observing which filterer handled it -- rather than by inspecting
+ * internal state.
  */
 class GrailsBootstrapRegistryInitializerSpec extends Specification {
 
-    StackTraceFilterer previousFilterer
-
-    def setup() {
-        previousFilterer = currentFilterer()
-    }
-
     def cleanup() {
-        setFilterer(previousFilterer)
+        GrailsUtil.initializeStackFilterer(new DefaultStackTraceFilterer())
     }
 
     def 'promotes a default StackTraceFilterer bean and installs it in GrailsUtil when no config is set'() {
@@ -58,24 +55,71 @@ class GrailsBootstrapRegistryInitializerSpec extends Specification {
         closeBootstrapContext(context)
 
         then:
-        def bean = context.getBeanFactory().getBean(StackTraceFilterer.BEAN_NAME, StackTraceFilterer)
-        bean instanceof DefaultStackTraceFilterer
-        currentFilterer().is(bean)
+        promotedFilterer(context) instanceof DefaultStackTraceFilterer
     }
 
-    def 'promotes the class configured via grails.logging.stackTraceFiltererClass'() {
-        given:
+    def 'promotes the class configured via grails.logging.stackTraceFiltererClass as a class name'() {
+        given: 'the string form, as written in application.yml or application.properties'
         def context = contextWithProperties([
                 (Settings.SETTING_LOGGING_STACKTRACE_FILTER_CLASS): RecordingStackTraceFilterer.name
         ])
 
         when:
         closeBootstrapContext(context)
+        GrailsUtil.deepSanitize(new RuntimeException('boom'))
 
-        then:
-        def bean = context.getBeanFactory().getBean(StackTraceFilterer.BEAN_NAME, StackTraceFilterer)
+        then: 'the configured class is both promoted and the one GrailsUtil sanitizes through'
+        def bean = promotedFilterer(context)
         bean instanceof RecordingStackTraceFilterer
-        currentFilterer().is(bean)
+        bean.recursiveCalls == 1
+    }
+
+    def 'promotes the class configured via grails.logging.stackTraceFiltererClass as a Class literal'() {
+        given: 'the Class form -- application.groovy is loaded into a property source that preserves value types'
+        def context = contextWithProperties([
+                (Settings.SETTING_LOGGING_STACKTRACE_FILTER_CLASS): RecordingStackTraceFilterer
+        ])
+
+        when:
+        closeBootstrapContext(context)
+        GrailsUtil.deepSanitize(new RuntimeException('boom'))
+
+        then: 'the configured class is both promoted and the one GrailsUtil sanitizes through'
+        def bean = promotedFilterer(context)
+        bean instanceof RecordingStackTraceFilterer
+        bean.recursiveCalls == 1
+    }
+
+    def 'resolves the configured class name against the ApplicationContext ClassLoader'() {
+        given: 'a filterer only the context ClassLoader can see, standing in for the devtools RestartClassLoader split'
+        def applicationLoader = new GroovyClassLoader(GrailsBootstrapRegistryInitializerSpec.classLoader)
+        applicationLoader.parseClass('''
+            package dynamic
+            import org.grails.exceptions.reporting.StackTraceFilterer
+            class ApplicationStackTraceFilterer implements StackTraceFilterer {
+                Throwable filter(Throwable source) { source }
+                Throwable filter(Throwable source, boolean recursive) { source }
+                void addInternalPackage(String name) {}
+                void setCutOffPackage(String cutOffPackage) {}
+                void setShouldFilter(boolean shouldFilter) {}
+            }
+        ''')
+
+        when: "grails-core's own ClassLoader tries to resolve it"
+        GrailsBootstrapRegistryInitializer.classLoader.loadClass('dynamic.ApplicationStackTraceFilterer')
+
+        then: 'it genuinely cannot -- the pre-fix lookup path'
+        thrown(ClassNotFoundException)
+
+        when:
+        def context = contextWithProperties([
+                (Settings.SETTING_LOGGING_STACKTRACE_FILTER_CLASS): 'dynamic.ApplicationStackTraceFilterer'
+        ])
+        context.classLoader = applicationLoader
+        closeBootstrapContext(context)
+
+        then: "the context's own ClassLoader resolves it anyway"
+        promotedFilterer(context).class.name == 'dynamic.ApplicationStackTraceFilterer'
     }
 
     def 'falls back to the default filterer when the configured class cannot be loaded'() {
@@ -88,8 +132,8 @@ class GrailsBootstrapRegistryInitializerSpec extends Specification {
         closeBootstrapContext(context)
 
         then:
-        def bean = context.getBeanFactory().getBean(StackTraceFilterer.BEAN_NAME, StackTraceFilterer)
-        bean instanceof DefaultStackTraceFilterer
+        noExceptionThrown()
+        promotedFilterer(context) instanceof DefaultStackTraceFilterer
     }
 
     def 'falls back to the default filterer when the configured class does not implement StackTraceFilterer'() {
@@ -102,8 +146,36 @@ class GrailsBootstrapRegistryInitializerSpec extends Specification {
         closeBootstrapContext(context)
 
         then:
-        def bean = context.getBeanFactory().getBean(StackTraceFilterer.BEAN_NAME, StackTraceFilterer)
-        bean instanceof DefaultStackTraceFilterer
+        noExceptionThrown()
+        promotedFilterer(context) instanceof DefaultStackTraceFilterer
+    }
+
+    def 'falls back to the default filterer when the configured Class literal does not implement StackTraceFilterer'() {
+        given:
+        def context = contextWithProperties([
+                (Settings.SETTING_LOGGING_STACKTRACE_FILTER_CLASS): String
+        ])
+
+        when:
+        closeBootstrapContext(context)
+
+        then:
+        noExceptionThrown()
+        promotedFilterer(context) instanceof DefaultStackTraceFilterer
+    }
+
+    def 'a logFullStackTraceOnFilter value that is not a boolean does not fail the bootstrap'() {
+        given:
+        def context = contextWithProperties([
+                (Settings.SETTING_LOG_FULL_STACKTRACE_ON_FILTER): 'yes-please'
+        ])
+
+        when:
+        closeBootstrapContext(context)
+
+        then: 'a misconfigured filterer degrades to the default rather than taking the application down'
+        noExceptionThrown()
+        promotedFilterer(context) instanceof DefaultStackTraceFilterer
     }
 
     def 'propagates logFullStackTraceOnFilter=false to the promoted DefaultStackTraceFilterer'() {
@@ -146,16 +218,21 @@ class GrailsBootstrapRegistryInitializerSpec extends Specification {
         System.setErr(originalErr)
     }
 
+    private static StackTraceFilterer promotedFilterer(GenericApplicationContext context) {
+        context.getBeanFactory().getBean(
+                GrailsBootstrapRegistryInitializer.STACK_TRACE_FILTERER_BEAN_NAME, StackTraceFilterer)
+    }
+
     private static void closeBootstrapContext(GenericApplicationContext context) {
         def registry = new DefaultBootstrapContext()
         new GrailsBootstrapRegistryInitializer().initialize(registry)
         registry.close(context)
     }
 
-    private static GenericApplicationContext contextWithProperties(Map<String, String> properties) {
+    private static GenericApplicationContext contextWithProperties(Map<String, Object> properties) {
         def context = new GenericApplicationContext()
         if (properties) {
-            context.environment.propertySources.addFirst(new MapPropertySource('test', properties as Map<String, Object>))
+            context.environment.propertySources.addFirst(new MapPropertySource('test', properties))
         }
         context
     }
@@ -169,23 +246,11 @@ class GrailsBootstrapRegistryInitializerSpec extends Specification {
         exception
     }
 
-    private static StackTraceFilterer currentFilterer() {
-        filtererField().get(null) as StackTraceFilterer
-    }
-
-    private static void setFilterer(StackTraceFilterer filterer) {
-        filtererField().set(null, filterer)
-    }
-
-    private static Field filtererField() {
-        Field field = GrailsUtil.getDeclaredField('stackFilterer')
-        field.accessible = true
-        field
-    }
-
     static class RecordingStackTraceFilterer implements StackTraceFilterer {
+        int recursiveCalls = 0
+
         Throwable filter(Throwable source) { source }
-        Throwable filter(Throwable source, boolean recursive) { source }
+        Throwable filter(Throwable source, boolean recursive) { recursiveCalls++; source }
         void addInternalPackage(String name) {}
         void setCutOffPackage(String cutOffPackage) {}
         void setShouldFilter(boolean shouldFilter) {}

@@ -38,7 +38,7 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
 import org.springframework.beans.BeanUtils;
-import org.springframework.beans.factory.NoSuchBeanDefinitionException;
+import org.springframework.beans.BeansException;
 import org.springframework.context.ApplicationContext;
 import org.springframework.web.context.ServletContextAware;
 import org.springframework.web.servlet.ModelAndView;
@@ -55,6 +55,7 @@ import grails.web.mapping.UrlMappingInfo;
 import grails.web.mapping.UrlMappingsHolder;
 import grails.web.mapping.exceptions.UrlMappingException;
 import grails.web.mvc.GrailsResponseMutator;
+import org.apache.grails.core.GrailsBootstrapRegistryInitializer;
 import org.grails.core.exceptions.GrailsRuntimeException;
 import org.grails.exceptions.ExceptionUtils;
 import org.grails.exceptions.reporting.DefaultStackTraceFilterer;
@@ -462,12 +463,20 @@ public class GrailsExceptionResolver extends SimpleMappingExceptionResolver impl
 
     /**
      * Looks up the {@link StackTraceFilterer} that
-     * {@link org.apache.grails.core.GrailsBootstrapRegistryInitializer} promoted to the
-     * {@code ApplicationContext} during bootstrap, so this resolver reuses that instance instead
-     * of instantiating a second copy from config. Returns {@code null} when no such bean is
-     * registered — e.g. a {@code GrailsApplication} wired up outside the normal Spring Boot
-     * bootstrap sequence — in which case {@link #createStackFilterer()} falls back to its own
-     * construction.
+     * {@link GrailsBootstrapRegistryInitializer} promoted to the {@code ApplicationContext} during
+     * bootstrap, so this resolver reuses that instance instead of instantiating a second copy from
+     * config. Returns {@code null} when the bean cannot be obtained — no such bean (e.g. a
+     * {@code GrailsApplication} wired up outside the normal Spring Boot bootstrap sequence), or a
+     * bean of an incompatible type registered under the same name — in which case
+     * {@link #createStackFilterer()} falls back to its own construction. A filterer
+     * misconfiguration must never fail the context, so no {@code BeansException} escapes here.
+     *
+     * <p>Note that an application registering its own bean definition named
+     * {@link GrailsBootstrapRegistryInitializer#STACK_TRACE_FILTERER_BEAN_NAME} replaces the
+     * promoted singleton: this resolver then uses the application's bean, while the static filterer
+     * already installed in {@code GrailsUtil} at bootstrap remains the config-resolved one. Replace
+     * the bean only when that split is intended; otherwise configure
+     * {@code grails.logging.stackTraceFiltererClass} so both consume the same instance.
      */
     protected StackTraceFilterer resolvePromotedStackTraceFilterer() {
         ApplicationContext context = grailsApplication.getMainContext();
@@ -475,9 +484,10 @@ public class GrailsExceptionResolver extends SimpleMappingExceptionResolver impl
             return null;
         }
         try {
-            return context.getBean(StackTraceFilterer.BEAN_NAME, StackTraceFilterer.class);
+            return context.getBean(GrailsBootstrapRegistryInitializer.STACK_TRACE_FILTERER_BEAN_NAME,
+                    StackTraceFilterer.class);
         }
-        catch (NoSuchBeanDefinitionException e) {
+        catch (BeansException e) {
             return null;
         }
     }

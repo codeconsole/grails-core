@@ -38,10 +38,10 @@ public class GrailsUtil {
     private static final boolean LOG_DEPRECATED = Boolean.valueOf(System.getProperty("grails.log.deprecated", String.valueOf(Environment.isDevelopmentMode())));
 
     /**
-     * Default filterer used before {@link #initializeStackFilterer(StackTraceFilterer)} runs (CLI,
-     * tests that don't boot a context, plain {@code main()} usage). Preserves the pre-PR behaviour
-     * of a single hardcoded {@link DefaultStackTraceFilterer} instance for the JVM lifetime when no
-     * application is wired.
+     * Default filterer used before {@link #initializeStackFilterer(StackTraceFilterer)} runs — that
+     * is, in any context not started through {@code SpringApplication} (CLI, plain {@code main()}
+     * usage, Grails unit tests). Preserves the pre-PR behaviour of a single hardcoded
+     * {@link DefaultStackTraceFilterer} instance for the JVM lifetime when no application is wired.
      */
     private static final StackTraceFilterer FALLBACK_FILTERER = new DefaultStackTraceFilterer();
 
@@ -70,6 +70,8 @@ public class GrailsUtil {
      * {@code logFullStackTraceOnFilter} flag and handing over a ready-to-use instance.
      *
      * <p>No-ops when {@code filterer} is null. Safe to call more than once — the last call wins.
+     * The installed filterer is JVM-global rather than per-context, so in a JVM hosting more than
+     * one application context the last one booted supplies the filterer for all of them.
      *
      * @since 8.0
      */
