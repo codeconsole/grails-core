@@ -80,13 +80,15 @@ class UrlMappingsGrailsPlugin extends Plugin {
         // @ConditionalOnProperty selects which registers. Its name: attribute must be an inline
         // constant, so the property names below are literals mirroring Settings.WEB_URL_CONVERTER
         // and Settings.SETTING_CORS_FILTER.
-        bean('grailsUrlConverter', UrlConverter).conditionalOnMissingBeanName().annotate(ConditionalOnProperty, name: 'grails.web.url.converter', havingValue: 'camelCase', matchIfMissing: true) {
-            new CamelCaseUrlConverter()
-        }
+        bean('grailsUrlConverter', UrlConverter).conditionalOnMissingBeanName()
+                .annotate(ConditionalOnProperty, name: 'grails.web.url.converter', havingValue: 'camelCase', matchIfMissing: true) {
+                    new CamelCaseUrlConverter()
+                }
 
-        bean('grailsUrlConverter', UrlConverter).conditionalOnMissingBeanName().annotate(ConditionalOnProperty, name: 'grails.web.url.converter', havingValue: 'hyphenated') {
-            new HyphenatedUrlConverter()
-        }
+        bean('grailsUrlConverter', UrlConverter).conditionalOnMissingBeanName()
+                .annotate(ConditionalOnProperty, name: 'grails.web.url.converter', havingValue: 'hyphenated') {
+                    new HyphenatedUrlConverter()
+                }
 
         bean('grailsLinkGenerator', LinkGenerator).conditionalOnMissingBeanName() {
             boolean useCache = cacheUrls != null ? cacheUrls :
@@ -97,9 +99,10 @@ class UrlMappingsGrailsPlugin extends Plugin {
         // Guarded on CorsFilter (the Spring type GrailsCorsFilter extends), not GrailsCorsFilter:
         // a user replacing CORS handling with any CorsFilter registration should not end up with
         // two CORS filters answering the same requests.
-        bean(GrailsCorsFilter).conditionalOnMissingBean(CorsFilter).annotate(ConditionalOnProperty, name: 'grails.cors.filter', havingValue: 'true', matchIfMissing: true) { GrailsCorsConfiguration grailsCorsConfiguration ->
-            new GrailsCorsFilter(grailsCorsConfiguration)
-        }
+        bean(GrailsCorsFilter).conditionalOnMissingBean(CorsFilter)
+                .annotate(ConditionalOnProperty, name: 'grails.cors.filter', havingValue: 'true', matchIfMissing: true) { GrailsCorsConfiguration grailsCorsConfiguration ->
+                    new GrailsCorsFilter(grailsCorsConfiguration)
+                }
 
         bean(UrlMappingsErrorPageCustomizer).conditionalOnMissingBean() { ObjectProvider<UrlMappings> urlMappingsProvider ->
             new UrlMappingsErrorPageCustomizer().tap {

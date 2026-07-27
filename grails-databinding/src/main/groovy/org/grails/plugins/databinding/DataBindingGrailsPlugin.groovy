@@ -114,10 +114,10 @@ class DataBindingGrailsPlugin extends Plugin {
         // Declared as an array rather than the original varargs parameter; Spring resolves both the
         // same way, injecting every DataBindingSourceCreator bean.
         bean(DataBindingSourceRegistry) { DataBindingSourceCreator[] creators ->
-            DefaultDataBindingSourceRegistry registry = new DefaultDataBindingSourceRegistry()
-            registry.dataBindingSourceCreators = creators
-            registry.initialize()
-            registry
+            new DefaultDataBindingSourceRegistry().tap {
+                dataBindingSourceCreators = creators
+                initialize()
+            }
         }
     }
 
