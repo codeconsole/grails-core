@@ -76,7 +76,7 @@ class DataBindingGrailsPlugin extends Plugin {
         // configurationProperties was a constructor-injected field on the hand-written class; the
         // generated sibling always has a no-arg constructor, so the one bean that reads it takes it
         // as a parameter instead.
-        bean('grailsWebDataBinder', GrailsWebDataBinder).lazy() { GrailsApplication grailsApplication,
+        bean(GrailsWebDataBinder).lazy() { GrailsApplication grailsApplication,
                 DataBindingConfigurationProperties configurationProperties,
                 ValueConverter[] valueConverters,
                 FormattedValueConverter[] formattedValueConverters,
@@ -121,7 +121,7 @@ class DataBindingGrailsPlugin extends Plugin {
 
         // Declared as an array rather than the original varargs parameter; Spring resolves both the
         // same way, injecting every DataBindingSourceCreator bean.
-        bean('dataBindingSourceRegistry', DataBindingSourceRegistry) { DataBindingSourceCreator[] creators ->
+        bean(DataBindingSourceRegistry) { DataBindingSourceCreator[] creators ->
             DefaultDataBindingSourceRegistry registry = new DefaultDataBindingSourceRegistry()
             registry.dataBindingSourceCreators = creators
             registry.initialize()

@@ -74,11 +74,11 @@ class CacheGrailsPlugin extends Plugin {
     def beans = {
         field('cacheManagerType', String).value('grails.cache.cacheManager', '')
 
-        bean('customCacheKeyGenerator', CustomCacheKeyGenerator).conditionalOnMissingBeanName() {
+        bean(CustomCacheKeyGenerator).conditionalOnMissingBeanName() {
             new CustomCacheKeyGenerator()
         }
 
-        bean('grailsCacheManager', GrailsCacheManager).conditionalOnMissingBeanName() { CachePluginConfiguration grailsCacheConfiguration ->
+        bean(GrailsCacheManager).conditionalOnMissingBeanName() { CachePluginConfiguration grailsCacheConfiguration ->
             if (cacheManagerType == 'GrailsConcurrentLinkedMapCacheManager') {
                 return new GrailsConcurrentLinkedMapCacheManager(configuration: grailsCacheConfiguration)
             }

@@ -79,7 +79,7 @@ class CoreGrailsPlugin extends Plugin {
     private static final SPRING_PROXY_TARGET_CLASS_CONFIG = 'spring.aop.proxy-target-class'
 
     def beans = {
-        bean('classLoader', ClassLoader).primary() { GrailsApplication grailsApplication ->
+        bean(ClassLoader).primary() { GrailsApplication grailsApplication ->
             grailsApplication.classLoader
         }
 
@@ -92,7 +92,7 @@ class CoreGrailsPlugin extends Plugin {
         // BeanFactoryPostProcessor, so it is created before @Value injection is active and a field
         // would always still be null, leaving the configured prefix with no effect. Static is also
         // Spring's documented shape for a BFPP bean, since it needs no enclosing instance.
-        bean('propertySourcesPlaceholderConfigurer', PropertySourcesPlaceholderConfigurer).primary().staticMethod() { Environment environment ->
+        bean(PropertySourcesPlaceholderConfigurer).primary().staticMethod() { Environment environment ->
             def configurer = new GrailsPlaceholderConfigurer()
             String prefix = environment.getProperty(Settings.SPRING_PLACEHOLDER_PREFIX)
             if (prefix != null) {
