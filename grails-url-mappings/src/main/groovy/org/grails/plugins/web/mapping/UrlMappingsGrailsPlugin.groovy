@@ -107,9 +107,7 @@ class UrlMappingsGrailsPlugin extends Plugin {
             }
         }
 
-        bean(UrlMappingsInfoHandlerAdapter).conditionalOnMissingBean() {
-            new UrlMappingsInfoHandlerAdapter()
-        }
+        bean(UrlMappingsInfoHandlerAdapter).conditionalOnMissingBean()
     }
 
     @Override

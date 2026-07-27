@@ -132,13 +132,9 @@ class Sitemesh3GrailsPlugin extends Plugin {
             new Sitemesh3ViewResolverDefinitionPostProcessor()
         }
 
-        bean('siteMeshViewResolverBeanPostProcessor', GrailsSiteMeshViewResolverBeanPostProcessor).staticMethod().conditionalOnMissingBean(SiteMeshViewResolverBeanPostProcessor) {
-            new GrailsSiteMeshViewResolverBeanPostProcessor()
-        }
+        bean('siteMeshViewResolverBeanPostProcessor', GrailsSiteMeshViewResolverBeanPostProcessor).staticMethod().conditionalOnMissingBean(SiteMeshViewResolverBeanPostProcessor)
 
-        bean('contentProcessor', CaptureAwareContentProcessor).annotate(ConditionalOnBean, value: DispatcherServlet).conditionalOnMissingBeanName() {
-            new CaptureAwareContentProcessor()
-        }
+        bean('contentProcessor', CaptureAwareContentProcessor).annotate(ConditionalOnBean, value: DispatcherServlet).conditionalOnMissingBeanName()
 
         bean('decoratorSelector', Sitemesh3LayoutFinder).annotate(ConditionalOnBean, value: DispatcherServlet).conditionalOnMissingBeanName() { ObjectProvider<GrailsConventionGroovyPageLocator> groovyPageLocator,
                 GrailsApplication grailsApplication ->
