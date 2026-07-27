@@ -20,6 +20,8 @@ package org.grails.compiler.injection
 
 import groovy.xml.MarkupBuilder
 import groovy.xml.XmlSlurper
+import org.codehaus.groovy.GroovyBugError
+import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ClassHelper
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.classgen.GeneratorContext
@@ -35,6 +37,7 @@ import spock.lang.Specification
 import spock.lang.TempDir
 import spock.util.environment.RestoreSystemProperties
 
+import grails.artefact.Artefact
 import grails.plugins.metadata.GrailsPlugin
 import grails.util.GrailsNameUtils
 import org.apache.grails.common.compiler.GroovyTransformOrder
@@ -47,7 +50,7 @@ class GlobalGrailsClassInjectorTransformationSpec extends Specification {
     void "a correct plugin xml file is generated when the plugin xml doesn't exist"() {
         given: "a file that doesn't yet exist"
             def pluginXml = new File(tempDir, 'plugin-xml-gen-test.test.xml')
-            ClassNode classNode = null
+            def classNode = null
             def cu = new CompilationUnit(new GroovyClassLoader())
             cu.addSource('FooGrailsPlugin', 'class FooGrailsPlugin {}')
             cu.addPhaseOperation({ SourceUnit source, GeneratorContext context, ClassNode cn ->
@@ -84,7 +87,7 @@ class GlobalGrailsClassInjectorTransformationSpec extends Specification {
     void "a correct plugin xml file is updated when the plugin xml does exist"() {
         given: "a file that doesn't yet exist"
             def pluginXml = File.createTempFile('plugin-xml-gen-test', '.test.xml', tempDir)
-            ClassNode classNode = null
+            def classNode = null
             def cu = new CompilationUnit(new GroovyClassLoader())
             cu.addSource('BarGrailsPlugin', 'class BarGrailsPlugin {}')
             cu.addPhaseOperation({ SourceUnit source, GeneratorContext context, ClassNode cn ->
@@ -94,8 +97,7 @@ class GlobalGrailsClassInjectorTransformationSpec extends Specification {
             } as CompilationUnit.IPrimaryClassNodeOperation, Phases.CONVERSION)
             cu.compile(Phases.CONVERSION)
             pluginXml.withWriter { writer ->
-                def mkp = new MarkupBuilder(writer)
-                mkp.plugin(name: 'foo') {
+                new MarkupBuilder(writer).plugin(name: 'foo') {
                     type('FooGrailsPlugin')
                     resources {
                         resource('Foo')
@@ -213,6 +215,16 @@ class GlobalGrailsClassInjectorTransformationSpec extends Specification {
             new GlobalGrailsClassInjectorTransformation().priority() == GroovyTransformOrder.GLOBAL_GRAILS_TRANSFORM_ORDER
     }
 
+    void "the global transform ignores a source without a resolvable URL"() {
+        when:
+            new GlobalGrailsClassInjectorTransformation().visit([] as ASTNode[], Stub(SourceUnit) {
+                getName() >> null
+            })
+
+        then:
+            noExceptionThrown()
+    }
+
     /**
      * Compiles the given source to a real file on disk (required so {@code GrailsASTUtils.getSourceUrl}
      * resolves a URL). Because {@code GlobalGrailsClassInjectorTransformation} is itself registered as a
@@ -223,7 +235,7 @@ class GlobalGrailsClassInjectorTransformationSpec extends Specification {
      * own {@code CANONICALIZATION} pass runs, mirroring how the Grails Gradle plugin stamps project
      * name/version metadata via its own compiler customizer.
      */
-    private static List compileToFile(File sourceFile, String source, File targetDirectory, Map<String, String> nodeMetaData = [:]) {
+    private static ClassNode compileToFile(File sourceFile, String source, File targetDirectory, Map<String, String> nodeMetaData = [:]) {
         sourceFile.parentFile.mkdirs()
         sourceFile.text = source
         def configuration = new CompilerConfiguration(targetDirectory: targetDirectory)
@@ -240,14 +252,12 @@ class GlobalGrailsClassInjectorTransformationSpec extends Specification {
         def cu = new CompilationUnit(configuration)
         cu.addSource(sourceFile)
         def capturedClassNode = null
-        def capturedSourceUnit = null
         cu.addPhaseOperation({ SourceUnit source1, GeneratorContext context, ClassNode cn ->
             capturedClassNode = cn
-            capturedSourceUnit = source1
         } as CompilationUnit.IPrimaryClassNodeOperation, Phases.CANONICALIZATION)
         cu.compile(Phases.CANONICALIZATION)
 
-        return [capturedClassNode, capturedSourceUnit]
+        capturedClassNode
     }
 
     void "the global transform stamps a GrailsPlugin descriptor class with a version property"() {
@@ -256,7 +266,7 @@ class GlobalGrailsClassInjectorTransformationSpec extends Specification {
             def targetDir = new File(tempDir, 'build/classes/groovy/main')
 
         when: "the source is compiled, exercising the registered global transform"
-            def (ClassNode classNode, SourceUnit sourceUnit) = compileToFile(
+            def classNode = compileToFile(
                     sourceFile,
                     'class PlainGrailsPlugin {}',
                     targetDir, [projectVersion: '1.5']
@@ -269,13 +279,44 @@ class GlobalGrailsClassInjectorTransformationSpec extends Specification {
             new File(targetDir, 'META-INF/grails-plugin.xml').exists()
     }
 
+    void "the global transform resolves a plugin version declared on the plugin class"() {
+        given: "a plugin descriptor with a declared version and no compiler project metadata"
+            def sourceFile = new File(tempDir, 'DeclaredGrailsPlugin.groovy')
+            def targetDir = new File(tempDir, 'build/classes/groovy/main')
+
+        when:
+            def classNode = compileToFile(
+                    sourceFile,
+                    'class DeclaredGrailsPlugin { Object version = "3.0" }',
+                    targetDir
+            )
+
+        then:
+            classNode.getProperty('version').initialExpression.text == '3.0'
+            new File(targetDir, 'META-INF/grails-plugin.xml').exists()
+    }
+
+    void "the global transform fails when a plugin descriptor has no version"() {
+        given: "a plugin descriptor without a declared or compiler-provided version"
+            def sourceFile = new File(tempDir, 'UnversionedGrailsPlugin.groovy')
+            def targetDir = new File(tempDir, 'build/classes/groovy/main')
+
+        when:
+            compileToFile(sourceFile, 'class UnversionedGrailsPlugin {}', targetDir)
+
+        then:
+            def exception = thrown(GroovyBugError)
+            exception.cause instanceof IllegalStateException
+            exception.cause.message.contains('does not define a plugin version')
+    }
+
     void "the global transform annotates a plain Grails resource class with @GrailsPlugin metadata"() {
         given: "a class under grails-app that isn't matched by any registered ArtefactHandler"
             def sourceFile = new File(tempDir, 'grails-app/services/FooWidget.groovy')
             def targetDir = new File(tempDir, 'build/classes/groovy/main')
 
         when: "the source is compiled, exercising the registered global transform"
-            def (ClassNode classNode, SourceUnit sourceUnit) = compileToFile(
+            def classNode = compileToFile(
                     sourceFile,
                     'class FooWidget {}',
                     targetDir,
@@ -289,13 +330,60 @@ class GlobalGrailsClassInjectorTransformationSpec extends Specification {
             annotations[0].getMember('version').text == '2.0'
     }
 
+    void "the global transform processes a Grails service as an artefact"() {
+        given: "a service source under grails-app"
+            def sourceFile = new File(tempDir, 'grails-app/services/FooService.groovy')
+            def targetDir = new File(tempDir, 'build/classes/groovy/main')
+            TraitInjectionUtils.@traitInjectors = []
+
+        when:
+            def classNode = compileToFile(
+                    sourceFile,
+                    'class FooService {}',
+                    targetDir
+            )
+
+        then:
+            classNode.getAnnotations(ClassHelper.make(Artefact)).size() == 1
+            classNode.getAnnotations(ClassHelper.make(Artefact))[0].getMember('value').text == 'Service'
+
+        cleanup:
+            TraitInjectionUtils.@traitInjectors = null
+            GlobalGrailsClassInjectorTransformation.pendingPluginClassNames.clear()
+            GlobalGrailsClassInjectorTransformation.pluginExcludePatterns.clear()
+    }
+
+    void "the global transform registers a concrete artefact handler in grails.factories"() {
+        given: "an artefact handler source"
+            def sourceFile = new File(tempDir, 'src/main/groovy/TestHandler.groovy')
+            def targetDir = new File(tempDir, 'build/classes/groovy/main')
+
+        when:
+            compileToFile(
+                    sourceFile,
+                    '''
+                    class TestHandler extends grails.core.ArtefactHandlerAdapter {
+                        TestHandler() {
+                            super("Test", null, null, "Handler")
+                        }
+                    }
+                    ''',
+                    targetDir
+            )
+
+        then:
+            def factories = new File(targetDir, 'META-INF/grails.factories')
+            factories.exists()
+            factories.text.contains('TestHandler')
+    }
+
     void "the global transform skips classes whose source falls outside the Grails resource patterns"() {
         given: "a plain source under src/main/groovy, which is project source but not a Grails resource"
             def sourceFile = new File(tempDir, 'src/main/groovy/PlainClass.groovy')
             def targetDir = new File(tempDir, 'build/classes/groovy/main')
 
         when: "the source is compiled, exercising the registered global transform"
-            def (ClassNode classNode, SourceUnit sourceUnit) = compileToFile(
+            def classNode = compileToFile(
                     sourceFile,
                     'class PlainClass {}',
                     targetDir,
@@ -309,7 +397,7 @@ class GlobalGrailsClassInjectorTransformationSpec extends Specification {
     void "plugin xml excludes are honoured and metadata refreshed when updating an existing file"() {
         given: "an existing plugin.xml with a resource that the plugin now wants excluded"
             def pluginXml = File.createTempFile('plugin-xml-excludes', 'test.xml', tempDir)
-            ClassNode classNode = null
+            def classNode = null
             def cu = new CompilationUnit(new GroovyClassLoader())
             cu.addSource('BazGrailsPlugin', '''
                 class BazGrailsPlugin {
@@ -355,6 +443,85 @@ class GlobalGrailsClassInjectorTransformationSpec extends Specification {
         cleanup:
             GlobalGrailsClassInjectorTransformation.pluginExcludePatterns.clear()
             GlobalGrailsClassInjectorTransformation.pendingPluginClassNames.clear()
+    }
+
+    void "plugin xml excludes are applied when writing a new descriptor"() {
+        given:
+            def pluginXml = new File(tempDir, 'plugin-xml-write-excludes.xml')
+            def classNode = null
+            def cu = new CompilationUnit(new GroovyClassLoader())
+            cu.addSource('WrittenExcludesGrailsPlugin', '''
+                class WrittenExcludesGrailsPlugin {
+                    def pluginExcludes = ['Excluded*']
+                    def grailsVersion = '4.0 > *'
+                }
+            ''')
+            cu.addPhaseOperation({ SourceUnit source, GeneratorContext context, ClassNode cn ->
+                if (cn.name.endsWith('GrailsPlugin')) {
+                    classNode = cn
+                }
+            } as CompilationUnit.IPrimaryClassNodeOperation, Phases.CONVERSION)
+            cu.compile(Phases.CONVERSION)
+
+        when:
+            GlobalGrailsClassInjectorTransformation.generatePluginXml(
+                    classNode,
+                    '1.0',
+                    ['ExcludedThing', 'KeptThing'] as Set,
+                    pluginXml
+            )
+
+        then:
+            new XmlSlurper().parse(pluginXml).resources.resource*.text() == ['KeptThing']
+
+        cleanup:
+            GlobalGrailsClassInjectorTransformation.pluginExcludePatterns.clear()
+            GlobalGrailsClassInjectorTransformation.pendingPluginClassNames.clear()
+    }
+
+    void "plugin xml resources are updated when an existing descriptor has no plugin class"() {
+        given:
+            def pluginXml = new File(tempDir, 'existing-plugin.xml')
+            pluginXml.text = '<plugin><resources><resource>ExistingThing</resource></resources></plugin>'
+
+        when:
+            GlobalGrailsClassInjectorTransformation.generatePluginXml(
+                    null,
+                    null,
+                    ['NewThing'] as Set,
+                    pluginXml
+            )
+
+        then:
+            new XmlSlurper().parse(pluginXml).resources.resource*.text() == ['ExistingThing', 'NewThing']
+    }
+
+    void "plugin xml update recreates safely when the existing descriptor is malformed"() {
+        given:
+            def pluginXml = new File(tempDir, 'malformed-plugin.xml')
+            pluginXml.text = '<plugin><resources>'
+
+        when:
+            GlobalGrailsClassInjectorTransformation.updatePluginXml(null, null, pluginXml, ['Foo'])
+
+        then:
+            noExceptionThrown()
+    }
+
+    void "plugin xml exclusions remove matching resources from an existing descriptor"() {
+        given:
+            def pluginXml = new File(tempDir, 'existing-plugin-excludes.xml')
+            pluginXml.text = '<plugin><resources><resource>ExcludedThing</resource><resource>KeptThing</resource></resources></plugin>'
+            GlobalGrailsClassInjectorTransformation.pluginExcludePatterns.add('Excluded*')
+
+        when:
+            GlobalGrailsClassInjectorTransformation.handleExcludes(new XmlSlurper().parse(pluginXml))
+
+        then:
+            noExceptionThrown()
+
+        cleanup:
+            GlobalGrailsClassInjectorTransformation.pluginExcludePatterns.clear()
     }
 
     private SourceUnit sourceUnitWithTarget(File targetDirectory) {
