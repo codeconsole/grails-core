@@ -23,6 +23,7 @@ import java.util.concurrent.TimeUnit
 
 import spock.lang.Specification
 import spock.lang.TempDir
+import spock.util.concurrent.PollingConditions
 
 /**
  * Tests for {@link RunningApplicationProcess}, the PID file based mechanism that lets
@@ -208,14 +209,21 @@ class RunningApplicationProcessSpec extends Specification {
         expect:
         RunningApplicationProcess.isRunning(pidFile)
 
-        when: "a generous timeout budget gives headroom for reaper-notification lag on a contended CI runner"
-        def result = RunningApplicationProcess.stop(pidFile, 30000)
+        when: "the application is stopped"
+        // Same budget the shipped stop-app command passes (grails-profiles/base/commands/stop-app.groovy)
+        def result = RunningApplicationProcess.stop(pidFile, 30_000)
 
         then:
         result == RunningApplicationProcess.StopResult.STOPPED
         !pidFile.exists()
-        // stop() observes exit via the ProcessHandle; the Process object's own reaper can lag
-        // behind on Windows, so wait for it rather than sampling isAlive() immediately
-        process.waitFor(10, TimeUnit.SECONDS)
+
+        and: "the JVM's own process bookkeeping catches up with the OS-level exit stop() already observed"
+        // Process.isAlive() queries OS process state directly, like stop()'s own awaitExit() fallback.
+        // Process.waitFor(timeout) instead blocks on the JVM's internal reaper thread, whose notification
+        // can lag under CI contention independently of whether the process has actually exited - polling
+        // the OS-backed check avoids that lag causing a spurious failure here.
+        new PollingConditions(timeout: 30, initialDelay: 0, delay: 0.1).eventually {
+            assert !process.isAlive()
+        }
     }
 }
