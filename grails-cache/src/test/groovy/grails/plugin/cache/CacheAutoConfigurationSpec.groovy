@@ -65,13 +65,25 @@ class CacheAutoConfigurationSpec extends Specification {
         context.close()
     }
 
-    void 'the auto-configuration backs off entirely when the cache plugin is not active'() {
-        given: 'a context without the plugin-contributed grailsCacheConfiguration definition'
-        AnnotationConfigApplicationContext context = buildContext([:], null, false)
+    void 'the plugin infrastructure beans are auto-configured too'() {
+        given:
+        AnnotationConfigApplicationContext context = buildContext([:])
 
         expect:
-        !context.containsBean('grailsCacheManager')
-        !context.containsBean('customCacheKeyGenerator')
+        context.getBean('grailsCacheConfiguration') instanceof CachePluginConfiguration
+        context.containsBean('grailsCacheAdminService')
+
+        cleanup:
+        context.close()
+    }
+
+    void 'no cache beans at all are auto-configured when caching is disabled'() {
+        given:
+        AnnotationConfigApplicationContext context = buildContext(['grails.cache.enabled': 'false'])
+
+        expect:
+        !context.containsBean('grailsCacheConfiguration')
+        !context.containsBean('grailsCacheAdminService')
 
         cleanup:
         context.close()
@@ -92,12 +104,9 @@ class CacheAutoConfigurationSpec extends Specification {
 
     @CompileStatic
     private static AnnotationConfigApplicationContext buildContext(
-            Map<String, Object> properties, GrailsCacheManager userCacheManager = null, boolean pluginActive = true) {
+            Map<String, Object> properties, GrailsCacheManager userCacheManager = null) {
         def context = new AnnotationConfigApplicationContext()
         context.environment.propertySources.addFirst(new MapPropertySource('test', properties))
-        if (pluginActive) {
-            context.registerBean('grailsCacheConfiguration', CachePluginConfiguration, () -> new CachePluginConfiguration())
-        }
         if (userCacheManager != null) {
             context.registerBean('grailsCacheManager', GrailsCacheManager, () -> userCacheManager)
         }

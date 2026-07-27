@@ -22,13 +22,9 @@ package grails.plugin.cache
 import groovy.transform.CompileStatic
 import groovy.util.logging.Slf4j
 
-import org.springframework.beans.factory.BeanRegistrar
-import org.springframework.beans.factory.BeanRegistry
 import org.springframework.boot.autoconfigure.AutoConfiguration
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBooleanProperty
 import org.springframework.cache.Cache
-import org.springframework.core.env.Environment
 
 import grails.plugins.Plugin
 import org.grails.plugin.cache.GrailsCacheManager
@@ -36,21 +32,15 @@ import org.grails.plugin.cache.GrailsCacheManager
 /**
  * Configures the cache plugin.
  *
- * <p>The cache manager and key generator are contributed as auto-configuration rather than by the
- * descriptor's registrar so that a bean contributed by the application or another plugin — for
- * example a cache-provider plugin's {@code grailsCacheManager} — makes the default back off cleanly
- * instead of triggering a bean-definition override.</p>
- *
- * <p>They are gated on the {@code CachePluginConfiguration} definition contributed by the registrar
- * below (which runs before auto-configuration conditions are evaluated), so they back off entirely
- * when the plugin is not active — e.g. the jar is on the classpath but the plugin is excluded —
- * keeping them in lockstep with the descriptor.</p>
+ * <p>Every bean is contributed as auto-configuration so that one supplied by the application or
+ * another plugin — for example a cache-provider plugin's {@code grailsCacheManager} — makes the
+ * default back off cleanly instead of triggering a bean-definition override. The whole set is gated
+ * on {@code grails.cache.enabled}.</p>
  */
 @Slf4j
 @CompileStatic
 @AutoConfiguration
 @ConditionalOnBooleanProperty(name = 'grails.cache.enabled', matchIfMissing = true)
-@ConditionalOnBean(CachePluginConfiguration)
 class CacheGrailsPlugin extends Plugin {
 
     def grailsVersion = '8.0.0-SNAPSHOT > *'
@@ -72,6 +62,11 @@ class CacheGrailsPlugin extends Plugin {
     def beans = {
         field('cacheManagerType', String).value('grails.cache.cacheManager', '')
 
+        bean(GrailsCacheAdminService)
+
+        // CachePluginConfiguration derives cachePluginConfiguration, so the contractual name is stated.
+        bean('grailsCacheConfiguration', CachePluginConfiguration)
+
         bean(CustomCacheKeyGenerator).conditionalOnMissingBeanName()
 
         bean(GrailsCacheManager).conditionalOnMissingBeanName() { CachePluginConfiguration grailsCacheConfiguration ->
@@ -79,19 +74,6 @@ class CacheGrailsPlugin extends Plugin {
                 return new GrailsConcurrentLinkedMapCacheManager(configuration: grailsCacheConfiguration)
             }
             new GrailsConcurrentMapCacheManager(configuration: grailsCacheConfiguration)
-        }
-    }
-
-    @Override
-    BeanRegistrar beanRegistrar() {
-        return { BeanRegistry registry, Environment environment ->
-            if (!environment.getProperty('grails.cache.enabled', Boolean, true)) {
-                log.warn('Cache plugin is disabled')
-                return
-            }
-
-            registry.registerBean('grailsCacheAdminService', GrailsCacheAdminService)
-            registry.registerBean('grailsCacheConfiguration', CachePluginConfiguration)
         }
     }
 
