@@ -76,7 +76,7 @@ public class GrailsPropertyBinder {
         Value value;
 
         if (currentGrailsProp instanceof HibernateEnumProperty hibernateEnumProperty &&
-                !(currentGrailsProp instanceof HibernateToManyProperty)) {
+                !hibernateEnumProperty.isCollectionElement()) {
             // A hasMany-of-enum property is also a HibernateEnumProperty, but it must still go
             // through collectionBinder.bindCollection() below so its join table gets created;
             // EnumTypeBinder only binds its element column, from BasicCollectionElementBinder.

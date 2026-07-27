@@ -22,7 +22,8 @@ import org.grails.orm.hibernate.cfg.PersistentEntityNamingStrategy;
 import org.grails.orm.hibernate.cfg.domainbinding.util.ColumnNameForPropertyAndPathFetcher;
 
 /**
- * Marker interface for Hibernate persistent properties whose Java type is an enum.
+ * Contract for Hibernate persistent properties that bind an enum value — either the property's
+ * own type or a basic collection's element type.
  *
  * <p>Three concrete subtypes exist, corresponding to the three creation paths in {@link
  * HibernateMappingFactory}:
@@ -59,5 +60,15 @@ public interface HibernateEnumProperty extends HibernatePersistentProperty {
      */
     default boolean isEnumColumnNullable() {
         return getHibernateOwner().isTablePerHierarchySubclass() || isNullable();
+    }
+
+    /**
+     * Whether this property is a {@code hasMany} basic-collection element rather than a scalar
+     * enum-typed property. {@link org.grails.orm.hibernate.cfg.domainbinding.binder.GrailsPropertyBinder}
+     * uses this to decide whether to bind it directly here, or let it fall through to the normal
+     * to-many collection path (whose element is bound later, from within the collection binder).
+     */
+    default boolean isCollectionElement() {
+        return false;
     }
 }

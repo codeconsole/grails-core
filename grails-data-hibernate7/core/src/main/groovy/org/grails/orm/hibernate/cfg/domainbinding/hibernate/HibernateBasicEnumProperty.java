@@ -53,4 +53,9 @@ public class HibernateBasicEnumProperty extends HibernateBasicProperty implement
     public boolean isEnumColumnNullable() {
         return true;
     }
+
+    @Override
+    public boolean isCollectionElement() {
+        return true;
+    }
 }
