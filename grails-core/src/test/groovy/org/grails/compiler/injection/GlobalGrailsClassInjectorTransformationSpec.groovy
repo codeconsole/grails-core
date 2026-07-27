@@ -47,6 +47,11 @@ class GlobalGrailsClassInjectorTransformationSpec extends Specification {
     @TempDir
     File tempDir
 
+    def cleanup() {
+        GlobalGrailsClassInjectorTransformation.pendingPluginClassNames.clear()
+        GlobalGrailsClassInjectorTransformation.pluginExcludePatterns.clear()
+    }
+
     void "a correct plugin xml file is generated when the plugin xml doesn't exist"() {
         given: "a file that doesn't yet exist"
             def pluginXml = new File(tempDir, 'plugin-xml-gen-test.test.xml')
@@ -349,8 +354,6 @@ class GlobalGrailsClassInjectorTransformationSpec extends Specification {
 
         cleanup:
             TraitInjectionUtils.@traitInjectors = null
-            GlobalGrailsClassInjectorTransformation.pendingPluginClassNames.clear()
-            GlobalGrailsClassInjectorTransformation.pluginExcludePatterns.clear()
     }
 
     void "the global transform registers a concrete artefact handler in grails.factories"() {
@@ -439,10 +442,6 @@ class GlobalGrailsClassInjectorTransformationSpec extends Specification {
             xml.@version.text() == '2.0'
             xml.@grailsVersion.text() == '3.0 > *'
             xml.resources.resource*.text() == ['KeptThing']
-
-        cleanup:
-            GlobalGrailsClassInjectorTransformation.pluginExcludePatterns.clear()
-            GlobalGrailsClassInjectorTransformation.pendingPluginClassNames.clear()
     }
 
     void "plugin xml excludes are applied when writing a new descriptor"() {
@@ -473,10 +472,6 @@ class GlobalGrailsClassInjectorTransformationSpec extends Specification {
 
         then:
             new XmlSlurper().parse(pluginXml).resources.resource*.text() == ['KeptThing']
-
-        cleanup:
-            GlobalGrailsClassInjectorTransformation.pluginExcludePatterns.clear()
-            GlobalGrailsClassInjectorTransformation.pendingPluginClassNames.clear()
     }
 
     void "plugin xml resources are updated when an existing descriptor has no plugin class"() {
@@ -519,9 +514,6 @@ class GlobalGrailsClassInjectorTransformationSpec extends Specification {
 
         then:
             noExceptionThrown()
-
-        cleanup:
-            GlobalGrailsClassInjectorTransformation.pluginExcludePatterns.clear()
     }
 
     private SourceUnit sourceUnitWithTarget(File targetDirectory) {
