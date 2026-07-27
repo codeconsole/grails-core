@@ -23,16 +23,14 @@ import groovy.transform.CompileStatic
 import org.sitemesh.webmvc.SiteMeshViewResolverBeanPostProcessor
 import org.sitemesh.webmvc.SiteMeshViewResolverPostProcessor
 
-import org.springframework.beans.factory.BeanRegistrar
-import org.springframework.beans.factory.BeanRegistry
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.boot.autoconfigure.AutoConfiguration
 import org.springframework.boot.autoconfigure.AutoConfigureAfter
 import org.springframework.boot.autoconfigure.AutoConfigureBefore
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass
+import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingClass
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
-import org.springframework.core.env.Environment
 import org.springframework.web.servlet.DispatcherServlet
 
 import grails.config.Config
@@ -59,8 +57,7 @@ import org.grails.web.gsp.io.GrailsConventionGroovyPageLocator
  * declared in this class's {@code beans} block, which {@code @GrailsBeans}
  * compiles into the generated {@code Sitemesh3AutoConfiguration} class — the
  * Spring annotations above this class gate and order that auto-configuration,
- * not the plugin itself, and move onto it at compile time. The only bean the
- * plugin registers outside it goes through {@link #beanRegistrar()}.</p>
+ * not the plugin itself, and move onto it at compile time.</p>
  *
  * <p>The decoration beans register ahead of the upstream auto-configuration:
  * the {@link Sitemesh3ViewResolverDefinitionPostProcessor} (which rewrites the
@@ -126,6 +123,13 @@ class Sitemesh3GrailsPlugin extends Plugin {
     ]
 
     def beans = {
+        // The SiteMesh 2 module (grails-layout) owns view-resolver decoration when it shares the
+        // classpath, so this stands down. @ConditionalOnMissingClass names the same marker class
+        // Sitemesh3EnvironmentPostProcessor.SITEMESH2_MARKER_CLASS holds - an .annotate(...)
+        // attribute must be an inline constant.
+        bean('grailsRenderViewMutator', Sitemesh3RenderViewMutator)
+                .annotate(ConditionalOnMissingClass, value: 'org.apache.grails.web.layout.GrailsLayoutViewResolverPostProcessor')
+
         bean('siteMeshViewResolverPostProcessor', Sitemesh3ViewResolverDefinitionPostProcessor).staticMethod().conditionalOnMissingBean(SiteMeshViewResolverPostProcessor) {
             new Sitemesh3ViewResolverDefinitionPostProcessor()
         }
@@ -153,18 +157,6 @@ class Sitemesh3GrailsPlugin extends Plugin {
                 gspReloadEnabled = reloadEnabled
                 defaultDecoratorName = defaultLayout ?: null
                 layoutCacheExpirationMillis = config.getProperty('grails.sitemesh.layout.cache.interval', Long, 5000L)
-            }
-        }
-    }
-
-    @Override
-    BeanRegistrar beanRegistrar() {
-        return { BeanRegistry registry, Environment environment ->
-            // Registrar beans win name conflicts over doWithSpring() beans, so
-            // registering unconditionally would displace the SiteMesh 2
-            // module's GrailsLayoutRenderViewMutator on a combined classpath.
-            if (!Sitemesh3EnvironmentPostProcessor.isSiteMesh2Present()) {
-                registry.registerBean('grailsRenderViewMutator', Sitemesh3RenderViewMutator)
             }
         }
     }
