@@ -202,6 +202,17 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
             return;
         }
 
+        // An empty block is a no-op, not an error - an empty @Configuration class is legal in Spring
+        // and an empty resources.groovy is legal in Grails, so having nothing to declare should not
+        // fail the build. Returning before the sibling is created matters: generating it would leave
+        // a bean-less class holding the @AutoConfiguration and @Conditional* annotations moved off
+        // the plugin, which is worse than doing nothing. Only the DSL scaffolding is stripped.
+        List<Statement> statements = beanStatements((ClosureExpression) initialExpression);
+        if (statements.isEmpty()) {
+            removeBeansProperty(classNode, beansProperty);
+            return;
+        }
+
         boolean isPlugin = extendsGrailsPlugin(classNode);
         if (!isPlugin) {
             for (String pluginOnlyMember : new String[] { AUTO_CONFIGURATION_NAME_MEMBER, MOVE_ANNOTATIONS_MEMBER }) {
@@ -217,7 +228,6 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
                 createAutoConfigurationSibling(classNode, grailsBeansAnnotation, source) : classNode;
 
         Set<String> usedNames = existingMemberNames(beanMethodHost);
-        List<Statement> statements = beanStatements((ClosureExpression) initialExpression);
         validateSharedBeanNames(statements, source);
         // Two passes: field(...)/method(...) declare explicit member names, so they are processed
         // first (along with anything malformed, so every statement is still processed exactly
@@ -239,6 +249,10 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
             applyStaticCompilation(classNode, beanMethodHost, source);
         }
 
+        removeBeansProperty(classNode, beansProperty);
+    }
+
+    private void removeBeansProperty(ClassNode classNode, PropertyNode beansProperty) {
         classNode.getProperties().remove(beansProperty);
         classNode.getFields().removeIf(field -> field.getName().equals(BEANS_PROPERTY));
     }

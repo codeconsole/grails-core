@@ -2594,4 +2594,58 @@ class GrailsBeansASTTransformationSpec extends Specification {
         !usesInvokeDynamic(new File(staticDir, 'DispatchFixturePluginAutoConfiguration.class'))
     }
 
+
+    def "an empty beans block on a plugin generates no sibling and leaves the plugin's annotations alone"() {
+        given: "a plugin whose beans block declares nothing"
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import grails.plugins.Plugin
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+            import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication
+
+            @GrailsBeans
+            @AutoConfiguration
+            @ConditionalOnWebApplication
+            class EmptyBeansGrailsPlugin extends Plugin {
+                def beans = { }
+            }
+        '''
+
+        when: "it compiles without error"
+        Class<?> plugin = compile(source)
+
+        then: "the plugin keeps the annotations that would otherwise have been moved onto a sibling"
+        plugin.annotations*.annotationType()*.simpleName.containsAll(['AutoConfiguration', 'ConditionalOnWebApplication'])
+
+        and: "the DSL scaffolding is still stripped"
+        !plugin.declaredFields*.name.contains('beans')
+
+        when: "the sibling a non-empty block would have generated is looked up"
+        plugin.classLoader.loadClass('EmptyBeansAutoConfiguration')
+
+        then: "it was never generated, so nothing bean-less is registered as an auto-configuration"
+        thrown(ClassNotFoundException)
+    }
+
+    def "an empty beans block on a plain configuration class is a no-op"() {
+        given:
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @GrailsBeans
+            @AutoConfiguration
+            class EmptyBeansConfiguration {
+                def beans = { }
+            }
+        '''
+
+        when:
+        Class<?> configuration = compile(source)
+
+        then: "it compiles, contributes no @Bean methods, and keeps its own annotations"
+        configuration.declaredMethods.every { !it.isAnnotationPresent(Bean) }
+        configuration.annotations*.annotationType()*.simpleName.contains('AutoConfiguration')
+        !configuration.declaredFields*.name.contains('beans')
+    }
 }
