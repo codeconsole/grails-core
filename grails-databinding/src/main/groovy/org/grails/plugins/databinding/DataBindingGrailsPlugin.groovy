@@ -111,25 +111,13 @@ class DataBindingGrailsPlugin extends Plugin {
             dataBinder
         }
 
-        bean('xmlDataBindingSourceCreator', XmlDataBindingSourceCreator) {
-            new XmlDataBindingSourceCreator()
-        }
-
-        bean('jsonDataBindingSourceCreator', JsonDataBindingSourceCreator) {
-            new JsonDataBindingSourceCreator()
-        }
-
-        bean('halJsonDataBindingSourceCreator', HalJsonDataBindingSourceCreator) {
-            new HalJsonDataBindingSourceCreator()
-        }
-
-        bean('halXmlDataBindingSourceCreator', HalXmlDataBindingSourceCreator) {
-            new HalXmlDataBindingSourceCreator()
-        }
-
-        bean('jsonApiDataBindingSourceCreator', JsonApiDataBindingSourceCreator) {
-            new JsonApiDataBindingSourceCreator()
-        }
+        // Each of these is nothing but its own no-argument construction, and each type's
+        // JavaBeans-derived name is exactly the bean name the hand-written class declared.
+        bean(XmlDataBindingSourceCreator)
+        bean(JsonDataBindingSourceCreator)
+        bean(HalJsonDataBindingSourceCreator)
+        bean(HalXmlDataBindingSourceCreator)
+        bean(JsonApiDataBindingSourceCreator)
 
         // Declared as an array rather than the original varargs parameter; Spring resolves both the
         // same way, injecting every DataBindingSourceCreator bean.
