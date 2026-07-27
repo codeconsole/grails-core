@@ -1,1 +1,1 @@
-org.grails.plugins.databinding.DataBindingConfiguration
+org.grails.plugins.databinding.DataBindingAutoConfiguration

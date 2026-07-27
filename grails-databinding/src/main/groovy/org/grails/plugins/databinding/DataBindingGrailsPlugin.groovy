@@ -16,10 +16,38 @@
  *  specific language governing permissions and limitations
  *  under the License.
  */
+
 package org.grails.plugins.databinding
 
+import groovy.transform.CompileStatic
+
+import org.springframework.boot.autoconfigure.AutoConfiguration
+import org.springframework.boot.autoconfigure.AutoConfigureOrder
+import org.springframework.boot.autoconfigure.ImportAutoConfiguration
+import org.springframework.boot.context.properties.EnableConfigurationProperties
+import org.springframework.context.ApplicationContext
+import org.springframework.context.MessageSource
+import org.springframework.core.annotation.AnnotationAwareOrderComparator
+
+import grails.compiler.beans.GrailsBeans
+import grails.core.GrailsApplication
+import grails.databinding.TypedStructuredBindingEditor
+import grails.databinding.converters.FormattedValueConverter
+import grails.databinding.converters.ValueConverter
+import grails.databinding.events.DataBindingListener
 import grails.plugins.Plugin
+import grails.util.GrailsArrayUtils
 import grails.util.GrailsUtil
+import grails.web.databinding.GrailsWebDataBinder
+import org.grails.databinding.bindingsource.DataBindingSourceCreator
+import org.grails.databinding.converters.DefaultConvertersConfiguration
+import org.grails.web.databinding.bindingsource.DataBindingSourceRegistry
+import org.grails.web.databinding.bindingsource.DefaultDataBindingSourceRegistry
+import org.grails.web.databinding.bindingsource.HalJsonDataBindingSourceCreator
+import org.grails.web.databinding.bindingsource.HalXmlDataBindingSourceCreator
+import org.grails.web.databinding.bindingsource.JsonApiDataBindingSourceCreator
+import org.grails.web.databinding.bindingsource.JsonDataBindingSourceCreator
+import org.grails.web.databinding.bindingsource.XmlDataBindingSourceCreator
 
 /**
  * Plugin for configuring the data binding features of Grails
@@ -29,7 +57,88 @@ import grails.util.GrailsUtil
  *
  * @since 2.3
  */
+@CompileStatic
+@GrailsBeans
+@AutoConfiguration
+@AutoConfigureOrder
+@EnableConfigurationProperties(DataBindingConfigurationProperties)
+@ImportAutoConfiguration(DefaultConvertersConfiguration)
 class DataBindingGrailsPlugin extends Plugin {
 
     def version = GrailsUtil.getGrailsVersion()
+
+    def beans = {
+        // Must be lazily initialized because plugins' ValueConverters and StructuredBindingEditors
+        // may be registered through the Grails bean DSL rather than an auto-configuration. For
+        // example DataBindingConfigurationSpec defines beans as part of test startup, and without
+        // this they would never be wired into the GrailsWebDataBinder bean.
+        //
+        // configurationProperties was a constructor-injected field on the hand-written class; the
+        // generated sibling always has a no-arg constructor, so the one bean that reads it takes it
+        // as a parameter instead.
+        bean('grailsWebDataBinder', GrailsWebDataBinder).lazy() { GrailsApplication grailsApplication,
+                DataBindingConfigurationProperties configurationProperties,
+                ValueConverter[] valueConverters,
+                FormattedValueConverter[] formattedValueConverters,
+                TypedStructuredBindingEditor[] structuredBindingEditors,
+                DataBindingListener[] dataBindingListeners ->
+
+            GrailsWebDataBinder dataBinder = new GrailsWebDataBinder(grailsApplication)
+            dataBinder.convertEmptyStringsToNull = configurationProperties.convertEmptyStringsToNull
+            dataBinder.trimStrings = configurationProperties.trimStrings
+            dataBinder.autoGrowCollectionLimit = configurationProperties.autoGrowCollectionLimit
+
+            ApplicationContext mainContext = grailsApplication.mainContext
+            ValueConverter[] mainContextConverters = mainContext
+                    .getBeansOfType(ValueConverter).values().toArray(new ValueConverter[0])
+            ValueConverter[] allValueConverters = (ValueConverter[]) GrailsArrayUtils.concat(valueConverters, mainContextConverters)
+            AnnotationAwareOrderComparator.sort(allValueConverters)
+            dataBinder.valueConverters = allValueConverters
+
+            FormattedValueConverter[] mainContextFormattedValueConverters = mainContext
+                    .getBeansOfType(FormattedValueConverter).values().toArray(new FormattedValueConverter[0])
+            dataBinder.formattedValueConverters = (FormattedValueConverter[]) GrailsArrayUtils.concat(formattedValueConverters, mainContextFormattedValueConverters)
+
+            TypedStructuredBindingEditor[] mainContextStructuredBindingEditors = mainContext
+                    .getBeansOfType(TypedStructuredBindingEditor).values().toArray(new TypedStructuredBindingEditor[0])
+            dataBinder.structuredBindingEditors = (TypedStructuredBindingEditor[]) GrailsArrayUtils.concat(structuredBindingEditors, mainContextStructuredBindingEditors)
+
+            DataBindingListener[] mainContextDataBindingListeners = mainContext
+                    .getBeansOfType(DataBindingListener).values().toArray(new DataBindingListener[0])
+            dataBinder.dataBindingListeners = (DataBindingListener[]) GrailsArrayUtils.concat(dataBindingListeners, mainContextDataBindingListeners)
+
+            dataBinder.messageSource = mainContext.getBean('messageSource', MessageSource)
+            dataBinder
+        }
+
+        bean('xmlDataBindingSourceCreator', XmlDataBindingSourceCreator) {
+            new XmlDataBindingSourceCreator()
+        }
+
+        bean('jsonDataBindingSourceCreator', JsonDataBindingSourceCreator) {
+            new JsonDataBindingSourceCreator()
+        }
+
+        bean('halJsonDataBindingSourceCreator', HalJsonDataBindingSourceCreator) {
+            new HalJsonDataBindingSourceCreator()
+        }
+
+        bean('halXmlDataBindingSourceCreator', HalXmlDataBindingSourceCreator) {
+            new HalXmlDataBindingSourceCreator()
+        }
+
+        bean('jsonApiDataBindingSourceCreator', JsonApiDataBindingSourceCreator) {
+            new JsonApiDataBindingSourceCreator()
+        }
+
+        // Declared as an array rather than the original varargs parameter; Spring resolves both the
+        // same way, injecting every DataBindingSourceCreator bean.
+        bean('dataBindingSourceRegistry', DataBindingSourceRegistry) { DataBindingSourceCreator[] creators ->
+            DefaultDataBindingSourceRegistry registry = new DefaultDataBindingSourceRegistry()
+            registry.dataBindingSourceCreators = creators
+            registry.initialize()
+            registry
+        }
+    }
+
 }

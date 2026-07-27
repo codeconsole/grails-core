@@ -38,6 +38,7 @@ dependencies {
 
     implementation platform(project(':grails-bom'))
 
+    implementation project(':grails-beans-dsl')
     api project(':grails-core')
     api project(':grails-web-core')
     api 'org.apache.groovy:groovy'
