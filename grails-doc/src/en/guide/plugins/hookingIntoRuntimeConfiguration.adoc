@@ -124,7 +124,9 @@ A plugin may override either `doWithSpring()` or `doWithSpring(BeanBuilder)`, bu
 
 `beanRegistrar()` and `doWithSpring` register beans at a single, fixed point in startup: before Spring Boot processes any `{springbootapi}org/springframework/boot/autoconfigure/AutoConfiguration.html[AutoConfiguration]`. That is enough for a bean to win against a Boot default guarded by `@ConditionalOnMissingBean`, but it cannot express ordering *relative to a specific* auto-configuration — running before `WebMvcAutoConfiguration` but after `MessageSourceAutoConfiguration`, say, regardless of where those two land in Boot's overall sort. Only a real `AutoConfiguration` class can declare that ordering, via `@AutoConfiguration(before = ..., after = ...)`.
 
-The link:{api}grails/compiler/beans/GrailsBeans.html[GrailsBeans] annotation lets you author bean definitions with DSL syntax similar to the classic Beans DSL, while compiling them at build time into genuine `@Bean` factory methods on a plain `AutoConfiguration` class — no closures, and nothing DSL-specific, survive into the compiled bytecode. Add `org.apache.grails:grails-beans-dsl` as a dependency and annotate a class whose `beans` property is a closure of `bean(["name", ] Type) { ... }` statements:
+The link:{api}grails/compiler/beans/GrailsBeans.html[GrailsBeans] annotation lets you author bean definitions with DSL syntax similar to the classic Beans DSL, while compiling them at build time into genuine `@Bean` factory methods on a plain `AutoConfiguration` class — no closures, and nothing DSL-specific, survive into the compiled bytecode. Declare a class whose `beans` property is a closure of `bean(["name", ] Type) { ... }` statements:
+
+NOTE: On a `*GrailsPlugin.groovy` plugin descriptor or an application's `Application` class the annotation is implicit — a `beans` property is compiled automatically, the same way `doWithSpring` and `watchedResources` are conventions rather than annotated members. `@GrailsBeans` is written out only on a standalone class, as in the first example below. A class with no `beans` property is untouched.
 
 [source,groovy]
 ----

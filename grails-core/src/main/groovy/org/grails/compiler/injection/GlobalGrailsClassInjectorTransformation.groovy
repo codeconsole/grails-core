@@ -68,6 +68,10 @@ class GlobalGrailsClassInjectorTransformation implements ASTTransformation, Comp
     public static final ClassNode ARTEFACT_HANDLER_CLASS = ClassHelper.make('grails.core.ArtefactHandler')
     public static final ClassNode TRAIT_INJECTOR_CLASS = ClassHelper.make('grails.compiler.traits.TraitInjector')
 
+    private static final String GRAILS_AUTO_CONFIGURATION_CLASS_NAME = 'grails.boot.config.GrailsAutoConfiguration'
+    private static final String BEANS_PROPERTY = 'beans'
+    private static final ClassNode GRAILS_BEANS_ANNOTATION = ClassHelper.make('grails.compiler.beans.GrailsBeans')
+
     @Override
     int priority() {
         return GroovyTransformOrder.GLOBAL_GRAILS_TRANSFORM_ORDER
@@ -115,7 +119,12 @@ class GlobalGrailsClassInjectorTransformation implements ASTTransformation, Comp
                     classNode.addProperty(new PropertyNode('version', Modifier.PUBLIC, ClassHelper.make(Object), classNode, new ConstantExpression(projectVersion.toString()), null, null))
                 }
 
+                compileBeansDsl(classNode, source)
                 continue
+            }
+
+            if (GrailsASTUtils.isSubclassOfOrImplementsInterface(classNode, GRAILS_AUTO_CONFIGURATION_CLASS_NAME)) {
+                compileBeansDsl(classNode, source)
             }
 
             if (updateGrailsFactoriesWithType(classNode, ARTEFACT_HANDLER_CLASS, compilationTargetDirectory)) {
@@ -179,6 +188,44 @@ class GlobalGrailsClassInjectorTransformation implements ASTTransformation, Comp
     /**
      * @return {@code true} when the {@code grails.isolated.build} system property is {@code true}.
      */
+    /**
+     * Compiles a plugin descriptor's or application class's {@code beans} closure into {@code @Bean}
+     * factory methods, so {@code @GrailsBeans} does not have to be written out - the {@code beans}
+     * property is a convention here in the same way {@code doWithSpring} and {@code watchedResources}
+     * already are.
+     *
+     * <p>The transformation is invoked directly rather than by adding the annotation: annotation-driven
+     * transformations are collected during semantic analysis, so an annotation added at
+     * {@code CANONICALIZATION} would never fire. A class that already declares {@code @GrailsBeans}
+     * is skipped, since its own transformation has run; a class without a {@code beans} property is
+     * skipped too, which is every plugin that does not use the DSL.</p>
+     */
+    private void compileBeansDsl(ClassNode classNode, SourceUnit source) {
+        if (classNode.getProperty(BEANS_PROPERTY) == null) {
+            return
+        }
+        if (!classNode.getAnnotations(GRAILS_BEANS_ANNOTATION).isEmpty()) {
+            return
+        }
+
+        ASTTransformation transformation
+        try {
+            transformation = (ASTTransformation) getClass().classLoader
+                    .loadClass('org.grails.compiler.beans.GrailsBeansASTTransformation')
+                    .getDeclaredConstructor()
+                    .newInstance()
+        }
+        catch (ClassNotFoundException ignored) {
+            // grails-beans-dsl is not on the compile classpath, so the beans property is left alone
+            return
+        }
+
+        if (transformation instanceof CompilationUnitAware) {
+            ((CompilationUnitAware) transformation).compilationUnit = compilationUnit
+        }
+        transformation.visit([new AnnotationNode(GRAILS_BEANS_ANNOTATION), classNode] as ASTNode[], source)
+    }
+
     static boolean isIsolatedBuild() {
         System.getProperty(ISOLATED_BUILD_PROPERTY, 'false').toBoolean()
     }

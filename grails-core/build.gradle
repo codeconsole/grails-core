@@ -51,7 +51,7 @@ dependencies {
     api 'jakarta.persistence:jakarta.persistence-api'
     api 'jakarta.annotation:jakarta.annotation-api'
 
-    implementation project(':grails-beans-dsl')
+    api project(':grails-beans-dsl')
 
     implementation 'com.github.ben-manes.caffeine:caffeine'
     api 'org.apache.groovy:groovy'
