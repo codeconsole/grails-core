@@ -20,20 +20,15 @@ package org.grails.plugins.domain
 
 import groovy.transform.CompileStatic
 
-import org.springframework.beans.factory.BeanRegistrar
-import org.springframework.beans.factory.BeanRegistry
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.boot.autoconfigure.AutoConfiguration
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication
 import org.springframework.context.MessageSource
-import org.springframework.core.env.Environment
 
-import grails.config.Config
 import grails.core.GrailsApplication
 import grails.plugins.Plugin
 import grails.util.GrailsUtil
 import org.grails.datastore.gorm.validation.constraints.factory.ConstraintFactory
-import org.grails.datastore.mapping.config.Settings as DatastoreSettings
 import org.grails.datastore.mapping.model.MappingContext
 import org.grails.plugins.domain.support.DefaultConstraintEvaluatorFactoryBean
 import org.grails.plugins.domain.support.DefaultMappingContextFactoryBean
@@ -78,19 +73,6 @@ class DomainClassGrailsPlugin extends Plugin {
         bean('gormValidatorRegistry', ValidatorRegistryFactoryBean).lazy() { @Qualifier('grailsDomainClassMappingContext') MappingContext mappingContext ->
             new ValidatorRegistryFactoryBean().tap {
                 it.mappingContext = mappingContext
-            }
-        }
-    }
-
-    @Override
-    BeanRegistrar beanRegistrar() {
-        return { BeanRegistry registry, Environment environment ->
-            // Set default for auto-timestamp annotation caching based on environment if not explicitly configured
-            Config config = grailsApplication.config
-            if (!config.containsProperty(DatastoreSettings.SETTING_AUTO_TIMESTAMP_CACHE_ANNOTATIONS)) {
-                // Not configured - disable caching in development mode to support class reloading
-                config.put(DatastoreSettings.SETTING_AUTO_TIMESTAMP_CACHE_ANNOTATIONS,
-                        !grails.util.Environment.isDevelopmentMode())
             }
         }
     }
