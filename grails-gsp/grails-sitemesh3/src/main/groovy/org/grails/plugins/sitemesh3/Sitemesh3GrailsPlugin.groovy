@@ -35,7 +35,6 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.core.env.Environment
 import org.springframework.web.servlet.DispatcherServlet
 
-import grails.compiler.beans.GrailsBeans
 import grails.config.Config
 import grails.core.GrailsApplication
 import grails.plugins.Plugin
@@ -100,7 +99,6 @@ import org.grails.web.gsp.io.GrailsConventionGroovyPageLocator
  * it keeps decoration out of such contexts too.</p>
  */
 @CompileStatic
-@GrailsBeans
 @AutoConfiguration
 @AutoConfigureAfter(name = 'org.springframework.boot.webmvc.autoconfigure.DispatcherServletAutoConfiguration')
 @AutoConfigureBefore(name = 'org.sitemesh.autoconfigure.SiteMeshViewResolverAutoConfiguration')

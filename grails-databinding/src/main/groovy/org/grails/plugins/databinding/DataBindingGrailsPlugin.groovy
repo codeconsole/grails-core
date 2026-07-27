@@ -29,7 +29,6 @@ import org.springframework.context.ApplicationContext
 import org.springframework.context.MessageSource
 import org.springframework.core.annotation.AnnotationAwareOrderComparator
 
-import grails.compiler.beans.GrailsBeans
 import grails.core.GrailsApplication
 import grails.databinding.TypedStructuredBindingEditor
 import grails.databinding.converters.FormattedValueConverter
@@ -57,7 +56,6 @@ import org.grails.web.databinding.bindingsource.XmlDataBindingSourceCreator
  * @since 2.3
  */
 @CompileStatic
-@GrailsBeans
 @AutoConfiguration
 @AutoConfigureOrder
 @EnableConfigurationProperties(DataBindingConfigurationProperties)

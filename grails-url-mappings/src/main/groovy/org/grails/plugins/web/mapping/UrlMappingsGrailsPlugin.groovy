@@ -33,7 +33,6 @@ import org.springframework.context.ApplicationContext
 import org.springframework.core.env.Environment
 import org.springframework.web.filter.CorsFilter
 
-import grails.compiler.beans.GrailsBeans
 import grails.config.Settings
 import grails.plugins.Plugin
 import grails.util.Environment as GrailsEnvironment
@@ -60,7 +59,6 @@ import org.grails.web.mapping.servlet.UrlMappingsErrorPageCustomizer
  * @since 0.4
  */
 @CompileStatic
-@GrailsBeans
 @AutoConfiguration
 @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
 @EnableConfigurationProperties([GrailsCorsConfiguration])

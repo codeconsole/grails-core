@@ -41,7 +41,6 @@ import org.springframework.web.servlet.i18n.FixedLocaleResolver
 import org.springframework.web.servlet.i18n.LocaleChangeInterceptor
 import org.springframework.web.servlet.i18n.SessionLocaleResolver
 
-import grails.compiler.beans.GrailsBeans
 import grails.config.Settings
 import grails.core.GrailsApplication
 import grails.plugins.GrailsPluginManager
@@ -60,7 +59,6 @@ import org.grails.web.i18n.ParamsAwareLocaleChangeInterceptor
  */
 @Slf4j
 @CompileStatic
-@GrailsBeans
 @AutoConfiguration(before = [MessageSourceAutoConfiguration, WebMvcAutoConfiguration])
 @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
 class I18nGrailsPlugin extends Plugin {

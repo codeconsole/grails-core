@@ -15,7 +15,6 @@
  */
 package grails.plugins.mail
 
-import grails.compiler.beans.GrailsBeans
 import grails.core.GrailsApplication
 import grails.plugins.GrailsPluginManager
 import grails.plugins.Plugin
@@ -34,7 +33,6 @@ import org.springframework.mail.javamail.JavaMailSender
 import org.springframework.mail.javamail.JavaMailSenderImpl
 
 @CompileStatic
-@GrailsBeans
 @AutoConfiguration
 @EnableConfigurationProperties(MailConfigurationProperties)
 class MailGrailsPlugin extends Plugin {

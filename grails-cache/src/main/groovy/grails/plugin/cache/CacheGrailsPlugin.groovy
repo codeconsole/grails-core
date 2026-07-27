@@ -30,7 +30,6 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnBooleanProp
 import org.springframework.cache.Cache
 import org.springframework.core.env.Environment
 
-import grails.compiler.beans.GrailsBeans
 import grails.plugins.Plugin
 import org.grails.plugin.cache.GrailsCacheManager
 
@@ -49,7 +48,6 @@ import org.grails.plugin.cache.GrailsCacheManager
  */
 @Slf4j
 @CompileStatic
-@GrailsBeans
 @AutoConfiguration
 @ConditionalOnBooleanProperty(name = 'grails.cache.enabled', matchIfMissing = true)
 @ConditionalOnBean(CachePluginConfiguration)
