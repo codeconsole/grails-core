@@ -48,13 +48,17 @@ def configureGroovyDoc = tasks.register('configureGroovyDoc') {
         if (testContainersVersion) {
             links << [packages: 'org.testcontainers.', href: "https://javadoc.io/doc/org.testcontainers/testcontainers/${testContainersVersion}/"]
         }
-        def springVersion = resolveProjectVersion('spring-core')
-        if (springVersion) {
-            links << [packages: 'org.springframework.', href: "https://docs.spring.io/spring-framework/docs/${springVersion}/javadoc-api/"]
-        }
+        // Groovydoc resolves 'links' first-match-wins in declaration order, so the more
+        // specific org.springframework.boot. entry must come before the broader
+        // org.springframework. entry or every Boot class link resolves against the
+        // Framework javadocs instead, where the Boot classes don't exist.
         def springBootVersion = resolveProjectVersion('spring-boot')
         if (springBootVersion) {
             links << [packages: 'org.springframework.boot.', href: "https://docs.spring.io/spring-boot/docs/${springBootVersion}/api/"]
+        }
+        def springVersion = resolveProjectVersion('spring-core')
+        if (springVersion) {
+            links << [packages: 'org.springframework.', href: "https://docs.spring.io/spring-framework/docs/${springVersion}/javadoc-api/"]
         }
         def hibernateVersion = resolveProjectVersion('hibernate-core')
         if (hibernateVersion) {
@@ -63,22 +67,35 @@ def configureGroovyDoc = tasks.register('configureGroovyDoc') {
         }
         def jakartaValidationVersion = resolveProjectVersion('jakarta.validation-api')
         if (jakartaValidationVersion) {
-            links << [packages: 'jakarta.validation.', href: "https://jakarta.ee/specifications/bean-validation/3.0/apidocs/"]
+            def specVersion = jakartaValidationVersion.split('\\.').take(2).join('.')
+            links << [packages: 'jakarta.validation.', href: "https://jakarta.ee/specifications/bean-validation/${specVersion}/apidocs/"]
         }
         def jakartaPersistenceVersion = resolveProjectVersion('jakarta.persistence-api')
         if (jakartaPersistenceVersion) {
-            links << [packages: 'jakarta.persistence.', href: "https://jakarta.ee/specifications/persistence/3.1/apidocs/"]
+            def specVersion = jakartaPersistenceVersion.split('\\.').take(2).join('.')
+            links << [packages: 'jakarta.persistence.', href: "https://jakarta.ee/specifications/persistence/${specVersion}/apidocs/"]
         }
         def jakartaServletVersion = resolveProjectVersion('jakarta.servlet-api')
         if (jakartaServletVersion) {
-            links << [packages: 'jakarta.servlet.', href: "https://jakarta.ee/specifications/platform/10/apidocs/"]
+            def servletSpecVersion = jakartaServletVersion.split('\\.').take(2).join('.')
+            // The platform apidocs are versioned by Jakarta EE Platform release, not by the
+            // Servlet spec version, so the two can't be derived from one another directly.
+            def servletSpecToPlatformVersion = ['5.0': '9', '6.0': '10', '6.1': '11']
+            def platformVersion = servletSpecToPlatformVersion[servletSpecVersion]
+            if (platformVersion) {
+                links << [packages: 'jakarta.servlet.', href: "https://jakarta.ee/specifications/platform/${platformVersion}/apidocs/"]
+            }
         }
-        links << [packages: 'org.grails.datastore.', href: "https://gorm.grails.org/latest/api/"]
-        links << [packages: 'grails.gorm.', href: "https://gorm.grails.org/latest/api/"]
-        links << [packages: 'org.grails.gorm.', href: "https://gorm.grails.org/latest/api/"]
-        links << [packages: 'groovy.', href: "https://docs.groovy-lang.org/latest/html/gapi/"]
-        links << [packages: 'org.apache.groovy.', href: "https://docs.groovy-lang.org/latest/html/gapi/"]
-        links << [packages: 'org.codehaus.groovy.', href: "https://docs.groovy-lang.org/latest/html/gapi/"]
+        // No external link is registered for org.grails.datastore./grails.gorm./org.grails.gorm.:
+        // since the data modules merged into grails-core in 7.0, those classes are generated
+        // directly in this repo's own aggregate Groovydoc and resolve locally. Mapping them to
+        // the older, standalone gorm.grails.org site would misdirect those in-repo links.
+        def groovyVersion = resolveProjectVersion('groovy')
+        if (groovyVersion) {
+            links << [packages: 'groovy.', href: "https://docs.groovy-lang.org/${groovyVersion}/html/gapi/"]
+            links << [packages: 'org.apache.groovy.', href: "https://docs.groovy-lang.org/${groovyVersion}/html/gapi/"]
+            links << [packages: 'org.codehaus.groovy.', href: "https://docs.groovy-lang.org/${groovyVersion}/html/gapi/"]
+        }
         if (it.ext.has('groovydocLinks')) {
             links.addAll(it.ext.groovydocLinks as List<Map<String, String>>)
         }

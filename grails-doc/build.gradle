@@ -127,8 +127,7 @@ combinedGroovydoc.configure { Groovydoc gdoc ->
 }
 
 def auditGroovydocLinks = tasks.register('auditGroovydocLinks', AuditGroovydocLinksTask) {
-    dependsOn combinedGroovydoc
-    apiDocsDir = combinedGroovydoc.get().destinationDir
+    apiDocsDir = project.layout.dir(combinedGroovydoc.map { it.destinationDir })
 }
 
 String getVersion(String artifact) {

@@ -19,14 +19,17 @@
 package org.grails.doc.gradle
 
 import org.gradle.api.DefaultTask
+import org.gradle.api.GradleException
 import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.tasks.InputDirectory
 import org.gradle.api.tasks.TaskAction
 
 /**
- * A task that audits generated Groovydocs for malformed navigation links.
- * Specifically targets 'phantom' links and relative path issues in navigation files
- * like overview-summary.html, deprecated-list.html, and help-doc.html.
+ * A task that audits generated Groovydocs for malformed inner-class links, where a
+ * slash-separated 'phantom' path (e.g. {@code Outer/Inner.html}) was emitted instead
+ * of the dotted Groovydoc naming convention ({@code Outer.Inner.html}).
+ *
+ * @see GroovydocLinkAuditor
  */
 abstract class AuditGroovydocLinksTask extends DefaultTask {
 
@@ -36,17 +39,13 @@ abstract class AuditGroovydocLinksTask extends DefaultTask {
     @TaskAction
     void auditLinks() {
         File apiDir = apiDocsDir.get().asFile
-        if (!apiDir.exists()) {
-            logger.warn "API documentation directory does not exist: ${apiDir.absolutePath}"
-            return
-        }
 
         List<String> violations = GroovydocLinkAuditor.findViolations(apiDir)
 
         if (!violations.isEmpty()) {
             violations.take(10).each { logger.error(it) }
             if (violations.size() > 10) logger.error("... and ${violations.size() - 10} more")
-            throw new org.gradle.api.GradleException("Found ${violations.size()} malformed links in Groovydoc. Please fix the source issue rather than patching. See logs for details.")
+            throw new GradleException("Found ${violations.size()} malformed links in Groovydoc. Please fix the source issue rather than patching. See logs for details.")
         } else {
             logger.lifecycle "No malformed Groovydoc links found in ${apiDir.absolutePath}"
         }

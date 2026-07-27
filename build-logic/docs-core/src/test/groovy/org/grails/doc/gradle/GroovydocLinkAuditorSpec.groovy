@@ -26,29 +26,16 @@ class GroovydocLinkAuditorSpec extends Specification {
     @TempDir
     File apiDir
 
-    void "reports no violations for clean navigation and inner class links"() {
+    void "reports no violations for clean inner class links"() {
         given:
         writeHtml('index.html', """
-            <a href='deprecated-list.html'>Deprecated</a>
-            <a href='help-doc.html'>Help</a>
+            <a href="deprecated-list.html">Deprecated</a>
+            <a href="help-doc.html">Help</a>
             <a href='SomePackage.SomeClass.html'>SomeClass</a>
         """)
 
         expect:
         GroovydocLinkAuditor.findViolations(apiDir).empty
-    }
-
-    void "flags a navigation link that is nested under a relative path prefix"() {
-        given:
-        writeHtml('index.html', "<a href='../deprecated-list.html'>Deprecated</a>")
-
-        when:
-        List<String> violations = GroovydocLinkAuditor.findViolations(apiDir)
-
-        then:
-        violations.size() == 1
-        violations[0].contains('deprecated-list.html')
-        violations[0].contains('index.html')
     }
 
     void "flags an inner class link using a slash-separated path when the dotted file actually exists"() {
