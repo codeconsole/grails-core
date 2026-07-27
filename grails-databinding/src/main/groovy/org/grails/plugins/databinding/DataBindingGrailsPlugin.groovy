@@ -36,7 +36,6 @@ import grails.databinding.converters.FormattedValueConverter
 import grails.databinding.converters.ValueConverter
 import grails.databinding.events.DataBindingListener
 import grails.plugins.Plugin
-import grails.util.GrailsArrayUtils
 import grails.util.GrailsUtil
 import grails.web.databinding.GrailsWebDataBinder
 import org.grails.databinding.bindingsource.DataBindingSourceCreator
@@ -89,23 +88,16 @@ class DataBindingGrailsPlugin extends Plugin {
             dataBinder.autoGrowCollectionLimit = configurationProperties.autoGrowCollectionLimit
 
             ApplicationContext mainContext = grailsApplication.mainContext
-            ValueConverter[] mainContextConverters = mainContext
-                    .getBeansOfType(ValueConverter).values().toArray(new ValueConverter[0])
-            ValueConverter[] allValueConverters = (ValueConverter[]) GrailsArrayUtils.concat(valueConverters, mainContextConverters)
+            ValueConverter[] allValueConverters = (valueConverters + mainContext.getBeansOfType(ValueConverter).values()) as ValueConverter[]
             AnnotationAwareOrderComparator.sort(allValueConverters)
             dataBinder.valueConverters = allValueConverters
 
-            FormattedValueConverter[] mainContextFormattedValueConverters = mainContext
-                    .getBeansOfType(FormattedValueConverter).values().toArray(new FormattedValueConverter[0])
-            dataBinder.formattedValueConverters = (FormattedValueConverter[]) GrailsArrayUtils.concat(formattedValueConverters, mainContextFormattedValueConverters)
-
-            TypedStructuredBindingEditor[] mainContextStructuredBindingEditors = mainContext
-                    .getBeansOfType(TypedStructuredBindingEditor).values().toArray(new TypedStructuredBindingEditor[0])
-            dataBinder.structuredBindingEditors = (TypedStructuredBindingEditor[]) GrailsArrayUtils.concat(structuredBindingEditors, mainContextStructuredBindingEditors)
-
-            DataBindingListener[] mainContextDataBindingListeners = mainContext
-                    .getBeansOfType(DataBindingListener).values().toArray(new DataBindingListener[0])
-            dataBinder.dataBindingListeners = (DataBindingListener[]) GrailsArrayUtils.concat(dataBindingListeners, mainContextDataBindingListeners)
+            dataBinder.formattedValueConverters =
+                    (formattedValueConverters + mainContext.getBeansOfType(FormattedValueConverter).values()) as FormattedValueConverter[]
+            dataBinder.structuredBindingEditors =
+                    (structuredBindingEditors + mainContext.getBeansOfType(TypedStructuredBindingEditor).values()) as TypedStructuredBindingEditor[]
+            dataBinder.dataBindingListeners =
+                    (dataBindingListeners + mainContext.getBeansOfType(DataBindingListener).values()) as DataBindingListener[]
 
             dataBinder.messageSource = mainContext.getBean('messageSource', MessageSource)
             dataBinder
