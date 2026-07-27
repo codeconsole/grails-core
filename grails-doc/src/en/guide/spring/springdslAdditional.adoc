@@ -229,6 +229,8 @@ class Application extends GrailsAutoConfiguration {
     }
 
     def beans = {
+        bean(MyService)
+
         bean('myBean', MyBeanImpl) {
             new MyBeanImpl(someProperty: 42, otherProperty: 'blue')
         }
@@ -236,6 +238,8 @@ class Application extends GrailsAutoConfiguration {
 }
 ----
 
-No further registration is needed on the `Application` class — Spring Boot already processes it. A standalone class annotated with both `@GrailsBeans` and `@AutoConfiguration` must instead be listed in `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports`, like any other hand-written auto-configuration.
+Both the name and the body are optional. `bean(MyService)` declares a bean named `myService` — the type's decapitalized simple name — that is simply `new MyService()`; give it a name only when the type does not produce the one you want, and a body only when there is something to say beyond constructing it.
+
+No further registration is needed on the `Application` class — Spring Boot already processes it. Beans declared here are also ordinary user beans as far as Spring Boot is concerned, so any auto-configuration guarded by `@ConditionalOnMissingBean` backs off in their favour, exactly as it would for a bean defined in `resources.groovy`. A standalone class annotated with both `@GrailsBeans` and `@AutoConfiguration` must instead be listed in `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports`, like any other hand-written auto-configuration.
 
 The DSL's full surface — the `bean(...)` qualifiers such as `.conditionalOnMissingBean(...)`, `.primary()` and `.annotate(...)`, plus `field(...)` and `method(...)` for state and logic shared across bean methods — is documented in the link:plugins.html#hookingIntoRuntimeConfiguration[plugin development chapter], together with applying `@GrailsBeans` directly to a plugin descriptor.
