@@ -133,19 +133,23 @@ class CoreAutoConfigurationSpec extends Specification {
                 }
     }
 
-    // Pins current behavior, which is not the intended behavior: the configurer is a
-    // BeanFactoryPostProcessor, so this configuration class is instantiated before
-    // AutowiredAnnotationBeanPostProcessor is active and its placeholderPrefix field is never
-    // injected. The setting therefore has no effect and the default prefix stays in force. The
-    // deleted hand-written CoreAutoConfiguration behaved identically; fixing it means a static
-    // @Bean method reading the prefix from the Environment, which is a change in its own right.
-    void 'a configured placeholder prefix does not currently displace the default one'() {
+    void 'a configured placeholder prefix is applied to the configurer'() {
+        expect:
+        contextRunner()
+                .withInitializer(registerProbe('@{foo.bar}'))
+                .withPropertyValues("${Settings.SPRING_PLACEHOLDER_PREFIX}=@{", 'foo.bar=test')
+                .run { context ->
+                    assert context.getBean(PlaceholderProbe).name == 'test'
+                }
+    }
+
+    void 'a configured placeholder prefix displaces the default one'() {
         expect:
         contextRunner()
                 .withInitializer(registerProbe('${foo.bar}'))
                 .withPropertyValues("${Settings.SPRING_PLACEHOLDER_PREFIX}=@{", 'foo.bar=test')
                 .run { context ->
-                    assert context.getBean(PlaceholderProbe).name == 'test'
+                    assert context.getBean(PlaceholderProbe).name == '${foo.bar}'
                 }
     }
 

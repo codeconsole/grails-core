@@ -31,6 +31,7 @@ import org.springframework.context.annotation.ConfigurationClassPostProcessor
 import org.springframework.context.support.GenericApplicationContext
 import org.springframework.context.support.PropertySourcesPlaceholderConfigurer
 import org.springframework.core.Ordered
+import org.springframework.core.env.Environment
 import org.springframework.core.io.Resource
 import org.springframework.util.ClassUtils
 
@@ -41,7 +42,7 @@ import grails.core.GrailsApplication
 import grails.core.support.proxy.DefaultProxyHandler
 import grails.plugins.Plugin
 import grails.util.BuildSettings
-import grails.util.Environment
+import grails.util.Environment as GrailsEnvironment
 import grails.util.GrailsUtil
 import org.grails.beans.support.PropertiesEditor
 import org.grails.core.io.DefaultResourceLocator
@@ -78,8 +79,6 @@ class CoreGrailsPlugin extends Plugin {
     private static final SPRING_PROXY_TARGET_CLASS_CONFIG = 'spring.aop.proxy-target-class'
 
     def beans = {
-        field('placeholderPrefix', String).value(Settings.SPRING_PLACEHOLDER_PREFIX, '#{null}')
-
         bean('classLoader', ClassLoader).primary() { GrailsApplication grailsApplication ->
             grailsApplication.classLoader
         }
@@ -88,14 +87,16 @@ class CoreGrailsPlugin extends Plugin {
             new ConfigProperties(grailsApplication.config)
         }
 
-        // Left as a non-static @Bean method reading the placeholderPrefix field, exactly as the
-        // hand-written class had it. That field is in practice never injected - a
-        // BeanFactoryPostProcessor's configuration class is instantiated before @Value injection is
-        // active - so the configured prefix has no effect today. See CoreAutoConfigurationSpec.
-        bean('propertySourcesPlaceholderConfigurer', PropertySourcesPlaceholderConfigurer).primary() {
+        // A static factory method reading the Environment, rather than an instance method reading an
+        // injected @Value field as the hand-written class had it: this bean is a
+        // BeanFactoryPostProcessor, so it is created before @Value injection is active and a field
+        // would always still be null, leaving the configured prefix with no effect. Static is also
+        // Spring's documented shape for a BFPP bean, since it needs no enclosing instance.
+        bean('propertySourcesPlaceholderConfigurer', PropertySourcesPlaceholderConfigurer).primary().staticMethod() { Environment environment ->
             def configurer = new GrailsPlaceholderConfigurer()
-            if (placeholderPrefix != null) {
-                configurer.placeholderPrefix = placeholderPrefix
+            String prefix = environment.getProperty(Settings.SPRING_PLACEHOLDER_PREFIX)
+            if (prefix != null) {
+                configurer.placeholderPrefix = prefix
             }
             configurer
         }
@@ -148,8 +149,8 @@ class CoreGrailsPlugin extends Plugin {
             pluginManagerPostProcessor(PluginManagerAwareBeanPostProcessor)
 
             // add shutdown hook if not running in war deployed mode
-            final warDeployed = Environment.isWarDeployed()
-            final devMode = !warDeployed && environment == Environment.DEVELOPMENT
+            final warDeployed = GrailsEnvironment.isWarDeployed()
+            final devMode = !warDeployed && environment == GrailsEnvironment.DEVELOPMENT
             if (devMode && ClassUtils.isPresent('jline.Terminal', application.classLoader)) {
                 shutdownHook(DevelopmentShutdownHook)
             }
