@@ -42,45 +42,18 @@ import java.sql.ResultSet
 class EnumHasManyDdlSpec extends Specification {
 
     @Shared @AutoCleanup HibernateDatastore datastore =
-        new HibernateDatastore(SurveyResponse)
+        new HibernateDatastore(SurveyResponse, OrdinalSurveyResponse, NamedColumnSurveyResponse, NonNullableSurveyResponse)
 
     @Issue("https://github.com/apache/grails-core/issues/16051")
     void "join table for a hasMany of enum is created with the element column"() {
-        given:
-        SessionImplementor sessionImplementor = (SessionImplementor) datastore.sessionFactory.currentSession
-
-        expect: "the join table exists and has an answers column, not just the owner FK"
-        ResultSet columns = sessionImplementor.doReturningWork {
-            it.prepareStatement(
-                "select column_name from information_schema.columns " +
-                "where table_name = 'SURVEY_RESPONSE_ANSWERS'"
-            ).executeQuery()
-        }
-        Set<String> columnNames = []
-        while (columns.next()) {
-            columnNames << columns.getString('column_name').toLowerCase()
-        }
-        columnNames.contains('survey_response_id')
-        columnNames.any { it.contains('answer') }
+        expect: "the join table has exactly the owner FK column and the element column, named from the enum's simple name"
+        columnNamesFor('SURVEY_RESPONSE_ANSWERS') == ['survey_response_id', 'survey_answer'] as Set
     }
 
     @Issue("https://github.com/apache/grails-core/issues/16051")
     void "the owner table does not get a spurious column for the hasMany enum element"() {
-        given:
-        SessionImplementor sessionImplementor = (SessionImplementor) datastore.sessionFactory.currentSession
-
         expect: "no answer-related column leaked onto survey_response itself"
-        ResultSet columns = sessionImplementor.doReturningWork {
-            it.prepareStatement(
-                "select column_name from information_schema.columns " +
-                "where table_name = 'SURVEY_RESPONSE'"
-            ).executeQuery()
-        }
-        Set<String> columnNames = []
-        while (columns.next()) {
-            columnNames << columns.getString('column_name').toLowerCase()
-        }
-        !columnNames.any { it.contains('answer') }
+        !columnNamesFor('SURVEY_RESPONSE').any { it.contains('answer') }
     }
 
     @Issue("https://github.com/apache/grails-core/issues/16051")
@@ -98,6 +71,78 @@ class EnumHasManyDdlSpec extends Specification {
         then:
         reloaded.answers.sort() == [SurveyAnswer.MAYBE, SurveyAnswer.DONT_KNOW].sort()
     }
+
+    @Issue("https://github.com/apache/grails-core/issues/16051")
+    void "a hasMany of enum with enumType ordinal stores the ordinal, not the name"() {
+        expect: "the element column is a numeric ordinal column, not a string one"
+        columnNamesFor('ORDINAL_SURVEY_RESPONSE_ANSWERS') == ['ordinal_survey_response_id', 'survey_answer'] as Set
+
+        when:
+        def response = new OrdinalSurveyResponse(respondent: "Bob")
+        response.addToAnswers(SurveyAnswer.FOR_SURE)
+        response.save(flush: true)
+        response.discard()
+        def reloaded = OrdinalSurveyResponse.get(response.id)
+
+        then:
+        reloaded.answers == [SurveyAnswer.FOR_SURE] as Set
+    }
+
+    @Issue("https://github.com/apache/grails-core/issues/16051")
+    void "a hasMany of enum with an explicit joinTable column name uses it verbatim"() {
+        expect: "the element column uses the explicitly configured name instead of the derived one"
+        columnNamesFor('NAMED_COLUMN_SURVEY_RESPONSE_ANSWERS') ==
+                ['named_column_survey_response_id', 'chosen_answer'] as Set
+
+        when:
+        def response = new NamedColumnSurveyResponse(respondent: "Carol")
+        response.addToAnswers(SurveyAnswer.MAYBE_NOT)
+        response.save(flush: true)
+        response.discard()
+        def reloaded = NamedColumnSurveyResponse.get(response.id)
+
+        then:
+        reloaded.answers == [SurveyAnswer.MAYBE_NOT] as Set
+    }
+
+    @Issue("https://github.com/apache/grails-core/issues/16051")
+    void "the hasMany enum element column stays nullable even when nullable false is declared, matching the non-enum sibling path"() {
+        expect: "nullable: false on a hasMany-of-enum does not reach the element column, same as a hasMany-of-String would"
+        isNullableColumn('NON_NULLABLE_SURVEY_RESPONSE_ANSWERS', 'survey_answer')
+    }
+
+    private Set<String> columnNamesFor(String tableName) {
+        SessionImplementor sessionImplementor = (SessionImplementor) datastore.sessionFactory.currentSession
+        sessionImplementor.doReturningWork { connection ->
+            Set<String> columnNames = []
+            try (def statement = connection.prepareStatement(
+                    "select column_name from information_schema.columns where table_name = ?")) {
+                statement.setString(1, tableName)
+                try (ResultSet resultSet = statement.executeQuery()) {
+                    while (resultSet.next()) {
+                        columnNames << resultSet.getString('column_name').toLowerCase()
+                    }
+                }
+            }
+            columnNames
+        }
+    }
+
+    private boolean isNullableColumn(String tableName, String columnName) {
+        SessionImplementor sessionImplementor = (SessionImplementor) datastore.sessionFactory.currentSession
+        sessionImplementor.doReturningWork { connection ->
+            try (def statement = connection.prepareStatement(
+                    "select is_nullable from information_schema.columns " +
+                    "where table_name = ? and column_name = ?")) {
+                statement.setString(1, tableName)
+                statement.setString(2, columnName.toUpperCase())
+                try (ResultSet resultSet = statement.executeQuery()) {
+                    resultSet.next()
+                    'YES'.equalsIgnoreCase(resultSet.getString('is_nullable'))
+                }
+            }
+        }
+    }
 }
 
 @Entity
@@ -109,6 +154,51 @@ class SurveyResponse {
 
     static constraints = {
         respondent blank: false
+    }
+}
+
+@Entity
+class OrdinalSurveyResponse {
+    String respondent
+    Set<SurveyAnswer> answers
+
+    static hasMany = [answers: SurveyAnswer]
+
+    static mapping = {
+        answers enumType: 'ordinal'
+    }
+
+    static constraints = {
+        respondent blank: false
+    }
+}
+
+@Entity
+class NamedColumnSurveyResponse {
+    String respondent
+    Set<SurveyAnswer> answers
+
+    static hasMany = [answers: SurveyAnswer]
+
+    static mapping = {
+        answers joinTable: [column: 'chosen_answer']
+    }
+
+    static constraints = {
+        respondent blank: false
+    }
+}
+
+@Entity
+class NonNullableSurveyResponse {
+    String respondent
+    Set<SurveyAnswer> answers
+
+    static hasMany = [answers: SurveyAnswer]
+
+    static constraints = {
+        respondent blank: false
+        answers nullable: false
     }
 }
 
