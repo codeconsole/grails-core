@@ -24,14 +24,35 @@ import groovy.util.logging.Slf4j
 
 import org.springframework.beans.factory.BeanRegistrar
 import org.springframework.beans.factory.BeanRegistry
+import org.springframework.boot.autoconfigure.AutoConfiguration
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBooleanProperty
 import org.springframework.cache.Cache
 import org.springframework.core.env.Environment
 
+import grails.compiler.beans.GrailsBeans
 import grails.plugins.Plugin
 import org.grails.plugin.cache.GrailsCacheManager
 
+/**
+ * Configures the cache plugin.
+ *
+ * <p>The cache manager and key generator are contributed as auto-configuration rather than by the
+ * descriptor's registrar so that a bean contributed by the application or another plugin — for
+ * example a cache-provider plugin's {@code grailsCacheManager} — makes the default back off cleanly
+ * instead of triggering a bean-definition override.</p>
+ *
+ * <p>They are gated on the {@code CachePluginConfiguration} definition contributed by the registrar
+ * below (which runs before auto-configuration conditions are evaluated), so they back off entirely
+ * when the plugin is not active — e.g. the jar is on the classpath but the plugin is excluded —
+ * keeping them in lockstep with the descriptor.</p>
+ */
 @Slf4j
 @CompileStatic
+@GrailsBeans
+@AutoConfiguration
+@ConditionalOnBooleanProperty(name = 'grails.cache.enabled', matchIfMissing = true)
+@ConditionalOnBean(CachePluginConfiguration)
 class CacheGrailsPlugin extends Plugin {
 
     def grailsVersion = '8.0.0-SNAPSHOT > *'
@@ -48,6 +69,21 @@ class CacheGrailsPlugin extends Plugin {
 
     private boolean isCachingEnabled() {
         config.getProperty('grails.cache.enabled', Boolean, true)
+    }
+
+    def beans = {
+        field('cacheManagerType', String).value('grails.cache.cacheManager', '')
+
+        bean('customCacheKeyGenerator', CustomCacheKeyGenerator).conditionalOnMissingBeanName() {
+            new CustomCacheKeyGenerator()
+        }
+
+        bean('grailsCacheManager', GrailsCacheManager).conditionalOnMissingBeanName() { CachePluginConfiguration grailsCacheConfiguration ->
+            if (cacheManagerType == 'GrailsConcurrentLinkedMapCacheManager') {
+                return new GrailsConcurrentLinkedMapCacheManager(configuration: grailsCacheConfiguration)
+            }
+            new GrailsConcurrentMapCacheManager(configuration: grailsCacheConfiguration)
+        }
     }
 
     @Override

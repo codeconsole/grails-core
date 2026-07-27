@@ -39,7 +39,7 @@ class CacheGrailsPluginSpec extends Specification {
         beanFactory.containsBeanDefinition('grailsCacheConfiguration')
     }
 
-    void "the cache manager and key generator defaults are left to GrailsCacheAutoConfiguration"() {
+    void "the cache manager and key generator defaults are left to CacheAutoConfiguration"() {
         // Auto-configured with @ConditionalOnMissingBean so an application- or plugin-defined
         // bean backs the default off instead of triggering a definition override
         given:

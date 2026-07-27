@@ -27,7 +27,7 @@ import org.grails.plugin.cache.GrailsCacheManager
 
 import spock.lang.Specification
 
-class GrailsCacheAutoConfigurationSpec extends Specification {
+class CacheAutoConfigurationSpec extends Specification {
 
     void 'the default cache manager and key generator are auto-configured'() {
         given:
@@ -101,7 +101,7 @@ class GrailsCacheAutoConfigurationSpec extends Specification {
         if (userCacheManager != null) {
             context.registerBean('grailsCacheManager', GrailsCacheManager, () -> userCacheManager)
         }
-        context.register(GrailsCacheAutoConfiguration)
+        context.register(CacheAutoConfiguration)
         context.refresh()
         return context
     }

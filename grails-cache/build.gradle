@@ -49,6 +49,7 @@ dependencies {
     api "org.codehaus.gpars:gpars:$gparsVersion"
     api "com.googlecode.concurrentlinkedhashmap:concurrentlinkedhashmap-lru:$concurrentlinkedhashmapLruVersion"
 
+    implementation project(':grails-beans-dsl')
     compileOnly project(':grails-domain-class')
 
     console project(':grails-console')
