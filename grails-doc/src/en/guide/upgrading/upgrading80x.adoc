@@ -1579,7 +1579,7 @@ This was introduced during the Grails 7.1 plugin-loading changes and remains req
 
 | `grails-domain-class`
 | `ConstraintEvaluatorAdapter` and `GrailsDomainClassAutoConfiguration.constraintsEvaluator(...)`
-| Code that imported the auto-configuration method should use the current `validateableConstraintsEvaluator(...)` bean path and the datastore constraint evaluator APIs.
+| Code that imported the auto-configuration method should use the current `validateableConstraintsEvaluator(...)` bean path and the datastore constraint evaluator APIs. The auto-configuration itself is now named `org.grails.plugins.domain.DomainClassAutoConfiguration`, following the `*GrailsPlugin` -> `*AutoConfiguration` convention; update any `@EnableAutoConfiguration(exclude = ...)` or `spring.autoconfigure.exclude` entry that referenced the old name.
 
 | `grails-fields`
 | `BeanPropertyAccessor.getBeanClass()`, its setter, `PropertyPathAccessor.getBeanClass()`, `FormFieldsTagLib.input(...)`, and direct `render*` helper methods
