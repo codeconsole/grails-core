@@ -41,10 +41,12 @@ import org.codehaus.groovy.ast.FieldNode;
 import org.codehaus.groovy.ast.MethodNode;
 import org.codehaus.groovy.ast.Parameter;
 import org.codehaus.groovy.ast.PropertyNode;
+import org.codehaus.groovy.ast.expr.ArgumentListExpression;
 import org.codehaus.groovy.ast.expr.BinaryExpression;
 import org.codehaus.groovy.ast.expr.ClassExpression;
 import org.codehaus.groovy.ast.expr.ClosureExpression;
 import org.codehaus.groovy.ast.expr.ConstantExpression;
+import org.codehaus.groovy.ast.expr.ConstructorCallExpression;
 import org.codehaus.groovy.ast.expr.Expression;
 import org.codehaus.groovy.ast.expr.ListExpression;
 import org.codehaus.groovy.ast.expr.MapEntryExpression;
@@ -53,6 +55,7 @@ import org.codehaus.groovy.ast.expr.MethodCallExpression;
 import org.codehaus.groovy.ast.expr.PropertyExpression;
 import org.codehaus.groovy.ast.stmt.BlockStatement;
 import org.codehaus.groovy.ast.stmt.ExpressionStatement;
+import org.codehaus.groovy.ast.stmt.ReturnStatement;
 import org.codehaus.groovy.ast.stmt.Statement;
 import org.codehaus.groovy.control.CompilationUnit;
 import org.codehaus.groovy.control.CompilePhase;
@@ -669,23 +672,32 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
 
     private void processBeanStatement(ClassNode classNode, MethodCallExpression outerCall, MethodCallExpression baseCall,
             List<MethodCallExpression> qualifierCalls, SourceUnit source, Set<String> usedNames) {
+        // The factory closure is optional: bean(Type) with no body declares a bean that is just its
+        // own no-argument construction, which is by far the most common shape and reads as noise
+        // when spelled out as bean(Type) { new Type() }.
         List<Expression> closureCallArgs = flatten(outerCall.getArguments());
-        if (closureCallArgs.isEmpty() || !(closureCallArgs.get(closureCallArgs.size() - 1) instanceof ClosureExpression)) {
-            addError(outerCall, source, "bean(...) must end with a factory closure: bean(Type) { ... }");
-            return;
-        }
-        ClosureExpression factory = (ClosureExpression) closureCallArgs.get(closureCallArgs.size() - 1);
+        ClosureExpression factory = !closureCallArgs.isEmpty() &&
+                closureCallArgs.get(closureCallArgs.size() - 1) instanceof ClosureExpression ?
+                (ClosureExpression) closureCallArgs.get(closureCallArgs.size() - 1) : null;
 
         // When bean(...) is itself the outermost call (no qualifiers chained), it carries the
         // trailing closure as its own last argument - exclude it before validating the [name, ] Type
         // shape, since it was already validated above.
         List<Expression> baseArgs = flatten(baseCall.getArguments());
-        if (baseCall == outerCall && !baseArgs.isEmpty()) {
+        if (factory != null && baseCall == outerCall && !baseArgs.isEmpty()) {
             baseArgs = baseArgs.subList(0, baseArgs.size() - 1);
         }
 
         TypeAndName typeAndName = parseNameAndType(baseArgs, baseCall, source, BEAN_CALL, false);
         if (typeAndName == null) {
+            return;
+        }
+
+        ClassNode beanType = typeAndName.type.getType();
+        if (factory == null && (beanType.isInterface() || Modifier.isAbstract(beanType.getModifiers()))) {
+            addError(baseCall, source, "bean(" + beanType.getNameWithoutPackage() + ") without a factory closure " +
+                    "constructs the declared type, which cannot be done for an interface or abstract class - " +
+                    "give it a body: bean(" + beanType.getNameWithoutPackage() + ") { new SomeImplementation() }");
             return;
         }
 
@@ -698,18 +710,23 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
                 syntheticBeanMethodName(typeAndName.type.getType(), usedNames);
         usedNames.add(javaMethodName);
 
+        Parameter[] beanParameters = factory == null || factory.getParameters() == null ?
+                Parameter.EMPTY_ARRAY : factory.getParameters();
+        Statement beanBody = factory != null ? factory.getCode() :
+                new ReturnStatement(new ConstructorCallExpression(beanType, ArgumentListExpression.EMPTY_ARGUMENTS));
+
         MethodNode beanMethod = new MethodNode(
                 javaMethodName,
                 Modifier.PUBLIC,
-                typeAndName.type.getType(),
-                factory.getParameters() == null ? Parameter.EMPTY_ARRAY : factory.getParameters(),
+                beanType,
+                beanParameters,
                 ClassNode.EMPTY_ARRAY,
-                factory.getCode());
+                beanBody);
         beanMethod.addAnnotation(beanAnnotation(typeAndName.name));
 
         for (MethodCallExpression qualifierCall : qualifierCalls) {
             List<Expression> qualifierArgs = flatten(qualifierCall.getArguments());
-            if (qualifierCall == outerCall) {
+            if (factory != null && qualifierCall == outerCall) {
                 // only the outermost call in the chain can carry the trailing factory closure
                 qualifierArgs = qualifierArgs.subList(0, qualifierArgs.size() - 1);
             }

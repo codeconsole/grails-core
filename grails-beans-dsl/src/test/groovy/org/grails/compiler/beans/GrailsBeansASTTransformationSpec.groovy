@@ -182,6 +182,97 @@ class GrailsBeansASTTransformationSpec extends Specification {
         fixtureBeans.getDeclaredMethod('URLHelper') != null
     }
 
+    def "bean(Type) with no factory closure compiles to a method that constructs the declared type"() {
+        given:
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @GrailsBeans
+            @AutoConfiguration
+            class BodylessFixtureBeans {
+                def beans = {
+                    bean(Greeter)
+                    bean('otherGreeter', Greeter)
+                }
+            }
+
+            class Greeter {
+                String greet() { 'hi' }
+            }
+        '''
+
+        when:
+        Class<?> fixtureBeans = compile(source)
+        def derived = fixtureBeans.getDeclaredMethod('greeter')
+        def named = fixtureBeans.getDeclaredMethod('otherGreeter')
+
+        then: "the name is derived from the type, or taken from the explicit name"
+        derived.getAnnotation(Bean).value() == ['greeter'] as String[]
+        named.getAnnotation(Bean).value() == ['otherGreeter'] as String[]
+
+        and: "both take no parameters and return a new instance of the declared type"
+        derived.parameterCount == 0
+        named.parameterCount == 0
+
+        and:
+        def instance = fixtureBeans.getDeclaredConstructor().newInstance()
+        derived.invoke(instance).greet() == 'hi'
+        !derived.invoke(instance).is(derived.invoke(instance))
+    }
+
+    def "bean(Type) with no factory closure still accepts chained qualifiers"() {
+        given:
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @GrailsBeans
+            @AutoConfiguration
+            class BodylessQualifiedFixtureBeans {
+                def beans = {
+                    bean(Widget).primary().lazy().conditionalOnMissingBean()
+                }
+            }
+
+            class Widget { }
+        '''
+
+        when:
+        Class<?> fixtureBeans = compile(source)
+        def method = fixtureBeans.getDeclaredMethod('widget')
+
+        then:
+        method.isAnnotationPresent(Bean)
+        method.isAnnotationPresent(Primary)
+        method.isAnnotationPresent(Lazy)
+        method.isAnnotationPresent(ConditionalOnMissingBean)
+        method.parameterCount == 0
+    }
+
+    def "bean(Type) with no factory closure is rejected for a type that cannot be constructed"() {
+        given:
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @GrailsBeans
+            @AutoConfiguration
+            class UninstantiableFixtureBeans {
+                def beans = {
+                    bean(Runnable)
+                }
+            }
+        '''
+
+        when:
+        compile(source)
+
+        then:
+        def e = thrown(Exception)
+        e.message.contains('cannot be done for an interface or abstract class')
+    }
+
     def "compiles conditionalOnMissingBean(...) into a @ConditionalOnMissingBean annotation"() {
         given:
         Class<?> fixtureBeans = compile()
@@ -913,7 +1004,7 @@ class GrailsBeansASTTransformationSpec extends Specification {
         'a method call that is not bean(...)'         | "someOtherMethod(String) { 'x' }"                                  | 'Expected bean(["name", ] Type) { ... }'
         'bean(...) with a name but no type'           | "bean('NotAType') { 'x' }"                                         | 'bean(...) requires a type'
         'bean(...) with the name and type in the old order' | "bean(String, 'x') { 'y' }"                                  | 'takes the name before the type'
-        'bean(...) with no trailing factory closure'  | "bean('x', String)"                                                | 'bean(...) must end with a factory closure'
+        'bean(...) with no factory closure on an uninstantiable type' | "bean('x', Runnable)"                               | 'cannot be done for an interface or abstract class'
         'conditionalOnMissingBean(...) with a non-type argument' |
                 "bean('x', String).conditionalOnMissingBean('not a type') { 'x' }" |
                 'conditionalOnMissingBean(...) arguments must be types'

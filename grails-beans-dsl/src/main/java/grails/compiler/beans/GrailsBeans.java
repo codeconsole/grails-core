@@ -33,7 +33,12 @@ import org.codehaus.groovy.transform.GroovyASTTransformationClass;
  * <p>The annotated class must declare a {@code beans} property initialised to a closure whose
  * statements are one of:
  * <ul>
- * <li>{@code bean(["name", ] Type) { ... }}, optionally chained with any combination of
+ * <li>{@code bean(["name", ] Type) { ... }} - or {@code bean(["name", ] Type)} with no body at all,
+ * which declares a bean that is simply {@code new Type()}, the most common shape. The bodyless form
+ * requires a concrete type with an accessible no-argument constructor; an interface or abstract type
+ * needs a body naming the implementation. It chains with the qualifiers below exactly as the
+ * closure form does ({@code bean(Foo).lazy().conditionalOnMissingBean()}). The closure form may be
+ * chained with any combination of
  * {@code .conditionalOnMissingBean(...)} (positional types, the annotation's own named
  * attributes such as {@code name:}/{@code search:}, or no arguments at all to let Spring infer
  * the back-off type from the return type), {@code .conditionalOnMissingBeanName(...)} (backs off
