@@ -18,17 +18,26 @@
  */
 package org.grails.plugins
 
+import groovy.transform.CompileDynamic
 import groovy.transform.CompileStatic
 
 import org.springframework.beans.factory.config.CustomEditorConfigurer
 import org.springframework.beans.factory.support.DefaultListableBeanFactory
 import org.springframework.beans.factory.xml.XmlBeanDefinitionReader
+import org.springframework.boot.autoconfigure.AutoConfiguration
+import org.springframework.boot.autoconfigure.AutoConfigureOrder
+import org.springframework.boot.autoconfigure.context.PropertyPlaceholderAutoConfiguration
 import org.springframework.context.annotation.ConfigurationClassPostProcessor
 import org.springframework.context.support.GenericApplicationContext
+import org.springframework.context.support.PropertySourcesPlaceholderConfigurer
+import org.springframework.core.Ordered
 import org.springframework.core.io.Resource
 import org.springframework.util.ClassUtils
 
+import grails.compiler.beans.GrailsBeans
+import grails.config.ConfigProperties
 import grails.config.Settings
+import grails.core.GrailsApplication
 import grails.core.support.proxy.DefaultProxyHandler
 import grails.plugins.Plugin
 import grails.util.BuildSettings
@@ -45,6 +54,7 @@ import org.grails.spring.aop.autoproxy.GroovyAwareAspectJAwareAdvisorAutoProxyCr
 import org.grails.spring.aop.autoproxy.GroovyAwareInfrastructureAdvisorAutoProxyCreator
 import org.grails.spring.beans.GrailsApplicationAwareBeanPostProcessor
 import org.grails.spring.beans.PluginManagerAwareBeanPostProcessor
+import org.grails.spring.context.support.GrailsPlaceholderConfigurer
 import org.grails.spring.context.support.MapBasedSmartPropertyOverrideConfigurer
 
 /**
@@ -53,6 +63,10 @@ import org.grails.spring.context.support.MapBasedSmartPropertyOverrideConfigurer
  * @author Graeme Rocher
  * @since 0.4
  */
+@CompileStatic
+@GrailsBeans
+@AutoConfiguration(before = [PropertyPlaceholderAutoConfiguration])
+@AutoConfigureOrder(Ordered.HIGHEST_PRECEDENCE)
 class CoreGrailsPlugin extends Plugin {
 
     def version = GrailsUtil.getGrailsVersion()
@@ -63,7 +77,32 @@ class CoreGrailsPlugin extends Plugin {
 
     private static final SPRING_PROXY_TARGET_CLASS_CONFIG = 'spring.aop.proxy-target-class'
 
+    def beans = {
+        field('placeholderPrefix', String).value(Settings.SPRING_PLACEHOLDER_PREFIX, '#{null}')
+
+        bean('classLoader', ClassLoader).primary() { GrailsApplication grailsApplication ->
+            grailsApplication.classLoader
+        }
+
+        bean('grailsConfigProperties', ConfigProperties).primary() { GrailsApplication grailsApplication ->
+            new ConfigProperties(grailsApplication.config)
+        }
+
+        // Left as a non-static @Bean method reading the placeholderPrefix field, exactly as the
+        // hand-written class had it. That field is in practice never injected - a
+        // BeanFactoryPostProcessor's configuration class is instantiated before @Value injection is
+        // active - so the configured prefix has no effect today. See CoreAutoConfigurationSpec.
+        bean('propertySourcesPlaceholderConfigurer', PropertySourcesPlaceholderConfigurer).primary() {
+            def configurer = new GrailsPlaceholderConfigurer()
+            if (placeholderPrefix != null) {
+                configurer.placeholderPrefix = placeholderPrefix
+            }
+            configurer
+        }
+    }
+
     @Override
+    @CompileDynamic
     Closure doWithSpring() {
         { ->
 
