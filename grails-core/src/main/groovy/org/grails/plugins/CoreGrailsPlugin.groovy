@@ -18,7 +18,6 @@
  */
 package org.grails.plugins
 
-import groovy.transform.CompileDynamic
 import groovy.transform.CompileStatic
 
 import org.springframework.aop.config.AopConfigUtils
@@ -60,6 +59,7 @@ import org.grails.spring.RuntimeSpringConfigUtilities
 import org.grails.spring.RuntimeSpringConfiguration
 import org.grails.spring.aop.autoproxy.GroovyAwareAspectJAwareAdvisorAutoProxyCreator
 import org.grails.spring.aop.autoproxy.GroovyAwareInfrastructureAdvisorAutoProxyCreator
+import org.grails.spring.beans.AbstractResourceLocatorPostProcessor
 import org.grails.spring.beans.GrailsApplicationAwareBeanPostProcessor
 import org.grails.spring.beans.PluginManagerAwareBeanPostProcessor
 import org.grails.spring.context.annotation.GrailsComponentScanPostProcessor
@@ -115,23 +115,6 @@ class CoreGrailsPlugin extends Plugin {
                 configurer.placeholderPrefix = prefix
             }
             configurer
-        }
-    }
-
-    /**
-     * The one definition that cannot move. {@code abstractGrailsResourceLocator} is an abstract
-     * parent definition, a bean builder concept with no equivalent in {@code BeanRegistry.Spec}
-     * or on a {@code @Bean} method, and it is part of this plugin's public surface: third-party
-     * plugins inherit from it with {@code bean.parent = 'abstractGrailsResourceLocator'} —
-     * asset-pipeline's {@code assetResourceLocator} among them.
-     */
-    @Override
-    @CompileDynamic
-    Closure doWithSpring() {
-        { ->
-            abstractGrailsResourceLocator {
-                searchLocations = [BuildSettings.BASE_DIR.absolutePath]
-            }
         }
     }
 
@@ -207,6 +190,14 @@ class CoreGrailsPlugin extends Plugin {
             }
 
             registry.registerBean('proxyHandler', DefaultProxyHandler)
+
+            // an abstract parent definition, which registerBean cannot express since it always
+            // takes a class; third-party plugins inherit their search locations from it
+            registry.registerBean('grailsAbstractResourceLocatorPostProcessor', AbstractResourceLocatorPostProcessor) {
+                it.infrastructure().supplier {
+                    new AbstractResourceLocatorPostProcessor([BuildSettings.BASE_DIR.absolutePath])
+                }
+            }
 
             List<String> packagesToScan = (List<String>) grailsApplication.config
                     .getProperty(Settings.SPRING_BEAN_PACKAGES, List) ?: []

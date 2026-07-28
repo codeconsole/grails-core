@@ -23,8 +23,10 @@ import java.beans.PropertyEditor
 
 import org.springframework.aop.config.AopConfigUtils
 import org.springframework.beans.factory.BeanRegistrar
+import org.springframework.beans.factory.config.BeanDefinition
 import org.springframework.beans.factory.config.CustomEditorConfigurer
 import org.springframework.beans.factory.support.BeanRegistryAdapter
+import org.springframework.beans.factory.support.GenericBeanDefinition
 import org.springframework.beans.factory.support.RootBeanDefinition
 import org.springframework.context.support.GenericApplicationContext
 
@@ -34,11 +36,14 @@ import grails.core.GrailsApplication
 import grails.core.support.GrailsApplicationAware
 import grails.core.support.proxy.DefaultProxyHandler
 import grails.core.support.proxy.ProxyHandler
+import grails.util.BuildSettings
 
 import org.grails.beans.support.PropertiesEditor
+import org.grails.core.io.DefaultResourceLocator
 import org.grails.core.support.ClassEditor
 import org.grails.spring.aop.autoproxy.GroovyAwareAspectJAwareAdvisorAutoProxyCreator
 import org.grails.spring.aop.autoproxy.GroovyAwareInfrastructureAdvisorAutoProxyCreator
+import org.grails.spring.beans.AbstractResourceLocatorPostProcessor
 
 import spock.lang.Specification
 
@@ -112,6 +117,29 @@ class CoreGrailsPluginRegistrarSpec extends Specification {
 
         expect:
         context.getBean(ProxyHandler) instanceof DefaultProxyHandler
+
+        cleanup:
+        context.close()
+    }
+
+    void 'the abstract resource locator parent is registered and can be inherited from'() {
+        given: 'a definition naming the parent the way a third-party plugin does'
+        GenericApplicationContext context = buildContext(new DefaultGrailsApplication()) {
+            GenericBeanDefinition child = new GenericBeanDefinition()
+            child.beanClass = DefaultResourceLocator
+            child.parentName = AbstractResourceLocatorPostProcessor.BEAN_NAME
+            it.registerBeanDefinition('inheritingLocator', child)
+        }
+
+        when:
+        BeanDefinition merged = context.beanFactory.getMergedBeanDefinition('inheritingLocator')
+
+        then: 'the parent exists, is abstract, and its property reaches the child'
+        context.getBeanDefinition(AbstractResourceLocatorPostProcessor.BEAN_NAME).abstract
+        merged.propertyValues.getPropertyValue('searchLocations').value == [BuildSettings.BASE_DIR.absolutePath]
+
+        and: 'so the child is instantiable'
+        context.getBean('inheritingLocator') instanceof DefaultResourceLocator
 
         cleanup:
         context.close()
