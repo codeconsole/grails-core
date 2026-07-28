@@ -18,7 +18,6 @@
  */
 package org.grails.compiler.injection
 
-import groovy.xml.MarkupBuilder
 import groovy.xml.XmlSlurper
 import org.codehaus.groovy.GroovyBugError
 import org.codehaus.groovy.ast.ASTNode
@@ -106,15 +105,16 @@ class GlobalGrailsClassInjectorTransformationSpec extends Specification {
                 }
             } as CompilationUnit.IPrimaryClassNodeOperation, Phases.CONVERSION)
             cu.compile(Phases.CONVERSION)
-            pluginXml.withWriter { writer ->
-                new MarkupBuilder(writer).plugin(name: 'foo') {
-                    type('FooGrailsPlugin')
-                    resources {
-                        resource('Foo')
-                        resource('Bar')
-                    }
-                }
-            }
+            pluginXml.text = '''
+                <plugin name="foo">
+                    <type>FooGrailsPlugin</type>
+                    <resources>
+                        <resource>Foo</resource>
+                        <resource>Bar</resource>
+                        <resource>Baz</resource>
+                    </resources>
+                </plugin>
+            '''
 
         expect: "the file does exist"
             pluginXml.exists()
@@ -136,8 +136,8 @@ class GlobalGrailsClassInjectorTransformationSpec extends Specification {
         then: "the generated plugin.xml is valid"
             xml.@name.text() == 'bar'
             xml.type.text() == 'BarGrailsPlugin'
-            xml.resources.resource.size() == 2
-            xml.resources.resource.text() == 'FooBar'
+            xml.resources.resource.size() == 3
+            xml.resources.resource.text() == 'FooBarBaz'
     }
 
     @RestoreSystemProperties
@@ -235,41 +235,6 @@ class GlobalGrailsClassInjectorTransformationSpec extends Specification {
             noExceptionThrown()
     }
 
-    /**
-     * Compiles the given source to a real file on disk (required so {@code GrailsASTUtils.getSourceUrl}
-     * resolves a URL). Because {@code GlobalGrailsClassInjectorTransformation} is itself registered as a
-     * global AST transformation (via {@code META-INF/services}) and grails-core's own compiled classes are
-     * on this test's classpath, compiling all the way through {@code CANONICALIZATION} exercises the real
-     * transformation exactly as production Grails builds do - no manual {@code visit()} call is needed.
-     * {@code nodeMetaData} is stamped onto the class during {@code CONVERSION}, before the transformation's
-     * own {@code CANONICALIZATION} pass runs, mirroring how the Grails Gradle plugin stamps project
-     * name/version metadata via its own compiler customizer.
-     */
-    private static ClassNode compileToFile(File sourceFile, String source, File targetDirectory, Map<String, String> nodeMetaData = [:]) {
-        sourceFile.parentFile.mkdirs()
-        sourceFile.text = source
-        def configuration = new CompilerConfiguration(targetDirectory: targetDirectory)
-        if (nodeMetaData) {
-            configuration.addCompilationCustomizers(new CompilationCustomizer(CompilePhase.CONVERSION) {
-                @Override
-                void call(SourceUnit source1, GeneratorContext context, ClassNode cn) throws CompilationFailedException {
-                    nodeMetaData.each {
-                        cn.putNodeMetaData(it.key, it.value)
-                    }
-                }
-            })
-        }
-        def cu = new CompilationUnit(configuration)
-        cu.addSource(sourceFile)
-        def capturedClassNode = null
-        cu.addPhaseOperation({ SourceUnit source1, GeneratorContext context, ClassNode cn ->
-            capturedClassNode = cn
-        } as CompilationUnit.IPrimaryClassNodeOperation, Phases.CANONICALIZATION)
-        cu.compile(Phases.CANONICALIZATION)
-
-        capturedClassNode
-    }
-
     void "the global transform stamps a GrailsPlugin descriptor class with a version property"() {
         given: "a *GrailsPlugin class with no explicit version property, and nowhere for plugin.xml to exist yet"
             def sourceFile = new File(tempDir, 'PlainGrailsPlugin.groovy')
@@ -297,7 +262,11 @@ class GlobalGrailsClassInjectorTransformationSpec extends Specification {
         when:
             def classNode = compileToFile(
                     sourceFile,
-                    'class DeclaredGrailsPlugin { Object version = "3.0" }',
+                    '''
+                        class DeclaredGrailsPlugin {
+                            def version = '3.0'
+                        }
+                    ''',
                     targetDir
             )
 
@@ -316,8 +285,10 @@ class GlobalGrailsClassInjectorTransformationSpec extends Specification {
 
         then:
             def exception = thrown(GroovyBugError)
-            exception.cause instanceof IllegalStateException
-            exception.cause.message.contains('does not define a plugin version')
+            with(exception) {
+                cause instanceof CompilationFailedException
+                cause.message.contains('does not define a plugin version')
+            }
     }
 
     void "the global transform annotates a plain Grails resource class with @GrailsPlugin metadata"() {
@@ -336,8 +307,10 @@ class GlobalGrailsClassInjectorTransformationSpec extends Specification {
         then: "the class is stamped with the project's @GrailsPlugin metadata"
             def annotations = classNode.getAnnotations(ClassHelper.make(GrailsPlugin))
             annotations.size() == 1
-            annotations[0].getMember('name').text == GrailsNameUtils.getPropertyNameForLowerCaseHyphenSeparatedName('foowidget')
-            annotations[0].getMember('version').text == '2.0'
+            with(annotations.first()) {
+                getMember('name').text == GrailsNameUtils.getPropertyNameForLowerCaseHyphenSeparatedName('foowidget')
+                getMember('version').text == '2.0'
+            }
     }
 
     void "the global transform processes a Grails service as an artefact"() {
@@ -354,8 +327,10 @@ class GlobalGrailsClassInjectorTransformationSpec extends Specification {
             )
 
         then:
-            classNode.getAnnotations(ClassHelper.make(Artefact)).size() == 1
-            classNode.getAnnotations(ClassHelper.make(Artefact))[0].getMember('value').text == 'Service'
+            with(classNode.getAnnotations(ClassHelper.make(Artefact))) {
+                size() == 1
+                first().getMember('value').text == 'Service'
+            }
 
         cleanup:
             TraitInjectionUtils.@traitInjectors = null
@@ -370,11 +345,11 @@ class GlobalGrailsClassInjectorTransformationSpec extends Specification {
             compileToFile(
                     sourceFile,
                     '''
-                    class TestHandler extends grails.core.ArtefactHandlerAdapter {
-                        TestHandler() {
-                            super("Test", null, null, "Handler")
+                        class TestHandler extends grails.core.ArtefactHandlerAdapter {
+                            TestHandler() {
+                                super('Test', null, null, 'Handler')
+                            }
                         }
-                    }
                     ''',
                     targetDir
             )
@@ -410,7 +385,7 @@ class GlobalGrailsClassInjectorTransformationSpec extends Specification {
             cu.addSource('BazGrailsPlugin', '''
                 class BazGrailsPlugin {
                     def pluginExcludes = ['Excluded*']
-                    def grailsVersion = "3.0 > *"
+                    def grailsVersion = '3.0 > *'
                 }
             ''')
             cu.addPhaseOperation({ SourceUnit source, GeneratorContext context, ClassNode cn ->
@@ -419,21 +394,21 @@ class GlobalGrailsClassInjectorTransformationSpec extends Specification {
                 }
             } as CompilationUnit.IPrimaryClassNodeOperation, Phases.CONVERSION)
             cu.compile(Phases.CONVERSION)
-            pluginXml.withWriter { writer ->
-                def mkp = new MarkupBuilder(writer)
-                mkp.plugin(name: 'baz', version: '1.0', grailsVersion: '1.0 > *') {
-                    type 'BazGrailsPlugin'
-                    resources {
-                        resource 'ExcludedThing'
-                    }
-                }
-            }
+            pluginXml.text = '''
+                <plugin name="baz" version="1.0" grailsVersion="1.0 > *">
+                    <type>BazGrailsPlugin</type>
+                    <resources>
+                        <resource>ExcludedThing</resource>
+                        <resource>ExistingThing</resource>
+                    </resources>
+                </plugin>
+            '''
 
         when: "the transformation updates the plugin.xml"
             GlobalGrailsClassInjectorTransformation.generatePluginXml(
                     classNode,
                     '2.0',
-                    ['ExcludedThing', 'KeptThing'] as Set,
+                    ['ExcludedThing', 'NewThing'] as Set,
                     pluginXml
             )
 
@@ -446,7 +421,7 @@ class GlobalGrailsClassInjectorTransformationSpec extends Specification {
         then: "the excluded resource was removed, the kept resource was added, and metadata was refreshed"
             xml.@version.text() == '2.0'
             xml.@grailsVersion.text() == '3.0 > *'
-            xml.resources.resource*.text() == ['KeptThing']
+            xml.resources.resource*.text() == ['ExistingThing', 'NewThing']
     }
 
     void "plugin xml excludes are applied when writing a new descriptor"() {
@@ -482,7 +457,13 @@ class GlobalGrailsClassInjectorTransformationSpec extends Specification {
     void "plugin xml resources are updated when an existing descriptor has no plugin class"() {
         given:
             def pluginXml = new File(tempDir, 'existing-plugin.xml')
-            pluginXml.text = '<plugin><resources><resource>ExistingThing</resource></resources></plugin>'
+            pluginXml.text = '''
+                <plugin>
+                    <resources>
+                        <resource>ExistingThing</resource>
+                    </resources>
+                </plugin>
+            '''
 
         when:
             GlobalGrailsClassInjectorTransformation.generatePluginXml(
@@ -525,7 +506,14 @@ class GlobalGrailsClassInjectorTransformationSpec extends Specification {
     void "plugin xml exclusions remove matching resources from an existing descriptor"() {
         given:
             def pluginXml = new File(tempDir, 'existing-plugin-excludes.xml')
-            pluginXml.text = '<plugin><resources><resource>ExcludedThing</resource><resource>KeptThing</resource></resources></plugin>'
+            pluginXml.text = '''
+                <plugin>
+                    <resources>
+                        <resource>ExcludedThing</resource>
+                        <resource>KeptThing</resource>
+                    </resources>
+                </plugin>
+            '''
             GlobalGrailsClassInjectorTransformation.pluginExcludePatterns.add('Excluded*')
 
         when:
@@ -542,5 +530,39 @@ class GlobalGrailsClassInjectorTransformationSpec extends Specification {
             getConfiguration() >> cc
             getName() >> 'TestSource'
         }
+    }
+
+    /**
+     * Compiles the given source to a real file on disk (required so {@code GrailsASTUtils.getSourceUrl}
+     * resolves a URL). Because {@code GlobalGrailsClassInjectorTransformation} is itself registered as a
+     * global AST transformation (via {@code META-INF/services}) and grails-core's own compiled classes are
+     * on this test's classpath, compiling all the way through {@code CANONICALIZATION} exercises the real
+     * transformation exactly as production Grails builds do - no manual {@code visit()} call is needed.
+     * {@code nodeMetaData} is stamped onto the class during {@code CONVERSION}, before the transformation's
+     * own {@code CANONICALIZATION} pass runs, mirroring how the Grails Gradle plugin stamps project
+     * name/version metadata via its own compiler customizer.
+     */
+    private static ClassNode compileToFile(File sourceFile, String source, File targetDirectory, Map<String, String> nodeMetaData = [:]) {
+        sourceFile.parentFile.mkdirs()
+        sourceFile.text = source
+        def configuration = new CompilerConfiguration(targetDirectory: targetDirectory)
+        if (nodeMetaData) {
+            configuration.addCompilationCustomizers(new CompilationCustomizer(CompilePhase.CONVERSION) {
+                @Override
+                void call(SourceUnit source1, GeneratorContext context, ClassNode cn) throws CompilationFailedException {
+                    nodeMetaData.each {
+                        cn.putNodeMetaData(it.key, it.value)
+                    }
+                }
+            })
+        }
+        def cu = new CompilationUnit(configuration)
+        cu.addSource(sourceFile)
+        def capturedClassNode = null
+        cu.addPhaseOperation({ SourceUnit source1, GeneratorContext context, ClassNode cn ->
+            capturedClassNode = cn
+        } as CompilationUnit.IPrimaryClassNodeOperation, Phases.CANONICALIZATION)
+        cu.compile(Phases.CANONICALIZATION)
+        capturedClassNode
     }
 }
