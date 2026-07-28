@@ -33,6 +33,11 @@ import org.codehaus.groovy.control.Phases
 import org.codehaus.groovy.control.SourceUnit
 import org.codehaus.groovy.control.customizers.CompilationCustomizer
 
+import ch.qos.logback.classic.Level
+import ch.qos.logback.classic.Logger
+import ch.qos.logback.classic.spi.ILoggingEvent
+import ch.qos.logback.core.read.ListAppender
+import org.slf4j.LoggerFactory
 import spock.lang.Specification
 import spock.lang.TempDir
 import spock.util.environment.RestoreSystemProperties
@@ -493,14 +498,28 @@ class GlobalGrailsClassInjectorTransformationSpec extends Specification {
 
     void "plugin xml update recreates safely when the existing descriptor is malformed"() {
         given:
+            def logger = LoggerFactory.getLogger(GlobalGrailsClassInjectorTransformation) as Logger
+            def appender = new ListAppender<ILoggingEvent>().tap { start() }
+            logger.addAppender(appender)
+
+        and: 'a malformed plugin.xml that cannot be parsed'
             def pluginXml = new File(tempDir, 'malformed-plugin.xml')
             pluginXml.text = '<plugin><resources>'
 
-        when:
+        when: 'the transformation attempts to update the malformed plugin.xml'
             GlobalGrailsClassInjectorTransformation.updatePluginXml(null, null, pluginXml, ['Foo'])
 
-        then:
+        then: 'no exception is thrown and a warning is logged'
             noExceptionThrown()
+            appender.list.size() == 1
+            with(appender.list[0]) {
+                level == Level.WARN
+                formattedMessage == "Failed to update existing file ${pluginXml.absolutePath}. Recreating it instead..."
+            }
+
+        cleanup:
+            logger.detachAppender(appender)
+            appender.stop()
     }
 
     void "plugin xml exclusions remove matching resources from an existing descriptor"() {
