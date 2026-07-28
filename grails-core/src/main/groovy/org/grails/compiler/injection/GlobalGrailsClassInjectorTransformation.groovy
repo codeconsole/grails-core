@@ -39,6 +39,7 @@ import org.codehaus.groovy.ast.expr.ConstantExpression
 import org.codehaus.groovy.control.CompilationUnit
 import org.codehaus.groovy.control.CompilePhase
 import org.codehaus.groovy.control.SourceUnit
+import org.codehaus.groovy.runtime.InvokerHelper
 import org.codehaus.groovy.transform.ASTTransformation
 import org.codehaus.groovy.transform.GroovyASTTransformation
 import org.codehaus.groovy.transform.TransformWithPriority
@@ -322,6 +323,7 @@ class GlobalGrailsClassInjectorTransformation implements ASTTransformation, Comp
             File pluginXml,
             Collection<String> artefactClassNames
     ) {
+        pluginXml.parentFile.mkdirs()
         if (pluginClassNode) {
             def pluginInfo = new PluginAstReader().readPluginInfo(pluginClassNode)
             pluginXml.withWriter(StandardCharsets.UTF_8.name()) { Writer writer ->
@@ -357,9 +359,20 @@ class GlobalGrailsClassInjectorTransformation implements ASTTransformation, Comp
                     }
                 }
             }
-
-            pendingPluginClassNames.clear()
+        } else {
+            pluginXml.withWriter(StandardCharsets.UTF_8.name()) { Writer writer ->
+                new MarkupBuilder(writer).plugin {
+                    resources {
+                        for (def artefactClassName : artefactClassNames) {
+                            if (!isResourceExcludedByPlugin(artefactClassName)) {
+                                resource(artefactClassName)
+                            }
+                        }
+                    }
+                }
+            }
         }
+        pendingPluginClassNames.clear()
     }
 
     /**
@@ -398,7 +411,7 @@ class GlobalGrailsClassInjectorTransformation implements ASTTransformation, Comp
             pendingPluginClassNames.clear()
 
         } catch (IOException | ParserConfigurationException | SAXException e) {
-            // Invalid or unreadable description; recreate it
+            // Invalid or unreadable descriptor; recreate it
             log.warn('Failed to update existing file {}. Recreating it instead...', pluginXmlFile.absolutePath, e)
             writePluginXml(pluginClassNode, pluginVersion, pluginXmlFile, artefactClassNames)
         }

@@ -59,6 +59,8 @@ class GlobalGrailsClassInjectorTransformationSpec extends Specification {
     void "a correct plugin xml file is generated when the plugin xml doesn't exist"() {
         given: "a file that doesn't yet exist"
             def pluginXml = new File(tempDir, 'plugin-xml-gen-test.test.xml')
+
+        and: "the class node for a plugin descriptor"
             def classNode = null
             def cu = new CompilationUnit(new GroovyClassLoader())
             cu.addSource('FooGrailsPlugin', 'class FooGrailsPlugin {}')
@@ -275,8 +277,8 @@ class GlobalGrailsClassInjectorTransformationSpec extends Specification {
             new File(targetDir, 'META-INF/grails-plugin.xml').exists()
     }
 
-    void "the global transform fails when a plugin descriptor has no version"() {
-        given: "a plugin descriptor without a declared or compiler-provided version"
+    void "the global transform fails when a plugin descriptor class has no version"() {
+        given: "a plugin descriptor class without a declared or compiler-provided version"
             def sourceFile = new File(tempDir, 'UnversionedGrailsPlugin.groovy')
             def targetDir = new File(tempDir, 'build/classes/groovy/main')
 
@@ -286,7 +288,7 @@ class GlobalGrailsClassInjectorTransformationSpec extends Specification {
         then:
             def exception = thrown(GroovyBugError)
             with(exception) {
-                cause instanceof CompilationFailedException
+                cause instanceof IllegalStateException
                 cause.message.contains('does not define a plugin version')
             }
     }
