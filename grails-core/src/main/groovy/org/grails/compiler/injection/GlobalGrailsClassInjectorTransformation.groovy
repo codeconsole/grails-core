@@ -589,7 +589,7 @@ class GlobalGrailsClassInjectorTransformation implements ASTTransformation, Comp
             GPathResult pluginXml
     ) {
         def pluginProperties = new PluginAstReader().readPluginInfo(pluginClassNode).getProperties()
-        def grailsVersion = pluginProperties['grailsVersion'] ?: getClass().package.implementationVersion + ' > *'
+        def grailsVersion = pluginProperties['grailsVersion'] ?: GlobalGrailsClassInjectorTransformation.package.implementationVersion + ' > *'
         pluginXml.@name = GrailsNameUtils.getLogicalPropertyName(pluginClassNode.name, 'GrailsPlugin')
         pluginXml.@version = pluginVersion
         pluginXml.@grailsVersion = grailsVersion.toString()
