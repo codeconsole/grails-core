@@ -33,11 +33,6 @@ import org.codehaus.groovy.control.SourceUnit
 import org.codehaus.groovy.control.customizers.CompilationCustomizer
 
 import ch.qos.logback.classic.Level
-import ch.qos.logback.classic.Logger
-import ch.qos.logback.classic.spi.ILoggingEvent
-import ch.qos.logback.core.read.ListAppender
-import org.slf4j.LoggerFactory
-import spock.lang.Shared
 import spock.lang.Specification
 import spock.lang.Subject
 import spock.lang.TempDir
@@ -47,6 +42,7 @@ import grails.artefact.Artefact
 import grails.plugins.metadata.GrailsPlugin
 import grails.util.GrailsNameUtils
 import org.apache.grails.common.compiler.GroovyTransformOrder
+import org.grails.testing.support.LogCapture
 
 class GlobalGrailsClassInjectorTransformationSpec extends Specification {
 
@@ -88,7 +84,7 @@ class GlobalGrailsClassInjectorTransformationSpec extends Specification {
     }
 
     void "a correct plugin xml file is updated when the plugin xml does exist"() {
-        given: "a file that doesn't yet exist"
+        given: "an existing file"
             def pluginXml = File.createTempFile('plugin-xml-gen-test', '.test.xml', tempDir)
             def classNode = compilePlugin('class BarGrailsPlugin {}')
             pluginXml.text = '''
@@ -102,10 +98,7 @@ class GlobalGrailsClassInjectorTransformationSpec extends Specification {
                 </plugin>
             '''
 
-        expect: "the file does exist"
-            pluginXml.exists()
-
-        when: "the transformation generates the plugin.xml"
+        when: "the transformation generates the xml"
             transformation.generatePluginXml(
                     classNode,
                     '1.0',
@@ -113,7 +106,7 @@ class GlobalGrailsClassInjectorTransformationSpec extends Specification {
                     pluginXml
             )
 
-        then: "the file exists"
+        then: "the file still exists"
             pluginXml.exists()
 
         when: "the xml is parsed"
@@ -457,9 +450,7 @@ class GlobalGrailsClassInjectorTransformationSpec extends Specification {
 
     void "plugin xml update recreates safely when the existing descriptor is malformed"() {
         given:
-            def logger = LoggerFactory.getLogger(GlobalGrailsClassInjectorTransformation) as Logger
-            def appender = new ListAppender<ILoggingEvent>().tap { start() }
-            logger.addAppender(appender)
+            def logCapture = new LogCapture(GlobalGrailsClassInjectorTransformation, Level.WARN)
 
         and: 'a malformed plugin.xml that cannot be parsed'
             def pluginXml = new File(tempDir, 'malformed-plugin.xml')
@@ -470,15 +461,14 @@ class GlobalGrailsClassInjectorTransformationSpec extends Specification {
 
         then: 'no exception is thrown and a warning is logged'
             noExceptionThrown()
-            appender.list.size() == 1
-            with(appender.list[0]) {
+            logCapture.events.size() == 1
+            with(logCapture.events[0]) {
                 level == Level.WARN
                 formattedMessage == "Failed to update existing file ${pluginXml.absolutePath}. Recreating it instead..."
             }
 
         cleanup:
-            logger.detachAppender(appender)
-            appender.stop()
+            logCapture.stop()
     }
 
     private SourceUnit sourceUnitWithTarget(File targetDirectory) {
@@ -495,9 +485,9 @@ class GlobalGrailsClassInjectorTransformationSpec extends Specification {
         def cu = new CompilationUnit(new GroovyClassLoader())
         cu.addSource('GrailsPlugin', pluginSource)
         cu.addPhaseOperation({ SourceUnit source, GeneratorContext context, ClassNode cn ->
-            //if (cn.name.endsWith('GrailsPlugin')) {
+            if (cn.name.endsWith('GrailsPlugin')) {
                 classNode = cn
-            //}
+            }
         } as CompilationUnit.IPrimaryClassNodeOperation, Phases.CONVERSION)
         cu.compile(Phases.CONVERSION)
         classNode

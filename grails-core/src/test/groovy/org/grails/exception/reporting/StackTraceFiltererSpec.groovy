@@ -18,14 +18,11 @@
  */
 package org.grails.exception.reporting
 
-import ch.qos.logback.classic.Logger
-import ch.qos.logback.classic.spi.ILoggingEvent
-import ch.qos.logback.core.read.ListAppender
-import org.slf4j.LoggerFactory
 import spock.lang.Specification
 
 import org.grails.exceptions.reporting.DefaultStackTraceFilterer
 import org.grails.exceptions.reporting.StackTraceFilterer
+import org.grails.testing.support.LogCapture
 
 class StackTraceFiltererSpec extends Specification {
 
@@ -69,10 +66,7 @@ class StackTraceFiltererSpec extends Specification {
 
     def 'filter emits a StackTrace log entry for a single throwable by default'() {
         given: 'a configured log appender to capture the StackTrace log entry'
-            def appender = new ListAppender<ILoggingEvent>().tap { start() }
-            def logger = (LoggerFactory.getLogger('StackTrace') as Logger).tap {
-                addAppender(appender)
-            }
+            def logCapture = new LogCapture('StackTrace')
 
         and: 'an exception whose stack trace mixes application and internal frames'
             def exception = new RuntimeException('boom')
@@ -85,19 +79,15 @@ class StackTraceFiltererSpec extends Specification {
             filterer.filter(exception)
 
         then: "a 'Full Stack Trace:' entry is emitted by the filterer for backwards compatibility"
-            appender.list.any { it.formattedMessage.contains('Full Stack Trace:') }
+            logCapture.events.any { it.formattedMessage.contains('Full Stack Trace:') }
 
         cleanup:
-            logger.detachAppender(appender)
-            appender.stop()
+            logCapture.stop()
     }
 
     def 'filter does not emit a StackTrace log entry when logFullStackTraceOnFilter is disabled'() {
         given: 'a configured log appender to capture the StackTrace log entry'
-            def appender = new ListAppender<ILoggingEvent>().tap { start() }
-            def logger = (LoggerFactory.getLogger('StackTrace') as Logger).tap {
-                addAppender(appender)
-            }
+            def logCapture = new LogCapture('StackTrace')
 
         and: 'a filterer with the side-effect emission disabled'
             def quietFilterer = new DefaultStackTraceFilterer(logFullStackTraceOnFilter: false)
@@ -113,11 +103,10 @@ class StackTraceFiltererSpec extends Specification {
             quietFilterer.filter(exception)
 
         then: "no 'Full Stack Trace:' entry is emitted by the filterer"
-            appender.list.every { !it.formattedMessage.contains('Full Stack Trace:') }
+            logCapture.events.every { !it.formattedMessage.contains('Full Stack Trace:') }
 
         cleanup:
-            logger.detachAppender(appender)
-            appender.stop()
+            logCapture.stop()
     }
 
     def 'retains controller frames across wrapped exceptions during recursive filtering'() {
@@ -169,10 +158,7 @@ class StackTraceFiltererSpec extends Specification {
 
     def 'filter emits one StackTrace log entry per throwable when walking the cause chain by default'() {
         given: 'a configured log appender to capture the StackTrace log entry'
-            def appender = new ListAppender<ILoggingEvent>().tap { start() }
-            def logger = (LoggerFactory.getLogger('StackTrace') as Logger).tap {
-                addAppender(appender)
-            }
+            def logCapture = new LogCapture('StackTrace')
 
         and: 'a wrapped exception whose wrapper and cause mix application and internal frames'
             def rootCause = new IllegalStateException('root cause')
@@ -191,19 +177,15 @@ class StackTraceFiltererSpec extends Specification {
             filterer.filter(exception, true)
 
         then: "a 'Full Stack Trace:' entry is emitted per throwable in the chain (pre-7.1 behaviour)"
-            appender.list.count { it.formattedMessage.contains('Full Stack Trace:') } == 2
+            logCapture.events.count { it.formattedMessage.contains('Full Stack Trace:') } == 2
 
         cleanup:
-            logger.detachAppender(appender)
-            appender.stop()
+            logCapture.stop()
     }
 
     def 'filter does not emit a StackTrace log entry when walking the cause chain with logFullStackTraceOnFilter disabled'() {
         given: 'a configured log appender to capture the StackTrace log entry'
-            def appender = new ListAppender<ILoggingEvent>().tap { start() }
-            def logger = (LoggerFactory.getLogger('StackTrace') as Logger).tap {
-                addAppender(appender)
-            }
+            def logCapture = new LogCapture('StackTrace')
 
         and: 'a filterer with the side-effect emission disabled'
             def quietFilterer = new DefaultStackTraceFilterer(logFullStackTraceOnFilter: false)
@@ -225,11 +207,10 @@ class StackTraceFiltererSpec extends Specification {
             quietFilterer.filter(exception, true)
 
         then: "no 'Full Stack Trace:' entry is emitted for any throwable in the chain"
-            appender.list.every { !it.formattedMessage.contains('Full Stack Trace:') }
+            logCapture.events.every { !it.formattedMessage.contains('Full Stack Trace:') }
 
         cleanup:
-            logger.detachAppender(appender)
-            appender.stop()
+            logCapture.stop()
     }
 
     def 'recursive filtering visits every throwable in the cause chain and sanitizes each'() {

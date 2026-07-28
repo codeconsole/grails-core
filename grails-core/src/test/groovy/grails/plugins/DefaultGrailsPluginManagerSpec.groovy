@@ -18,10 +18,6 @@
  */
 package grails.plugins
 
-import ch.qos.logback.classic.Logger
-import ch.qos.logback.classic.spi.ILoggingEvent
-import ch.qos.logback.core.read.ListAppender
-import org.slf4j.LoggerFactory
 import spock.lang.Specification
 import spock.lang.Unroll
 
@@ -34,6 +30,7 @@ import org.apache.grails.core.plugins.DefaultPluginDiscovery
 import org.apache.grails.core.plugins.PluginDiscovery
 import org.apache.grails.core.plugins.PluginInfo
 import org.apache.grails.core.plugins.PluginUtils
+import org.grails.testing.support.LogCapture
 
 /**
  * Test suite for DefaultGrailsPluginManager
@@ -136,9 +133,7 @@ class DefaultGrailsPluginManagerSpec extends Specification {
         }
 
         and: 'configure a logback appender to capture log messages'
-        def logger = LoggerFactory.getLogger(DefaultGrailsPluginManager) as Logger
-        def appender = new ListAppender<ILoggingEvent>().tap { start() }
-        logger.addAppender(appender)
+        def logCapture = new LogCapture(DefaultGrailsPluginManager)
 
         when:
         discovery.init(new StandardEnvironment())
@@ -153,12 +148,12 @@ class DefaultGrailsPluginManagerSpec extends Specification {
         }
 
         and: 'the per-plugin loaded-successfully messages are not emitted at INFO'
-        appender.list
+        logCapture.events
                 .findAll { it.formattedMessage.contains('loaded successfully') }
                 .every { it.level.toString() != 'INFO' }
 
         and: 'a single INFO summary line reports the plugins in load order'
-        def summaryLines = appender.list.findAll {
+        def summaryLines = logCapture.events.findAll {
             it.formattedMessage.contains('Grails plugins in load order')
         }
         summaryLines.size() == 1
@@ -168,8 +163,7 @@ class DefaultGrailsPluginManagerSpec extends Specification {
         }
 
         cleanup:
-        logger.detachAppender(appender)
-        appender.stop()
+        logCapture.stop()
     }
 
     private static PluginInfo stubPluginWithGrailsVersion(String grailsVersion) {

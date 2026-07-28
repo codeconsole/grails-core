@@ -18,16 +18,13 @@
  */
 package org.apache.grails.core.plugins
 
-import ch.qos.logback.classic.Logger
-import ch.qos.logback.classic.spi.ILoggingEvent
-import ch.qos.logback.core.read.ListAppender
-import org.slf4j.LoggerFactory
 import spock.lang.Specification
 import spock.lang.Unroll
 
 import org.springframework.core.env.StandardEnvironment
 
 import org.grails.io.support.SpringIOUtils
+import org.grails.testing.support.LogCapture
 
 class PluginDiscoverySpec extends Specification {
 
@@ -362,10 +359,7 @@ class PluginDiscoverySpec extends Specification {
         }
 
         and: 'configure a logback appender to capture log messages'
-        def appender = new ListAppender<ILoggingEvent>().tap { start() }
-        def logger = (LoggerFactory.getLogger(DefaultPluginDiscovery) as Logger).tap {
-            addAppender(appender)
-        }
+        def logCapture = new LogCapture(DefaultPluginDiscovery)
 
         when:
         discovery.init(new StandardEnvironment())
@@ -377,15 +371,14 @@ class PluginDiscoverySpec extends Specification {
         }
 
         and: 'the skipped duplicate is reported at WARN'
-        appender.list.any {
+        logCapture.events.any {
             it.level.toString() == 'WARN' &&
             it.formattedMessage.contains('repeatedProbe') &&
             it.formattedMessage.contains('already registered')
         }
 
         cleanup:
-        logger.detachAppender(appender)
-        appender.stop()
+        logCapture.stop()
     }
 }
 
