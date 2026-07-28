@@ -95,21 +95,20 @@ dependencies {
     api 'org.slf4j:jcl-over-slf4j'
 
     // Testing
-    testImplementation 'ch.qos.logback:logback-classic'
+    testImplementation 'ch.qos.logback:logback-classic' // Used for checking log output in tests
     testImplementation 'org.spockframework:spock-core'
 
     testRuntimeOnly 'net.bytebuddy:byte-buddy' // Required by Spock's mocking support
     testRuntimeOnly 'org.objenesis:objenesis' // Required by Spock for mocking classes without default constructor
 }
 
-TaskProvider<WriteProperties> writeProps = tasks.register('writeGrailsProperties', WriteProperties)
-writeProps.configure { WriteProperties it ->
-    it.destinationFile = project.layout.buildDirectory.file('grails.build.properties')
-    it.property('grails.version', project.version)
+def writeProps= tasks.register('writeGrailsProperties', WriteProperties) {
+    destinationFile = project.layout.buildDirectory.file('grails.build.properties')
+    property('grails.version', project.version)
 }
 
-tasks.named('processResources', ProcessResources).configure { ProcessResources it ->
-    it.from writeProps
+tasks.named('processResources', ProcessResources) {
+    from(writeProps)
 }
 
 apply {
