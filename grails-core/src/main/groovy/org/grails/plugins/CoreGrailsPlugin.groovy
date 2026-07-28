@@ -21,6 +21,8 @@ package org.grails.plugins
 import groovy.transform.CompileDynamic
 import groovy.transform.CompileStatic
 
+import org.springframework.beans.factory.BeanRegistrar
+import org.springframework.beans.factory.BeanRegistry
 import org.springframework.beans.factory.config.CustomEditorConfigurer
 import org.springframework.beans.factory.support.DefaultListableBeanFactory
 import org.springframework.beans.factory.xml.XmlBeanDefinitionReader
@@ -40,6 +42,7 @@ import grails.config.ConfigProperties
 import grails.config.Settings
 import grails.core.GrailsApplication
 import grails.core.support.proxy.DefaultProxyHandler
+import grails.plugins.GrailsPluginManager
 import grails.plugins.Plugin
 import grails.util.BuildSettings
 import grails.util.Environment as GrailsEnvironment
@@ -55,6 +58,7 @@ import org.grails.spring.aop.autoproxy.GroovyAwareAspectJAwareAdvisorAutoProxyCr
 import org.grails.spring.aop.autoproxy.GroovyAwareInfrastructureAdvisorAutoProxyCreator
 import org.grails.spring.beans.GrailsApplicationAwareBeanPostProcessor
 import org.grails.spring.beans.PluginManagerAwareBeanPostProcessor
+import org.grails.spring.context.annotation.GrailsComponentScanPostProcessor
 import org.grails.spring.context.support.GrailsPlaceholderConfigurer
 import org.grails.spring.context.support.MapBasedSmartPropertyOverrideConfigurer
 
@@ -102,6 +106,28 @@ class CoreGrailsPlugin extends Plugin {
         }
     }
 
+    /**
+     * Scans the packages named by {@code grails.spring.bean.packages}. Contributed here rather
+     * than through {@code doWithSpring}'s {@code grailsContext:component-scan} element, which
+     * needs the XML namespace handler and therefore the bean builder DSL.
+     */
+    @Override
+    BeanRegistrar beanRegistrar() {
+        return { BeanRegistry registry, Environment springEnvironment ->
+            List<String> packagesToScan = (List<String>) grailsApplication.config
+                    .getProperty(Settings.SPRING_BEAN_PACKAGES, List) ?: []
+            if (!packagesToScan) {
+                return
+            }
+            GrailsPluginManager pluginManager = manager
+            registry.registerBean('grailsComponentScanPostProcessor', GrailsComponentScanPostProcessor) {
+                it.infrastructure().supplier {
+                    new GrailsComponentScanPostProcessor(packagesToScan, pluginManager)
+                }
+            }
+        }
+    }
+
     @Override
     @CompileDynamic
     Closure doWithSpring() {
@@ -131,18 +157,6 @@ class CoreGrailsPlugin extends Plugin {
                 if (isProxyTargetClass != null) {
                     proxyTargetClass = isProxyTargetClass
                 }
-            }
-
-            def packagesToScan = []
-
-            def beanPackages = config.getProperty(Settings.SPRING_BEAN_PACKAGES, List)
-            if (beanPackages) {
-                packagesToScan += beanPackages
-            }
-
-            if (packagesToScan) {
-                xmlns(grailsContext: 'http://grails.org/schema/context')
-                grailsContext.'component-scan'('base-package': packagesToScan.join(','))
             }
 
             grailsApplicationAwarePostProcessor(GrailsApplicationAwareBeanPostProcessor, ref('grailsApplication'))

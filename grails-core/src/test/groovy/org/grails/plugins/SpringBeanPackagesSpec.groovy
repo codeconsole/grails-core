@@ -19,11 +19,12 @@
 
 package org.grails.plugins
 
+import org.springframework.beans.factory.BeanRegistrar
+import org.springframework.beans.factory.support.BeanRegistryAdapter
 import org.springframework.context.support.GenericApplicationContext
 
 import grails.core.DefaultGrailsApplication
 import grails.core.GrailsApplication
-import grails.spring.BeanBuilder
 
 import org.grails.plugins.scan.ScannedComponent
 
@@ -66,18 +67,20 @@ class SpringBeanPackagesSpec extends Specification {
         context.close()
     }
 
-    private static def buildContext(GrailsApplication application) {
-        // the core plugin's beans reference the grailsApplication bean, which the plugin
-        // machinery contributes in a real context
-        GenericApplicationContext parent = new GenericApplicationContext()
-        parent.beanFactory.registerSingleton(GrailsApplication.APPLICATION_ID, application)
-        parent.refresh()
-
+    private static GenericApplicationContext buildContext(GrailsApplication application) {
         CoreGrailsPlugin plugin = new CoreGrailsPlugin()
         plugin.grailsApplication = application
-        BeanBuilder builder = new BeanBuilder(parent)
-        builder.beans plugin.doWithSpring()
-        builder.createApplicationContext()
+
+        GenericApplicationContext context = new GenericApplicationContext()
+        context.beanFactory.registerSingleton(GrailsApplication.APPLICATION_ID, application)
+
+        // the scan is contributed through beanRegistrar(), applied before refresh the way the
+        // plugin manager applies it, so its BeanDefinitionRegistryPostProcessor actually runs
+        BeanRegistrar registrar = plugin.beanRegistrar()
+        new BeanRegistryAdapter(context, context.beanFactory, context.environment, registrar.getClass())
+                .register(registrar)
+        context.refresh()
+        context
     }
 
 }
