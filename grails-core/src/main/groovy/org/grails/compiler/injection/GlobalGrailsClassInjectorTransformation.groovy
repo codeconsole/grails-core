@@ -84,6 +84,8 @@ class GlobalGrailsClassInjectorTransformation implements ASTTransformation, Comp
     public static final ClassNode ARTEFACT_HANDLER_CLASS = ClassHelper.make('grails.core.ArtefactHandler')
     public static final ClassNode TRAIT_INJECTOR_CLASS = ClassHelper.make('grails.compiler.traits.TraitInjector')
 
+    private static final AntPathMatcher ANT_PATH_MATCHER = new AntPathMatcher()
+
     private final LinkedHashSet<String> pendingPluginClassNames = []
     private final Collection<String> pluginExcludePatterns = []
 
@@ -279,6 +281,9 @@ class GlobalGrailsClassInjectorTransformation implements ASTTransformation, Comp
         def pluginClasses = [] as LinkedHashSet<String>
         pluginClasses.addAll(transformedClassNames)
         pluginClasses.addAll(pendingPluginClassNames)
+        // Reset excludes from a previous source unit so that patterns declared by one plugin
+        // do not leak into a subsequent compilation within the same Gradle worker.
+        pluginExcludePatterns.clear()
 
         // Create or update grails-plugin.xml when a concrete plugin class is present; otherwise,
         // update an existing descriptor or defer resource names until the descriptor is compiled.
@@ -313,7 +318,6 @@ class GlobalGrailsClassInjectorTransformation implements ASTTransformation, Comp
      * @param pluginXml the output descriptor file
      * @param artefactClassNames artefact class names to include as resources
      */
-    @CompileDynamic
     void writePluginXml(
             @Nullable ClassNode pluginClassNode,
             String pluginVersion,
@@ -322,43 +326,44 @@ class GlobalGrailsClassInjectorTransformation implements ASTTransformation, Comp
     ) {
         pluginXml.parentFile.mkdirs()
         if (pluginClassNode) {
-            def pluginInfo = new PluginAstReader().readPluginInfo(pluginClassNode)
-            pluginXml.withWriter(StandardCharsets.UTF_8.name()) { Writer writer ->
-                def markupBuilder = new MarkupBuilder(writer)
-                def pluginName = GrailsNameUtils.getLogicalPropertyName(pluginClassNode.name, 'GrailsPlugin')
-                def pluginProperties = pluginInfo.properties
-                def pluginExcludes = pluginProperties.get('pluginExcludes')
-                if (pluginExcludes instanceof List) {
-                    pluginExcludePatterns.clear()
-                    pluginExcludePatterns.addAll(pluginExcludes)
-                }
-
-                // if the plugin class doesn't define a grailsVersion, use the version of the grails-core jar
-                def grailsVersion = pluginProperties['grailsVersion'] ?:
-                        GlobalGrailsClassInjectorTransformation.package.implementationVersion + ' > *'
-
-                markupBuilder.plugin(name: pluginName, version: pluginVersion, grailsVersion: grailsVersion) {
-                    type(pluginClassNode.name)
-
-                    for (def entry : pluginProperties) {
-                        delegate."$entry.key"(entry.value)
-                    }
-
-                    // if there are pending class names to add to the plugin.xml - add them as resources
-                    if (artefactClassNames) {
-                        resources {
-                            for (def artefactClassName : artefactClassNames) {
-                                if (!isResourceExcludedByPlugin(artefactClassName)) {
-                                    resource(artefactClassName)
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+            writePluginXmlWithDescriptor(pluginClassNode, pluginVersion, pluginXml, artefactClassNames)
         } else {
-            pluginXml.withWriter(StandardCharsets.UTF_8.name()) { Writer writer ->
-                new MarkupBuilder(writer).plugin {
+            writePluginXmlWithoutDescriptor(pluginXml, artefactClassNames)
+        }
+        pendingPluginClassNames.clear()
+    }
+
+    @CompileDynamic
+    private void writePluginXmlWithDescriptor(
+            ClassNode pluginClassNode,
+            String pluginVersion,
+            File pluginXml,
+            Collection<String> artefactClassNames
+    ) {
+        def pluginInfo = new PluginAstReader().readPluginInfo(pluginClassNode)
+        pluginXml.withWriter(StandardCharsets.UTF_8.name()) { Writer writer ->
+            def markupBuilder = new MarkupBuilder(writer)
+            def pluginName = GrailsNameUtils.getLogicalPropertyName(pluginClassNode.name, 'GrailsPlugin')
+            def pluginProperties = pluginInfo.properties
+            def pluginExcludes = pluginProperties.get('pluginExcludes')
+            if (pluginExcludes instanceof List) {
+                pluginExcludePatterns.clear()
+                pluginExcludePatterns.addAll(pluginExcludes)
+            }
+
+            // if the plugin class doesn't define a grailsVersion, use the version of the grails-core jar
+            def grailsVersion = pluginProperties['grailsVersion'] ?:
+                    GlobalGrailsClassInjectorTransformation.package.implementationVersion + ' > *'
+
+            markupBuilder.plugin(name: pluginName, version: pluginVersion, grailsVersion: grailsVersion) {
+                type(pluginClassNode.name)
+
+                for (def entry : pluginProperties) {
+                    delegate."$entry.key"(entry.value)
+                }
+
+                // if there are pending class names to add to the plugin.xml - add them as resources
+                if (artefactClassNames) {
                     resources {
                         for (def artefactClassName : artefactClassNames) {
                             if (!isResourceExcludedByPlugin(artefactClassName)) {
@@ -369,7 +374,21 @@ class GlobalGrailsClassInjectorTransformation implements ASTTransformation, Comp
                 }
             }
         }
-        pendingPluginClassNames.clear()
+    }
+
+    @CompileDynamic
+    private void writePluginXmlWithoutDescriptor(File pluginXml, Collection<String> artefactClassNames) {
+        pluginXml.withWriter(StandardCharsets.UTF_8.name()) { Writer writer ->
+            new MarkupBuilder(writer).plugin {
+                resources {
+                    for (def artefactClassName : artefactClassNames) {
+                        if (!isResourceExcludedByPlugin(artefactClassName)) {
+                            resource(artefactClassName)
+                        }
+                    }
+                }
+            }
+        }
     }
 
     /**
@@ -437,10 +456,9 @@ class GlobalGrailsClassInjectorTransformation implements ASTTransformation, Comp
      * @return {@code true} when the resource should be excluded
      */
     private boolean isResourceExcludedByPlugin(String resourceName) {
-        def matcher = new AntPathMatcher()
         def resourcePath = resourceName.replace('.', '/')
         pluginExcludePatterns.any {
-            matcher.match(it, resourcePath)
+            ANT_PATH_MATCHER.match(it, resourcePath)
         }
     }
 
