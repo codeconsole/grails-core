@@ -20,12 +20,15 @@ package org.apache.grails.core
 
 import grails.config.Settings
 import grails.util.GrailsUtil
+import org.grails.core.cfg.GroovyConfigPropertySourceLoader
 import org.grails.exceptions.reporting.DefaultStackTraceFilterer
 import org.grails.exceptions.reporting.StackTraceFilterer
 import org.springframework.boot.bootstrap.DefaultBootstrapContext
 import org.springframework.context.support.GenericApplicationContext
 import org.springframework.core.env.MapPropertySource
+import org.springframework.core.io.FileSystemResource
 import spock.lang.Specification
+import spock.lang.TempDir
 
 /**
  * Verifies that {@link GrailsBootstrapRegistryInitializer} resolves a {@link StackTraceFilterer} from
@@ -42,6 +45,9 @@ import spock.lang.Specification
  * internal state.
  */
 class GrailsBootstrapRegistryInitializerSpec extends Specification {
+
+    @TempDir
+    File configDir
 
     def cleanup() {
         GrailsUtil.initializeStackFilterer(new DefaultStackTraceFilterer())
@@ -85,6 +91,28 @@ class GrailsBootstrapRegistryInitializerSpec extends Specification {
         GrailsUtil.deepSanitize(new RuntimeException('boom'))
 
         then: 'the configured class is both promoted and the one GrailsUtil sanitizes through'
+        def bean = promotedFilterer(context)
+        bean instanceof RecordingStackTraceFilterer
+        bean.recursiveCalls == 1
+    }
+
+    def 'promotes the class configured via a real application.groovy Class literal'() {
+        given: 'an application.groovy parsed by the real ConfigSlurper -> NavigableMap -> NavigableMapPropertySource pipeline, not a synthetic MapPropertySource'
+        def configFile = new File(configDir, 'application.groovy')
+        configFile.text = """
+            grails.logging.stackTraceFiltererClass = ${RecordingStackTraceFilterer.name}
+        """
+        def propertySource = new GroovyConfigPropertySourceLoader()
+                .load('application.groovy', new FileSystemResource(configFile))
+                .first()
+        def context = new GenericApplicationContext()
+        context.environment.propertySources.addFirst(propertySource)
+
+        when:
+        closeBootstrapContext(context)
+        GrailsUtil.deepSanitize(new RuntimeException('boom'))
+
+        then: 'the Class literal survives the real config-loading pipeline and is both promoted and used'
         def bean = promotedFilterer(context)
         bean instanceof RecordingStackTraceFilterer
         bean.recursiveCalls == 1
@@ -160,6 +188,20 @@ class GrailsBootstrapRegistryInitializerSpec extends Specification {
         closeBootstrapContext(context)
 
         then:
+        noExceptionThrown()
+        promotedFilterer(context) instanceof DefaultStackTraceFilterer
+    }
+
+    def 'falls back to the default filterer when the configured value is neither a Class nor a String'() {
+        given: 'a shape neither branch of resolveFiltererClass handles -- e.g. a YAML list or a boolean typo'
+        def context = contextWithProperties([
+                (Settings.SETTING_LOGGING_STACKTRACE_FILTER_CLASS): ['not', 'a', 'class', 'or', 'a', 'string']
+        ])
+
+        when:
+        closeBootstrapContext(context)
+
+        then: 'the mismatched type degrades to the default rather than being silently ignored or failing the bootstrap'
         noExceptionThrown()
         promotedFilterer(context) instanceof DefaultStackTraceFilterer
     }

@@ -162,14 +162,22 @@ public class GrailsBootstrapRegistryInitializer implements BootstrapRegistryInit
                     Settings.SETTING_LOGGING_STACKTRACE_FILTER_CLASS, t.getMessage());
             return DefaultStackTraceFilterer.class;
         }
+        if (configured == null) {
+            return DefaultStackTraceFilterer.class;
+        }
         try {
             if (configured instanceof Class<?> configuredClass) {
                 return configuredClass.asSubclass(StackTraceFilterer.class);
             }
-            if (configured instanceof CharSequence configuredName && StringUtils.hasText(configuredName)) {
+            if (configured instanceof CharSequence configuredName) {
+                if (!StringUtils.hasText(configuredName)) {
+                    return DefaultStackTraceFilterer.class;
+                }
                 return ClassUtils.forName(configuredName.toString(), classLoader)
                         .asSubclass(StackTraceFilterer.class);
             }
+            LOG.warn("Configured StackTraceFilterer [{}] for [{}] is neither a Class nor a String, falling back to default",
+                    configured, Settings.SETTING_LOGGING_STACKTRACE_FILTER_CLASS);
         }
         catch (Throwable t) {
             LOG.warn("Problem loading configured StackTraceFilterer class [{}], falling back to default: {}",
