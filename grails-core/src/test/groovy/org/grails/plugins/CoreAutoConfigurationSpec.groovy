@@ -35,7 +35,9 @@ import grails.core.GrailsApplication
 
 import org.grails.spring.context.support.GrailsPlaceholderConfigurer
 
+import spock.lang.Issue
 import spock.lang.Specification
+import spock.util.environment.RestoreSystemProperties
 
 class CoreAutoConfigurationSpec extends Specification {
 
@@ -138,6 +140,20 @@ class CoreAutoConfigurationSpec extends Specification {
         contextRunner()
                 .withInitializer(registerProbe('@{foo.bar}'))
                 .withPropertyValues("${Settings.SPRING_PLACEHOLDER_PREFIX}=@{", 'foo.bar=test')
+                .run { context ->
+                    assert context.getBean(PlaceholderProbe).name == 'test'
+                }
+    }
+
+    @Issue('GRAILS-10130')
+    @RestoreSystemProperties
+    void 'a system property is resolved in a bean definition placeholder'() {
+        given:
+        System.setProperty('foo.bar', 'test')
+
+        expect:
+        contextRunner()
+                .withInitializer(registerProbe('${foo.bar}'))
                 .run { context ->
                     assert context.getBean(PlaceholderProbe).name == 'test'
                 }

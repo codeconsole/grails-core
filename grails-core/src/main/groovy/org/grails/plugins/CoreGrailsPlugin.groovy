@@ -21,6 +21,7 @@ package org.grails.plugins
 import groovy.transform.CompileDynamic
 import groovy.transform.CompileStatic
 
+import org.springframework.aop.config.AopConfigUtils
 import org.springframework.beans.factory.BeanRegistrar
 import org.springframework.beans.factory.BeanRegistry
 import org.springframework.beans.factory.config.CustomEditorConfigurer
@@ -37,7 +38,10 @@ import org.springframework.core.env.Environment
 import org.springframework.core.io.Resource
 import org.springframework.util.ClassUtils
 
+import java.beans.PropertyEditor
+
 import grails.compiler.beans.GrailsBeans
+import grails.config.Config
 import grails.config.ConfigProperties
 import grails.config.Settings
 import grails.core.GrailsApplication
@@ -80,7 +84,7 @@ class CoreGrailsPlugin extends Plugin {
                                 'file:./grails-app/conf/application.groovy',
                                 'file:./grails-app/conf/application.yml']
 
-    private static final SPRING_PROXY_TARGET_CLASS_CONFIG = 'spring.aop.proxy-target-class'
+    private static final String SPRING_PROXY_TARGET_CLASS_CONFIG = 'spring.aop.proxy-target-class'
 
     def beans = {
         bean(ClassLoader).primary() { GrailsApplication grailsApplication ->
@@ -89,6 +93,14 @@ class CoreGrailsPlugin extends Plugin {
 
         bean('grailsConfigProperties', ConfigProperties).primary() { GrailsApplication grailsApplication ->
             new ConfigProperties(grailsApplication.config)
+        }
+
+        // GroovyPagesGrailsPlugin registers its own caching, GSP-aware locator under this name
+        // from doWithSpring, which runs earlier, so this backs off when GSP is present.
+        bean('grailsResourceLocator', DefaultResourceLocator).conditionalOnMissingBeanName() {
+            new DefaultResourceLocator().tap {
+                searchLocations = [BuildSettings.BASE_DIR.absolutePath]
+            }
         }
 
         // A static factory method reading the Environment, rather than an instance method reading an
@@ -107,6 +119,23 @@ class CoreGrailsPlugin extends Plugin {
     }
 
     /**
+     * The one definition that cannot move. {@code abstractGrailsResourceLocator} is an abstract
+     * parent definition, a bean builder concept with no equivalent in {@code BeanRegistry.Spec}
+     * or on a {@code @Bean} method, and it is part of this plugin's public surface: third-party
+     * plugins inherit from it with {@code bean.parent = 'abstractGrailsResourceLocator'} —
+     * asset-pipeline's {@code assetResourceLocator} among them.
+     */
+    @Override
+    @CompileDynamic
+    Closure doWithSpring() {
+        { ->
+            abstractGrailsResourceLocator {
+                searchLocations = [BuildSettings.BASE_DIR.absolutePath]
+            }
+        }
+    }
+
+    /**
      * Scans the packages named by {@code grails.spring.bean.packages}. Contributed here rather
      * than through {@code doWithSpring}'s {@code grailsContext:component-scan} element, which
      * needs the XML namespace handler and therefore the bean builder DSL.
@@ -114,6 +143,71 @@ class CoreGrailsPlugin extends Plugin {
     @Override
     BeanRegistrar beanRegistrar() {
         return { BeanRegistry registry, Environment springEnvironment ->
+            GrailsApplication application = grailsApplication
+            Config config = application.config
+
+            // enable post-processing of @Configuration beans defined by plugins
+            registry.registerBean('grailsConfigurationClassPostProcessor', ConfigurationClassPostProcessor)
+
+            registry.registerBean('grailsBeanOverrideConfigurer', MapBasedSmartPropertyOverrideConfigurer) {
+                it.supplier {
+                    MapBasedSmartPropertyOverrideConfigurer configurer = new MapBasedSmartPropertyOverrideConfigurer()
+                    configurer.grailsApplication = application
+                    configurer
+                }
+            }
+
+            // replace the AutoProxy advisor with a Groovy aware one; the two variants share
+            // Spring's own internalAutoProxyCreator name, so at most one is registered
+            Boolean isProxyTargetClass = config.getProperty(SPRING_PROXY_TARGET_CLASS_CONFIG, Boolean)
+            if (ClassUtils.isPresent('org.aspectj.lang.annotation.Around', application.classLoader) &&
+                    !config.getProperty(Settings.SPRING_DISABLE_ASPECTJ, Boolean)) {
+                registry.registerBean(AopConfigUtils.AUTO_PROXY_CREATOR_BEAN_NAME, GroovyAwareAspectJAwareAdvisorAutoProxyCreator) {
+                    it.supplier {
+                        GroovyAwareAspectJAwareAdvisorAutoProxyCreator creator = new GroovyAwareAspectJAwareAdvisorAutoProxyCreator()
+                        if (isProxyTargetClass != null) {
+                            creator.proxyTargetClass = isProxyTargetClass
+                        }
+                        creator
+                    }
+                }
+            }
+            else {
+                registry.registerBean(AopConfigUtils.AUTO_PROXY_CREATOR_BEAN_NAME, GroovyAwareInfrastructureAdvisorAutoProxyCreator) {
+                    it.supplier {
+                        GroovyAwareInfrastructureAdvisorAutoProxyCreator creator = new GroovyAwareInfrastructureAdvisorAutoProxyCreator()
+                        if (isProxyTargetClass != null) {
+                            creator.proxyTargetClass = isProxyTargetClass
+                        }
+                        creator
+                    }
+                }
+            }
+
+            registry.registerBean('grailsApplicationAwarePostProcessor', GrailsApplicationAwareBeanPostProcessor) {
+                it.supplier { new GrailsApplicationAwareBeanPostProcessor(application) }
+            }
+            registry.registerBean('pluginManagerPostProcessor', PluginManagerAwareBeanPostProcessor)
+
+            // a shutdown hook only outside war deployment, in development, with jline present
+            if (!GrailsEnvironment.isWarDeployed() && environment == GrailsEnvironment.DEVELOPMENT &&
+                    ClassUtils.isPresent('jline.Terminal', application.classLoader)) {
+                registry.registerBean('shutdownHook', DevelopmentShutdownHook)
+            }
+
+            registry.registerBean('customEditors', CustomEditorConfigurer) {
+                it.supplier {
+                    CustomEditorConfigurer configurer = new CustomEditorConfigurer()
+                    Map<Class<?>, Class<? extends PropertyEditor>> editors = [:]
+                    editors.put(Class, ClassEditor)
+                    editors.put(Properties, PropertiesEditor)
+                    configurer.customEditors = editors
+                    configurer
+                }
+            }
+
+            registry.registerBean('proxyHandler', DefaultProxyHandler)
+
             List<String> packagesToScan = (List<String>) grailsApplication.config
                     .getProperty(Settings.SPRING_BEAN_PACKAGES, List) ?: []
             if (!packagesToScan) {
@@ -125,62 +219,6 @@ class CoreGrailsPlugin extends Plugin {
                     new GrailsComponentScanPostProcessor(packagesToScan, pluginManager)
                 }
             }
-        }
-    }
-
-    @Override
-    @CompileDynamic
-    Closure doWithSpring() {
-        { ->
-
-            def application = grailsApplication
-
-            // Grails config as properties
-            def config = application.config
-
-            // enable post-processing of @Configuration beans defined by plugins
-            grailsConfigurationClassPostProcessor(ConfigurationClassPostProcessor)
-            grailsBeanOverrideConfigurer(MapBasedSmartPropertyOverrideConfigurer) {
-                delegate.grailsApplication = application
-            }
-
-            Class proxyCreatorClazz = null
-            // replace AutoProxy advisor with Groovy aware one
-            if (ClassUtils.isPresent('org.aspectj.lang.annotation.Around', application.classLoader) && !config.getProperty(Settings.SPRING_DISABLE_ASPECTJ, Boolean)) {
-                proxyCreatorClazz = GroovyAwareAspectJAwareAdvisorAutoProxyCreator
-            } else {
-                proxyCreatorClazz = GroovyAwareInfrastructureAdvisorAutoProxyCreator
-            }
-
-            Boolean isProxyTargetClass = config.getProperty(SPRING_PROXY_TARGET_CLASS_CONFIG, Boolean)
-            'org.springframework.aop.config.internalAutoProxyCreator'(proxyCreatorClazz) {
-                if (isProxyTargetClass != null) {
-                    proxyTargetClass = isProxyTargetClass
-                }
-            }
-
-            grailsApplicationAwarePostProcessor(GrailsApplicationAwareBeanPostProcessor, ref('grailsApplication'))
-            pluginManagerPostProcessor(PluginManagerAwareBeanPostProcessor)
-
-            // add shutdown hook if not running in war deployed mode
-            final warDeployed = GrailsEnvironment.isWarDeployed()
-            final devMode = !warDeployed && environment == GrailsEnvironment.DEVELOPMENT
-            if (devMode && ClassUtils.isPresent('jline.Terminal', application.classLoader)) {
-                shutdownHook(DevelopmentShutdownHook)
-            }
-            abstractGrailsResourceLocator {
-                searchLocations = [BuildSettings.BASE_DIR.absolutePath]
-            }
-            grailsResourceLocator(DefaultResourceLocator) { bean ->
-                bean.parent = 'abstractGrailsResourceLocator'
-            }
-
-            customEditors(CustomEditorConfigurer) {
-                customEditors = [(Class): ClassEditor,
-                                 (Properties): PropertiesEditor]
-            }
-
-            proxyHandler(DefaultProxyHandler)
         }
     }
 

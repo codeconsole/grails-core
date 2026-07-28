@@ -84,6 +84,9 @@ dependencies {
     // ApplicationContextRunner's signatures reach AssertJ through ApplicationContextAssertProvider;
     // without it on the classpath Groovy cannot introspect the runner and every call misses.
     testRuntimeOnly 'org.assertj:assertj-core'
+    // AspectJ is compileOnly for the framework; on the test classpath so CoreGrailsPlugin's
+    // AspectJ-aware auto proxy creator branch is reachable
+    testRuntimeOnly 'org.aspectj:aspectjweaver'
 
     testImplementation 'org.hamcrest:hamcrest'
 
