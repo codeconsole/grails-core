@@ -37,16 +37,13 @@ import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.PropertyNode
 import org.codehaus.groovy.ast.expr.ConstantExpression
 import org.codehaus.groovy.control.CompilationUnit
-import org.codehaus.groovy.control.CompilePhase
 import org.codehaus.groovy.control.SourceUnit
-import org.codehaus.groovy.runtime.InvokerHelper
 import org.codehaus.groovy.transform.ASTTransformation
 import org.codehaus.groovy.transform.GroovyASTTransformation
 import org.codehaus.groovy.transform.TransformWithPriority
 
-import org.xml.sax.SAXException
-
 import org.jspecify.annotations.Nullable
+import org.xml.sax.SAXException
 
 import grails.artefact.Artefact
 import grails.compiler.ast.ClassInjector
@@ -73,7 +70,7 @@ import org.grails.io.support.UrlResource
  */
 @Slf4j
 @CompileStatic
-@GroovyASTTransformation(phase = CompilePhase.CANONICALIZATION)
+@GroovyASTTransformation
 class GlobalGrailsClassInjectorTransformation implements ASTTransformation, CompilationUnitAware, TransformWithPriority {
 
     /**
@@ -87,8 +84,8 @@ class GlobalGrailsClassInjectorTransformation implements ASTTransformation, Comp
     public static final ClassNode ARTEFACT_HANDLER_CLASS = ClassHelper.make('grails.core.ArtefactHandler')
     public static final ClassNode TRAIT_INJECTOR_CLASS = ClassHelper.make('grails.compiler.traits.TraitInjector')
 
-    static LinkedHashSet<String> pendingPluginClassNames = []
-    static Collection<String> pluginExcludePatterns = []
+    private final LinkedHashSet<String> pendingPluginClassNames = []
+    private final Collection<String> pluginExcludePatterns = []
 
     CompilationUnit compilationUnit
 
@@ -270,7 +267,7 @@ class GlobalGrailsClassInjectorTransformation implements ASTTransformation, Comp
      * @param transformedClassNames the artefact classes transformed in the current source unit
      * @param pluginXmlFile the generated plugin descriptor file
      */
-    protected static void generatePluginXml(
+    protected void generatePluginXml(
             @Nullable ClassNode pluginClassNode,
             @Nullable String pluginVersion,
             Set<String> transformedClassNames,
@@ -317,7 +314,7 @@ class GlobalGrailsClassInjectorTransformation implements ASTTransformation, Comp
      * @param artefactClassNames artefact class names to include as resources
      */
     @CompileDynamic
-    static void writePluginXml(
+    void writePluginXml(
             @Nullable ClassNode pluginClassNode,
             String pluginVersion,
             File pluginXml,
@@ -384,7 +381,7 @@ class GlobalGrailsClassInjectorTransformation implements ASTTransformation, Comp
      * @param pluginXmlFile the existing plugin descriptor file
      * @param artefactClassNames artefact class names to add as resources
      */
-    static void updatePluginXml(
+    void updatePluginXml(
             @Nullable ClassNode pluginClassNode,
             @Nullable String pluginVersion,
             File pluginXmlFile,
@@ -423,7 +420,7 @@ class GlobalGrailsClassInjectorTransformation implements ASTTransformation, Comp
      * @param pluginXml the parsed plugin descriptor
      */
     @CompileDynamic
-    protected static void handleExcludes(GPathResult pluginXml) {
+    protected void handleExcludes(GPathResult pluginXml) {
         if (pluginExcludePatterns) {
             pluginXml.resources.resource.each { resourceNode ->
                 if (isResourceExcludedByPlugin((resourceNode as GPathResult).text())) {
@@ -439,7 +436,7 @@ class GlobalGrailsClassInjectorTransformation implements ASTTransformation, Comp
      * @param resourceName the resource name to test
      * @return {@code true} when the resource should be excluded
      */
-    private static boolean isResourceExcludedByPlugin(String resourceName) {
+    private boolean isResourceExcludedByPlugin(String resourceName) {
         def matcher = new AntPathMatcher()
         def resourcePath = resourceName.replace('.', '/')
         pluginExcludePatterns.any {

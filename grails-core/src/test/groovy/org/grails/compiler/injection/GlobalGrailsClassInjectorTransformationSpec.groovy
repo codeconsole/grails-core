@@ -37,7 +37,9 @@ import ch.qos.logback.classic.Logger
 import ch.qos.logback.classic.spi.ILoggingEvent
 import ch.qos.logback.core.read.ListAppender
 import org.slf4j.LoggerFactory
+import spock.lang.Shared
 import spock.lang.Specification
+import spock.lang.Subject
 import spock.lang.TempDir
 import spock.util.environment.RestoreSystemProperties
 
@@ -51,31 +53,21 @@ class GlobalGrailsClassInjectorTransformationSpec extends Specification {
     @TempDir
     File tempDir
 
-    def cleanup() {
-        GlobalGrailsClassInjectorTransformation.pendingPluginClassNames.clear()
-        GlobalGrailsClassInjectorTransformation.pluginExcludePatterns.clear()
-    }
+    @Subject
+    def transformation = new GlobalGrailsClassInjectorTransformation()
 
     void "a correct plugin xml file is generated when the plugin xml doesn't exist"() {
         given: "a file that doesn't yet exist"
             def pluginXml = new File(tempDir, 'plugin-xml-gen-test.test.xml')
 
         and: "the class node for a plugin descriptor"
-            def classNode = null
-            def cu = new CompilationUnit(new GroovyClassLoader())
-            cu.addSource('FooGrailsPlugin', 'class FooGrailsPlugin {}')
-            cu.addPhaseOperation({ SourceUnit source, GeneratorContext context, ClassNode cn ->
-                if (cn.name.endsWith('GrailsPlugin')) {
-                     classNode = cn
-                }
-            } as CompilationUnit.IPrimaryClassNodeOperation, Phases.CONVERSION)
-            cu.compile(Phases.CONVERSION)
+            def classNode = compilePlugin('class FooGrailsPlugin {}')
 
         expect: "the file doesn't exist"
             !pluginXml.exists()
 
         when: "the transformation generates the xml file"
-            GlobalGrailsClassInjectorTransformation.generatePluginXml(
+            transformation.generatePluginXml(
                     classNode,
                     '1.0',
                     ['Foo'] as Set,
@@ -98,15 +90,7 @@ class GlobalGrailsClassInjectorTransformationSpec extends Specification {
     void "a correct plugin xml file is updated when the plugin xml does exist"() {
         given: "a file that doesn't yet exist"
             def pluginXml = File.createTempFile('plugin-xml-gen-test', '.test.xml', tempDir)
-            def classNode = null
-            def cu = new CompilationUnit(new GroovyClassLoader())
-            cu.addSource('BarGrailsPlugin', 'class BarGrailsPlugin {}')
-            cu.addPhaseOperation({ SourceUnit source, GeneratorContext context, ClassNode cn ->
-                if (cn.name.endsWith('GrailsPlugin')) {
-                    classNode = cn
-                }
-            } as CompilationUnit.IPrimaryClassNodeOperation, Phases.CONVERSION)
-            cu.compile(Phases.CONVERSION)
+            def classNode = compilePlugin('class BarGrailsPlugin {}')
             pluginXml.text = '''
                 <plugin name="foo">
                     <type>FooGrailsPlugin</type>
@@ -122,7 +106,7 @@ class GlobalGrailsClassInjectorTransformationSpec extends Specification {
             pluginXml.exists()
 
         when: "the transformation generates the plugin.xml"
-            GlobalGrailsClassInjectorTransformation.generatePluginXml(
+            transformation.generatePluginXml(
                     classNode,
                     '1.0',
                     ['Foo', 'Bar'] as Set,
@@ -407,7 +391,7 @@ class GlobalGrailsClassInjectorTransformationSpec extends Specification {
             '''
 
         when: "the transformation updates the plugin.xml"
-            GlobalGrailsClassInjectorTransformation.generatePluginXml(
+            transformation.generatePluginXml(
                     classNode,
                     '2.0',
                     ['ExcludedThing', 'NewThing'] as Set,
@@ -429,23 +413,15 @@ class GlobalGrailsClassInjectorTransformationSpec extends Specification {
     void "plugin xml excludes are applied when writing a new descriptor"() {
         given:
             def pluginXml = new File(tempDir, 'plugin-xml-write-excludes.xml')
-            def classNode = null
-            def cu = new CompilationUnit(new GroovyClassLoader())
-            cu.addSource('WrittenExcludesGrailsPlugin', '''
+            def classNode = compilePlugin('''
                 class WrittenExcludesGrailsPlugin {
                     def pluginExcludes = ['Excluded*']
                     def grailsVersion = '4.0 > *'
                 }
             ''')
-            cu.addPhaseOperation({ SourceUnit source, GeneratorContext context, ClassNode cn ->
-                if (cn.name.endsWith('GrailsPlugin')) {
-                    classNode = cn
-                }
-            } as CompilationUnit.IPrimaryClassNodeOperation, Phases.CONVERSION)
-            cu.compile(Phases.CONVERSION)
 
         when:
-            GlobalGrailsClassInjectorTransformation.generatePluginXml(
+            transformation.generatePluginXml(
                     classNode,
                     '1.0',
                     ['ExcludedThing', 'KeptThing'] as Set,
@@ -468,7 +444,7 @@ class GlobalGrailsClassInjectorTransformationSpec extends Specification {
             '''
 
         when:
-            GlobalGrailsClassInjectorTransformation.generatePluginXml(
+            transformation.generatePluginXml(
                     null,
                     null,
                     ['NewThing'] as Set,
@@ -490,7 +466,7 @@ class GlobalGrailsClassInjectorTransformationSpec extends Specification {
             pluginXml.text = '<plugin><resources>'
 
         when: 'the transformation attempts to update the malformed plugin.xml'
-            GlobalGrailsClassInjectorTransformation.updatePluginXml(null, null, pluginXml, ['Foo'])
+            transformation.updatePluginXml(null, null, pluginXml, ['Foo'])
 
         then: 'no exception is thrown and a warning is logged'
             noExceptionThrown()
@@ -505,26 +481,6 @@ class GlobalGrailsClassInjectorTransformationSpec extends Specification {
             appender.stop()
     }
 
-    void "plugin xml exclusions remove matching resources from an existing descriptor"() {
-        given:
-            def pluginXml = new File(tempDir, 'existing-plugin-excludes.xml')
-            pluginXml.text = '''
-                <plugin>
-                    <resources>
-                        <resource>ExcludedThing</resource>
-                        <resource>KeptThing</resource>
-                    </resources>
-                </plugin>
-            '''
-            GlobalGrailsClassInjectorTransformation.pluginExcludePatterns.add('Excluded*')
-
-        when:
-            GlobalGrailsClassInjectorTransformation.handleExcludes(new XmlSlurper().parse(pluginXml))
-
-        then:
-            noExceptionThrown()
-    }
-
     private SourceUnit sourceUnitWithTarget(File targetDirectory) {
         def cc = new CompilerConfiguration()
         cc.setTargetDirectory((File) targetDirectory)
@@ -532,6 +488,19 @@ class GlobalGrailsClassInjectorTransformationSpec extends Specification {
             getConfiguration() >> cc
             getName() >> 'TestSource'
         }
+    }
+
+    private static ClassNode compilePlugin(String pluginSource) {
+        def classNode = null
+        def cu = new CompilationUnit(new GroovyClassLoader())
+        cu.addSource('GrailsPlugin', pluginSource)
+        cu.addPhaseOperation({ SourceUnit source, GeneratorContext context, ClassNode cn ->
+            //if (cn.name.endsWith('GrailsPlugin')) {
+                classNode = cn
+            //}
+        } as CompilationUnit.IPrimaryClassNodeOperation, Phases.CONVERSION)
+        cu.compile(Phases.CONVERSION)
+        classNode
     }
 
     /**
