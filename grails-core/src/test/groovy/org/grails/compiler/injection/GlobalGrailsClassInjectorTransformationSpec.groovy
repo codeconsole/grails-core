@@ -79,6 +79,7 @@ class GlobalGrailsClassInjectorTransformationSpec extends Specification {
         then: "the generated xml is valid"
             xml.@name.text() == 'foo'
             xml.type.text() == 'FooGrailsPlugin'
+            !xml.attributes().containsKey('grailsVersion')
             xml.resources.size() == 1
             xml.resources.resource.text() == 'Foo'
     }
@@ -115,6 +116,7 @@ class GlobalGrailsClassInjectorTransformationSpec extends Specification {
         then: "the generated plugin.xml is valid"
             xml.@name.text() == 'bar'
             xml.type.text() == 'BarGrailsPlugin'
+            !xml.attributes().containsKey('grailsVersion')
             xml.resources.resource.size() == 3
             xml.resources.resource.text() == 'FooBarBaz'
     }

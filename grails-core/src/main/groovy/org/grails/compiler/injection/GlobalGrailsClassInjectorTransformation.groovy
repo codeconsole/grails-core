@@ -358,11 +358,13 @@ class GlobalGrailsClassInjectorTransformation implements ASTTransformation, Comp
                 pluginExcludePatterns.addAll(pluginExcludes)
             }
 
-            // if the plugin class doesn't define a grailsVersion, use the version of the grails-core jar
-            def grailsVersion = pluginProperties['grailsVersion'] ?:
-                    GlobalGrailsClassInjectorTransformation.package.implementationVersion + ' > *'
+            def grailsVersion = resolveGrailsVersion(pluginProperties)
+            def pluginAttributes = [name: pluginName, version: pluginVersion]
+            if (grailsVersion) {
+                pluginAttributes.grailsVersion = grailsVersion
+            }
 
-            markupBuilder.plugin(name: pluginName, version: pluginVersion, grailsVersion: grailsVersion) {
+            markupBuilder.plugin(pluginAttributes) {
                 type(pluginClassNode.name)
 
                 for (def entry : pluginProperties) {
@@ -629,15 +631,26 @@ class GlobalGrailsClassInjectorTransformation implements ASTTransformation, Comp
             GPathResult pluginXml
     ) {
         def pluginProperties = new PluginAstReader().readPluginInfo(pluginClassNode).properties
-        def grailsVersion = pluginProperties['grailsVersion'] ?: GlobalGrailsClassInjectorTransformation.package.implementationVersion + ' > *'
+        def grailsVersion = resolveGrailsVersion(pluginProperties)
         pluginXml.@name = GrailsNameUtils.getLogicalPropertyName(pluginClassNode.name, 'GrailsPlugin')
         pluginXml.@version = pluginVersion
-        pluginXml.@grailsVersion = grailsVersion.toString()
+        if (grailsVersion) {
+            pluginXml.@grailsVersion = grailsVersion
+        }
         pluginXml.type = pluginClassNode.name
         for (def entry : pluginProperties) {
             pluginXml."$entry.key" = entry.value
         }
         pluginProperties
+    }
+
+    private static @Nullable String resolveGrailsVersion(Map pluginProperties) {
+        def declaredVersion = pluginProperties['grailsVersion']?.toString()
+        if (declaredVersion) {
+            return declaredVersion
+        }
+        def frameworkVersion = GlobalGrailsClassInjectorTransformation.package.implementationVersion
+        frameworkVersion ? "${frameworkVersion} > *" : null
     }
 
     /**
