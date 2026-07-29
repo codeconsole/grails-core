@@ -282,6 +282,75 @@ class GlobalGrailsClassInjectorTransformationSpec extends Specification {
             new File(targetDir, 'META-INF/grails-plugin.xml').exists()
     }
 
+    void "the implicit beans convention leaves a plugin descriptor's unrelated beans property alone"() {
+        given: "a descriptor whose beans property is not the DSL, as a pre-8.0 plugin's may well be"
+            def sourceFile = new File(tempDir, 'UnrelatedBeansGrailsPlugin.groovy')
+            def targetDir = new File(tempDir, 'build/classes/groovy/main')
+
+        when: "it is compiled with the beans DSL on the classpath"
+            def classNode = compileToFile(
+                    sourceFile,
+                    '''
+                        class UnrelatedBeansGrailsPlugin {
+                            def version = '1.0'
+                            def beans = [someKey: 'someValue']
+                        }
+                    ''',
+                    targetDir
+            )
+
+        then: "the property survives, rather than being claimed and failed as a malformed DSL block"
+            classNode.getProperty('beans') != null
+    }
+
+    void "the implicit beans convention leaves a closure that is not DSL-shaped alone"() {
+        given: "a descriptor with a beans closure of ordinary Groovy"
+            def sourceFile = new File(tempDir, 'OtherClosureGrailsPlugin.groovy')
+            def targetDir = new File(tempDir, 'build/classes/groovy/main')
+
+        when:
+            def classNode = compileToFile(
+                    sourceFile,
+                    '''
+                        class OtherClosureGrailsPlugin {
+                            def version = '1.0'
+                            def beans = {
+                                println 'not the DSL'
+                            }
+                        }
+                    ''',
+                    targetDir
+            )
+
+        then:
+            classNode.getProperty('beans') != null
+    }
+
+    void "the implicit beans convention claims a DSL-shaped beans closure"() {
+        given: "a descriptor whose beans closure is the DSL, chained qualifiers included"
+            def sourceFile = new File(tempDir, 'DslBeansGrailsPlugin.groovy')
+            def targetDir = new File(tempDir, 'build/classes/groovy/main')
+
+        when:
+            def classNode = compileToFile(
+                    sourceFile,
+                    '''
+                        @org.springframework.boot.autoconfigure.AutoConfiguration
+                        class DslBeansGrailsPlugin {
+                            def version = '1.0'
+                            def beans = {
+                                bean('greeting', String) { 'hello' }
+                                bean('lazyGreeting', String).lazy() { 'later' }
+                            }
+                        }
+                    ''',
+                    targetDir
+            )
+
+        then: "the property is consumed by the transform, unlike the two cases above"
+            classNode.getProperty('beans') == null
+    }
+
     void "the global transform fails when a plugin descriptor class has no version"() {
         given: "a plugin descriptor class without a declared or compiler-provided version"
             def sourceFile = new File(tempDir, 'UnversionedGrailsPlugin.groovy')
