@@ -425,6 +425,39 @@ class GlobalGrailsClassInjectorTransformationSpec extends Specification {
             new XmlSlurper().parse(pluginXml).resources.resource*.text() == ['KeptThing']
     }
 
+    void "excludes recorded by the descriptor still apply to a later source unit"() {
+        given: "an existing descriptor listing a resource the plugin excludes"
+            def pluginXml = new File(tempDir, 'carry-over-plugin.xml')
+            def seed = '''
+                <plugin name="carryOver" version="1.0" grailsVersion="1.0 > *">
+                    <type>CarryOverGrailsPlugin</type>
+                    <resources>
+                        <resource>ExcludedThing</resource>
+                        <resource>KeptThing</resource>
+                    </resources>
+                </plugin>
+            '''
+            pluginXml.text = seed
+            def classNode = compilePlugin('''
+                class CarryOverGrailsPlugin {
+                    def pluginExcludes = ['Excluded*']
+                }
+            ''')
+
+        when: "source unit 1 is the plugin descriptor"
+        transformation.generatePluginXml(classNode, '1.0', ['KeptThing'] as Set, pluginXml)
+
+        then: "the excludes are honoured and the kept resource is recorded"
+        new XmlSlurper().parse(pluginXml).resources.resource*.text() == ['KeptThing']
+
+        when: "source unit 2 is an ordinary artefact source"
+        pluginXml.text = seed
+        transformation.generatePluginXml(null, null, ['AnotherThing'] as Set, pluginXml)
+
+        then: "the excludes recorded in source unit 1 are still honoured"
+        new XmlSlurper().parse(pluginXml).resources.resource*.text() == ['KeptThing', 'AnotherThing']
+    }
+
     void "plugin xml resources are updated when an existing descriptor has no plugin class"() {
         given:
             def pluginXml = new File(tempDir, 'existing-plugin.xml')

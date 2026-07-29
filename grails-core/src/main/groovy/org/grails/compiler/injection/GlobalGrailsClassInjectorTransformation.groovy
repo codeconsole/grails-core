@@ -281,9 +281,6 @@ class GlobalGrailsClassInjectorTransformation implements ASTTransformation, Comp
         def pluginClasses = [] as LinkedHashSet<String>
         pluginClasses.addAll(transformedClassNames)
         pluginClasses.addAll(pendingPluginClassNames)
-        // Reset excludes from a previous source unit so that patterns declared by one plugin
-        // do not leak into a subsequent compilation within the same Gradle worker.
-        pluginExcludePatterns.clear()
 
         // Create or update grails-plugin.xml when a concrete plugin class is present; otherwise,
         // update an existing descriptor or defer resource names until the descriptor is compiled.
