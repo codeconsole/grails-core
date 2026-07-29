@@ -489,13 +489,53 @@ class GlobalGrailsClassInjectorTransformationSpec extends Specification {
         when: 'the transformation attempts to update the malformed plugin.xml'
             transformation.updatePluginXml(null, null, pluginXml, ['Foo'])
 
-        then: 'no exception is thrown and a warning is logged'
+        then: 'the corrupt descriptor is removed, names are deferred, and a warning is logged'
             noExceptionThrown()
+            !pluginXml.exists()
+            transformation.generatePluginXml(
+                    compilePlugin('class RecoveredGrailsPlugin {}'),
+                    '1.0',
+                    [] as Set,
+                    pluginXml
+            )
+            def recoveredXml = new XmlSlurper().parse(pluginXml)
+            recoveredXml.resources.resource*.text() == ['Foo']
             logCapture.events.size() == 1
             with(logCapture.events[0]) {
                 level == Level.WARN
                 formattedMessage == "Failed to update existing file ${pluginXml.absolutePath}. Recreating it instead..."
             }
+
+        cleanup:
+            logCapture.stop()
+    }
+
+    void "plugin xml update recreates malformed descriptors with available plugin metadata"() {
+        given:
+            def logCapture = new LogCapture(GlobalGrailsClassInjectorTransformation, Level.WARN)
+            def pluginXml = new File(tempDir, 'malformed-plugin-with-metadata.xml')
+            pluginXml.text = '<plugin><resources>'
+            def classNode = compilePlugin('''
+                class RecoveryGrailsPlugin {
+                    def grailsVersion = '3.0 > *'
+                }
+            ''')
+
+        when: 'the transformation updates the malformed descriptor with plugin metadata'
+            transformation.updatePluginXml(classNode, '2.0', pluginXml, ['RecoveryService'])
+
+        then: 'a warning is logged and the descriptor is recreated from the plugin class'
+            logCapture.events.size() == 1
+            with(logCapture.events[0]) {
+                level == Level.WARN
+                formattedMessage == "Failed to update existing file ${pluginXml.absolutePath}. Recreating it instead..."
+            }
+            def xml = new XmlSlurper().parse(pluginXml)
+            xml.@name.text() == 'recovery'
+            xml.@version.text() == '2.0'
+            xml.@grailsVersion.text() == '3.0 > *'
+            xml.type.text() == 'RecoveryGrailsPlugin'
+            xml.resources.resource*.text() == ['RecoveryService']
 
         cleanup:
             logCapture.stop()

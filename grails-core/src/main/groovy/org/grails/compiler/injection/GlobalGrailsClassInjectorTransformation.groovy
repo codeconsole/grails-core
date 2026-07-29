@@ -436,7 +436,12 @@ class GlobalGrailsClassInjectorTransformation implements ASTTransformation, Comp
         } catch (IOException | ParserConfigurationException | SAXException e) {
             // Invalid or unreadable descriptor; recreate it
             log.warn('Failed to update existing file {}. Recreating it instead...', pluginXmlFile.absolutePath, e)
-            writePluginXml(pluginClassNode, pluginVersion, pluginXmlFile, artefactClassNames)
+            if (pluginClassNode) {
+                writePluginXml(pluginClassNode, pluginVersion, pluginXmlFile, artefactClassNames)
+            } else {
+                pluginXmlFile.delete()
+                pendingPluginClassNames.addAll(artefactClassNames)
+            }
         }
     }
 
