@@ -25,7 +25,13 @@ import java.util.jar.JarOutputStream
 
 import groovy.transform.CompileStatic
 
+import ch.qos.logback.classic.Level
+import ch.qos.logback.classic.spi.ILoggingEvent
+
+import org.apache.grails.core.testing.support.LogCapture
 import org.springframework.core.Ordered
+
+import org.grails.core.io.support.GrailsFactoriesLoader
 
 import spock.lang.Specification
 import spock.lang.TempDir
@@ -39,8 +45,10 @@ class ApplicationCommandProviderSpec extends Specification {
     private ClassLoader originalContextClassLoader
     private URLClassLoader factoryClassLoader
     private URLClassLoader registryDefiningClassLoader
+    private LogCapture logCapture
 
     def cleanup() {
+        logCapture?.close()
         Thread.currentThread().contextClassLoader = originalContextClassLoader
         factoryClassLoader?.close()
         registryDefiningClassLoader?.close()
@@ -160,18 +168,17 @@ class ApplicationCommandProviderSpec extends Specification {
                 "${ApplicationCommand.name}=missing.LinkageCommand,${ModernTestCommand.name}")
         useFactoryResources([plugin], false,
                 ['missing.LinkageCommand': new NoClassDefFoundError('simulated missing command dependency')])
-        ByteArrayOutputStream errorOutput = new ByteArrayOutputStream()
+        logCapture = new LogCapture(ApplicationContextCommandRegistry)
 
         when:
-        ApplicationContextCommandRegistry registry = captureStandardError(errorOutput) {
-            new ApplicationContextCommandRegistry()
-        }
+        ApplicationContextCommandRegistry registry = new ApplicationContextCommandRegistry()
 
         then:
         registry.findCommand('modern-test') instanceof ModernTestCommand
-        errorOutput.toString('UTF-8').contains('missing.LinkageCommand')
-        errorOutput.toString('UTF-8').contains('load-time-linkage-command.jar')
-        errorOutput.toString('UTF-8').contains('report it to the Grails framework')
+        List<ILoggingEvent> errors = logCapture.events.findAll { it.level == Level.ERROR }
+        errors.any { it.formattedMessage.contains('missing.LinkageCommand') }
+        errors.any { it.formattedMessage.contains('load-time-linkage-command.jar') }
+        errors.any { it.formattedMessage.contains('report it to the Grails framework') }
     }
 
     @Unroll
@@ -202,18 +209,17 @@ class ApplicationCommandProviderSpec extends Specification {
                 "${ApplicationCommandProvider.name}=missing.LinkageProvider,${TestCommandProvider.name}")
         useFactoryResources([plugin], false,
                 ['missing.LinkageProvider': new NoClassDefFoundError('simulated missing provider dependency')])
-        ByteArrayOutputStream errorOutput = new ByteArrayOutputStream()
+        logCapture = new LogCapture(ApplicationContextCommandRegistry)
 
         when:
-        ApplicationContextCommandRegistry registry = captureStandardError(errorOutput) {
-            new ApplicationContextCommandRegistry()
-        }
+        ApplicationContextCommandRegistry registry = new ApplicationContextCommandRegistry()
 
         then:
         registry.findCommand('provider-test') instanceof ProviderTestCommand
-        errorOutput.toString('UTF-8').contains('missing.LinkageProvider')
-        errorOutput.toString('UTF-8').contains('load-time-linkage-provider.jar')
-        errorOutput.toString('UTF-8').contains('report it to the Grails framework')
+        List<ILoggingEvent> errors = logCapture.events.findAll { it.level == Level.ERROR }
+        errors.any { it.formattedMessage.contains('missing.LinkageProvider') }
+        errors.any { it.formattedMessage.contains('load-time-linkage-provider.jar') }
+        errors.any { it.formattedMessage.contains('report it to the Grails framework') }
     }
 
     @Unroll
@@ -285,24 +291,22 @@ class ApplicationCommandProviderSpec extends Specification {
         URL secondPlugin = createFactoryJar('second-plugin.jar',
                 'grails.dev.commands.ApplicationCommand=missing.SecondLegacyCommand')
         useFactoryResources([firstPlugin, secondPlugin], true)
-        ByteArrayOutputStream errorOutput = new ByteArrayOutputStream()
+        logCapture = new LogCapture(ApplicationCommandDiagnostics)
 
         when:
-        ApplicationContextCommandRegistry registry = captureStandardError(errorOutput) {
-            new ApplicationContextCommandRegistry()
-        }
+        ApplicationContextCommandRegistry registry = new ApplicationContextCommandRegistry()
 
         then:
         registry.missingCommandHint == 'Grails 7 commands were detected; set grails { legacyCommandSupport = true } or upgrade the plugin.'
         !((TrackingFactoryClassLoader) factoryClassLoader).legacyCommandClassLoaded
-        List<String> errors = errorOutput.toString('UTF-8').readLines().findAll {
-            it.contains('ships Grails 7 commands')
+        List<ILoggingEvent> errors = logCapture.events.findAll {
+            it.level == Level.ERROR && it.formattedMessage.contains('ships Grails 7 commands')
         }
         errors.size() == 2
-        errors.count { it.contains('first-plugin.jar') } == 1
-        errors.count { it.contains('second-plugin.jar') } == 1
+        errors.count { it.formattedMessage.contains('first-plugin.jar') } == 1
+        errors.count { it.formattedMessage.contains('second-plugin.jar') } == 1
         errors.every {
-            it.contains('set grails { legacyCommandSupport = true } or upgrade the plugin.')
+            it.formattedMessage.contains('set grails { legacyCommandSupport = true } or upgrade the plugin.')
         }
     }
 
@@ -310,16 +314,14 @@ class ApplicationCommandProviderSpec extends Specification {
         given:
         URL plugin = createFactoryJar('modern-plugin.jar', 'example.OtherFactory=missing.OtherFactory')
         useFactoryResources([plugin])
-        ByteArrayOutputStream errorOutput = new ByteArrayOutputStream()
+        logCapture = new LogCapture(ApplicationCommandDiagnostics)
 
         when:
-        ApplicationContextCommandRegistry registry = captureStandardError(errorOutput) {
-            new ApplicationContextCommandRegistry()
-        }
+        ApplicationContextCommandRegistry registry = new ApplicationContextCommandRegistry()
 
         then:
         registry.missingCommandHint == null
-        !errorOutput.toString('UTF-8').contains('ships Grails 7 commands')
+        !logCapture.events.any { it.formattedMessage.contains('ships Grails 7 commands') }
     }
 
     def "reports a malformed factory resource and continues command discovery"() {
@@ -327,24 +329,23 @@ class ApplicationCommandProviderSpec extends Specification {
         String malformedFactory = 'grails.dev.commands.ApplicationCommand=' + '\\' + 'uInvalid'
         URL plugin = createFactoryJar('malformed-plugin.jar', malformedFactory)
         useFactoryResources([plugin])
-        ByteArrayOutputStream errorOutput = new ByteArrayOutputStream()
+        logCapture = new LogCapture(GrailsFactoriesLoader)
 
         when:
-        ApplicationContextCommandRegistry registry = captureStandardError(errorOutput) {
-            new ApplicationContextCommandRegistry()
-        }
+        ApplicationContextCommandRegistry registry = new ApplicationContextCommandRegistry()
 
         then:
         registry.missingCommandHint == null
         noExceptionThrown()
-        String captured = errorOutput.toString('UTF-8')
-        captured.contains('Unable to read factory declarations')
-        captured.contains('malformed-plugin.jar')
-        captured.contains('META-INF/grails.factories')
+        ILoggingEvent warning = logCapture.events.find {
+            it.level == Level.WARN && it.formattedMessage.contains('malformed-plugin.jar')
+        }
+        warning.formattedMessage.contains('Unable to read factory declarations')
+        warning.formattedMessage.contains('META-INF/grails.factories')
 
         and: 'the cause is reported, since it is what tells the user why the resource was dropped'
-        captured.contains(IllegalArgumentException.name)
-        captured.contains('Malformed')
+        warning.throwableProxy.className == IllegalArgumentException.name
+        warning.throwableProxy.message.contains('Malformed')
     }
 
     def "reports a malformed cli factory resource without losing another plugin's modern commands"() {
@@ -359,23 +360,22 @@ class ApplicationCommandProviderSpec extends Specification {
                 'example.OtherFactory=example.OtherImplementation',
                 "${ApplicationCommand.name}=${ModernTestCommand.name}")
         useFactoryResources([malformedPlugin, modernPlugin])
-        ByteArrayOutputStream errorOutput = new ByteArrayOutputStream()
+        logCapture = new LogCapture(GrailsFactoriesLoader)
 
         when:
-        ApplicationContextCommandRegistry registry = captureStandardError(errorOutput) {
-            new ApplicationContextCommandRegistry()
-        }
+        ApplicationContextCommandRegistry registry = new ApplicationContextCommandRegistry()
 
         then:
         registry.findCommand('modern-test') instanceof ModernTestCommand
-        String captured = errorOutput.toString('UTF-8')
-        captured.contains('Unable to read factory declarations')
-        captured.contains('malformed-cli-plugin.jar')
-        captured.contains('META-INF/grails-cli.factories')
+        ILoggingEvent warning = logCapture.events.find {
+            it.level == Level.WARN && it.formattedMessage.contains('malformed-cli-plugin.jar')
+        }
+        warning.formattedMessage.contains('Unable to read factory declarations')
+        warning.formattedMessage.contains('META-INF/grails-cli.factories')
 
         and: 'the cause is reported, since it is what tells the user why the resource was dropped'
-        captured.contains(IllegalArgumentException.name)
-        captured.contains('Malformed')
+        warning.throwableProxy.className == IllegalArgumentException.name
+        warning.throwableProxy.message.contains('Malformed')
     }
 
     def "continues command discovery when factory resources cannot be enumerated"() {
@@ -399,16 +399,17 @@ class ApplicationCommandProviderSpec extends Specification {
         originalContextClassLoader = Thread.currentThread().contextClassLoader
         factoryClassLoader = new FixedFactoryResourceClassLoader(factoryResource, getClass().classLoader)
         Thread.currentThread().contextClassLoader = factoryClassLoader
-        ByteArrayOutputStream errorOutput = new ByteArrayOutputStream()
+        logCapture = new LogCapture(ApplicationCommandDiagnostics)
 
         when:
-        ApplicationContextCommandRegistry registry = captureStandardError(errorOutput) {
-            new ApplicationContextCommandRegistry()
-        }
+        ApplicationContextCommandRegistry registry = new ApplicationContextCommandRegistry()
 
         then:
         registry.missingCommandHint != null
-        errorOutput.toString('UTF-8').contains('Plugin memory:legacy-plugin/META-INF/grails.factories ships Grails 7 commands')
+        logCapture.events.any {
+            it.level == Level.ERROR && it.formattedMessage.contains(
+                    'Plugin memory:legacy-plugin/META-INF/grails.factories ships Grails 7 commands')
+        }
     }
 
     def "does not report legacy command diagnostics when a provider handles the factory key"() {
@@ -418,16 +419,14 @@ class ApplicationCommandProviderSpec extends Specification {
                 'grails.dev.commands.ApplicationCommand=missing.SupportedLegacyCommand',
                 "${ApplicationCommandProvider.name}=${DiagnosticSupportCommandProvider.name}")
         useFactoryResources([plugin])
-        ByteArrayOutputStream errorOutput = new ByteArrayOutputStream()
+        logCapture = new LogCapture(ApplicationCommandDiagnostics)
 
         when:
-        ApplicationContextCommandRegistry registry = captureStandardError(errorOutput) {
-            new ApplicationContextCommandRegistry()
-        }
+        ApplicationContextCommandRegistry registry = new ApplicationContextCommandRegistry()
 
         then:
         registry.missingCommandHint == null
-        !errorOutput.toString('UTF-8').contains('ships Grails 7 commands')
+        !logCapture.events.any { it.formattedMessage.contains('ships Grails 7 commands') }
     }
 
     def "does not report missing support when a factory-key provider fails to contribute commands"() {
@@ -437,16 +436,14 @@ class ApplicationCommandProviderSpec extends Specification {
                 'grails.dev.commands.ApplicationCommand=missing.SupportedLegacyCommand',
                 "${ApplicationCommandProvider.name}=${ThrowingDiagnosticSupportCommandProvider.name}")
         useFactoryResources([plugin])
-        ByteArrayOutputStream errorOutput = new ByteArrayOutputStream()
+        logCapture = new LogCapture(ApplicationCommandDiagnostics)
 
         when:
-        ApplicationContextCommandRegistry registry = captureStandardError(errorOutput) {
-            new ApplicationContextCommandRegistry()
-        }
+        ApplicationContextCommandRegistry registry = new ApplicationContextCommandRegistry()
 
         then:
         registry.missingCommandHint == null
-        !errorOutput.toString('UTF-8').contains('ships Grails 7 commands')
+        !logCapture.events.any { it.formattedMessage.contains('ships Grails 7 commands') }
     }
 
     private URL createFactoryJar(String name, String legacyFactories, String cliFactories = null) {
@@ -482,16 +479,6 @@ class ApplicationCommandProviderSpec extends Specification {
         Thread.currentThread().contextClassLoader = factoryClassLoader
     }
 
-    private static <T> T captureStandardError(ByteArrayOutputStream output, Closure<T> action) {
-        PrintStream originalError = System.err
-        try {
-            System.err = new PrintStream(output, true, 'UTF-8')
-            action.call()
-        }
-        finally {
-            System.err = originalError
-        }
-    }
 }
 
 class ThrowingCommandProvider implements ApplicationCommandProvider {
