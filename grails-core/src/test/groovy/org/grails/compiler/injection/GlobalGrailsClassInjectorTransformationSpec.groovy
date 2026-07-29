@@ -290,9 +290,10 @@ class GlobalGrailsClassInjectorTransformationSpec extends Specification {
         when:
             compileToFile(sourceFile, 'class UnversionedGrailsPlugin {}', targetDir)
 
-        then:
+        then: "the compilation fails with a clear message and no xml file is generated"
             def exception = thrown(MultipleCompilationErrorsException)
             exception.message.contains('does not define a plugin version')
+            !new File(targetDir, 'META-INF/grails-plugin.xml').exists()
     }
 
     void "the global transform annotates a plain Grails resource class with @GrailsPlugin metadata"() {

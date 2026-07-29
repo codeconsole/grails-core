@@ -175,10 +175,10 @@ class GlobalGrailsClassInjectorTransformation implements ASTTransformation, Comp
             }
         }
 
-        validatePluginVersionDefined(pluginClassNode, pluginVersion, pluginXmlFile, source)
-
-        // create or update grails-plugin.xml
-        generatePluginXml(pluginClassNode, pluginVersion, transformedClassNames, pluginXmlFile)
+        if (validatePluginVersionDefined(pluginClassNode, pluginVersion, pluginXmlFile, source)) {
+            // create or update grails-plugin.xml
+            generatePluginXml(pluginClassNode, pluginVersion, transformedClassNames, pluginXmlFile)
+        }
     }
 
     /**
@@ -312,7 +312,7 @@ class GlobalGrailsClassInjectorTransformation implements ASTTransformation, Comp
         classNode.addAnnotation(annotationNode)
     }
 
-    private static void validatePluginVersionDefined(
+    private static boolean validatePluginVersionDefined(
             @Nullable ClassNode pluginClassNode,
             @Nullable String pluginVersion,
             File pluginXmlFile,
@@ -323,7 +323,9 @@ class GlobalGrailsClassInjectorTransformation implements ASTTransformation, Comp
                     "Unable to generate '$pluginXmlFile' because plugin class " +
                     "'$pluginClassNode.name' does not define a plugin version."
             )
+            return false
         }
+        true
     }
 
     /**
