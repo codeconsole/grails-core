@@ -70,7 +70,7 @@ class ApplicationContextCommandFactorySpec extends Specification {
         where:
         errorType           | registryType
         StackOverflowError  | StackOverflowRegistry
-        ThreadDeath         | ThreadDeathRegistry
+        OutOfMemoryError    | OutOfMemoryRegistry
     }
 }
 
@@ -105,9 +105,9 @@ class StackOverflowRegistry {
     }
 }
 
-class ThreadDeathRegistry {
+class OutOfMemoryRegistry {
 
     static Object getInstance() {
-        throw new ThreadDeath()
+        throw new OutOfMemoryError()
     }
 }

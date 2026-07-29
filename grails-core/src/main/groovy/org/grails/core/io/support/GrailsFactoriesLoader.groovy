@@ -20,6 +20,7 @@
 package org.grails.core.io.support
 
 import groovy.transform.CompileStatic
+import groovy.util.logging.Slf4j
 
 import org.springframework.core.OrderComparator
 import org.springframework.util.Assert
@@ -35,6 +36,7 @@ import org.grails.io.support.FactoriesLoaderSupport
  * @since 2.4
  * @author Graeme Rocher
  */
+@Slf4j
 @CompileStatic
 class GrailsFactoriesLoader extends FactoriesLoaderSupport {
 
@@ -130,7 +132,9 @@ class GrailsFactoriesLoader extends FactoriesLoaderSupport {
                     properties.load(input)
                 }
             }
-            catch (IOException | IllegalArgumentException ignored) {
+            catch (IOException | IllegalArgumentException e) {
+                log.warn('Unable to read factory declarations from \'{}\'; skipping it. Any factories declared in that resource are unavailable.',
+                        resource.toExternalForm(), e)
                 continue
             }
 

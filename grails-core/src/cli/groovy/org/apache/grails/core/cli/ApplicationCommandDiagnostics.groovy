@@ -81,9 +81,6 @@ class ApplicationCommandDiagnostics {
             if (current instanceof VirtualMachineError) {
                 throw (VirtualMachineError) current
             }
-            if (current instanceof ThreadDeath) {
-                throw (ThreadDeath) current
-            }
             current = current.cause
         }
     }

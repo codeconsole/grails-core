@@ -154,12 +154,12 @@ class LegacyCommandCompatibilityIntegrationSpec extends Specification {
         }
         markerFile.delete()
 
-        expect: 'the adapter targets the included-build Grails 7 / Groovy 4 binary and its resolved compile versions'
+        expect: 'the adapter targets the standalone Grails 7 / Groovy 4 binary and its resolved compile versions'
         applicationCommand != null
         applicationCommand instanceof ApplicationCommandTargetAware
         legacyCommand.class.name == 'legacy.g7.commands.HelloG7PrecompiledCommand'
         publishedArtifact.name.contains('legacy-g7-command-plugin')
-        grailsCompileVersion == '7.0.14'
+        grailsCompileVersion.startsWith('7.')
         groovyCompileVersion.startsWith('4.')
 
         when: 'the precompiled command runs through the public Grails 8 adapter'
@@ -198,6 +198,35 @@ class LegacyCommandCompatibilityIntegrationSpec extends Specification {
         result
         outputDirectory.directory
         renderedFile.text == 'G7-CONTEXT-true'
+
+        cleanup:
+        renderedFile.delete()
+        outputDirectory.delete()
+    }
+
+    def "registers a precompiled command that relies on the trait to derive its name"() {
+        given: 'the command shape create-command generated on Grails 7, declaring no name of its own'
+        ApplicationCommand applicationCommand = ApplicationContextCommandRegistry.instance.findCommand('hello-derived-name')
+        ExecutionContext executionContext = new ExecutionContext(Mock(CommandLine))
+        File outputDirectory = new File(executionContext.baseDir, 'build/hello-derived-name')
+        File renderedFile = new File(outputDirectory, 'rendered.txt')
+        renderedFile.delete()
+        outputDirectory.delete()
+
+        expect: 'the trait default resolved the registration key from the class name across the version boundary'
+        applicationCommand != null
+        applicationCommand instanceof ApplicationCommandTargetAware
+        ((ApplicationCommandTargetAware) applicationCommand).target.class.name ==
+                'legacy.g7.commands.HelloDerivedNameCommand'
+        applicationCommand.name == 'hello-derived-name'
+
+        when: 'the command runs and reads its own derived name from inside the precompiled binary'
+        applicationCommand.applicationContext = applicationContext
+        boolean result = applicationCommand.handle(executionContext)
+
+        then: 'the derivation is the same one the Groovy 4 bytecode observes at runtime'
+        result
+        renderedFile.text == 'G7-DERIVED-NAME-hello-derived-name'
 
         cleanup:
         renderedFile.delete()

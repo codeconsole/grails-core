@@ -29,6 +29,8 @@ import org.apache.grails.core.cli.compat.LegacyApplicationCommandProvider
 import org.grails.build.parsing.CommandLine
 import org.slf4j.LoggerFactory
 import org.springframework.context.ConfigurableApplicationContext
+import org.springframework.core.Ordered
+import org.springframework.core.annotation.Order
 import spock.lang.Specification
 import spock.lang.TempDir
 import spock.lang.Unroll
@@ -117,6 +119,35 @@ class LegacyCommandRegistryLoadingSpec extends Specification {
         then:
         command instanceof ConfigReportCommand
         !(command instanceof LegacyApplicationCommandAdapter)
+    }
+
+    def "prefers the ordered legacy command when two legacy commands share a name"() {
+        given:
+        useFactoryResources('grails.dev.commands.ApplicationCommand=' +
+                "${AUnorderedLegacyCollisionCommand.name},${ZOrderedLegacyCollisionCommand.name}")
+
+        when:
+        ApplicationCommand command = new ApplicationContextCommandRegistry().findCommand('legacy-order-collision')
+
+        then:
+        ((ApplicationCommandTargetAware) command).target instanceof ZOrderedLegacyCollisionCommand
+    }
+
+    @Unroll
+    def "resolves unordered legacy command name collisions by class name when declared #declarationOrder"() {
+        given:
+        useFactoryResources("grails.dev.commands.ApplicationCommand=${declaredClasses.join(',')}")
+
+        when:
+        ApplicationCommand command = new ApplicationContextCommandRegistry().findCommand('legacy-stable-collision')
+
+        then:
+        ((ApplicationCommandTargetAware) command).target instanceof AStableLegacyCollisionCommand
+
+        where:
+        declarationOrder   | declaredClasses
+        'in class order'   | [AStableLegacyCollisionCommand.name, BStableLegacyCollisionCommand.name]
+        'in reverse order' | [BStableLegacyCollisionCommand.name, AStableLegacyCollisionCommand.name]
     }
 
     def "continues loading commands when a legacy command constructor fails"() {
@@ -236,7 +267,7 @@ class LegacyCommandRegistryLoadingSpec extends Specification {
         thrown.is(failure)
 
         where:
-        failure << [new StackOverflowError(), new ThreadDeath()]
+        failure << [new StackOverflowError(), new OutOfMemoryError()]
     }
 
     @Unroll
@@ -253,7 +284,7 @@ class LegacyCommandRegistryLoadingSpec extends Specification {
         thrown.is(failure)
 
         where:
-        failure << [new StackOverflowError(), new ThreadDeath()]
+        failure << [new StackOverflowError(), new OutOfMemoryError()]
     }
 
     @Unroll
@@ -270,7 +301,7 @@ class LegacyCommandRegistryLoadingSpec extends Specification {
         thrown.is(failure)
 
         where:
-        failure << [new StackOverflowError(), new ThreadDeath()]
+        failure << [new StackOverflowError(), new OutOfMemoryError()]
     }
 
     private void attachProviderAppender() {
@@ -377,6 +408,79 @@ class LegacyRegistryCollisionCommand implements grails.dev.commands.ApplicationC
     @Override
     String getDescription() {
         'Legacy registry collision command'
+    }
+
+    @Override
+    boolean handle(LegacyExecutionContext executionContext) {
+        true
+    }
+}
+
+class AUnorderedLegacyCollisionCommand implements grails.dev.commands.ApplicationCommand {
+
+    @Override
+    String getName() {
+        'legacy-order-collision'
+    }
+
+    @Override
+    String getDescription() {
+        'Unordered legacy collision command'
+    }
+
+    @Override
+    boolean handle(LegacyExecutionContext executionContext) {
+        true
+    }
+}
+
+@Order(Ordered.HIGHEST_PRECEDENCE)
+class ZOrderedLegacyCollisionCommand implements grails.dev.commands.ApplicationCommand {
+
+    @Override
+    String getName() {
+        'legacy-order-collision'
+    }
+
+    @Override
+    String getDescription() {
+        'Ordered legacy collision command'
+    }
+
+    @Override
+    boolean handle(LegacyExecutionContext executionContext) {
+        true
+    }
+}
+
+class AStableLegacyCollisionCommand implements grails.dev.commands.ApplicationCommand {
+
+    @Override
+    String getName() {
+        'legacy-stable-collision'
+    }
+
+    @Override
+    String getDescription() {
+        'First stable legacy collision command'
+    }
+
+    @Override
+    boolean handle(LegacyExecutionContext executionContext) {
+        true
+    }
+}
+
+class BStableLegacyCollisionCommand implements grails.dev.commands.ApplicationCommand {
+
+    @Override
+    String getName() {
+        'legacy-stable-collision'
+    }
+
+    @Override
+    String getDescription() {
+        'Second stable legacy collision command'
     }
 
     @Override

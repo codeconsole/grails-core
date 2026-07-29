@@ -24,23 +24,36 @@ import org.apache.grails.core.cli.ApplicationCommand
 import org.apache.grails.core.cli.ApplicationCommandTargetAware
 import org.apache.grails.core.cli.ExecutionContext
 import org.springframework.context.ConfigurableApplicationContext
+import org.springframework.core.Ordered
+import org.springframework.core.annotation.OrderUtils
 
 /**
  * Adapts a Grails 7 command contract to the Grails 8 CLI contract.
  */
 @SuppressWarnings('deprecation')
 @CompileStatic
-class LegacyApplicationCommandAdapter implements ApplicationCommand, ApplicationCommandTargetAware {
+class LegacyApplicationCommandAdapter implements ApplicationCommand, ApplicationCommandTargetAware, Ordered {
 
     private final grails.dev.commands.ApplicationCommand legacyCommand
+    private final int order
 
     LegacyApplicationCommandAdapter(grails.dev.commands.ApplicationCommand legacyCommand) {
         this.legacyCommand = legacyCommand
+        this.order = resolveOrder(legacyCommand)
     }
 
     @Override
     Object getTarget() {
         legacyCommand
+    }
+
+    /**
+     * The order declared by the adapted Grails 7 command, so that commands ordered through the
+     * Spring conventions keep deciding duplicate command names as they did on Grails 7.
+     */
+    @Override
+    int getOrder() {
+        order
     }
 
     @Override
@@ -66,5 +79,12 @@ class LegacyApplicationCommandAdapter implements ApplicationCommand, Application
     @Override
     boolean handle(ExecutionContext executionContext) {
         legacyCommand.handle(new grails.dev.commands.ExecutionContext(executionContext.commandLine))
+    }
+
+    private static int resolveOrder(grails.dev.commands.ApplicationCommand legacyCommand) {
+        if (legacyCommand instanceof Ordered) {
+            return ((Ordered) legacyCommand).order
+        }
+        OrderUtils.getOrder(legacyCommand.class, Ordered.LOWEST_PRECEDENCE)
     }
 }

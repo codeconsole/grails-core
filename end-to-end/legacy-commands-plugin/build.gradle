@@ -29,7 +29,7 @@ version = '0.0.1'
 group = 'legacy.commands.plugin'
 
 dependencies {
-    implementation platform(project(':grails-bom'))
+    implementation platform("org.apache.grails:grails-bom:$projectVersion")
 
     // This fixture recompiles legacy command sources against Grails 8's grails-core-cli-legacy to
     // validate discovery, adapter, registry, and runner wiring end-to-end. It does not
@@ -40,6 +40,5 @@ dependencies {
 }
 
 apply {
-    from rootProject.layout.projectDirectory.file('gradle/functional-test-config.gradle')
-    from rootProject.layout.projectDirectory.file('gradle/grails-extension-gradle-config.gradle')
+    from rootProject.layout.projectDirectory.file('../gradle/grails-extension-gradle-config.gradle')
 }

@@ -174,4 +174,63 @@ class GrailsApplicationContextCommandRunnerSpec extends Specification {
         then:
         autowireTarget.is(command)
     }
+
+    def "resolveSkipBootstrap reads the flag declared by a command"() {
+        expect:
+        GrailsApplicationContextCommandRunner.resolveSkipBootstrap(new SkipBootstrapCommand()) == true
+    }
+
+    def "resolveSkipBootstrap returns null for a command without the flag"() {
+        expect:
+        GrailsApplicationContextCommandRunner.resolveSkipBootstrap(new PlainCommand()) == null
+    }
+
+    def "resolveSkipBootstrap reads the flag from the target of a legacy command adapter"() {
+        given: 'an adapter that forwards handle() but not the properties its target declares'
+        Object adapter = new TargetAwareAdapter(new SkipBootstrapCommand())
+
+        expect: 'the flag is invisible on the adapter itself'
+        !adapter.hasProperty('skipBootstrap')
+
+        and: 'so it can only be found by going through the target'
+        GrailsApplicationContextCommandRunner.resolveSkipBootstrap(adapter) == true
+    }
+
+    def "resolveSkipBootstrap ignores a non-Boolean flag declared by the target"() {
+        expect:
+        GrailsApplicationContextCommandRunner.resolveSkipBootstrap(new TargetAwareAdapter(new TextSkipBootstrapCommand())) == null
+    }
+
+    /**
+     * A command opting out of BootStrap execution, like the schema export and database migration commands.
+     */
+    static class SkipBootstrapCommand {
+        Boolean skipBootstrap = true
+    }
+
+    /**
+     * A command declaring a {@code skipBootstrap} property of an unusable type.
+     */
+    static class TextSkipBootstrapCommand {
+        String skipBootstrap = 'true'
+    }
+
+    /**
+     * A command leaving BootStrap execution alone.
+     */
+    static class PlainCommand {
+        String description = 'runs with BootStrap'
+    }
+
+    /**
+     * Stands in for the adapter the registry returns for a Grails 7 command: it exposes the target
+     * but none of the properties that target declares.
+     */
+    static class TargetAwareAdapter implements ApplicationCommandTargetAware {
+        final Object target
+
+        TargetAwareAdapter(Object target) {
+            this.target = target
+        }
+    }
 }
