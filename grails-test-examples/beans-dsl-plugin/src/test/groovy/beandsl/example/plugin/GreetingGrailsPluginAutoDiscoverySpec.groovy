@@ -19,6 +19,7 @@
 package beandsl.example.plugin
 
 import org.springframework.boot.WebApplicationType
+import org.springframework.boot.autoconfigure.AutoConfiguration
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration
 import org.springframework.boot.autoconfigure.aop.AopAutoConfiguration
 import org.springframework.boot.builder.SpringApplicationBuilder
@@ -63,6 +64,19 @@ class GreetingGrailsPluginAutoDiscoverySpec extends Specification {
 
         then:
         context.getBean('greeting', Greeting).text == 'Hello, World!'
+    }
+
+    def "the generated sibling takes the plugin descriptor convention name"() {
+        given: 'the GrailsPlugin suffix is replaced, not appended to'
+        Class<?> sibling = Class.forName('beandsl.example.plugin.GreetingAutoConfiguration')
+
+        expect:
+        sibling.isAnnotationPresent(AutoConfiguration)
+
+        and: 'the members the DSL declared landed on it, not on the plugin class'
+        sibling.declaredFields*.name.contains('greetingSuffix')
+        sibling.declaredMethods*.name.contains('buildGreeting')
+        GreetingGrailsPlugin.declaredFields*.name.every { it != 'beans' }
     }
 
 }

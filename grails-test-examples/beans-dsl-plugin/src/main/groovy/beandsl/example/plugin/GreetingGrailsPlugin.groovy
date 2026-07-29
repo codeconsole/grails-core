@@ -28,8 +28,8 @@ import grails.plugins.Plugin
  * Demonstrates {@code field(...)} and {@code method(...)} - the same shape real autoconfigurations
  * like the built-in i18n plugin's need: injected configuration shared across beans, and a private
  * helper factored out of a bean's construction logic. Both compile onto the generated
- * {@code GreetingGrailsPluginAutoConfiguration} sibling as ordinary private members, exactly like
- * a hand-written {@code @Configuration} class's own fields and methods.
+ * {@code GreetingAutoConfiguration} sibling as ordinary private members, exactly like a
+ * hand-written {@code @Configuration} class's own fields and methods.
  */
 @GrailsBeans
 @AutoConfiguration

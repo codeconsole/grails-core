@@ -75,16 +75,14 @@ class UrlMappingsGrailsPlugin extends Plugin {
         field('serverURL', String).value(Settings.SERVER_URL, '#{null}')
 
         // The two mutually exclusive grailsUrlConverter variants share one bean name; the
-        // @ConditionalOnProperty selects which registers. Its name: attribute must be an inline
-        // constant, so the property names below are literals mirroring Settings.WEB_URL_CONVERTER
-        // and Settings.SETTING_CORS_FILTER.
+        // @ConditionalOnProperty selects which registers.
         bean('grailsUrlConverter', UrlConverter).conditionalOnMissingBeanName()
-                .annotate(ConditionalOnProperty, name: 'grails.web.url.converter', havingValue: 'camelCase', matchIfMissing: true) {
+                .annotate(ConditionalOnProperty, name: Settings.WEB_URL_CONVERTER, havingValue: 'camelCase', matchIfMissing: true) {
                     new CamelCaseUrlConverter()
                 }
 
         bean('grailsUrlConverter', UrlConverter).conditionalOnMissingBeanName()
-                .annotate(ConditionalOnProperty, name: 'grails.web.url.converter', havingValue: 'hyphenated') {
+                .annotate(ConditionalOnProperty, name: Settings.WEB_URL_CONVERTER, havingValue: 'hyphenated') {
                     new HyphenatedUrlConverter()
                 }
 
@@ -98,7 +96,7 @@ class UrlMappingsGrailsPlugin extends Plugin {
         // a user replacing CORS handling with any CorsFilter registration should not end up with
         // two CORS filters answering the same requests.
         bean(GrailsCorsFilter).conditionalOnMissingBean(CorsFilter)
-                .annotate(ConditionalOnProperty, name: 'grails.cors.filter', havingValue: 'true', matchIfMissing: true) { GrailsCorsConfiguration grailsCorsConfiguration ->
+                .annotate(ConditionalOnProperty, name: Settings.SETTING_CORS_FILTER, havingValue: 'true', matchIfMissing: true) { GrailsCorsConfiguration grailsCorsConfiguration ->
                     new GrailsCorsFilter(grailsCorsConfiguration)
                 }
 
