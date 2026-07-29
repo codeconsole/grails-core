@@ -182,6 +182,151 @@ class GlobalGrailsClassInjectorTransformation implements ASTTransformation, Comp
     }
 
     /**
+     * Resolves the project version recorded in compiler metadata, falling back to the Grails
+     * implementation version when no project version is available.
+     *
+     * @param classNode the class whose compiler metadata is inspected
+     * @return the resolved project version, or {@code null} when neither compiler metadata nor
+     *         the Grails implementation provides a version
+     */
+    private static @Nullable String resolveProjectVersion(ClassNode classNode) {
+        def projectVersion = classNode.getNodeMetaData('projectVersion')?.toString()
+        if (projectVersion == null) {
+            // fallback to the version of the grails-core jar if no project version is available
+            projectVersion = GlobalGrailsClassInjectorTransformation.package.implementationVersion
+        }
+        projectVersion
+    }
+
+    /**
+     * Resolves the project name recorded in compiler metadata.
+     *
+     * @param classNode the class whose compiler metadata is inspected
+     * @return the project name, or {@code null} when it is not present
+     */
+    private static @Nullable String resolveProjectName(ClassNode classNode) {
+        classNode.getNodeMetaData('projectName')?.toString()
+    }
+
+    /**
+     * Determines whether a source belongs to a project that should be processed by this
+     * transformation.
+     *
+     * @param url the source URL
+     * @return {@code true} when the URL identifies project source
+     */
+    private static boolean shouldVisit(@Nullable URL url) {
+        url != null && GrailsResourceUtils.isProjectSource(new UrlResource(url))
+    }
+
+    /**
+     * Determines whether a class is a concrete Grails plugin descriptor class.
+     *
+     * @param classNode the class to inspect
+     * @return {@code true} when the class name ends with {@code GrailsPlugin} and is not abstract
+     */
+    private static boolean isGrailsPluginDescriptorClass(ClassNode classNode) {
+        classNode.name.endsWith('GrailsPlugin') && !classNode.abstract
+    }
+
+    /**
+     * Resolves the plugin version from compiler metadata or from the plugin class's declared
+     * version property.
+     *
+     * @param classNode the plugin descriptor class
+     * @param projectVersion the version recorded in compiler metadata
+     * @return the resolved plugin version, or {@code null} when neither source defines one
+     */
+    private static @Nullable String resolvePluginVersion(ClassNode classNode, @Nullable String projectVersion) {
+        if (projectVersion) {
+            return projectVersion
+        }
+        def versionField = classNode.getDeclaredField('version')
+        def initialExpression = versionField?.initialExpression
+        initialExpression instanceof ConstantExpression ? initialExpression.text : null
+    }
+
+    /**
+     * Adds the generated version property to a plugin descriptor class when it does not already
+     * declare one.
+     *
+     * @param classNode the plugin descriptor class
+     * @param pluginVersion the plugin version
+     */
+    private static void addPluginVersionProperty(ClassNode classNode, String pluginVersion) {
+        if (!classNode.hasProperty('version')) {
+            classNode.addProperty(
+                    new PropertyNode(
+                            'version',
+                            Modifier.PUBLIC,
+                            ClassHelper.make(Object),
+                            classNode,
+                            new ConstantExpression(pluginVersion),
+                            null,
+                            null
+                    )
+            )
+        }
+    }
+
+    /**
+     * Adds the Grails plugin annotation containing the project name and version to a class.
+     *
+     * @param classNode the class to annotate
+     * @param projectName the project name
+     * @param projectVersion the project version
+     */
+    private static void addPluginAnnotation(ClassNode classNode, String projectName, String projectVersion) {
+        GrailsASTUtils.addAnnotationOrGetExisting(
+                classNode,
+                GrailsPlugin,
+                [
+                        name: GrailsNameUtils.getPropertyNameForLowerCaseHyphenSeparatedName(projectName),
+                        version: projectVersion
+                ] as Map<String, Object>
+        )
+    }
+
+    /**
+     * Adds an import to the module containing the class.
+     *
+     * @param classNode the class whose module should receive the import
+     * @param className the fully qualified class name to import
+     */
+    private static void addImport(ClassNode classNode, String className) {
+        classNode.module.addImport(
+                className.tokenize('.')[-1],
+                ClassHelper.make(className)
+        )
+    }
+
+    /**
+     * Adds an {@link Artefact} annotation identifying the artefact handler type.
+     *
+     * @param classNode the artefact class
+     * @param handlerType the artefact handler type
+     */
+    private static void addArtefactAnnotation(ClassNode classNode, String handlerType) {
+        def annotationNode = new AnnotationNode(new ClassNode(Artefact))
+        annotationNode.addMember('value', new ConstantExpression(handlerType))
+        classNode.addAnnotation(annotationNode)
+    }
+
+    private static void validatePluginVersionDefined(
+            @Nullable ClassNode pluginClassNode,
+            @Nullable String pluginVersion,
+            File pluginXmlFile,
+            SourceUnit sourceUnit
+    ) {
+        if (pluginClassNode && !pluginVersion) {
+            GrailsASTUtils.error(sourceUnit, pluginClassNode,
+                    "Unable to generate '$pluginXmlFile' because plugin class " +
+                    "'$pluginClassNode.name' does not define a plugin version."
+            )
+        }
+    }
+
+    /**
      * Determines whether compilation is configured to use isolated project output directories.
      *
      * @return {@code true} when the {@code grails.isolated.build} system property is {@code true}
@@ -258,20 +403,6 @@ class GlobalGrailsClassInjectorTransformation implements ASTTransformation, Comp
     private static boolean updateGrailsFactoriesWithTypes(ClassNode classNode, Collection<ClassNode> superTypes, File compilationTargetDirectory) {
         superTypes.any {
             updateGrailsFactoriesWithType(classNode, it, compilationTargetDirectory)
-        }
-    }
-
-    private static void validatePluginVersionDefined(
-            @Nullable ClassNode pluginClassNode,
-            @Nullable String pluginVersion,
-            File pluginXmlFile,
-            SourceUnit sourceUnit
-    ) {
-        if (pluginClassNode && !pluginVersion) {
-            GrailsASTUtils.error(sourceUnit, pluginClassNode,
-                    "Unable to generate '$pluginXmlFile' because plugin class " +
-                    "'$pluginClassNode.name' does not define a plugin version."
-            )
         }
     }
 
@@ -485,137 +616,6 @@ class GlobalGrailsClassInjectorTransformation implements ASTTransformation, Comp
      */
     private static Writable createMarkup(GPathResult node) {
         (Writable) new StreamingMarkupBuilder().bindNode(node)
-    }
-
-    /**
-     * Resolves the project version recorded in compiler metadata, falling back to the Grails
-     * implementation version when no project version is available.
-     *
-     * @param classNode the class whose compiler metadata is inspected
-     * @return the resolved project version, or {@code null} when neither compiler metadata nor
-     *         the Grails implementation provides a version
-     */
-    private static @Nullable String resolveProjectVersion(ClassNode classNode) {
-        def projectVersion = classNode.getNodeMetaData('projectVersion')?.toString()
-        if (projectVersion == null) {
-            // fallback to the version of the grails-core jar if no project version is available
-            projectVersion = GlobalGrailsClassInjectorTransformation.package.implementationVersion
-        }
-        projectVersion
-    }
-
-    /**
-     * Resolves the project name recorded in compiler metadata.
-     *
-     * @param classNode the class whose compiler metadata is inspected
-     * @return the project name, or {@code null} when it is not present
-     */
-    private static @Nullable String resolveProjectName(ClassNode classNode) {
-        classNode.getNodeMetaData('projectName')?.toString()
-    }
-
-    /**
-     * Determines whether a source belongs to a project that should be processed by this
-     * transformation.
-     *
-     * @param url the source URL
-     * @return {@code true} when the URL identifies project source
-     */
-    private static boolean shouldVisit(@Nullable URL url) {
-        url != null && GrailsResourceUtils.isProjectSource(new UrlResource(url))
-    }
-
-    /**
-     * Determines whether a class is a concrete Grails plugin descriptor class.
-     *
-     * @param classNode the class to inspect
-     * @return {@code true} when the class name ends with {@code GrailsPlugin} and is not abstract
-     */
-    private static boolean isGrailsPluginDescriptorClass(ClassNode classNode) {
-        classNode.name.endsWith('GrailsPlugin') && !classNode.abstract
-    }
-
-    /**
-     * Resolves the plugin version from compiler metadata or from the plugin class's declared
-     * version property.
-     *
-     * @param classNode the plugin descriptor class
-     * @param projectVersion the version recorded in compiler metadata
-     * @return the resolved plugin version, or {@code null} when neither source defines one
-     */
-    private static @Nullable String resolvePluginVersion(ClassNode classNode, @Nullable String projectVersion) {
-        if (projectVersion) {
-            return projectVersion
-        }
-        def versionField = classNode.getDeclaredField('version')
-        def initialExpression = versionField?.initialExpression
-        initialExpression instanceof ConstantExpression ? initialExpression.text : null
-    }
-
-    /**
-     * Adds the generated version property to a plugin descriptor class when it does not already
-     * declare one.
-     *
-     * @param classNode the plugin descriptor class
-     * @param pluginVersion the plugin version
-     */
-    private static void addPluginVersionProperty(ClassNode classNode, String pluginVersion) {
-        if (!classNode.hasProperty('version')) {
-            classNode.addProperty(
-                    new PropertyNode(
-                            'version',
-                            Modifier.PUBLIC,
-                            ClassHelper.make(Object),
-                            classNode,
-                            new ConstantExpression(pluginVersion),
-                            null,
-                            null
-                    )
-            )
-        }
-    }
-
-    /**
-     * Adds the Grails plugin annotation containing the project name and version to a class.
-     *
-     * @param classNode the class to annotate
-     * @param projectName the project name
-     * @param projectVersion the project version
-     */
-    private static void addPluginAnnotation(ClassNode classNode, String projectName, String projectVersion) {
-        GrailsASTUtils.addAnnotationOrGetExisting(
-                classNode,
-                GrailsPlugin,
-                [
-                        name: GrailsNameUtils.getPropertyNameForLowerCaseHyphenSeparatedName(projectName),
-                        version: projectVersion
-                ] as Map<String, Object>
-        )
-    }
-
-    /**
-     * Adds an import to the module containing the class.
-     *
-     * @param classNode the class whose module should receive the import
-     * @param className the fully qualified class name to import
-     */
-    private static void addImport(ClassNode classNode, String className) {
-        classNode.module.addImport(
-                className.tokenize('.')[-1],
-                ClassHelper.make(className)
-        )
-    }
-
-    /**
-     * Adds an {@link Artefact} annotation identifying the artefact handler type.
-     *
-     * @param classNode the artefact class
-     * @param handlerType the artefact handler type
-     */
-    private static void addArtefactAnnotation(ClassNode classNode, String handlerType) {
-        def annotationNode = new AnnotationNode(new ClassNode(Artefact))
-        annotationNode.addMember('value', new ConstantExpression(handlerType))
-        classNode.addAnnotation(annotationNode)
     }
 
     /**
