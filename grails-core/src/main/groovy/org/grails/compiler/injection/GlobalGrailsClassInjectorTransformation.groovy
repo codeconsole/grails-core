@@ -321,13 +321,14 @@ class GlobalGrailsClassInjectorTransformation implements ASTTransformation, Comp
      * Writes a new plugin descriptor from the plugin class metadata and supplied artefact classes.
      *
      * @param pluginClassNode the plugin descriptor class
-     * @param pluginVersion the required plugin version when {@code pluginClassNode} is present
+     * @param pluginVersion the required plugin version when {@code pluginClassNode} is present, or
+     *                      {@code null} when writing a resources-only descriptor
      * @param pluginXml the output descriptor file
      * @param artefactClassNames artefact class names to include as resources
      */
     void writePluginXml(
             @Nullable ClassNode pluginClassNode,
-            String pluginVersion,
+            @Nullable String pluginVersion,
             File pluginXml,
             Collection<String> artefactClassNames
     ) {
@@ -491,9 +492,10 @@ class GlobalGrailsClassInjectorTransformation implements ASTTransformation, Comp
      * implementation version when no project version is available.
      *
      * @param classNode the class whose compiler metadata is inspected
-     * @return the resolved project version
+     * @return the resolved project version, or {@code null} when neither compiler metadata nor
+     *         the Grails implementation provides a version
      */
-    private static String resolveProjectVersion(ClassNode classNode) {
+    private static @Nullable String resolveProjectVersion(ClassNode classNode) {
         def projectVersion = classNode.getNodeMetaData('projectVersion')?.toString()
         if (projectVersion == null) {
             // fallback to the version of the grails-core jar if no project version is available
