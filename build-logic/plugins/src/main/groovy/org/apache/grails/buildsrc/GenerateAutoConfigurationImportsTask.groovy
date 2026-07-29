@@ -19,6 +19,7 @@
 package org.apache.grails.buildsrc
 
 import org.gradle.api.DefaultTask
+import org.gradle.api.GradleException
 import org.gradle.api.file.ConfigurableFileCollection
 import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.tasks.Classpath
@@ -46,6 +47,8 @@ abstract class GenerateAutoConfigurationImportsTask extends DefaultTask {
 
     static final String AUTO_CONFIGURATION_ANNOTATION = 'org.springframework.boot.autoconfigure.AutoConfiguration'
 
+    private static final String CLASS_FILE_EXTENSION = '.class'
+
     @InputFiles
     @IgnoreEmptyDirectories
     @PathSensitive(PathSensitivity.RELATIVE)
@@ -61,11 +64,29 @@ abstract class GenerateAutoConfigurationImportsTask extends DefaultTask {
     @Classpath
     abstract ConfigurableFileCollection getScanClasspath()
 
+    /**
+     * The module's own resource directories, checked for a hand-maintained copy of the imports file.
+     * This task's output lands at the same archive path, so a module keeping both would feed the
+     * resource into the jar twice.
+     */
+    @InputFiles
+    @IgnoreEmptyDirectories
+    @PathSensitive(PathSensitivity.RELATIVE)
+    abstract ConfigurableFileCollection getResourcesDirs()
+
     @OutputDirectory
     abstract DirectoryProperty getOutputDirectory()
 
     @TaskAction
     void generate() {
+        List<File> handMaintained = handMaintainedImportsFiles(resourcesDirs.files)
+        if (handMaintained) {
+            throw new GradleException("${path} generates ${IMPORTS_RESOURCE_PATH}, but this module also " +
+                    "keeps one by hand at ${handMaintained*.path.join(', ')}. Both land at the same path in " +
+                    'the jar, so the resource would be contributed twice. Delete the hand-maintained file - ' +
+                    'the generated one lists every @AutoConfiguration in this module.')
+        }
+
         SortedSet<String> discovered = scan(classesDirs.files, scanClasspath.files) { String className, Throwable failure ->
             logger.warn('generateAutoConfigurationImports: could not inspect {} - it will be excluded from ' +
                     'the generated imports file even if it is genuinely annotated @AutoConfiguration. Cause: {}',
@@ -74,6 +95,17 @@ abstract class GenerateAutoConfigurationImportsTask extends DefaultTask {
         File importsFile = outputDirectory.file(IMPORTS_RESOURCE_PATH).get().asFile
         importsFile.parentFile.mkdirs()
         importsFile.text = discovered.isEmpty() ? '' : discovered.join('\n') + '\n'
+    }
+
+    /**
+     * The hand-maintained copies of the imports file found among {@code resourcesDirs}. Static so it
+     * is directly unit-testable without running a real Gradle task.
+     *
+     * @param resourcesDirs the module's resource source directories
+     * @return every existing {@code META-INF/spring/...AutoConfiguration.imports} among them
+     */
+    static List<File> handMaintainedImportsFiles(Set<File> resourcesDirs) {
+        resourcesDirs.collect { new File(it, IMPORTS_RESOURCE_PATH) }.findAll { it.isFile() }
     }
 
     /**
@@ -113,11 +145,18 @@ abstract class GenerateAutoConfigurationImportsTask extends DefaultTask {
             return
         }
         dir.eachFileRecurse(groovy.io.FileType.FILES) { file ->
-            if (!file.name.endsWith('.class') || file.name.contains('$')) {
+            if (!file.name.endsWith(CLASS_FILE_EXTENSION) || file.name.contains('$')) {
                 return
             }
+            // The extension is dropped by length, not with minus: minus removes the first
+            // occurrence of '.class' anywhere, so once the separators have become dots any package
+            // segment starting with 'class' would be mangled instead -
+            // org/grails/plugins/classloading/FooAutoConfiguration.class becoming
+            // org.grails.pluginsloading.FooAutoConfiguration.class, which then fails to load and is
+            // reported as unresolvable rather than registered.
             String relative = dir.toPath().relativize(file.toPath()).toString()
-            String className = relative.replace(File.separator, '.') - '.class'
+            String className = relative[0..<(relative.length() - CLASS_FILE_EXTENSION.length())]
+                    .replace(File.separator, '.')
             try {
                 Class<?> candidate = Class.forName(className, false, scanLoader)
                 if (candidate.isAnnotationPresent(autoConfigurationAnnotation)) {

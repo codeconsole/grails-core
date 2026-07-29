@@ -170,4 +170,52 @@ class GenerateAutoConfigurationImportsTaskSpec extends Specification {
         reportedFailures == ['Broken']
     }
 
+    def "finds a class whose package segment begins with the class-file extension"() {
+        given: "a package named so that stripping '.class' by first occurrence would mangle the name"
+        File srcDir = new File(tempDir, 'src')
+        new File(srcDir, 'fixture/classloading').mkdirs()
+        new File(srcDir, 'fixture/classloading/ScannedAutoConfig.groovy').text = '''
+            package fixture.classloading
+
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @AutoConfiguration
+            class ScannedAutoConfig {
+            }
+        '''
+        File destDir = new File(tempDir, 'classes')
+        destDir.mkdirs()
+        compileFixtures(srcDir, destDir)
+
+        when:
+        List<String> reportedFailures = []
+        SortedSet<String> found = GenerateAutoConfigurationImportsTask.scan(
+                [destDir] as Set, testClasspath(destDir)) { String className, Throwable failure ->
+            reportedFailures << className
+        }
+
+        then:
+        found == ['fixture.classloading.ScannedAutoConfig'] as SortedSet
+        reportedFailures.isEmpty()
+    }
+
+    def "reports a hand-maintained imports file alongside the generated one"() {
+        given: "a module resource directory that already contains the file this task writes"
+        File resources = new File(tempDir, 'resources')
+        File handMaintained = new File(resources, GenerateAutoConfigurationImportsTask.IMPORTS_RESOURCE_PATH)
+        handMaintained.parentFile.mkdirs()
+        handMaintained.text = 'fixture.HandMaintainedAutoConfig\n'
+
+        and: "a second one that does not"
+        File emptyResources = new File(tempDir, 'other-resources')
+        emptyResources.mkdirs()
+
+        expect:
+        GenerateAutoConfigurationImportsTask.handMaintainedImportsFiles(
+                [resources, emptyResources] as Set) == [handMaintained]
+
+        and:
+        GenerateAutoConfigurationImportsTask.handMaintainedImportsFiles([emptyResources] as Set).isEmpty()
+    }
+
 }

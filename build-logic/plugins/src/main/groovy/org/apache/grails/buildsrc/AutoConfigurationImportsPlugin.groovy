@@ -57,6 +57,7 @@ class AutoConfigurationImportsPlugin implements Plugin<Project> {
                     'by scanning compiled classes for @AutoConfiguration'
             t.classesDirs.from(main.output.classesDirs)
             t.scanClasspath.from(main.compileClasspath, main.output.classesDirs)
+            t.resourcesDirs.from(main.resources.srcDirs)
             t.outputDirectory.set(generatedDir)
         }
 
