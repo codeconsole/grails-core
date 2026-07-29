@@ -22,7 +22,7 @@ import spock.lang.Specification
 
 import org.grails.exceptions.reporting.DefaultStackTraceFilterer
 import org.grails.exceptions.reporting.StackTraceFilterer
-import org.grails.testing.support.LogCapture
+import org.apache.grails.core.testing.support.LogCapture
 
 class StackTraceFiltererSpec extends Specification {
 

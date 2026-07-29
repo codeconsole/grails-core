@@ -30,7 +30,7 @@ import org.apache.grails.core.plugins.DefaultPluginDiscovery
 import org.apache.grails.core.plugins.PluginDiscovery
 import org.apache.grails.core.plugins.PluginInfo
 import org.apache.grails.core.plugins.PluginUtils
-import org.grails.testing.support.LogCapture
+import org.apache.grails.core.testing.support.LogCapture
 
 /**
  * Test suite for DefaultGrailsPluginManager

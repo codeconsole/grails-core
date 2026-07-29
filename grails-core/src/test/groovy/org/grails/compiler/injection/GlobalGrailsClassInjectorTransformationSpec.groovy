@@ -42,7 +42,7 @@ import grails.artefact.Artefact
 import grails.plugins.metadata.GrailsPlugin
 import grails.util.GrailsNameUtils
 import org.apache.grails.common.compiler.GroovyTransformOrder
-import org.grails.testing.support.LogCapture
+import org.apache.grails.core.testing.support.LogCapture
 
 class GlobalGrailsClassInjectorTransformationSpec extends Specification {
 

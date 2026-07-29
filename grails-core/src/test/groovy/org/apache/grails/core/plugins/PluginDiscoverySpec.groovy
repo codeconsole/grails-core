@@ -24,7 +24,7 @@ import spock.lang.Unroll
 import org.springframework.core.env.StandardEnvironment
 
 import org.grails.io.support.SpringIOUtils
-import org.grails.testing.support.LogCapture
+import org.apache.grails.core.testing.support.LogCapture
 
 class PluginDiscoverySpec extends Specification {
 

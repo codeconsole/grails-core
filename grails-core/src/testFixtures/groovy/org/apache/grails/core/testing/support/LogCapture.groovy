@@ -16,7 +16,7 @@
  *  specific language governing permissions and limitations
  *  under the License.
  */
-package org.grails.testing.support
+package org.apache.grails.core.testing.support
 
 import ch.qos.logback.classic.Level
 import ch.qos.logback.classic.Logger
