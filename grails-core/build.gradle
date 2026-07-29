@@ -52,6 +52,10 @@ dependencies {
     api 'jakarta.persistence:jakarta.persistence-api'
     api 'jakarta.annotation:jakarta.annotation-api'
 
+    // api, and the only declaration of it anywhere: grails-core is on every Grails project's
+    // classpath, and GlobalGrailsClassInjectorTransformation.compileBeansDsl loads the transform
+    // reflectively and returns silently when it is absent - so this is what makes the implicit
+    // 'def beans = { }' convention reach a third-party plugin author at all.
     api project(':grails-beans-dsl')
 
     implementation 'com.github.ben-manes.caffeine:caffeine'
