@@ -919,6 +919,64 @@ class GrailsBeansASTTransformationSpec extends Specification {
         e.message.contains('Cannot assign')
     }
 
+    def "a bean body reading an inherited Plugin member is rejected under @CompileStatic"() {
+        given: "the habit doWithSpring allows and the generated sibling cannot, since it extends Object"
+        String source = '''
+            import groovy.transform.CompileStatic
+            import grails.compiler.beans.GrailsBeans
+            import grails.plugins.Plugin
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @CompileStatic
+            @GrailsBeans
+            @AutoConfiguration
+            class PluginMemberPlugin extends Plugin {
+                def beans = {
+                    bean('greeting', String) {
+                        config.toString()
+                    }
+                }
+            }
+        '''
+
+        when:
+        compile(source)
+
+        then:
+        MultipleCompilationErrorsException e = thrown(MultipleCompilationErrorsException)
+        e.message.contains('No such property: config')
+    }
+
+    def "the generated sibling holds no channel through which a Plugin instance could arrive"() {
+        given:
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import grails.plugins.Plugin
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @GrailsBeans
+            @AutoConfiguration
+            class DetachedSiblingPlugin extends Plugin {
+                def beans = {
+                    bean('greeting', String) { 'hello' }
+                }
+            }
+        '''
+
+        when:
+        GroovyClassLoader loader = new GroovyClassLoader(getClass().classLoader)
+        loader.parseClass(source)
+        Class<?> sibling = loader.loadClass('DetachedSiblingPluginAutoConfiguration')
+
+        then: 'it extends Object and offers only a no-arg constructor'
+        sibling.superclass == Object
+        sibling.declaredConstructors.every { it.parameterCount == 0 }
+
+        and: 'so it is not a Plugin and cannot hold one'
+        !Plugin.isAssignableFrom(sibling)
+        sibling.declaredFields*.type.every { !Plugin.isAssignableFrom(it) }
+    }
+
     def "an error against a generated node reports the position of the DSL statement that produced it"() {
         given: "a typo in .annotate(...), which Groovy itself reports against the generated member"
         String source = '''
@@ -2617,7 +2675,7 @@ class GrailsBeansASTTransformationSpec extends Specification {
                 String version = "1.0"
 
                 def beans = {
-                    field("encoding", String).value("grails.gsp.view.encoding", "UTF-8")
+                    field("encoding", String).value("grails.views.gsp.encoding", "UTF-8")
                     field("localeResolverType", String).value("grails.i18n.locale.resolver", "session")
 
                     method("buildLocaleResolver", LocaleResolver) {

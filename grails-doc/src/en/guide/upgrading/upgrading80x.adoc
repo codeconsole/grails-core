@@ -1602,6 +1602,18 @@ This was introduced during the Grails 7.1 plugin-loading changes and remains req
 | `ConstraintEvaluatorAdapter` and `GrailsDomainClassAutoConfiguration.constraintsEvaluator(...)`
 | Code that imported the auto-configuration method should use the current `validateableConstraintsEvaluator(...)` bean path and the datastore constraint evaluator APIs. The auto-configuration itself is now named `org.grails.plugins.domain.DomainClassAutoConfiguration`, following the `*GrailsPlugin` -> `*AutoConfiguration` convention; update any `@EnableAutoConfiguration(exclude = ...)` or `spring.autoconfigure.exclude` entry that referenced the old name.
 
+| `grails-core`
+| `org.grails.plugins.core.CoreAutoConfiguration`
+| Now `org.grails.plugins.CoreAutoConfiguration`. The class is generated beside the plugin descriptor that declares its beans, and `CoreGrailsPlugin` lives in `org.grails.plugins`, so the simple name is unchanged but the package is not. Update any `@EnableAutoConfiguration(exclude = ...)`, `spring.autoconfigure.exclude`, or `@AutoConfigureAfter(name = ...)` entry naming the old package. Spring Boot only reports an invalid exclude for a class still on the classpath, so a stale entry is silently ignored rather than reported, and the beans it was meant to suppress are registered anyway.
+
+| `grails-cache`
+| `grails.plugin.cache.GrailsCacheAutoConfiguration`
+| Now `grails.plugin.cache.CacheAutoConfiguration`, following the `*GrailsPlugin` -> `*AutoConfiguration` convention. Update any `@EnableAutoConfiguration(exclude = ...)` or `spring.autoconfigure.exclude` entry that referenced the old name; the same silent-ignore applies as above.
+
+| `grails-databinding`
+| `org.grails.plugins.databinding.DataBindingConfiguration`
+| Now `org.grails.plugins.databinding.DataBindingAutoConfiguration`. It was registered as an auto-configuration while named only `*Configuration`; the name now says what it is. Update any `@EnableAutoConfiguration(exclude = ...)` or `spring.autoconfigure.exclude` entry that referenced the old name; the same silent-ignore applies as above.
+
 | `grails-fields`
 | `BeanPropertyAccessor.getBeanClass()`, its setter, `PropertyPathAccessor.getBeanClass()`, `FormFieldsTagLib.input(...)`, and direct `render*` helper methods
 | Use the `beanType` property exposed by the accessors.
