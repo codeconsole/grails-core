@@ -49,8 +49,8 @@ class GrailsApplicationContextCommandRunner extends DevelopmentGrailsApplication
         if (command) {
             Object autowireTarget = resolveAutowireTarget(command)
 
-            Object skipBootstrap = autowireTarget.hasProperty('skipBootstrap')?.getProperty(autowireTarget)
-            if (skipBootstrap instanceof Boolean && !System.getProperty(Settings.SETTING_SKIP_BOOTSTRAP)) {
+            Boolean skipBootstrap = resolveSkipBootstrap(command)
+            if (skipBootstrap != null && !System.getProperty(Settings.SETTING_SKIP_BOOTSTRAP)) {
                 System.setProperty(Settings.SETTING_SKIP_BOOTSTRAP, skipBootstrap.toString())
             }
 
@@ -137,6 +137,21 @@ class GrailsApplicationContextCommandRunner extends DevelopmentGrailsApplication
     static Object resolveAutowireTarget(Object command) {
         command instanceof ApplicationCommandTargetAware ?
             ((ApplicationCommandTargetAware) command).target : command
+    }
+
+    /**
+     * Reads the optional {@code skipBootstrap} flag declared by a command. The flag is looked up on
+     * the autowire target rather than on {@code command} itself, so a command reached through the
+     * deprecated Grails 7 compatibility layer keeps its flag: the adapter forwards {@code handle}
+     * but not the arbitrary properties a command declares.
+     *
+     * @param command the command resolved from the registry
+     * @return the declared flag, or {@code null} when the target declares no {@code skipBootstrap} property or declares one that is not a {@link Boolean}
+     */
+    static Boolean resolveSkipBootstrap(Object command) {
+        Object autowireTarget = resolveAutowireTarget(command)
+        Object skipBootstrap = autowireTarget.hasProperty('skipBootstrap')?.getProperty(autowireTarget)
+        skipBootstrap instanceof Boolean ? (Boolean) skipBootstrap : null
     }
 
     /**

@@ -38,10 +38,12 @@ class ApplicationCommandProviderSpec extends Specification {
 
     private ClassLoader originalContextClassLoader
     private URLClassLoader factoryClassLoader
+    private URLClassLoader registryDefiningClassLoader
 
     def cleanup() {
         Thread.currentThread().contextClassLoader = originalContextClassLoader
         factoryClassLoader?.close()
+        registryDefiningClassLoader?.close()
     }
 
     def "continues loading providers when one provider constructor fails"() {
@@ -80,9 +82,6 @@ class ApplicationCommandProviderSpec extends Specification {
     def "instantiates a modern command once when distinct resources declare the same class"() {
         given:
         ConstructorCountingApplicationCommand.constructorCalls = 0
-        new ApplicationContextCommandRegistry()
-        int registryClassLoaderConstructions = ConstructorCountingApplicationCommand.constructorCalls
-        ConstructorCountingApplicationCommand.constructorCalls = 0
         URL firstPlugin = createFactoryJar(
                 'first-counting-command.jar',
                 'example.FirstFactory=example.FirstImplementation',
@@ -98,7 +97,32 @@ class ApplicationCommandProviderSpec extends Specification {
 
         then:
         registry.findCommand('counting-modern') instanceof ConstructorCountingApplicationCommand
-        ConstructorCountingApplicationCommand.constructorCalls == registryClassLoaderConstructions + 1
+        ConstructorCountingApplicationCommand.constructorCalls == 1
+    }
+
+    def "instantiates the same command class once across registry and context classloaders"() {
+        given: 'a factories declaration reachable from the registry classloader and the context classloader'
+        SharedCountingApplicationCommand.constructorCalls = 0
+        URL plugin = createFactoryJar(
+                'shared-counting-command.jar',
+                'example.OtherFactory=example.OtherImplementation',
+                "${ApplicationCommand.name}=${SharedCountingApplicationCommand.name}")
+        // The registry scans its own defining classloader and then the thread context classloader.
+        // Define the registry class in a loader that also carries the factories jar so the first
+        // scan finds the declaration, and hand the same jar to the context classloader for the
+        // second. The command class itself stays on the shared parent test classpath, so both
+        // scans resolve the identical Class - the case that was previously constructed twice.
+        registryDefiningClassLoader = new RegistryDefiningClassLoader([plugin] as URL[], getClass().classLoader)
+        useFactoryResources([plugin])
+
+        when: 'the singleton instance is read, since the eager @Singleton initializer constructs it'
+        def registry = registryDefiningClassLoader
+                .loadClass(ApplicationContextCommandRegistry.name)
+                .instance
+
+        then:
+        registry.findCommand('counting-shared') instanceof SharedCountingApplicationCommand
+        SharedCountingApplicationCommand.constructorCalls == 1
     }
 
     def "ordered modern commands win duplicate-name collisions"() {
@@ -167,7 +191,7 @@ class ApplicationCommandProviderSpec extends Specification {
         thrown.is(failure)
 
         where:
-        failure << [new StackOverflowError(), new ThreadDeath()]
+        failure << [new StackOverflowError(), new OutOfMemoryError()]
     }
 
     def "reports a provider load-time linkage error with its factory origin and continues discovery"() {
@@ -209,7 +233,7 @@ class ApplicationCommandProviderSpec extends Specification {
         thrown.is(failure)
 
         where:
-        failure << [new StackOverflowError(), new ThreadDeath()]
+        failure << [new StackOverflowError(), new OutOfMemoryError()]
     }
 
     @Unroll
@@ -230,7 +254,7 @@ class ApplicationCommandProviderSpec extends Specification {
         thrown.is(failure)
 
         where:
-        failure << [new StackOverflowError(), new ThreadDeath()]
+        failure << [new StackOverflowError(), new OutOfMemoryError()]
     }
 
     @Unroll
@@ -251,7 +275,7 @@ class ApplicationCommandProviderSpec extends Specification {
         thrown.is(failure)
 
         where:
-        failure << [new StackOverflowError(), new ThreadDeath()]
+        failure << [new StackOverflowError(), new OutOfMemoryError()]
     }
 
     def "reports each legacy command plugin once without loading its command classes"() {
@@ -298,18 +322,60 @@ class ApplicationCommandProviderSpec extends Specification {
         !errorOutput.toString('UTF-8').contains('ships Grails 7 commands')
     }
 
-    def "continues command discovery when a factory resource is malformed"() {
+    def "reports a malformed factory resource and continues command discovery"() {
         given:
         String malformedFactory = 'grails.dev.commands.ApplicationCommand=' + '\\' + 'uInvalid'
         URL plugin = createFactoryJar('malformed-plugin.jar', malformedFactory)
         useFactoryResources([plugin])
+        ByteArrayOutputStream errorOutput = new ByteArrayOutputStream()
 
         when:
-        ApplicationContextCommandRegistry registry = new ApplicationContextCommandRegistry()
+        ApplicationContextCommandRegistry registry = captureStandardError(errorOutput) {
+            new ApplicationContextCommandRegistry()
+        }
 
         then:
         registry.missingCommandHint == null
         noExceptionThrown()
+        String captured = errorOutput.toString('UTF-8')
+        captured.contains('Unable to read factory declarations')
+        captured.contains('malformed-plugin.jar')
+        captured.contains('META-INF/grails.factories')
+
+        and: 'the cause is reported, since it is what tells the user why the resource was dropped'
+        captured.contains(IllegalArgumentException.name)
+        captured.contains('Malformed')
+    }
+
+    def "reports a malformed cli factory resource without losing another plugin's modern commands"() {
+        given:
+        String malformedCliFactory = ApplicationCommand.name + '=' + '\\' + 'uInvalid'
+        URL malformedPlugin = createFactoryJar(
+                'malformed-cli-plugin.jar',
+                'example.OtherFactory=example.OtherImplementation',
+                malformedCliFactory)
+        URL modernPlugin = createFactoryJar(
+                'modern-command-plugin.jar',
+                'example.OtherFactory=example.OtherImplementation',
+                "${ApplicationCommand.name}=${ModernTestCommand.name}")
+        useFactoryResources([malformedPlugin, modernPlugin])
+        ByteArrayOutputStream errorOutput = new ByteArrayOutputStream()
+
+        when:
+        ApplicationContextCommandRegistry registry = captureStandardError(errorOutput) {
+            new ApplicationContextCommandRegistry()
+        }
+
+        then:
+        registry.findCommand('modern-test') instanceof ModernTestCommand
+        String captured = errorOutput.toString('UTF-8')
+        captured.contains('Unable to read factory declarations')
+        captured.contains('malformed-cli-plugin.jar')
+        captured.contains('META-INF/grails-cli.factories')
+
+        and: 'the cause is reported, since it is what tells the user why the resource was dropped'
+        captured.contains(IllegalArgumentException.name)
+        captured.contains('Malformed')
     }
 
     def "continues command discovery when factory resources cannot be enumerated"() {
@@ -326,10 +392,10 @@ class ApplicationCommandProviderSpec extends Specification {
         noExceptionThrown()
     }
 
-    def "uses the resource URL when plugin origin resolution fails"() {
+    def "reports the factory resource URL as the plugin origin when the resource is not a jar"() {
         given:
-        URL factoryResource = new URL(null, 'memory:broken-origin/META-INF/grails.factories',
-                new FailingOriginUrlStreamHandler())
+        URL factoryResource = new URL(null, 'memory:legacy-plugin/META-INF/grails.factories',
+                new FixedFactoryResourceUrlStreamHandler())
         originalContextClassLoader = Thread.currentThread().contextClassLoader
         factoryClassLoader = new FixedFactoryResourceClassLoader(factoryResource, getClass().classLoader)
         Thread.currentThread().contextClassLoader = factoryClassLoader
@@ -342,7 +408,7 @@ class ApplicationCommandProviderSpec extends Specification {
 
         then:
         registry.missingCommandHint != null
-        errorOutput.toString('UTF-8').contains('Plugin memory:broken-origin/META-INF/grails.factories ships Grails 7 commands')
+        errorOutput.toString('UTF-8').contains('Plugin memory:legacy-plugin/META-INF/grails.factories ships Grails 7 commands')
     }
 
     def "does not report legacy command diagnostics when a provider handles the factory key"() {
@@ -407,6 +473,12 @@ class ApplicationCommandProviderSpec extends Specification {
         originalContextClassLoader = Thread.currentThread().contextClassLoader
         factoryClassLoader = new TrackingFactoryClassLoader(
                 resources as URL[], getClass().classLoader, duplicateResources, loadFailures)
+        // Bootstrap loadClass before the loader becomes the context classloader: the JDK bean
+        // introspector resolves *BeanInfo classes through the context classloader, and a
+        // first-ever invocation of this Groovy-compiled loadClass in the middle of that lookup
+        // triggers Groovy class initialization that recurses into the same lookup and dies with
+        // a ClassCircularityError.
+        factoryClassLoader.loadClass(Object.name)
         Thread.currentThread().contextClassLoader = factoryClassLoader
     }
 
@@ -483,6 +555,25 @@ class ConstructorCountingApplicationCommand implements ApplicationCommand {
     @Override
     String getName() {
         'counting-modern'
+    }
+
+    @Override
+    boolean handle(ExecutionContext executionContext) {
+        true
+    }
+}
+
+class SharedCountingApplicationCommand implements ApplicationCommand {
+
+    static int constructorCalls
+
+    SharedCountingApplicationCommand() {
+        constructorCalls++
+    }
+
+    @Override
+    String getName() {
+        'counting-shared'
     }
 
     @Override
@@ -632,6 +723,65 @@ class TrackingFactoryClassLoader extends URLClassLoader {
     }
 }
 
+/**
+ * Defines {@link ApplicationContextCommandRegistry} (and its generated inner classes) itself, so
+ * that the registry's own classloader sees the factory jars handed to this loader. The
+ * package-scoped {@link ApplicationCommandDiagnostics} collaborator must be defined alongside it,
+ * since package-private access does not cross classloaders. Everything else - including the
+ * command classes the factories declare - delegates to the parent test classpath, which is what
+ * makes the same command Class reachable through two distinct classloaders.
+ */
+@CompileStatic
+class RegistryDefiningClassLoader extends URLClassLoader {
+
+    private static final List<String> CHILD_FIRST_CLASSES =
+            [ApplicationContextCommandRegistry.name, ApplicationCommandDiagnostics.name].asImmutable()
+
+    RegistryDefiningClassLoader(URL[] urls, ClassLoader parent) {
+        super(urls, parent)
+    }
+
+    @Override
+    protected Class<?> loadClass(String name, boolean resolve) throws ClassNotFoundException {
+        // Deliberately free of closures and other Groovy runtime dispatch: this runs in the middle
+        // of classloading, where triggering metaclass initialization recurses into this method.
+        if (childFirst(name)) {
+            Class<?> loaded = findLoadedClass(name)
+            if (loaded == null) {
+                byte[] classBytes = readParentClassBytes(name)
+                loaded = defineClass(name, classBytes, 0, classBytes.length)
+            }
+            if (resolve) {
+                resolveClass(loaded)
+            }
+            return loaded
+        }
+        super.loadClass(name, resolve)
+    }
+
+    private byte[] readParentClassBytes(String name) throws ClassNotFoundException {
+        InputStream input = parent.getResourceAsStream(name.replace('.', '/') + '.class')
+        if (input == null) {
+            throw new ClassNotFoundException(name)
+        }
+        try {
+            input.readAllBytes()
+        }
+        finally {
+            input.close()
+        }
+    }
+
+    private static boolean childFirst(String name) {
+        for (String childFirstClass : CHILD_FIRST_CLASSES) {
+            if (name == childFirstClass || name.startsWith(childFirstClass + '$')) {
+                return true
+            }
+        }
+        false
+    }
+}
+
 @CompileStatic
 class ThrowingFactoryResourcesClassLoader extends URLClassLoader {
 
@@ -666,16 +816,10 @@ class FixedFactoryResourceClassLoader extends URLClassLoader {
 }
 
 @CompileStatic
-class FailingOriginUrlStreamHandler extends URLStreamHandler {
-
-    private int connectionCount
+class FixedFactoryResourceUrlStreamHandler extends URLStreamHandler {
 
     @Override
     protected URLConnection openConnection(URL url) throws IOException {
-        connectionCount++
-        if (connectionCount > 1) {
-            throw new AssertionError('origin unavailable')
-        }
         new URLConnection(url) {
             @Override
             void connect() {

@@ -24,6 +24,7 @@ import groovy.transform.CompileStatic
 import groovy.util.logging.Slf4j
 
 import grails.dev.commands.ApplicationCommand as LegacyApplicationCommand
+import org.springframework.core.OrderComparator
 import org.springframework.util.ClassUtils
 
 import org.apache.grails.core.cli.ApplicationCommand
@@ -58,15 +59,11 @@ class LegacyApplicationCommandProvider implements ApplicationCommandFactoryKeyPr
             addLegacyCommandClasses(legacyClasses, contextClassLoader)
         }
 
+        List<LegacyApplicationCommandAdapter> adapters = []
         for (Class<? extends LegacyApplicationCommand> legacyClass : legacyClasses) {
             try {
                 LegacyApplicationCommand legacyCommand = instantiate(legacyClass)
-                ApplicationCommand command = new LegacyApplicationCommandAdapter(legacyCommand)
-                String installedName = registrar.register(command)
-                if (installedName != null && !warningLogged) {
-                    log.warn('Command \'{}\' from a Grails 7 plugin was loaded through the deprecated grails.dev.commands compatibility layer. Ask the plugin author to migrate to the org.apache.grails.core.cli command API and publish a -cli companion artifact; this compatibility path will be removed in a future major release.', installedName)
-                    warningLogged = true
-                }
+                adapters.add(new LegacyApplicationCommandAdapter(legacyCommand))
             }
             catch (LinkageError e) {
                 rethrowIfFatal(e)
@@ -77,6 +74,21 @@ class LegacyApplicationCommandProvider implements ApplicationCommandFactoryKeyPr
                 rethrowIfFatal(e)
                 log.warn('Failed to load a Grails 7 legacy command from class \'{}\' through the deprecated grails.dev.commands compatibility layer; skipping it.',
                         legacyClass.name, e)
+            }
+        }
+
+        // Registration is first-wins, so the adapters are ordered the same way the Grails 8 commands are: by class
+        // name for a stable baseline, then by the order the adapted command declares. Without this, two Grails 7
+        // plugins shipping the same command name would be resolved by jar scan order.
+        adapters.sort { LegacyApplicationCommandAdapter first, LegacyApplicationCommandAdapter second ->
+            first.target.class.name <=> second.target.class.name
+        }
+        OrderComparator.sort(adapters)
+        for (ApplicationCommand command : adapters) {
+            String installedName = registrar.register(command)
+            if (installedName != null && !warningLogged) {
+                log.warn('Command \'{}\' from a Grails 7 plugin was loaded through the deprecated grails.dev.commands compatibility layer. Ask the plugin author to migrate to the org.apache.grails.core.cli command API and publish a -cli companion artifact; this compatibility path will be removed in a future major release.', installedName)
+                warningLogged = true
             }
         }
     }
@@ -140,9 +152,6 @@ class LegacyApplicationCommandProvider implements ApplicationCommandFactoryKeyPr
         while (current != null && seen.add(current)) {
             if (current instanceof VirtualMachineError) {
                 throw (VirtualMachineError) current
-            }
-            if (current instanceof ThreadDeath) {
-                throw (ThreadDeath) current
             }
             current = current.cause
         }

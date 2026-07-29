@@ -43,22 +43,56 @@ class ApplicationContextCommandRegistry {
         ClassLoader registryClassLoader = ApplicationContextCommandRegistry.classLoader
         ClassLoader contextClassLoader = Thread.currentThread().contextClassLoader
 
-        addApplicationCommands(registryClassLoader)
-
-        // If this is reflectively loaded from the delegating cli, we need to make sure the context class loader is
-        // also used to pull any commands that are loaded from the gradle classpath. Only when it is a distinct
-        // classloader: repeating the scan for the same classloader would re-instantiate every command (whose
-        // constructor may have side effects) just to discard it on the name-collision check below.
-        if (contextClassLoader != null && contextClassLoader != registryClassLoader) {
-            addApplicationCommands(contextClassLoader)
-        }
+        addApplicationCommands(registryClassLoader, contextClassLoader)
 
         Set<String> handledFactoryKeys = loadCommandProviders(registryClassLoader, contextClassLoader)
         missingCommandHint = ApplicationCommandDiagnostics.detectMissingCommandHint(
                 registryClassLoader, contextClassLoader, handledFactoryKeys)
     }
 
-    private void addApplicationCommands(ClassLoader classLoader) {
+    private void addApplicationCommands(ClassLoader registryClassLoader, ClassLoader contextClassLoader) {
+        Map<Class<? extends ApplicationCommand>, String> commandOrigins = new LinkedHashMap<>()
+        addApplicationCommandClasses(commandOrigins, registryClassLoader)
+
+        // If this is reflectively loaded from the delegating cli, we need to make sure the context class loader is
+        // also used to pull any commands that are loaded from the gradle classpath. The classes are collected before
+        // any of them is instantiated: a class reachable through both classloaders would otherwise be instantiated
+        // twice (its constructor may have side effects) just to be discarded on the name-collision check below.
+        if (contextClassLoader != null && contextClassLoader != registryClassLoader) {
+            addApplicationCommandClasses(commandOrigins, contextClassLoader)
+        }
+
+        List<ApplicationCommand> discoveredCommands = []
+        for (Map.Entry<Class<? extends ApplicationCommand>, String> entry : commandOrigins) {
+            try {
+                discoveredCommands.add(instantiate(entry.key))
+            }
+            catch (LinkageError e) {
+                rethrowIfFatal(e)
+                log.error('Unable to link application command \'{}\' declared in \'{}\'. This is a Grails binary-compatibility issue; please report it to the Grails framework. The command is unavailable.',
+                        entry.key.name, entry.value, e)
+            }
+            catch (Throwable e) {
+                rethrowIfFatal(e)
+                log.warn('Failed to load application command \'{}\' declared in \'{}\'; skipping it.',
+                        entry.key.name, entry.value, e)
+            }
+        }
+
+        discoveredCommands.sort { ApplicationCommand first, ApplicationCommand second ->
+            first.class.name <=> second.class.name
+        }
+        OrderComparator.sort(discoveredCommands)
+        for (ApplicationCommand command : discoveredCommands) {
+            if (!commands.containsKey(command.name)) {
+                commands[command.name] = command
+            }
+        }
+    }
+
+    private static void addApplicationCommandClasses(
+            Map<Class<? extends ApplicationCommand>, String> commandOrigins,
+            ClassLoader classLoader) {
         Map<String, List<String>> declarations
         try {
             declarations = GrailsFactoriesLoader.loadFactoryDeclarations(
@@ -70,22 +104,21 @@ class ApplicationContextCommandRegistry {
             return
         }
 
-        Map<String, String> commandOrigins = new LinkedHashMap<>()
+        Map<String, String> declaredOrigins = new LinkedHashMap<>()
         for (Map.Entry<String, List<String>> entry : declarations) {
             for (String commandName : entry.value) {
-                commandOrigins.putIfAbsent(commandName, entry.key)
+                declaredOrigins.putIfAbsent(commandName, entry.key)
             }
         }
 
-        List<ApplicationCommand> discoveredCommands = []
-        for (Map.Entry<String, String> entry : commandOrigins) {
+        for (Map.Entry<String, String> entry : declaredOrigins) {
             try {
                 Class<?> commandClass = ClassUtils.forName(entry.key, classLoader)
                 if (!ApplicationCommand.isAssignableFrom(commandClass)) {
                     throw new IllegalArgumentException(
                             "Class [${entry.key}] is not assignable to [${ApplicationCommand.name}]")
                 }
-                discoveredCommands.add(instantiateCommand((Class<? extends ApplicationCommand>) commandClass))
+                commandOrigins.putIfAbsent((Class<? extends ApplicationCommand>) commandClass, entry.value)
             }
             catch (LinkageError e) {
                 rethrowIfFatal(e)
@@ -96,16 +129,6 @@ class ApplicationContextCommandRegistry {
                 rethrowIfFatal(e)
                 log.warn('Failed to load application command \'{}\' declared in \'{}\'; skipping it.',
                         entry.key, entry.value, e)
-            }
-        }
-
-        discoveredCommands.sort { ApplicationCommand first, ApplicationCommand second ->
-            first.class.name <=> second.class.name
-        }
-        OrderComparator.sort(discoveredCommands)
-        for (ApplicationCommand command : discoveredCommands) {
-            if (!commands.containsKey(command.name)) {
-                commands[command.name] = command
             }
         }
     }
@@ -190,23 +213,9 @@ class ApplicationContextCommandRegistry {
         }
     }
 
-    private static ApplicationCommandProvider instantiate(Class<? extends ApplicationCommandProvider> providerClass) {
+    private static <T> T instantiate(Class<? extends T> type) {
         try {
-            providerClass.getDeclaredConstructor().newInstance()
-        }
-        catch (InvocationTargetException e) {
-            Throwable cause = e.cause
-            rethrowIfFatal(cause)
-            if (cause instanceof LinkageError) {
-                throw (LinkageError) cause
-            }
-            throw e
-        }
-    }
-
-    private static ApplicationCommand instantiateCommand(Class<? extends ApplicationCommand> commandClass) {
-        try {
-            commandClass.getDeclaredConstructor().newInstance()
+            type.getDeclaredConstructor().newInstance()
         }
         catch (InvocationTargetException e) {
             Throwable cause = e.cause
@@ -224,9 +233,6 @@ class ApplicationContextCommandRegistry {
         while (current != null && seen.add(current)) {
             if (current instanceof VirtualMachineError) {
                 throw (VirtualMachineError) current
-            }
-            if (current instanceof ThreadDeath) {
-                throw (ThreadDeath) current
             }
             current = current.cause
         }

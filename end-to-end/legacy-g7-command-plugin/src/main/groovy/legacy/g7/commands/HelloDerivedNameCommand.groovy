@@ -16,4 +16,24 @@
  *  specific language governing permissions and limitations
  *  under the License.
  */
-rootProject.name = 'legacy-g7-command-plugin'
+package legacy.g7.commands
+
+import grails.dev.commands.GrailsApplicationCommand
+
+/**
+ * Mirrors the command shape {@code create-command} generated on Grails 7: it implements the trait
+ * and declares neither {@code getName()} nor {@code getDescription()}, so the registered command
+ * name is whatever the trait derives from the class name. Reading {@code name} inside
+ * {@code handle()} exercises that derivation from the precompiled Groovy 4 binary rather than
+ * from the recompiled trait alone.
+ */
+class HelloDerivedNameCommand implements GrailsApplicationCommand {
+
+    @Override
+    boolean handle() {
+        File outputDirectory = file('build/hello-derived-name')
+        mkdir(outputDirectory)
+        render("G7-DERIVED-NAME-${name}", new File(outputDirectory, 'rendered.txt'))
+        true
+    }
+}

@@ -17,9 +17,17 @@
  *  under the License.
  */
 
-// Standalone composite-build fixture compiled against published Grails 7 / Groovy 4.
-// Included by the monorepo root so grails-test-examples-legacy-commands can consume a real
-// precompiled Grails 7 ApplicationCommand binary instead of recompiling sources under Grails 8.
+// Standalone build compiled against published Grails 7 / Groovy 4, producing a real precompiled
+// Grails 7 ApplicationCommand binary for legacy-commands to consume instead of recompiling the
+// sources under Grails 8.
+//
+// This is deliberately not part of the end-to-end build and is not composed with includeBuild:
+// substitution would rewrite org.apache.grails:grails-core to this repo's Groovy 5 project, which
+// is exactly what the fixture exists to avoid.
+//
+// It builds under the JDK declared in .sdkmanrc (17, the minimum for a Grails 7 app) rather than a
+// Gradle toolchain, so the surrounding builds never inherit a second JDK requirement. Run it with
+// `sdk env` from this directory, or see .github/workflows/end-to-end.yml for how CI provisions it.
 plugins {
     id 'java-library'
     id 'groovy'
@@ -27,12 +35,6 @@ plugins {
 
 group = 'legacy.g7.commands'
 version = '0.0.1'
-
-java {
-    toolchain {
-        languageVersion = JavaLanguageVersion.of(17)
-    }
-}
 
 repositories {
     mavenCentral()
@@ -61,15 +63,21 @@ def groovyCompileVersion = providers.provider {
     resolvedCompileVersion('org.apache.groovy', 'groovy')
 }
 
+// With no toolchain or release set (deliberate - see above), the JVM running Gradle is what
+// determines the class-file version, so record it for the CI verify step to assert against.
+def buildJdkSpec = providers.systemProperty('java.specification.version')
+
 tasks.named('jar', Jar).configure {
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     inputs.property('grailsCompileVersion', grailsCompileVersion)
     inputs.property('groovyCompileVersion', groovyCompileVersion)
+    inputs.property('buildJdkSpec', buildJdkSpec)
     doFirst {
         manifest.attributes(
                 'Grails-Legacy-Command-Fixture': 'true',
                 'Grails-Compile-Version': grailsCompileVersion.get(),
-                'Groovy-Compile-Version': groovyCompileVersion.get()
+                'Groovy-Compile-Version': groovyCompileVersion.get(),
+                'Build-Jdk-Spec': buildJdkSpec.get()
         )
     }
 }
