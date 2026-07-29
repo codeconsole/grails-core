@@ -420,14 +420,14 @@ class GlobalGrailsClassInjectorTransformation implements ASTTransformation, Comp
         try {
             def pluginXml = IOUtils.createXmlSlurper().parse(pluginXmlFile)
             if (pluginClassNode) {
-                def pluginProperties = writePluginXmlProperties(pluginClassNode, pluginVersion, pluginXml)
+                def pluginProperties = updatePluginXmlProperties(pluginClassNode, pluginVersion, pluginXml)
                 def pluginExcludes = pluginProperties.get('pluginExcludes')
                 if (pluginExcludes instanceof List) {
                     pluginExcludePatterns.clear()
                     pluginExcludePatterns.addAll(pluginExcludes as List<String>)
                 }
             }
-            writePluginXmlResources(pluginXml, artefactClassNames)
+            updatePluginXmlResources(pluginXml, artefactClassNames)
             handleExcludes(pluginXml)
 
             pluginXmlFile.withWriter(StandardCharsets.UTF_8.name()) {
@@ -627,7 +627,7 @@ class GlobalGrailsClassInjectorTransformation implements ASTTransformation, Comp
      * @return the plugin properties extracted from the class
      */
     @CompileDynamic
-    private static Map writePluginXmlProperties(
+    private static Map updatePluginXmlProperties(
             ClassNode pluginClassNode,
             String pluginVersion,
             GPathResult pluginXml
@@ -663,7 +663,7 @@ class GlobalGrailsClassInjectorTransformation implements ASTTransformation, Comp
      * @param artefactClassNames artefact class names to add
      */
     @CompileDynamic
-    private static void writePluginXmlResources(GPathResult pluginXml, Collection<String> artefactClassNames) {
+    private static void updatePluginXmlResources(GPathResult pluginXml, Collection<String> artefactClassNames) {
         def resources = pluginXml.resources
         for (def className : artefactClassNames) {
             if (!resources.resource.find { it.text() == className }) {
