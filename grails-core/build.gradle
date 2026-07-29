@@ -102,7 +102,7 @@ dependencies {
     testRuntimeOnly 'org.objenesis:objenesis' // Required by Spock for mocking classes without default constructor
 
     testFixturesImplementation(platform(project(':grails-bom')))
-    testFixturesApi 'ch.qos.logback:logback-classic' // Used for checking log output in tests
+    testFixturesApi 'ch.qos.logback:logback-classic' // LogCapture uses Logback types in its API
 }
 
 def writeProps = tasks.register('writeGrailsProperties', WriteProperties) {
