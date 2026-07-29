@@ -767,6 +767,187 @@ class GrailsBeansASTTransformationSpec extends Specification {
         autoConfigClass.getDeclaredField('encoding').getAnnotation(Value).value() == '${app.encoding:UTF-8}'
     }
 
+    def "field(...).value(...) resolves a constant inherited from an interface in the same compilation unit"() {
+        given: "the shape every grails.config.Settings key has, in a source unit that is still compiling"
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            interface BaseSameUnitKeys {
+                String ENCODING_KEY = 'app.encoding'
+            }
+
+            interface SameUnitKeys extends BaseSameUnitKeys {
+            }
+
+            @GrailsBeans
+            @AutoConfiguration
+            class InterfaceConstantFixture {
+                def beans = {
+                    field('encoding', String).value(SameUnitKeys.ENCODING_KEY, 'UTF-8')
+                }
+            }
+        '''
+
+        when:
+        GroovyClassLoader loader = new GroovyClassLoader(getClass().classLoader)
+        loader.parseClass(source)
+        Class<?> fixture = loader.loadClass('InterfaceConstantFixture')
+
+        then:
+        fixture.getDeclaredField('encoding').getAnnotation(Value).value() == '${app.encoding:UTF-8}'
+    }
+
+    def "an unresolvable .value(...) constant on a same-unit owner is a located error, not an internal compiler error"() {
+        given: "a typo against a constant declared in the same file, for which no loaded Class exists yet"
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            class SameFileKeys {
+                public static final String ENCODING_KEY = 'app.encoding'
+            }
+
+            @GrailsBeans
+            @AutoConfiguration
+            class UnresolvableConstantFixture {
+                def beans = {
+                    field('encoding', String).value(SameFileKeys.NO_SUCH_KEY, 'UTF-8')
+                }
+            }
+        '''
+
+        when:
+        compile(source)
+
+        then:
+        MultipleCompilationErrorsException e = thrown(MultipleCompilationErrorsException)
+        e.message.contains('.value(...) arguments must be compile-time String constants')
+    }
+
+    def "an .annotate(...) attribute written as a concatenation folds under @CompileStatic"() {
+        given: "the same shape .value(...) folds, which the static compiler would otherwise rewrite into .plus() calls"
+        String source = '''
+            import groovy.transform.CompileStatic
+            import grails.compiler.beans.GrailsBeans
+            import grails.plugins.Plugin
+            import org.springframework.beans.factory.annotation.Value
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            interface ConcatKeys {
+                String LOCALE_RESOLVER = 'grails.i18n.locale.resolver'
+            }
+
+            @CompileStatic
+            @GrailsBeans
+            @AutoConfiguration
+            class ConcatAnnotatePlugin extends Plugin {
+                def beans = {
+                    field('localeResolverType', String).annotate(Value, value: '${' + ConcatKeys.LOCALE_RESOLVER + ':session}')
+                }
+            }
+        '''
+
+        when:
+        GroovyClassLoader loader = new GroovyClassLoader(getClass().classLoader)
+        loader.parseClass(source)
+        Class<?> autoConfigClass = loader.loadClass('ConcatAnnotatePluginAutoConfiguration')
+
+        then:
+        autoConfigClass.getDeclaredField('localeResolverType').getAnnotation(Value).value() ==
+                '${grails.i18n.locale.resolver:session}'
+    }
+
+    def "the consumed beans property leaves no field behind for another member to compile against"() {
+        given: "a class whose own method still reads beans after the transform has taken it"
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @GrailsBeans
+            @AutoConfiguration
+            class LeftoverFieldFixture {
+                def beans = {
+                    bean('greeting', String) { 'hello' }
+                }
+
+                def peek() {
+                    beans
+                }
+            }
+        '''
+
+        when:
+        Class<?> fixture = compile(source)
+
+        then: 'the backing field is gone from the class, not merely from its field list'
+        fixture.declaredFields.every { it.name != 'beans' }
+
+        when: 'the stale member is reached'
+        fixture.getDeclaredConstructor().newInstance().peek()
+
+        then: 'it fails as a missing Groovy property rather than a NoSuchFieldError'
+        thrown(MissingPropertyException)
+    }
+
+    def "@TypeChecked on a Plugin subclass reaches the bean bodies lifted onto the generated sibling"() {
+        given: "a body that only a type checker would reject"
+        String source = '''
+            import groovy.transform.TypeChecked
+            import grails.compiler.beans.GrailsBeans
+            import grails.plugins.Plugin
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @TypeChecked
+            @GrailsBeans
+            @AutoConfiguration
+            class TypeCheckedPlugin extends Plugin {
+                def beans = {
+                    bean('greeting', String) {
+                        Integer notAnInteger = 'definitely a String'
+                        'hello'
+                    }
+                }
+            }
+        '''
+
+        when:
+        compile(source)
+
+        then:
+        MultipleCompilationErrorsException e = thrown(MultipleCompilationErrorsException)
+        e.message.contains('Cannot assign')
+    }
+
+    def "an error against a generated node reports the position of the DSL statement that produced it"() {
+        given: "a typo in .annotate(...), which Groovy itself reports against the generated member"
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+            import org.springframework.core.annotation.Order
+
+            @GrailsBeans
+            @AutoConfiguration
+            class PositionedErrorFixture {
+                def beans = {
+                    bean('greeting', String).annotate(Order, valu: 1) {
+                        'hello'
+                    }
+                }
+            }
+        '''
+
+        when:
+        compile(source)
+
+        then:
+        MultipleCompilationErrorsException e = thrown(MultipleCompilationErrorsException)
+        e.message.contains("'valu' is not part of the annotation Order")
+
+        and: 'located at the offending statement rather than nowhere'
+        !e.message.contains('line -1')
+    }
+
     def "field(...).value(placeholder) passes a string already carrying a placeholder or SpEL expression through verbatim"() {
         given: "a complete placeholder, a SpEL expression, and a mixed literal with an embedded placeholder"
         String source = '''
@@ -979,6 +1160,7 @@ class GrailsBeansASTTransformationSpec extends Specification {
             import org.springframework.beans.factory.annotation.Value
             import org.springframework.boot.autoconfigure.AutoConfiguration
             import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication
+            import org.springframework.boot.autoconfigure.condition.SearchStrategy
             import org.springframework.context.annotation.Primary
             import org.springframework.core.annotation.Order
 
@@ -1073,9 +1255,19 @@ class GrailsBeansASTTransformationSpec extends Specification {
         'same-named bean(...) statements guarded only by the bare return-type back-off' |
                 "bean('x', String).conditionalOnMissingBean() { 'a' }; bean('x', Integer).conditionalOnMissingBean() { 1 }" |
                 'carries its own discriminating condition'
+        'same-named bean(...) statements guarded only by a name-based conditionalOnMissingBean(...)' |
+                "bean('x', String).conditionalOnMissingBean(name: 'x') { 'a' }; bean('x', Integer).conditionalOnMissingBean(name: 'x') { 1 }" |
+                'carries its own discriminating condition'
+        'same-named bean(...) statements guarded only by a search-scoped conditionalOnMissingBean(...)' |
+                "bean('x', String).conditionalOnMissingBean(name: 'x', search: SearchStrategy.CURRENT) { 'a' }; bean('x', Integer).conditionalOnMissingBean(name: 'x', search: SearchStrategy.CURRENT) { 1 }" |
+                'carries its own discriminating condition'
         'a field(...) and a method(...) sharing the same name' |
                 "field('x', String); method('x', Integer) { 1 }" | 'is already used by another'
         'the removed .methodName(...) qualifier'          | "bean('x', String).methodName('y') { 'z' }"                      | 'Expected bean(["name", ] Type) { ... }'
+        'a bean(...) chained onto a field(...)'            | "field('suffix', String).bean('greeter', String) { 'hi' }"       | 'is its own statement'
+        'a field(...) chained onto a bean(...)'            | "bean('greeter', String) { 'hi' }.field('suffix', String)"       | 'is its own statement'
+        'field(Type) whose derived name is a reserved keyword'  | 'field(Boolean)'                                            | 'derived from Boolean, is not a valid name'
+        'method(Type) whose derived name is a reserved keyword' | "method(Long) { 1L }"                                       | 'derived from Long, is not a valid name'
     }
 
     def "a bean(...).staticMethod() compiles to a static @Bean factory method"() {

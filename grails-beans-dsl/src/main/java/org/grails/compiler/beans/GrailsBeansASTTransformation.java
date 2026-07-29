@@ -31,7 +31,9 @@ import javax.lang.model.SourceVersion;
 
 import groovy.transform.CompilationUnitAware;
 import groovy.transform.CompileStatic;
+import groovy.transform.TypeChecked;
 import org.apache.groovy.util.BeanUtils;
+import org.codehaus.groovy.GroovyBugError;
 import org.codehaus.groovy.ast.ASTNode;
 import org.codehaus.groovy.ast.AnnotatedNode;
 import org.codehaus.groovy.ast.AnnotationNode;
@@ -64,6 +66,7 @@ import org.codehaus.groovy.syntax.SyntaxException;
 import org.codehaus.groovy.syntax.Types;
 import org.codehaus.groovy.transform.ASTTransformation;
 import org.codehaus.groovy.transform.GroovyASTTransformation;
+import org.codehaus.groovy.transform.StaticTypesTransformation;
 import org.codehaus.groovy.transform.sc.StaticCompileTransformation;
 
 import org.springframework.beans.factory.annotation.Value;
@@ -254,7 +257,10 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
 
     private void removeBeansProperty(ClassNode classNode, PropertyNode beansProperty) {
         classNode.getProperties().remove(beansProperty);
-        classNode.getFields().removeIf(field -> field.getName().equals(BEANS_PROPERTY));
+        // removeField, not getFields().remove: the latter leaves ClassNode's own fieldIndex entry
+        // behind, so another member still referring to 'beans' type-checks and compiles to a
+        // getfield against a field that is never emitted, failing with NoSuchFieldError at runtime.
+        classNode.removeField(BEANS_PROPERTY);
     }
 
     private boolean extendsGrailsPlugin(ClassNode classNode) {
@@ -296,6 +302,9 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
         String siblingName = (packageName == null || packageName.isEmpty()) ?
                 siblingSimpleName : packageName + "." + siblingSimpleName;
         ClassNode sibling = new ClassNode(siblingName, Modifier.PUBLIC, ClassHelper.OBJECT_TYPE);
+        // Without a position, anything Groovy later reports against a generated node - a sibling
+        // name clash, a typo in .annotate(...) - is reported at line -1, column -1.
+        sibling.setSourcePosition(pluginClass);
         source.getAST().addClass(sibling);
 
         // Matching annotations move entirely rather than being merely copied - they have no effect
@@ -399,20 +408,38 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
         return false;
     }
 
+    // The bean bodies are lifted onto a class the normal transform pipeline no longer visits, so
+    // whichever of these the author put on the plugin has to be re-applied here or the bodies are
+    // silently left unchecked. @GrailsCompileStatic and @GrailsTypeChecked need no handling of their
+    // own: @AnnotationCollector has already expanded them by canonicalization.
     private void applyStaticCompilation(ClassNode pluginClass, ClassNode sibling, SourceUnit source) {
-        List<AnnotationNode> annotations = pluginClass.getAnnotations(ClassHelper.make(CompileStatic.class));
-        if (annotations.isEmpty() || compilationUnit == null) {
+        if (compilationUnit == null) {
             return;
+        }
+        if (applyStaticTypesTransformation(pluginClass, sibling, source,
+                CompileStatic.class, new StaticCompileTransformation())) {
+            return;
+        }
+        applyStaticTypesTransformation(pluginClass, sibling, source,
+                TypeChecked.class, new StaticTypesTransformation());
+    }
+
+    private boolean applyStaticTypesTransformation(ClassNode pluginClass, ClassNode sibling, SourceUnit source,
+            Class<? extends java.lang.annotation.Annotation> annotationType, StaticTypesTransformation transformation) {
+        List<AnnotationNode> annotations = pluginClass.getAnnotations(ClassHelper.make(annotationType));
+        if (annotations.isEmpty()) {
+            return false;
         }
 
         AnnotationNode sourceAnnotation = annotations.get(0);
-        AnnotationNode siblingAnnotation = new AnnotationNode(ClassHelper.make(CompileStatic.class));
+        AnnotationNode siblingAnnotation = new AnnotationNode(ClassHelper.make(annotationType));
         sourceAnnotation.getMembers().forEach(siblingAnnotation::setMember);
+        siblingAnnotation.setSourcePosition(sourceAnnotation);
         sibling.addAnnotation(siblingAnnotation);
 
-        StaticCompileTransformation transformation = new StaticCompileTransformation();
         transformation.setCompilationUnit(compilationUnit);
         transformation.visit(new ASTNode[] { siblingAnnotation, sibling }, source);
+        return true;
     }
 
     private List<Statement> beanStatements(ClosureExpression dsl) {
@@ -573,7 +600,7 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
         for (MethodCallExpression qualifierCall : qualifierCalls) {
             String qualifierName = qualifierCall.getMethodAsString();
             List<Expression> args = withoutTrailingClosure(flatten(qualifierCall.getArguments()), qualifierCall, outerCall);
-            if (CONDITIONAL_ON_MISSING_BEAN_CALL.equals(qualifierName) && !args.isEmpty()) {
+            if (CONDITIONAL_ON_MISSING_BEAN_CALL.equals(qualifierName) && discriminatesByType(args)) {
                 return true;
             }
             if (ANNOTATE_CALL.equals(qualifierName)) {
@@ -585,6 +612,33 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
             }
         }
         return false;
+    }
+
+    // @ConditionalOnMissingBean attributes that say nothing about a *type*. Where duplicates share
+    // one bean name - the only situation validateSharedBeanNames runs in - a name: or search: is
+    // identical on each of them and so can no more tell them apart than the bare form can.
+    private static final Set<String> NON_DISCRIMINATING_MISSING_BEAN_ATTRIBUTES = Set.of("name", "search");
+
+    private boolean discriminatesByType(List<Expression> args) {
+        boolean sawSomething = false;
+        for (Expression arg : args) {
+            if (arg instanceof ClassExpression) {
+                return true;
+            }
+            if (!(arg instanceof MapExpression)) {
+                // an argument shape this method does not model - stay lenient rather than reject
+                return true;
+            }
+            for (MapEntryExpression entry : ((MapExpression) arg).getMapEntryExpressions()) {
+                Object key = entry.getKeyExpression() instanceof ConstantExpression ?
+                        ((ConstantExpression) entry.getKeyExpression()).getValue() : null;
+                if (!(key instanceof String) || !NON_DISCRIMINATING_MISSING_BEAN_ATTRIBUTES.contains(key)) {
+                    return true;
+                }
+                sawSomething = true;
+            }
+        }
+        return !sawSomething && !args.isEmpty();
     }
 
     private List<Expression> withoutTrailingClosure(List<Expression> args, MethodCallExpression call,
@@ -639,6 +693,16 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
             }
             qualifierCalls.add(0, baseCall);
             baseCall = (MethodCallExpression) baseCall.getObjectExpression();
+        }
+
+        // The walk above stops at the first root call name it meets, so without this a root
+        // statement chained onto another - field("suffix", String).bean("greeter", String) { } -
+        // parses as one statement and the left-hand declaration is silently dropped.
+        if (!baseCall.isImplicitThis() && baseCall.getObjectExpression() instanceof MethodCallExpression) {
+            addError(statement, source, baseCall.getMethodAsString() + "(...) cannot be chained onto " +
+                    ((MethodCallExpression) baseCall.getObjectExpression()).getMethodAsString() +
+                    "(...) - each bean(...), field(...) and method(...) declaration is its own statement");
+            return;
         }
 
         String rootName = baseCall.getMethodAsString();
@@ -736,7 +800,8 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
                 beanParameters,
                 ClassNode.EMPTY_ARRAY,
                 beanBody);
-        beanMethod.addAnnotation(beanAnnotation(typeAndName.name));
+        beanMethod.setSourcePosition(baseCall);
+        beanMethod.addAnnotation(withPosition(beanAnnotation(typeAndName.name), baseCall));
 
         for (MethodCallExpression qualifierCall : qualifierCalls) {
             List<Expression> qualifierArgs = flatten(qualifierCall.getArguments());
@@ -778,6 +843,7 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
         }
 
         FieldNode field = classNode.addField(typeAndName.name, Modifier.PRIVATE, typeAndName.type.getType(), null);
+        field.setSourcePosition(baseCall);
 
         for (MethodCallExpression qualifierCall : qualifierCalls) {
             List<Expression> qualifierArgs = flatten(qualifierCall.getArguments());
@@ -878,18 +944,43 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
             if (fieldName == null) {
                 return null;
             }
-            FieldNode field = owner.getField(fieldName);
-            if (field != null && field.isStatic() && field.isFinal() &&
-                    field.getInitialExpression() instanceof ConstantExpression) {
+            FieldNode field = findStaticFinalField(owner, fieldName, new HashSet<>());
+            if (field != null && field.getInitialExpression() instanceof ConstantExpression) {
                 Object value = ((ConstantExpression) field.getInitialExpression()).getValue();
                 return value instanceof String ? (String) value : null;
             }
+            // The reflective fallback needs a loaded Class, which a ClassNode from this same
+            // compilation unit does not have - getTypeClass() would throw GroovyBugError, an
+            // AssertionError that no catch below would hold, aborting the compilation with an
+            // internal compiler error instead of the located message the caller reports.
             try {
                 Object value = owner.getTypeClass().getField(fieldName).get(null);
                 return value instanceof String ? (String) value : null;
             }
-            catch (ReflectiveOperationException | RuntimeException | LinkageError ignored) {
+            catch (ReflectiveOperationException | RuntimeException | LinkageError | GroovyBugError ignored) {
                 return null;
+            }
+        }
+        return null;
+    }
+
+    // ClassNode.getField walks superclasses but not interfaces, so a constant declared on an
+    // implemented interface - the shape every grails.config.Settings key has - is invisible to it
+    // while the owner is still being compiled.
+    private FieldNode findStaticFinalField(ClassNode owner, String fieldName, Set<String> visited) {
+        for (ClassNode type = owner; type != null; type = type.getSuperClass()) {
+            if (!visited.add(type.getName())) {
+                return null;
+            }
+            FieldNode declared = type.getDeclaredField(fieldName);
+            if (declared != null && declared.isStatic() && declared.isFinal()) {
+                return declared;
+            }
+            for (ClassNode implemented : type.getInterfaces()) {
+                FieldNode inherited = findStaticFinalField(implemented, fieldName, visited);
+                if (inherited != null) {
+                    return inherited;
+                }
             }
         }
         return null;
@@ -926,6 +1017,7 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
                 body.getParameters() == null ? Parameter.EMPTY_ARRAY : body.getParameters(),
                 ClassNode.EMPTY_ARRAY,
                 body.getCode());
+        helperMethod.setSourcePosition(baseCall);
 
         for (MethodCallExpression qualifierCall : qualifierCalls) {
             List<Expression> qualifierArgs = flatten(qualifierCall.getArguments());
@@ -968,6 +1060,17 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
         String name;
         if (args.size() == 1) {
             name = decapitalize(type.getType().getNameWithoutPackage());
+            // The derived name becomes the generated member's name just as an explicit one does, so
+            // it has to clear the same bar - decapitalizing Boolean, Long or Class hands back a Java
+            // keyword, and no closure body could then reference the member.
+            if (requireValidIdentifier && !isValidJavaIdentifier(name)) {
+                addError(call, source, "\"" + name + "\", derived from " +
+                        type.getType().getNameWithoutPackage() + ", is not a valid name: it becomes the " +
+                        "generated member's name, so it must be a valid Java identifier - give one " +
+                        "explicitly, e.g. " + callName + "(\"" + name + "Value\", " +
+                        type.getType().getNameWithoutPackage() + ")");
+                return null;
+            }
         }
         else {
             Expression nameArg = args.get(0);
@@ -1079,9 +1182,22 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
                         "(...) attribute names must be simple identifiers, e.g. .annotate(Order, value: 1)");
                 return false;
             }
-            annotation.setMember((String) keyValue, entry.getValueExpression());
+            annotation.setMember((String) keyValue, foldStringValue(entry.getValueExpression()));
         }
         return true;
+    }
+
+    // Same reason .value(...) folds its arguments: an attribute written as a concatenation is a
+    // BinaryExpression here, and under @CompileStatic the static compiler rewrites it into a
+    // .plus() call before Groovy folds annotation members, at which point it is no longer an inline
+    // constant. Folding now keeps .annotate(...) and .value(...) consistent, and leaves anything
+    // that is not a resolvable String - class literals, numbers, enum constants, arrays - alone.
+    private Expression foldStringValue(Expression value) {
+        if (value instanceof ConstantExpression) {
+            return value;
+        }
+        String resolved = resolveStringConstant(value);
+        return resolved != null ? new ConstantExpression(resolved) : value;
     }
 
     private boolean addAnnotationIfAbsent(AnnotatedNode target, MethodCallExpression qualifierCall,
@@ -1092,8 +1208,13 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
                     "here, via an earlier qualifier or .annotate(...)");
             return false;
         }
-        target.addAnnotation(annotation);
+        target.addAnnotation(withPosition(annotation, qualifierCall));
         return true;
+    }
+
+    private AnnotationNode withPosition(AnnotationNode annotation, ASTNode origin) {
+        annotation.setSourcePosition(origin);
+        return annotation;
     }
 
     private List<Expression> flatten(Expression arguments) {
