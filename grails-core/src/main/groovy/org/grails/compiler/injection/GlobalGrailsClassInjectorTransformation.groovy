@@ -534,7 +534,8 @@ class GlobalGrailsClassInjectorTransformation implements ASTTransformation, Comp
 
     /**
      * Updates an existing plugin descriptor with plugin metadata and newly discovered artefact
-     * resources. If the descriptor cannot be read or written, it is recreated.
+     * resources. If the descriptor cannot be parsed or written, it is recreated; other failures
+     * propagate to abort compilation.
      *
      * @param pluginClassNode the plugin descriptor class, or {@code null} when only resources are updated
      * @param pluginVersion the plugin version, or {@code null} when only resources are updated
