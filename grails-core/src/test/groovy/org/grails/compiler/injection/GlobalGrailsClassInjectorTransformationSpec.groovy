@@ -52,6 +52,16 @@ class GlobalGrailsClassInjectorTransformationSpec extends Specification {
     @Subject
     def transformation = new GlobalGrailsClassInjectorTransformation()
 
+    def setup() {
+        // Set zero trait injectors before each test to avoid cross-test contamination
+        TraitInjectionUtils.@traitInjectors = []
+    }
+
+    def cleanup() {
+        // Reset the trait injectors after each test to avoid cross-test contamination
+        TraitInjectionUtils.@traitInjectors = null
+    }
+
     void "a correct plugin xml file is generated when the plugin xml doesn't exist"() {
         given: "a file that doesn't yet exist"
             def pluginXml = new File(tempDir, 'plugin-xml-gen-test.test.xml')
@@ -311,7 +321,6 @@ class GlobalGrailsClassInjectorTransformationSpec extends Specification {
         given: "a service source under grails-app"
             def sourceFile = new File(tempDir, 'grails-app/services/FooService.groovy')
             def targetDir = new File(tempDir, 'build/classes/groovy/main')
-            TraitInjectionUtils.@traitInjectors = []
 
         when:
             def classNode = compileToFile(
@@ -325,9 +334,6 @@ class GlobalGrailsClassInjectorTransformationSpec extends Specification {
                 size() == 1
                 first().getMember('value').text == 'Service'
             }
-
-        cleanup:
-            TraitInjectionUtils.@traitInjectors = null
     }
 
     void "the global transform registers a concrete artefact handler in grails.factories"() {
@@ -632,7 +638,6 @@ class GlobalGrailsClassInjectorTransformationSpec extends Specification {
         given: 'a service source under grails-app that already carries @Artefact'
             def sourceFile = new File(tempDir, 'grails-app/services/AnnotatedService.groovy')
             def targetDir = new File(tempDir, 'build/classes/groovy/main')
-            TraitInjectionUtils.@traitInjectors = []
 
         when:
             def classNode = compileToFile(
@@ -647,16 +652,12 @@ class GlobalGrailsClassInjectorTransformationSpec extends Specification {
 
         then: 'the class still has exactly one @Artefact annotation'
             classNode.getAnnotations(ClassHelper.make(Artefact)).size() == 1
-
-        cleanup:
-            TraitInjectionUtils.@traitInjectors = null
     }
 
     void "abstract GrailsPlugin class is not identified as a plugin descriptor by the visit method"() {
         given: 'an abstract GrailsPlugin class under grails-app'
             def sourceFile = new File(tempDir, 'grails-app/AbstractPluginGrailsPlugin.groovy')
             def targetDir = new File(tempDir, 'build/classes/groovy/main')
-            TraitInjectionUtils.@traitInjectors = []
 
         when: 'the source is compiled, exercising the registered global transform'
             compileToFile(
@@ -668,9 +669,6 @@ class GlobalGrailsClassInjectorTransformationSpec extends Specification {
 
         then: 'no plugin.xml file is generated because the class was not treated as a plugin descriptor'
             !new File(targetDir, 'META-INF/grails-plugin.xml').exists()
-
-        cleanup:
-            TraitInjectionUtils.@traitInjectors = null
     }
 
     private SourceUnit sourceUnitWithTarget(File targetDirectory) {
