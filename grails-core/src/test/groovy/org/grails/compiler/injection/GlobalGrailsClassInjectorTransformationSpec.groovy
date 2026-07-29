@@ -79,7 +79,6 @@ class GlobalGrailsClassInjectorTransformationSpec extends Specification {
         then: "the generated xml is valid"
             xml.@name.text() == 'foo'
             xml.type.text() == 'FooGrailsPlugin'
-            !xml.attributes().containsKey('grailsVersion')
             xml.resources.size() == 1
             xml.resources.resource.text() == 'Foo'
     }
@@ -116,9 +115,26 @@ class GlobalGrailsClassInjectorTransformationSpec extends Specification {
         then: "the generated plugin.xml is valid"
             xml.@name.text() == 'bar'
             xml.type.text() == 'BarGrailsPlugin'
-            !xml.attributes().containsKey('grailsVersion')
             xml.resources.resource.size() == 3
             xml.resources.resource.text() == 'FooBarBaz'
+    }
+
+    def "resolveGrailsVersionWithFrameworkVersion prefers declared plugin metadata"() {
+        expect:
+            GlobalGrailsClassInjectorTransformation.resolveGrailsVersionWithFrameworkVersion(
+                    [grailsVersion: '3.0 > *'],
+                    '8.0.0'
+            ) == '3.0 > *'
+    }
+
+    def "resolveGrailsVersionWithFrameworkVersion formats the framework version when plugin metadata is absent"() {
+        expect:
+            GlobalGrailsClassInjectorTransformation.resolveGrailsVersionWithFrameworkVersion([:], '8.0.0') == '8.0.0 > *'
+    }
+
+    def "resolveGrailsVersionWithFrameworkVersion returns null when both plugin and framework metadata are absent"() {
+        expect:
+            GlobalGrailsClassInjectorTransformation.resolveGrailsVersionWithFrameworkVersion([:], null) == null
     }
 
     @RestoreSystemProperties

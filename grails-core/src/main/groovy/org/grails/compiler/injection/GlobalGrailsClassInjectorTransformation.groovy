@@ -647,11 +647,20 @@ class GlobalGrailsClassInjectorTransformation implements ASTTransformation, Comp
     }
 
     private static @Nullable String resolveGrailsVersion(Map pluginProperties) {
+        resolveGrailsVersionWithFrameworkVersion(
+                pluginProperties,
+                GlobalGrailsClassInjectorTransformation.package.implementationVersion
+        )
+    }
+
+    static @Nullable String resolveGrailsVersionWithFrameworkVersion(
+            Map pluginProperties,
+            @Nullable String frameworkVersion
+    ) {
         def declaredVersion = pluginProperties['grailsVersion']?.toString()
         if (declaredVersion) {
             return declaredVersion
         }
-        def frameworkVersion = GlobalGrailsClassInjectorTransformation.package.implementationVersion
         frameworkVersion ? "${frameworkVersion} > *" : null
     }
 
