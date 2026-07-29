@@ -25,17 +25,18 @@ plugins {
     id 'org.apache.grails.buildsrc.compile'
     id 'org.apache.grails.buildsrc.vulnerability-scan'
     id 'org.apache.grails.buildsrc.autoconfiguration-imports'
-    id 'org.apache.grails.gradle.grails-code-style'
-    id 'org.apache.grails.gradle.grails-jacoco'
 }
 
 version = projectVersion
-group = 'org.apache.grails'
+group = 'examples'
 
 dependencies {
 
     implementation platform(project(':grails-bom'))
 
+    // The one module that must declare this itself: it deliberately keeps grails-core off its
+    // classpath (see grails-test-examples/beans-dsl-plugin), so the api that carries the DSL
+    // everywhere else does not reach here.
     implementation project(':grails-beans-dsl')
 
     api 'org.springframework.boot:spring-boot-autoconfigure'
@@ -51,8 +52,12 @@ dependencies {
     testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine'
     testImplementation 'org.spockframework:spock-core'
     testRuntimeOnly 'org.slf4j:slf4j-simple'
+
+    // functional-test-config.gradle does not supply the launcher that test-config.gradle does,
+    // and these modules hold plain unit tests
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
 apply {
-    from rootProject.layout.projectDirectory.file('gradle/test-config.gradle')
+    from rootProject.layout.projectDirectory.file('gradle/functional-test-config.gradle')
 }

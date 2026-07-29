@@ -25,23 +25,20 @@ plugins {
     id 'org.apache.grails.buildsrc.compile'
     id 'org.apache.grails.buildsrc.vulnerability-scan'
     id 'org.apache.grails.buildsrc.autoconfiguration-imports'
-    id 'org.apache.grails.gradle.grails-code-style'
-    id 'org.apache.grails.gradle.grails-jacoco'
 }
 
 version = projectVersion
-group = 'org.apache.grails'
+group = 'examples'
 
 dependencies {
 
     implementation platform(project(':grails-bom'))
 
-    implementation project(':grails-beans-dsl')
-
-    // Kept separate from grails-beans-dsl-example: pulling grails-core onto a module's
+    // Kept separate from grails-test-examples/beans-dsl: pulling grails-core onto a module's
     // classpath at all activates Grails' own plugin-bootstrap ApplicationContextInitializer
     // (registered unconditionally via spring.factories) for any SpringApplication.run() in
-    // that module, which would have changed the other example's existing test behaviour.
+    // that module, which would have changed the other example's existing test behaviour. It also
+    // carries grails-beans-dsl, so this module needs no declaration of its own.
     implementation project(':grails-core')
 
     api 'org.springframework.boot:spring-boot-autoconfigure'
@@ -57,8 +54,12 @@ dependencies {
     testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine'
     testImplementation 'org.spockframework:spock-core'
     testRuntimeOnly 'org.slf4j:slf4j-simple'
+
+    // functional-test-config.gradle does not supply the launcher that test-config.gradle does,
+    // and these modules hold plain unit tests
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
 apply {
-    from rootProject.layout.projectDirectory.file('gradle/test-config.gradle')
+    from rootProject.layout.projectDirectory.file('gradle/functional-test-config.gradle')
 }
