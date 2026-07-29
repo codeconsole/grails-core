@@ -1006,12 +1006,22 @@ class Product {
 
     @SuppressWarnings('unused')
     static embedded = ['category']
+
+    static constraints = {
+        name(bindable: true)
+        numberInStock(bindable: true)
+        category(bindable: true)
+    }
 }
 
 @Entity
 class Category {
 
     String name
+
+    static constraints = {
+        name(bindable: true)
+    }
 
     @Override
     String toString() {
@@ -1052,6 +1062,12 @@ class Event {
     String name
     Date date
     State state
+
+    static constraints = {
+        name(bindable: true)
+        date(bindable: true)
+        state(bindable: true)
+    }
 
     enum State { OPEN, CLOSED }
 }
