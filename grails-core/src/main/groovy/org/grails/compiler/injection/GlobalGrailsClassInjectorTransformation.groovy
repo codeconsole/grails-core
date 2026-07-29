@@ -550,7 +550,7 @@ class GlobalGrailsClassInjectorTransformation implements ASTTransformation, Comp
             File pluginXmlFile,
             Collection<String> artefactClassNames
     ) {
-        if (!artefactClassNames) return
+        if (!pluginClassNode && !artefactClassNames) return
         try {
             def pluginXml = IOUtils.createXmlSlurper().parse(pluginXmlFile)
             if (pluginClassNode) {

@@ -503,6 +503,37 @@ class GlobalGrailsClassInjectorTransformationSpec extends Specification {
             new XmlSlurper().parse(pluginXml).resources.resource*.text() == ['ExistingThing', 'NewThing']
     }
 
+    void "plugin xml metadata and excludes are updated when no new artefacts are discovered"() {
+        given:
+            def pluginXml = new File(tempDir, 'metadata-only-plugin.xml')
+            pluginXml.text = '''
+                <plugin name="oldName" version="1.0" grailsVersion="1.0 > *">
+                    <type>OldGrailsPlugin</type>
+                    <resources>
+                        <resource>ExcludedThing</resource>
+                        <resource>KeptThing</resource>
+                    </resources>
+                </plugin>
+            '''
+            def classNode = compilePlugin('''
+                class UpdatedGrailsPlugin {
+                    def grailsVersion = '3.0 > *'
+                    def pluginExcludes = ['Excluded*']
+                }
+            ''')
+
+        when:
+            transformation.updatePluginXml(classNode, '2.0', pluginXml, [])
+
+        then:
+            def xml = new XmlSlurper().parse(pluginXml)
+            xml.@name.text() == 'updated'
+            xml.@version.text() == '2.0'
+            xml.@grailsVersion.text() == '3.0 > *'
+            xml.type.text() == 'UpdatedGrailsPlugin'
+            xml.resources.resource*.text() == ['KeptThing']
+    }
+
     void "plugin xml update recreates safely when the existing descriptor is malformed"() {
         given:
             def logCapture = new LogCapture(GlobalGrailsClassInjectorTransformation, Level.WARN)
