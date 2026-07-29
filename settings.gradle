@@ -115,6 +115,7 @@ include(
         'grails-controllers',
         'grails-converters',
         'grails-core',
+        'grails-core-cli-legacy',
         'grails-databinding-core',
         'grails-databinding',
         'grails-datasource',
