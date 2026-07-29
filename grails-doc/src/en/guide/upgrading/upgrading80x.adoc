@@ -1781,3 +1781,29 @@ If you upgrade an application that customized the plugin:
 * Applications that used the plugin's transitive webjars (jQuery UI, jGrowl, DataTables, jquery-form) must now declare those dependencies themselves.
 * The `grails.plugin.springsecurity.ui.Constants` class and the `spring-security-ui-register.js` and `spring-security-ui-*` stylesheet assets have been removed.
 * `LogoutController` now declares a computed `allowedMethods` restricting its action to POST while `logout.postOnly` is active (the default), making the restriction visible to tooling such as the create-app welcome page.
+
+==== 38. Stack Trace Filterer Configuration Reaches All Callers
+
+`grails.logging.stackTraceFiltererClass` and `grails.exceptionresolver.logFullStackTraceOnFilter` now also
+apply to paths outside the exception resolver — including GSP view-render exceptions — so the same two keys
+control which filterer is used and whether it emits, everywhere the framework filters a stack trace, not
+just for resolver-driven requests.
+
+[source, yaml]
+.grails-app/conf/application.yml
+----
+grails:
+    logging:
+        stackTraceFiltererClass: com.example.MyStackTraceFilterer
+    exceptionresolver:
+        logFullStackTraceOnFilter: false
+----
+
+Applications that previously had to silence the `StackTrace` logger in logback purely to suppress
+render-time noise can set `logFullStackTraceOnFilter: false` instead and reach every caller of the filterer.
+
+The configured filterer is resolved once during application startup, before the application context
+refreshes. Any context not started through `SpringApplication` — the CLI, plain `main()` usage, Grails unit
+tests — keeps the previous fallback behaviour unchanged: a plain `DefaultStackTraceFilterer` with no
+configuration applied. The filterer is JVM-global rather than per-context, so in a JVM hosting more than one
+application context the last one booted supplies the filterer for all of them.
