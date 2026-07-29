@@ -153,22 +153,11 @@ class JsonRendererSpec extends Specification {
 }
 
 class Album {
-
     String title
     String isbn
-
-    static constraints = {
-        title(bindable: true)
-        isbn(bindable: true)
-    }
 }
 
 @Entity
 class Song {
-
     String title
-
-    static constraints = {
-        title(bindable: true)
-    }
 }
