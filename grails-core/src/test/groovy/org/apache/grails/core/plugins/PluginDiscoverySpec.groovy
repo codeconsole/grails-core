@@ -18,6 +18,7 @@
  */
 package org.apache.grails.core.plugins
 
+import ch.qos.logback.classic.Level
 import spock.lang.Specification
 import spock.lang.Unroll
 
@@ -371,14 +372,15 @@ class PluginDiscoverySpec extends Specification {
         }
 
         and: 'the skipped duplicate is reported at WARN'
-        logCapture.events.any {
-            it.level.toString() == 'WARN' &&
+        def duplicateWarnings = logCapture.events.findAll {
+            it.level == Level.WARN &&
             it.formattedMessage.contains('repeatedProbe') &&
             it.formattedMessage.contains('already registered')
         }
+        duplicateWarnings.size() == 1
 
         cleanup:
-        logCapture.stop()
+        logCapture.close()
     }
 }
 

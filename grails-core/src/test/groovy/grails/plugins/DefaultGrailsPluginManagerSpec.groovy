@@ -18,6 +18,7 @@
  */
 package grails.plugins
 
+import ch.qos.logback.classic.Level
 import spock.lang.Specification
 import spock.lang.Unroll
 
@@ -148,9 +149,11 @@ class DefaultGrailsPluginManagerSpec extends Specification {
         }
 
         and: 'the per-plugin loaded-successfully messages are not emitted at INFO'
-        logCapture.events
-                .findAll { it.formattedMessage.contains('loaded successfully') }
-                .every { it.level.toString() != 'INFO' }
+        def loadedEvents = logCapture.events.findAll {
+            it.formattedMessage.contains('loaded successfully')
+        }
+        loadedEvents.size() == 2
+        loadedEvents.every { it.level == Level.DEBUG }
 
         and: 'a single INFO summary line reports the plugins in load order'
         def summaryLines = logCapture.events.findAll {
@@ -158,12 +161,12 @@ class DefaultGrailsPluginManagerSpec extends Specification {
         }
         summaryLines.size() == 1
         with(summaryLines[0]) {
-            level.toString() == 'INFO'
+            level == Level.INFO
             formattedMessage.contains('Loaded 2 Grails plugins in load order: [alphaProbe (1.0.0), betaProbe (2.0.0)]')
         }
 
         cleanup:
-        logCapture.stop()
+        logCapture.close()
     }
 
     private static PluginInfo stubPluginWithGrailsVersion(String grailsVersion) {

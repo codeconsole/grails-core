@@ -509,7 +509,7 @@ class GlobalGrailsClassInjectorTransformationSpec extends Specification {
             }
 
         cleanup:
-            logCapture.stop()
+            logCapture.close()
     }
 
     void "plugin xml update recreates malformed descriptors with available plugin metadata"() {
@@ -540,7 +540,7 @@ class GlobalGrailsClassInjectorTransformationSpec extends Specification {
             xml.resources.resource*.text() == ['RecoveryService']
 
         cleanup:
-            logCapture.stop()
+            logCapture.close()
     }
 
     void "artefact class names are deferred and then included when the plugin descriptor is compiled later"() {

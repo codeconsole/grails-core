@@ -18,6 +18,8 @@
  */
 package org.apache.grails.core.testing.support
 
+import groovy.transform.CompileStatic
+
 import ch.qos.logback.classic.Level
 import ch.qos.logback.classic.Logger
 import ch.qos.logback.classic.spi.ILoggingEvent
@@ -28,7 +30,7 @@ import org.slf4j.LoggerFactory
  * Captures log events emitted by a specific logger during a test.
  *
  * <p>Temporarily sets the logger to the given level (defaults to {@link Level#TRACE}) so that
- * all events are captured, and restores the original level when {@link LogCapture#stop()} is called.</p>
+ * all events are captured, and restores the original logger state when {@link #close()} is called.</p>
  *
  * <p>Typical Spock usage:</p>
  * <pre>
@@ -41,16 +43,19 @@ import org.slf4j.LoggerFactory
  *     logCapture.events.any { it.level == Level.WARN }
  *
  * cleanup:
- *     logCapture.stop()
+ *     logCapture.close()
  * </pre>
  */
-class LogCapture {
+@CompileStatic
+class LogCapture implements AutoCloseable {
 
     private final Logger logger
     private final Level previousLevel
+    private final boolean previousAdditivity
     private final ListAppender<ILoggingEvent> appender = new ListAppender<>()
+    private boolean closed
 
-    LogCapture(Class loggerClass, Level level = Level.TRACE) {
+    LogCapture(Class<?> loggerClass, Level level = Level.TRACE) {
         this(LoggerFactory.getLogger(loggerClass) as Logger, level)
     }
 
@@ -61,7 +66,9 @@ class LogCapture {
     private LogCapture(Logger logger, Level level) {
         this.logger = logger
         previousLevel = logger.level
+        previousAdditivity = logger.additive
         logger.level = level
+        logger.additive = false
         appender.start()
         logger.addAppender(appender)
     }
@@ -76,11 +83,17 @@ class LogCapture {
     }
 
     /**
-     * Detaches the appender, stops it, and restores the original logger level.
+     * Detaches the appender, stops it, and restores the original logger state.
      */
-    void stop() {
+    @Override
+    void close() {
+        if (closed) {
+            return
+        }
+        closed = true
         logger.detachAppender(appender)
         appender.stop()
         logger.level = previousLevel
+        logger.additive = previousAdditivity
     }
 }

@@ -82,7 +82,7 @@ class StackTraceFiltererSpec extends Specification {
             logCapture.events.any { it.formattedMessage.contains('Full Stack Trace:') }
 
         cleanup:
-            logCapture.stop()
+            logCapture.close()
     }
 
     def 'filter does not emit a StackTrace log entry when logFullStackTraceOnFilter is disabled'() {
@@ -103,10 +103,10 @@ class StackTraceFiltererSpec extends Specification {
             quietFilterer.filter(exception)
 
         then: "no 'Full Stack Trace:' entry is emitted by the filterer"
-            logCapture.events.every { !it.formattedMessage.contains('Full Stack Trace:') }
+            logCapture.events.count { it.formattedMessage.contains('Full Stack Trace:') } == 0
 
         cleanup:
-            logCapture.stop()
+            logCapture.close()
     }
 
     def 'retains controller frames across wrapped exceptions during recursive filtering'() {
@@ -180,7 +180,7 @@ class StackTraceFiltererSpec extends Specification {
             logCapture.events.count { it.formattedMessage.contains('Full Stack Trace:') } == 2
 
         cleanup:
-            logCapture.stop()
+            logCapture.close()
     }
 
     def 'filter does not emit a StackTrace log entry when walking the cause chain with logFullStackTraceOnFilter disabled'() {
@@ -207,10 +207,10 @@ class StackTraceFiltererSpec extends Specification {
             quietFilterer.filter(exception, true)
 
         then: "no 'Full Stack Trace:' entry is emitted for any throwable in the chain"
-            logCapture.events.every { !it.formattedMessage.contains('Full Stack Trace:') }
+            logCapture.events.count { it.formattedMessage.contains('Full Stack Trace:') } == 0
 
         cleanup:
-            logCapture.stop()
+            logCapture.close()
     }
 
     def 'recursive filtering visits every throwable in the cause chain and sanitizes each'() {
