@@ -19,7 +19,6 @@
 package org.grails.compiler.injection
 
 import groovy.xml.XmlSlurper
-import org.codehaus.groovy.GroovyBugError
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ClassHelper
 import org.codehaus.groovy.ast.ClassNode
@@ -28,6 +27,7 @@ import org.codehaus.groovy.control.CompilationFailedException
 import org.codehaus.groovy.control.CompilationUnit
 import org.codehaus.groovy.control.CompilePhase
 import org.codehaus.groovy.control.CompilerConfiguration
+import org.codehaus.groovy.control.MultipleCompilationErrorsException
 import org.codehaus.groovy.control.Phases
 import org.codehaus.groovy.control.SourceUnit
 import org.codehaus.groovy.control.customizers.CompilationCustomizer
@@ -263,11 +263,8 @@ class GlobalGrailsClassInjectorTransformationSpec extends Specification {
             compileToFile(sourceFile, 'class UnversionedGrailsPlugin {}', targetDir)
 
         then:
-            def exception = thrown(GroovyBugError)
-            with(exception) {
-                cause instanceof IllegalStateException
-                cause.message.contains('does not define a plugin version')
-            }
+            def exception = thrown(MultipleCompilationErrorsException)
+            exception.message.contains('does not define a plugin version')
     }
 
     void "the global transform annotates a plain Grails resource class with @GrailsPlugin metadata"() {

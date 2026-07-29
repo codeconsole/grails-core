@@ -175,6 +175,8 @@ class GlobalGrailsClassInjectorTransformation implements ASTTransformation, Comp
             }
         }
 
+        validatePluginVersionDefined(pluginClassNode, pluginVersion, pluginXmlFile, source)
+
         // create or update grails-plugin.xml
         generatePluginXml(pluginClassNode, pluginVersion, transformedClassNames, pluginXmlFile)
     }
@@ -259,6 +261,20 @@ class GlobalGrailsClassInjectorTransformation implements ASTTransformation, Comp
         }
     }
 
+    private static void validatePluginVersionDefined(
+            @Nullable ClassNode pluginClassNode,
+            @Nullable String pluginVersion,
+            File pluginXmlFile,
+            SourceUnit sourceUnit
+    ) {
+        if (pluginClassNode && !pluginVersion) {
+            GrailsASTUtils.error(sourceUnit, pluginClassNode,
+                    "Unable to generate '$pluginXmlFile' because plugin class " +
+                    "'$pluginClassNode.name' does not define a plugin version."
+            )
+        }
+    }
+
     /**
      * Creates or updates the generated {@code META-INF/grails-plugin.xml} descriptor and carries
      * forward artefact classes collected during compilation.
@@ -285,12 +301,6 @@ class GlobalGrailsClassInjectorTransformation implements ASTTransformation, Comp
         // Create or update grails-plugin.xml when a concrete plugin class is present; otherwise,
         // update an existing descriptor or defer resource names until the descriptor is compiled.
         if (pluginClassNode && !pluginClassNode.abstract) {
-            if (!pluginVersion) {
-                throw new IllegalStateException(
-                        "Unable to generate '${pluginXmlFile}' because plugin class '${pluginClassNode.name}' " +
-                                'does not define a plugin version.'
-                )
-            }
             if (!pluginXmlExists) {
                 // The plugin descriptor is being compiled for the first time.
                 writePluginXml(pluginClassNode, pluginVersion, pluginXmlFile, pluginClasses)
