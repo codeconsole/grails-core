@@ -66,7 +66,7 @@ class DomainClassGrailsPlugin extends Plugin {
             }
         }
 
-        bean('validateableConstraintsEvaluator', DefaultConstraintEvaluatorFactoryBean).lazy() { GrailsApplication grailsApplication, List<MessageSource> messageSources, @Qualifier('grailsDomainClassMappingContext') MappingContext mappingContext ->
+        bean('validateableConstraintsEvaluator', DefaultConstraintEvaluatorFactoryBean).lazy() { List<MessageSource> messageSources, @Qualifier('grailsDomainClassMappingContext') MappingContext mappingContext, GrailsApplication grailsApplication ->
             new DefaultConstraintEvaluatorFactoryBean(messageSources, mappingContext, grailsApplication)
         }
 
