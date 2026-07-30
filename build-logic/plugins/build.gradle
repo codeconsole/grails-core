@@ -42,7 +42,7 @@ dependencies {
     implementation "org.sonatype.gradle.plugins:scan-gradle-plugin:${gradleProperties.sonatypeScanPluginVersion}"
     // GenerateAutoConfigurationImportsTask reads @AutoConfiguration out of class files rather than
     // loading them, so a class it cannot resolve can never be silently dropped from the imports file
-    implementation "org.ow2.asm:asm:${gradleProperties.buildAsmVersion}"
+    implementation "org.ow2.asm:asm:${gradleBomDependencyVersions['asm.version']}"
 
     testImplementation "org.spockframework:spock-core:${gradleBomDependencyVersions['gradle-spock.version']}"
     testImplementation gradleTestKit()
