@@ -1267,6 +1267,68 @@ class GrailsBeansASTTransformationSpec extends Specification {
         paramAnnotations.any { it instanceof Qualifier && it.value() == 'special' }
     }
 
+    def "a @Qualifier on a closure parameter selects the intended candidate when Spring injects it"() {
+        given: "two beans of the dependency type, so the injection point is genuinely ambiguous " +
+                "without the qualifier - refresh would fail outright if it were not honoured"
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.beans.factory.annotation.Qualifier
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            class Dependency {
+                String label
+
+                Dependency(String label) {
+                    this.label = label
+                }
+            }
+
+            class Consumer {
+                String from
+
+                Consumer(Dependency dependency) {
+                    from = dependency.label
+                }
+            }
+
+            @GrailsBeans
+            @AutoConfiguration
+            class QualifiedInjectionFixture {
+                def beans = {
+                    bean('plain', Dependency) { new Dependency('plain') }
+                    bean('special', Dependency) { new Dependency('special') }
+
+                    bean('viaBody', Consumer) { @Qualifier('special') Dependency dependency ->
+                        new Consumer(dependency)
+                    }
+
+                    bean('viaGeneratedCall', Consumer) { @Qualifier('special') Dependency dependency ->
+                    }
+                }
+            }
+        '''
+
+        and:
+        GroovyClassLoader loader = new GroovyClassLoader(getClass().classLoader)
+        loader.parseClass(source)
+        def context = new AnnotationConfigApplicationContext()
+        context.classLoader = loader
+        context.register(loader.loadClass('QualifiedInjectionFixture'))
+
+        when:
+        context.refresh()
+
+        then: 'both candidates are registered, so the qualifier is doing the work'
+        context.getBeanNamesForType(loader.loadClass('Dependency')).length == 2
+
+        and: 'and Spring injected the qualified one, through a closure body and a generated constructor call alike'
+        context.getBean('viaBody').from == 'special'
+        context.getBean('viaGeneratedCall').from == 'special'
+
+        cleanup:
+        context.close()
+    }
+
     def "the beans closure property does not survive compilation"() {
         given:
         Class<?> fixtureBeans = compile()

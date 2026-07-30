@@ -105,8 +105,11 @@ import org.springframework.context.annotation.Scope;
  * {@code BeanFactoryPostProcessor}/{@code BeanPostProcessor} beans), and (repeatably)
  * {@code .annotate(AnnotationType[, attr: value, ...])}. Synthesises a public method, returning
  * the declared type, annotated {@code @org.springframework.context.annotation.Bean("name")} plus
- * whichever qualifiers were chained, whose body and parameters are lifted directly from the DSL
- * closure. The generated method's name is an implementation detail: it matches the bean name when
+ * whichever qualifiers were chained. Its parameters are always the DSL closure's own, annotations
+ * included. Its body is the closure's, except where that body is empty - or the closure is omitted
+ * altogether - in which case a {@code new Type(...)} call over those same parameters is synthesised
+ * instead, leaving the compiler to select the constructor from their types exactly as it would for a
+ * body written out by hand. The generated method's name is an implementation detail: it matches the bean name when
  * that is a usable Java identifier not already taken by an existing or generated member, and
  * falls back to a synthesized {@code <type>$N} name otherwise (a non-identifier name like
  * {@code "my-service"}, a reserved keyword, or a collision - a bean named {@code toString} never
