@@ -1065,6 +1065,45 @@ class GrailsBeansASTTransformationSpec extends Specification {
         e.message.contains('cannot be done for an interface or abstract class')
     }
 
+    @Unroll
+    def "a constant declared on a Groovy class folds under @CompileStatic: #description"() {
+        given: "resolution happens while the DSL is compiled, before @CompileStatic could rewrite " +
+                "the reference into a getter call, so a class constant is no different from an interface one"
+        String source = """
+            import grails.compiler.beans.GrailsBeans
+            import groovy.transform.CompileStatic
+            import org.springframework.beans.factory.annotation.Value
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            class ClassHeldKeys {
+                static final String KEY = 'probe.key'
+            }
+
+            @GrailsBeans
+            @CompileStatic
+            @AutoConfiguration
+            class ClassConstantFixture {
+                def beans = {
+                    field('thing', String)$qualifier
+                }
+            }
+        """
+
+        when:
+        GroovyClassLoader loader = new GroovyClassLoader(getClass().classLoader)
+        loader.parseClass(source)
+        Class<?> fixture = loader.loadClass('ClassConstantFixture')
+
+        then:
+        fixture.getDeclaredField('thing').getAnnotation(Value).value() == expected
+
+        where:
+        description                     | qualifier                                                             || expected
+        '.value(key, default)'          | ".value(ClassHeldKeys.KEY, 'x')"                                      || '${probe.key:x}'
+        '.annotate concatenation'       | ".annotate(Value, value: '\${' + ClassHeldKeys.KEY + ':y}')"          || '${probe.key:y}'
+        '.annotate bare reference'      | '.annotate(Value, value: ClassHeldKeys.KEY)'                          || 'probe.key'
+    }
+
     def "a bean body reading an inherited Plugin member is rejected under @CompileStatic"() {
         given: "the habit doWithSpring allows and the generated sibling cannot, since it extends Object"
         String source = '''
