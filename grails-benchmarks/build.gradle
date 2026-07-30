@@ -152,9 +152,11 @@ def mergeJmhClasspathMetadata = tasks.register('mergeJmhClasspathMetadata') {
                                     }
                                 } else if (lineMetadataPrefixes.any { String prefix -> path.startsWith(prefix) }) {
                                     Set<String> lines = lineEntries.computeIfAbsent(path) { new TreeSet<>() }
-                                    zipFile.getInputStream(entry).getText('UTF-8').readLines().each { String line ->
-                                        if (line) {
-                                            lines.add(line)
+                                    zipFile.getInputStream(entry).withCloseable { input ->
+                                        input.getText('UTF-8').readLines().each { String line ->
+                                            if (line) {
+                                                lines.add(line)
+                                            }
                                         }
                                     }
                                 } else if (propertiesMetadataPaths.contains(path)) {
