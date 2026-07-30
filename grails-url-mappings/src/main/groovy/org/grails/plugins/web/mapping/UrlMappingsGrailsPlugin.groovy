@@ -96,7 +96,9 @@ class UrlMappingsGrailsPlugin extends Plugin {
         // a user replacing CORS handling with any CorsFilter registration should not end up with
         // two CORS filters answering the same requests.
         bean(GrailsCorsFilter).conditionalOnMissingBean(CorsFilter)
-                .annotate(ConditionalOnProperty, name: Settings.SETTING_CORS_FILTER, havingValue: 'true', matchIfMissing: true) { GrailsCorsConfiguration grailsCorsConfiguration ->
+                .annotate(ConditionalOnProperty, name: Settings.SETTING_CORS_FILTER,
+                        havingValue: 'true', matchIfMissing: true) {
+                    GrailsCorsConfiguration grailsCorsConfiguration ->
                 }
 
         bean(UrlMappingsErrorPageCustomizer).conditionalOnMissingBean() { ObjectProvider<UrlMappings> urlMappingsProvider ->
