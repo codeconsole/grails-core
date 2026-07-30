@@ -36,12 +36,9 @@ class ExampleBeans {
             new Greeter('hello from GrailsBeans')
         }
 
-        bean('fancyGreeter', FancyGreeter).conditionalOnMissingBean(FancyGreeter) {
-            new FancyGreeter()
-        }
+        bean('fancyGreeter', FancyGreeter).conditionalOnMissingBean(FancyGreeter)
 
         bean('loudGreeter', LoudGreeter) { Greeter greeter ->
-            new LoudGreeter(greeter)
         }
     }
 
