@@ -919,6 +919,113 @@ class GrailsBeansASTTransformationSpec extends Specification {
         e.message.contains('Cannot assign')
     }
 
+    def "a parameter-only bean closure constructs the declared type from its own parameters"() {
+        given: "the parameters say what is injected; the constructor call is generated"
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.beans.factory.annotation.Qualifier
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            class Dependency {
+            }
+
+            class Wired {
+                Wired(List<String> names, @Qualifier('ignored') Dependency dependency, Integer count) { }
+            }
+
+            @GrailsBeans
+            @AutoConfiguration
+            class ParameterOnlyFixture {
+                def beans = {
+                    bean('wired', Wired) { List<String> names, @Qualifier('special') Dependency dependency, Integer count ->
+                    }
+                }
+            }
+        '''
+
+        when:
+        GroovyClassLoader loader = new GroovyClassLoader(getClass().classLoader)
+        loader.parseClass(source)
+        Class<?> fixture = loader.loadClass('ParameterOnlyFixture')
+        def method = fixture.declaredMethods.find { it.name == 'wired' }
+
+        then: "the closure's parameters became the method's, in the order written"
+        method.parameterTypes*.simpleName == ['List', 'Dependency', 'Integer']
+        method.genericParameterTypes[0].typeName == 'java.util.List<java.lang.String>'
+
+        and: "the qualifier is the one written here, not the constructor's"
+        method.parameters[1].getAnnotation(Qualifier).value() == 'special'
+
+        and: "it is a @Bean under the declared name"
+        method.getAnnotation(Bean).value() == ['wired'] as String[]
+    }
+
+    def "a parameter-only closure lets the compiler pick the constructor, so a second one changes nothing"() {
+        given: "the shape that broke a previous design: a type with both a no-arg and an argument-taking constructor"
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            class Overloaded {
+                String via
+
+                Overloaded() { via = 'no-arg' }
+
+                Overloaded(String value) { via = value }
+            }
+
+            @GrailsBeans
+            @AutoConfiguration
+            class OverloadedCtorFixture {
+                def beans = {
+                    bean('picked', Overloaded) { String value ->
+                    }
+
+                    bean('defaulted', Overloaded) {
+                    }
+                }
+            }
+        '''
+
+        when:
+        GroovyClassLoader loader = new GroovyClassLoader(getClass().classLoader)
+        loader.parseClass(source)
+        Class<?> fixture = loader.loadClass('OverloadedCtorFixture')
+        def instance = fixture.getDeclaredConstructor().newInstance()
+
+        then: "the parameter list selects the String constructor"
+        fixture.getDeclaredMethod('picked', String).parameterCount == 1
+        instance.picked('chosen').via == 'chosen'
+
+        and: "and an empty parameter list selects the no-argument one, exactly as bodyless bean(Type) does"
+        fixture.getDeclaredMethod('defaulted').parameterCount == 0
+        instance.defaulted().via == 'no-arg'
+    }
+
+    def "a parameter-only bean closure is rejected for a type that cannot be constructed"() {
+        given:
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @GrailsBeans
+            @AutoConfiguration
+            class AbstractParameterOnlyFixture {
+                def beans = {
+                    bean('runnable', Runnable) { String ignored ->
+                    }
+                }
+            }
+        '''
+
+        when:
+        compile(source)
+
+        then:
+        MultipleCompilationErrorsException e = thrown(MultipleCompilationErrorsException)
+        e.message.contains('cannot be done for an interface or abstract class')
+    }
+
     def "a bean body reading an inherited Plugin member is rejected under @CompileStatic"() {
         given: "the habit doWithSpring allows and the generated sibling cannot, since it extends Object"
         String source = '''

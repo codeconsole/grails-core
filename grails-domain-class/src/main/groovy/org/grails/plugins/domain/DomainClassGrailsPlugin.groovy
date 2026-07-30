@@ -67,7 +67,6 @@ class DomainClassGrailsPlugin extends Plugin {
         }
 
         bean('validateableConstraintsEvaluator', DefaultConstraintEvaluatorFactoryBean).lazy() { List<MessageSource> messageSources, @Qualifier('grailsDomainClassMappingContext') MappingContext mappingContext, GrailsApplication grailsApplication ->
-            new DefaultConstraintEvaluatorFactoryBean(messageSources, mappingContext, grailsApplication)
         }
 
         bean('gormValidatorRegistry', ValidatorRegistryFactoryBean).lazy() { @Qualifier('grailsDomainClassMappingContext') MappingContext mappingContext ->

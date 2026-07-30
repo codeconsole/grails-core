@@ -55,7 +55,9 @@ import org.codehaus.groovy.ast.expr.MapEntryExpression;
 import org.codehaus.groovy.ast.expr.MapExpression;
 import org.codehaus.groovy.ast.expr.MethodCallExpression;
 import org.codehaus.groovy.ast.expr.PropertyExpression;
+import org.codehaus.groovy.ast.expr.VariableExpression;
 import org.codehaus.groovy.ast.stmt.BlockStatement;
+import org.codehaus.groovy.ast.stmt.EmptyStatement;
 import org.codehaus.groovy.ast.stmt.ExpressionStatement;
 import org.codehaus.groovy.ast.stmt.ReturnStatement;
 import org.codehaus.groovy.ast.stmt.Statement;
@@ -772,8 +774,12 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
         }
 
         ClassNode beanType = typeAndName.type.getType();
-        if (factory == null && (beanType.isInterface() || Modifier.isAbstract(beanType.getModifiers()))) {
-            addError(baseCall, source, "bean(" + beanType.getNameWithoutPackage() + ") without a factory closure " +
+        // A closure whose body is empty declares construction too, from its own parameters: the
+        // parameters say what is injected, and the generated body is the constructor call the author
+        // would otherwise have written out. bean(Type) { } with no parameters is bean(Type).
+        boolean constructsDeclaredType = factory == null || isEmpty(factory.getCode());
+        if (constructsDeclaredType && (beanType.isInterface() || Modifier.isAbstract(beanType.getModifiers()))) {
+            addError(baseCall, source, "bean(" + beanType.getNameWithoutPackage() + ") with no factory closure body " +
                     "constructs the declared type, which cannot be done for an interface or abstract class - " +
                     "give it a body: bean(" + beanType.getNameWithoutPackage() + ") { new SomeImplementation() }");
             return;
@@ -790,8 +796,9 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
 
         Parameter[] beanParameters = factory == null || factory.getParameters() == null ?
                 Parameter.EMPTY_ARRAY : factory.getParameters();
-        Statement beanBody = factory != null ? factory.getCode() :
-                new ReturnStatement(new ConstructorCallExpression(beanType, ArgumentListExpression.EMPTY_ARGUMENTS));
+        Statement beanBody = constructsDeclaredType ?
+                new ReturnStatement(new ConstructorCallExpression(beanType, constructorArguments(beanParameters))) :
+                factory.getCode();
 
         MethodNode beanMethod = new MethodNode(
                 javaMethodName,
@@ -815,6 +822,25 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
         }
 
         classNode.addMethod(beanMethod);
+    }
+
+    private boolean isEmpty(Statement code) {
+        return code == null || code instanceof EmptyStatement ||
+                (code instanceof BlockStatement && ((BlockStatement) code).getStatements().isEmpty());
+    }
+
+    /**
+     * The closure's parameters, passed straight through as the constructor's arguments. Which
+     * constructor that selects is left to the compiler, resolved from these argument types exactly as
+     * it would be for a hand-written {@code new Type(...)} - nothing here reads the declared type's
+     * constructors, so adding one cannot change what this bean injects.
+     */
+    private ArgumentListExpression constructorArguments(Parameter[] parameters) {
+        ArgumentListExpression arguments = new ArgumentListExpression();
+        for (Parameter parameter : parameters) {
+            arguments.addExpression(new VariableExpression(parameter));
+        }
+        return arguments;
     }
 
     private String syntheticBeanMethodName(ClassNode beanType, Set<String> usedNames) {

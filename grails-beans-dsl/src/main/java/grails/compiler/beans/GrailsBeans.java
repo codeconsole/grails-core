@@ -34,9 +34,12 @@ import org.codehaus.groovy.transform.GroovyASTTransformationClass;
  * statements are one of:
  * <ul>
  * <li>{@code bean(["name", ] Type) { ... }} - or {@code bean(["name", ] Type)} with no body at all,
- * which declares a bean that is simply {@code new Type()}, the most common shape. The bodyless form
- * requires a concrete type with an accessible no-argument constructor; an interface or abstract type
- * needs a body naming the implementation. It chains with the qualifiers below exactly as the
+ * which declares a bean that is simply {@code new Type()}, the most common shape. A closure with
+ * parameters but an empty body means the same for a bean with dependencies: the parameters say what
+ * is injected and the constructor call is generated from them, in the order written, leaving the
+ * compiler to select the constructor from their types just as it would for a hand-written body. Both
+ * forms require a concrete type; an interface or abstract type needs a body naming the
+ * implementation. It chains with the qualifiers below exactly as the
  * closure form does ({@code bean(Foo).lazy().conditionalOnMissingBean()}). The closure form may be
  * chained with any combination of
  * {@code .conditionalOnMissingBean(...)} (positional types, the annotation's own named

@@ -116,15 +116,12 @@ class MailGrailsPlugin extends Plugin {
         }
 
         bean(MailMessageBuilderFactory).conditionalOnMissingBean() { MailSender mailSender, MailMessageContentRenderer mailMessageContentRenderer ->
-            new MailMessageBuilderFactory(mailSender, mailMessageContentRenderer)
         }
 
         bean(MailMessageContentRenderer).conditionalOnMissingBean() { GroovyPagesTemplateEngine groovyPagesTemplateEngine, GroovyPagesUriService groovyPagesUriService, GrailsApplication grailsApplication, GrailsPluginManager pluginManager ->
-            new MailMessageContentRenderer(groovyPagesTemplateEngine, groovyPagesUriService, grailsApplication, pluginManager)
         }
 
         bean(MailService).conditionalOnMissingBean() { MailConfigurationProperties mailConfigurationProperties, MailMessageBuilderFactory mailMessageBuilderFactory ->
-            new MailService(mailConfigurationProperties, mailMessageBuilderFactory)
         }
     }
 }

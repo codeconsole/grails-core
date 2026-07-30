@@ -97,7 +97,6 @@ class UrlMappingsGrailsPlugin extends Plugin {
         // two CORS filters answering the same requests.
         bean(GrailsCorsFilter).conditionalOnMissingBean(CorsFilter)
                 .annotate(ConditionalOnProperty, name: Settings.SETTING_CORS_FILTER, havingValue: 'true', matchIfMissing: true) { GrailsCorsConfiguration grailsCorsConfiguration ->
-                    new GrailsCorsFilter(grailsCorsConfiguration)
                 }
 
         bean(UrlMappingsErrorPageCustomizer).conditionalOnMissingBean() { ObjectProvider<UrlMappings> urlMappingsProvider ->
