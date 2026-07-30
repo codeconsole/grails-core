@@ -99,7 +99,14 @@ import org.codehaus.groovy.transform.GroovyASTTransformationClass;
  * of them has any effect where the author wrote them. Annotations outside that set can be moved
  * explicitly via {@link #moveAnnotations}.
  */
-@Retention(RetentionPolicy.RUNTIME)
+/*
+ * CLASS retention: the transform consumes this at canonicalization and it is not among the
+ * annotations moved to the generated sibling, so it stays on the source class with nothing left to
+ * read it. Keeping it out of the runtime image matters a little more than usual here, since
+ * grails-core declares grails-beans-dsl api and so puts this module on every application's runtime
+ * classpath.
+ */
+@Retention(RetentionPolicy.CLASS)
 @Target(ElementType.TYPE)
 @GroovyASTTransformationClass("org.grails.compiler.beans.GrailsBeansASTTransformation")
 public @interface GrailsBeans {

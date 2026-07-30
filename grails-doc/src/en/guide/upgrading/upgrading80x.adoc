@@ -1879,3 +1879,38 @@ refreshes. Any context not started through `SpringApplication` — the CLI, plai
 tests — keeps the previous fallback behaviour unchanged: a plain `DefaultStackTraceFilterer` with no
 configuration applied. The filterer is JVM-global rather than per-context, so in a JVM hosting more than one
 application context the last one booted supplies the filterer for all of them.
+
+==== 39. `grails.spring.bean.packages` Scanning Fixed Outside the Project Directory
+
+The component scan driven by `grails.spring.bean.packages` resolved its search root from a probe of the
+*working directory* — it looked for a `grails-app` directory or an `Application.groovy` beside it — and
+returned nothing when neither was there. An application started from anywhere other than its project root
+therefore registered none of the `@Component` classes in the configured packages, silently.
+
+That covers most production shapes: a systemd unit with its own `WorkingDirectory`, a container with a
+`WORKDIR`, an application server. `java -jar build/libs/app.jar` run from the project root was unaffected,
+which is why the gap survived. The scan now uses Spring's own resource resolution, so the packages are
+scanned wherever the process is started from.
+
+[source, yaml]
+.grails-app/conf/application.yml
+----
+grails:
+    spring:
+        bean:
+            packages:
+                - com.example.components
+----
+
+**Applications deployed this way will start getting beans they previously did not.** The scan registers
+every `@Component`, `@Service`, `@Repository` and `@Controller` in the listed packages. Two things to check
+before upgrading:
+
+* A class in one of those packages that was never actually reaching the context — because it duplicates a
+bean the application defines elsewhere, or because it was left behind — now registers. A duplicate under the
+same bean name will fail startup rather than pass silently.
+* Beans that were previously absent may now participate in autowiring by type, so an injection point that
+resolved unambiguously before can become ambiguous.
+
+Removing the packages from `grails.spring.bean.packages`, or the stray classes from those packages, restores
+the previous set of beans.
