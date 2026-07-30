@@ -18,17 +18,22 @@
  */
 package org.apache.grails.buildsrc
 
+import groovy.io.FileType
+
 import org.gradle.api.DefaultTask
 import org.gradle.api.GradleException
 import org.gradle.api.file.ConfigurableFileCollection
 import org.gradle.api.file.DirectoryProperty
-import org.gradle.api.tasks.Classpath
 import org.gradle.api.tasks.IgnoreEmptyDirectories
 import org.gradle.api.tasks.InputFiles
 import org.gradle.api.tasks.OutputDirectory
 import org.gradle.api.tasks.PathSensitive
 import org.gradle.api.tasks.PathSensitivity
 import org.gradle.api.tasks.TaskAction
+import org.objectweb.asm.AnnotationVisitor
+import org.objectweb.asm.ClassReader
+import org.objectweb.asm.ClassVisitor
+import org.objectweb.asm.Opcodes
 
 /**
  * Scans this project's own compiled main classes for {@code @AutoConfiguration} and writes
@@ -36,9 +41,12 @@ import org.gradle.api.tasks.TaskAction
  * file never needs to be hand-maintained. Mirrors how {@code META-INF/grails-plugin.xml} is already
  * generated from scanned {@code *GrailsPlugin} classes elsewhere in this build.
  *
- * <p>Classes are inspected via a scratch {@link URLClassLoader} over this project's own runtime
- * classpath, isolated from the Gradle daemon's classpath (parent set to the platform loader) so a
- * different Spring/Groovy version on the daemon's classpath cannot shadow the project's own.
+ * <p>Class files are read directly with ASM rather than loaded. Loading required every supertype and
+ * annotation of every candidate to be resolvable, and a candidate that failed to load could only be
+ * warned about and skipped - so a genuine {@code @AutoConfiguration} could drop out of the generated
+ * file while the build stayed green, which is the outcome this task exists to prevent. Reading the
+ * annotation table needs nothing beyond the class file itself, so that failure mode is gone and
+ * there is no scan classpath to get wrong.
  */
 abstract class GenerateAutoConfigurationImportsTask extends DefaultTask {
 
@@ -47,22 +55,15 @@ abstract class GenerateAutoConfigurationImportsTask extends DefaultTask {
 
     static final String AUTO_CONFIGURATION_ANNOTATION = 'org.springframework.boot.autoconfigure.AutoConfiguration'
 
+    private static final String AUTO_CONFIGURATION_DESCRIPTOR =
+            'L' + AUTO_CONFIGURATION_ANNOTATION.replace('.' as char, '/' as char) + ';'
+
     private static final String CLASS_FILE_EXTENSION = '.class'
 
     @InputFiles
     @IgnoreEmptyDirectories
     @PathSensitive(PathSensitivity.RELATIVE)
     abstract ConfigurableFileCollection getClassesDirs()
-
-    /**
-     * The classpath the scratch classloader resolves annotations/supertypes against. Deliberately
-     * built from the project's compile classpath (dependencies only) rather than its runtime
-     * classpath: the runtime classpath includes the source set's own output, which - once this
-     * task's generated directory is registered on that same output - would make this task depend
-     * on itself.
-     */
-    @Classpath
-    abstract ConfigurableFileCollection getScanClasspath()
 
     /**
      * The module's own resource directories, checked for a hand-maintained copy of the imports file.
@@ -87,11 +88,7 @@ abstract class GenerateAutoConfigurationImportsTask extends DefaultTask {
                     'the generated one lists every @AutoConfiguration in this module.')
         }
 
-        SortedSet<String> discovered = scan(classesDirs.files, scanClasspath.files) { String className, Throwable failure ->
-            logger.warn('generateAutoConfigurationImports: could not inspect {} - it will be excluded from ' +
-                    'the generated imports file even if it is genuinely annotated @AutoConfiguration. Cause: {}',
-                    className, failure.toString())
-        }
+        SortedSet<String> discovered = scan(classesDirs.files)
         File importsFile = outputDirectory.file(IMPORTS_RESOURCE_PATH).get().asFile
         importsFile.parentFile.mkdirs()
         importsFile.text = discovered.isEmpty() ? '' : discovered.join('\n') + '\n'
@@ -109,64 +106,76 @@ abstract class GenerateAutoConfigurationImportsTask extends DefaultTask {
     }
 
     /**
-     * Package-private so it is directly unit-testable without running a real Gradle task.
+     * Static so it is directly unit-testable without running a real Gradle task.
      *
-     * @param classesDirs directories of compiled {@code .class} files to inspect (a project's own
-     * output only - dependency jars on {@code classpathFiles} are never scanned for candidates)
-     * @param classpathFiles the classpath the scratch classloader resolves supertypes/annotations
-     * against; must include {@code classesDirs} plus every runtime dependency
-     * @param onUnresolvable invoked with (className, failure) for every candidate class that could
-     * not be loaded against {@code classpathFiles}. Defaults to a no-op so existing callers are
-     * unaffected; {@link #generate()} passes a callback that logs a build warning, since a class
-     * that fails to load here is silently excluded from the generated imports file - which, if it
-     * was genuinely a real {@code @AutoConfiguration}, means its beans would never be registered
-     * with no other signal that anything went wrong.
+     * @param classesDirs directories of compiled {@code .class} files to inspect - a project's own
+     * output only, never a dependency jar
      * @return the fully-qualified names of every top-level class annotated {@code @AutoConfiguration},
      * sorted for a deterministic, diff-friendly output file
      */
-    static SortedSet<String> scan(Set<File> classesDirs, Set<File> classpathFiles,
-            Closure<?> onUnresolvable = { String className, Throwable failure -> }) {
-        URL[] urls = classpathFiles.collect { it.toURI().toURL() } as URL[]
-        URLClassLoader scanLoader = new URLClassLoader(urls, ClassLoader.systemClassLoader.parent)
-        try {
-            Class<?> autoConfigurationAnnotation = Class.forName(AUTO_CONFIGURATION_ANNOTATION, false, scanLoader)
-            SortedSet<String> discovered = new TreeSet<>()
-            classesDirs.each { dir -> scanDirectory(dir, scanLoader, autoConfigurationAnnotation, discovered, onUnresolvable) }
-            discovered
-        }
-        finally {
-            scanLoader.close()
-        }
+    static SortedSet<String> scan(Set<File> classesDirs) {
+        SortedSet<String> discovered = new TreeSet<>()
+        classesDirs.each { File dir -> scanDirectory(dir, discovered) }
+        discovered
     }
 
-    private static void scanDirectory(File dir, URLClassLoader scanLoader, Class<?> autoConfigurationAnnotation,
-            SortedSet<String> discovered, Closure<?> onUnresolvable) {
+    private static void scanDirectory(File dir, SortedSet<String> discovered) {
         if (!dir.exists()) {
             return
         }
-        dir.eachFileRecurse(groovy.io.FileType.FILES) { file ->
+        dir.eachFileRecurse(FileType.FILES) { File file ->
+            // A Groovy closure compiles to a $-named class, which is never a candidate
             if (!file.name.endsWith(CLASS_FILE_EXTENSION) || file.name.contains('$')) {
                 return
             }
-            // The extension is dropped by length, not with minus: minus removes the first
-            // occurrence of '.class' anywhere, so once the separators have become dots any package
-            // segment starting with 'class' would be mangled instead -
-            // org/grails/plugins/classloading/FooAutoConfiguration.class becoming
-            // org.grails.pluginsloading.FooAutoConfiguration.class, which then fails to load and is
-            // reported as unresolvable rather than registered.
-            String relative = dir.toPath().relativize(file.toPath()).toString()
-            String className = relative[0..<(relative.length() - CLASS_FILE_EXTENSION.length())]
-                    .replace(File.separator, '.')
-            try {
-                Class<?> candidate = Class.forName(className, false, scanLoader)
-                if (candidate.isAnnotationPresent(autoConfigurationAnnotation)) {
-                    discovered << candidate.name
-                }
-            }
-            catch (Throwable unresolvable) {
-                onUnresolvable.call(className, unresolvable)
+            String name = autoConfigurationClassName(file)
+            if (name) {
+                discovered << name
             }
         }
+    }
+
+    /**
+     * The class's binary name when its class file carries {@code @AutoConfiguration}, otherwise
+     * {@code null}. The name comes from the class file rather than from its path, so a package
+     * segment that happens to contain the file extension cannot mangle it.
+     */
+    private static String autoConfigurationClassName(File classFile) {
+        ClassReader reader
+        try {
+            reader = new ClassReader(classFile.bytes)
+        }
+        catch (IOException | IllegalArgumentException notAClassFile) {
+            // Unreadable or malformed: a real problem with the module's own output, not something to
+            // skip quietly the way an unresolvable class used to be
+            throw new GradleException("Could not read ${classFile} while generating ${IMPORTS_RESOURCE_PATH}",
+                    notAClassFile)
+        }
+        AutoConfigurationDetector detector = new AutoConfigurationDetector()
+        reader.accept(detector, ClassReader.SKIP_CODE | ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES)
+        detector.present ? reader.className.replace('/' as char, '.' as char) : null
+    }
+
+    /**
+     * Records whether the visited class declares {@code @AutoConfiguration} directly. Deliberately a
+     * direct check and not a meta-annotation search, matching what {@code isAnnotationPresent} did.
+     */
+    private static class AutoConfigurationDetector extends ClassVisitor {
+
+        boolean present
+
+        AutoConfigurationDetector() {
+            super(Opcodes.ASM9)
+        }
+
+        @Override
+        AnnotationVisitor visitAnnotation(String descriptor, boolean visible) {
+            if (AUTO_CONFIGURATION_DESCRIPTOR == descriptor) {
+                present = true
+            }
+            null
+        }
+
     }
 
 }

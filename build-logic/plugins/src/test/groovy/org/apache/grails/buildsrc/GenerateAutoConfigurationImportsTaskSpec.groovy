@@ -22,14 +22,13 @@ import groovy.io.FileType
 import org.codehaus.groovy.control.CompilationUnit
 import org.codehaus.groovy.control.CompilerConfiguration
 import org.codehaus.groovy.control.Phases
-import org.springframework.boot.autoconfigure.AutoConfiguration
 import spock.lang.TempDir
 
 import spock.lang.Specification
 
 /**
  * Compiles small fixture sources to real {@code .class} files (the same way {@code groovyc} would)
- * and scans them, rather than mocking the classloading behaviour {@link GenerateAutoConfigurationImportsTask#scan}
+ * and scans them, rather than mocking the class-file reading {@link GenerateAutoConfigurationImportsTask#scan}
  * depends on.
  */
 class GenerateAutoConfigurationImportsTaskSpec extends Specification {
@@ -47,23 +46,6 @@ class GenerateAutoConfigurationImportsTaskSpec extends Specification {
             }
         }
         unit.compile(Phases.OUTPUT)
-    }
-
-    private static File springBootAutoconfigureClasspathEntry() {
-        new File(AutoConfiguration.protectionDomain.codeSource.location.toURI())
-    }
-
-    /**
-     * Compiled fixture classes are themselves Groovy classes (they implement
-     * {@code groovy.lang.GroovyObject}), so the scratch classloader needs the Groovy runtime too -
-     * exactly as a real project's {@code runtimeClasspath} always would.
-     */
-    private static File groovyRuntimeClasspathEntry() {
-        new File(GroovyObject.protectionDomain.codeSource.location.toURI())
-    }
-
-    private static Set<File> testClasspath(File destDir) {
-        [destDir, springBootAutoconfigureClasspathEntry(), groovyRuntimeClasspathEntry()] as Set
     }
 
     def "finds a top-level class annotated @AutoConfiguration"() {
@@ -84,7 +66,7 @@ class GenerateAutoConfigurationImportsTaskSpec extends Specification {
         compileFixtures(srcDir, destDir)
 
         when:
-        SortedSet<String> found = GenerateAutoConfigurationImportsTask.scan([destDir] as Set, testClasspath(destDir))
+        SortedSet<String> found = GenerateAutoConfigurationImportsTask.scan([destDir] as Set)
 
         then:
         found == ['fixture.RealAutoConfig'] as SortedSet
@@ -105,7 +87,7 @@ class GenerateAutoConfigurationImportsTaskSpec extends Specification {
         compileFixtures(srcDir, destDir)
 
         when:
-        SortedSet<String> found = GenerateAutoConfigurationImportsTask.scan([destDir] as Set, testClasspath(destDir))
+        SortedSet<String> found = GenerateAutoConfigurationImportsTask.scan([destDir] as Set)
 
         then:
         found.isEmpty()
@@ -134,7 +116,7 @@ class GenerateAutoConfigurationImportsTaskSpec extends Specification {
         new File(destDir, 'fixture/Outer$Nested.class').exists()
 
         when:
-        SortedSet<String> found = GenerateAutoConfigurationImportsTask.scan([destDir] as Set, testClasspath(destDir))
+        SortedSet<String> found = GenerateAutoConfigurationImportsTask.scan([destDir] as Set)
 
         then:
         found.isEmpty()
@@ -142,32 +124,29 @@ class GenerateAutoConfigurationImportsTaskSpec extends Specification {
 
     def "returns an empty set for a nonexistent classes directory"() {
         expect:
-        GenerateAutoConfigurationImportsTask.scan(
-                [new File(tempDir, 'does-not-exist')] as Set, [springBootAutoconfigureClasspathEntry()] as Set).isEmpty()
+        GenerateAutoConfigurationImportsTask.scan([new File(tempDir, 'does-not-exist')] as Set).isEmpty()
     }
 
-    def "reports classes that fail to load instead of silently dropping them"() {
-        given: "a compiled class whose superclass is deliberately removed from the classpath afterwards"
+    def "detects an @AutoConfiguration whose supertype is not resolvable"() {
+        given: "a compiled class whose superclass is deliberately removed afterwards - the shape that " +
+                "used to be warned about and silently dropped from the generated file"
         File srcDir = new File(tempDir, 'src')
         srcDir.mkdirs()
         new File(srcDir, 'Missing.groovy').text = 'class Missing {}'
-        new File(srcDir, 'Broken.groovy').text = 'class Broken extends Missing {}'
+        new File(srcDir, 'RealAutoConfig.groovy').text = '''
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @AutoConfiguration
+            class RealAutoConfig extends Missing {
+            }
+        '''
         File destDir = new File(tempDir, 'classes')
         destDir.mkdirs()
         compileFixtures(srcDir, destDir)
         assert new File(destDir, 'Missing.class').delete()
 
-        when:
-        List<String> reportedFailures = []
-        SortedSet<String> found = GenerateAutoConfigurationImportsTask.scan(
-                [destDir] as Set, testClasspath(destDir)) { String className, Throwable failure ->
-            reportedFailures << className
-            assert failure != null
-        }
-
-        then: "the unloadable class is excluded from the result but not silently - the callback fires for it"
-        found.isEmpty()
-        reportedFailures == ['Broken']
+        expect: "reading the annotation table needs nothing but the class file itself"
+        GenerateAutoConfigurationImportsTask.scan([destDir] as Set) == ['RealAutoConfig'] as SortedSet
     }
 
     def "finds a class whose package segment begins with the class-file extension"() {
@@ -188,15 +167,10 @@ class GenerateAutoConfigurationImportsTaskSpec extends Specification {
         compileFixtures(srcDir, destDir)
 
         when:
-        List<String> reportedFailures = []
-        SortedSet<String> found = GenerateAutoConfigurationImportsTask.scan(
-                [destDir] as Set, testClasspath(destDir)) { String className, Throwable failure ->
-            reportedFailures << className
-        }
+        SortedSet<String> found = GenerateAutoConfigurationImportsTask.scan([destDir] as Set)
 
         then:
         found == ['fixture.classloading.ScannedAutoConfig'] as SortedSet
-        reportedFailures.isEmpty()
     }
 
     def "reports a hand-maintained imports file alongside the generated one"() {
