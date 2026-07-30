@@ -102,6 +102,7 @@ This repository contains multiple independent Gradle projects:
 | **build-logic/** | Gradle convention plugins for the build | `cd build-logic && ../gradlew build` |
 | **grails-gradle/** | Grails Gradle plugins | `cd grails-gradle && ./gradlew build` |
 | **grails-forge/** | Application generator (like Spring Initializr) | `cd grails-forge && ./gradlew build` |
+| **end-to-end/** | End-to-end tests consuming published Grails artifacts (see `end-to-end/README.md` for required setup) | `cd end-to-end && ./gradlew check` |
 
 Each project has its own `settings.gradle` and independent build. When working on a specific project, run Gradle commands from that project's directory.
 

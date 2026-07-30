@@ -1748,7 +1748,21 @@ The `console` and `shell` tasks also draw from the provisioned cli tier, so the
 `build.gradle` is no longer needed and can be removed (the `console` configuration itself remains
 for additional console-only dependencies).
 
-Disable the discovery with `grails { cliAutoProvision = false }` and declare the cli tier
+The deprecated Grails 7 command contract is isolated in
+`org.apache.grails:grails-core-cli-legacy`. When both `cliAutoProvision` (default `true`) and
+`legacyCommandSupport` (default `false`) are enabled, the plugin adds this artifact to the
+execution-only `grailsCliLegacy` bucket. `grailsCliClasspath` includes that bucket, but application
+and plugin compile classpaths do not. Opt in so existing Grails 7 command plugins keep working
+without exposing the deprecated API to new command sources.
+
+Two flags control auto-provisioning:
+
+* `cliAutoProvision` (default `true`) controls the modern CLI tier: `grails-core-cli`,
+  `grails-console`, and discovered companion `-cli` artifacts.
+* `legacyCommandSupport` (default `false`) controls only the Grails 7 application-command bridge.
+  It is consulted only when `cliAutoProvision` is also enabled.
+
+Disable the modern CLI tier with `grails { cliAutoProvision = false }` and declare dependencies
 explicitly when full control over the command classpath is preferred:
 
 [source,groovy]
@@ -1763,6 +1777,17 @@ dependencies {
     grailsCli 'org.apache.grails:grails-core-cli'
     grailsCli 'org.apache.grails:grails-console'
     grailsCli 'org.apache.grails:grails-data-hibernate7-dbmigration-cli'
+    grailsCliLegacy 'org.apache.grails:grails-core-cli-legacy'
+}
+----
+
+Keep modern companion auto-provisioning while enabling only the Grails 7 bridge:
+
+[source,groovy]
+.build.gradle
+----
+grails {
+    legacyCommandSupport = true
 }
 ----
 
@@ -1790,34 +1815,82 @@ The renamed framework command packages are:
 |`org.apache.grails.security.cli.*` (grails-spring-security-cli)
 |===
 
-**Third-party plugins must be rebuilt against Grails 8 for their commands to be available.**
-Apply the new `org.apache.grails.gradle.grails-plugin-cli` Gradle plugin, move command sources from
-`grails-app/commands` to `src/cli/groovy`, and update the contract imports — recompiling then
-regenerates the `grails-cli.factories` registration automatically and the companion `-cli`
-artifact is published alongside the plugin (see
-xref:commandLine#creatingCustomCommands[Creating Custom Commands] for the complete workflow).
-Hand-authored command registrations must move from
-`src/main/resources/META-INF/grails.factories` to `.../grails-cli.factories`. A Grails 7 command
-plugin dropped onto a Grails 8 application unchanged will not have its commands discovered.
+===== 35.1 Backwards Compatibility for Existing Command Plugins
 
-**What this change means for upgrading an application.** Plugin re-releases are *not* a
-prerequisite for upgrading the application itself — the impact of the CLI split is bounded as
-follows:
+Grails 8 provides a deprecated, execution-only compatibility layer for already-published Grails 7 command
+plugins. Application commands created with `create-command` that implement
+`grails.dev.commands.ApplicationCommand` or `grails.dev.commands.GrailsApplicationCommand` remain
+available without a plugin re-release when the bridge is enabled. The deprecated
+`grails.dev.commands.*` types are retained in `org.apache.grails:grails-core-cli-legacy`, which is
+provisioned only on the command runner classpath when both `cliAutoProvision` and
+`legacyCommandSupport` are enabled (`legacyCommandSupport` defaults to `false`), and registrations
+in `META-INF/grails.factories` under `grails.dev.commands.ApplicationCommand` continue to be
+discovered at runtime.
 
-* *Plugins that ship no commands* are entirely unaffected by this change.
-* *Command-bearing plugins that have not yet been rebuilt for Grails 8* keep their runtime
-  functionality — controllers, services, taglibs, and other artefacts continue to work exactly as
-  before, because the runtime plugin jar never depended on the command contract. Only the plugin's
-  *commands* are unavailable: their registrations in the legacy `grails.factories` location are
-  ignored (the clean break above), so they disappear from the command list rather than fail. The
-  commands return once the plugin publishes a Grails 8 release with a companion `-cli` artifact.
-* *The application's own commands* in `grails-app/commands` need only the import rename shown
-  above; the build wiring is automatic.
+Enable the bridge in the consuming application:
 
-NOTE: The statements above are about the CLI split specifically. Independently of it, Grails 8
-removes APIs that were deprecated in Grails 7 — a Grails 7 plugin that avoided those deprecations
-generally continues to work on Grails 8 unchanged, while one that relied on them (or on other
-Grails 8 changes such as Spring Boot 4) needs an update for that reason.
+[source,groovy]
+.build.gradle
+----
+grails {
+    legacyCommandSupport = true
+}
+----
+
+Or set the project property `grailsLegacyCommandSupport=true`.
+
+When the bridge is disabled, Grails still inspects legacy `META-INF/grails.factories` resources at
+command runtime without loading their command classes. If a plugin still publishes
+`grails.dev.commands.ApplicationCommand` entries, Grails logs an error naming the plugin artifact.
+An unknown command also includes the remediation to enable `legacyCommandSupport` or upgrade the
+plugin. This detection does not resolve application dependencies during Gradle configuration.
+
+Grails logs a one-time deprecation warning when it uses this compatibility layer. It is intended
+to keep existing published plugins working while plugin authors migrate; it is deprecated and may
+be removed in a future major release. No removal major has been announced.
+
+Legacy application commands do not receive a dedicated Gradle task. Run them through the generic
+`runCommand` task (or the shell, which routes legacy adapters there), for example:
+
+[source,bash]
+----
+./gradlew runCommand "-Pargs=generate-controller example.Book"
+----
+
+Named per-command Gradle tasks remain available only for migrated commands published in a
+companion `-cli` artifact.
+
+New and migrated commands should always compile against `org.apache.grails.core.cli.*` from
+`grails-core-cli`. A plugin that intentionally continues to author commands against the deprecated
+contract must declare `compileOnly 'org.apache.grails:grails-core-cli-legacy'` explicitly. Consumers
+of already-published Grails 7 command plugins must opt in with
+`grails { legacyCommandSupport = true }` (or declare `grailsCliLegacy` themselves).
+
+**What just works:**
+
+* Code generation scripts created with `create-script`, including scripts packaged as
+  `META-INF/commands/*.groovy` such as `audit-quickstart` and `s2-quickstart`, are unaffected.
+* YAML commands packaged as `META-INF/commands/*.yml` are unaffected.
+* Existing published Grails 7 application-command plugins continue to work on Grails 8 without a
+  re-release once `legacyCommandSupport` is enabled.
+
+**What consumers of Grails 7 command plugins must do:**
+
+* Enable `grails { legacyCommandSupport = true }` (or `-PgrailsLegacyCommandSupport=true`), or
+  declare `grailsCliLegacy 'org.apache.grails:grails-core-cli-legacy'` explicitly when
+  `cliAutoProvision` is disabled.
+
+**What plugin authors must do:**
+
+* Migrate application commands to the `org.apache.grails.core.cli.*` API and register them in
+  `META-INF/grails-cli.factories`.
+* Publish commands in a companion `-cli` artifact for the CLI classpath split and per-command
+  Gradle task support. See xref:commandLine#creatingCustomCommands[Creating Custom Commands] for
+  the complete workflow.
+
+NOTE: The compatibility layer applies only to the legacy application-command contract. Independently
+of it, a Grails 7 plugin that relies on APIs removed in Grails 8, Spring Boot 4, or other Grails 8
+changes still requires an update.
 
 ==== 37. jQuery Webjar Upgraded to 4.0.0
 
