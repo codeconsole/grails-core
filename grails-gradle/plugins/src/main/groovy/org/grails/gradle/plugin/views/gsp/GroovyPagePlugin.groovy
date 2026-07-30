@@ -55,7 +55,6 @@ class GroovyPagePlugin implements Plugin<Project> {
         TaskContainer tasks = project.tasks
 
         project.configurations.register('gspCompile')
-        project.dependencies.add('gspCompile', 'jakarta.servlet:jakarta.servlet-api:6.0.0')
 
         SourceSet mainSourceSet = SourceSets.findMainSourceSet(project)
         SourceSetOutput output = mainSourceSet?.output
