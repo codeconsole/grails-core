@@ -711,6 +711,20 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
         }
 
         String rootName = baseCall.getMethodAsString();
+
+        // The body closure belongs to the outermost call, after every qualifier. Written the other
+        // way round it sits on the root call instead, where the [name, ] Type parsing below finds it
+        // as an extra argument and reports something unrelated - that the name and type are the wrong
+        // way around, or that a type is missing.
+        List<Expression> rootArgs = flatten(baseCall.getArguments());
+        if (!qualifierCalls.isEmpty() && !rootArgs.isEmpty() &&
+                rootArgs.get(rootArgs.size() - 1) instanceof ClosureExpression) {
+            String firstQualifier = qualifierCalls.get(0).getMethodAsString();
+            addError(statement, source, "the body closure comes last, after every chained qualifier - " +
+                    "write " + rootName + "(...)." + firstQualifier + "(...) { ... } rather than " +
+                    rootName + "(...) { ... }." + firstQualifier + "(...)");
+            return;
+        }
         boolean isBean = BEAN_CALL.equals(rootName);
         Set<String> allowedQualifiers = isBean ? BEAN_QUALIFIER_CALL_NAMES :
                 FIELD_CALL.equals(rootName) ? FIELD_QUALIFIER_CALL_NAMES : METHOD_QUALIFIER_CALL_NAMES;
@@ -800,7 +814,7 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
         Parameter[] beanParameters = factory == null || factory.getParameters() == null ?
                 Parameter.EMPTY_ARRAY : factory.getParameters();
         Statement beanBody = constructsDeclaredType ?
-                new ReturnStatement(new ConstructorCallExpression(beanType, constructorArguments(beanParameters))) :
+                synthesizedConstruction(beanType, beanParameters, baseCall) :
                 factory.getCode();
 
         MethodNode beanMethod = new MethodNode(
@@ -833,17 +847,33 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
     }
 
     /**
-     * The closure's parameters, passed straight through as the constructor's arguments. Which
-     * constructor that selects is left to the compiler, resolved from these argument types exactly as
-     * it would be for a hand-written {@code new Type(...)} - nothing here reads the declared type's
-     * constructors, so adding one cannot change what this bean injects.
+     * The construction a bodyless or empty-bodied {@code bean(...)} compiles to: the closure's
+     * parameters passed straight through as the constructor's arguments. Which constructor that
+     * selects is left to the compiler, resolved from these argument types exactly as it would be for
+     * a hand-written {@code new Type(...)} - nothing here reads the declared type's constructors, so
+     * adding one cannot change what this bean injects.
+     *
+     * <p>Every node carries the position of the {@code bean(...)} statement. Without it, the ordinary
+     * failure of this form - a parameter list matching no constructor - reaches the compiler with no
+     * location, and under static compilation that surfaces as a {@code GroovyBugError} at line -1
+     * inviting the author to file a Groovy bug, rather than the located "Cannot find matching
+     * constructor" the hand-written equivalent gets.</p>
      */
-    private ArgumentListExpression constructorArguments(Parameter[] parameters) {
+    private Statement synthesizedConstruction(ClassNode beanType, Parameter[] parameters, ASTNode origin) {
         ArgumentListExpression arguments = new ArgumentListExpression();
         for (Parameter parameter : parameters) {
-            arguments.addExpression(new VariableExpression(parameter));
+            VariableExpression argument = new VariableExpression(parameter);
+            argument.setSourcePosition(origin);
+            arguments.addExpression(argument);
         }
-        return arguments;
+        arguments.setSourcePosition(origin);
+
+        ConstructorCallExpression construction = new ConstructorCallExpression(beanType, arguments);
+        construction.setSourcePosition(origin);
+
+        ReturnStatement returnStatement = new ReturnStatement(construction);
+        returnStatement.setSourcePosition(origin);
+        return returnStatement;
     }
 
     private String syntheticBeanMethodName(ClassNode beanType, Set<String> usedNames) {

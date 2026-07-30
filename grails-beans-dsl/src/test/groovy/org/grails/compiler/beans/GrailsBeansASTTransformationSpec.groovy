@@ -1002,6 +1002,45 @@ class GrailsBeansASTTransformationSpec extends Specification {
         instance.defaulted().via == 'no-arg'
     }
 
+    @Unroll
+    def "a synthesized construction that matches no constructor is reported against the statement: #description"() {
+        given: "the ordinary failure of the bodyless and empty-body forms"
+        String source = """
+            import grails.compiler.beans.GrailsBeans
+            import groovy.transform.CompileStatic
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            class NeedsString {
+                NeedsString(String required) { }
+            }
+
+            @GrailsBeans
+            @CompileStatic
+            @AutoConfiguration
+            class ConstructorMismatchFixture {
+                def beans = {
+                    $statement
+                }
+            }
+        """
+
+        when:
+        compile(source)
+
+        then: "a located type-checking error, not an internal compiler error at line -1"
+        MultipleCompilationErrorsException e = thrown(MultipleCompilationErrorsException)
+        e.message.contains('Cannot find matching constructor')
+
+        and:
+        !e.message.contains('line -1')
+        !e.message.contains('BUG!')
+
+        where:
+        description                   | statement
+        'empty body with parameters'  | 'bean(NeedsString) { Integer n ->\n                    }'
+        'no closure at all'           | 'bean(NeedsString)'
+    }
+
     def "a parameter-only bean closure is rejected for a type that cannot be constructed"() {
         given:
         String source = '''
@@ -1491,6 +1530,9 @@ class GrailsBeansASTTransformationSpec extends Specification {
         'a field(...) and a method(...) sharing the same name' |
                 "field('x', String); method('x', Integer) { 1 }" | 'is already used by another'
         'the removed .methodName(...) qualifier'          | "bean('x', String).methodName('y') { 'z' }"                      | 'Expected bean(["name", ] Type) { ... }'
+        'a qualifier chained after the body closure'      | "bean(String) { 'hi' }.lazy()"                                   | 'the body closure comes last'
+        'a qualifier chained after a named bean body'     | "bean('greeting', String) { 'hi' }.lazy()"                       | 'the body closure comes last'
+        'a qualifier chained after a method(...) body'    | "method('x', String) { 'y' }.annotate(Order, value: 1)"          | 'the body closure comes last'
         'a bean(...) chained onto a field(...)'            | "field('suffix', String).bean('greeter', String) { 'hi' }"       | 'is its own statement'
         'a field(...) chained onto a bean(...)'            | "bean('greeter', String) { 'hi' }.field('suffix', String)"       | 'is its own statement'
         'field(Type) whose derived name is a reserved keyword'  | 'field(Boolean)'                                            | 'derived from Boolean, is not a valid name'
