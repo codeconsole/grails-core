@@ -112,7 +112,7 @@ dependencies {
 Because all Grails projects will apply the Grails Gradle plugin, the BOM is automatically applied.
 You can override a version in the BOM by setting the associated Gradle property.
 The possible gradle properties are generated as part of this documentation.
-Please see link:{versionsRef}Grails BOM.html[Grails BOM Dependencies] for a quick reference.
+Please see link:{versionsRef}Grails%20BOM.html[Grails BOM Dependencies] for a quick reference.
 
 ===== 4.1 BOM Property Changes
 
