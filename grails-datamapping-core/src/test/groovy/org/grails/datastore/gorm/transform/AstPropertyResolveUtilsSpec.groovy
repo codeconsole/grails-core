@@ -229,6 +229,49 @@ class AstPropertyResolveUtilsSpec extends Specification {
         outcomes.every { it }
     }
 
+    void "concurrent resolution of the exact same shared ClassNode instance from many threads is safe"() {
+        // Distinct-instance concurrency (the test above) can never exercise a race on the
+        // underlying node-metadata storage, because nothing is shared between the threads. A single
+        // ClassNode instance genuinely can be looked up from more than one thread at once in
+        // practice - e.g. ClassHelper.OBJECT_TYPE/STRING_TYPE are JVM-wide singletons that this
+        // utility's callers can resolve to for a plain Object- or def-typed property, so two
+        // unrelated, concurrently-running compilations could both reach this cache for the exact
+        // same node. This test exercises that shared-node case directly and asserts every thread's
+        // returned value is correct.
+        //
+        // Note on what this test can and can't prove: the cached computation here is deterministic
+        // and idempotent, so even with the "synchronized (cacheHolder)" guard in
+        // AstPropertyResolveUtils#getPropertiesFromCache removed, every thread still computes and
+        // returns the same correct value in practice - a black-box test of returned values cannot
+        // reliably force ClassNode's underlying, explicitly-documented-not-thread-safe metadata
+        // storage into an observably-wrong state without reaching into Groovy internals neither this
+        // spec nor AstPropertyResolveUtils controls. Verified by temporarily removing that guard and
+        // running this test 8 times without a failure. The synchronization is kept as a correctness
+        // fix justified by ListHashMap's own documentation, not because this test can demonstrate
+        // its absence breaking anything; this test instead guards against a regression to something
+        // observably broken (an exception, a null, a wrong/partial result) under real concurrent
+        // load, which is the failure mode a future refactor could plausibly introduce.
+        given: 'one ClassNode instance that every thread will resolve concurrently'
+        ClassNode sharedNode = new ClassNode('SharedWidget', Modifier.PUBLIC, ClassHelper.OBJECT_TYPE)
+        sharedNode.addProperty('label', Modifier.PUBLIC, ClassHelper.STRING_TYPE, null, null, null)
+        int threadCount = 32
+        ExecutorService executor = Executors.newFixedThreadPool(threadCount)
+        CyclicBarrier barrier = new CyclicBarrier(threadCount)
+
+        when: 'all threads race to resolve properties for the same instance at once'
+        List<Future<List<String>>> futures = (0..<threadCount).collect {
+            executor.submit({ ->
+                barrier.await()
+                AstPropertyResolveUtils.getPropertyNames(sharedNode)
+            } as Callable<List<String>>)
+        }
+        List<List<String>> results = futures.collect { Future<List<String>> future -> future.get(30, TimeUnit.SECONDS) }
+        executor.shutdown()
+
+        then: 'every thread observes the same, fully and correctly populated result - none sees a partial or corrupted map'
+        results.every { it == ['label'] }
+    }
+
     private static Expression mapExpressionOf(String key, ClassNode valueType) {
         MapExpression mapExpression = new MapExpression()
         mapExpression.addMapEntryExpression(new ConstantExpression(key), new ClassExpression(valueType))

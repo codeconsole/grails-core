@@ -74,16 +74,48 @@ public class AstPropertyResolveUtils {
      * Per {@link ClassNode#getModule()}'s own convention, the cache is stored on
      * {@link ClassNode#redirect()} - the node a placeholder/generics-parameterized reference
      * ultimately stands in for - so that looking a class up through different reference nodes still
-     * shares one cache entry.
+     * shares one cache entry. {@code redirect()} can in principle be reassigned after construction
+     * (e.g. a forward-reference placeholder later pointed at the real, resolved node by the
+     * compiler's resolve phase) - but {@link ClassNode#setRedirect(ClassNode)} explicitly refuses to
+     * do so for a <em>primary</em> node ({@code GroovyBugError}), and every {@code ClassNode} this
+     * utility's real callers pass in - one actively being compiled from source during an AST
+     * transform - is primary, so for them {@code redirect()} is simply {@code this} for the entire
+     * object's life; there is no reassignment to account for. The one place a non-primary,
+     * redirect-able node does appear ({@link ClassHelper#make(Class, boolean) ClassHelper.make(c,
+     * false)}) sets its redirect target eagerly, at construction, before any caller could observe or
+     * cache through it in an unredirected state. Even so, if some future, currently-unforeseen path
+     * ever did cache through a node before it was redirected, that would be harmless rather than a
+     * source of stale data: the entry becomes unreachable the moment the redirect is set (a later
+     * lookup through the same original reference resolves to the different, real node and computes
+     * fresh there instead), so it is simply never read again and becomes eligible for garbage
+     * collection with the abandoned node.
      * <p>
-     * No explicit synchronization is used. A given {@code ClassNode} instance is built by, and only
-     * ever mutated by, the single compiler thread compiling its source unit; nothing in this
-     * codebase compiles the same {@code ClassNode} from two threads at once (Gradle's test workers
-     * are separate JVMs, not threads sharing this cache, and this module does not enable JUnit's
-     * in-JVM parallel execution). The realistic concurrency exposure - if it ever arises - is
-     * distinct {@code ClassNode}s being resolved concurrently by independent {@code compileGroovy}
-     * tasks, each populating its own node's metadata; that is naturally race-free since the nodes
-     * involved are different objects.
+     * {@code classNode.isResolved()} gates one part of what gets cached (see
+     * {@link #populatePropertiesForClassNode}) and, in principle, its result can depend on when it
+     * is checked - it delegates through {@code redirect} (see {@link ClassNode#isResolved()}). Given
+     * the above, that delegation is immaterial for the primary nodes this cache actually serves: a
+     * terminal node's {@code isResolved()} reduces to {@code clazz != null} (or, for array/component
+     * types, {@code componentType.isResolved()}) - and {@code clazz} has no setter anywhere in
+     * {@code ClassNode} outside its {@code ClassNode(Class)} constructor (verified against the
+     * Groovy 5.0.7 sources), so that value is fixed for the object's entire life.
+     * <p>
+     * Access is synchronized per {@code ClassNode} ({@code synchronized (cacheHolder)} in
+     * {@link #getPropertiesFromCache}) because {@link ClassNode}'s node-metadata storage
+     * ({@code NodeMetaDataHandler}, backed by {@code ListHashMap}) is explicitly documented as not
+     * thread-safe, and while a given {@code ClassNode} representing a class actively being compiled
+     * is normally touched by only the one thread compiling it, that is not true of every node this
+     * utility can be called with: some callers resolve a property's declared type as a plain
+     * {@code ClassNode} for a common JDK type (e.g. an {@code Object}- or {@code def}-typed
+     * property), and {@link ClassHelper#make(Class)} returns a small, fixed set of interned,
+     * JVM-wide-shared singleton nodes for exactly those types (e.g. {@link ClassHelper#OBJECT_TYPE},
+     * {@code STRING_TYPE}). Two unrelated, concurrently-running compilations that both happen to
+     * resolve such a type would otherwise race on the same node's metadata map with no protection at
+     * all. Synchronizing per node makes concurrent calls into this class safe with respect to each
+     * other and keeps the common case (one thread, one node) effectively uncontended. It cannot, by
+     * itself, protect against unrelated code elsewhere in the compiler writing a <em>different</em>
+     * metadata key to the same shared node concurrently without also synchronizing on that node -
+     * this class has no way to compel that. That residual risk belongs to {@code ClassNode}'s
+     * metadata storage in general, not to anything specific to the cache here.
      */
     private static final String PROPERTIES_CACHE_KEY = AstPropertyResolveUtils.class.getName() + ".properties";
 
@@ -133,7 +165,9 @@ public class AstPropertyResolveUtils {
 
     private static Map<String, ClassNode> getPropertiesFromCache(ClassNode classNode) {
         ClassNode cacheHolder = classNode.redirect();
-        return cacheHolder.getNodeMetaData(PROPERTIES_CACHE_KEY, key -> computeProperties(cacheHolder));
+        synchronized (cacheHolder) {
+            return cacheHolder.getNodeMetaData(PROPERTIES_CACHE_KEY, key -> computeProperties(cacheHolder));
+        }
     }
 
     private static Map<String, ClassNode> computeProperties(ClassNode classNode) {
