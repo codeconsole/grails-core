@@ -18,6 +18,7 @@
  */
 package grails.plugin.json.view
 
+import grails.persistence.Entity
 import grails.plugin.json.view.test.JsonViewTest
 import org.grails.testing.GrailsUnitTest
 import spock.lang.Specification
@@ -26,15 +27,15 @@ class IncludeAssociationsSpec extends Specification implements JsonViewTest, Gra
 
     void "test includeAssociations with json api"() {
         given: "A collection"
-        mappingContext.addPersistentEntities(Player, Team)
-        Player player = new Player(name: "Cantona")
+        mappingContext.addPersistentEntities(IncludeAssociationsPlayer, IncludeAssociationsTeam)
+        IncludeAssociationsPlayer player = new IncludeAssociationsPlayer(name: "Cantona")
         player.id = 1
         def players = [player]
 
         when: "A collection type is rendered"
         def renderResult = render('''
 import groovy.transform.*
-import grails.plugin.json.view.*
+import grails.plugin.json.view.IncludeAssociationsPlayer as Player
 
 @Field Collection<Player> players
 
@@ -44,7 +45,29 @@ json jsonapi.render(players, [associations: false])
         }
 
         then: "The result is an array"
-        renderResult.jsonText == '{"data":[{"type":"player","id":"1","attributes":{"name":"Cantona"}}],"links":{"self":"/foo"}}'
+        renderResult.jsonText == '{"data":[{"type":"includeAssociationsPlayer","id":"1","attributes":{"name":"Cantona"}}],"links":{"self":"/foo"}}'
 
+    }
+}
+
+@Entity
+class IncludeAssociationsTeam {
+    String name
+    IncludeAssociationsPlayer captain
+    List players
+    List<String> titles
+    @SuppressWarnings('unused')
+    static hasMany = [players: IncludeAssociationsPlayer]
+}
+
+@Entity
+class IncludeAssociationsPlayer {
+    Long version
+    String name
+    @SuppressWarnings('unused')
+    static belongsTo = [team: IncludeAssociationsTeam]
+
+    static constraints = {
+        name nullable: false
     }
 }

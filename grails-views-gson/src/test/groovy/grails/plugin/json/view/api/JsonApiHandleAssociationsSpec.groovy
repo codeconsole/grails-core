@@ -27,14 +27,14 @@ import spock.lang.Specification
 
 class JsonApiHandleAssociationsSpec extends Specification implements JsonViewTest, GrailsUnitTest {
     void setup() {
-        mappingContext.addPersistentEntities(Author, PublishedBook, Publisher)
+        mappingContext.addPersistentEntities(HandleAssociationsAuthor, PublishedBook, Publisher)
     }
 
     void 'more than one associated objects should produce valid JSON'() {
         given:
             PublishedBook returnOfTheKing = new PublishedBook(
                     title: 'The Return of the King',
-                    author: new Author(name: "J.R.R. Tolkien"),
+                    author: new HandleAssociationsAuthor(name: "J.R.R. Tolkien"),
                     publisher: new Publisher(name: 'George Allen & Unwin')
             )
             returnOfTheKing.id = 3
@@ -62,13 +62,18 @@ json jsonapi.render(book)
 @Entity
 class PublishedBook {
     String title
-    Author author
+    HandleAssociationsAuthor author
     Publisher publisher
 }
 
 
 @Entity
 class Publisher {
+    String name
+}
+
+@Entity
+class HandleAssociationsAuthor {
     String name
 }
 

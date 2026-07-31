@@ -33,12 +33,14 @@ class JsonApiSpec extends Specification implements JsonViewTest, GrailsUnitTest 
     JsonMapper objectMapper = JsonMapper.builder().build()
 
     void setup() {
-        // Resets SuperHero's own cached constraints map (see Validateable#clearConstraintsMapCache).
-        // JsonViewTest#cleanup() already resets the shared ConstraintEvalUtils cache after every
-        // feature, but SuperHero's cache is specific to this spec's own Validateable command
-        // object, so it is reset here too.
         SuperHero.clearConstraintsMapCache()
         mappingContext.addPersistentEntities(Widget, Author, Book, ResearchPaper)
+    }
+
+    void cleanup() {
+        // Leaves SuperHero's cached constraints map clean for whichever spec runs next in this
+        // fork, rather than relying solely on the reset in setup() above.
+        SuperHero.clearConstraintsMapCache()
     }
 
     void 'test simple case'() {

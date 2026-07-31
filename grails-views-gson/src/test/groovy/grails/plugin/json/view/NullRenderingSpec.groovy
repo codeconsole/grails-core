@@ -19,6 +19,7 @@
 package grails.plugin.json.view
 
 import tools.jackson.databind.json.JsonMapper
+import grails.persistence.Entity
 import grails.plugin.json.view.test.JsonViewTest
 import spock.lang.Shared
 import spock.lang.Specification
@@ -31,18 +32,18 @@ class NullRenderingSpec extends Specification implements JsonViewTest {
     void 'test rendering nulls with a domain'() {
         given:
         def templateText = '''
-            import grails.plugin.json.view.*
-            
+            import grails.plugin.json.view.NullRenderingPlayer as Player
+
             model {
                 Player player
             }
-            
+
             json g.render(player)
         '''
 
         when:
-        mappingContext.addPersistentEntity(Player)
-        def renderResult = render(templateText, [player: new Player()])
+        mappingContext.addPersistentEntity(NullRenderingPlayer)
+        def renderResult = render(templateText, [player: new NullRenderingPlayer()])
 
         then: 'No fields are rendered because they are null'
         renderResult.jsonText == '{}'
@@ -51,18 +52,18 @@ class NullRenderingSpec extends Specification implements JsonViewTest {
     void 'test rendering nulls with a domain (renderNulls = true)'() {
         given:
         def templateText = '''
-            import grails.plugin.json.view.*
-            
+            import grails.plugin.json.view.NullRenderingPlayer as Player
+
             model {
                 Player player
             }
-            
+
             json g.render(player, [renderNulls: true])
         '''
 
         when:
-        mappingContext.addPersistentEntity(Player)
-        def renderResult = render(templateText, [player: new Player()])
+        mappingContext.addPersistentEntity(NullRenderingPlayer)
+        def renderResult = render(templateText, [player: new NullRenderingPlayer()])
 
         then: 'No fields are rendered because they are null'
         objectMapper.readTree(renderResult.jsonText) == objectMapper.readTree('{ "team": null, "name": null}')
@@ -74,12 +75,12 @@ class NullRenderingSpec extends Specification implements JsonViewTest {
             model {
                 Map map
             }
-            
+
             json g.render(map)
         '''
 
         when:
-        mappingContext.addPersistentEntity(Player)
+        mappingContext.addPersistentEntity(NullRenderingPlayer)
         def renderResult = render(templateText, [map: [foo: null, bar: null]])
 
         then: 'Maps with nulls are rendered by default'
@@ -92,12 +93,12 @@ class NullRenderingSpec extends Specification implements JsonViewTest {
             model {
                 Object obj
             }
-            
+
             json g.render(obj)
         '''
 
         when:
-        mappingContext.addPersistentEntity(Player)
+        mappingContext.addPersistentEntity(NullRenderingPlayer)
         def renderResult = render(templateText, [obj: new Child2()])
 
         then: 'No fields are rendered because they are null'
@@ -110,15 +111,37 @@ class NullRenderingSpec extends Specification implements JsonViewTest {
             model {
                 Object obj
             }
-            
+
             json g.render(obj, [renderNulls: true])
         '''
 
         when:
-        mappingContext.addPersistentEntity(Player)
+        mappingContext.addPersistentEntity(NullRenderingPlayer)
         def renderResult = render(templateText, [obj: new Child2()])
 
         then:
         objectMapper.readTree(renderResult.jsonText) == objectMapper.readTree('{"name": null, "parent": null}')
+    }
+}
+
+@Entity
+class NullRenderingTeam {
+    String name
+    NullRenderingPlayer captain
+    List players
+    List<String> titles
+    @SuppressWarnings('unused')
+    static hasMany = [players: NullRenderingPlayer]
+}
+
+@Entity
+class NullRenderingPlayer {
+    Long version
+    String name
+    @SuppressWarnings('unused')
+    static belongsTo = [team: NullRenderingTeam]
+
+    static constraints = {
+        name nullable: false
     }
 }
