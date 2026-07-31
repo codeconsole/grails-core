@@ -31,8 +31,14 @@ import spock.lang.Specification
  */
 class WhereQueryClosureCaptureSpec extends Specification {
 
-    // The domain class names must be unique across the test JVM because
-    // AstPropertyResolveUtils caches resolved properties statically by class name
+    // Historical note: these domain class names were made unique across the test JVM
+    // (ClosureCaptureBook/ClosureCaptureAuthor rather than the more generic Book/Author)
+    // because AstPropertyResolveUtils used to cache resolved properties in a single
+    // static map keyed by class name, so a same-named fixture in another spec could
+    // collide with this one. AstPropertyResolveUtils now caches per-ClassNode instance
+    // (see its javadoc), so that collision can no longer happen regardless of naming -
+    // the unique names are kept only because they make the fixture's purpose clearer,
+    // not because uniqueness is required for correctness.
     private static final String SERVICE_SOURCE = '''
 import grails.gorm.DetachedCriteria
 import grails.gorm.annotation.Entity

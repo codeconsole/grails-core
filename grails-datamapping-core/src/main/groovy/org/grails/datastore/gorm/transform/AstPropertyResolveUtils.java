@@ -20,9 +20,7 @@
 package org.grails.datastore.gorm.transform;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
-import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -51,26 +49,43 @@ import org.grails.datastore.mapping.reflect.NameUtils;
 public class AstPropertyResolveUtils {
 
     /**
-     * Cache of resolved properties per {@link ClassNode}.
+     * Key under which the resolved property map is stashed via {@link ClassNode#getNodeMetaData(Object, java.util.function.Function)}.
      * <p>
-     * Keyed by {@code ClassNode} identity rather than name. {@link ClassNode#equals(Object)} and
-     * {@link ClassNode#hashCode()} compare by {@link ClassNode#getText()} (essentially the class
-     * name), so a {@code Map} keyed by name - or even by {@code ClassNode} itself as the map key -
-     * treats any two distinct {@code ClassNode} instances that happen to share a name as the same
-     * cache entry. That collision is a real hazard for classes compiled without a package (common
-     * in tests and dynamically generated sources), and for the same source compiled more than once
-     * in separate {@code GroovyClassLoader}s: each compilation produces its own {@code ClassNode}
-     * instance that must never share cached property data with another compilation's instance of a
-     * same-named class. An {@link IdentityHashMap} avoids that collision entirely by comparing keys
-     * with {@code ==} instead of {@code equals()}.
+     * Earlier versions of this class cached resolved properties in a single static, process-wide
+     * {@code Map} keyed by class name (later by {@code ClassNode} identity). Both designs share a
+     * problem: a static map is never emptied, so every {@code ClassNode} ever looked up - and, for
+     * a primary node, the {@code GroovyClassLoader}/{@code CompileUnit} it pins via
+     * {@link ClassNode#getModule()} - is retained for the lifetime of the JVM. In a long-lived
+     * process that repeatedly compiles Groovy (a Gradle daemon reusing its Groovy compiler across
+     * builds, a dev-mode recompile loop), that is an unbounded classloader leak.
      * <p>
-     * Wrapped in {@link Collections#synchronizedMap(Map)} because AST transforms that populate and
-     * read this cache can run concurrently on multiple threads (e.g. parallel test execution within
-     * one JVM/fork); a plain, unsynchronized {@link HashMap} is not safe for concurrent structural
-     * modification and can corrupt its internal state under concurrent {@code put()} calls.
+     * Storing the resolved properties as metadata on the {@code ClassNode} itself instead avoids
+     * both hazards this class has previously had to fix:
+     * <ul>
+     *     <li>No collision is possible between distinct {@code ClassNode} instances that happen to
+     *     share a name (e.g. classes compiled without a package, or the same source compiled twice
+     *     in separate {@code GroovyClassLoader}s) - each instance owns its own metadata storage, so
+     *     there is no shared key space to collide on in the first place.</li>
+     *     <li>No leak is possible - the cached data is only reachable through the {@code ClassNode}
+     *     it describes, so it becomes eligible for garbage collection at the same time as the node
+     *     (and the compilation/classloader it belongs to) rather than being pinned forever by a
+     *     static field.</li>
+     * </ul>
+     * Per {@link ClassNode#getModule()}'s own convention, the cache is stored on
+     * {@link ClassNode#redirect()} - the node a placeholder/generics-parameterized reference
+     * ultimately stands in for - so that looking a class up through different reference nodes still
+     * shares one cache entry.
+     * <p>
+     * No explicit synchronization is used. A given {@code ClassNode} instance is built by, and only
+     * ever mutated by, the single compiler thread compiling its source unit; nothing in this
+     * codebase compiles the same {@code ClassNode} from two threads at once (Gradle's test workers
+     * are separate JVMs, not threads sharing this cache, and this module does not enable JUnit's
+     * in-JVM parallel execution). The realistic concurrency exposure - if it ever arises - is
+     * distinct {@code ClassNode}s being resolved concurrently by independent {@code compileGroovy}
+     * tasks, each populating its own node's metadata; that is naturally race-free since the nodes
+     * involved are different objects.
      */
-    protected static final Map<ClassNode, Map<String, ClassNode>> cachedClassProperties =
-            Collections.synchronizedMap(new IdentityHashMap<>());
+    private static final String PROPERTIES_CACHE_KEY = AstPropertyResolveUtils.class.getName() + ".properties";
 
     /**
      * Resolves the type of of the given property
@@ -117,25 +132,23 @@ public class AstPropertyResolveUtils {
     }
 
     private static Map<String, ClassNode> getPropertiesFromCache(ClassNode classNode) {
-        Map<String, ClassNode> cachedProperties = cachedClassProperties.get(classNode);
-        if (cachedProperties == null) {
-            Map<String, ClassNode> newProperties = new HashMap<>();
-            boolean isDomainClass = AstUtils.isDomainClass(classNode);
-            if (isDomainClass) {
-                newProperties.put(GormProperties.IDENTITY, new ClassNode(Long.class));
-                newProperties.put(GormProperties.VERSION, new ClassNode(Long.class));
-            }
-            ClassNode currentNode = classNode;
-            while (currentNode != null && !currentNode.equals(ClassHelper.OBJECT_TYPE)) {
-                populatePropertiesForClassNode(currentNode, newProperties, isDomainClass, !isDomainClass);
-                currentNode = currentNode.getSuperClass();
-            }
-            // Publish only once fully populated so a concurrent reader can never observe a
-            // partially-populated entry for this ClassNode.
-            cachedProperties = newProperties;
-            cachedClassProperties.put(classNode, cachedProperties);
+        ClassNode cacheHolder = classNode.redirect();
+        return cacheHolder.getNodeMetaData(PROPERTIES_CACHE_KEY, key -> computeProperties(cacheHolder));
+    }
+
+    private static Map<String, ClassNode> computeProperties(ClassNode classNode) {
+        Map<String, ClassNode> newProperties = new HashMap<>();
+        boolean isDomainClass = AstUtils.isDomainClass(classNode);
+        if (isDomainClass) {
+            newProperties.put(GormProperties.IDENTITY, new ClassNode(Long.class));
+            newProperties.put(GormProperties.VERSION, new ClassNode(Long.class));
         }
-        return cachedProperties;
+        ClassNode currentNode = classNode;
+        while (currentNode != null && !currentNode.equals(ClassHelper.OBJECT_TYPE)) {
+            populatePropertiesForClassNode(currentNode, newProperties, isDomainClass, !isDomainClass);
+            currentNode = currentNode.getSuperClass();
+        }
+        return newProperties;
     }
 
     private static void populatePropertiesForClassNode(ClassNode classNode, Map<String, ClassNode> cachedProperties, boolean isDomainClass, boolean allowAbstract) {
