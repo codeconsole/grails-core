@@ -23,9 +23,13 @@ import groovy.transform.CompileStatic
 import org.springframework.context.annotation.AnnotationConfigApplicationContext
 import org.springframework.core.env.MapPropertySource
 
+import grails.core.DefaultGrailsApplication
+import grails.core.GrailsApplication
+
 import org.grails.plugin.cache.GrailsCacheManager
 
 import spock.lang.Specification
+import spock.lang.Unroll
 
 class CacheAutoConfigurationSpec extends Specification {
 
@@ -89,6 +93,44 @@ class CacheAutoConfigurationSpec extends Specification {
         context.close()
     }
 
+    @Unroll
+    void 'a relaxed boolean disables the beans, and the startup hook backs off with them: grails.cache.enabled=#value'() {
+        given: '@ConditionalOnBooleanProperty compares the literal true/false, so these do not enable'
+        AnnotationConfigApplicationContext context = buildContext(['grails.cache.enabled': value])
+
+        expect:
+        !context.containsBean('grailsCacheConfiguration')
+
+        when: 'the plugin lifecycle hook runs against that context'
+        pluginFor(context, ['grails.cache.enabled': value]).doWithApplicationContext()
+
+        then: 'it backs off rather than asking for a bean the condition declined to register - reading ' +
+                'the property again here would resolve these as true and fail startup'
+        noExceptionThrown()
+
+        cleanup:
+        context.close()
+
+        where:
+        value << ['yes', 'on', '1']
+    }
+
+    void 'the startup hook does its work when the beans are there'() {
+        given: 'the enabled path, so the back-off above is not simply always taken'
+        AnnotationConfigApplicationContext context = buildContext([:])
+
+        when:
+        pluginFor(context, [:]).doWithApplicationContext()
+
+        then: 'the default caches it creates on startup exist'
+        GrailsCacheManager cacheManager = context.getBean('grailsCacheManager', GrailsCacheManager)
+        cacheManager.cacheExists('grailsBlocksCache')
+        cacheManager.cacheExists('grailsTemplatesCache')
+
+        cleanup:
+        context.close()
+    }
+
     void 'a user-defined grailsCacheManager bean makes the auto-configured default back off'() {
         given: 'a user-defined cache manager under the auto-configured bean name'
         def userCacheManager = Mock(GrailsCacheManager)
@@ -100,6 +142,20 @@ class CacheAutoConfigurationSpec extends Specification {
 
         cleanup:
         context.close()
+    }
+
+    /**
+     * A plugin wired the way the runtime wires it: with the application context and with a
+     * GrailsApplication carrying the same configuration. Both matter - reading the property back out
+     * of that configuration is exactly what doWithApplicationContext must not do.
+     */
+    private static CacheGrailsPlugin pluginFor(AnnotationConfigApplicationContext context, Map<String, Object> properties) {
+        GrailsApplication grailsApplication = new DefaultGrailsApplication()
+        properties.each { String key, Object value -> grailsApplication.config.put(key, value) }
+        new CacheGrailsPlugin().tap {
+            it.grailsApplication = grailsApplication
+            it.applicationContext = context
+        }
     }
 
     @CompileStatic
