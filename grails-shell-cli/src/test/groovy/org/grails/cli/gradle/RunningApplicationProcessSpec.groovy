@@ -218,12 +218,14 @@ class RunningApplicationProcessSpec extends Specification {
         !pidFile.exists()
 
         and: "the JVM's own process bookkeeping catches up with the OS-level exit stop() already observed"
-        // Process.isAlive() queries OS process state directly, like stop()'s own awaitExit() fallback.
-        // Process.waitFor(timeout) instead blocks on the JVM's internal reaper thread, whose notification
-        // can lag under CI contention independently of whether the process has actually exited - polling
-        // the OS-backed check avoids that lag causing a spurious failure here.
+        // process.isAlive() (java.lang.Process) is backed by the same async reaper-thread completion
+        // as process.waitFor(timeout) - it is NOT a live OS query, so polling it would still be exposed
+        // to the same notification lag under CI contention. process.toHandle().isAlive() delegates to
+        // ProcessHandle's native isAlive0() check instead, which queries the OS process table directly
+        // on every call, exactly like stop()'s own awaitExit() fallback - so it is unaffected by reaper
+        // lag regardless of how long we poll for.
         new PollingConditions(timeout: 30, initialDelay: 0, delay: 0.1).eventually {
-            assert !process.isAlive()
+            assert !process.toHandle().isAlive()
         }
     }
 }
