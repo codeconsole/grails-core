@@ -1857,8 +1857,12 @@ of already-published Grails 7 command plugins must opt in with
 **What just works:**
 
 * Code generation scripts created with `create-script`, including scripts packaged as
-  `META-INF/commands/*.groovy` such as `audit-quickstart` and `s2-quickstart`, are unaffected.
-* YAML commands packaged as `META-INF/commands/*.yml` are unaffected.
+  `META-INF/commands/*.groovy` such as `audit-quickstart` and `s2-quickstart`, remain executable
+  through the CLI. When a plugin publishes a companion `-cli` artifact, those scripts (and
+  `META-INF/commands/*.yml` / `*.json` multi-step commands under `src/main/scripts`) are packaged
+  into the companion only - not the runtime plugin jar - and stay available via
+  `grailsCliClasspath`. Plugins without a companion continue to ship `src/main/scripts` in the
+  runtime jar, matching Grails 7 packaging.
 * Existing published Grails 7 application-command plugins continue to work on Grails 8 without a
   re-release once `legacyCommandSupport` is enabled.
 
@@ -1874,7 +1878,9 @@ of already-published Grails 7 command plugins must opt in with
   `META-INF/grails-cli.factories`.
 * Publish commands in a companion `-cli` artifact for the CLI classpath split and per-command
   Gradle task support. See xref:commandLine#creatingCustomCommands[Creating Custom Commands] for
-  the complete workflow.
+  the complete workflow. Applying `org.apache.grails.gradle.grails-plugin-cli` also routes
+  `src/main/scripts` into that companion automatically - leave scripts under `src/main/scripts`
+  or place them under `src/cli/resources/META-INF/commands`.
 
 NOTE: The compatibility layer applies only to the legacy application-command contract. Independently
 of it, a Grails 7 plugin that relies on APIs removed in Grails 8, Spring Boot 4, or other Grails 8

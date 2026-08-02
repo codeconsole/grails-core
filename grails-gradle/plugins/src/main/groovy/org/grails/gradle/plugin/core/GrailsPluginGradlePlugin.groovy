@@ -28,6 +28,7 @@ import org.gradle.api.Task
 import org.gradle.api.file.DuplicatesStrategy
 import org.gradle.api.tasks.Copy
 import org.gradle.api.tasks.JavaExec
+import org.gradle.api.tasks.SourceSet
 import org.gradle.api.tasks.TaskProvider
 import org.gradle.api.tasks.SourceSetContainer
 import org.gradle.api.tasks.bundling.Jar
@@ -37,6 +38,7 @@ import org.gradle.tooling.provider.model.ToolingModelBuilderRegistry
 
 import org.springframework.boot.gradle.tasks.bundling.BootJar
 
+import org.grails.gradle.plugin.commands.GrailsCliArtifactGradlePlugin
 import org.grails.gradle.plugin.run.FindMainClassTask
 import org.grails.gradle.plugin.util.SourceSets
 
@@ -244,22 +246,69 @@ class GrailsPluginGradlePlugin extends GrailsGradlePlugin {
         }
     }
 
+    /**
+     * Packages plugin templates into the runtime jar and routes command scripts into either the
+     * runtime jar or the companion {@code -cli} jar.
+     *
+     * <p>When {@link GrailsCliArtifactGradlePlugin} is applied, {@code src/main/scripts} is copied
+     * into the cli source set as {@code META-INF/commands} so Groovy/YAML/JSON command resources
+     * ship only on {@code grailsCliClasspath} and stay out of {@code runtimeClasspath},
+     * {@code bootJar}, and {@code bootWar}. Without a companion, the historical behavior is
+     * preserved: scripts remain in the runtime plugin jar so unmigrated Grails 7 plugins and
+     * {@code legacyCommandSupport} consumers keep discovering them on the application classpath.
+     * Templates always stay on the runtime jar.</p>
+     */
     @CompileDynamic
     protected void configurePluginResources(Project project) {
         project.afterEvaluate() {
             ProcessResources processResources = (ProcessResources) project.tasks.getByName('processResources')
-
-            TaskProvider<Copy> copyCommands = project.tasks.register('copyCommands', Copy) {
-                from("${project.projectDir}/src/main/scripts")
-                into("${processResources.destinationDir}/META-INF/commands")
+            boolean hasCliCompanion = project.pluginManager.hasPlugin(GrailsCliArtifactGradlePlugin.PLUGIN_ID)
+            ProcessResources commandResources = processResources
+            if (hasCliCompanion) {
+                SourceSet cliSourceSet = project.extensions.getByType(SourceSetContainer)
+                        .getByName(GrailsCliArtifactGradlePlugin.CLI_SOURCE_SET_NAME)
+                commandResources = (ProcessResources) project.tasks.getByName(cliSourceSet.processResourcesTaskName)
             }
 
-            TaskProvider<Copy> copyTemplates = project.tasks.register('copyTemplates', Copy) {
-                from("${project.projectDir}/src/main/templates")
-                into("${processResources.destinationDir}/META-INF/templates")
+            TaskProvider<Copy> copyCommands = project.tasks.register('copyCommands', Copy) { Copy copy ->
+                copy.from("${project.projectDir}/src/main/scripts")
+                // Resolve the destination lazily so the process*Resources output dir is final.
+                copy.into {
+                    "${commandResources.destinationDir}/META-INF/commands"
+                }
+            }
+
+            TaskProvider<Copy> copyTemplates = project.tasks.register('copyTemplates', Copy) { Copy copy ->
+                copy.from("${project.projectDir}/src/main/templates")
+                copy.into {
+                    "${processResources.destinationDir}/META-INF/templates"
+                }
             }
             processResources.setDuplicatesStrategy(DuplicatesStrategy.INCLUDE)
-            processResources.dependsOn(copyCommands, copyTemplates)
+            if (hasCliCompanion) {
+                commandResources.setDuplicatesStrategy(DuplicatesStrategy.INCLUDE)
+                commandResources.dependsOn(copyCommands)
+                processResources.dependsOn(copyTemplates)
+                // A prior non-companion (or pre-migration) build may have left src/main/scripts
+                // copies under the main processResources output. Wipe META-INF/commands there so
+                // incremental jars do not keep shipping them; processResources then re-runs (its
+                // outputs changed) and restores any hand-authored src/main/resources/META-INF/commands.
+                // Use the configured processResources destination, not a hard-coded build path.
+                TaskProvider cleanStaleRuntimeCommands = project.tasks
+                        .register('cleanStaleRuntimeCommandResources') { Task cleanTask ->
+                            cleanTask.outputs.upToDateWhen { false }
+                            cleanTask.doLast {
+                                project.delete(new File(processResources.destinationDir, 'META-INF/commands'))
+                            }
+                        }
+                processResources.dependsOn(cleanStaleRuntimeCommands)
+                project.tasks.named('jar', Jar).configure { Jar jarTask ->
+                    jarTask.dependsOn(cleanStaleRuntimeCommands)
+                }
+            }
+            else {
+                processResources.dependsOn(copyCommands, copyTemplates)
+            }
             project.processResources {
                 // spring/resources.groovy is excluded from the published jar (see configureJarTask)
                 // but is allowed into build/resources/main/ so plugin integration tests can load it.

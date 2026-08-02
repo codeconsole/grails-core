@@ -1,0 +1,74 @@
+// Plugin that publishes a companion -cli artifact. src/main/scripts must land in the companion
+// jar (META-INF/commands) and must not ship in the runtime plugin jar.
+plugins {
+    id 'org.apache.grails.gradle.grails-plugin'
+    id 'org.apache.grails.gradle.grails-plugin-cli'
+}
+
+group = 'org.example.test'
+
+grails {
+    bom = null
+    cliAutoProvision = false
+}
+
+cliArtifact {
+    defaultDependencies = false
+    automaticModuleName = 'org.example.test.plugin.with.cli'
+}
+
+// Simulate a prior non-companion build that left command scripts under main resources. The
+// companion packaging path must still keep them out of the runtime jar on an incremental build.
+// cleanStaleRuntimeCommandResources is registered in afterEvaluate by grails-plugin, so wire here too.
+afterEvaluate {
+    def staleDir = layout.buildDirectory.dir('resources/main/META-INF/commands')
+    def seed = tasks.register('seedStaleRuntimeCommands') {
+        outputs.dir(staleDir)
+        doLast {
+            def dir = staleDir.get().asFile
+            dir.mkdirs()
+            // Prior non-companion packaging left script copies in main resources.
+            new File(dir, 'example-script.groovy').text = "description('stale-copy') {}\n"
+            new File(dir, 'example-multi-step.yml').text = "description: stale\n"
+            new File(dir, 'removed-before-migration.groovy').text = "description('gone') {}\n"
+        }
+    }
+    tasks.named('cleanStaleRuntimeCommandResources').configure { cleanTask ->
+        cleanTask.mustRunAfter(seed)
+    }
+    tasks.named('jar', Jar).configure { jarTask ->
+        jarTask.dependsOn(seed)
+    }
+}
+
+tasks.register('inspectCommandPackaging') {
+    dependsOn 'jar', 'cliJar'
+    doLast {
+        def runtimeJar = tasks.named('jar', Jar).get().archiveFile.get().asFile
+        def cliJarFile = tasks.named('cliJar', Jar).get().archiveFile.get().asFile
+        def runtimeEntries = jarEntries(runtimeJar)
+        def cliEntries = jarEntries(cliJarFile)
+        println "RUNTIME_JAR=${runtimeJar.name}"
+        println "CLI_JAR=${cliJarFile.name}"
+        println "RUNTIME_HAS_SCRIPT=${runtimeEntries.contains('META-INF/commands/example-script.groovy')}"
+        println "RUNTIME_HAS_YAML=${runtimeEntries.contains('META-INF/commands/example-multi-step.yml')}"
+        println "RUNTIME_HAS_REMOVED=${runtimeEntries.contains('META-INF/commands/removed-before-migration.groovy')}"
+        println "RUNTIME_HAS_HAND_AUTHORED=${runtimeEntries.contains('META-INF/commands/hand-authored.yml')}"
+        println "CLI_HAS_SCRIPT=${cliEntries.contains('META-INF/commands/example-script.groovy')}"
+        println "CLI_HAS_YAML=${cliEntries.contains('META-INF/commands/example-multi-step.yml')}"
+        println "RUNTIME_HAS_TEMPLATE=${runtimeEntries.contains('META-INF/templates/example.txt')}"
+    }
+}
+
+static Set<String> jarEntries(File jarFile) {
+    def entries = new LinkedHashSet<String>()
+    jarFile.withInputStream { InputStream input ->
+        new java.util.jar.JarInputStream(input).withCloseable { java.util.jar.JarInputStream jar ->
+            java.util.jar.JarEntry entry
+            while ((entry = jar.nextJarEntry) != null) {
+                entries << entry.name
+            }
+        }
+    }
+    entries
+}
