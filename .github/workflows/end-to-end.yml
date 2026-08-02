@@ -138,6 +138,8 @@ jobs:
         # Only the end-to-end build. grails-core's own unit and functional suites are the CI
         # workflow's job; nothing here re-runs them. The publish steps above are setup, not tests.
         working-directory: 'end-to-end'
+        env:
+          DO_NOT_CACHE_TESTS: '1'
         run: ./gradlew check --continue --stacktrace
       - name: "📤 Upload test reports"
         if: failure()
