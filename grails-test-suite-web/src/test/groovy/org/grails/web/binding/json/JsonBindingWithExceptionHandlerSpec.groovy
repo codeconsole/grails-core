@@ -97,6 +97,6 @@ class BindingWithExceptionHandlerMethodController {
 class SomeCommandObject {
     String name
     static constraints = {
-        name matches: /[A-Z].*/, bindable: true
+        name matches: /[A-Z].*/
     }
 }

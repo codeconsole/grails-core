@@ -614,6 +614,18 @@ class SimpleDataBinderSpec extends Specification {
         target.values.one.name == 'First'
     }
 
+    void 'Test an empty whiteList binds no properties'() {
+        given:
+        def binder = new SimpleDataBinder()
+        def target = new MapConstructorValue(name: 'Original')
+
+        when:
+        binder.bind(target, [name: 'Changed'] as SimpleMapDataBindingSource, [])
+
+        then:
+        target.name == 'Original'
+    }
+
     @Issue('https://github.com/apache/grails-core/issues/11140')
     void 'Test bind a Integer on a List<Long>'() {
         given:

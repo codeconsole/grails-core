@@ -21,6 +21,7 @@ package grails.web.databinding
 import groovy.transform.CompileStatic
 import groovy.transform.Sortable
 
+import grails.config.Settings
 import grails.databinding.BindUsing
 import grails.databinding.BindingFormat
 import grails.databinding.DataBindingSource
@@ -52,7 +53,6 @@ class GrailsWebDataBinderSpec extends Specification implements DataTest {
     }
 
     void setup() {
-        grailsApplication.config.grails.databinding.legacyBindableDefault = false
         binder = grailsApplication.mainContext.getBean(DataBindingUtils.DATA_BINDER_BEAN_NAME) as GrailsWebDataBinder
     }
     
@@ -470,6 +470,7 @@ class GrailsWebDataBinderSpec extends Specification implements DataTest {
 
     void 'Test generated parent allowlist applies persisted association child allowlist'() {
         given:
+        grailsApplication.config.setAt(Settings.LEGACY_BINDABLE_DEFAULT, false)
         def child = new GeneratedBindingChild(name: 'Original').save(flush: true, failOnError: true)
         def parent = new GeneratedBindingParent(child: child).save(flush: true, failOnError: true)
 
@@ -486,6 +487,7 @@ class GrailsWebDataBinderSpec extends Specification implements DataTest {
 
     void 'Test generated allowlist applies to persisted domain instances in typed arrays'() {
         given:
+        grailsApplication.config.setAt(Settings.LEGACY_BINDABLE_DEFAULT, false)
         def child = new GeneratedBindingChild(name: 'Original').save(flush: true, failOnError: true)
         def holder = new GeneratedBindingArrayHolder()
 
@@ -504,6 +506,7 @@ class GrailsWebDataBinderSpec extends Specification implements DataTest {
 
     void 'Test null public include list resolves generated allowlist'() {
         given:
+        grailsApplication.config.setAt(Settings.LEGACY_BINDABLE_DEFAULT, false)
         def child = new GeneratedBindingChild(name: 'Original')
 
         when:
@@ -546,6 +549,7 @@ class GrailsWebDataBinderSpec extends Specification implements DataTest {
 
     void 'Test Map constructor fallback fails closed without a no-arg constructor'() {
         given:
+        grailsApplication.config.setAt(Settings.LEGACY_BINDABLE_DEFAULT, false)
         def holder = new SecureMapConstructorHolder()
         def indexedHolder = new SecureMapConstructorHolder()
         def arrayHolder = new SecureMapConstructorHolder()
@@ -582,7 +586,7 @@ class GrailsWebDataBinderSpec extends Specification implements DataTest {
 
     void 'Test Map constructor fallback remains permissive in compatibility mode'() {
         given:
-        grailsApplication.config.grails.databinding.legacyBindableDefault = true
+        grailsApplication.config.setAt(Settings.LEGACY_BINDABLE_DEFAULT, true)
         def holder = new SecureMapConstructorHolder()
 
         when:
@@ -598,7 +602,7 @@ class GrailsWebDataBinderSpec extends Specification implements DataTest {
         !holder.arrayValues[0].admin
 
         cleanup:
-        grailsApplication.config.grails.databinding.legacyBindableDefault = false
+        grailsApplication.config.setAt(Settings.LEGACY_BINDABLE_DEFAULT, null)
     }
 
     void 'Test Map constructor fallback binds unconfigured properties but not bindable false by default'() {
@@ -645,6 +649,35 @@ class GrailsWebDataBinderSpec extends Specification implements DataTest {
 
         then:
         holder.values.isEmpty()
+    }
+
+    void 'Test typed Map binding in default mode notifies listeners and records value conversion errors'() {
+        given:
+        def holder = new TypedMapBindingHolder()
+        List<String> afterBindingProperties = []
+        List<BindingError> bindingErrors = []
+        def listener = new DataBindingListenerAdapter() {
+            @Override
+            void afterBinding(Object object, String propertyName, Object errors) {
+                afterBindingProperties << propertyName
+            }
+
+            @Override
+            void bindingError(BindingError error, Object errors) {
+                bindingErrors << error
+            }
+        }
+
+        when:
+        binder.bind(holder, new SimpleMapDataBindingSource([
+            values: [first: [quantity: 'not-a-number']]
+        ]), listener)
+
+        then:
+        holder.values.first.hasErrors()
+        holder.values.first.errors.getFieldError('quantity').code == 'typeMismatch'
+        afterBindingProperties.contains('values')
+        bindingErrors*.propertyName.contains('quantity')
     }
 
     void 'Test binding to a hasMany List'() {
@@ -1903,10 +1936,6 @@ class Team {
         states: String
     ]
 
-    static constraints = {
-        members bindable: true
-        states bindable: true
-    }
 }
 
 @Entity
@@ -1933,11 +1962,7 @@ class Publisher {
     ]
 
     static constraints = {
-        name bindable: true
-        publications bindable: true
-        authors bindable: true
-        widgets bindable: true
-        localCurrency nullable: true, bindable: true
+        localCurrency(nullable: true)
     }
 }
 
@@ -1945,10 +1970,6 @@ class SomeNonDomainClass {
     Publication publication
     List<Long> listOfLong
 
-    static constraints = {
-        publication bindable: true
-        listOfLong bindable: true
-    }
 }
 
 @Entity
@@ -1960,11 +1981,6 @@ class Publication {
     @SuppressWarnings('unused')
     static belongsTo = [publisher: Publisher]
 
-    static constraints = {
-        title bindable: true
-        author bindable: true
-        publisher bindable: true
-    }
 }
 
 @Entity
@@ -1990,9 +2006,8 @@ class Author {
     ParentWidget widget
 
     static constraints = {
-        name bindable: true
-        widget nullable: true, bindable: true
-        stringWithSpecialBinding nullable: true, bindable: true
+        widget(nullable: true)
+        stringWithSpecialBinding(nullable: true)
     }
 }
 
@@ -2014,10 +2029,8 @@ class Widget {
     List<Integer> listOfIntegers = []
 
     static constraints = {
-        isBindable bindable: true
         isNotBindable(bindable: false)
-        timeZone nullable: true, bindable: true
-        listOfIntegers bindable: true
+        timeZone(nullable: true)
     }
 }
 
@@ -2040,10 +2053,8 @@ class ParentWidget implements Validateable {
     TimeZone timeZone
 
     static constraints = {
-        isBindable bindable: true
         isNotBindable(bindable: false)
-        timeZone nullable: true, bindable: true
-        listOfIntegers bindable: true
+        timeZone(nullable: true)
     }
 }
 
@@ -2051,18 +2062,12 @@ class ParentWidget implements Validateable {
 class Fidget extends ParentWidget {
     String name
 
-    static constraints = {
-        name bindable: true
-    }
 }
 
 @Entity
 class Parent {
     Child child
 
-    static constraints = {
-        child bindable: true
-    }
 }
 
 @Entity
@@ -2074,10 +2079,6 @@ class Child {
 
     static hasMany = [someOtherIds: Integer]
 
-    static constraints = {
-        birthDate bindable: true
-        someOtherIds bindable: true
-    }
 }
 
 @Entity
@@ -2132,6 +2133,14 @@ class SecureMapConstructorValue implements Validateable {
     }
 }
 
+class TypedMapBindingHolder {
+    Map<String, TypedMapBindingValue> values = [:]
+}
+
+class TypedMapBindingValue implements Validateable {
+    Integer quantity
+}
+
 @Entity
 @SuppressWarnings('unused')
 class DataBindingBook {
@@ -2148,12 +2157,6 @@ class DataBindingBook {
         importantPageNumbers: Integer
     ]
 
-    static constraints = {
-        title bindable: true
-        importantPageNumbers bindable: true
-        topics bindable: true
-        datePublished bindable: true
-    }
 }
 
 @Entity
@@ -2173,22 +2176,11 @@ class CollectionContainer {
         sortedSetOfWidgets: Widget
     ]
 
-    static constraints = {
-        listOfWidgets bindable: true
-        setOfWidgets bindable: true
-        collectionOfWidgets bindable: true
-        sortedSetOfWidgets bindable: true
-        listOfStrings bindable: true
-        listOfLong bindable: true
-    }
 }
 
 class DocumentHolder {
     List<ObjectId> objectIds
 
-    static constraints = {
-        objectIds bindable: true
-    }
 }
 
 class ObjectId {
@@ -2199,9 +2191,6 @@ class ObjectId {
         value = str
     }
 
-    static constraints = {
-        value bindable: true
-    }
 }
 
 class PrimitiveContainer implements Validateable {
@@ -2214,34 +2203,18 @@ class PrimitiveContainer implements Validateable {
     float someFloat
     double someDouble
 
-    static constraints = {
-        someBoolean bindable: true
-        someByte bindable: true
-        someChar bindable: true
-        someShort bindable: true
-        someInt bindable: true
-        someLong bindable: true
-        someFloat bindable: true
-        someDouble bindable: true
-    }
 }
 
 @SuppressWarnings('unused')
 class SomeValidateableClass implements Validateable {
     Integer someNumber
 
-    static constraints = {
-        someNumber bindable: true
-    }
 }
 
 @Entity
 class AssociationBindingPage {
     Integer number
 
-    static constraints = {
-        number bindable: true
-    }
 }
 
 @Entity
@@ -2254,11 +2227,6 @@ class AssociationBindingBook {
     static belongsTo = [author: AssociationBindingAuthor]
     static hasMany = [pages: AssociationBindingPage]
 
-    static constraints = {
-        title bindable: true
-        pages bindable: true
-        author bindable: true
-    }
 }
 
 @Entity
@@ -2270,10 +2238,6 @@ class AssociationBindingAuthor {
 
     static hasMany = [books: AssociationBindingBook]
 
-    static constraints = {
-        name bindable: true
-        books bindable: true
-    }
 }
 
 @Entity
@@ -2290,11 +2254,6 @@ class Foo {
 
     static constraints = {
         activeDays(bindable: true)
-        activeMonday bindable: true
-        numbers bindable: true
-        names bindable: true
-        airports bindable: true
-        workdays bindable: true
     }
 
     static transients = ['activeDays']
@@ -2337,26 +2296,16 @@ class NonDomainClassWithMapProperty {
     String name
     Map<String, Album> albums
 
-    static constraints = {
-        name bindable: true
-        albums bindable: true
-    }
 }
 
 class NonDomainClassWithSetOfDomainInstances {
     Set<Publisher> publishers
 
-    static constraints = {
-        publishers bindable: true
-    }
 }
 
 class Album {
     String title
 
-    static constraints = {
-        title bindable: true
-    }
 }
 
 @SuppressWarnings('unused')
@@ -2372,16 +2321,10 @@ class AlbumHolder {
         return new Album(title: album)
     }
 
-    static constraints = {
-        album bindable: true
-    }
 }
 
 @SuppressWarnings('unused')
 class ListCommand implements Validateable {
     List<Long> myLongList
 
-    static constraints = {
-        myLongList bindable: true
-    }
 }

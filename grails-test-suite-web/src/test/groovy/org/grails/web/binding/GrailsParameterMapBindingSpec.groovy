@@ -155,8 +155,4 @@ class MyController {
 @Entity
 class MyDomain {
     String name
-
-    static constraints = {
-        name bindable: true
-    }
 }

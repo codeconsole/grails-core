@@ -230,8 +230,8 @@ class Book {
    String author
 
    static constraints = {
-       title nullable: false, bindable: true
-       author nullable: false, bindable: true
+       title nullable: false
+       author nullable: false
    }
 }
 

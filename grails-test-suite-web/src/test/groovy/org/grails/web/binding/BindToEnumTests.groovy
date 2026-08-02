@@ -58,7 +58,7 @@ class RoleHolder {
     EnumRole role
 
     static constraints = {
-        role nullable:true, bindable: true
+        role nullable:true
     }
 }
 
@@ -74,3 +74,4 @@ class EnumBindingController {
         [holder:h]
     }
 }
+

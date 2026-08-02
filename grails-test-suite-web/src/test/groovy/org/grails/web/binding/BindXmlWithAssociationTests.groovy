@@ -86,11 +86,6 @@ class PersonController {
 class TargetPerson {
     String name
     Book book
-
-    static constraints = {
-        name bindable: true
-        book bindable: true
-    }
 }
 
 @Entity
@@ -101,7 +96,5 @@ class Book {
 
     static constraints = {
         id bindable: true
-        title bindable: true
-        pages bindable: true
     }
 }

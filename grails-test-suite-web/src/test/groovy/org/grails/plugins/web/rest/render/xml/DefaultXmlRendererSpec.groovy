@@ -123,6 +123,6 @@ class XmlBook {
 
     @SuppressWarnings('unused')
     static constraints = {
-        title blank: false, bindable: true
+        title(blank: false)
     }
 }

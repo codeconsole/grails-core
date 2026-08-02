@@ -90,18 +90,13 @@ class MyAuthor {
     MyCity placeOfBirth
 
     static constraints = {
-        name nullable:true, bindable: true
-        hairColour bindable: true
-        placeOfBirth nullable:true, bindable: true
+        name nullable:true
+        placeOfBirth nullable:true
     }
 }
 @Entity
 class MyCity {
     String name
-
-    static constraints = {
-        name bindable: true
-    }
 }
 
 
@@ -109,7 +104,7 @@ class AuthorFieldCommand implements Validateable{
     MyCity placeOfBirth
     String name
     static constraints = {
-        placeOfBirth nullable:true, bindable: true
-        name bindable: true
+        placeOfBirth nullable:true
     }
 }
+

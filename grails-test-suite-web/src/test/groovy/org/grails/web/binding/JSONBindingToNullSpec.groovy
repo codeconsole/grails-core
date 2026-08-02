@@ -150,23 +150,15 @@ class User {
     Date lastAccessDate
 
     static constraints = {
-        username bindable: true
-        password bindable: true
-        firstName bindable: true
-        lastName bindable: true
-        middleName nullable:true, bindable: true
-        phone nullable:true, bindable: true
-        email nullable:true, email:true, bindable: true
-        activeDirectoryUsername nullable:true, bindable: true
-        createdBy nullable:true, bindable: true
-        lastUpdatedBy nullable:true, bindable: true
-        logonFailureCount nullable:false, bindable: true
-        disabled bindable: true
-        mustChangePassword bindable: true
-        useActiveDirectory bindable: true
-        activationDate bindable: true
-        deactivationDate nullable:true, bindable: true
-        lastUpdatedDate nullable:true, bindable: true
-        lastAccessDate nullable:true, bindable: true
+        middleName(nullable:true)
+        phone(nullable:true)
+        email(nullable:true, email:true)
+        activeDirectoryUsername(nullable:true)
+        createdBy(nullable:true)
+        lastUpdatedBy(nullable:true)
+        logonFailureCount(nullable:false)
+        deactivationDate(nullable:true)
+        lastUpdatedDate(nullable:true)
+        lastAccessDate(nullable:true)
     }
 }
