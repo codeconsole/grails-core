@@ -66,10 +66,10 @@ dependencies {
 }
 
 // Ship the plugin views as templates (used by the s2ui-override command).
-// 'copyTemplates' is registered by the grails-plugin gradle plugin in afterEvaluate as a Sync
+// 'copyTemplates' is registered by the grails-plugin gradle plugin in afterEvaluate as a Copy
 // task with a unique output directory, so it can only be configured from a later afterEvaluate.
 afterEvaluate {
-    tasks.named('copyTemplates', Sync) {
+    tasks.named('copyTemplates', Copy) {
         from(layout.projectDirectory.dir('grails-app/views')) {
             into('views')
         }

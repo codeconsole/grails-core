@@ -17,22 +17,6 @@ cliArtifact {
     automaticModuleName = 'org.example.test.plugin.with.cli'
 }
 
-// Seed leftover script copies under main resources (prior non-companion packaging). The runtime
-// jar filter must drop them without a forced clean task while keeping hand-authored commands.
-tasks.register('seedStaleRuntimeCommands') {
-    def staleDir = layout.buildDirectory.dir('resources/main/META-INF/commands')
-    doLast {
-        def dir = staleDir.get().asFile
-        dir.mkdirs()
-        new File(dir, 'example-script.groovy').text = "description('stale') {}\n"
-        new File(dir, 'removed-before-migration.groovy').text = "description('gone') {}\n"
-    }
-}
-
-tasks.named('jar', Jar).configure { jarTask ->
-    jarTask.dependsOn('seedStaleRuntimeCommands')
-}
-
 tasks.register('inspectCommandPackaging') {
     dependsOn 'jar', 'cliJar'
     doLast {
@@ -44,12 +28,11 @@ tasks.register('inspectCommandPackaging') {
         println "CLI_JAR=${cliJarFile.name}"
         println "RUNTIME_HAS_SCRIPT=${runtimeEntries.contains('META-INF/commands/example-script.groovy')}"
         println "RUNTIME_HAS_YAML=${runtimeEntries.contains('META-INF/commands/example-multi-step.yml')}"
-        println "RUNTIME_HAS_REMOVED=${runtimeEntries.contains('META-INF/commands/removed-before-migration.groovy')}"
         println "RUNTIME_HAS_HAND_AUTHORED=${runtimeEntries.contains('META-INF/commands/hand-authored.yml')}"
         println "CLI_HAS_SCRIPT=${cliEntries.contains('META-INF/commands/example-script.groovy')}"
         println "CLI_HAS_YAML=${cliEntries.contains('META-INF/commands/example-multi-step.yml')}"
         println "RUNTIME_HAS_TEMPLATE=${runtimeEntries.contains('META-INF/templates/example.txt')}"
-        println "COPY_COMMANDS_DIR=${tasks.named('copyCommands', Sync).get().destinationDir.absolutePath.replace('\\', '/')}"
+        println "COPY_COMMANDS_DIR=${tasks.named('copyCommands', Copy).get().destinationDir.absolutePath.replace('\\', '/')}"
     }
 }
 

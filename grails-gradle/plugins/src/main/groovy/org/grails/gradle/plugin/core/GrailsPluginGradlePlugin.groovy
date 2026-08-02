@@ -25,12 +25,9 @@ import groovy.transform.CompileStatic
 
 import org.gradle.api.Project
 import org.gradle.api.Task
-import org.gradle.api.file.DuplicatesStrategy
-import org.gradle.api.file.FileCopyDetails
 import org.gradle.api.tasks.Copy
 import org.gradle.api.tasks.JavaExec
 import org.gradle.api.tasks.SourceSet
-import org.gradle.api.tasks.Sync
 import org.gradle.api.tasks.TaskProvider
 import org.gradle.api.tasks.SourceSetContainer
 import org.gradle.api.tasks.bundling.Jar
@@ -260,11 +257,12 @@ class GrailsPluginGradlePlugin extends GrailsGradlePlugin {
      * {@code legacyCommandSupport} consumers keep discovering them on the application classpath.
      * Templates always stay on the runtime jar.</p>
      *
-     * <p>{@code copyCommands} and {@code copyTemplates} are {@link Sync} tasks with unique output
-     * directories under the build dir (never writing into {@code processResources.destinationDir} as
-     * a side effect). The appropriate {@code process*Resources} task consumes that output via
-     * {@code from(...)}, so Gradle owns each path and can drop removed sources without a forced
-     * clean task wired into every build.</p>
+     * <p>{@code copyCommands} and {@code copyTemplates} are {@link Copy} tasks, each with a unique
+     * output directory under the build dir. They never side-write into
+     * {@code processResources.destinationDir}. The appropriate {@code process*Resources} task is
+     * only a composition of those unique outputs (via {@code from(...)}), so Gradle tracks
+     * ownership without a forced clean task. Prefer {@code Copy} over {@code Sync} here so end-app
+     * and asset-pipeline consumers that type {@code tasks.named('copyTemplates', Copy)} keep working.</p>
      */
     @CompileDynamic
     protected void configurePluginResources(Project project) {
@@ -272,18 +270,19 @@ class GrailsPluginGradlePlugin extends GrailsGradlePlugin {
             ProcessResources processResources = (ProcessResources) project.tasks.getByName('processResources')
             boolean hasCliCompanion = project.pluginManager.hasPlugin(GrailsCliArtifactGradlePlugin.PLUGIN_ID)
 
-            // Unique Sync outputs - never side-write into processResources.destinationDir.
-            TaskProvider<Sync> copyCommands = project.tasks.register('copyCommands', Sync) { Sync sync ->
-                sync.from("${project.projectDir}/src/main/scripts")
-                sync.into(project.layout.buildDirectory.dir('tmp/grails-plugin-commands'))
+            // Unique Copy outputs - never side-write into processResources.destinationDir.
+            TaskProvider<Copy> copyCommands = project.tasks.register('copyCommands', Copy) { Copy copy ->
+                copy.from("${project.projectDir}/src/main/scripts")
+                copy.into(project.layout.buildDirectory.dir('tmp/grails-plugin-commands'))
             }
 
-            TaskProvider<Sync> copyTemplates = project.tasks.register('copyTemplates', Sync) { Sync sync ->
-                sync.from("${project.projectDir}/src/main/templates")
-                sync.into(project.layout.buildDirectory.dir('tmp/grails-plugin-templates'))
+            TaskProvider<Copy> copyTemplates = project.tasks.register('copyTemplates', Copy) { Copy copy ->
+                copy.from("${project.projectDir}/src/main/templates")
+                copy.into(project.layout.buildDirectory.dir('tmp/grails-plugin-templates'))
             }
 
-            processResources.setDuplicatesStrategy(DuplicatesStrategy.INCLUDE)
+            // processResources is only a combination of unique task outputs + main resources.
+            // Do not set DuplicatesStrategy.INCLUDE - overlapping paths are a configuration error.
             processResources.from(copyTemplates) { into 'META-INF/templates' }
 
             if (hasCliCompanion) {
@@ -291,23 +290,7 @@ class GrailsPluginGradlePlugin extends GrailsGradlePlugin {
                         .getByName(GrailsCliArtifactGradlePlugin.CLI_SOURCE_SET_NAME)
                 ProcessResources commandResources = (ProcessResources) project.tasks
                         .getByName(cliSourceSet.processResourcesTaskName)
-                commandResources.setDuplicatesStrategy(DuplicatesStrategy.INCLUDE)
                 commandResources.from(copyCommands) { into 'META-INF/commands' }
-                // Prior builds may have left script copies under processResources.destinationDir
-                // (Copy does not purge foreign files). Filter the runtime jar so only hand-authored
-                // src/main/resources/META-INF/commands entries remain - no forced clean task.
-                File handAuthoredCommands = project.file('src/main/resources/META-INF/commands')
-                project.tasks.named('jar', Jar).configure { Jar jarTask ->
-                    jarTask.eachFile { FileCopyDetails details ->
-                        String path = details.path.replace('\\', '/')
-                        if (path.startsWith('META-INF/commands/') && path != 'META-INF/commands/') {
-                            String relative = path.substring('META-INF/commands/'.length())
-                            if (!new File(handAuthoredCommands, relative).file) {
-                                details.exclude()
-                            }
-                        }
-                    }
-                }
             }
             else {
                 processResources.from(copyCommands) { into 'META-INF/commands' }

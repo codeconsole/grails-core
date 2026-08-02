@@ -1881,6 +1881,10 @@ of already-published Grails 7 command plugins must opt in with
   the complete workflow. Applying `org.apache.grails.gradle.grails-plugin-cli` also routes
   `src/main/scripts` into that companion automatically - leave scripts under `src/main/scripts`
   or place them under `src/cli/resources/META-INF/commands`.
+* After first applying `grails-plugin-cli` on a project that was already built without it, run
+  `./gradlew clean` once. Older plugin packaging wrote command scripts into
+  `build/resources/main/META-INF/commands`; a clean build directory is the supported way to drop
+  that leftover output. Fresh builds never place companion scripts on the runtime classpath.
 
 NOTE: The compatibility layer applies only to the legacy application-command contract. Independently
 of it, a Grails 7 plugin that relies on APIs removed in Grails 8, Spring Boot 4, or other Grails 8
