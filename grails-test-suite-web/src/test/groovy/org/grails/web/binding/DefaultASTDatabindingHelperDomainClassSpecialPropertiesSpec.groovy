@@ -18,26 +18,34 @@
  */
 package org.grails.web.binding
 
+import grails.config.Settings
 import grails.gorm.dirty.checking.DirtyCheck
 import grails.persistence.Entity
 import grails.util.Holders
 import groovy.transform.CompileStatic
 import org.grails.config.PropertySourcesConfig
 import org.grails.validation.ConstraintEvalUtils
-import org.grails.web.databinding.DefaultASTDatabindingHelper
 import spock.lang.Issue
 import spock.lang.Specification
 
 class DefaultASTDatabindingHelperDomainClassSpecialPropertiesSpec extends
         Specification {
 
+    private def originalConfig
+
     def setup() {
         ConstraintEvalUtils.clearDefaultConstraints()
-        Holders.setConfig(new PropertySourcesConfig([(DefaultASTDatabindingHelper.LEGACY_BINDABLE_DEFAULT): false]))
+        originalConfig = Holders.config
+        Holders.setConfig(new PropertySourcesConfig([(Settings.LEGACY_BINDABLE_DEFAULT): false]))
+        grails.web.databinding.DataBindingUtils.clearBindingCaches()
+        grails.web.databinding.GrailsWebDataBinder.resetWarnedBindingShapes()
     }
 
     def cleanup() {
         ConstraintEvalUtils.clearDefaultConstraints()
+        Holders.setConfig(originalConfig)
+        grails.web.databinding.DataBindingUtils.clearBindingCaches()
+        grails.web.databinding.GrailsWebDataBinder.resetWarnedBindingShapes()
     }
 
     @Issue('GRAILS-11173')

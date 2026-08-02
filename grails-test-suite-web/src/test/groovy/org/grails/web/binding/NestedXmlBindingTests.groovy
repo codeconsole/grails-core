@@ -173,12 +173,6 @@ class Person {
     Location location
     List<Location> locations = []
     static hasMany = [locations:Location]
-
-    static constraints = {
-        name bindable: true
-        location bindable: true
-        locations bindable: true
-    }
 }
 
 @Entity
@@ -188,18 +182,12 @@ class Location {
 
     static constraints = {
         id bindable: true
-        shippingAddress bindable: true
-        billingAddress bindable: true
     }
 }
 
 @Entity
 class Foo {
     static belongsTo = [bar: Bar]
-
-    static constraints = {
-        bar bindable: true
-    }
 }
 
 @Entity

@@ -44,8 +44,4 @@ class WithCriteriaReadOnlySpec extends Specification implements DomainUnitTest<P
 @Entity
 class Person {
     String name
-
-    static constraints = {
-        name bindable: true
-    }
 }

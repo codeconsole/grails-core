@@ -274,11 +274,15 @@ class SimpleDataBinder implements DataBinder {
         'class' != propName && 'classLoader' != propName && 'protectionDomain' != propName && 'metaClass' != propName && 'metaPropertyValues' != propName && 'properties' != propName && !blackList?.contains(propName) && (whiteList == null || isBindAllBindingIncludeList(whiteList) || whiteList.contains(propName) || whiteList.find { it -> it?.toString()?.startsWith(propName + '.') })
     }
 
-    protected static List getBindAllBindingIncludeList() {
+    /**
+     * Marker include list meaning "bind every eligible property". Used when an
+     * explicit exclude-only bind must not intersect the class allowlist.
+     */
+    static List getBindAllBindingIncludeList() {
         BIND_ALL_BINDING_INCLUDE_LIST
     }
 
-    protected static boolean isBindAllBindingIncludeList(List includeList) {
+    static boolean isBindAllBindingIncludeList(List includeList) {
         includeList instanceof BindAllBindingIncludeList
     }
 
@@ -416,13 +420,14 @@ class SimpleDataBinder implements DataBinder {
     }
 
     protected Object instantiateAndBindOrUseMapConstructor(Class referencedType, Map values, DataBindingListener listener) {
+        def instance
         try {
-            def instance = referencedType.getDeclaredConstructor().newInstance()
-            bind(instance, new SimpleMapDataBindingSource(values), listener)
-            return instance
+            instance = referencedType.getDeclaredConstructor().newInstance()
         } catch (NoSuchMethodException | IllegalAccessException ignored) {
             return referencedType.newInstance(values)
         }
+        bind(instance, new SimpleMapDataBindingSource(values), listener)
+        instance
     }
 
     @CompileStatic(TypeCheckingMode.SKIP)

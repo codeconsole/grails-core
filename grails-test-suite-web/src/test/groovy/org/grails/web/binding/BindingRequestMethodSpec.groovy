@@ -170,19 +170,9 @@ class BindingController {
 class Employee {
     String firstName
     String lastName
-
-    static constraints = {
-        firstName bindable: true
-        lastName bindable: true
-    }
 }
 
 class MyCommandObject {
     String firstName
     String lastName
-
-    static constraints = {
-        firstName bindable: true
-        lastName bindable: true
-    }
 }

@@ -187,9 +187,4 @@ class DemoController {
 class Person {
     String firstName
     String lastName
-
-    static constraints = {
-        firstName bindable: true
-        lastName bindable: true
-    }
 }

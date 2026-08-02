@@ -99,11 +99,6 @@ class Album {
 
     @SuppressWarnings('unused')
     static hasMany = [companies: Company]
-
-    static constraints = {
-        title bindable: true
-        companies bindable: true
-    }
 }
 
 @Entity
@@ -113,9 +108,4 @@ class Company {
 
     @SuppressWarnings('unused')
     static hasMany = [albums: Album]
-
-    static constraints = {
-        name bindable: true
-        albums bindable: true
-    }
 }

@@ -54,8 +54,5 @@ class DomainPropertiesAccessorSpec extends Specification {
 @Entity
 class TestDomain {
     Integer age
-
-    static constraints = {
-        age bindable: true
-    }
 }
+

@@ -560,34 +560,46 @@ class GrailsWebDataBinder extends SimpleDataBinder {
                 def referencedType = getReferencedTypeForCollection(propName, obj)
                 if (referencedType != null) {
                     needsBinding = false
-                    Map map = initializeMap(obj, propName)
-                    map.clear()
-                    ((Map) val).each { key, item ->
-                        if (item == null || referencedType.isAssignableFrom(item.getClass())) {
-                            map[key] = item
-                        } else if (item instanceof Map || item instanceof DataBindingSource) {
-                            def instance
-                            if (isDomainClass(referencedType)) {
-                                def idValue = getIdentifierValueFrom(item)
-                                if (idValue != null && idValue != '' && idValue != 'null') {
-                                    instance = getPersistentInstance(referencedType, idValue)
+                    // Match bindProperty listener order: beforeBinding on the source value first
+                    // so a veto skips conversion and nested binding entirely; then mutate the
+                    // target map in place (supports getter-only Map properties).
+                    if (listener == null || listener.beforeBinding(obj, propName, val, errors) != false) {
+                        try {
+                            Map boundMap = new LinkedHashMap()
+                            ((Map) val).each { key, item ->
+                                if (item == null || referencedType.isAssignableFrom(item.getClass())) {
+                                    boundMap[key] = item
+                                } else if (item instanceof Map || item instanceof DataBindingSource) {
+                                    def instance
+                                    if (isDomainClass(referencedType)) {
+                                        def idValue = getIdentifierValueFrom(item)
+                                        if (idValue != null && idValue != '' && idValue != 'null') {
+                                            instance = getPersistentInstance(referencedType, idValue)
+                                        }
+                                    }
+                                    DataBindingSource itemBindingSource = item instanceof DataBindingSource ?
+                                            (DataBindingSource) item : new SimpleMapDataBindingSource((Map) item)
+                                    if (instance == null) {
+                                        instance = instantiateAndBindNestedOrUseMapConstructor(
+                                                referencedType, item, itemBindingSource, nestedIncludeList, listener)
+                                    } else {
+                                        bindNested(instance, itemBindingSource, nestedIncludeList, listener)
+                                    }
+                                    if (instance != null) {
+                                        boundMap[key] = instance
+                                    }
+                                } else {
+                                    boundMap[key] = convert(referencedType, item)
                                 }
                             }
-                            DataBindingSource itemBindingSource = item instanceof DataBindingSource ?
-                                    (DataBindingSource) item : new SimpleMapDataBindingSource((Map) item)
-                            if (instance == null) {
-                                instance = instantiateAndBindNestedOrUseMapConstructor(
-                                        referencedType, item, itemBindingSource, nestedIncludeList, listener)
-                            } else {
-                                bindNested(instance, itemBindingSource, nestedIncludeList, listener)
-                            }
-                            if (instance != null) {
-                                map[key] = instance
-                            }
-                        } else {
-                            map[key] = convert(referencedType, item)
+                            Map map = initializeMap(obj, propName)
+                            map.clear()
+                            map.putAll(boundMap)
+                        } catch (Exception e) {
+                            addBindingError(obj, propName, val, e, listener, errors)
                         }
                     }
+                    listener?.afterBinding(obj, propName, errors)
                 }
             } else if (grailsApplication != null) { // Fixes bidirectional oneToOne binding issue #9308
                 PersistentEntity domainClass = getPersistentEntity(obj.getClass())
@@ -613,10 +625,9 @@ class GrailsWebDataBinder extends SimpleDataBinder {
 
     private Object instantiateAndBindNestedOrUseMapConstructor(Class referencedType, Object value,
             DataBindingSource source, List includeList, DataBindingListener listener) {
+        def instance
         try {
-            def instance = referencedType.getDeclaredConstructor().newInstance()
-            bindNested(instance, source, includeList, listener)
-            return instance
+            instance = referencedType.getDeclaredConstructor().newInstance()
         } catch (NoSuchMethodException | IllegalAccessException ignored) {
             if (value instanceof Map) {
                 if (isBindAllBindingIncludeList(includeList) ||
@@ -630,6 +641,8 @@ class GrailsWebDataBinder extends SimpleDataBinder {
             }
             throw ignored
         }
+        bindNested(instance, source, includeList, listener)
+        instance
     }
 
     private Map filterUnbindableMapConstructorArguments(Class referencedType, Map values) {
@@ -663,6 +676,12 @@ class GrailsWebDataBinder extends SimpleDataBinder {
         "Cannot securely data-bind [${targetType.name}] because it has no accessible no-arg constructor. " +
                 'Add a no-arg constructor and bindable constraints, pass an explicit bind-all include for this element, ' +
                 'or set `grails.databinding.legacyBindableDefault=true`.'
+    }
+
+    static void resetWarnedBindingShapes() {
+        synchronized (WARNED_BINDING_SHAPES) {
+            WARNED_BINDING_SHAPES.clear()
+        }
     }
 
     @Override

@@ -105,7 +105,7 @@ abstract class AbstractAuditableLedgerBase {
 @Entity
 class DirtyCheckLedgerEntry extends AbstractAuditableLedgerBase {
     static constraints = {
-        description nullable: true, bindable: true
+        description nullable: true
     }
 }
 

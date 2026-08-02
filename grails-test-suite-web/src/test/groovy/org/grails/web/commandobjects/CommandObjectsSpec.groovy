@@ -476,36 +476,21 @@ class TestController {
 
 class ParentCommand implements Validateable {
     int testId
-
-    static constraints = {
-        testId bindable: true
-    }
 }
 
 class ChildCommand extends ParentCommand {
     int myId
-
-    static constraints = {
-        myId bindable: true
-    }
 }
 
 class DateComamndObject {
     Date birthday
-
-    static constraints = {
-        birthday bindable: true
-    }
 }
 
 class WidgetCommand {
     Integer width
     Integer height
 
-    static constraints = {
-        width bindable: true
-        height range: 1..10, bindable: true
-    }
+    static constraints = { height range: 1..10 }
 }
 
 class SomeCommand {
@@ -518,20 +503,16 @@ class SomeCommand {
     String getSomeValue() {
         someFieldWithNoSetter
     }
-
-    static constraints = {
-        someValue bindable: true
-    }
 }
 
 class Artist implements Validateable {
     String name
-    static constraints = { name shared: 'isProg', bindable: true }
+    static constraints = { name shared: 'isProg' }
 }
 
 class ArtistSubclass extends Artist {
     String bandName
-    static constraints = { bandName matches: /[A-Z].*/, bindable: true }
+    static constraints = { bandName matches: /[A-Z].*/ }
 }
 
 abstract class MyAbstractController {
@@ -556,9 +537,9 @@ class Person {
 
     static constraints = {
         name matches: /[A-Z]+/
-        name bindable: true
+        bindable: false
         city nullable: true, bindable: false
-        state nullable: true, bindable: true
+        state nullable: true
     }
 }
 
@@ -566,22 +547,11 @@ class NonDomainCommandObjectWithIdAndVersion {
     Long id
     Long version
     String name
-
-    static constraints = {
-        id bindable: true
-        version bindable: false
-        name bindable: true
-    }
 }
 
 abstract class WithGeneric<G> implements Validateable {
     String firstName
     G lastName
-
-    static constraints = {
-        firstName bindable: true
-        lastName bindable: true
-    }
 }
 
 class ConcreteGenericBased extends WithGeneric<String> {

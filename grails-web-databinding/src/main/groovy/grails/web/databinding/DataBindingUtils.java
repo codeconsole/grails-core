@@ -38,16 +38,20 @@ import groovy.lang.MetaClass;
 
 import jakarta.servlet.ServletRequest;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationContext;
 import org.springframework.validation.BeanPropertyBindingResult;
 import org.springframework.validation.BindingResult;
 import org.springframework.validation.FieldError;
 import org.springframework.validation.ObjectError;
 
+import grails.config.Settings;
 import grails.core.GrailsApplication;
 import grails.databinding.CollectionDataBindingSource;
 import grails.databinding.DataBinder;
 import grails.databinding.DataBindingSource;
+import grails.databinding.SimpleDataBinder;
 import grails.util.Environment;
 import grails.util.Holders;
 import grails.validation.ValidationErrors;
@@ -73,10 +77,16 @@ import org.grails.web.databinding.bindingsource.InvalidRequestBodyException;
 @SuppressWarnings("rawtypes")
 public class DataBindingUtils {
 
+    private static final Logger LOG = LoggerFactory.getLogger(DataBindingUtils.class);
     public static final String DATA_BINDER_BEAN_NAME = "grailsWebDataBinder";
     private static final String BLANK = "";
+    private static final List NO_BINDING_INCLUDE_LIST = new NoBindingIncludeList();
     private static final Map<Class, List> CLASS_TO_BINDING_INCLUDE_LIST = new ConcurrentHashMap<>();
     private static final Map<Class, List> CLASS_TO_LEGACY_BINDING_INCLUDE_LIST = new ConcurrentHashMap<>();
+    private static final Map<Class, List> CLASS_TO_UNBINDABLE_PROPERTY_NAMES = new ConcurrentHashMap<>();
+
+    private static final class NoBindingIncludeList extends ArrayList {
+    }
 
     /**
      * Associations both sides of any bidirectional relationships found in the object and source map to bind
@@ -134,6 +144,9 @@ public class DataBindingUtils {
             final Class<? extends Object> objectClass = object.getClass();
             if (includeListCache.containsKey(objectClass)) {
                 includeList = includeListCache.get(objectClass);
+                if (includeList == NO_BINDING_INCLUDE_LIST) {
+                    includeList = null;
+                }
             } else {
                 // Resolve the runtime-derived bindable names only on a cache miss - this walks the
                 // target's constraints/metaclass and would otherwise run on every bind of a cached class.
@@ -163,8 +176,8 @@ public class DataBindingUtils {
                 if (!legacyBindableDefaultEnabled) {
                     includeList = asGeneratedBindingIncludeList(includeList);
                 }
-                if (includeList != null && !Environment.getCurrent().isReloadEnabled()) {
-                    includeListCache.put(objectClass, includeList);
+                if (!Environment.getCurrent().isReloadEnabled()) {
+                    includeListCache.put(objectClass, includeList == null ? NO_BINDING_INCLUDE_LIST : includeList);
                 }
             }
         } catch (Exception e) {
@@ -243,10 +256,16 @@ public class DataBindingUtils {
     }
 
     static List getUnbindablePropertyNames(final Object object) {
+        // Instance-derived constraints (constraintsMap / getConstraintsMap / constraints)
+        // may differ between instances of the same class, so do not cache by Class here.
         return getPropertyNamesWithBindableValue(object, Boolean.FALSE);
     }
 
     static List getUnbindablePropertyNames(final Class objectClass) {
+        if (!Environment.getCurrent().isReloadEnabled()) {
+            return CLASS_TO_UNBINDABLE_PROPERTY_NAMES.computeIfAbsent(
+                    objectClass, ignored -> getPropertyNamesWithBindableValue(evaluateConstrainedProperties(objectClass), Boolean.FALSE));
+        }
         return getPropertyNamesWithBindableValue(evaluateConstrainedProperties(objectClass), Boolean.FALSE);
     }
 
@@ -379,9 +398,9 @@ public class DataBindingUtils {
         GrailsApplication application = Holders.findApplication();
         if (application != null) {
             return resolveLegacyBindableDefault(
-                    application.getConfig().getProperty(DefaultASTDatabindingHelper.LEGACY_BINDABLE_DEFAULT, Object.class, null));
+                    application.getConfig().getProperty(Settings.LEGACY_BINDABLE_DEFAULT, Object.class, null));
         }
-        return resolveLegacyBindableDefault(Holders.getFlatConfig().get(DefaultASTDatabindingHelper.LEGACY_BINDABLE_DEFAULT));
+        return resolveLegacyBindableDefault(Holders.getFlatConfig().get(Settings.LEGACY_BINDABLE_DEFAULT));
     }
 
     /**
@@ -407,7 +426,24 @@ public class DataBindingUtils {
         if (value instanceof Boolean) {
             return (Boolean) value;
         }
-        return value instanceof CharSequence && "true".equalsIgnoreCase(value.toString().trim());
+        if (value instanceof CharSequence) {
+            final String configuredValue = value.toString().trim();
+            if ("true".equalsIgnoreCase(configuredValue)) {
+                return true;
+            }
+            if ("false".equalsIgnoreCase(configuredValue)) {
+                return false;
+            }
+        }
+        LOG.warn("Unrecognised value [{}] for configuration property [{}]; secure data binding will be enabled.",
+                value, Settings.LEGACY_BINDABLE_DEFAULT);
+        return false;
+    }
+
+    static void clearBindingCaches() {
+        CLASS_TO_BINDING_INCLUDE_LIST.clear();
+        CLASS_TO_LEGACY_BINDING_INCLUDE_LIST.clear();
+        CLASS_TO_UNBINDABLE_PROPERTY_NAMES.clear();
     }
 
     /**
@@ -480,9 +516,14 @@ public class DataBindingUtils {
      */
     public static BindingResult bindObjectToInstance(Object object, Object source, List include, List exclude, String filter) {
         if (include == null) {
-            include = getBindingIncludeList(object);
+            if (exclude == null || !isLegacyBindableDefaultEnabled()) {
+                include = getBindingIncludeList(object);
+            } else {
+                // Exclude-only in compatibility mode must not intersect the class allowlist.
+                include = SimpleDataBinder.getBindAllBindingIncludeList();
+            }
         }
-        else if (include.isEmpty()) {
+        else if (include.isEmpty() && !SimpleDataBinder.isBindAllBindingIncludeList(include)) {
             include = Collections.singletonList(DefaultASTDatabindingHelper.NO_BINDABLE_PROPERTIES);
         }
         GrailsApplication application = Holders.findApplication();
@@ -515,9 +556,13 @@ public class DataBindingUtils {
     public static BindingResult bindObjectToDomainInstance(PersistentEntity entity, Object object,
                                                            Object source, List include, List exclude, String filter) {
         if (include == null) {
-            include = getBindingIncludeList(object);
+            if (exclude == null || !isLegacyBindableDefaultEnabled()) {
+                include = getBindingIncludeList(object);
+            } else {
+                include = SimpleDataBinder.getBindAllBindingIncludeList();
+            }
         }
-        else if (include.isEmpty()) {
+        else if (include.isEmpty() && !SimpleDataBinder.isBindAllBindingIncludeList(include)) {
             include = Collections.singletonList(DefaultASTDatabindingHelper.NO_BINDABLE_PROPERTIES);
         }
         BindingResult bindingResult = null;

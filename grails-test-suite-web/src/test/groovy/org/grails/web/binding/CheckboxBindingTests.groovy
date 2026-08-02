@@ -75,22 +75,11 @@ class Pizza {
     boolean delivery = true
     Options options = new Options()
     static embedded = ["options"]
-
-    static constraints = {
-        name bindable: true
-        delivery bindable: true
-        options bindable: true
-    }
 }
 
 class Options {
     boolean extraAnchovies = true
     boolean stuffedCrust = true
-
-    static constraints = {
-        extraAnchovies bindable: true
-        stuffedCrust bindable: true
-    }
 }
 
 @Artefact('Controller')

@@ -53,11 +53,6 @@ class GrailsWebDataBindingStructuredEditorSpec extends Specification {
 class Company {
     Employee president
     Employee vicePresident
-
-    static constraints = {
-        president bindable: true
-        vicePresident bindable: true
-    }
 }
 
 class Employee {
@@ -75,3 +70,4 @@ class StucturedEmployeeEditor extends AbstractStructuredBindingEditor<Employee> 
         employee
     }
 }
+

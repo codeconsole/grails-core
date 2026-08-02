@@ -298,10 +298,6 @@ class Gizmo {
     Long version
     String name
 
-    static constraints = {
-        name bindable: true
-    }
-
     static get() {
         new Gizmo(name:"iPod")
     }

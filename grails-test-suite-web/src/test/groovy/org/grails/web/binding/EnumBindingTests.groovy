@@ -44,11 +44,6 @@ class EnumBindingTests extends Specification implements ControllerUnitTest<Statu
 class StatusTransition {
     String title
     Status status
-
-    static constraints = {
-        title bindable: true
-        status bindable: true
-    }
 }
 enum Status {
     OPEN, IN_PROGRESS, ON_HOLD, DONE
