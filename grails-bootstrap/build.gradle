@@ -50,7 +50,7 @@ dependencies {
     // published as the grails-bootstrap-cli companion and never reach an application runtime classpath
     cliImplementation platform(project(':grails-bom'))
     cliApi project(project.path)
-    cliImplementation 'org.jline:jline'
+    cliApi 'org.jline:jline'
     cliImplementation 'org.springframework.boot:spring-boot'
     cliImplementation 'org.apache.groovy:groovy'
     cliImplementation 'org.apache.groovy:groovy-ant'

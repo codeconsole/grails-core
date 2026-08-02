@@ -65,8 +65,6 @@ dependencies {
 
     implementation project(':grails-gsp')
 
-    compileOnly 'org.jline:jline'
-
     testImplementation 'org.spockframework:spock-core'
     testImplementation project(':grails-layout')
     testImplementation project(':grails-web-gsp')

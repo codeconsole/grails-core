@@ -47,11 +47,21 @@ import java.util.regex.Pattern
 @Timeout(value = 30, unit = TimeUnit.SECONDS)
 class GrailsConsoleSpec extends Specification {
 
+    /**
+     * The escape character that introduces every sequence asserted below, written as a unicode escape
+     * so it survives tooling that would mangle a raw control byte in source.
+     *
+     * <p>Every pattern here includes it deliberately: matching on a bare {@code [} would keep passing
+     * if the CSI introducer were dropped from {@code ConsoleAnsi} entirely - a regression that puts
+     * literal {@code [1;33m} text on a user's terminal, which is what these tests exist to catch.</p>
+     */
+    static final String ESC = '\u001B'
+
     /** Accepts either form of the SGR reset sequence: ESC[m and ESC[0m are both a full reset. */
-    static final Pattern RESET_AT_END = ~/(?s).*\[0?m$/
+    static final Pattern RESET_AT_END = Pattern.compile("(?s).*${ESC}\\[0?m\$")
 
     /** Matches every SGR escape (ESC[<params>m) so codes can be checked regardless of grouping. */
-    static final Pattern SGR = ~/\[([0-9;]*)m/
+    static final Pattern SGR = Pattern.compile("${ESC}\\[([0-9;]*)m")
 
     PrintStream out
     GrailsConsole console
@@ -168,9 +178,9 @@ class GrailsConsoleSpec extends Specification {
         out./print.*/(* _) >> { def args -> output += args.join('') }
 
         and: 'cursor up, cursor left and erase-to-end-of-line'
-        output.contains('[1A')
-        output =~ /\[\d+D/
-        output.contains('[0K')
+        output.contains("${ESC}[1A")
+        output =~ Pattern.compile("${ESC}\\[\\d+D")
+        output.contains("${ESC}[0K")
     }
 
     def "userInput writes the prompt through the terminal"() {
@@ -179,6 +189,18 @@ class GrailsConsoleSpec extends Specification {
 
         then:
         terminalOut.toString(StandardCharsets.UTF_8).contains('QUESTION')
+    }
+
+    @Issue('GRAILS-10753')
+    def "userInput - the styled prompt closes its own styling"() {
+        when:
+        console.userInput("QUESTION")
+
+        then: 'the prompt must not leave the terminal stuck in bold/yellow after the question'
+        String written = terminalOut.toString(StandardCharsets.UTF_8)
+        written.contains('QUESTION')
+        SGR.matcher(written).find()
+        sgrCodes(written).contains(0)
     }
 
     def "Spring Boot's spring.output.ansi.enabled=never suppresses ansi output"() {
@@ -211,6 +233,54 @@ class GrailsConsoleSpec extends Specification {
         System.clearProperty('spring.output.ansi.enabled')
     }
 
+    def "log does not erase the prompt with escapes when ansi output is disabled"() {
+        given: 'a prompt is on screen and ansi is off'
+        console.ansiEnabled = false
+        console.@userInputActive = true
+
+        when:
+        console.log('MSG')
+
+        then:
+        out./print.*/(* _) >> { def args -> output += args.join('') }
+
+        and: 'the prompt erase must not leak raw escape bytes into piped output'
+        output.contains('MSG')
+        !output.contains(ESC)
+    }
+
+    def "append does not move the cursor with escapes when ansi output is disabled"() {
+        given:
+        console.ansiEnabled = false
+        console.@userInputActive = true
+
+        when:
+        console.append('MSG')
+
+        then:
+        out./print.*/(* _) >> { def args -> output += args.join('') }
+
+        and:
+        output.contains('MSG')
+        !output.contains(ESC)
+    }
+
+    def "an unusable spring.output.ansi.enabled value is reported rather than silently ignored"() {
+        given:
+        def captured = new ByteArrayOutputStream()
+        console.@err = new PrintStream(captured, true)
+
+        when: 'a plausible but unsupported value - the enum only accepts always/detect/never'
+        System.setProperty('spring.output.ansi.enabled', 'false')
+
+        then: 'it falls back to detect, but says so instead of silently reading as colour-on'
+        console.isAnsiEnabled()
+        captured.toString(StandardCharsets.UTF_8).contains('spring.output.ansi.enabled')
+
+        cleanup:
+        System.clearProperty('spring.output.ansi.enabled')
+    }
+
     def "no ansi sequences are emitted when ansi output is disabled"() {
         given:
         console.ansiEnabled = false
@@ -221,8 +291,8 @@ class GrailsConsoleSpec extends Specification {
         then:
         out./print.*/(* _) >> { def args -> output += args.join('') }
 
-        and: 'plain text only'
+        and: 'plain text only - no escape sequences at all'
         output.contains('MSG')
-        !output.contains('[')
+        !output.contains(ESC)
     }
 }

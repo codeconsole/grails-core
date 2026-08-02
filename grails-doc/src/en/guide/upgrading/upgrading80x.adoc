@@ -1769,6 +1769,15 @@ dependencies {
 }
 ----
 
+WARNING: `grails-console` is not optional in that list. It carries the entry points the Gradle tasks
+run - `grails.ui.console.GrailsSwingConsole`, `grails.ui.shell.GrailsShell`,
+`grails.ui.command.GrailsApplicationContextCommandRunner` and
+`grails.ui.script.GrailsApplicationScriptRunner`. Earlier versions reached them through the `console`
+configuration that the application generator wrote into every `build.gradle`, so the tasks worked
+without any CLI tier at all. Generated applications no longer declare that dependency, so with
+auto-provisioning off and `grails-console` omitted, `console`, `shell`, `runCommand`, `runScript` and
+`urlMappingsReport` fail with `Could not find or load main class`.
+
 Keep modern companion auto-provisioning while enabling only the Grails 7 bridge:
 
 [source,groovy]
@@ -2009,7 +2018,18 @@ The same property works as a system property, which is how the CLI reads it sinc
 
 [source,bash]
 ----
-./gradlew bootRun -Dspring.output.ansi.enabled=never
+grails -Dspring.output.ansi.enabled=never run-app
+----
+
+Note that passing `-D` to `gradlew` sets the property on the Gradle daemon, not on the JVM that
+`bootRun` forks for your application, so it has no effect there. To disable colour for `bootRun`, use
+the `application.yml` form above or set it on the task itself:
+
+[source,groovy]
+----
+tasks.named('bootRun') {
+    systemProperty 'spring.output.ansi.enabled', 'never'
+}
 ----
 
 If you previously disabled colour through Jansi's own switch, replace it - the property no longer has any
@@ -2073,6 +2093,11 @@ rather than in the artifact applications depend on. These types moved out of
 * `org.grails.build.logging.GrailsConsoleAntBuilder`
 * `org.grails.build.logging.GrailsConsoleBuildListener`
 * `org.grails.build.interactive.CandidateListCompletionHandler`
+
+The URL mappings report renderer moved the same way, out of `org.apache.grails:grails-url-mappings`
+and into `org.apache.grails:grails-url-mappings-cli`:
+
+* `org.grails.web.mapping.reporting.AnsiConsoleUrlMappingsRenderer`
 
 Their package names are unchanged - only the artifact that carries them is different.
 

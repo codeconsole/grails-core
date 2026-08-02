@@ -27,6 +27,7 @@ import java.io.StringWriter;
 import java.util.List;
 import java.util.Locale;
 import java.util.Stack;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.codehaus.groovy.runtime.DefaultGroovyMethods;
 import org.codehaus.groovy.runtime.StackTraceUtils;
@@ -72,6 +73,16 @@ public class GrailsConsole implements ConsoleLogger {
      * has no Environment, so the system property is read directly as well.
      */
     private static final String SPRING_ANSI_PROPERTY = "spring.output.ansi.enabled";
+
+    /** The last rejected {@link #SPRING_ANSI_PROPERTY} value, so the warning is not repeated per message. */
+    private static final AtomicReference<String> WARNED_ANSI_VALUE = new AtomicReference<>();
+
+    /**
+     * Set to {@code true} while a caller has deliberately replaced {@code System.out}/{@code System.err}
+     * and does not want the console to re-install its own streams over the top. See
+     * {@code org.grails.test.io.SystemOutAndErrSwapper}.
+     */
+    public static final String SUSPEND_SYSTEM_OUT_REDIRECT = "grails.console.suspend.system.out.redirect";
     public static final String ENABLE_INTERACTIVE = "grails.console.enable.interactive";
     public static final String LINE_SEPARATOR = System.getProperty("line.separator");
     public static final String CATEGORY_SEPARATOR = "|";
@@ -397,12 +408,30 @@ public class GrailsConsole implements ConsoleLogger {
     }
 
     protected void redirectSystemOutAndErr(boolean force) {
+        if (!force && isSystemOutRedirectSuspended()) {
+            return;
+        }
         if (force || !(System.out instanceof GrailsConsolePrintStream)) {
             System.setOut(new GrailsConsolePrintStream(out));
         }
         if (force || !(System.err instanceof GrailsConsoleErrorPrintStream)) {
             System.setErr(new GrailsConsoleErrorPrintStream(err));
         }
+    }
+
+    /**
+     * Whether something has deliberately taken over {@code System.out}/{@code System.err} and asked the
+     * console to keep its hands off.
+     *
+     * <p>Every output method calls {@code verifySystemOut()}, which re-installs the console streams
+     * whenever it does not recognise the current ones. That is the right default for a stream some
+     * library replaced behind the console's back, but it also destroys a capture a caller installed on
+     * purpose - test output capture, most obviously. Such a caller sets {@link #SUSPEND_SYSTEM_OUT_REDIRECT}
+     * for the duration of the swap. A plain system property rather than a marker type keeps modules that
+     * capture output (grails-test-core) free of any dependency on the cli tier.</p>
+     */
+    private static boolean isSystemOutRedirectSuspended() {
+        return Boolean.getBoolean(SUSPEND_SYSTEM_OUT_REDIRECT);
     }
 
     public static GrailsConsole createInstance() throws IOException {
@@ -707,7 +736,7 @@ public class GrailsConsole implements ConsoleLogger {
      * Resolves Spring Boot's ansi setting, preferring what Boot has already bound and falling back to the
      * raw system property for the CLI, where no Environment exists to bind it.
      */
-    private static AnsiOutput.Enabled resolveConfiguredAnsi() {
+    private AnsiOutput.Enabled resolveConfiguredAnsi() {
         AnsiOutput.Enabled bound = AnsiOutput.getEnabled();
         if (bound != null && bound != AnsiOutput.Enabled.DETECT) {
             return bound;
@@ -719,7 +748,24 @@ public class GrailsConsole implements ConsoleLogger {
         try {
             return AnsiOutput.Enabled.valueOf(property.trim().toUpperCase(Locale.ROOT));
         } catch (IllegalArgumentException ignored) {
+            warnAboutUnsupportedAnsiValue(property);
             return AnsiOutput.Enabled.DETECT;
+        }
+    }
+
+    /**
+     * Reports an unusable ansi setting. Falling back to {@code detect} silently reads as "colour on",
+     * which is the opposite of what someone writing {@code =false} or {@code =off} intended, and Spring
+     * Boot's binder - which would reject the value outright - never sees a property read this way.
+     *
+     * <p>The notice goes to the captured stderr rather than through this console, because
+     * {@link #isAnsiEnabled()} runs on every message; it is repeated only when the offending value
+     * changes so a bad setting costs one line, not one per message.</p>
+     */
+    private void warnAboutUnsupportedAnsiValue(String property) {
+        if (!property.equals(WARNED_ANSI_VALUE.getAndSet(property)) && err != null) {
+            err.println("Ignoring unsupported " + SPRING_ANSI_PROPERTY + " value '" + property
+                    + "'; expected one of always, detect or never. Falling back to detect.");
         }
     }
 
@@ -797,6 +843,12 @@ public class GrailsConsole implements ConsoleLogger {
     }
 
     private void erasePrompt(PrintStream printStream) {
+        // ConsoleAnsi always renders the escape it is asked for, so the caller has to decide whether
+        // ansi is wanted. The previous ansi library returned a no-op builder while output was
+        // disabled, which silently covered this call site.
+        if (!isAnsiEnabled()) {
+            return;
+        }
         printStream.print(ansi()
                 .eraseLineBackward().cursorLeft(PROMPT.length()));
     }
@@ -813,7 +865,9 @@ public class GrailsConsole implements ConsoleLogger {
         PrintStream printStream = out;
         try {
             if (userInputActive && !appendCalled) {
-                printStream.print(moveDownToSkipPrompt());
+                if (isAnsiEnabled()) {
+                    printStream.print(moveDownToSkipPrompt());
+                }
                 appendCalled = true;
             }
             if (msg.endsWith(LINE_SEPARATOR)) {
