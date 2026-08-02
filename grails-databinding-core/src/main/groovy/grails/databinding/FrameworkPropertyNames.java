@@ -21,10 +21,31 @@ package grails.databinding;
 import java.util.Set;
 
 /**
- * Property names managed by the language runtime or Grails rather than request data binding.
+ * Property names managed by the language runtime or Grails rather than ordinary request data.
+ * <p>
+ * Intrinsic runtime properties are never request-bindable. Grails-managed domain properties
+ * are excluded from generated allowlists and from {@code nullMissing} clearing by default,
+ * but may still bind when an application explicitly opts them in (for example
+ * {@code bindable: true}).
  */
 public final class FrameworkPropertyNames {
 
+    /**
+     * Language / MetaClass properties that must never be bound from request data.
+     */
+    public static final Set<String> INTRINSIC_RUNTIME_PROPERTIES = Set.of(
+            "class", "classLoader", "protectionDomain", "metaClass", "metaPropertyValues", "properties");
+
+    /**
+     * Grails domain lifecycle properties excluded from default binding allowlists and
+     * {@code nullMissing} clearing unless explicitly opted in.
+     */
+    public static final Set<String> GRAILS_MANAGED_PROPERTIES = Set.of(
+            "errors", "id", "version", "dateCreated", "lastUpdated");
+
+    /**
+     * Union of {@link #INTRINSIC_RUNTIME_PROPERTIES} and {@link #GRAILS_MANAGED_PROPERTIES}.
+     */
     public static final Set<String> FRAMEWORK_MANAGED_PROPERTIES = Set.of(
             "class", "classLoader", "protectionDomain", "metaClass", "metaPropertyValues", "properties",
             "errors", "id", "version", "dateCreated", "lastUpdated");

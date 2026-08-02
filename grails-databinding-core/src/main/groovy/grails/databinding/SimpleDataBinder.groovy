@@ -271,8 +271,12 @@ class SimpleDataBinder implements DataBinder {
     }
 
     protected boolean isOkToBind(String propName, List whiteList, List blackList) {
-        !FrameworkPropertyNames.FRAMEWORK_MANAGED_PROPERTIES.contains(propName) && !blackList?.contains(propName) &&
-                (whiteList == null || whiteList.is(BIND_ALL_BINDING_INCLUDE_LIST) || whiteList.contains(propName) ||
+        // Only intrinsic runtime properties are hard-denied here. Grails-managed domain
+        // properties (id, version, dateCreated, lastUpdated, errors) may still bind when
+        // explicitly allowlisted (e.g. bindable: true); the AST helper and nullMissing
+        // clearer apply the broader FRAMEWORK_MANAGED_PROPERTIES set.
+        !FrameworkPropertyNames.INTRINSIC_RUNTIME_PROPERTIES.contains(propName) && !blackList?.contains(propName) &&
+                (whiteList == null || isBindAllBindingIncludeList(whiteList) || whiteList.contains(propName) ||
                         whiteList.any { item -> item?.toString()?.startsWith(propName + '.') })
     }
 
