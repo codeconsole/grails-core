@@ -31,6 +31,7 @@ import org.gradle.api.artifacts.DependencyConstraint
 import org.gradle.api.artifacts.VersionConstraint
 import org.gradle.api.artifacts.component.ModuleComponentIdentifier
 import org.gradle.api.artifacts.result.ResolvedComponentResult
+import org.gradle.api.provider.Provider
 
 /**
  * Validates that transitive dependencies do not replace versions what the
@@ -87,53 +88,42 @@ class GrailsDependencyValidatorPlugin implements Plugin<Project> {
                 task.onlyIf { Task t -> !shouldSkip(t.project) }
                 task.doLast { Task t -> validateDependencies(project) }
             }
-            project.tasks.register(VALIDATE_RUNTIME_TASK_NAME) { Task task ->
-                task.group = 'verification'
-                task.description = 'Fails if developer-only tooling reaches the production runtime classpath.'
-                task.onlyIf { Task t -> t.project.findProperty(FORBIDDEN_RUNTIME_EXT) != null }
-                task.doLast { Task t -> validateProductionClasspath(project) }
-            }
-            project.tasks.matching { Task candidate -> candidate.name == 'check' }.configureEach { Task check ->
-                check.dependsOn(VALIDATE_RUNTIME_TASK_NAME)
-            }
+            registerProductionClasspathValidation(project)
         }
     }
 
     /**
-     * Resolves {@code runtimeClasspath} and fails when any module matches a forbidden key. Keeping
-     * this as a build check means the separation is enforced continuously rather than re-verified
-     * by hand whenever a dependency is added.
+     * Registers {@link #VALIDATE_RUNTIME_TASK_NAME}. Like {@link #VALIDATE_TASK_NAME}, it is invoked
+     * explicitly by CI rather than hung off {@code check}.
+     *
+     * <p>Both inputs are providers, so the ext property a project declares in its own build script is
+     * read when the value is needed rather than at plugin-apply time, and nothing reaches back to the
+     * project once the task runs. The task skips itself when the project declares no forbidden
+     * coordinates or has no resolvable {@code runtimeClasspath}.</p>
      */
-    private static void validateProductionClasspath(Project project) {
-        Object configured = project.findProperty(FORBIDDEN_RUNTIME_EXT)
-        if (configured == null) {
-            return
+    private static void registerProductionClasspathValidation(Project project) {
+        Provider<Set<String>> forbiddenCoordinates = project.provider {
+            Object configured = project.findProperty(FORBIDDEN_RUNTIME_EXT)
+            configured == null
+                    ? Collections.<String> emptySet()
+                    : ((Collection<?>) configured).collect { it.toString() }.toSet()
         }
-        Set<String> forbidden = ((Collection<?>) configured).collect { it.toString() }.toSet()
-        Configuration runtimeClasspath = project.configurations.findByName('runtimeClasspath')
-        if (runtimeClasspath == null || !runtimeClasspath.canBeResolved) {
-            return
-        }
-        List<String> offenders = []
-        runtimeClasspath.incoming.resolutionResult.allComponents { ResolvedComponentResult component ->
-            if (!(component.id instanceof ModuleComponentIdentifier)) {
-                return
-            }
-            ModuleComponentIdentifier id = (ModuleComponentIdentifier) component.id
-            for (String key : forbidden) {
-                String[] parts = key.split(':')
-                String group = parts[0]
-                String name = parts.length > 1 ? parts[1] : '*'
-                if (id.group == group && (name == '*' || id.module == name)) {
-                    offenders.add("${id.group}:${id.module}:${id.version}".toString())
+
+        Provider<ResolvedComponentResult> rootComponent = project.provider {
+            Configuration runtimeClasspath = project.configurations.findByName('runtimeClasspath')
+            runtimeClasspath?.canBeResolved ? runtimeClasspath : null
+        }.flatMap { Configuration it -> it.incoming.resolutionResult.rootComponent }
+
+        project.tasks.register(VALIDATE_RUNTIME_TASK_NAME, ValidateProductionClasspathTask) {
+            ValidateProductionClasspathTask task ->
+                task.group = 'verification'
+                task.description = 'Fails if developer-only tooling reaches the production runtime classpath.'
+                task.projectPath.set(project.path)
+                task.forbiddenCoordinates.set(forbiddenCoordinates)
+                task.rootComponent.set(rootComponent)
+                task.onlyIf {
+                    !task.forbiddenCoordinates.get().isEmpty() && task.rootComponent.present
                 }
-            }
-        }
-        if (offenders) {
-            throw new GradleException(
-                    "Developer-only tooling reached the production runtime classpath of ${project.path}: " +
-                            "${offenders.unique().sort().join(', ')}. These belong to the cli tier " +
-                            '(auto-provisioned onto grailsCli) and must not ship with an application.')
         }
     }
 

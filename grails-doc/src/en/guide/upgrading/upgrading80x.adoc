@@ -1956,13 +1956,14 @@ Grails no longer depends on a separate ANSI library. The console renders its esc
 and the FuseSource Jansi artifact - unmaintained, and the subject of an unfixed CVE - is gone from the
 dependency graph along with the `org.jline:jansi` fork that briefly replaced it.
 
-At the same time, developer-only tooling no longer ships with an application. `grails-console` (the Swing
-console, the Groovy shell, and the script and command runners) was previously exposed by the web starter,
-which put it - and everything it pulls in - on every application's production runtime classpath:
+At the same time, developer-only tooling no longer ships with an application. These artifacts could reach
+an application's production runtime classpath, by a different route for each:
 
-* `org.apache.grails:grails-console`
-* `org.apache.groovy:groovy-console`, `groovy-groovysh`, `groovy-swing`
-* the JLine family, including `org.jline:jansi`
+* `org.apache.grails:grails-console` - the Swing console, the Groovy shell, and the script and command
+  runners - and the `org.apache.groovy:groovy-console`, `groovy-groovysh` and `groovy-swing` libraries it
+  brings with it, through the `console` configuration the application generator declared
+* the JLine family, including `org.jline:jansi`, and the FuseSource Jansi artifact, declared directly by
+  the generated build
 
 None of these are on an application's runtime classpath now. They are provisioned onto the `grailsCli`
 configuration instead, which the Grails Gradle plugin puts on the compile and test classpaths but never on
@@ -2134,7 +2135,7 @@ The `cli` tier now has its own test source sets:
 |===
 |Source set |Purpose
 
-|`src/testCli`
+|`src/test-cli`
 |Tests for CLI classes. Runs as the `testCli` task, wired into `check`.
 
 |`src/integration-test-cli`
@@ -2146,7 +2147,7 @@ Both are created by `org.apache.grails.gradle.grails-plugin-cli`, so there is no
 folder, add a spec, and the task picks it up.
 
 `src/test` no longer sees the CLI tier at all. Move any existing spec that exercises a command or another
-CLI class into `src/testCli`, or into `src/integration-test-cli` if it boots an application.
+CLI class into `src/test-cli`, or into `src/integration-test-cli` if it boots an application.
 
 Both CLI test source sets can read the module's `main` and `test` output, so shared fixtures stay where they
 are. `src/integration-test-cli` additionally reuses `src/integration-test/resources` when that folder exists,

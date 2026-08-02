@@ -153,12 +153,7 @@ class TestPhasesGradlePlugin implements Plugin<Project> {
         }
     }
 
-    /**
-     * Contributes a phase's binary results to {@link #MERGE_TEST_REPORTS_TASK_NAME}. Also called for
-     * test tasks that are wired by hand rather than declared as a {@link TestPhase}, so their results
-     * are not silently missing from the merged report.
-     */
-    static void addPhaseToMergeTestReports(Project project, String phaseName) {
+    private static void addPhaseToMergeTestReports(Project project, String phaseName) {
         project.tasks.named(MERGE_TEST_REPORTS_TASK_NAME, TestReport) {
             it.testResults.from(
                     // WARNING: this must be a path & not a reference to the test task so Gradle doesn't force other tests to run

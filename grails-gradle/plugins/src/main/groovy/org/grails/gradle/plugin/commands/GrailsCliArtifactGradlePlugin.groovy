@@ -31,12 +31,9 @@ import org.gradle.api.component.ConfigurationVariantDetails
 import org.gradle.api.component.SoftwareComponentFactory
 import org.gradle.api.tasks.SourceSet
 import org.gradle.api.tasks.SourceSetContainer
-import org.gradle.api.tasks.TaskProvider
 import org.gradle.api.tasks.bundling.Jar
-import org.gradle.api.tasks.testing.Test
 import org.gradle.api.plugins.JavaPlugin
 import org.gradle.api.plugins.JavaPluginExtension
-import org.gradle.language.base.plugins.LifecycleBasePlugin
 
 import javax.inject.Inject
 
@@ -186,70 +183,47 @@ abstract class GrailsCliArtifactGradlePlugin implements Plugin<Project> {
         // coordinate (see CliPublishingSupport)
         CliPublishingSupport.rewritePublishedCliCapabilityDependencies(project)
 
-        // both cli test phases below report through the merged test report this plugin owns
+        // Both cli phases are ordinary test phases: the plugin builds the source set from the phase's
+        // source folder, inherits the module's test configurations, registers the Test task, wires it
+        // into check, and contributes the results to the merged report.
+        //
+        // The cli tier needs its own phases rather than leaking into `test`, which must stay a faithful
+        // stand-in for an application's production classpath: if a cli class or a cli-only dependency
+        // (jline, jansi) reaches main, that has to surface as a failure instead of being silently
+        // satisfied by cli wiring.
         project.pluginManager.apply(TestPhasesGradlePlugin)
-
-        // The cli tier gets its own test source set (`src/testCli`) rather than leaking into the
-        // main test classpath. `test` must stay a faithful stand-in for an application's production
-        // classpath: if a cli class or a cli-only dependency (jline, jansi) reaches main, that has to
-        // surface as a compile/test failure instead of being silently satisfied by cli wiring.
-        SourceSet testCliSourceSet = sourceSets.create(CLI_TEST_SOURCE_SET_NAME)
-        SourceSet mainSourceSet = sourceSets.getByName(SourceSet.MAIN_SOURCE_SET_NAME)
-
-        // testCli sees the cli classes it exercises, the module's own main classes, and the shared
-        // fixtures in `test` (helpers such as output capture are reused by both), and it inherits the
-        // module's declared test toolchain so build files need no extra configuration. The one-way
-        // direction is deliberate: testCli may read test, but test never sees cli.
-        SourceSet testSourceSet = sourceSets.getByName(SourceSet.TEST_SOURCE_SET_NAME)
-        project.dependencies.add(testCliSourceSet.implementationConfigurationName, cliSourceSet.output)
-        project.dependencies.add(testCliSourceSet.implementationConfigurationName, mainSourceSet.output)
-        project.dependencies.add(testCliSourceSet.implementationConfigurationName, testSourceSet.output)
-        project.configurations.named(testCliSourceSet.implementationConfigurationName).configure { Configuration it ->
-            it.extendsFrom(
-                    project.configurations.getByName('cliApi'),
-                    project.configurations.getByName('cliImplementation'),
-                    project.configurations.getByName('testImplementation'))
-        }
-        project.configurations.named(testCliSourceSet.runtimeOnlyConfigurationName).configure { Configuration it ->
-            it.extendsFrom(project.configurations.getByName('testRuntimeOnly'))
-        }
-        // compileOnly and the annotation processor path are part of that same declared test toolchain:
-        // a spec moved verbatim out of src/test must still compile against whatever `test` compiled
-        // against (Lombok-generated accessors, an optional type behind testCompileOnly), or the move
-        // fails with an error that points nowhere near the cause
-        project.configurations.named(testCliSourceSet.compileOnlyConfigurationName).configure { Configuration it ->
-            it.extendsFrom(project.configurations.getByName('testCompileOnly'))
-        }
-        project.configurations.named(testCliSourceSet.annotationProcessorConfigurationName).configure { Configuration it ->
-            it.extendsFrom(project.configurations.getByName('testAnnotationProcessor'))
-        }
-
-        TaskProvider<Test> testCliTask = project.tasks.register(CLI_TEST_SOURCE_SET_NAME, Test) { Test task ->
-            task.group = LifecycleBasePlugin.VERIFICATION_GROUP
-            task.description = 'Runs the tests for the cli tier against the cli classpath.'
-            task.testClassesDirs = testCliSourceSet.output.classesDirs
-            task.classpath = testCliSourceSet.runtimeClasspath
-            task.useJUnitPlatform()
-            // a TestPhase gets this wiring for free; testCli is a plain source set, so without it the
-            // phase's results never reach the merged report and a failing cli spec is invisible there
-            task.shouldRunAfter(JavaPlugin.TEST_TASK_NAME)
-            task.finalizedBy(TestPhasesGradlePlugin.MERGE_TEST_REPORTS_TASK_NAME)
-        }
-        project.tasks.named(LifecycleBasePlugin.CHECK_TASK_NAME).configure { it.dependsOn(testCliTask) }
-        TestPhasesGradlePlugin.addPhaseToMergeTestReports(project, CLI_TEST_SOURCE_SET_NAME)
-
-        // A command boots an application the same way the shell does, so some cli tests need a real
-        // application context. Those get their own phase in src/integration-test-cli - never the
-        // application's own integrationTest phase, which has to keep the production classpath shape.
-        // Registered here rather than left to each build script: a module only creates the folder.
         NamedDomainObjectContainer<TestPhase> testPhases =
                 project.extensions.getByName(TestPhasesGradlePlugin.EXTENSION_NAME) as NamedDomainObjectContainer<TestPhase>
-        // Configured before being added, NOT via create(name, action): the container fires its
-        // configureEach handler - which is what turns sourceFolderName into a source set - during add(),
-        // so anything a create-action sets arrives too late to be read.
-        TestPhase cliIntegrationPhase = project.objects.newInstance(TestPhase, CLI_INTEGRATION_TEST_PHASE_NAME)
-        cliIntegrationPhase.sourceFolderName.set(CLI_INTEGRATION_TEST_SOURCE_FOLDER)
-        testPhases.add(cliIntegrationPhase)
+
+        // testCli's derived source folder is already src/test-cli, so it needs no override. A command
+        // boots an application the same way the shell does, so tests that need a real application context
+        // get the second phase - never the application's own integrationTest phase, which has to keep the
+        // production classpath shape.
+        addTestPhase(project, testPhases, CLI_TEST_SOURCE_SET_NAME, null)
+        addTestPhase(project, testPhases, CLI_INTEGRATION_TEST_PHASE_NAME, CLI_INTEGRATION_TEST_SOURCE_FOLDER)
+
+        // On top of the shared test wiring, both phases see the cli classes they exercise and the cli
+        // dependency buckets. The direction is one-way by design: a cli phase may read `test`, but `test`
+        // never sees cli.
+        for (String phaseName : [CLI_TEST_SOURCE_SET_NAME, CLI_INTEGRATION_TEST_PHASE_NAME]) {
+            SourceSet phaseSourceSet = sourceSets.getByName(phaseName)
+            project.dependencies.add(phaseSourceSet.implementationConfigurationName, cliSourceSet.output)
+            project.configurations.named(phaseSourceSet.implementationConfigurationName).configure { Configuration it ->
+                it.extendsFrom(
+                        project.configurations.getByName('cliApi'),
+                        project.configurations.getByName('cliImplementation'))
+            }
+            // compileOnly and the annotation processor path are part of the module's declared test
+            // toolchain too: a spec moved verbatim out of src/test must still compile against whatever
+            // `test` compiled against (Lombok-generated accessors, a type behind testCompileOnly), or the
+            // move fails with an error that points nowhere near the cause
+            project.configurations.named(phaseSourceSet.compileOnlyConfigurationName).configure { Configuration it ->
+                it.extendsFrom(project.configurations.getByName('testCompileOnly'))
+            }
+            project.configurations.named(phaseSourceSet.annotationProcessorConfigurationName).configure { Configuration it ->
+                it.extendsFrom(project.configurations.getByName('testAnnotationProcessor'))
+            }
+        }
 
         SourceSet cliIntegrationTestSourceSet = sourceSets.getByName(CLI_INTEGRATION_TEST_PHASE_NAME)
         // both integration phases boot the same application, so its configuration and fixtures are
@@ -301,6 +275,24 @@ abstract class GrailsCliArtifactGradlePlugin implements Plugin<Project> {
                         project.name, extension.artifactId.get())
             }
         }
+    }
+
+    /**
+     * Adds a {@link TestPhase} to the container, optionally overriding the source folder its name would
+     * otherwise derive.
+     *
+     * <p>The phase is configured before it is added, NOT through {@code create(name, action)}: the
+     * container fires its {@code configureEach} handler - which is what turns {@code sourceFolderName}
+     * into a source set - during {@code add()}, so anything a create-action sets arrives too late to be
+     * read.</p>
+     */
+    private static void addTestPhase(Project project, NamedDomainObjectContainer<TestPhase> testPhases,
+                                     String phaseName, String sourceFolder) {
+        TestPhase phase = project.objects.newInstance(TestPhase, phaseName)
+        if (sourceFolder != null) {
+            phase.sourceFolderName.set(sourceFolder)
+        }
+        testPhases.add(phase)
     }
 
     /**
