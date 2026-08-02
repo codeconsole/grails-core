@@ -49,11 +49,6 @@ class DefaultASTDatabindingHelperDomainClassSpecialPropertiesSpec extends
         grails.web.databinding.GrailsWebDataBinder.resetWarnedBindingShapes()
     }
 
-    def cleanupSpec() {
-        ConstraintEvalUtils.clearDefaultConstraints()
-        Holders.setConfig(originalConfig)
-    }
-
     @Issue('GRAILS-11173')
     void 'Test binding to special properties in a domain class'() {
         when:
