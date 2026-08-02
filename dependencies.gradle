@@ -23,7 +23,7 @@
 ext {
     gradleBomDependencyVersions = [
             'ant.version'                   : '1.10.15',
-            'asm.version'                   : '9.10',
+            'asm.version'                   : '9.10.1',
             'asciidoctor-gradle-jvm.version': '4.0.5',
             'asciidoctorj.version'          : '3.0.0',
             'asset-pipeline-gradle.version' : '5.0.34',
@@ -89,7 +89,7 @@ ext {
             'commons-compress.version'      : '1.28.0',
             'commons-lang3.version'         : '3.20.0',
             'geb-spock.version'             : '8.0.1',
-            'groovy.version'                : '4.0.32',
+            'groovy.version'                : '4.0.33',
             'guava.version'                 : '33.6.0-jre',
             'h2.version'                    : '2.4.240',
             // Security: overrides spring-boot-dependencies (5.3.6). 5.4.3 fixes CVE-2026-54399 (httpcore5) and CVE-2026-54428 (httpcore5-h2).
@@ -272,7 +272,7 @@ ext {
     else if (project.name == 'grails-micronaut-bom') {
         customBomVersions = [
                 'javaparser-core.version': '3.27.0', // micronaut requires 3.27, groovy 4 ships with 3.28 but is compatible with 3.27
-                'asm.version'            : '9.10',
+                'asm.version'            : '9.10.1',
         ]
         combinedVersions += customBomVersions
         customBomDependencies = [
