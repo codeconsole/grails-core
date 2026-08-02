@@ -25,6 +25,7 @@ import groovy.transform.CompileStatic
 
 import org.gradle.api.Project
 import org.gradle.api.Task
+import org.gradle.api.file.ProjectLayout
 import org.gradle.api.tasks.Copy
 import org.gradle.api.tasks.JavaExec
 import org.gradle.api.tasks.SourceSet
@@ -52,6 +53,12 @@ import org.grails.gradle.plugin.util.SourceSets
 class GrailsPluginGradlePlugin extends GrailsGradlePlugin {
 
     public static final String PLUGIN_ID = 'org.apache.grails.gradle.grails-plugin'
+
+    /** Build-dir root staged by {@code copyCommands}; laid out as the archive sees it. */
+    protected static final String COMMANDS_STAGING_DIR = 'grails/plugin-commands'
+
+    /** Build-dir root staged by {@code copyTemplates}; laid out as the archive sees it. */
+    protected static final String TEMPLATES_STAGING_DIR = 'grails/plugin-templates'
 
     @Inject
     GrailsPluginGradlePlugin(ToolingModelBuilderRegistry registry) {
@@ -246,61 +253,96 @@ class GrailsPluginGradlePlugin extends GrailsGradlePlugin {
     }
 
     /**
+     * A plugin's {@code src/main/templates} are always packaged by {@code copyTemplates}, so the
+     * base wiring that folds them into {@code processResources} must not also apply. Routing them
+     * through {@code processResources} would subject them to the {@code **}{@code /*.gsp} exclusion
+     * that keeps compiled views out of {@code build/resources/main}, silently dropping GSP
+     * templates such as the ones {@code generate-views} and {@code s2ui-override} render from.
+     */
+    @Override
+    protected void configureTemplateResources(Project project) {
+    }
+
+    /**
      * Packages plugin templates into the runtime jar and routes command scripts into either the
      * runtime jar or the companion {@code -cli} jar.
      *
-     * <p>When {@link GrailsCliArtifactGradlePlugin} is applied, {@code src/main/scripts} is copied
-     * into the cli source set as {@code META-INF/commands} so Groovy/YAML/JSON command resources
+     * <p>When {@link GrailsCliArtifactGradlePlugin} is applied, {@code src/main/scripts} is staged
+     * as {@code META-INF/commands} on the cli source set, so Groovy/YAML/JSON command resources
      * ship only on {@code grailsCliClasspath} and stay out of {@code runtimeClasspath},
      * {@code bootJar}, and {@code bootWar}. Without a companion, the historical behavior is
      * preserved: scripts remain in the runtime plugin jar so unmigrated Grails 7 plugins and
      * {@code legacyCommandSupport} consumers keep discovering them on the application classpath.
      * Templates always stay on the runtime jar.</p>
      *
-     * <p>{@code copyCommands} and {@code copyTemplates} are {@link Copy} tasks, each with a unique
-     * output directory under the build dir. They never side-write into
-     * {@code processResources.destinationDir}. The appropriate {@code process*Resources} task is
-     * only a composition of those unique outputs (via {@code from(...)}), so Gradle tracks
-     * ownership without a forced clean task. Prefer {@code Copy} over {@code Sync} here so end-app
-     * and asset-pipeline consumers that type {@code tasks.named('copyTemplates', Copy)} keep working.</p>
+     * <p>{@code copyCommands} and {@code copyTemplates} stay {@link Copy} tasks - build scripts
+     * configure them through {@code tasks.named('copyTemplates', Copy)} - and each owns one
+     * directory that nothing else writes, laid out exactly as the archive sees it. The staging
+     * tree is wiped before it is regenerated, so a script or template whose source was deleted
+     * stops being packaged; a plain {@code Copy} only ever adds. The wipe runs as a task action,
+     * so it happens only when the task actually executes and up-to-date checks are untouched.</p>
+     *
+     * <p>Those directories are attached to a source set output instead of being copied again by
+     * {@code process*Resources}. That is what keeps GSP templates intact: {@code grails-app/views}
+     * is a resource directory whose {@code *.gsp} files are excluded from {@code processResources},
+     * and copy patterns set on a task apply to every spec composed into it - so anything routed
+     * through {@code processResources} would lose the GSP templates that {@code generate-views} and
+     * {@code s2ui-override} render from.</p>
      */
-    @CompileDynamic
     protected void configurePluginResources(Project project) {
-        project.afterEvaluate() {
-            ProcessResources processResources = (ProcessResources) project.tasks.getByName('processResources')
-            boolean hasCliCompanion = project.pluginManager.hasPlugin(GrailsCliArtifactGradlePlugin.PLUGIN_ID)
+        ProjectLayout layout = project.layout
 
-            // Unique Copy outputs - never side-write into processResources.destinationDir.
-            TaskProvider<Copy> copyCommands = project.tasks.register('copyCommands', Copy) { Copy copy ->
-                copy.from("${project.projectDir}/src/main/scripts")
-                copy.into(project.layout.buildDirectory.dir('tmp/grails-plugin-commands'))
-            }
+        TaskProvider<Copy> copyCommands = project.tasks.register('copyCommands', Copy) { Copy copy ->
+            copy.from(layout.projectDirectory.dir('src/main/scripts'))
+            copy.into(layout.buildDirectory.dir("${COMMANDS_STAGING_DIR}/META-INF/commands"))
+            regenerateStagingTree(copy)
+        }
 
-            TaskProvider<Copy> copyTemplates = project.tasks.register('copyTemplates', Copy) { Copy copy ->
-                copy.from("${project.projectDir}/src/main/templates")
-                copy.into(project.layout.buildDirectory.dir('tmp/grails-plugin-templates'))
-            }
+        TaskProvider<Copy> copyTemplates = project.tasks.register('copyTemplates', Copy) { Copy copy ->
+            copy.from(layout.projectDirectory.dir('src/main/templates'))
+            copy.into(layout.buildDirectory.dir("${TEMPLATES_STAGING_DIR}/META-INF/templates"))
+            regenerateStagingTree(copy)
+        }
 
-            // processResources is only a combination of unique task outputs + main resources.
-            // Do not set DuplicatesStrategy.INCLUDE - overlapping paths are a configuration error.
-            processResources.from(copyTemplates) { into 'META-INF/templates' }
+        SourceSetContainer sourceSets = project.extensions.getByType(SourceSetContainer)
+        SourceSet mainSourceSet = sourceSets.getByName(SourceSet.MAIN_SOURCE_SET_NAME)
+        mainSourceSet.output.dir([builtBy: copyTemplates], layout.buildDirectory.dir(TEMPLATES_STAGING_DIR))
 
-            if (hasCliCompanion) {
-                SourceSet cliSourceSet = project.extensions.getByType(SourceSetContainer)
-                        .getByName(GrailsCliArtifactGradlePlugin.CLI_SOURCE_SET_NAME)
-                ProcessResources commandResources = (ProcessResources) project.tasks
-                        .getByName(cliSourceSet.processResourcesTaskName)
-                commandResources.from(copyCommands) { into 'META-INF/commands' }
-            }
-            else {
-                processResources.from(copyCommands) { into 'META-INF/commands' }
-            }
+        project.tasks.named('processResources', ProcessResources).configure { ProcessResources task ->
+            // grails-app/views is a resource directory, but a plugin's views are compiled rather
+            // than packaged. Templates carrying the same GSPs are staged above, out of reach of
+            // this pattern.
+            task.exclude('**/*.gsp')
+        }
 
-            project.processResources {
-                // spring/resources.groovy is excluded from the published jar (see configureJarTask)
-                // but is allowed into build/resources/main/ so plugin integration tests can load it.
-                exclude('**/*.gsp')
-            }
+        routeCommandResources(project, copyCommands)
+    }
+
+    /**
+     * Clears a copy task's own destination before it runs, so the tree it produces is exactly the
+     * tree its sources describe. Registered as a task action rather than a separate clean task:
+     * Gradle settles up-to-dateness before any action runs, so an unchanged build still skips the
+     * task instead of being forced to re-copy.
+     */
+    private static void regenerateStagingTree(Copy copy) {
+        copy.doFirst { Task task ->
+            ((Copy) task).destinationDir.deleteDir()
+        }
+    }
+
+    /**
+     * Sends {@code src/main/scripts} to the cli source set when a companion is published and to the
+     * main source set otherwise. The choice can only be made once the build script has been
+     * evaluated, because {@code grails-plugin-cli} is applied after this plugin.
+     */
+    private void routeCommandResources(Project project, TaskProvider<Copy> copyCommands) {
+        project.afterEvaluate {
+            SourceSetContainer sourceSets = project.extensions.getByType(SourceSetContainer)
+            SourceSet target = project.pluginManager.hasPlugin(GrailsCliArtifactGradlePlugin.PLUGIN_ID)
+                    ? sourceSets.getByName(GrailsCliArtifactGradlePlugin.CLI_SOURCE_SET_NAME)
+                    : sourceSets.getByName(SourceSet.MAIN_SOURCE_SET_NAME)
+            target.output.dir([builtBy: copyCommands],
+                    project.layout.buildDirectory.dir(COMMANDS_STAGING_DIR))
         }
     }
 

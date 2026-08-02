@@ -19,6 +19,8 @@ tasks.register('inspectCommandPackaging') {
         println "RUNTIME_JAR=${runtimeJar.name}"
         println "RUNTIME_HAS_SCRIPT=${runtimeEntries.contains('META-INF/commands/legacy-only-script.groovy')}"
         println "RUNTIME_HAS_TEMPLATE=${runtimeEntries.contains('META-INF/templates/legacy-only.txt')}"
+        println "RUNTIME_HAS_GSP_TEMPLATE=${runtimeEntries.contains('META-INF/templates/legacy-only.gsp')}"
+        println "RUNTIME_SCRIPT_COUNT=${runtimeEntries.count { it.startsWith('META-INF/commands/') && !it.endsWith('/') }}"
     }
 }
 

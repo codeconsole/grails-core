@@ -41,6 +41,7 @@ import org.gradle.api.artifacts.DependencySet
 import org.gradle.api.artifacts.ModuleDependency
 import org.gradle.api.attributes.AttributeMatchingStrategy
 import org.gradle.api.attributes.Category
+import org.gradle.api.file.CopySpec
 import org.gradle.api.file.DuplicatesStrategy
 import org.gradle.api.file.FileCollection
 import org.gradle.api.file.RegularFile
@@ -130,6 +131,8 @@ class GrailsGradlePlugin implements Plugin<Project> {
         String grailsVersion = resolveGrailsVersion(project)
 
         enableNative2Ascii(project, grailsVersion)
+
+        configureTemplateResources(project)
 
         configureAssetCompilation(project)
 
@@ -1097,6 +1100,22 @@ ${importStatements}
     }
 
     /**
+     * Packages {@code src/main/templates} into the main resources as {@code META-INF/templates}.
+     *
+     * <p>Grails plugins override this: they stage templates through the {@code copyTemplates} task
+     * into a directory of their own so that a plugin's templates are not subject to the resource
+     * filters {@code processResources} applies to {@code grails-app} resource directories.</p>
+     */
+    protected void configureTemplateResources(Project project) {
+        SourceSet sourceSet = SourceSets.findMainSourceSet(project)
+        project.tasks.named(sourceSet.processResourcesTaskName, ProcessResources).configure { ProcessResources task ->
+            task.from(project.layout.projectDirectory.dir('src/main/templates')) { CopySpec spec ->
+                spec.into('META-INF/templates')
+            }
+        }
+    }
+
+    /**
      * Enables native2ascii processing of resource bundles
      **/
     @CompileDynamic
@@ -1127,10 +1146,6 @@ ${importStatements}
             // the app version leaves processResources UP-TO-DATE and stale substituted values
             // (e.g. info.app.grailsVersion in application.yml) are repackaged into every build.
             task.inputs.properties(replaceTokens)
-
-            task.from(project.relativePath('src/main/templates')) { spec ->
-                spec.into('META-INF/templates')
-            }
 
             if (!native2ascii) {
                 task.from(sourceSet.resources) { spec ->
