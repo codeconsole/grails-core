@@ -16,6 +16,7 @@
  *  specific language governing permissions and limitations
  *  under the License.
  */
+import org.apache.tools.ant.DirectoryScanner
 import org.gradle.api.initialization.resolve.RepositoriesMode
 
 pluginManagement {
@@ -77,4 +78,11 @@ includeBuild('..') {
 }
 includeBuild('../grails-gradle') {
     name = 'grails-gradle'
+}
+
+// Due to https://github.com/gradle/gradle/issues/2986 , we can't change the global exclude for profiles, it must be done everywhere
+for (String pattern in DirectoryScanner.defaultExcludes) {
+    if (pattern.contains('gitignore') || pattern.contains('gitattributes')) {
+        DirectoryScanner.removeDefaultExclude(pattern)
+    }
 }
