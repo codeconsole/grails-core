@@ -329,6 +329,9 @@ class BindDataMethodTests extends Specification implements ControllerUnitTest<Bi
     }
 
     void 'Test generated complex property wildcards do not allow a sibling property with the same prefix'() {
+        given:
+        enableSecureBinding()
+
         when:
         params.foo_admin = 'administrator'
         def model = controller.bindComplexPropertyWildcardSibling()
@@ -839,6 +842,54 @@ class BindDataMethodTests extends Specification implements ControllerUnitTest<Bi
         explicitIncludeTarget.email == null
     }
 
+    void 'Test nullMissing resets an omitted included primitive to its type default'() {
+        given:
+        def target = new PrimitiveCommandObject(active: true)
+
+        when:
+        def result = DataBindingUtils.bindObjectToInstance(target, [:], ['active'], [], null, true)
+
+        then:
+        !target.active
+        result == null
+    }
+
+    void 'Test nullMissing reports a property clear failure in the binding result'() {
+        given:
+        def target = new FailingClearCommandObject()
+
+        when:
+        def result = DataBindingUtils.bindObjectToInstance(target, [:], ['value'], [], null, true)
+
+        then:
+        result.hasFieldErrors('value')
+        target.value == 'existing'
+    }
+
+    void 'Test nullMissing preserves binding errors when a clear also fails'() {
+        given:
+        def target = new ErrorCollectingCommandObject()
+
+        when:
+        def result = DataBindingUtils.bindObjectToInstance(
+                target, [count: 'not-a-number'], ['count', 'value'], [], null, true)
+
+        then:
+        result.hasFieldErrors('count')
+        result.hasFieldErrors('value')
+    }
+
+    void 'Test nullMissing reports the full path when a nested clear fails'() {
+        given:
+        def target = new NestedFailingClearCommandObject(child: new FailingClearCommandObject())
+
+        when:
+        def result = DataBindingUtils.bindObjectToInstance(target, [:], ['child.value'], [], null, true)
+
+        then:
+        result.hasFieldErrors('child.value')
+    }
+
     private void enableSecureBinding() {
         grailsApplication.config.setAt(Settings.LEGACY_BINDABLE_DEFAULT, false)
         DataBindingUtils.clearBindingCaches()
@@ -1273,6 +1324,39 @@ class NoAllowlistChild {
 
 class FrameworkManagedCommandObject {
     Long id
+}
+
+class PrimitiveCommandObject {
+    boolean active
+}
+
+class FailingClearCommandObject {
+    private String currentValue = 'existing'
+
+    String getValue() {
+        currentValue
+    }
+
+    void setValue(String value) {
+        throw new IllegalStateException('value cannot be cleared')
+    }
+}
+
+class ErrorCollectingCommandObject implements Validateable {
+    Integer count
+    private String currentValue = 'existing'
+
+    String getValue() {
+        currentValue
+    }
+
+    void setValue(String value) {
+        throw new IllegalStateException('value cannot be cleared')
+    }
+}
+
+class NestedFailingClearCommandObject {
+    FailingClearCommandObject child
 }
 
 class RecordingGrailsWebDataBinder extends GrailsWebDataBinder {
