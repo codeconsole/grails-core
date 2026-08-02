@@ -24,7 +24,6 @@ import groovy.transform.CompileStatic
 import org.gradle.api.GradleException
 import org.gradle.api.Plugin
 import org.gradle.api.Project
-import org.gradle.api.Task
 import org.gradle.api.artifacts.Configuration
 import org.gradle.api.artifacts.Dependency
 import org.gradle.api.artifacts.DependencyConstraint
@@ -82,13 +81,60 @@ class GrailsDependencyValidatorPlugin implements Plugin<Project> {
     @Override
     void apply(Project project) {
         project.plugins.withId('java') {
-            project.tasks.register(VALIDATE_TASK_NAME) { Task task ->
+            registerDependencyVersionValidation(project)
+            registerProductionClasspathValidation(project)
+        }
+    }
+
+    /**
+     * Registers {@link #VALIDATE_TASK_NAME}, wired entirely from providers.
+     *
+     * <p>Inspecting the dependency graph needs the project, so it happens while the task's inputs are
+     * computed - after the build scripts have run, and before any task executes - rather than from a
+     * {@code doLast} block. The task itself then only compares the two version maps it was given.</p>
+     *
+     * <p>Every provider short-circuits when the project opts out, so a skipped project never pays for
+     * the resolution or the BOM probing.</p>
+     */
+    private static void registerDependencyVersionValidation(Project project) {
+        Provider<String> bomPath = project.provider {
+            if (shouldSkip(project)) {
+                return ''
+            }
+            String detected = detectBomPath(project)
+            if (detected == null) {
+                return ''
+            }
+            // no BOM-bearing configuration means there is nothing to compare against
+            String bomName = detected.substring(detected.lastIndexOf(':') + 1)
+            findBomConfigurations(project, bomName).isEmpty() ? '' : detected
+        }
+
+        Provider<Map<String, String>> bomVersions = bomPath.map { String path ->
+            if (!path) {
+                return Collections.<String, String> emptyMap()
+            }
+            String bomName = path.substring(path.lastIndexOf(':') + 1)
+            collectBomVersions(project, path, findBomConfigurations(project, bomName))
+        }
+
+        Provider<Map<String, String>> resolvedVersions = bomPath.map { String path ->
+            if (!path) {
+                return Collections.<String, String> emptyMap()
+            }
+            String bomName = path.substring(path.lastIndexOf(':') + 1)
+            collectResolvedVersions(findBomConfigurations(project, bomName))
+        }
+
+        project.tasks.register(VALIDATE_TASK_NAME, ValidateDependencyVersionsTask) {
+            ValidateDependencyVersionsTask task ->
                 task.group = 'verification'
                 task.description = 'Validates that no transitive dependency upgrades a version beyond what the BOM manages.'
-                task.onlyIf { Task t -> !shouldSkip(t.project) }
-                task.doLast { Task t -> validateDependencies(project) }
-            }
-            registerProductionClasspathValidation(project)
+                task.projectName.set(project.name)
+                task.bomPath.set(bomPath)
+                task.bomVersions.set(bomVersions)
+                task.resolvedVersions.set(resolvedVersions)
+                task.allowedOverrides.set(project.provider { resolveAllowedOverrides(project) })
         }
     }
 
@@ -144,49 +190,6 @@ class GrailsDependencyValidatorPlugin implements Plugin<Project> {
             return true
         }
         return Boolean.parseBoolean(value.toString())
-    }
-
-    private static void validateDependencies(Project project) {
-        String bomPath = detectBomPath(project)
-        if (bomPath == null) {
-            return
-        }
-
-        String bomName = bomPath.substring(bomPath.lastIndexOf(':') + 1)
-        Set<Configuration> bomConfigurations = findBomConfigurations(project, bomName)
-        if (bomConfigurations.isEmpty()) {
-            return
-        }
-
-        Map<String, String> bomVersions = collectBomVersions(project, bomPath, bomConfigurations)
-        if (bomVersions.isEmpty()) {
-            project.logger.warn('No BOM versions collected for project \'{}\'. Skipping validation.', project.name)
-            return
-        }
-
-        Set<String> allowedOverrides = resolveAllowedOverrides(project)
-        Map<String, String> resolvedVersions = collectResolvedVersions(bomConfigurations)
-        List<String> violations = new ArrayList<>()
-
-        for (Map.Entry<String, String> entry : resolvedVersions.entrySet()) {
-            if (allowedOverrides.contains(entry.key)) {
-                continue
-            }
-            String bomVersion = bomVersions.get(entry.key)
-            if (bomVersion != null && bomVersion != entry.value) {
-                violations.add("  ${entry.key} - resolved ${entry.value}, expected ${bomVersion}" as String)
-            }
-        }
-
-        if (!violations.isEmpty()) {
-            String message = "Dependency version validation failed for project '${project.name}'.\n" +
-                    "The following dependencies resolved to versions different from the BOM (${bomPath}):\n\n" +
-                    violations.join('\n') + '\n\n' +
-                    'A transitive dependency is upgrading these versions.\n' +
-                    'To fix, update the dependency version in dependencies.gradle or add an exclusion in the build file.\n' +
-                    "For intentional overrides, add the coordinate to project.ext.${ALLOWED_OVERRIDES_EXT} (e.g. as a Set<String> of 'group:name' keys)."
-            throw new GradleException(message)
-        }
     }
 
     /**
