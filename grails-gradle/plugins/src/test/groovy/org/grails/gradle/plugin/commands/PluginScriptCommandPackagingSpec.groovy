@@ -26,7 +26,9 @@ import org.grails.gradle.plugin.core.GradleSpecification
  *
  * <p>With {@code grails-plugin-cli}, Groovy/YAML command scripts must leave the runtime plugin jar
  * and land only in the companion. Without a companion, the historical runtime-jar packaging is
- * preserved so unmigrated Grails 7 plugins keep working under {@code legacyCommandSupport}.</p>
+ * preserved so unmigrated Grails 7 plugins keep working under {@code legacyCommandSupport}.
+ * {@code copyCommands} owns a unique output directory consumed via {@code from(...)} so Gradle
+ * tracks ownership without a forced clean task.</p>
  */
 class PluginScriptCommandPackagingSpec extends GradleSpecification {
 
@@ -47,6 +49,9 @@ class PluginScriptCommandPackagingSpec extends GradleSpecification {
 
         and: 'templates remain a runtime concern'
         result.output.contains('RUNTIME_HAS_TEMPLATE=true')
+
+        and: 'copyCommands owns a unique output directory under the build dir'
+        result.output.find(/COPY_COMMANDS_DIR=.*\/tmp\/grails-plugin-commands/)
     }
 
     def "plugins without a companion keep src/main/scripts in the runtime jar"() {
