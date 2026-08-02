@@ -59,6 +59,7 @@ import grails.validation.ValidationErrors;
 import grails.web.mime.MimeType;
 import grails.web.mime.MimeTypeResolver;
 import grails.web.mime.MimeTypeUtils;
+import org.grails.config.NavigableMap;
 import org.grails.core.exceptions.GrailsConfigurationException;
 import org.grails.datastore.mapping.model.PersistentEntity;
 import org.grails.datastore.mapping.model.PersistentProperty;
@@ -385,10 +386,36 @@ public class DataBindingUtils {
     static boolean isLegacyBindableDefaultEnabled() {
         GrailsApplication application = Holders.findApplication();
         if (application != null) {
-            return application.getConfig().getProperty(DefaultASTDatabindingHelper.LEGACY_BINDABLE_DEFAULT, Boolean.class, true);
+            return resolveLegacyBindableDefault(
+                    application.getConfig().getProperty(DefaultASTDatabindingHelper.LEGACY_BINDABLE_DEFAULT, Object.class, null));
         }
-        Object value = Holders.getFlatConfig().get(DefaultASTDatabindingHelper.LEGACY_BINDABLE_DEFAULT);
-        return value == null || Boolean.TRUE.equals(value) || "true".equalsIgnoreCase(String.valueOf(value));
+        return resolveLegacyBindableDefault(Holders.getFlatConfig().get(DefaultASTDatabindingHelper.LEGACY_BINDABLE_DEFAULT));
+    }
+
+    /**
+     * Resolves the configured value of {@code grails.databinding.legacyBindableDefault} against the
+     * permissive default.
+     * <p>
+     * The raw value must be resolved here rather than through a typed {@code Boolean} config lookup:
+     * a config value that converts to {@code Boolean.FALSE} is discarded in favour of the supplied
+     * default, which would silently ignore an explicit opt-in to the secure deny-by-default mode from
+     * any string-valued source such as a properties file, a system property or an environment variable.
+     * <p>
+     * A navigable config answers an absent key with a placeholder object rather than {@code null}, so
+     * only a genuinely absent key may fall back to the permissive default. Any other unrecognised value
+     * fails closed, because this switch governs mass-assignment protection.
+     *
+     * @param value the raw configured value, which may be {@code null} or an absent-key placeholder
+     * @return true when the legacy (permissive) binding default applies
+     */
+    static boolean resolveLegacyBindableDefault(final Object value) {
+        if (value == null || value instanceof NavigableMap.NullSafeNavigator) {
+            return true;
+        }
+        if (value instanceof Boolean) {
+            return (Boolean) value;
+        }
+        return value instanceof CharSequence && "true".equalsIgnoreCase(value.toString().trim());
     }
 
     /**
