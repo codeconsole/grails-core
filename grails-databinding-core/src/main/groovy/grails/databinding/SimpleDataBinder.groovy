@@ -271,35 +271,21 @@ class SimpleDataBinder implements DataBinder {
     }
 
     protected boolean isOkToBind(String propName, List whiteList, List blackList) {
-        !isFrameworkProperty(propName) && !blackList?.contains(propName) &&
-                (whiteList == null || isBindAllBindingIncludeList(whiteList) || whiteList.contains(propName) ||
+        !FrameworkPropertyNames.FRAMEWORK_MANAGED_PROPERTIES.contains(propName) && !blackList?.contains(propName) &&
+                (whiteList == null || whiteList.is(BIND_ALL_BINDING_INCLUDE_LIST) || whiteList.contains(propName) ||
                         whiteList.any { item -> item?.toString()?.startsWith(propName + '.') })
-    }
-
-    static boolean isPropertyExcluded(String propertyName, List excludeList) {
-        excludeList?.any { item ->
-            String excludeName = item?.toString()
-            excludeName == propertyName || propertyName.startsWith(excludeName + '.') ||
-                    (excludeName?.endsWith('.*') && propertyName.startsWith(excludeName.substring(0, excludeName.length() - 1))) ||
-                    (excludeName?.endsWith('_*') && propertyName.startsWith(excludeName.substring(0, excludeName.length() - 1)))
-        } ?: false
-    }
-
-    private static boolean isFrameworkProperty(String propertyName) {
-        'class' == propertyName || 'classLoader' == propertyName || 'protectionDomain' == propertyName ||
-                'metaClass' == propertyName || 'metaPropertyValues' == propertyName || 'properties' == propertyName
     }
 
     /**
      * Marker include list meaning "bind every eligible property". Used when an
      * explicit exclude-only bind must not intersect the class allowlist.
      */
-    static List getBindAllBindingIncludeList() {
+    protected static List getBindAllBindingIncludeList() {
         BIND_ALL_BINDING_INCLUDE_LIST
     }
 
-    static boolean isBindAllBindingIncludeList(List includeList) {
-        includeList instanceof BindAllBindingIncludeList
+    protected static boolean isBindAllBindingIncludeList(List includeList) {
+        includeList.is(BIND_ALL_BINDING_INCLUDE_LIST)
     }
 
     private static final class BindAllBindingIncludeList extends ArrayList {
