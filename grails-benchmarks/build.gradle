@@ -41,6 +41,12 @@ group = 'org.apache.grails'
 // The latter remains omitted until existing JMH source import-order and fixture-formatting
 // violations can be remediated together.
 
+sourceSets {
+    report {
+        groovy.srcDirs = ['src/report/groovy']
+    }
+}
+
 // The Groovy fixtures under src/main/groovy build the framework objects whose APIs are
 // closure-based (the URL mappings DSL, the Validateable trait, view templates). The JMH
 // benchmarks themselves live in src/jmh/java and only *call* those fixtures, so that the
@@ -66,6 +72,28 @@ dependencies {
     // with NoClassDefFoundError: jakarta/servlet/ServletContext.
     implementation 'jakarta.servlet:jakarta.servlet-api'
     implementation 'org.springframework:spring-test'
+
+    reportImplementation platform(project(':grails-bom'))
+    reportImplementation 'org.apache.groovy:groovy'
+    reportImplementation 'org.apache.groovy:groovy-json'
+
+    // Pull the report source set's full runtime classpath (groovy-json etc.), not only its
+    // compiled classes - the Spock suite exercises JsonSlurper and HttpClient paths.
+    testImplementation sourceSets.report.runtimeClasspath
+    testImplementation 'org.apache.groovy:groovy-test-junit5'
+    testImplementation 'org.junit.jupiter:junit-jupiter-api'
+    testImplementation 'org.junit.platform:junit-platform-suite'
+    testImplementation 'org.spockframework:spock-core'
+    testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine'
+}
+
+apply from: rootProject.layout.projectDirectory.file('gradle/test-config.gradle')
+
+tasks.register('jmhCompare', JavaExec) {
+    group = 'verification'
+    description = 'Compares JMH JSON results and renders a pull request report.'
+    classpath = sourceSets.report.runtimeClasspath
+    mainClass = 'org.apache.grails.benchmarks.report.JmhCompare'
 }
 
 // The jmh source set compiles and runs against everything main depends on.

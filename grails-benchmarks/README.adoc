@@ -49,6 +49,18 @@ JAVA_HOME=/path/to/jdk-21 ./gradlew :grails-benchmarks:jmh \
 Add allocation profiling with `-Pjmh.profilers=gc`, which populates the `gc.alloc.rate.norm`
 (bytes per operation) metric the CI report shows as an advisory column.
 
+== Comparing results locally
+
+Render a report from a JMH JSON result file with the Gradle comparison task:
+
+[source,bash]
+----
+./gradlew -q :grails-benchmarks:jmhCompare --args="--head build/results/jmh/results.json"
+----
+
+Add `--base <path>` to compare paired base and HEAD results. Add `--output <file>` to write the
+rendered Markdown report to a file as well as standard output.
+
 == Gradle properties
 
 |===
@@ -73,6 +85,7 @@ shrink the comparison set in CI.
 == Layout
 
 Benchmarks are Java, under `src/jmh/java`. Setup fixtures are Groovy, under `src/main/groovy`.
+The comparison tool is Groovy in the `report` source set, under `src/report/groovy`.
 
 That split is intentional. A benchmark written in Groovy measures Groovy's dynamic call-site
 machinery as much as the Grails API under test, so the measured method stays in Java. Fixtures
@@ -81,6 +94,9 @@ are Groovy only where the Grails API genuinely requires it -- the URL mappings D
 than `src/jmh/groovy` because the `me.champeau.jmh` plugin puts the main source set's output on
 the jmh compile classpath, which keeps the benchmark source set pure Java and preserves normal
 JMH annotation processing.
+
+The `report` source set depends on Groovy alone and on no Grails project. The CI reporting job
+runs it after a bare checkout, so it must render Markdown without compiling the framework.
 
 Benchmarks are grouped by package, and the CI report aggregates per group:
 
@@ -135,5 +151,6 @@ the JIT can eliminate the work being measured.
 
 `.github/workflows/benchmark.yml` runs this suite on pull requests labelled `performance`,
 measuring the merge commit against the pull request's base commit on a single runner, and posts
-the comparison produced by `.github/scripts/jmh_compare.py`. The check is advisory and never
-fails a build.
+the comparison produced by `:grails-benchmarks:jmhCompare`. The Groovy tool lives in
+`grails-benchmarks/src/report/groovy`, uses the `report` source set, and is covered by
+`./gradlew :grails-benchmarks:test`. The check is advisory and never fails a build.
