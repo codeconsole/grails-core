@@ -28,7 +28,7 @@ ext {
             'asset-pipeline-gradle.version' : '5.2.0-M1',
             'commons-text.version'          : '1.15.0',
             'directory-watcher.version'     : '0.19.1',
-            'gradle-groovy.version'         : '4.0.32',
+            'gradle-groovy.version'         : '4.0.33',
             'gradle-spock.version'          : '2.4-groovy-4.0',
             'grails-publish-plugin.version' : '1.0.0-M2',
             'jansi.version'                 : '2.4.2',
