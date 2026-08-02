@@ -58,10 +58,11 @@ export GRADLE_OPTS="-Xms2G -Xmx5G"
 
 ## Available Skills
 
-> **AI AGENTS - MANDATORY**: Before writing or modifying any code, you **MUST** read the relevant skill file(s) below. Do not write Groovy/Grails code without first loading these instructions:
+> **AI AGENTS - MANDATORY**: Before writing or modifying any code, you **MUST** read the relevant skill file(s) below. Do not write Groovy/Grails/Gradle code without first loading these instructions:
 > - Writing Grails code → Read `.agents/skills/grails-developer/SKILL.md`
 > - Writing Groovy code → Read `.agents/skills/groovy-developer/SKILL.md`
 > - Writing Java code → Read `.agents/skills/java-developer/SKILL.md`
+> - Writing or changing Gradle builds → Read `.agents/skills/gradle-developer/SKILL.md`
 > - Upgrading applications to Grails 8 → Read `.agents/skills/grails-8-upgrade/SKILL.md`
 > - Writing Hibernate code → Read `.agents/skills/hibernate-developer/SKILL.md`
 > - Fixing style/analysis violations → Read `.agents/skills/violation-fixer/SKILL.md`
@@ -74,6 +75,7 @@ export GRADLE_OPTS="-Xms2G -Xmx5G"
 |-------|------|---------|
 | **grails-developer** | `.agents/skills/grails-developer/SKILL.md` | Current Grails apps, GORM, controllers, views |
 | **groovy-developer** | `.agents/skills/groovy-developer/SKILL.md` | Groovy 5 syntax, closures, DSLs, Spock |
+| **gradle-developer** | `.agents/skills/gradle-developer/SKILL.md` | Gradle 9 builds, BOM/platforms, convention plugins, wrappers |
 | **grails-8-upgrade** | `.agents/skills/grails-8-upgrade/SKILL.md` | Upgrading Grails applications from 7.x to 8 |
 | **java-developer** | `.agents/skills/java-developer/SKILL.md` | Java 21 features, Groovy interop |
 | **hibernate-developer** | `.agents/skills/hibernate-developer/SKILL.md` | Hibernate 7 mapping, binders, generators |
