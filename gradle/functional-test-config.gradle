@@ -16,21 +16,25 @@
  *  specific language governing permissions and limitations
  *  under the License.
  */
-def skippedProjects = testProjects + docProjects + cliProjects
-def substitutableProjects = rootProject.subprojects
-        .findAll { !(it.name in skippedProjects) }
-        .collect { subproject ->
-            // Ensure the target project is evaluated before we attempt to substitute it.
-            // This is necessary because it may not have been evaluated yet, and we need to
-            // ensure that the artifactId and cliArtifactId properties are available for substitution.
-            project.evaluationDependsOn(subproject.path)
-            return [
-                    project: subproject,
-                    artifactId: subproject.findProperty('pomArtifactId') ?: subproject.name,
-                    cliArtifactId: subproject.findProperty('cliArtifactId')
-            ]
-        }
 
+if (!rootProject.ext.has('substitutableFunctionalTestProjectsCache')) {
+    def skippedProjects = testProjects + docProjects + cliProjects
+    rootProject.ext.set('substitutableFunctionalTestProjectsCache', rootProject.subprojects
+            .findAll { !(it.name in skippedProjects) }
+            .collect { subproject ->
+                // Ensure the target project is evaluated before we attempt to substitute it.
+                // This is necessary because it may not have been evaluated yet, and we need to
+                // ensure that the artifactId and cliArtifactId properties are available for substitution.
+                project.evaluationDependsOn(subproject.path)
+                return [
+                        project: subproject,
+                        artifactId: subproject.findProperty('pomArtifactId') ?: subproject.name,
+                        cliArtifactId: subproject.findProperty('cliArtifactId')
+                ]
+            }
+    )
+}
+def substitutableProjects = rootProject.ext.get('substitutableFunctionalTestProjectsCache')
 configurations.configureEach {
     resolutionStrategy.dependencySubstitution {
         // Test projects will often include dependencies from local projects. This will ensure any dependencies
