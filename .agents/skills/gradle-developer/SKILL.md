@@ -45,8 +45,16 @@ Related skills (do not substitute this one):
 1. **Match neighboring modules.** Before inventing structure, open 2-3 similar `build.gradle` files and copy their plugin block, dependency style, and `apply { from ... }` scripts.
 2. **Prefer existing convention plugins** over inline configuration. If `CompilePlugin` already sets encoding, release, jars, and reproducibility, do not re-declare those in the module script.
 3. **Gradle docs are secondary.** Official Gradle 9 docs are useful for APIs and deprecations, but this monorepo intentionally diverges (configuration cache off, no Spring DM plugin, heavy `projectDir` remapping, presence-based `-P` flags, custom BOM validator). When docs and this repo disagree, **follow this repo** unless you are deliberately fixing a known issue with a tracked reason.
-4. **Never reintroduce** `io.spring.dependency-management` / Spring Dependency Management plugin. Grails 8 uses native `platform()` / `enforcedPlatform()` plus `org.apache.grails.gradle.bom-property-overrides` (see PR #15467).
+4. **Do not use** `io.spring.dependency-management` / Spring Dependency Management plugin in core modules or applications. The intentional regression fixture at `grails-test-examples/spring-dependency-management` is the only exception. Grails 8 otherwise uses native `platform()` / `enforcedPlatform()` plus `org.apache.grails.gradle.bom-property-overrides` (see PR #15467).
 5. **Scope Gradle invocations** to the touched subproject (`:module:test`, not root `test`) unless the change is cross-cutting.
+
+### Change workflow
+
+1. Inspect 2-3 sibling modules and the relevant convention plugin or shared script.
+2. Confirm the Gradle project path in `settings.gradle`, including any `projectDir` mapping.
+3. Edit the smallest appropriate build file or convention plugin.
+4. Run scoped compile, test, and `validateDependencyVersions` tasks for the changed project.
+5. For `grails-gradle` changes, run the relevant plugin TestKit tests from `grails-gradle/` with its wrapper.
 
 ---
 
@@ -146,9 +154,9 @@ Never unify those casually.
    gradle -p gradle-bootstrap
    ```
 
-   That refreshes wrappers/scripts for **root**, **grails-gradle**, **grails-forge**, and **end-to-end**, and separately runs `legacyG7Wrapper` so **`end-to-end/legacy-g7-command-plugin` stays on its pinned Grails 7 Gradle version** (currently 8.x - do **not** force it to 9).
+   Bootstrap generates the wrapper under `gradle-bootstrap/`, **copies** it to **grails-forge**, **grails-gradle**, and **end-to-end**, then **moves** the generated wrapper into the **repository root**. It also runs `legacyG7Wrapper` so **`end-to-end/legacy-g7-command-plugin` stays on its pinned Grails 7 Gradle version** (currently 8.x - do **not** force it to 9). Root is therefore bootstrap-covered; do not re-list it as a manual step.
 
-3. Still refresh locations **not** fully covered by bootstrap. For each tree, keep the **full** wrapper set in sync (`gradle-wrapper.properties`, `gradle-wrapper.jar`, `gradlew`, `gradlew.bat`) - not properties alone:
+3. Manually refresh the locations bootstrap does **not** cover. For each tree, keep the **full** wrapper set in sync (`gradle-wrapper.properties`, `gradle-wrapper.jar`, `gradlew`, `gradlew.bat`) - not properties alone:
 
    - `build-logic/` - run its wrapper task or copy the complete set from root after bootstrap
    - `grails-profiles/base/skeleton/` and `grails-profiles/profile/skeleton/`
@@ -308,7 +316,7 @@ implementation platform(project(':grails-hibernate7-bom'))
 - Adds constraints for published subprojects
 - Applies `gradle/cli-companion-bom-constraints.gradle` for CLI companion versions under `enforcedPlatform`
 
-### `validateDependencyVersions` (PR #15689 family / AGENTS.md rule 14)
+### `validateDependencyVersions` (AGENTS.md rule 14 / dependency-validator plugin)
 
 Applied via `org.apache.grails.buildsrc.dependency-validator`.
 
@@ -321,7 +329,7 @@ How to fix by direction:
 | Transitive resolved **newer** than BOM | **Bump** the pin in `dependencies.gradle` so the BOM is `>=` the winner (usual case; AGENTS.md rule 14) |
 | Resolved **older** / forced / strict conflict | Find the force, strict constraint, or second platform pulling the other version; remove the force, align platforms, or document a deliberate override |
 | Intentional divergence that must stay | `ext.allowedBomOverrides = ['group:name', …]` with a **commented reason** - last resort |
-| Whole project cannot validate | Prefer `ext.skipDependencyValidation = true` in the build script. CLI: **`-PskipDependencyValidation=true`** is the safe form. Bare `-PskipDependencyValidation` is treated as skip only when the property value is `null` (see `shouldSkip`); prefer `=true` so behavior does not depend on how the CLI materializes the property |
+| Whole project cannot validate | Prefer `ext.skipDependencyValidation = true` in the build script. CLI: `-PskipDependencyValidation` is presence-based and skips validation; `-PskipDependencyValidation=true` is also valid. Use the documented form that best communicates intent. |
 
 Also:
 
@@ -378,14 +386,15 @@ Plugin IDs (implementation under `build-logic/plugins/…/buildsrc/`):
 - `JavaCompile.options.release` from `javaVersion` (21) - not outdated `sourceCompatibility`/`targetCompatibility` pairs in new code
 - UTF-8 everywhere
 - `-parameters` for reflection/IDE
-- Forked compilation with `-Dgrails.isolated.build=true` and **per-project** `BaseDirArgumentProvider` so `grails.factories` never leak across modules via reused compiler daemons
+- Forked compilation with `-Dgrails.isolated.build=true` and a **per-project** `BaseDirArgumentProvider` supplying `-Dbase.dir=<projectDir>`. It is marked `@Internal`, not `@InputDirectory`, because `projectDir` contains build outputs. Do not remove it: it prevents `grails.factories` leaking between compiler daemons (#15799 / `CompilePlugin` comments).
+- The compile-time `base.dir` provider is required, but absolute `base.dir` values are forbidden in `Test.systemProperties`: they make cache keys machine-specific. Never "simplify" by removing the compiler provider or adding an absolute test property.
 - `Jar.duplicatesStrategy = FAIL` - duplicate entries are configuration bugs
 - Reproducible archives: no timestamps, fixed order, unix 0644/0755
 - Groovy `configurationScript` → `gradle/groovy-compile-configscript.groovy` (annotation member order / GROOVY-12146 workaround, PR #15963)
 
 ### Published Grails Gradle plugins (`grails-gradle`)
 
-Use the **fully qualified** plugin IDs in `plugins { id '…' }` blocks (registered in `grails-gradle/plugins/build.gradle`):
+Use the **fully qualified** plugin IDs in `plugins { id '…' }` blocks. Most are registered in `grails-gradle/plugins/build.gradle`. `org.apache.grails.gradle.grails-publish` is supplied by the external `grails-publish-plugin` implementation dependency (not listed in that file's `gradlePlugin {}` block) but is still the correct ID for publishing.
 
 | Plugin ID |
 |-----------|
@@ -404,6 +413,7 @@ Use the **fully qualified** plugin IDs in `plugins { id '…' }` blocks (registe
 | `org.apache.grails.gradle.grails-integration-test` |
 | `org.apache.grails.gradle.grails-test-phases` |
 | `org.apache.grails.gradle.bom-property-overrides` |
+| `org.apache.grails.gradle.grails-publish` (via grails-publish-plugin dependency) |
 
 Never paste bare suffixes like `grails-web` into a `plugins` block - resolution will fail.
 
@@ -436,6 +446,11 @@ apply {
 | `rat-root-config.gradle` | Apache RAT |
 | `cli-companion-bom-constraints.gradle` | CLI artifact constraints on BOMs |
 | `hibernate5-test-config.gradle` / `hibernate7-test-config.gradle` | Datastore test stacks |
+| `spring-security-test-config.gradle` | Spring Security functional and integration tests |
+| `grails-data-tck-config.gradle` | GORM data TCK wiring and test filters |
+| `grails-extension-gradle-config.gradle` | Gradle extension module conventions |
+| `test-webjar-asset-config.gradle` | WebJar asset test setup |
+| `mongodb-forked-test-config.gradle` | Forked MongoDB test configuration |
 | `mongodb-*-test-config.gradle` / `redis-test-config.gradle` | External service tests |
 | `plugin-repositories.gradle` | Shared plugin repo config for settings |
 | `groovy-compile-configscript.groovy` | Groovy compiler config script (not applied via `apply from` in modules - referenced by CompilePlugin) |
@@ -470,6 +485,20 @@ These bit this repo in production PRs. Treat as hard rules when writing plugin o
 6. Tests need **`junit-platform-launcher`** on `testRuntimeOnly` (shared script adds it) - Gradle 9 requirement.
 7. Do not enable **configuration cache** or **configure-on-demand** in this repo without an issue-linked plan.
 8. **`evaluationDependsOn`** appears in BOM/docs scripts for a reason - do not cargo-cult it into random modules; it couples configuration order and slows builds.
+
+### Build Cacheability
+
+The local build cache is enabled. Treat cacheability as a correctness constraint, not a later optimization.
+
+| Rule | Why / practice |
+|------|----------------|
+| Do not put absolute machine paths, especially `base.dir`, in `Test.systemProperties` | They poison cache keys across machines (#15483). The compiler's `@Internal` `BaseDirArgumentProvider` is the separate, required compile-time case. |
+| Avoid `doFirst` and custom actions on cacheable tasks | They can make a task ineligible for the build cache. Prefer a dedicated task with declared inputs and outputs or model the I/O properly. Some tradeoffs are intentional: GroovyDoc compatibility with configuration cache and selected `GroovyCompile` `doFirst` actions in `GrailsGradlePlugin`. |
+| Give compiler configuration and reports task-specific paths | Overlapping outputs disable caching. Use names such as `grailsGroovyCompilerConfig-{taskName}.groovy` and separate Checkstyle / CodeNarc report paths (#15532). |
+| Do not use `outputs.upToDateWhen` to bypass work when it also prevents cache loading | Model inputs and outputs instead. Keep GSP outputs separate, for example `gsp-classes/main` versus `webapp` (#15537). |
+| Normalize generated unstable files packed into jars or classpaths | `SbomPlugin` uses `normalization.runtimeClasspath.ignore("META-INF/sbom.json")`. Add comparable normalization so unstable generated contents do not cascade cache misses. |
+
+Use Develocity experiments to prove a change: populate the cache, then delete task outputs (or `clean`) and rebuild - cacheable tasks should report `FROM-CACHE`. A plain second build with outputs still present usually reports `UP-TO-DATE`, which does not prove remote/local cache loading.
 
 ---
 
@@ -540,12 +569,17 @@ Develocity: `https://develocity.apache.org` - build scans publish when authentic
 | Do not | Do instead |
 |--------|------------|
 | Apply Spring Dependency Management plugin | `platform` / `enforcedPlatform` + bom-property-overrides |
+| Apply Spring Dependency Management outside `grails-test-examples/spring-dependency-management` | Native platforms + bom-property-overrides |
 | Hardcode versions in module `dependencies {}` | BOM maps in root `dependencies.gradle` |
 | Introduce `libs.versions.toml` catalogs | Keep `dependencies.gradle` maps |
 | Silence `validateDependencyVersions` without comment | Fix the mismatch (usually bump BOM if transitive is newer; else remove force / align platforms / document override) |
 | Root `./gradlew test` after a one-module edit | `./gradlew :module:test` |
 | Enable configuration cache "because Gradle says so" | Leave off until #15497 |
 | Resolve `configuration.files` in `configureEach` | Defer to execution / providers |
+| Add an absolute machine path to `Test.systemProperties` | Use portable task inputs; keep compiler-only `base.dir` in its `@Internal` argument provider |
+| Give multiple tasks the same compiler config or report output path | Make every output path task-specific |
+| Use `outputs.upToDateWhen` in a way that prevents cache loading | Declare inputs and outputs or use a dedicated task |
+| Pack unstable generated files without classpath normalization | Add an explicit normalization ignore when appropriate |
 | Duplicate CompilePlugin settings in module scripts | Trust convention plugins |
 | Invent new plugin IDs without build-logic registration | Add descriptor + tests in build-logic |
 | Bump one wrapper only | Sync all wrapper locations |
@@ -601,7 +635,10 @@ Removed/deprecated APIs AI still emits - **reject on sight** in new code: `jcent
 | PR | Takeaway |
 |----|----------|
 | #15467 | Spring DM removed; platforms + bom-property-overrides |
+| #15483 | Cacheable tasks need portable inputs; avoid absolute test properties and normalize packed unstable SBOM metadata |
 | #15365 | Gradle 9.4 API cleanup; caching annotations; junit launcher |
+| #15532 | Overlapping task outputs disable caching; use per-task compiler and report paths |
+| #15537 | Bad `outputs.upToDateWhen` predicates block cache loads; keep GSP output directories distinct |
 | #15672 / #15763 | Wrapper multi-location sync discipline |
 | #15730 | Prefer Boot BOM inheritance over duplicate pins |
 | #15686 / #15687 | code-style / analysis / jacoco / violation aggregation plugins |
@@ -610,8 +647,24 @@ Removed/deprecated APIs AI still emits - **reject on sight** in new code: `jcent
 | #16006 | processResources tokens must be task inputs |
 | #16009 | afterEvaluate ordering vs configuration observation |
 | #16076 | No compile classpath probes at GroovyCompile configuration time |
+| #16069 | Dependency substitution for functional tests is hot-path config work - keep it cheap and cached |
+| #16078 | Keep CLI/test-tier deps off the production runtime classpath; do not ship unfixed native tooling (Jansi) |
 
 When fixing a new Gradle failure, search merged PR titles for the exception text before inventing a workaround.
+
+---
+
+## Agent Quality Bar
+
+Strong 8.0.x Gradle PRs are small, sibling-consistent, and evidence-backed:
+
+- State the **Problem**, **Fix**, **Why**, and **Verification** in the PR or handoff.
+- Match the closest existing module, script, or convention plugin before adding a new pattern.
+- Avoid drive-by reformatting, dependency churn, or unrelated modernization.
+- Verify with the narrowest commands that cover the changed project: compile, targeted tests, and dependency validation as applicable.
+- For `grails-gradle`, include the relevant TestKit coverage.
+- Use dual review when available, especially for build, dependency, and publishing changes.
+- Report exact commands and results. Evidence beats confidence.
 
 ---
 
@@ -639,7 +692,10 @@ When fixing a new Gradle failure, search merged PR titles for the exception text
 - [ ] Scoped Gradle verify command green (`:module:compileGroovy`, `:module:test`, plugin TestKit as applicable)
 - [ ] Wrapper/version sync complete if Gradle version changed
 - [ ] No configuration-time resolution / nested afterEvaluate hazards introduced
+- [ ] No absolute machine paths in `Test.systemProperties`; compiler `base.dir` remains isolated in `BaseDirArgumentProvider`
+- [ ] No overlapping task outputs; classpath normalization considered for packed generated files
 - [ ] Apache headers on new files
 - [ ] User-facing behavior documented if it affects app builds (`grails-doc`)
+- [ ] For commit-ready work, use `violation-fixer` to run the AGENTS.md gate: `./gradlew clean aggregateViolations :grails-test-report:check --continue`. This is not required merely to read this skill.
 
 If you only remember three things: **copy siblings**, **BOM owns versions**, **never resolve configurations while configuring tasks**.
