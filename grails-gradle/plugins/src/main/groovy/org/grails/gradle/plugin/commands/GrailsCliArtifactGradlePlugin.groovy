@@ -75,6 +75,7 @@ import org.apache.grails.gradle.publish.GrailsPublishExtension
 @CompileStatic
 abstract class GrailsCliArtifactGradlePlugin implements Plugin<Project> {
 
+    public static final String PLUGIN_ID = 'org.apache.grails.gradle.grails-plugin-cli'
     public static final String CLI_SOURCE_SET_NAME = 'cli'
     public static final String CLI_TEST_SOURCE_SET_NAME = 'testCli'
 
