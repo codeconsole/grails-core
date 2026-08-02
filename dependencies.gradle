@@ -230,7 +230,12 @@ ext {
 
     // Because pom exclusions aren't properly supported by gradle, we can't inherit the grails-gradle-bom
     // this requires copying the platforms selectively to the grails-bom. Create a combined version for convenience.
-    combinedPlatforms = ['spring-boot-bom': gradleBomPlatformDependencies['spring-boot-bom']] + bomPlatformDependencies
+    // log4j2-bom is listed ahead of spring-boot-bom so published POM import order keeps CVE-2026-49844's
+    // Log4j 2.25.5 management ahead of Spring Boot's older Log4j pin (see each BOM's dependencies block).
+    combinedPlatforms = [
+            'log4j2-bom'     : bomPlatformDependencies['log4j2-bom'],
+            'spring-boot-bom': gradleBomPlatformDependencies['spring-boot-bom'],
+    ] + bomPlatformDependencies.findAll { it.key != 'log4j2-bom' }
     combinedDependencies = gradleBomDependencies + bomDependencies
     combinedVersions = gradleBomDependencyVersions + bomDependencyVersions
 
