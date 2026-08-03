@@ -55,10 +55,6 @@ class DomainClassGrailsPlugin extends Plugin {
     def dependsOn = [i18n: version]
     def loadAfter = ['controllers', 'dataSource']
 
-    // The deleted class held grailsApplication and messageSources as fields populated by an
-    // @Autowired constructor. The generated sibling always has a no-arg constructor, so both are
-    // taken as bean method parameters instead - resolved identically by Spring, and only when the
-    // bean that needs them is created rather than when the configuration class is instantiated.
     def beans = {
         bean('grailsDomainClassMappingContext', DefaultMappingContextFactoryBean).lazy() { GrailsApplication grailsApplication, List<MessageSource> messageSources, List<ConstraintFactory> factories ->
             new DefaultMappingContextFactoryBean(grailsApplication, messageSources).tap {

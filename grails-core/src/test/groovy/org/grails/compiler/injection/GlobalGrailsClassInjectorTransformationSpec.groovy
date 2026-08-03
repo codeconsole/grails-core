@@ -351,6 +351,28 @@ class GlobalGrailsClassInjectorTransformationSpec extends Specification {
             classNode.getProperty('beans') == null
     }
 
+    void "the implicit beans convention claims an application class's DSL-shaped beans closure"() {
+        given: "an application class where a generated project puts it, carrying no @GrailsBeans"
+            def sourceFile = new File(tempDir, 'grails-app/init/Application.groovy')
+            def targetDir = new File(tempDir, 'build/classes/groovy/main')
+
+        when:
+            def classNode = compileToFile(
+                    sourceFile,
+                    '''
+                        class Application extends grails.boot.config.GrailsAutoConfiguration {
+                            def beans = {
+                                bean('greeting', String) { 'hello' }
+                            }
+                        }
+                    ''',
+                    targetDir
+            )
+
+        then: "the property is consumed, so an application declares beans without annotating anything"
+            classNode.getProperty('beans') == null
+    }
+
     void "the global transform fails when a plugin descriptor class has no version"() {
         given: "a plugin descriptor class without a declared or compiler-provided version"
             def sourceFile = new File(tempDir, 'UnversionedGrailsPlugin.groovy')
