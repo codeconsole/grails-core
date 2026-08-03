@@ -45,32 +45,55 @@ public class DirectoryWatcher extends Thread {
      */
     public DirectoryWatcher() {
         setDaemon(true);
-        AbstractDirectoryWatcher directoryWatcherDelegate;
-        try {
-            if (System.getProperty("os.name").equals("Mac OS X")) {
-                Boolean jnaAvailable = false;
-                try {
-                    Class.forName("com.sun.jna.Pointer");
-                    jnaAvailable = true;
-                } catch (ClassNotFoundException e) {
-                    if (LOG.isWarnEnabled()) {
-                        LOG.warn("Error Initializing Native OS X File Event Watcher. Add JNA to classpath for Faster File Watching performance.");
-                    }
+        this.directoryWatcherDelegate = createDelegate();
+    }
 
-                }
-                if (jnaAvailable) {
-                    directoryWatcherDelegate = (AbstractDirectoryWatcher) Class.forName("org.grails.io.watch.MacOsWatchServiceDirectoryWatcher").getDeclaredConstructor().newInstance();
-                } else {
-                    directoryWatcherDelegate = (AbstractDirectoryWatcher) Class.forName("org.grails.io.watch.WatchServiceDirectoryWatcher").getDeclaredConstructor().newInstance();
-                }
-            } else {
-                directoryWatcherDelegate = (AbstractDirectoryWatcher) Class.forName("org.grails.io.watch.WatchServiceDirectoryWatcher").getDeclaredConstructor().newInstance();
+    /**
+     * Selects the best available watcher implementation.
+     *
+     * <p>On macOS the native FSEvents based watcher is preferred, but it requires the optional
+     * {@code io.methvin:directory-watcher} dependency. When that isn't available the JDK
+     * {@link java.nio.file.WatchService} is used instead. Polling is only a last resort.</p>
+     *
+     * @return the watcher to delegate to
+     */
+    private static AbstractDirectoryWatcher createDelegate() {
+        if (System.getProperty("os.name").equals("Mac OS X")) {
+            AbstractDirectoryWatcher macOsWatcher = createMacOsWatcher();
+            if (macOsWatcher != null) {
+                return macOsWatcher;
             }
-        } catch (Throwable e) {
-            LOG.info("Exception while trying to load WatchServiceDirectoryWatcher (this is probably Java 6 and WatchService isn't available). Falling back to PollingDirectoryWatcher.", e);
-            directoryWatcherDelegate = new PollingDirectoryWatcher();
         }
-        this.directoryWatcherDelegate = directoryWatcherDelegate;
+        try {
+            return new WatchServiceDirectoryWatcher();
+        } catch (Throwable e) {
+            LOG.warn("Could not create a WatchService based directory watcher. Falling back to PollingDirectoryWatcher.", e);
+            return new PollingDirectoryWatcher();
+        }
+    }
+
+    /**
+     * @return the native macOS watcher, or {@code null} if it is unavailable
+     */
+    private static AbstractDirectoryWatcher createMacOsWatcher() {
+        try {
+            // MacOsWatchServiceDirectoryWatcher delegates to io.methvin's MacOSXListeningWatchService,
+            // an optional dependency of this module. Probe for that class rather than for JNA: JNA is
+            // frequently present transitively (Testcontainers, docker-java, ...) without the watcher
+            // library, and using it as the signal sends those applications down a load that can't succeed.
+            Class.forName("io.methvin.watchservice.MacOSXListeningWatchService");
+        } catch (ClassNotFoundException e) {
+            if (LOG.isDebugEnabled()) {
+                LOG.debug("Native macOS file event watching is unavailable. Add 'io.methvin:directory-watcher' to the classpath for faster file watching.");
+            }
+            return null;
+        }
+        try {
+            return (AbstractDirectoryWatcher) Class.forName("org.grails.io.watch.MacOsWatchServiceDirectoryWatcher").getDeclaredConstructor().newInstance();
+        } catch (Throwable e) {
+            LOG.warn("Could not create the native macOS directory watcher. Falling back to the JDK WatchService.", e);
+            return null;
+        }
     }
 
     /**

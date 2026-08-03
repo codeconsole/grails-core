@@ -88,6 +88,10 @@ dependencies {
     // Testing
     testImplementation 'org.slf4j:slf4j-simple'
     testImplementation 'org.spockframework:spock-core'
+
+    // JNA without directory-watcher is the classpath shape DirectoryWatcherSpec pins: applications
+    // routinely pick JNA up transitively, and it must not be mistaken for native watcher support.
+    testImplementation 'net.java.dev.jna:jna'
 }
 
 processResources {
