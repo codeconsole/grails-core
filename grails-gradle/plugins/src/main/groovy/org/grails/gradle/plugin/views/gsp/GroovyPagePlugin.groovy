@@ -54,12 +54,6 @@ class GroovyPagePlugin implements Plugin<Project> {
     private void configureProject(Project project) {
         TaskContainer tasks = project.tasks
 
-        // Extension point for applications: dependencies declared on `gspCompile` are appended to the
-        // GSP compile classpath below, in addition to `compileClasspath`. Intended for classes that GSPs
-        // reference but the application's own sources do not (e.g. an otherwise `runtimeOnly` dependency).
-        // Empty by default - everything GSP compilation needs arrives via `compileClasspath`.
-        project.configurations.register('gspCompile')
-
         SourceSet mainSourceSet = SourceSets.findMainSourceSet(project)
         SourceSetOutput output = mainSourceSet?.output
         FileCollection classesDirs = resolveClassesDirs(output, project)
@@ -70,7 +64,6 @@ class GroovyPagePlugin implements Plugin<Project> {
         FileCollection allClasspath = project.getObjects().fileCollection().from(
                 [
                         project.configurations.named('compileClasspath'),
-                        project.configurations.named('gspCompile'),
                         classesDirs,
                         project.configurations.findByName('providedCompile') ?: null
                 ].findAll { it }
