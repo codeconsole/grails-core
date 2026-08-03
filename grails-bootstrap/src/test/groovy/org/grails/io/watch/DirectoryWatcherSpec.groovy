@@ -18,7 +18,8 @@
  */
 package org.grails.io.watch
 
-import java.lang.reflect.Method
+import java.lang.reflect.InvocationHandler
+import java.lang.reflect.Proxy
 import java.nio.file.Path
 import java.util.concurrent.CopyOnWriteArrayList
 
@@ -29,122 +30,160 @@ import spock.util.concurrent.PollingConditions
 import spock.util.environment.RestoreSystemProperties
 
 /**
- * Tests which watcher implementation {@link DirectoryWatcher} selects, and that the selected one
- * reports changes.
+ * Tests that a {@link DirectoryWatcher} reports file changes on the classpaths an application can
+ * present, exercised through the watcher's public API.
  *
  * <p>The native macOS watcher needs {@code io.methvin:directory-watcher}, which this module declares
  * {@code compileOnly}. The test runtime therefore does not carry it — matching an application that
  * has not opted in — while {@code net.java.dev.jna:jna} is present, reproducing the common case of
- * JNA arriving transitively (Testcontainers, docker-java, ...) on its own. The cases that need the
- * optional library are covered by loading the watcher classes in an isolated class loader built from
- * the {@code optionalWatcher} configuration.</p>
+ * JNA arriving transitively (Testcontainers, docker-java, ...) on its own. Cases that need the
+ * optional library run in a class loader assembled from the {@code optionalWatcher} configuration.
+ * Those use reflection only to cross the class loader boundary; every call is to a public method.</p>
  */
 @RestoreSystemProperties
 class DirectoryWatcherSpec extends Specification {
 
     private static final String MAC_OS = 'Mac OS X'
-    private static final String NATIVE_WATCH_SERVICE = 'io.methvin.watchservice.MacOSXListeningWatchService'
+
+    /**
+     * Long enough that a watcher which only wakes on this interval cannot report inside the timeouts
+     * used here, so a report proves the watcher is event driven rather than polling.
+     */
+    private static final long NON_POLLING_SLEEP_TIME = 120_000
 
     @TempDir
     Path watchedDirectory
 
-    void 'JNA alone does not select the native macOS watcher'() {
-        given: 'the classpath shape produced by a transitively acquired JNA'
-        assert isPresent('com.sun.jna.Pointer')
-        assert !isPresent(NATIVE_WATCH_SERVICE)
-        System.setProperty('os.name', MAC_OS)
-
-        expect: 'JNA is not a valid signal for native watcher availability'
-        new DirectoryWatcher().directoryWatcherDelegate instanceof WatchServiceDirectoryWatcher
-    }
-
-    void 'the JDK watcher is selected off macOS'() {
+    void 'a change to a watched file is reported'() {
         given:
-        System.setProperty('os.name', 'Linux')
+        List<String> changed = watchForChanges(new DirectoryWatcher(), 1000)
 
-        expect:
-        new DirectoryWatcher().directoryWatcherDelegate instanceof WatchServiceDirectoryWatcher
-    }
-
-    void 'polling is not selected while the JDK can supply a WatchService'() {
-        expect: 'polling is a last resort, unreachable on the supported Java baseline'
-        !(new DirectoryWatcher().directoryWatcherDelegate instanceof PollingDirectoryWatcher)
-    }
-
-    @Requires({ DirectoryWatcherSpec.optionalWatcherJars() })
-    void 'the native macOS watcher is selected when the optional library is available'() {
-        given:
-        System.setProperty('os.name', MAC_OS)
-
-        expect:
-        selectedDelegateIn(isolatedLoader(optionalWatcherJars(), true)) == 'MacOsWatchServiceDirectoryWatcher'
-    }
-
-    @Requires({ DirectoryWatcherSpec.optionalWatcherJars() })
-    void 'the optional library without JNA degrades instead of failing construction'() {
-        given: 'directory-watcher present but the JNA it links against absent, which raises a LinkageError'
-        System.setProperty('os.name', MAC_OS)
-
-        expect: 'the linkage failure is treated as the native watcher simply being unavailable'
-        selectedDelegateIn(isolatedLoader(optionalWatcherJars(), false)) == 'WatchServiceDirectoryWatcher'
-    }
-
-    void 'the selected watcher reports a change to a watched file'() {
-        given:
-        File directory = watchedDirectory.toFile()
-        File watched = new File(directory, 'watched.txt')
-        watched.text = 'initial'
-
-        List<File> changed = new CopyOnWriteArrayList<>()
-        DirectoryWatcher watcher = new DirectoryWatcher()
-        watcher.sleepTime = 100
-        watcher.addListener(new DirectoryWatcher.FileChangeListener() {
-            void onChange(File file) { changed << file }
-
-            void onNew(File file) { changed << file }
-        })
-        watcher.addWatchDirectory(directory, 'txt')
-        watcher.start()
-
-        when: 'the watched file is modified after the watcher has started'
-        // the JDK WatchService falls back to polling on some platforms, so allow a generous window
-        Thread.sleep(1000)
-        watched.text = 'modified'
+        when:
+        modifyWatchedFile()
 
         then:
-        new PollingConditions(timeout: 60, initialDelay: 1).eventually {
-            assert changed*.name.contains('watched.txt')
+        new PollingConditions(timeout: 60).eventually {
+            assert changed.contains('watched.txt')
         }
+    }
 
-        cleanup:
-        watcher.active = false
+    void 'a change is reported without waiting for a poll interval'() {
+        given: 'a macOS classpath carrying JNA but not the optional watcher library'
+        System.setProperty('os.name', MAC_OS)
+
+        and: 'a sleep interval far longer than the timeout below'
+        List<String> changed = watchForChanges(new DirectoryWatcher(), NON_POLLING_SLEEP_TIME)
+
+        when:
+        modifyWatchedFile()
+
+        then: 'JNA alone must not downgrade the watcher to polling'
+        new PollingConditions(timeout: 40).eventually {
+            assert changed.contains('watched.txt')
+        }
+    }
+
+    @Requires({ DirectoryWatcherSpec.optionalWatcherJars() })
+    void 'a change is reported when the optional native library is available'() {
+        given:
+        System.setProperty('os.name', MAC_OS)
+        List<String> changed = watchForChangesIn(isolatedLoader(true), 1000)
+
+        when:
+        modifyWatchedFile()
+
+        then:
+        new PollingConditions(timeout: 60).eventually {
+            assert changed.contains('watched.txt')
+        }
+    }
+
+    @Requires({ DirectoryWatcherSpec.optionalWatcherJars() })
+    void 'a change is reported when the optional library is present but cannot link'() {
+        given: 'directory-watcher present without the JNA it links against, so loading it fails'
+        System.setProperty('os.name', MAC_OS)
+
+        when: 'the watcher is constructed and started'
+        List<String> changed = watchForChangesIn(isolatedLoader(false), 1000)
+        modifyWatchedFile()
+
+        then: 'the linkage failure degrades to a working watcher rather than failing construction'
+        new PollingConditions(timeout: 60).eventually {
+            assert changed.contains('watched.txt')
+        }
+    }
+
+    private File modifyWatchedFile() {
+        File watched = new File(watchedDirectory.toFile(), 'watched.txt')
+        watched.text = "modified ${System.nanoTime()}"
+        watched
     }
 
     /**
-     * Loads the watcher classes in a class loader isolated from the test runtime so the optional
-     * library, and JNA, can be present or absent independently of this JVM's own classpath.
+     * Starts the watcher on the temporary directory and collects the names of files reported.
      */
-    private static ClassLoader isolatedLoader(List<File> optionalWatcher, boolean includeJna) {
+    private List<String> watchForChanges(DirectoryWatcher watcher, long sleepTime) {
+        File watched = new File(watchedDirectory.toFile(), 'watched.txt')
+        watched.text = 'initial'
+
+        List<String> changed = new CopyOnWriteArrayList<>()
+        watcher.sleepTime = sleepTime
+        watcher.addListener(new DirectoryWatcher.FileChangeListener() {
+            void onChange(File file) { changed << file.name }
+
+            void onNew(File file) { changed << file.name }
+        })
+        watcher.addWatchDirectory(watchedDirectory.toFile(), 'txt')
+        watcher.start()
+        registerForCleanup(watcher)
+        // let the watcher register before the file is touched
+        Thread.sleep(1000)
+        changed
+    }
+
+    /**
+     * The same as {@link #watchForChanges}, for a watcher loaded by another class loader. Reflection
+     * bridges the loader boundary only; every member used is part of the public API.
+     */
+    private List<String> watchForChangesIn(ClassLoader loader, long sleepTime) {
+        File watched = new File(watchedDirectory.toFile(), 'watched.txt')
+        watched.text = 'initial'
+
+        Class<?> watcherClass = loader.loadClass(DirectoryWatcher.name)
+        Class<?> listenerClass = loader.loadClass(DirectoryWatcher.FileChangeListener.name)
+        Object watcher = watcherClass.getDeclaredConstructor().newInstance()
+
+        List<String> changed = new CopyOnWriteArrayList<>()
+        Object listener = Proxy.newProxyInstance(loader, [listenerClass] as Class[], { proxy, method, arguments ->
+            if (method.name in ['onChange', 'onNew']) {
+                changed << ((File) arguments[0]).name
+            }
+            null
+        } as InvocationHandler)
+
+        watcherClass.getMethod('setSleepTime', long).invoke(watcher, sleepTime)
+        watcherClass.getMethod('addListener', listenerClass).invoke(watcher, listener)
+        watcherClass.getMethod('addWatchDirectory', File, String).invoke(watcher, watchedDirectory.toFile(), 'txt')
+        watcherClass.getMethod('start').invoke(watcher)
+        registerForCleanup(watcher, watcherClass.getMethod('setActive', boolean))
+        Thread.sleep(1000)
+        changed
+    }
+
+    /**
+     * Builds a class loader carrying the optional watcher library, with JNA either present or absent.
+     * The platform loader as parent keeps this JVM's application classpath out of the picture.
+     */
+    private static ClassLoader isolatedLoader(boolean includeJna) {
         List<File> entries = System.getProperty('java.class.path')
                 .split(File.pathSeparator)
                 .collect { new File(it) }
         // directory-watcher depends on JNA, so the exclusion has to cover the optional jars too
-        entries.addAll(optionalWatcher)
+        entries.addAll(optionalWatcherJars())
         URL[] urls = entries
                 .findAll { includeJna || !(it.name ==~ /jna(-platform)?-\d.*\.jar/) }
                 .collect { it.toURI().toURL() }
-        // the platform loader as parent keeps this JVM's application classpath out of the picture
         new URLClassLoader(urls, ClassLoader.platformClassLoader)
-    }
-
-    private static String selectedDelegateIn(ClassLoader loader) {
-        Class<?> watcherClass = loader.loadClass(DirectoryWatcher.name)
-        Object watcher = watcherClass.getDeclaredConstructor().newInstance()
-        // getDirectoryWatcherDelegate is package-private, and this spec's package is a different
-        // runtime package once the class comes from another loader, so access has to be requested
-        Method delegate = watcherClass.getDeclaredMethod('getDirectoryWatcherDelegate')
-        delegate.accessible = true
-        delegate.invoke(watcher).getClass().simpleName
     }
 
     static List<File> optionalWatcherJars() {
@@ -152,13 +191,20 @@ class DirectoryWatcherSpec extends Specification {
         path ? path.split(File.pathSeparator).collect { new File(it) }.findAll { it.exists() } : []
     }
 
-    private static boolean isPresent(String className) {
-        try {
-            Class.forName(className)
-            true
+    private final List<Closure> cleanupTasks = []
+
+    private void registerForCleanup(Object watcher, java.lang.reflect.Method setActive = null) {
+        cleanupTasks << {
+            if (setActive) {
+                setActive.invoke(watcher, false)
+            }
+            else {
+                ((DirectoryWatcher) watcher).active = false
+            }
         }
-        catch (Throwable ignored) {
-            false
-        }
+    }
+
+    void cleanup() {
+        cleanupTasks.each { it.call() }
     }
 }

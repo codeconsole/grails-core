@@ -49,13 +49,6 @@ public class DirectoryWatcher extends Thread {
     }
 
     /**
-     * @return the watcher implementation selected for the current platform and classpath
-     */
-    AbstractDirectoryWatcher getDirectoryWatcherDelegate() {
-        return directoryWatcherDelegate;
-    }
-
-    /**
      * Selects the best available watcher implementation.
      *
      * <p>On macOS the native FSEvents based watcher is preferred, but it requires the optional
