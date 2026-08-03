@@ -29,6 +29,8 @@ plugins {
     id 'me.champeau.jmh' version '0.7.3'
     id 'org.apache.grails.buildsrc.properties'
     id 'org.apache.grails.buildsrc.compile'
+    id 'org.apache.grails.buildsrc.vulnerability-scan'
+    id 'org.apache.grails.gradle.grails-code-style'
 }
 
 version = projectVersion
@@ -36,10 +38,8 @@ group = 'org.apache.grails'
 
 // This build-time-only benchmark harness is never published, so it deliberately omits
 // org.apache.grails.buildsrc.publish, org.apache.grails.buildsrc.sbom,
-// org.apache.grails.buildsrc.vulnerability-scan, org.apache.grails.gradle.grails-jacoco,
-// org.apache.grails.buildsrc.dependency-validator, and org.apache.grails.gradle.grails-code-style.
-// The latter remains omitted until existing JMH source import-order and fixture-formatting
-// violations can be remediated together.
+// org.apache.grails.gradle.grails-jacoco, and org.apache.grails.buildsrc.dependency-validator.
+// Its JMH dependency is GPLv2 with the Classpath Exception (Category X) and must not be published.
 
 sourceSets {
     report {
@@ -263,6 +263,8 @@ tasks.named('jmhJar') {
 }
 
 tasks.named('check') {
-    // Benchmarks are not otherwise compiled by the standard lifecycle tasks.
+    // Prefer compile-on-every-build over workflow-only compilation: the suite is small,
+    // and silent bit-rot between labelled performance runs is worse than the incremental
+    // JMH compile cost on ordinary developer/CI builds. jmhJar remains the full packaging gate.
     dependsOn tasks.named('jmhClasses')
 }

@@ -43,7 +43,10 @@ jobs:
   # Results are advisory: a detected regression never fails this workflow.
   benchmark:
     name: "Paired JMH benchmarks (${{ matrix.shard }})"
-    if: ${{ github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'performance') }}
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (contains(github.event.pull_request.labels.*.name, 'performance') &&
+       (github.event.action != 'labeled' || github.event.label.name == 'performance'))
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
@@ -53,8 +56,6 @@ jobs:
       BASE_SHA: ${{ github.event.pull_request.base.sha }}
       HEAD_SHA: ${{ github.sha }}
       JMH_INCLUDE: '.*'
-      PR_NUMBER: ${{ github.event.pull_request.number || 0 }}
-      REPOSITORY: ${{ github.repository }}
       RESULT_DIR: ${{ github.workspace }}/jmh-results/${{ matrix.shard }}
       REPORT_DIR: ${{ github.workspace }}/jmh-reports/${{ matrix.shard }}
       SHARD: ${{ matrix.shard }}
@@ -140,6 +141,12 @@ jobs:
             printf 'BASE_BUILD_OK=%s\n' "$base_build_ok"
             printf 'HEAD_BUILD_OK=%s\n' "$head_build_ok"
           } >> "$GITHUB_ENV"
+      - name: "🛑 Stop Gradle daemons before measurement"
+        if: always()
+        run: |
+          ./gradlew --stop || true
+          if [ -n "${BASE_DIR:-}" ] && [ -d "$BASE_DIR" ]; then (cd "$BASE_DIR" && ./gradlew --stop) || true; fi
+          if [ -n "${HEAD_DIR:-}" ] && [ -d "$HEAD_DIR" ]; then (cd "$HEAD_DIR" && ./gradlew --stop) || true; fi
       # Two forks, three warmup iterations, and five measurement iterations balance PR latency
       # against confidence. Reversing shard order cancels first-versus-second runner-state bias.
       - name: "🌡️ Run paired JMH benchmarks"
@@ -262,7 +269,11 @@ jobs:
   report:
     name: "Publish JMH benchmark comparison"
     needs: benchmark
-    if: ${{ always() && github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'performance') && github.event.pull_request.head.repo.full_name == github.repository }}
+    if: >-
+      always() && github.event_name == 'pull_request' &&
+      contains(github.event.pull_request.labels.*.name, 'performance') &&
+      (github.event.action != 'labeled' || github.event.label.name == 'performance') &&
+      github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -360,20 +371,24 @@ jobs:
             fi
             printf '\n'
           } > "$report_file"
+          should_post=false
           if [ "${#complete_shards[@]}" -gt 0 ]; then
+            should_post=true
             ./gradlew -q --console=plain :grails-benchmarks:jmhCompare --args="--head $pooled_head --base $pooled_base --expected-shards $expected_shard_files --output $comparison_file"
             cat "$comparison_file" >> "$report_file"
           elif compgen -G "$head_only/*.json" > /dev/null; then
+            should_post=true
             printf 'No complete same-runner base and HEAD shard pair was available. Reporting available HEAD results only.\n\n' >> "$report_file"
             ./gradlew -q --console=plain :grails-benchmarks:jmhCompare --args="--head $head_only --output $comparison_file"
             cat "$comparison_file" >> "$report_file"
           else
-            printf '### JMH Benchmark Report\n\nNo HEAD benchmark results were produced.\n\n%s\n' \
-              '<!-- grails-jmh-benchmark -->' >> "$report_file"
+            printf '### JMH Benchmark Report\n\nNo HEAD benchmark results were produced for this run. The previous JMH report comment on this PR (if any) was left unchanged.\n' >> "$report_file"
           fi
           cat "$report_file" >> "$GITHUB_STEP_SUMMARY"
           printf 'report_file=%s\n' "$report_file" >> "$GITHUB_OUTPUT"
+          printf 'should_post=%s\n' "$should_post" >> "$GITHUB_OUTPUT"
       - name: "💬 Post or update JMH PR comment"
+        if: steps.compare.outputs.should_post == 'true'
         continue-on-error: true
         env:
           REPORT_FILE: ${{ steps.compare.outputs.report_file }}

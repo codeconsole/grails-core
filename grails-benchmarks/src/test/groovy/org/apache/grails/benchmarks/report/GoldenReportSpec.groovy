@@ -28,7 +28,7 @@ class GoldenReportSpec extends Specification {
     Path temporaryDirectory
 
     @Unroll
-    def "#name report exactly matches the Python golden file"() {
+    def "#name report exactly matches the golden fixture"() {
         given:
         Path output = temporaryDirectory.resolve("${name}.md")
         String[] arguments = argumentsFor(head, base, output, expectedShards)
@@ -38,7 +38,7 @@ class GoldenReportSpec extends Specification {
 
         then:
         result == 0
-        Files.readString(output) == resource(expected)
+        normalize(Files.readString(output)) == normalize(resource(expected))
 
         where:
         name      | head                        | base                        | expected                 | expectedShards
@@ -67,5 +67,9 @@ class GoldenReportSpec extends Specification {
 
     private String resource(String name) {
         Files.readString(resourcePath(name))
+    }
+
+    private static String normalize(String text) {
+        text.replace("\r\n", "\n").replace("\r", "\n")
     }
 }

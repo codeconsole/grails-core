@@ -18,11 +18,9 @@ package org.apache.grails.benchmarks.report
 
 import groovy.transform.CompileStatic
 
-import java.util.Comparator
-import java.util.Locale
-
 @CompileStatic
 class ReportRenderer {
+
     static final String MARKER = '<!-- grails-jmh-benchmark -->'
     static final String DASH = '—'
     static final String BENCHMARK_PACKAGE = 'org.apache.grails.benchmarks.'

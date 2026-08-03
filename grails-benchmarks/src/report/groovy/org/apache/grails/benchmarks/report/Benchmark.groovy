@@ -22,6 +22,7 @@ import groovy.transform.Immutable
 @CompileStatic
 @Immutable
 class Benchmark {
+
     String identity
     Double score
     Double error

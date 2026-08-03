@@ -78,7 +78,7 @@ class JmhCompareSpec extends Specification {
         ReportRenderer.render(result).contains('1 shard pair(s) instead of the expected 2')
     }
 
-    def "number formatting matches Python percent g rendering"() {
+    def "number formatting matches percent-g style rendering"() {
         expect:
         ReportRenderer.number(value) == rendered
         where:
@@ -100,17 +100,6 @@ class JmhCompareSpec extends Specification {
         code == 0
         Files.readString(output).toLowerCase().contains('no comparison was possible')
         0 * poster._
-    }
-
-    def "fail on regression remains successful"() {
-        given:
-        Path head = temporaryDirectory.resolve('head.json')
-        Path base = temporaryDirectory.resolve('base.json')
-        String json = '[{"benchmark":"sample.Run","mode":"avgt","primaryMetric":{"score":%s,"scoreError":1,"scoreUnit":"ns/op"}}]'
-        Files.writeString(head, String.format(json, '120'))
-        Files.writeString(base, String.format(json, '100'))
-        expect:
-        JmhCompare.run(['--head', head.toString(), '--base', base.toString(), '--fail-on-regression'] as String[], Mock(CommentPoster)) == 0
     }
 
     private static Benchmark benchmark(double score, String unit = 'ns/op', List<Double> confidence = [99D, 101D]) {

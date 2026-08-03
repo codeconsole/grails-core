@@ -22,10 +22,6 @@ import java.util.Collections;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
-import grails.web.mapping.UrlMappingData;
-import grails.web.mapping.UrlMappingInfo;
-import org.grails.plugins.web.interceptors.UrlMappingMatcher;
-import org.grails.web.servlet.mvc.GrailsWebRequest;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Fork;
@@ -37,6 +33,11 @@ import org.openjdk.jmh.annotations.Setup;
 import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.annotations.Threads;
 import org.openjdk.jmh.annotations.Warmup;
+
+import grails.web.mapping.UrlMappingData;
+import grails.web.mapping.UrlMappingInfo;
+import org.grails.plugins.web.interceptors.UrlMappingMatcher;
+import org.grails.web.servlet.mvc.GrailsWebRequest;
 
 /**
  * Measures URI matcher decisions that select Grails interceptors during request dispatch. Both
@@ -59,6 +60,17 @@ public class UrlMappingMatcherBenchmark {
         matcher = new UrlMappingMatcher(InterceptorFixture.createInterceptor());
         matcher.matches(Map.of("uri", "/orders/**"));
         mappingInfo = new BenchmarkUrlMappingInfo();
+        assertFixtureMatches();
+    }
+
+    // Guard against a no-op matcher configuration that would otherwise benchmark failed matches.
+    private void assertFixtureMatches() {
+        if (!matcher.doesMatch("/orders/42", mappingInfo)) {
+            throw new IllegalStateException("UrlMappingMatcher fixture should match /orders/42");
+        }
+        if (matcher.doesMatch("/catalog/42", mappingInfo)) {
+            throw new IllegalStateException("UrlMappingMatcher fixture should reject /catalog/42");
+        }
     }
 
     @Benchmark

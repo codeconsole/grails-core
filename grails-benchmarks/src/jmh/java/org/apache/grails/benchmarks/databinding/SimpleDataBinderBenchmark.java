@@ -22,8 +22,6 @@ import java.util.Date;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
-import grails.databinding.SimpleDataBinder;
-import grails.databinding.SimpleMapDataBindingSource;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Fork;
@@ -35,6 +33,9 @@ import org.openjdk.jmh.annotations.Setup;
 import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.annotations.Threads;
 import org.openjdk.jmh.annotations.Warmup;
+
+import grails.databinding.SimpleDataBinder;
+import grails.databinding.SimpleMapDataBindingSource;
 
 /**
  * Measures form and request-map binding into a command-style object. Binding overhead affects
@@ -49,6 +50,9 @@ import org.openjdk.jmh.annotations.Warmup;
 @Fork(value = 2, jvmArgsAppend = {"-Xms1g", "-Xmx1g", "-XX:+UseG1GC"})
 public class SimpleDataBinderBenchmark {
 
+    private static final long FIXTURE_CREATED_AT_MILLIS = 1_700_000_000_000L;
+    private static final Date FIXTURE_CREATED_AT = new Date(FIXTURE_CREATED_AT_MILLIS);
+
     private SimpleDataBinder binder;
     private SimpleMapDataBindingSource flatSource;
     private SimpleMapDataBindingSource conversionSource;
@@ -61,15 +65,45 @@ public class SimpleDataBinderBenchmark {
                 "age", 42,
                 "accountId", 9_001L,
                 "status", Status.ACTIVE,
-                "createdAt", new Date(1_700_000_000_000L)
+                "createdAt", FIXTURE_CREATED_AT
         ));
         conversionSource = new SimpleMapDataBindingSource(Map.of(
                 "name", "Ada",
                 "age", "42",
                 "accountId", "9001",
                 "status", "ACTIVE",
-                "createdAt", new Date(1_700_000_000_000L)
+                "createdAt", FIXTURE_CREATED_AT
         ));
+        assertFixtureMatches();
+    }
+
+    // Guard against silently skipped binding that would benchmark an empty target object.
+    private void assertFixtureMatches() {
+        BindingTarget flatTarget = new BindingTarget();
+        binder.bind(flatTarget, flatSource);
+        assertTargetMatches("flat map", flatTarget);
+
+        BindingTarget conversionTarget = new BindingTarget();
+        binder.bind(conversionTarget, conversionSource);
+        assertTargetMatches("type-converted map", conversionTarget);
+    }
+
+    private void assertTargetMatches(String scenario, BindingTarget target) {
+        if (!"Ada".equals(target.getName())) {
+            throw new IllegalStateException("SimpleDataBinder fixture mismatch for " + scenario + " name");
+        }
+        if (!Integer.valueOf(42).equals(target.getAge())) {
+            throw new IllegalStateException("SimpleDataBinder fixture mismatch for " + scenario + " age");
+        }
+        if (!Long.valueOf(9_001L).equals(target.getAccountId())) {
+            throw new IllegalStateException("SimpleDataBinder fixture mismatch for " + scenario + " accountId");
+        }
+        if (target.getStatus() != Status.ACTIVE) {
+            throw new IllegalStateException("SimpleDataBinder fixture mismatch for " + scenario + " status");
+        }
+        if (target.getCreatedAt() == null || target.getCreatedAt().getTime() != FIXTURE_CREATED_AT_MILLIS) {
+            throw new IllegalStateException("SimpleDataBinder fixture mismatch for " + scenario + " createdAt");
+        }
     }
 
     @Benchmark

@@ -24,6 +24,7 @@ import java.nio.file.Path
 
 @CompileStatic
 class JmhCompare {
+
     static void main(String[] args) {
         int exit = run(args, new GitHubComments())
         if (exit != 0) {
@@ -102,10 +103,6 @@ class JmhCompare {
                 throw new IllegalArgumentException("unknown option: ${option}")
             }
             String key = option.substring(2)
-            if (key == 'fail-on-regression') {
-                options.put(key, 'true')
-                continue
-            }
             if (!values.contains(key) || index + 1 >= args.length) {
                 throw new IllegalArgumentException("missing value for --${key}")
             }

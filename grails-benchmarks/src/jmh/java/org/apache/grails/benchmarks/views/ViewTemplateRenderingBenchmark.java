@@ -24,6 +24,7 @@ import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 import groovy.text.Template;
+
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Fork;
@@ -55,11 +56,29 @@ public class ViewTemplateRenderingBenchmark {
     private Map<String, Object> markupModel;
 
     @Setup
-    public void setup() {
+    public void setup() throws IOException {
         jsonTemplate = ViewTemplateFixture.createJsonTemplate();
         markupTemplate = ViewTemplateFixture.createMarkupTemplate();
         jsonModel = Map.of("name", "Ada", "count", 42);
         markupModel = Map.of("make", "Audi", "trim", "A5");
+        assertFixtureMatches();
+    }
+
+    // Guard against rendering templates that silently emit empty output.
+    private void assertFixtureMatches() throws IOException {
+        StringWriter jsonWriter = new StringWriter();
+        jsonTemplate.make(jsonModel).writeTo(jsonWriter);
+        String jsonResult = jsonWriter.toString();
+        if (!jsonResult.contains("Ada") || !jsonResult.contains("42")) {
+            throw new IllegalStateException("View template JSON fixture does not contain expected output");
+        }
+
+        StringWriter markupWriter = new StringWriter();
+        markupTemplate.make(markupModel).writeTo(markupWriter);
+        String markupResult = markupWriter.toString();
+        if (!markupResult.contains("Audi") || !markupResult.contains("A5")) {
+            throw new IllegalStateException("View template markup fixture does not contain expected output");
+        }
     }
 
     @Benchmark

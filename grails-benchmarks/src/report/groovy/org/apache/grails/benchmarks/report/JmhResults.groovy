@@ -24,6 +24,7 @@ import java.nio.file.Path
 
 @CompileStatic
 class JmhResults {
+
     static final String ALLOCATION_METRIC = 'gc.alloc.rate.norm'
 
     static Double finiteNumber(Object value) {

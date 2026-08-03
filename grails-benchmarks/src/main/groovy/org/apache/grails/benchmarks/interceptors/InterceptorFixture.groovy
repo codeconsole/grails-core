@@ -28,4 +28,5 @@ class InterceptorFixture {
 }
 
 class BenchmarkInterceptor implements Interceptor {
+
 }

@@ -20,7 +20,6 @@ import groovy.json.JsonOutput
 import groovy.json.JsonSlurper
 import groovy.transform.CompileStatic
 
-import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
@@ -28,11 +27,13 @@ import java.time.Duration
 
 @CompileStatic
 interface CommentPoster {
+
     void post(String report, String repo, String prNumber, String token)
 }
 
 @CompileStatic
 class GitHubComments implements CommentPoster {
+
     static final int MAX_BODY = 65000
     static final String TRUNCATION = '\n\n_Report truncated. The full report is available in the workflow artifacts._\n\n<!-- grails-jmh-benchmark -->'
     private final HttpClient client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(15)).build()

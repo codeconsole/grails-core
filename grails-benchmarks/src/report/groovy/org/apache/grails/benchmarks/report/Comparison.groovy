@@ -22,6 +22,7 @@ import groovy.transform.Immutable
 @CompileStatic
 @Immutable
 class ComparisonRow {
+
     String identity
     Benchmark base
     Benchmark head
@@ -35,6 +36,7 @@ class ComparisonRow {
 @CompileStatic
 @Immutable
 class RulerDeviation {
+
     String shard
     String identity
     double speedup
@@ -43,6 +45,7 @@ class RulerDeviation {
 @CompileStatic
 @Immutable
 class Comparison {
+
     List<ComparisonRow> rows
     List<String> onlyHead
     List<String> onlyBase

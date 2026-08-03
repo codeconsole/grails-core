@@ -22,9 +22,6 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
-import grails.web.mapping.UrlCreator;
-import grails.web.mapping.UrlMappingInfo;
-import org.grails.web.mapping.DefaultUrlMappingsHolder;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Fork;
@@ -36,6 +33,10 @@ import org.openjdk.jmh.annotations.Setup;
 import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.annotations.Threads;
 import org.openjdk.jmh.annotations.Warmup;
+
+import grails.web.mapping.UrlCreator;
+import grails.web.mapping.UrlMappingInfo;
+import org.grails.web.mapping.DefaultUrlMappingsHolder;
 
 /**
  * Measures request URI matching and reverse URL creation, which are performed for every routed

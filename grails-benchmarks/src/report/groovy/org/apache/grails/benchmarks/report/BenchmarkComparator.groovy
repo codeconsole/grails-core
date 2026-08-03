@@ -20,6 +20,7 @@ import groovy.transform.CompileStatic
 
 @CompileStatic
 class BenchmarkComparator {
+
     static final String RULER_PACKAGE = 'org.apache.grails.benchmarks.ruler.'
 
     static boolean comparable(Benchmark head, Benchmark base) {
@@ -102,13 +103,18 @@ class BenchmarkComparator {
         [head, base].each { Map<String, Map<String, Benchmark>> all -> (all.keySet() - paired).each { String shard -> dropped.addAll(all.get(shard).keySet()) } }
         List<RulerDeviation> deviations = []
         List<String> incomplete = []
-        paired.each { String shard -> rulers.each { String id ->
-            Benchmark h = head.get(shard).get(id)
-            Benchmark b = base.get(shard).get(id)
-            Double value = h != null && b != null ? speedup(h, b) : null
-            if (value == null || !Double.isFinite(value) || value <= 0D) incomplete.add("${shard}: ${id}".toString())
-            else deviations.add(new RulerDeviation(shard, id, value))
-        } }
+        paired.each { String shard ->
+            rulers.each { String id ->
+                Benchmark h = head.get(shard).get(id)
+                Benchmark b = base.get(shard).get(id)
+                Double value = h != null && b != null ? speedup(h, b) : null
+                if (value == null || !Double.isFinite(value) || value <= 0D) {
+                    incomplete.add("${shard}: ${id}".toString())
+                } else {
+                    deviations.add(new RulerDeviation(shard, id, value))
+                }
+            }
+        }
         Comparison comparison = compare(headSamples.collectEntries { String id, List<Benchmark> samples -> [(id): JmhResults.poolBenchmarks(samples)] }, baseSamples.collectEntries { String id, List<Benchmark> samples -> [(id): JmhResults.poolBenchmarks(samples)] }, threshold)
         Set<String> missing = new TreeSet<>(expected.findAll { String shard -> !paired.contains(shard) })
         missing.addAll((head.keySet() - base.keySet()) - paired)
