@@ -83,7 +83,10 @@ class DirectoryWatcherSpec extends Specification {
         }
     }
 
-    @Requires({ DirectoryWatcherSpec.optionalWatcherJars() })
+    // Needs a real macOS host, not just os.name: registering a directory calls through to the Carbon
+    // framework, which JNA can only bind there. The linkage test below stays cross-platform because it
+    // falls back before any native registration happens.
+    @Requires({ os.macOs && DirectoryWatcherSpec.optionalWatcherJars() })
     void 'a change is reported when the optional native library is available'() {
         given:
         System.setProperty('os.name', MAC_OS)
