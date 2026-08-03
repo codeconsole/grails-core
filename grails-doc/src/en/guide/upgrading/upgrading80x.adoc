@@ -2194,7 +2194,34 @@ The relationship between the source sets is deliberately one-way: CLI tests may 
 ordinary tests never see CLI classes, which is what keeps the `test` classpath a faithful stand-in for
 production.
 
-==== 41. `grails.spring.bean.packages` Scanning Fixed Outside the Project Directory
+==== 41. `gspCompile` Configuration Removed
+
+The `org.apache.grails.gradle.grails-gsp` plugin no longer registers a `gspCompile` configuration.
+
+It dated back to the original Ant-based GSP compiler, where it carried the classpath that compiler ran
+against. Once GSP compilation moved to a forked compile task the configuration's only remaining content was
+a hardcoded servlet API dependency, and that dependency has itself been removed — the servlet API already
+reaches GSP compilation through the regular compile classpath, at the version the BOM manages.
+
+GSPs continue to compile against the project's `compileClasspath`, its compiled classes, and — for a WAR
+build — `providedCompile`. No application that leaves the configuration alone is affected.
+
+A build that declares dependencies on `gspCompile` fails with `Could not find method gspCompile()`. Move
+those declarations to `compileOnly`, which places them on the compile classpath that GSP compilation uses:
+
+[source,groovy]
+.build.gradle
+----
+dependencies {
+    // Grails 7
+    // gspCompile 'com.example:some-library:1.0'
+
+    // Grails 8
+    compileOnly 'com.example:some-library:1.0'
+}
+----
+
+==== 42. `grails.spring.bean.packages` Scanning Fixed Outside the Project Directory
 
 The component scan driven by `grails.spring.bean.packages` resolved its search root from a probe of the
 *working directory* — it looked for a `grails-app` directory or an `Application.groovy` beside it — and

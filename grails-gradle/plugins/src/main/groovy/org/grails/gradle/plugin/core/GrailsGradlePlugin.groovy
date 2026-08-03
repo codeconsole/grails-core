@@ -339,7 +339,7 @@ ${importStatements}
         // Adding an exclusion to every dependency in a pom is very verbose and
         // greatly increases the size of the pom.
         // It would be nice to have documented in a comment why this global exclude is in here
-        String slf4jPreventExclusion = project.properties['slf4jPreventExclusion']
+        String slf4jPreventExclusion = project.findProperty('slf4jPreventExclusion')
         if (!slf4jPreventExclusion || slf4jPreventExclusion != 'true') {
             project.configurations.configureEach { Configuration configuration ->
                 configuration.exclude(group: 'org.slf4j', module: 'slf4j-simple')
@@ -356,7 +356,7 @@ ${importStatements}
                 profileConfiguration.transitive = true
 
                 profileConfiguration.defaultDependencies { DependencySet deps ->
-                    String defaultProfileCoordinates = "org.apache.grails.profiles:${System.getProperty('grails.profile') ?: getDefaultProfile()}:${project.properties['grailsVersion'] ?: BuildSettings.grailsVersion}" as String
+                    String defaultProfileCoordinates = "org.apache.grails.profiles:${System.getProperty('grails.profile') ?: getDefaultProfile()}:${project.findProperty('grailsVersion') ?: BuildSettings.grailsVersion}" as String
                     project.logger.info('No Grails profile is defined for project {}, defaulting to: {}', project.name, defaultProfileCoordinates)
                     deps.add(
                             project.dependencies.create(defaultProfileCoordinates)
@@ -635,7 +635,7 @@ ${importStatements}
                     'grails.env': Environment.isSystemSet() ? Environment.getCurrent().getName() : Environment.PRODUCTION.getName(),
                     'info.app.name': project.name,
                     'info.app.version': project.version instanceof Serializable ? project.version : project.version.toString(),
-                    'info.app.grailsVersion': project.properties.get('grailsVersion')
+                    'info.app.grailsVersion': project.findProperty('grailsVersion')
             ]
 
             // Capture build directory at configuration time to avoid Task.project access at execution time
@@ -667,7 +667,7 @@ ${importStatements}
     @CompileStatic
     protected void configureMicronaut(Project project) {
         project.afterEvaluate {
-            boolean micronautEnabled = project.getConfigurations().getByName('runtimeClasspath').getAllDependencies().findAll { Dependency dep -> dep.group == 'org.apache.grails' && dep.name == 'grails-micronaut' } as boolean
+            boolean micronautEnabled = project.getConfigurations().getByName('runtimeClasspath').getAllDependencies().any { Dependency dep -> dep.group == 'org.apache.grails' && dep.name == 'grails-micronaut' }
             if (!micronautEnabled) {
                 return
             }
@@ -740,7 +740,7 @@ ${importStatements}
 
     @CompileStatic
     protected void configureGroovy(Project project) {
-        final String groovyVersion = project.properties['groovy.version']
+        final String groovyVersion = project.findProperty('groovy.version')
         if (groovyVersion) {
             project.logger.lifecycle('Warning: groovy.version is defined, Grails Gradle Plugin will force all groovy dependencies to version {}.', groovyVersion)
             project.configurations.configureEach { Configuration configuration ->
