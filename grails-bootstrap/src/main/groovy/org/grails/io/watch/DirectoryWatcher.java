@@ -49,6 +49,13 @@ public class DirectoryWatcher extends Thread {
     }
 
     /**
+     * @return the watcher implementation selected for the current platform and classpath
+     */
+    AbstractDirectoryWatcher getDirectoryWatcherDelegate() {
+        return directoryWatcherDelegate;
+    }
+
+    /**
      * Selects the best available watcher implementation.
      *
      * <p>On macOS the native FSEvents based watcher is preferred, but it requires the optional
@@ -81,10 +88,12 @@ public class DirectoryWatcher extends Thread {
             // an optional dependency of this module. Probe for that class rather than for JNA: JNA is
             // frequently present transitively (Testcontainers, docker-java, ...) without the watcher
             // library, and using it as the signal sends those applications down a load that can't succeed.
+            // A LinkageError means the class is present but its own dependencies (JNA) are not, which is
+            // equally unusable, so treat both as simply unavailable.
             Class.forName("io.methvin.watchservice.MacOSXListeningWatchService");
-        } catch (ClassNotFoundException e) {
+        } catch (ClassNotFoundException | LinkageError e) {
             if (LOG.isDebugEnabled()) {
-                LOG.debug("Native macOS file event watching is unavailable. Add 'io.methvin:directory-watcher' to the classpath for faster file watching.");
+                LOG.debug("Native macOS file event watching is unavailable. Add 'io.methvin:directory-watcher' to the classpath for faster file watching.", e);
             }
             return null;
         }

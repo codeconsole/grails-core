@@ -18,56 +18,138 @@
  */
 package org.grails.io.watch
 
-import java.lang.reflect.Field
+import java.lang.reflect.Method
+import java.nio.file.Path
+import java.util.concurrent.CopyOnWriteArrayList
 
+import spock.lang.Requires
 import spock.lang.Specification
+import spock.lang.TempDir
+import spock.util.concurrent.PollingConditions
+import spock.util.environment.RestoreSystemProperties
 
 /**
- * Tests the watcher implementation {@link DirectoryWatcher} selects.
+ * Tests which watcher implementation {@link DirectoryWatcher} selects, and that the selected one
+ * reports changes.
  *
- * <p>{@code io.methvin:directory-watcher} is {@code compileOnly}, so it is absent from this
- * module's test runtime — the same situation as an application that does not opt into it.
- * {@code net.java.dev.jna:jna} <em>is</em> on the test runtime classpath, reproducing the
- * common case of JNA arriving transitively (Testcontainers, docker-java, ...) without the
- * watcher library.</p>
+ * <p>The native macOS watcher needs {@code io.methvin:directory-watcher}, which this module declares
+ * {@code compileOnly}. The test runtime therefore does not carry it — matching an application that
+ * has not opted in — while {@code net.java.dev.jna:jna} is present, reproducing the common case of
+ * JNA arriving transitively (Testcontainers, docker-java, ...) on its own. The cases that need the
+ * optional library are covered by loading the watcher classes in an isolated class loader built from
+ * the {@code optionalWatcher} configuration.</p>
  */
+@RestoreSystemProperties
 class DirectoryWatcherSpec extends Specification {
 
-    private static AbstractDirectoryWatcher delegateOf(DirectoryWatcher watcher) {
-        Field field = DirectoryWatcher.getDeclaredField('directoryWatcherDelegate')
-        field.setAccessible(true)
-        (AbstractDirectoryWatcher) field.get(watcher)
+    private static final String MAC_OS = 'Mac OS X'
+    private static final String NATIVE_WATCH_SERVICE = 'io.methvin.watchservice.MacOSXListeningWatchService'
+
+    @TempDir
+    Path watchedDirectory
+
+    void 'JNA alone does not select the native macOS watcher'() {
+        given: 'the classpath shape produced by a transitively acquired JNA'
+        assert isPresent('com.sun.jna.Pointer')
+        assert !isPresent(NATIVE_WATCH_SERVICE)
+        System.setProperty('os.name', MAC_OS)
+
+        expect: 'JNA is not a valid signal for native watcher availability'
+        new DirectoryWatcher().directoryWatcherDelegate instanceof WatchServiceDirectoryWatcher
     }
 
-    void 'the native macOS watcher is not selected when its optional dependency is absent'() {
-        expect: 'the probe reflects this module compiling directory-watcher as compileOnly'
-        !isPresent('io.methvin.watchservice.MacOSXListeningWatchService')
+    void 'the JDK watcher is selected off macOS'() {
+        given:
+        System.setProperty('os.name', 'Linux')
 
-        when:
-        AbstractDirectoryWatcher delegate = delegateOf(new DirectoryWatcher())
+        expect:
+        new DirectoryWatcher().directoryWatcherDelegate instanceof WatchServiceDirectoryWatcher
+    }
+
+    void 'polling is not selected while the JDK can supply a WatchService'() {
+        expect: 'polling is a last resort, unreachable on the supported Java baseline'
+        !(new DirectoryWatcher().directoryWatcherDelegate instanceof PollingDirectoryWatcher)
+    }
+
+    @Requires({ DirectoryWatcherSpec.optionalWatcherJars() })
+    void 'the native macOS watcher is selected when the optional library is available'() {
+        given:
+        System.setProperty('os.name', MAC_OS)
+
+        expect:
+        selectedDelegateIn(isolatedLoader(optionalWatcherJars(), true)) == 'MacOsWatchServiceDirectoryWatcher'
+    }
+
+    @Requires({ DirectoryWatcherSpec.optionalWatcherJars() })
+    void 'the optional library without JNA degrades instead of failing construction'() {
+        given: 'directory-watcher present but the JNA it links against absent, which raises a LinkageError'
+        System.setProperty('os.name', MAC_OS)
+
+        expect: 'the linkage failure is treated as the native watcher simply being unavailable'
+        selectedDelegateIn(isolatedLoader(optionalWatcherJars(), false)) == 'WatchServiceDirectoryWatcher'
+    }
+
+    void 'the selected watcher reports a change to a watched file'() {
+        given:
+        File directory = watchedDirectory.toFile()
+        File watched = new File(directory, 'watched.txt')
+        watched.text = 'initial'
+
+        List<File> changed = new CopyOnWriteArrayList<>()
+        DirectoryWatcher watcher = new DirectoryWatcher()
+        watcher.sleepTime = 100
+        watcher.addListener(new DirectoryWatcher.FileChangeListener() {
+            void onChange(File file) { changed << file }
+
+            void onNew(File file) { changed << file }
+        })
+        watcher.addWatchDirectory(directory, 'txt')
+        watcher.start()
+
+        when: 'the watched file is modified after the watcher has started'
+        // the JDK WatchService falls back to polling on some platforms, so allow a generous window
+        Thread.sleep(1000)
+        watched.text = 'modified'
 
         then:
-        !(delegate instanceof MacOsWatchServiceDirectoryWatcher)
+        new PollingConditions(timeout: 60, initialDelay: 1).eventually {
+            assert changed*.name.contains('watched.txt')
+        }
+
+        cleanup:
+        watcher.active = false
     }
 
-    void 'a WatchService based watcher is selected rather than falling back to polling'() {
-        when:
-        AbstractDirectoryWatcher delegate = delegateOf(new DirectoryWatcher())
-
-        then: 'polling is a last resort and must not be reached on a JDK that has a WatchService'
-        !(delegate instanceof PollingDirectoryWatcher)
-        delegate instanceof WatchServiceDirectoryWatcher
+    /**
+     * Loads the watcher classes in a class loader isolated from the test runtime so the optional
+     * library, and JNA, can be present or absent independently of this JVM's own classpath.
+     */
+    private static ClassLoader isolatedLoader(List<File> optionalWatcher, boolean includeJna) {
+        List<File> entries = System.getProperty('java.class.path')
+                .split(File.pathSeparator)
+                .collect { new File(it) }
+        // directory-watcher depends on JNA, so the exclusion has to cover the optional jars too
+        entries.addAll(optionalWatcher)
+        URL[] urls = entries
+                .findAll { includeJna || !(it.name ==~ /jna(-platform)?-\d.*\.jar/) }
+                .collect { it.toURI().toURL() }
+        // the platform loader as parent keeps this JVM's application classpath out of the picture
+        new URLClassLoader(urls, ClassLoader.platformClassLoader)
     }
 
-    void 'the presence of JNA alone does not select the native macOS watcher'() {
-        given: 'JNA on the classpath, but not the watcher library that actually backs the native watcher'
-        assert isPresent('com.sun.jna.Pointer')
+    private static String selectedDelegateIn(ClassLoader loader) {
+        Class<?> watcherClass = loader.loadClass(DirectoryWatcher.name)
+        Object watcher = watcherClass.getDeclaredConstructor().newInstance()
+        // getDirectoryWatcherDelegate is package-private, and this spec's package is a different
+        // runtime package once the class comes from another loader, so access has to be requested
+        Method delegate = watcherClass.getDeclaredMethod('getDirectoryWatcherDelegate')
+        delegate.accessible = true
+        delegate.invoke(watcher).getClass().simpleName
+    }
 
-        when:
-        AbstractDirectoryWatcher delegate = delegateOf(new DirectoryWatcher())
-
-        then: 'JNA is not a valid signal for native watcher availability'
-        delegate instanceof WatchServiceDirectoryWatcher
+    static List<File> optionalWatcherJars() {
+        String path = System.getProperty('grails.test.optionalWatcherClasspath')
+        path ? path.split(File.pathSeparator).collect { new File(it) }.findAll { it.exists() } : []
     }
 
     private static boolean isPresent(String className) {
