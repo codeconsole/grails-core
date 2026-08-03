@@ -62,10 +62,10 @@ class CodecMetaClassSupportSpec extends Specification {
 
         when:
             support.configureCodecMethods(codecFactory, true, targetMetaClasses)
+            support.configureCodecMethods(codecFactory, true, targetMetaClasses)
             Object encodedAlias = InvokerHelper.invokeMethod(new CodecMetaClassSupportSpecTarget('a&b'), 'encodeAsBench', null)
             Object decoded = InvokerHelper.invokeMethod(new CodecMetaClassSupportSpecTarget('a&amp;b'), 'decodeBenchmark', null)
             Object decodedAlias = InvokerHelper.invokeMethod(new CodecMetaClassSupportSpecTarget('a&amp;b'), 'decodeBench', null)
-            support.configureCodecMethods(codecFactory, true, targetMetaClasses)
 
         then:
             encodedAlias == 'a&amp;b'
@@ -91,10 +91,17 @@ class CodecMetaClassSupportSpec extends Specification {
         when:
             start.countDown()
             futures*.get(10L, TimeUnit.SECONDS)
+            Object concurrentEncode = InvokerHelper.invokeMethod(new CodecMetaClassSupportSpecTarget('a&b'), 'encodeAsBenchmark', null)
+            Object concurrentDecode = InvokerHelper.invokeMethod(new CodecMetaClassSupportSpecTarget('a&amp;b'), 'decodeBenchmark', null)
+            // Same factory still keeps the first cached encoder after concurrent registration.
+            codecFactory.encoder = new BenchmarkEncoder('|')
+            support.configureCodecMethods(codecFactory, true, targetMetaClasses)
+            Object afterReconfigure = InvokerHelper.invokeMethod(new CodecMetaClassSupportSpecTarget('a&b'), 'encodeAsBenchmark', null)
 
         then:
-            InvokerHelper.invokeMethod(new CodecMetaClassSupportSpecTarget('a&b'), 'encodeAsBenchmark', null) == 'a&amp;b'
-            InvokerHelper.invokeMethod(new CodecMetaClassSupportSpecTarget('a&amp;b'), 'decodeBenchmark', null) == 'a&b'
+            concurrentEncode == 'a&amp;b'
+            concurrentDecode == 'a&b'
+            afterReconfigure == 'a&amp;b'
 
         cleanup:
             executor.shutdownNow()

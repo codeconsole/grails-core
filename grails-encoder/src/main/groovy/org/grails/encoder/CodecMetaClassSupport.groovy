@@ -46,6 +46,13 @@ class CodecMetaClassSupport {
     private static final Cache<CodecFactory, Set<MetaMethodRegistrationKey>> REGISTERED_META_METHODS = Caffeine.newBuilder()
             .weakKeys()
             .build()
+    /**
+     * Per-factory locks keep claim+register atomic for the same CodecFactory without
+     * synchronizing on globally shared ExpandoMetaClass instances (String, Object, ...).
+     */
+    private static final Cache<CodecFactory, Object> FACTORY_REGISTRATION_LOCKS = Caffeine.newBuilder()
+            .weakKeys()
+            .build()
 
     /**
      * Adds "encodeAs*" and "decode*" metamethods for given codecClass
@@ -137,11 +144,6 @@ class CodecMetaClassSupport {
     }
 
     @CompileStatic
-    private addAliasMetaMethods(List<ExpandoMetaClass> targetMetaClasses, Set<String> aliases, Closure<String> methodNameClosure, Closure methodClosure) {
-        addAliasMetaMethods(targetMetaClasses, aliases, methodNameClosure, methodClosure, false, null)
-    }
-
-    @CompileStatic
     private addAliasMetaMethods(List<ExpandoMetaClass> targetMetaClasses, Set<String> aliases, Closure<String> methodNameClosure, Closure methodClosure,
             boolean cacheLookup, CodecFactory codecFactory) {
         aliases?.each { String aliasName ->
@@ -175,7 +177,8 @@ class CodecMetaClassSupport {
                 emc."${methodName}" << closure
             }
             else {
-                synchronized (emc) {
+                // Serialize only this factory's registrations; never lock the shared EMC.
+                synchronized (factoryRegistrationLock(codecFactory)) {
                     if (shouldRegisterMetaMethod(emc, methodName, codecFactory)) {
                         emc."${methodName}" << closure
                     }
@@ -192,7 +195,7 @@ class CodecMetaClassSupport {
 
     @CompileStatic
     private static MetaMethodRegistrationKey registrationKey(ExpandoMetaClass emc, String methodName) {
-        new MetaMethodRegistrationKey(emc.getTheClass().getName(), methodName)
+        new MetaMethodRegistrationKey(emc.getTheClass(), methodName)
     }
 
     @CompileStatic
@@ -203,13 +206,20 @@ class CodecMetaClassSupport {
     }
 
     @CompileStatic
+    private static Object factoryRegistrationLock(CodecFactory codecFactory) {
+        FACTORY_REGISTRATION_LOCKS.get(codecFactory) { CodecFactory ignored ->
+            new Object()
+        }
+    }
+
+    @CompileStatic
     private static class MetaMethodRegistrationKey {
 
-        private final String targetClassName
+        private final Class<?> targetClass
         private final String methodName
 
-        MetaMethodRegistrationKey(String targetClassName, String methodName) {
-            this.targetClassName = targetClassName
+        MetaMethodRegistrationKey(Class<?> targetClass, String methodName) {
+            this.targetClass = targetClass
             this.methodName = methodName
         }
 
@@ -223,13 +233,13 @@ class CodecMetaClassSupport {
             }
 
             MetaMethodRegistrationKey otherKey = (MetaMethodRegistrationKey) other
-            targetClassName == otherKey.targetClassName &&
+            targetClass == otherKey.targetClass &&
                     methodName == otherKey.methodName
         }
 
         @Override
         int hashCode() {
-            int result = targetClassName.hashCode()
+            int result = targetClass.hashCode()
             31 * result + methodName.hashCode()
         }
     }
