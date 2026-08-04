@@ -56,6 +56,10 @@ class GrailsDataMongoDBSpec extends ApplicationContextSpec implements CommandOut
 
         then:
         template.contains("implementation \"org.apache.grails:grails-data-mongodb\"")
+        template.contains("implementation \"org.apache.grails:grails-data-mongodb-embedded\"")
+
+        and: 'flapdoodle is the application\'s own dependency, so it carries a version'
+        template.contains("implementation \"de.flapdoodle.embed:de.flapdoodle.embed.mongo:\$flapdoodleVersion\"")
     }
 
     void "test config"() {
@@ -64,6 +68,35 @@ class GrailsDataMongoDBSpec extends ApplicationContextSpec implements CommandOut
 
         then:
         ctx.configuration.containsKey("grails.mongodb.url")
+    }
+
+    void "test the embedded MongoDB is enabled in every environment"() {
+        when:
+        GeneratorContext ctx = buildGeneratorContext(['gorm-mongodb'])
+
+        then: 'each environment starts its own server, so a generated app runs with no MongoDB installed'
+        ctx.configuration.get("environments.development.embedded.mongodb.enabled") == true
+        ctx.configuration.get("environments.test.embedded.mongodb.enabled") == true
+        ctx.configuration.get("environments.production.embedded.mongodb.enabled") == true
+
+        and: 'development and test start instantly and download nothing'
+        ctx.configuration.get("environments.development.embedded.mongodb.backend") == 'in-memory'
+        ctx.configuration.get("environments.test.embedded.mongodb.backend") == 'in-memory'
+
+        and: 'only production runs a real mongod, because it is the backend that can persist'
+        ctx.configuration.get("environments.production.embedded.mongodb.backend") == 'flapdoodle'
+        ctx.configuration.get("environments.production.embedded.mongodb.database-dir") == './prodDb'
+        !ctx.configuration.containsKey("environments.development.embedded.mongodb.database-dir")
+        !ctx.configuration.containsKey("environments.test.embedded.mongodb.database-dir")
+    }
+
+    void "test no initializer is copied into the generated application"() {
+        when:
+        Map<String, String> output = generate(['gorm-mongodb'])
+
+        then: 'the embedded support arrives as a dependency, not as generated source'
+        !output.keySet().any { it.endsWith('EmbeddedMongoConfig.groovy') }
+        !output.containsKey('src/main/resources/META-INF/spring.factories')
     }
 
     void "test a SQL driver combined with MongoDB still adds Hibernate 5 as the default SQL implementation"() {

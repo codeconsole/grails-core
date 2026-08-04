@@ -107,6 +107,12 @@ class SbomPlugin implements Plugin<Project> {
             'pkg:maven/jline/jline@2.14.6?type=jar'                           : 'BSD-2-Clause', // maps incorrectly because of https://github.com/CycloneDX/cyclonedx-core-java/issues/205
             'pkg:maven/opensymphony/sitemesh@2.6.0?type=jar'                  : 'OpenSymphony', // custom license approved by legal LEGAL-707
             'pkg:maven/org.antlr/antlr4-runtime@4.7.2?type=jar'               : 'BSD-3-Clause', // maps incorrectly because of https://github.com/CycloneDX/cyclonedx-core-java/issues/205
+            // mongo-java-server declares only "The BSD License" so it maps to BSD-4-Clause for the same
+            // reason as the org.jline group below. https://github.com/bwaldvogel/mongo-java-server/blob/main/LICENSE
+            // has three numbered clauses and no advertising clause, making it BSD-3-Clause.
+            'pkg:maven/de.bwaldvogel/mongo-java-server@1.47.0?type=jar'       : 'BSD-3-Clause',
+            'pkg:maven/de.bwaldvogel/mongo-java-server-core@1.47.0?type=jar'  : 'BSD-3-Clause',
+            'pkg:maven/de.bwaldvogel/mongo-java-server-memory-backend@1.47.0?type=jar': 'BSD-3-Clause',
             // The whole org.jline group declares "The BSD License", which maps incorrectly because of
             // https://github.com/CycloneDX/cyclonedx-core-java/issues/205 - the POMs point at BSD-3-Clause.
             // jline.version tracks the JLine version Groovy ships, so every module resolves to one version.
