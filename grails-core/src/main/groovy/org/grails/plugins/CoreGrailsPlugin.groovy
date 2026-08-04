@@ -21,6 +21,7 @@ package org.grails.plugins
 import groovy.transform.CompileStatic
 
 import org.springframework.aop.config.AopConfigUtils
+import org.springframework.aot.AotDetector
 import org.springframework.beans.factory.BeanRegistrar
 import org.springframework.beans.factory.BeanRegistry
 import org.springframework.beans.factory.config.CustomEditorConfigurer
@@ -129,8 +130,13 @@ class CoreGrailsPlugin extends Plugin {
             GrailsApplication application = grailsApplication
             Config config = application.config
 
-            // enable post-processing of @Configuration beans defined by plugins
-            registry.registerBean('grailsConfigurationClassPostProcessor', ConfigurationClassPostProcessor)
+            // enable post-processing of @Configuration beans defined by plugins. An AOT-optimized
+            // context has no ConfigurationClassPostProcessor of its own: the configuration classes
+            // were parsed at build time and their beans are already in the generated initializer,
+            // so registering one here would parse them a second time.
+            if (!AotDetector.useGeneratedArtifacts()) {
+                registry.registerBean('grailsConfigurationClassPostProcessor', ConfigurationClassPostProcessor)
+            }
 
             registry.registerBean('grailsBeanOverrideConfigurer', MapBasedSmartPropertyOverrideConfigurer) {
                 it.supplier {
