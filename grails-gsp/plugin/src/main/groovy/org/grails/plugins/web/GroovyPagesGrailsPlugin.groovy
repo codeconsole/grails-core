@@ -265,9 +265,9 @@ class GroovyPagesGrailsPlugin extends Plugin {
             }
 
             errorsViewStackTracePrinter(ErrorsViewStackTracePrinter, ref('grailsResourceLocator'))
-            filteringCodecsByContentTypeSettings(FilteringCodecsByContentTypeSettings, application)
+            filteringCodecsByContentTypeSettings(FilteringCodecsByContentTypeSettings, ref('grailsApplication'))
 
-            groovyPagesServlet(ServletRegistrationBean, new GroovyPagesServlet(), '*.gsp') {
+            groovyPagesServlet(ServletRegistrationBean, bean(GroovyPagesServlet), '*.gsp') {
                 if (Environment.isDevelopmentMode()) {
                     initParameters = [showSource: '1']
                 }
