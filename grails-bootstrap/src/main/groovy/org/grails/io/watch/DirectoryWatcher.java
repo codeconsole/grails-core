@@ -85,9 +85,12 @@ public class DirectoryWatcher extends Thread {
             // equally unusable, so treat both as simply unavailable.
             Class.forName("io.methvin.watchservice.MacOSXListeningWatchService");
         } catch (ClassNotFoundException | LinkageError e) {
-            if (LOG.isDebugEnabled()) {
-                LOG.debug("Native macOS file event watching is unavailable. Add 'io.methvin:directory-watcher' to the classpath for faster file watching.", e);
-            }
+            // Warn rather than debug: the JDK supplies no native WatchService on macOS, so the fallback
+            // polls and file changes take seconds to be noticed. The message names the one dependency
+            // that fixes that, and adding it silences this. The cause is debug detail, not the point.
+            LOG.warn("Native macOS file event watching is unavailable, so the JDK WatchService is used instead, " +
+                    "which polls on macOS. Add 'io.methvin:directory-watcher' to the classpath for event driven file watching.");
+            LOG.debug("io.methvin.watchservice.MacOSXListeningWatchService could not be loaded.", e);
             return null;
         }
         try {

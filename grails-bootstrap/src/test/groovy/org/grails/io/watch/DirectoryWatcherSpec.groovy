@@ -116,6 +116,46 @@ class DirectoryWatcherSpec extends Specification {
         }
     }
 
+    void 'macOS without the optional library says how to restore event driven watching'() {
+        given: 'the classpath an application has by default, where the optional library is absent'
+        System.setProperty('os.name', MAC_OS)
+
+        when:
+        String logged = captureStandardError { registerForCleanup(new DirectoryWatcher()) }
+
+        then: 'the fallback is announced, not silent, and names the dependency that resolves it'
+        logged.contains('WARN')
+        logged.contains('io.methvin:directory-watcher')
+    }
+
+    void 'a platform with a native WatchService says nothing about the optional library'() {
+        given: 'a platform whose JDK WatchService is already event driven'
+        System.setProperty('os.name', 'Linux')
+
+        when:
+        String logged = captureStandardError { registerForCleanup(new DirectoryWatcher()) }
+
+        then: 'the advice is macOS only, so it must not reach anyone it cannot help'
+        !logged.contains('io.methvin:directory-watcher')
+    }
+
+    /**
+     * Captures what an application would see on the console. slf4j-simple resolves
+     * {@code System.err} on each write, so replacing it here redirects the watcher's own logging.
+     */
+    private static String captureStandardError(Closure<?> work) {
+        PrintStream original = System.err
+        ByteArrayOutputStream captured = new ByteArrayOutputStream()
+        System.setErr(new PrintStream(captured, true))
+        try {
+            work.call()
+        }
+        finally {
+            System.setErr(original)
+        }
+        captured.toString()
+    }
+
     private File modifyWatchedFile() {
         File watched = new File(watchedDirectory.toFile(), 'watched.txt')
         watched.text = "modified ${System.nanoTime()}"
