@@ -1,0 +1,2 @@
+org.springframework.beans.factory.aot.BeanRegistrationExcludeFilter=\
+org.grails.spring.beans.aot.AbstractBeanDefinitionExcludeFilter
