@@ -1,0 +1,101 @@
+////
+Licensed to the Apache Software Foundation (ASF) under one
+or more contributor license agreements.  See the NOTICE file
+distributed with this work for additional information
+regarding copyright ownership.  The ASF licenses this file
+to you under the Apache License, Version 2.0 (the
+"License"); you may not use this file except in compliance
+with the License.  You may obtain a copy of the License at
+
+https://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing,
+software distributed under the License is distributed on an
+"AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+KIND, either express or implied.  See the License for the
+specific language governing permissions and limitations
+under the License.
+////
+
+Spring's ahead-of-time (AOT) processing moves bean wiring from startup to build time. Instead of scanning the classpath, reading annotations and evaluating conditions on every boot, the build generates Java source that registers the bean definitions directly, and the application runs that.
+
+Two things follow from it: startup does less work, and the application becomes eligible for a GraalVM native image, which cannot perform the classpath scanning and reflection that normal startup relies on.
+
+AOT is opt-in.
+
+
+=== Enabling AOT
+
+
+Apply the Spring Boot AOT plugin alongside the Grails plugins:
+
+[source,groovy]
+----
+apply plugin: 'org.springframework.boot.aot'
+----
+
+This adds a `processAot` task, which `bootJar` then runs as part of the build. Nothing about a normal `bootRun` or `bootJar` changes until the application is started with AOT enabled:
+
+[source,bash]
+----
+java -Dspring.aot.enabled=true -jar build/libs/myapp.jar
+----
+
+An application started this way logs `Starting AOT-processed Application` rather than `Starting Application`.
+
+
+=== Generate in production mode
+
+
+`processAot` builds the bean definitions that the packaged application will use, so it must run with the same environment those definitions are meant for:
+
+[source,groovy]
+----
+tasks.named('processAot') {
+    systemProperty 'grails.env', 'production'
+}
+----
+
+Without this the task runs in the development environment, where reloading is enabled and several beans take a different shape. The URL mappings holder, for example, becomes a proxy whose type cannot be determined without creating it, and generation fails with an error naming a bean that is unrelated to anything in the application:
+
+[source]
+----
+Field urlMappings in org.grails.web.mapping.servlet.UrlMappingsErrorPageCustomizer
+required a bean of type 'grails.web.mapping.UrlMappings' that could not be found.
+----
+
+Reload-mode beans have no meaning in a packaged artifact, so generating in production mode is correct as well as necessary.
+
+
+=== What AOT changes at runtime
+
+
+An AOT-processed application registers the same beans as a normal one. The difference is the annotation-processing infrastructure it no longer needs, since the work those components do has already been done:
+
+* `internalConfigurationAnnotationProcessor`
+* `internalAutowiredAnnotationProcessor`
+* `internalCommonAnnotationProcessor`
+* Spring Boot's shared metadata reader factory
+* Grails' own configuration class post-processor
+
+Application beans, plugin beans and auto-configuration beans are all present as usual.
+
+
+=== Limitations
+
+
+Beans contributed from a plugin's `beanRegistrar()` are not generated. Spring marks them as registrar-owned and skips them, and they are registered again at runtime when Grails applies the plugin registrars. They behave correctly, but the plugin scan that produces them still runs on every start, so they do not benefit from generation.
+
+Writing bean definitions that hold live objects will fail generation. A definition is a recipe rather than an instance, and there is no general way to generate code that reconstructs an arbitrary object, so a constructor argument or property value holding one cannot be processed:
+
+[source]
+----
+UnsupportedTypeValueCodeGenerationException:
+    Code generation does not support com.example.SomeService
+----
+
+Reference another bean by name instead, or express the collaborator as a nested bean definition, and the generator can emit both.
+
+Abstract bean definitions — templates that exist only to be inherited through `bean.parent` — are excluded from generation, because Spring has no representation for them in generated code. Definitions that inherit from one are unaffected: they are generated from their merged definition, with the inherited values already folded in.
+
+AOT processing on its own does not make an application ready for a native image. A native image additionally requires reachability metadata covering the resources and reflection an application performs at runtime.

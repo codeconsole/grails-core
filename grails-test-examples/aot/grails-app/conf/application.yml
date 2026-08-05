@@ -1,0 +1,5 @@
+grails:
+    profile: web
+info:
+    app:
+        name: aot
