@@ -45,10 +45,16 @@ sourceSets {
     report {
         groovy.srcDirs = ['src/report/groovy']
     }
+    reportTest {
+        groovy.srcDirs = ['src/reportTest/groovy']
+        resources.srcDirs = ['src/reportTest/resources']
+        compileClasspath = sourceSets.report.runtimeClasspath + configurations.reportTestCompileClasspath
+        runtimeClasspath = output + compileClasspath + configurations.reportTestRuntimeClasspath
+    }
 }
 
 // The Groovy fixtures under src/main/groovy build the framework objects whose APIs are
-// closure-based (the URL mappings DSL, the Validateable trait, view templates). The JMH
+// closure-based (the URL mappings DSL and view templates). The JMH
 // benchmarks themselves live in src/jmh/java and only *call* those fixtures, so that the
 // measured code path is plain Java and does not include Groovy's dynamic dispatch.
 // me.champeau.jmh puts the main source set's output on the jmh compile classpath, which is
@@ -79,15 +85,27 @@ dependencies {
 
     // Pull the report source set's full runtime classpath (groovy-json etc.), not only its
     // compiled classes - the Spock suite exercises JsonSlurper and HttpClient paths.
-    testImplementation sourceSets.report.runtimeClasspath
-    testImplementation 'org.apache.groovy:groovy-test-junit5'
-    testImplementation 'org.junit.jupiter:junit-jupiter-api'
-    testImplementation 'org.junit.platform:junit-platform-suite'
-    testImplementation 'org.spockframework:spock-core'
-    testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine'
+    reportTestImplementation platform(project(':grails-bom'))
+    reportTestImplementation 'org.apache.groovy:groovy-test-junit5'
+    reportTestImplementation 'org.junit.jupiter:junit-jupiter-api'
+    reportTestImplementation 'org.junit.platform:junit-platform-suite'
+    reportTestImplementation 'org.spockframework:spock-core'
+    reportTestRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine'
+    // gradle/test-config.gradle adds these only to testRuntimeOnly.
+    reportTestRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+    reportTestRuntimeOnly 'net.bytebuddy:byte-buddy'
+    reportTestRuntimeOnly 'org.objenesis:objenesis'
 }
 
 apply from: rootProject.layout.projectDirectory.file('gradle/test-config.gradle')
+
+// Keep the conventional task and output locations so grails-test-report continues to aggregate it,
+// while compiling and running only the standalone report tool and its reportTest source set.
+tasks.named('test', Test) {
+    setDependsOn([tasks.named('reportTestClasses')])
+    testClassesDirs = sourceSets.reportTest.output.classesDirs
+    classpath = sourceSets.reportTest.runtimeClasspath
+}
 
 tasks.register('jmhCompare', JavaExec) {
     group = 'verification'
