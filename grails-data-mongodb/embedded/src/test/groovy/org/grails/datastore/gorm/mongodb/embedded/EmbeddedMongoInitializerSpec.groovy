@@ -166,6 +166,29 @@ class EmbeddedMongoInitializerSpec extends Specification {
         e.message.contains('flapdoodle')
     }
 
+    void 'a port held by something other than an embedded MongoDB is never reused'() {
+        given: 'an unrelated service holding the port, on the address a backend binds'
+        ServerSocket intruder = new ServerSocket(27990, 1, InetAddress.getByName('localhost'))
+        GenericApplicationContext context = contextWith([
+                (EmbeddedMongoInitializer.ENABLED): 'true',
+                (EmbeddedMongoInitializer.BACKEND): InMemoryMongoBackend.NAME,
+                (EmbeddedMongoInitializer.PORT)   : '27990',
+        ])
+
+        when:
+        new EmbeddedMongoInitializer().initialize(context)
+
+        then: 'it fails rather than publishing a MongoDB url pointing at that service'
+        IllegalStateException e = thrown()
+        e.message.contains('something else may already be using')
+
+        and: 'no url was published'
+        !context.environment.getProperty('grails.mongodb.url')
+
+        cleanup:
+        intruder.close()
+    }
+
     void 'an unknown backend is reported by name'() {
         given:
         GenericApplicationContext context = contextWith([

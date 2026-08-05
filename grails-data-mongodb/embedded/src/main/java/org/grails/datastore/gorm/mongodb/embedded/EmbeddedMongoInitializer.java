@@ -18,9 +18,6 @@
  */
 package org.grails.datastore.gorm.mongodb.embedded;
 
-import java.io.IOException;
-import java.net.InetSocketAddress;
-import java.net.Socket;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -28,6 +25,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -107,6 +105,13 @@ public class EmbeddedMongoInitializer implements ApplicationContextInitializer<C
     private static final Pattern DATABASE_IN_URL = Pattern.compile("^mongodb(?:\\+srv)?://[^/]+/([^?]+)");
 
     /**
+     * The servers this JVM started, by port. Keyed rather than a single field because two
+     * application contexts in one JVM can ask for different ports, and consulted so that a
+     * devtools restart reuses its own server without mistaking any other listener for one.
+     */
+    private static final Map<Integer, RunningEmbeddedMongo> STARTED = new ConcurrentHashMap<>();
+
+    /**
      * Flapdoodle first, so that adding it to an application is all it takes to move from
      * the in-memory reimplementation to a real mongod.
      */
@@ -132,12 +137,15 @@ public class EmbeddedMongoInitializer implements ApplicationContextInitializer<C
         String database = resolveDatabase(environment, propertyNames);
 
         String url;
-        if (isListening(port)) {
-            // A devtools restart reuses this JVM, so the server started by the previous
-            // application context is still running and still owns the port. The same
-            // branch covers a MongoDB the developer started themselves.
-            url = "mongodb://localhost:" + port + "/" + database;
-            log.info("Reusing MongoDB already listening at {}", url);
+        RunningEmbeddedMongo started = STARTED.get(port);
+        if (started != null) {
+            // A devtools restart reuses this JVM and this class is loaded from a jar, so it
+            // survives in the base classloader along with the server the previous
+            // application context started. Only a server this initializer started is reused;
+            // anything else holding the port makes the start below fail with an error that
+            // says so, rather than publishing a MongoDB url pointing at an unrelated service.
+            url = "mongodb://" + started.getHost() + ":" + started.getPort() + "/" + database;
+            log.info("Reusing the embedded MongoDB this JVM already started at {}", url);
         }
         else {
             url = start(environment, port, database);
@@ -169,9 +177,11 @@ public class EmbeddedMongoInitializer implements ApplicationContextInitializer<C
         }
         catch (Exception ex) {
             throw new IllegalStateException("Failed to start the " + backend.getName() +
-                    " embedded MongoDB on port " + port + ". Set " + PORT + " to a free port, or set " + ENABLED +
-                    "=false to use an external MongoDB.", ex);
+                    " embedded MongoDB on port " + port + ", which something else may already be using. Set " +
+                    PORT + " to a free port, or set " + ENABLED + "=false to use an external MongoDB.", ex);
         }
+
+        STARTED.put(port, running);
 
         // Registered on the JVM rather than the application context so that it survives a
         // devtools restart and fires only once, when the JVM itself exits.
@@ -269,13 +279,4 @@ public class EmbeddedMongoInitializer implements ApplicationContextInitializer<C
         return DEFAULT_DATABASE;
     }
 
-    private boolean isListening(int port) {
-        try (Socket socket = new Socket()) {
-            socket.connect(new InetSocketAddress("localhost", port), 250);
-            return true;
-        }
-        catch (IOException ignored) {
-            return false;
-        }
-    }
 }

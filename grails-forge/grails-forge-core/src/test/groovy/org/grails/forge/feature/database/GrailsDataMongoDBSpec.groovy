@@ -57,9 +57,6 @@ class GrailsDataMongoDBSpec extends ApplicationContextSpec implements CommandOut
         then:
         template.contains("implementation \"org.apache.grails:grails-data-mongodb\"")
         template.contains("implementation \"org.apache.grails:grails-data-mongodb-embedded\"")
-
-        and: 'flapdoodle is the application\'s own dependency, so it carries a version'
-        template.contains("implementation \"de.flapdoodle.embed:de.flapdoodle.embed.mongo:\$flapdoodleVersion\"")
     }
 
     void "test config"() {
@@ -70,24 +67,17 @@ class GrailsDataMongoDBSpec extends ApplicationContextSpec implements CommandOut
         ctx.configuration.containsKey("grails.mongodb.url")
     }
 
-    void "test the embedded MongoDB is enabled in every environment"() {
+    void "test the embedded MongoDB is enabled for development and test only"() {
         when:
         GeneratorContext ctx = buildGeneratorContext(['gorm-mongodb'])
 
-        then: 'each environment starts its own server, so a generated app runs with no MongoDB installed'
+        then: 'development and test start their own server, so the app runs with no MongoDB installed'
         ctx.configuration.get("environments.development.embedded.mongodb.enabled") == true
         ctx.configuration.get("environments.test.embedded.mongodb.enabled") == true
-        ctx.configuration.get("environments.production.embedded.mongodb.enabled") == true
 
-        and: 'development and test start instantly and download nothing'
-        ctx.configuration.get("environments.development.embedded.mongodb.backend") == 'in-memory'
-        ctx.configuration.get("environments.test.embedded.mongodb.backend") == 'in-memory'
-
-        and: 'only production runs a real mongod, because it is the backend that can persist'
-        ctx.configuration.get("environments.production.embedded.mongodb.backend") == 'flapdoodle'
-        ctx.configuration.get("environments.production.embedded.mongodb.database-dir") == './prodDb'
-        !ctx.configuration.containsKey("environments.development.embedded.mongodb.database-dir")
-        !ctx.configuration.containsKey("environments.test.embedded.mongodb.database-dir")
+        and: 'production keeps the configured url, so deploying with MONGO_HOST set reaches that database'
+        !ctx.configuration.containsKey("environments.production.embedded.mongodb.enabled")
+        ctx.configuration.get("grails.mongodb.url") == 'mongodb://${MONGO_HOST:localhost}:${MONGO_PORT:27017}/foo'
     }
 
     void "test no initializer is copied into the generated application"() {
