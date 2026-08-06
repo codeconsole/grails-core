@@ -25,10 +25,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-import org.springframework.boot.SpringApplication;
 import org.springframework.boot.EnvironmentPostProcessor;
+import org.springframework.boot.SpringApplication;
 import org.springframework.boot.bootstrap.ConfigurableBootstrapContext;
-import org.springframework.boot.context.config.ConfigDataEnvironmentPostProcessor;
 import org.springframework.core.Ordered;
 import org.springframework.core.env.ConfigurableEnvironment;
 import org.springframework.core.env.MapPropertySource;
@@ -49,7 +48,7 @@ import org.apache.grails.core.plugins.PluginInfo;
  *
  * <h2>Ordering</h2>
  *
- * <p>This runs after {@link ConfigDataEnvironmentPostProcessor}, so the application's own
+ * <p>This runs after {@code ConfigDataEnvironmentPostProcessor}, so the application's own
  * {@code spring.messages.basename} is visible and can be merged rather than replaced; and after
  * {@code GrailsEnvironmentPostProcessor}, whose plugin configuration can influence the environment
  * this reads. It does not, however, depend on that processor having initialised plugin discovery:
@@ -61,7 +60,7 @@ import org.apache.grails.core.plugins.PluginInfo;
 public class I18nEnvironmentPostProcessor implements EnvironmentPostProcessor, Ordered {
 
     /**
-     * Later than {@link ConfigDataEnvironmentPostProcessor#ORDER} so {@code application.yml} is
+     * Later than {@code ConfigDataEnvironmentPostProcessor.ORDER} so {@code application.yml} is
      * loaded, and later than {@code GrailsEnvironmentPostProcessor} so plugin configuration is in
      * place.
      */
@@ -172,9 +171,9 @@ public class I18nEnvironmentPostProcessor implements EnvironmentPostProcessor, O
         }
 
         if (this.bootstrapContext == null || !this.bootstrapContext.isRegistered(PluginDiscovery.class)) {
-            throw new IllegalStateException("Plugin message bundles are on the classpath but Grails plugin discovery "
-                    + "is unavailable, so their base names cannot be ordered. Set "
-                    + INCLUDE_PLUGIN_BUNDLES_PROPERTY + "=false to exclude plugin bundles deliberately.");
+            throw new IllegalStateException("Plugin message bundles are on the classpath but Grails plugin discovery " +
+                    "is unavailable, so their base names cannot be ordered. Set " +
+                    INCLUDE_PLUGIN_BUNDLES_PROPERTY + "=false to exclude plugin bundles deliberately.");
         }
 
         PluginDiscovery pluginDiscovery = this.bootstrapContext.get(PluginDiscovery.class);

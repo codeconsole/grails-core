@@ -107,10 +107,10 @@ public class I18nRuntimeHintsProcessor implements BeanFactoryInitializationAotPr
     private static String toResourcePath(String basename) {
         String trimmed = basename.trim();
         if (trimmed.startsWith(CLASSPATH_PREFIX)) {
-            throw new IllegalArgumentException("Invalid " + BASENAME_PROPERTY + " entry '" + trimmed
-                    + "'. Base names are ResourceBundle names resolved from the classpath root, so the '"
-                    + CLASSPATH_PREFIX + "' prefix is not supported; use '"
-                    + trimmed.substring(CLASSPATH_PREFIX.length()) + "' instead.");
+            throw new IllegalArgumentException("Invalid " + BASENAME_PROPERTY + " entry '" + trimmed +
+                    "'. Base names are ResourceBundle names resolved from the classpath root, so the '" +
+                    CLASSPATH_PREFIX + "' prefix is not supported; use '" +
+                    trimmed.substring(CLASSPATH_PREFIX.length()) + "' instead.");
         }
         return trimmed.replace('.', '/');
     }

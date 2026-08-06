@@ -45,7 +45,6 @@ import grails.core.GrailsApplication
 import grails.plugins.GrailsPluginManager
 import grails.plugins.Plugin
 import grails.util.BuildSettings
-import grails.util.Environment
 import grails.util.GrailsUtil
 import org.grails.web.i18n.ParamsAwareLocaleChangeInterceptor
 
