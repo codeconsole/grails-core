@@ -22,6 +22,8 @@ import groovy.transform.CompileStatic
 import groovy.util.logging.Slf4j
 
 import org.springframework.aot.AotDetector
+import org.springframework.beans.factory.BeanRegistry
+import org.springframework.beans.factory.BeanRegistrar
 import org.springframework.beans.factory.config.PropertiesFactoryBean
 import org.springframework.boot.web.servlet.ServletRegistrationBean
 import org.springframework.core.io.Resource
@@ -102,6 +104,24 @@ class GroovyPagesGrailsPlugin extends Plugin {
     @Override
     void doWithApplicationContext() {
         applicationContext.getBean('groovyPagesTemplateEngine', GroovyPagesTemplateEngine).clearPageCache()
+    }
+
+    /**
+     * Tag library beans autowire by name and are read from the artefacts the application knows
+     * about, which the {@link org.springframework.beans.factory.BeanRegistry} API cannot express, so
+     * their definitions are contributed by a dedicated post-processor. Contributing them here rather
+     * than from {@code doWithSpring()} leaves the definitions an ahead-of-time image generated, and
+     * the injection generated with them, in place.
+     */
+    @Override
+    BeanRegistrar beanRegistrar() {
+        { BeanRegistry registry, org.springframework.core.env.Environment environment ->
+            registry.registerBean('tagLibBeanDefinitionsPostProcessor', TagLibBeanDefinitionsPostProcessor) {
+                it.infrastructure().supplier {
+                    new TagLibBeanDefinitionsPostProcessor(grailsApplication)
+                }
+            }
+        } as BeanRegistrar
     }
 
     /**
@@ -256,19 +276,6 @@ class GroovyPagesGrailsPlugin extends Plugin {
             // Configure a Spring MVC view resolver if none is defined
             groovyPagesPostProcessor(GroovyPagesPostProcessor)
 
-            // Now go through tag libraries and configure them in Spring too. With AOP proxies and so on
-            for (taglib in application.tagLibClasses) {
-
-                final tagLibClass = taglib.clazz
-
-                "${taglib.fullName}"(tagLibClass) { bean ->
-                    bean.autowire = true
-                    bean.lazyInit = true
-
-                    // Taglib scoping support could be easily added here. Scope could be based on a static field in the taglib class.
-                    //bean.scope = 'request'
-                }
-            }
 
             errorsViewStackTracePrinter(ErrorsViewStackTracePrinter, ref('grailsResourceLocator'))
             filteringCodecsByContentTypeSettings(FilteringCodecsByContentTypeSettings, ref('grailsApplication'))
