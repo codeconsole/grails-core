@@ -246,4 +246,46 @@ locales=fr
         and: 'and nothing is composed, because nothing was discovered'
         environment.getProperty(I18nEnvironmentPostProcessor.BASENAME_PROPERTY) == null
     }
+
+    void 'the deprecated grails.i18n.cache.seconds is translated into a cache duration'() {
+        given:
+        MockEnvironment environment = new MockEnvironment()
+        environment.setProperty('grails.gsp.enable.reload', 'true')
+        environment.setProperty('grails.i18n.cache.seconds', '30')
+
+        when:
+        new I18nEnvironmentPostProcessor(bootstrapContext)
+                .postProcessEnvironment(environment, applicationUsing(getClass().classLoader))
+
+        then: 'an application that tuned reload timing keeps working after upgrading'
+        environment.getProperty('spring.messages.cache-duration') == '30s'
+    }
+
+    void 'the deprecated property is ignored outside reload mode, as it always was'() {
+        given: 'the previous message source applied cacheSeconds only when reload was enabled'
+        MockEnvironment environment = new MockEnvironment()
+        environment.setProperty('grails.i18n.cache.seconds', '30')
+
+        when:
+        new I18nEnvironmentPostProcessor(bootstrapContext)
+                .postProcessEnvironment(environment, applicationUsing(getClass().classLoader))
+
+        then: 'honouring it in production would start re-reading bundles that were cached forever'
+        environment.getProperty('spring.messages.cache-duration') == null
+    }
+
+    void 'spring.messages.cache-duration wins over the deprecated property'() {
+        given:
+        MockEnvironment environment = new MockEnvironment()
+        environment.setProperty('grails.gsp.enable.reload', 'true')
+        environment.setProperty('grails.i18n.cache.seconds', '30')
+        environment.setProperty('spring.messages.cache-duration', '45s')
+
+        when:
+        new I18nEnvironmentPostProcessor(bootstrapContext)
+                .postProcessEnvironment(environment, applicationUsing(getClass().classLoader))
+
+        then: 'the replacement takes precedence during a partial migration'
+        environment.getProperty('spring.messages.cache-duration') == '45s'
+    }
 }

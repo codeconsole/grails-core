@@ -2284,6 +2284,14 @@ Two Grails settings are removed in favour of it:
 |`spring.messages.cache-duration`
 |===
 
+`grails.i18n.cache.seconds` is still honoured as a temporary upgrade aid: it is translated into
+`spring.messages.cache-duration` and logs a deprecation warning. As before, it applies only when reload
+is enabled, so an application that set it for development keeps the timing it had. Setting
+`spring.messages.cache-duration` explicitly always wins. Migrate before it is removed.
+
+`grails.i18n.filecache.seconds` has no replacement and is ignored: it tuned the file-timestamp re-check
+of the message source Grails used to own, which Spring Boot's has no equivalent for.
+
 `grails.i18n.availableLocales.includePlugins` is replaced by `grails.i18n.include-plugin-bundles`, which
 now governs both message resolution and the locales offered by a language selector, so the two can no
 longer disagree.

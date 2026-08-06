@@ -61,6 +61,16 @@
       "name": "grails.i18n.default.locale",
       "description": "The locale of the base message bundle, always offered by a language selector and used by the 'fixed' locale resolver. Falls back to the JVM default when unset.",
       "type": "java.lang.String"
+    },
+    {
+      "name": "grails.i18n.cache.seconds",
+      "description": "How long (in seconds) resolved message bundles are cached. Honoured only when reload is enabled, as before.",
+      "type": "java.lang.Integer",
+      "deprecation": {
+        "level": "warning",
+        "reason": "Spring Boot owns the message source; its cache duration is configured with spring.messages.cache-duration.",
+        "replacement": "spring.messages.cache-duration"
+      }
     }
   ],
   "hints": [

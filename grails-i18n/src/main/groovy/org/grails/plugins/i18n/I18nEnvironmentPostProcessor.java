@@ -25,6 +25,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import org.springframework.boot.EnvironmentPostProcessor;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.bootstrap.ConfigurableBootstrapContext;
@@ -33,6 +36,7 @@ import org.springframework.core.env.ConfigurableEnvironment;
 import org.springframework.core.env.MapPropertySource;
 import org.springframework.core.env.MutablePropertySources;
 
+import grails.config.Settings;
 import grails.util.Environment;
 import org.apache.grails.core.plugins.PluginDiscovery;
 import org.apache.grails.core.plugins.PluginInfo;
@@ -89,6 +93,8 @@ public class I18nEnvironmentPostProcessor implements EnvironmentPostProcessor, O
 
     /** Short enough to feel immediate while editing, long enough not to re-read on every lookup. */
     private static final String DEVELOPMENT_CACHE_DURATION = "5s";
+
+    private static final Logger logger = LoggerFactory.getLogger(I18nEnvironmentPostProcessor.class);
 
     private final ConfigurableBootstrapContext bootstrapContext;
 
@@ -166,10 +172,39 @@ public class I18nEnvironmentPostProcessor implements EnvironmentPostProcessor, O
         if (gspEncoding != null && !gspEncoding.isBlank()) {
             defaults.put(ENCODING_PROPERTY, gspEncoding);
         }
+        String legacyCacheDuration = legacyCacheDuration(environment);
         if (reloadEnabled(environment)) {
-            defaults.put(CACHE_DURATION_PROPERTY, DEVELOPMENT_CACHE_DURATION);
+            defaults.put(CACHE_DURATION_PROPERTY,
+                    (legacyCacheDuration != null) ? legacyCacheDuration : DEVELOPMENT_CACHE_DURATION);
         }
         return defaults;
+    }
+
+    /**
+     * Translates the removed {@code grails.i18n.cache.seconds} into a duration, easing upgrades for an
+     * application that tuned it.
+     *
+     * <p>Deliberately faithful to the old behaviour rather than to the property's name: the previous
+     * message source applied this setting <em>only</em> when reload was enabled, so honouring it in
+     * production now would quietly start re-reading bundles in applications that have cached them
+     * forever for years. The caller therefore applies the returned value only in reload mode, while the
+     * warning is emitted wherever the property is set so the migration is visible either way.</p>
+     *
+     * @return the equivalent {@code spring.messages.cache-duration}, or {@code null} when the removed
+     * property is not set
+     * @deprecated since 8.0, for removal. Configure {@code spring.messages.cache-duration} instead.
+     */
+    @Deprecated(since = "8.0", forRemoval = true)
+    @SuppressWarnings("removal")
+    private String legacyCacheDuration(ConfigurableEnvironment environment) {
+        Integer cacheSeconds = environment.getProperty(Settings.I18N_CACHE_SECONDS, Integer.class);
+        if (cacheSeconds == null) {
+            return null;
+        }
+        logger.warn("'{}' is deprecated and will be removed. Spring Boot owns the message source now, " +
+                "so use '{}={}s' instead. As before, the setting applies only when reload is enabled.",
+                Settings.I18N_CACHE_SECONDS, CACHE_DURATION_PROPERTY, cacheSeconds);
+        return cacheSeconds + "s";
     }
 
     /**
