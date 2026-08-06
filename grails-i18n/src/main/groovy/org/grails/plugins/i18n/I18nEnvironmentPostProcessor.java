@@ -33,6 +33,7 @@ import org.springframework.core.env.ConfigurableEnvironment;
 import org.springframework.core.env.MapPropertySource;
 import org.springframework.core.env.MutablePropertySources;
 
+import grails.util.Environment;
 import org.apache.grails.core.plugins.PluginDiscovery;
 import org.apache.grails.core.plugins.PluginInfo;
 
@@ -82,6 +83,13 @@ public class I18nEnvironmentPostProcessor implements EnvironmentPostProcessor, O
 
     private static final String GSP_ENCODING_PROPERTY = "grails.views.gsp.encoding";
 
+    private static final String GSP_ENABLE_RELOAD_PROPERTY = "grails.gsp.enable.reload";
+
+    private static final String CACHE_DURATION_PROPERTY = "spring.messages.cache-duration";
+
+    /** Short enough to feel immediate while editing, long enough not to re-read on every lookup. */
+    private static final String DEVELOPMENT_CACHE_DURATION = "5s";
+
     private final ConfigurableBootstrapContext bootstrapContext;
 
     I18nEnvironmentPostProcessor(ConfigurableBootstrapContext bootstrapContext) {
@@ -95,6 +103,13 @@ public class I18nEnvironmentPostProcessor implements EnvironmentPostProcessor, O
 
     @Override
     public void postProcessEnvironment(ConfigurableEnvironment environment, SpringApplication application) {
+        MutablePropertySources propertySources = environment.getPropertySources();
+
+        // Contributed even when nothing was discovered: an application may point
+        // spring.messages.basename at a bundle outside grails-app/i18n and so have a message source
+        // but no descriptor, and Grails' documented defaults should still apply to it.
+        propertySources.addLast(new MapPropertySource(DEFAULTS_PROPERTY_SOURCE_NAME, defaults(environment)));
+
         List<I18nDescriptor> descriptors = I18nDescriptors.load(application.getClassLoader());
         if (descriptors.isEmpty()) {
             return;
@@ -104,9 +119,6 @@ public class I18nEnvironmentPostProcessor implements EnvironmentPostProcessor, O
                 Boolean.TRUE);
         EffectiveI18nDescriptors effective = EffectiveI18nDescriptors.of(descriptors,
                 pluginNamesInTopologicalOrder(environment, descriptors, includePluginBundles), includePluginBundles);
-
-        MutablePropertySources propertySources = environment.getPropertySources();
-        propertySources.addLast(new MapPropertySource(DEFAULTS_PROPERTY_SOURCE_NAME, defaults(environment)));
 
         List<String> composed = compose(environment, effective.basenames());
         if (!composed.isEmpty()) {
@@ -154,7 +166,28 @@ public class I18nEnvironmentPostProcessor implements EnvironmentPostProcessor, O
         if (gspEncoding != null && !gspEncoding.isBlank()) {
             defaults.put(ENCODING_PROPERTY, gspEncoding);
         }
+        if (reloadEnabled(environment)) {
+            defaults.put(CACHE_DURATION_PROPERTY, DEVELOPMENT_CACHE_DURATION);
+        }
         return defaults;
+    }
+
+    /**
+     * Whether bundles should be re-read while the application runs.
+     *
+     * <p>Without a cache duration {@code ResourceBundleMessageSource} caches every bundle forever in a
+     * map of its own — "cache forever: prefer locale cache over repeated getBundle calls" — which
+     * {@code ResourceBundle.clearCache} cannot reach. Editing a bundle would then have no effect until
+     * a restart, where the message source Grails used previously reloaded automatically in development.
+     * Setting a short duration switches Spring to a fresh {@code ResourceBundle.getBundle} per lookup,
+     * which honours both the time-to-live and an explicit cache flush.</p>
+     *
+     * <p>Contributed at the lowest precedence, so an application that sets
+     * {@code spring.messages.cache-duration} itself still wins.</p>
+     */
+    private boolean reloadEnabled(ConfigurableEnvironment environment) {
+        return Environment.getCurrent().isReloadEnabled() ||
+                environment.getProperty(GSP_ENABLE_RELOAD_PROPERTY, Boolean.class, Boolean.FALSE);
     }
 
     /**

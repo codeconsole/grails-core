@@ -2350,6 +2350,9 @@ instead of a `ClassLoader`; most applications simply rely on the one Grails regi
 
 ===== Reloading during development
 
-Editing a value in an existing bundle still reloads without a restart. Adding or removing a base name
-now needs a restart, because Spring Boot reads the configured base names once when it builds the message
-source.
+Editing a value in an existing bundle still reloads without a restart: Grails contributes a short
+`spring.messages.cache-duration` when reload is enabled, in place of the `grails.i18n.cache.seconds` it
+used to apply to its own message source.
+
+Adding or removing a base name now needs a restart, because Spring Boot reads the configured base names
+once when it builds the message source.

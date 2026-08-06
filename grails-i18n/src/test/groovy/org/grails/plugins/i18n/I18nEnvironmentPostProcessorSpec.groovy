@@ -190,4 +190,60 @@ locales=fr
         IllegalStateException e = thrown()
         e.message.contains(I18nEnvironmentPostProcessor.INCLUDE_PLUGIN_BUNDLES_PROPERTY)
     }
+    void 'a short cache duration is contributed when reload is enabled'() {
+        given:
+        MockEnvironment environment = new MockEnvironment()
+        environment.setProperty('grails.gsp.enable.reload', 'true')
+
+        when:
+        new I18nEnvironmentPostProcessor(bootstrapContext)
+                .postProcessEnvironment(environment, applicationUsing(getClass().classLoader))
+
+        then: "without it ResourceBundleMessageSource caches bundles forever in a map ResourceBundle.clearCache cannot reach"
+        environment.getProperty('spring.messages.cache-duration') == '5s'
+    }
+
+    void 'an application that sets its own cache duration keeps it'() {
+        given:
+        MockEnvironment environment = new MockEnvironment()
+        environment.setProperty('grails.gsp.enable.reload', 'true')
+        environment.setProperty('spring.messages.cache-duration', '30s')
+
+        when:
+        new I18nEnvironmentPostProcessor(bootstrapContext)
+                .postProcessEnvironment(environment, applicationUsing(getClass().classLoader))
+
+        then: 'the development default lands at the lowest precedence'
+        environment.getProperty('spring.messages.cache-duration') == '30s'
+    }
+
+    void 'no cache duration is forced when reload is not enabled'() {
+        given:
+        MockEnvironment environment = new MockEnvironment()
+
+        when:
+        new I18nEnvironmentPostProcessor(bootstrapContext)
+                .postProcessEnvironment(environment, applicationUsing(getClass().classLoader))
+
+        then: 'production keeps Boot\'s cache-forever behaviour'
+        environment.getProperty('spring.messages.cache-duration') == null
+    }
+
+    void 'Grails defaults apply even to an application with no descriptor at all'() {
+        given: 'spring.messages.basename may point outside grails-app/i18n, so there is no descriptor'
+        MockEnvironment environment = new MockEnvironment()
+        environment.setProperty('grails.views.gsp.encoding', 'ISO-8859-1')
+        ClassLoader empty = new URLClassLoader([] as URL[], null)
+
+        when:
+        new I18nEnvironmentPostProcessor(bootstrapContext)
+                .postProcessEnvironment(environment, applicationUsing(empty))
+
+        then: 'Boot would otherwise fall back to its own defaults, contradicting documented behaviour'
+        environment.getProperty('spring.messages.fallback-to-system-locale') == 'false'
+        environment.getProperty('spring.messages.encoding') == 'ISO-8859-1'
+
+        and: 'and nothing is composed, because nothing was discovered'
+        environment.getProperty(I18nEnvironmentPostProcessor.BASENAME_PROPERTY) == null
+    }
 }

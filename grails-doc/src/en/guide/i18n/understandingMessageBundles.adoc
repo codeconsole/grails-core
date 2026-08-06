@@ -88,8 +88,9 @@ Set `grails.i18n.include-plugin-bundles` to `false` to leave plugin bundles out 
 
 ==== Reloading during development
 
-Editing a value in an existing bundle is picked up without a restart, given a short
-`spring.messages.cache-duration`.
+Editing a value in an existing bundle is picked up without a restart. Grails contributes a short
+`spring.messages.cache-duration` automatically when reload is enabled; without one Spring caches every
+bundle for the lifetime of the application. Set the property yourself to override the duration.
 
 Adding a locale file for a base name that already exists resolves without a restart too, though the
 language selector described in <<changingLocales>> only lists it once the build has regenerated its
