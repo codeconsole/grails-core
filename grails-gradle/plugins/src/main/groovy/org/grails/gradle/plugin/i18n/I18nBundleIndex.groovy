@@ -72,6 +72,13 @@ final class I18nBundleIndex implements Serializable {
     /** Bundle file extension; the only extension {@code ResourceBundleMessageSource} reads from the classpath. */
     static final String PROPERTIES_SUFFIX = '.properties'
 
+    /**
+     * Appended to every failure so the reader can find the full rationale rather than re-deriving the
+     * naming rules from a one-line error.
+     */
+    static final String UPGRADE_REFERENCE =
+            "See 'Message Bundles Resolved by Spring Boot' in the Grails 8 upgrade guide."
+
     private static final Set<String> ISO_LANGUAGES = Locale.getISOLanguages().toList().toSet().asImmutable()
 
     private static final Set<String> ISO_COUNTRIES = Locale.getISOCountries().toList().toSet().asImmutable()
@@ -130,7 +137,8 @@ Cannot classify i18n bundle '${stem}${PROPERTIES_SUFFIX}'. It reads as base name
 locale suffix '${suffix}', but '${suffix}' is not a valid locale (expected language(_COUNTRY(_variant)) \
 using ISO codes).
 If '${suffix}' is a mistyped locale, correct it. If '${stem}' is genuinely a separate base name, declare it:
-    grails { i18n { basenames = ['${owner}', '${stem}'] } }""")
+    grails { i18n { basenames = ['${owner}', '${stem}'] } }
+${UPGRADE_REFERENCE}""")
                 }
                 locales << suffix
                 continue
@@ -207,7 +215,8 @@ If '${suffix}' is a mistyped locale, correct it. If '${stem}' is genuinely a sep
 No locale-independent bundle for ${missing.collect { "'${it}${PROPERTIES_SUFFIX}'" }.join(', ')}. \
 Spring Boot's message-source auto-configuration requires a base bundle without a locale suffix, and \
 backs off entirely without one — leaving the application with no messageSource bean.
-Add the missing file, or rename the locale-specific bundle if its base name was not what you intended.""")
+Add the missing file, or rename the locale-specific bundle if its base name was not what you intended.
+${UPGRADE_REFERENCE}""")
         }
     }
 }

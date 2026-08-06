@@ -167,7 +167,11 @@ ${offenders.collect { "'${it}${I18nBundleIndex.PROPERTIES_SUFFIX}'" }.join(', ')
 A plugin's base names must be '${pluginName}' or '${pluginName}-*' so they cannot collide with an \
 application's bundles or another plugin's. Spring resolves a base name to the first match on the \
 classpath, so a colliding bundle is silently shadowed rather than merged.
-Rename to, for example, '${pluginName}-${offenders.first()}${I18nBundleIndex.PROPERTIES_SUFFIX}'.""")
+Rename '${offenders.first()}${I18nBundleIndex.PROPERTIES_SUFFIX}' to \
+'${pluginName}${I18nBundleIndex.PROPERTIES_SUFFIX}', or to \
+'${pluginName}-<name>${I18nBundleIndex.PROPERTIES_SUFFIX}' if the plugin ships more than one bundle. \
+Locale variants follow the base name, so '${pluginName}_fr${I18nBundleIndex.PROPERTIES_SUFFIX}'.
+${I18nBundleIndex.UPGRADE_REFERENCE}""")
         }
     }
 }

@@ -2317,6 +2317,14 @@ application's. Rename it into the plugin's namespace.
 
 Applications are unaffected — there is only one application, so its base names cannot collide.
 
+A namespaced bundle still works under Grails 7, so a plugin does not need a separate source branch to
+support both. Grails 7 discovers a plugin's bundles by scanning the plugin jar's root for
+`*.properties` and matching locale suffixes; it never inspects the base name, so
+`spring-security-core.properties` and `spring-security-core_fr.properties` are found exactly as
+`messages.properties` was. The `spring-security-core` plugin has shipped this layout for years. Rename
+once, and the same source builds for both: Grails 7 finds the bundles by scanning, Grails 8 through the
+generated descriptor.
+
 ===== Every bundle needs a locale-independent file
 
 Spring Boot's auto-configuration only activates when a configured base name has a bundle without a
