@@ -30,6 +30,7 @@ import org.openjdk.jmh.annotations.Measurement;
 import org.openjdk.jmh.annotations.Mode;
 import org.openjdk.jmh.annotations.OutputTimeUnit;
 import org.openjdk.jmh.annotations.Scope;
+import org.openjdk.jmh.annotations.Setup;
 import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.annotations.Threads;
 import org.openjdk.jmh.annotations.Warmup;
@@ -57,6 +58,19 @@ public class GroovyPageParserBenchmark {
                 <g:each in=\"${books}\" var=\"book\"><p>${book.name}</p></g:each>
             </section>
             """;
+
+    @Setup
+    public void setup() throws IOException {
+        byte[] smallSource = parse("small.gsp", SMALL_TEMPLATE);
+        byte[] taggedSource = parse("tagged.gsp", TAGGED_TEMPLATE);
+        if (smallSource.length <= 100 || taggedSource.length <= 100) {
+            throw new IllegalStateException("GSP parser fixture generated insufficient source");
+        }
+        String taggedText = new String(taggedSource, StandardCharsets.UTF_8);
+        if (!taggedText.contains("invokeTag('link','g'") || !taggedText.contains("for( book in ")) {
+            throw new IllegalStateException("GSP parser tagged fixture did not generate expected tag output");
+        }
+    }
 
     @Benchmark
     public byte[] parseSmallTemplate() throws IOException {
