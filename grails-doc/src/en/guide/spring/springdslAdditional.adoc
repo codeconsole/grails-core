@@ -113,9 +113,6 @@ NOTE: If you define a bean in `resources.groovy` with the same name as one previ
 
 Beans can also be configured using a `grails-app/conf/spring/resources.xml`. In earlier versions of Grails this file was automatically generated for you by the `run-app` script, but the DSL in `resources.groovy` is the preferred approach now so it isn't automatically generated now. But it is still supported - you just need to create it yourself.
 
-In Grails 8, `resources.xml` remains supported for backward compatibility on Spring Framework 7.
-For new bean definitions, prefer `resources.groovy`; BeanBuilder registers standard Spring bean definitions programmatically and only initializes Spring XML infrastructure when XML imports or Spring XML namespaces are used.
-
 This file is typical Spring XML file and the Spring documentation has an {springreference}core/beans/introduction.html[excellent reference] on how to configure Spring beans.
 
 The `myBean` bean that we configured using the DSL would be configured with this syntax in the XML file:
