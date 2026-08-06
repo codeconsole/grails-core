@@ -1,0 +1,74 @@
+/*
+ *  Licensed to the Apache Software Foundation (ASF) under one
+ *  or more contributor license agreements.  See the NOTICE file
+ *  distributed with this work for additional information
+ *  regarding copyright ownership.  The ASF licenses this file
+ *  to you under the Apache License, Version 2.0 (the
+ *  "License"); you may not use this file except in compliance
+ *  with the License.  You may obtain a copy of the License at
+ *
+ *    https://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing,
+ *  software distributed under the License is distributed on an
+ *  "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ *  KIND, either express or implied.  See the License for the
+ *  specific language governing permissions and limitations
+ *  under the License.
+ */
+package org.grails.spring.beans.aot
+
+import org.springframework.aot.hint.MemberCategory
+import org.springframework.aot.hint.RuntimeHints
+import org.springframework.aot.hint.TypeReference
+import spock.lang.Specification
+
+/**
+ * Covers the framework's closures being found while the hints are written, rather than named one by
+ * one. Groovy reads {@code doCall}'s parameter types to choose an overload, so a closure missing
+ * from an image fails where it is used rather than at start-up.
+ */
+class GrailsClosureRuntimeHintsSpec extends Specification {
+
+    RuntimeHints hints = new RuntimeHints()
+
+    private List<String> registeredTypes() {
+        hints.reflection().typeHints().collect { it.type.name }
+    }
+
+    void 'the framework closures on the classpath are registered'() {
+        when:
+            new GrailsClosureRuntimeHints().registerHints(hints, getClass().classLoader)
+
+        then: 'this module alone ships plenty, so a scan that found nothing would be broken'
+            registeredTypes().count { it.contains('_closure') } > 0
+    }
+
+    void 'a registered closure can have its parameter types read'() {
+        given:
+            new GrailsClosureRuntimeHints().registerHints(hints, getClass().classLoader)
+
+        when:
+            def closure = registeredTypes().find { it.contains('_closure') }
+            def hint = hints.reflection().getTypeHint(TypeReference.of(closure))
+
+        then: 'that is the access Groovy needs to select an overload'
+            hint.memberCategories.contains(MemberCategory.INVOKE_DECLARED_METHODS)
+    }
+
+    void 'only framework closures are registered'() {
+        when:
+            new GrailsClosureRuntimeHints().registerHints(hints, getClass().classLoader)
+
+        then: 'an application registers its own; this must not reach outside the framework'
+            registeredTypes().every { it.startsWith('grails.') || it.startsWith('org.grails.') }
+    }
+
+    void 'a class loader that resolves nothing yields no hints rather than failing'() {
+        when:
+            new GrailsClosureRuntimeHints().registerHints(hints, new URLClassLoader(new URL[0], null))
+
+        then:
+            noExceptionThrown()
+    }
+}
