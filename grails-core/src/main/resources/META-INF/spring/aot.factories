@@ -5,4 +5,5 @@ org.springframework.aot.hint.RuntimeHintsRegistrar=\
 org.grails.spring.beans.aot.GrailsClosureRuntimeHints
 
 org.springframework.beans.factory.aot.BeanRegistrationAotProcessor=\
-org.grails.spring.beans.aot.AutowireModeBeanRegistrationAotProcessor
+org.grails.spring.beans.aot.AutowireModeBeanRegistrationAotProcessor,\
+org.grails.spring.beans.aot.VarargsBeanRegistrationAotProcessor
