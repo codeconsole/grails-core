@@ -21,6 +21,7 @@ package org.grails.plugins.web
 import groovy.transform.CompileStatic
 import groovy.util.logging.Slf4j
 
+import org.springframework.aot.AotDetector
 import org.springframework.beans.factory.config.PropertiesFactoryBean
 import org.springframework.boot.web.servlet.ServletRegistrationBean
 import org.springframework.core.io.Resource
@@ -166,7 +167,12 @@ class GroovyPagesGrailsPlugin extends Plugin {
                 }
             }
 
-            def deployed = !Metadata.getCurrent().isDevelopmentEnvironmentAvailable()
+            // An ahead-of-time image reads the pages compiled at build time whatever its
+            // surroundings suggest. It can be run from the directory it was built in, where a
+            // development environment is available, and it still cannot compile a page: defining a
+            // class at run time is what such an image gives up.
+            def deployed = !Metadata.getCurrent().isDevelopmentEnvironmentAvailable() ||
+                    AotDetector.useGeneratedArtifacts()
             groovyPageLocator(CachingGrailsConventionGroovyPageLocator) { bean ->
                 bean.lazyInit = true
                 if (customResourceLoader) {

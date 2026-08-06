@@ -91,9 +91,22 @@ public class TagLibRuntimeHints implements RuntimeHintsRegistrar {
         return all;
     }
 
+    /**
+     * Types the plugin descriptors call. A descriptor is Groovy, so even a static call on a utility
+     * class is dispatched dynamically and needs the class to survive.
+     */
+    private static final String[] CALLED_FROM_DESCRIPTORS = {
+            "org.springframework.aot.AotDetector"
+    };
+
     @Override
     public void registerHints(RuntimeHints hints, @Nullable ClassLoader classLoader) {
         ClassLoader loader = (classLoader != null) ? classLoader : ClassUtils.getDefaultClassLoader();
+        for (String type : CALLED_FROM_DESCRIPTORS) {
+            hints.reflection().registerTypeIfPresent(loader, type,
+                    MemberCategory.INVOKE_DECLARED_METHODS,
+                    MemberCategory.INVOKE_PUBLIC_METHODS);
+        }
         ResourcePatternResolver resolver = new PathMatchingResourcePatternResolver(loader);
         MetadataReaderFactory metadataReaderFactory = new CachingMetadataReaderFactory(resolver);
         int registered = 0;

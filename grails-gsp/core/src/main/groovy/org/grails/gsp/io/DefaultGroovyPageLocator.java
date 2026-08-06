@@ -47,6 +47,8 @@ import grails.plugins.GrailsPluginManager;
 import grails.plugins.PluginManagerAware;
 import grails.util.CollectionUtils;
 import grails.util.Environment;
+
+import org.springframework.aot.AotDetector;
 import org.grails.gsp.GroovyPage;
 import org.grails.gsp.GroovyPageBinding;
 import org.grails.io.support.GrailsResourceUtils;
@@ -410,8 +412,30 @@ public class DefaultGroovyPageLocator implements GroovyPageLocator, ResourceLoad
         return foundResource;
     }
 
+    /**
+     * Whether the pages compiled at build time should be used.
+     *
+     * <p>They are skipped in development so that editing a page takes effect without a restart, and
+     * that is decided by whether the application looks like a project on disk. An ahead-of-time
+     * image can look like one -- it is a single executable that may be run from anywhere, including
+     * the directory it was built in -- but it cannot compile a page at run time, because it cannot
+     * define a class at all. Reading the sources there renders nothing, so the compiled pages are
+     * used whatever the surroundings suggest.</p>
+     */
     private boolean isPrecompiledAvailable() {
-        return precompiledGspMap != null && precompiledGspMap.size() > 0 && !Environment.isDevelopmentMode();
+        if (precompiledGspMap == null || precompiledGspMap.isEmpty()) {
+            return false;
+        }
+        return !isDevelopmentMode() || AotDetector.useGeneratedArtifacts();
+    }
+
+    /**
+     * Whether the application is being developed, which is decided by whether it looks like a project
+     * on disk. Overridable because that is derived from the working directory when the class is
+     * loaded, and so cannot be varied any other way.
+     */
+    protected boolean isDevelopmentMode() {
+        return Environment.isDevelopmentMode();
     }
 
     public void setApplicationContext(ApplicationContext applicationContext) throws BeansException {
