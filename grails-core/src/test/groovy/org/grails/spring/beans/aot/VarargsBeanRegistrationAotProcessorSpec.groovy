@@ -23,6 +23,7 @@ import org.springframework.aot.generate.DefaultGenerationContext
 import org.springframework.aot.generate.GeneratedFiles
 import org.springframework.aot.generate.InMemoryGeneratedFiles
 import org.springframework.beans.factory.config.RuntimeBeanReference
+import org.springframework.beans.factory.support.AbstractBeanDefinition
 import org.springframework.beans.factory.support.RootBeanDefinition
 import org.springframework.context.aot.ApplicationContextAotGenerator
 import org.springframework.context.support.GenericApplicationContext
@@ -49,8 +50,10 @@ class VarargsBeanRegistrationAotProcessorSpec extends Specification {
     }
 
     /** The generated source for a context holding one bean with the given constructor arguments. */
-    private String generatedSourceFor(Class<?> beanClass, List<Object> arguments) {
+    private String generatedSourceFor(Class<?> beanClass, List<Object> arguments,
+                                      int autowireMode = AbstractBeanDefinition.AUTOWIRE_NO) {
         RootBeanDefinition definition = new RootBeanDefinition(beanClass)
+        definition.autowireMode = autowireMode
         arguments.each { definition.constructorArgumentValues.addGenericArgumentValue(it) }
         context.registerBeanDefinition('subject', definition)
 
@@ -119,6 +122,16 @@ class VarargsBeanRegistrationAotProcessorSpec extends Specification {
         then: 'gathering it would turn an argument that is missed into one that is wrong'
             generated.contains('addGenericArgumentValue("java.lang.String")')
             !generated.contains('new Class[]')
+    }
+
+    void 'a bean that is also autowired keeps both contributions'() {
+        when: 'two processors decorate the same generated properties, one after the other'
+            String generated = generatedSourceFor(Registration, ['*.gsp'],
+                    AbstractBeanDefinition.AUTOWIRE_BY_NAME)
+
+        then: 'neither displaces the other'
+            generated.contains('new String[] {"*.gsp"}')
+            generated.contains("setAutowireMode(${AbstractBeanDefinition.AUTOWIRE_BY_NAME})")
     }
 
     void 'a bean built with no arguments is untouched'() {
