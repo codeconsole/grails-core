@@ -277,3 +277,29 @@ be enabled (`grails.mongodb.transactional = true`). Spring Data repositories are
 session are shared, and the two object-mapping models stay separate. See the
 link:{mongodb5Guide}index.html#springDataInterop[Spring Data MongoDB Interoperability] section of the GORM for MongoDB
 guide for details.
+
+==== Message Bundles Resolved by Spring Boot
+
+Internationalization now runs on Spring Boot's own `MessageSourceAutoConfiguration`. Grails' custom
+message source is gone, and with it the `classpath*:*.properties` scan it performed at start-up.
+
+The base names Spring Boot needs are recorded at build time, per application and per plugin, so the
+whole `spring.messages.*` surface works as it does in any Boot application:
+
+[source,yaml]
+----
+spring:
+    messages:
+        cache-duration: 5s
+        use-code-as-default-message: true
+----
+
+Those properties were previously ignored, because Grails' own message source claimed the bean.
+
+Because discovery no longer scans, the message bundles an application and its plugins ship are known
+ahead of time. Grails registers the GraalVM resource hints for them — including plugin bundles and any
+base name an application configures itself, neither of which Spring Boot's own registrar covers.
+
+Plugin message bundles must now be namespaced on the plugin name — `spring-security-core.properties`
+rather than `messages.properties` — so that two plugins cannot shadow one another. See
+<<upgrading80x>> for the details.

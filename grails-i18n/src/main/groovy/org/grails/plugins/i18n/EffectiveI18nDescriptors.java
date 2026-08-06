@@ -25,6 +25,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import org.apache.grails.core.plugins.PluginUtils;
+
 /**
  * The message bundles that actually participate, in the order Spring Boot should consult them.
  *
@@ -81,14 +83,18 @@ public final class EffectiveI18nDescriptors {
                 applications.add(descriptor);
             }
             else {
-                pluginDescriptors.put(descriptor.name(), descriptor);
+                // Descriptors record the hyphenated plugin name, matching the bundle base-name
+                // convention (spring-security-core), while a discovered plugin reports the logical
+                // camel-case form (springSecurityCore). Normalising both sides is what lets the two
+                // meet; comparing them raw silently drops every multi-word plugin's bundles.
+                pluginDescriptors.put(PluginUtils.normalizePluginName(descriptor.name()), descriptor);
             }
         }
 
         List<I18nDescriptor> effectivePlugins = new ArrayList<>();
         if (includePluginBundles) {
             for (String pluginName : pluginNamesInTopologicalOrder) {
-                I18nDescriptor descriptor = pluginDescriptors.get(pluginName);
+                I18nDescriptor descriptor = pluginDescriptors.get(PluginUtils.normalizePluginName(pluginName));
                 if (descriptor != null) {
                     effectivePlugins.add(descriptor);
                 }

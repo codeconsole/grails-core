@@ -2255,3 +2255,91 @@ resolved unambiguously before can become ambiguous.
 
 Removing the packages from `grails.spring.bean.packages`, or the stray classes from those packages, restores
 the previous set of beans.
+
+==== 45. Message Bundles Resolved by Spring Boot
+
+Grails no longer registers a `messageSource` bean. Spring Boot's `MessageSourceAutoConfiguration`
+supplies a standard `ResourceBundleMessageSource`, and Grails contributes only the base-name list, which
+it records at build time rather than discovering by scanning the classpath at runtime.
+
+Most applications need no change. The rest of this section covers the cases that do.
+
+===== `spring.messages.*` is now the configuration surface
+
+`spring.messages.*` was previously ignored, because Grails' own message source claimed the bean name and
+Boot's auto-configuration backed off. It is now honoured in full — `encoding`, `cache-duration`,
+`fallback-to-system-locale`, `always-use-message-format`, `use-code-as-default-message` and
+`common-messages`.
+
+Two Grails settings are removed in favour of it:
+
+[cols="1,1"]
+|===
+|Removed |Replacement
+
+|`grails.i18n.cache.seconds`
+|`spring.messages.cache-duration`
+
+|`grails.i18n.filecache.seconds`
+|`spring.messages.cache-duration`
+|===
+
+`grails.i18n.availableLocales.includePlugins` is replaced by `grails.i18n.include-plugin-bundles`, which
+now governs both message resolution and the locales offered by a language selector, so the two can no
+longer disagree.
+
+===== Plugin authors: base names must be namespaced
+
+A plugin's message bundle base names must be its plugin name, or that name followed by a hyphen and a
+suffix:
+
+[source]
+----
+grails-app/i18n/spring-security-core.properties            <1>
+grails-app/i18n/spring-security-core_fr.properties
+grails-app/i18n/spring-security-core-validation.properties <2>
+----
+<1> the plugin's own name
+<2> further bundles inside its namespace
+
+The plugin build fails otherwise. A plugin shipping `messages.properties` used to contribute messages as
+a fallback behind the application's own bundle; Spring resolves a base name to the first matching
+resource on the classpath, so such a bundle would now silently shadow, or be shadowed by, the
+application's. Rename it into the plugin's namespace.
+
+Applications are unaffected — there is only one application, so its base names cannot collide.
+
+===== Every bundle needs a locale-independent file
+
+Spring Boot's auto-configuration only activates when a configured base name has a bundle without a
+locale suffix, and it contributes the whole `messageSource` bean. An application shipping only
+`messages_de.properties` would therefore have had no message source at all, so the build now rejects it.
+
+===== Ambiguous base names must be declared
+
+A base name ending in a valid locale identifier is ambiguous: `api_fr.properties` reads as base name
+`api` in French. Likewise `api_errors.properties` alongside `api.properties` reads as a mistyped locale
+variant of `api`. Both fail the build; declare the base name when the inference is wrong:
+
+[source,groovy]
+----
+grails {
+    i18n {
+        basenames = ['api', 'api_errors']
+    }
+}
+----
+
+===== `PluginAwareResourceBundleMessageSource` removed
+
+`org.grails.spring.context.support.PluginAwareResourceBundleMessageSource` and the Grails fork of
+`ReloadableResourceBundleMessageSource` beside it are removed. Code that injected `MessageSource` is
+unaffected. Code that cast the bean to either type, or called `getBundleCodes()`, must be updated —
+inject `MessageSource` and use its interface, or declare your own bean, which Boot's auto-configuration
+backs off from.
+
+===== Reloading during development
+
+Editing a value in an existing bundle still reloads without a restart. Adding or removing a base name
+now needs a restart, because Spring Boot reads the configured base names once when it builds the message
+source.

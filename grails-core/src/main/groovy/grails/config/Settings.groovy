@@ -392,9 +392,15 @@ interface Settings {
 
     String DATE_LENIENT_PARSING = 'grails.databinding.dateParsingLenient'
 
-    String I18N_CACHE_SECONDS = 'grails.i18n.cache.seconds'
-
-    String I18N_FILE_CACHE_SECONDS = 'grails.i18n.filecache.seconds'
+    /**
+     * Whether message bundles contributed by plugins participate, both in message resolution and in
+     * the locales offered by a language selector. Defaults to {@code true}.
+     *
+     * <p>Bundle caching, encoding and locale fallback are Spring Boot's {@code spring.messages.*}
+     * properties; {@code grails.i18n.cache.seconds} and {@code grails.i18n.filecache.seconds} were
+     * removed in favour of {@code spring.messages.cache-duration}.</p>
+     */
+    String I18N_INCLUDE_PLUGIN_BUNDLES = 'grails.i18n.include-plugin-bundles'
 
     /**
      * The locale resolution strategy: {@code session} (default), {@code cookie},
