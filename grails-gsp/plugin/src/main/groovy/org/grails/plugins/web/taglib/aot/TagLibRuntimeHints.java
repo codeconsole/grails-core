@@ -20,6 +20,8 @@ package org.grails.plugins.web.taglib.aot;
 
 import java.io.IOException;
 
+import org.grails.aot.RegistrableTypes;
+
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
@@ -71,19 +73,6 @@ public class TagLibRuntimeHints implements RuntimeHintsRegistrar {
             ResourcePatternResolver.CLASSPATH_ALL_URL_PREFIX + "org/grails/buffer/**/*.class"
     };
 
-    /**
-     * Whether the type, and the class declaring it, resolve on this classpath. The JSP integration
-     * is compiled against an API an application need not have, and registering a type the analysis
-     * then cannot parse fails the build rather than degrading at run time.
-     */
-    private boolean resolves(String className, ClassLoader loader) {
-        int declaring = className.indexOf("$");
-        if (declaring > 0 && !ClassUtils.isPresent(className.substring(0, declaring), loader)) {
-            return false;
-        }
-        return ClassUtils.isPresent(className, loader);
-    }
-
     private static String[] patterns() {
         String[] all = new String[RUNTIME_PATTERNS.length + 1];
         System.arraycopy(RUNTIME_PATTERNS, 0, all, 0, RUNTIME_PATTERNS.length);
@@ -128,7 +117,7 @@ public class TagLibRuntimeHints implements RuntimeHintsRegistrar {
                 catch (IOException | RuntimeException ex) {
                     continue;
                 }
-                if (!resolves(className, loader)) {
+                if (!RegistrableTypes.loads(className, loader)) {
                     continue;
                 }
                 // declared rather than public throughout: a tag's body may call a private helper on

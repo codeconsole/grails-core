@@ -20,6 +20,8 @@ package org.grails.datastore.gorm.aot;
 
 import java.io.IOException;
 
+import org.grails.aot.RegistrableTypes;
+
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
@@ -92,7 +94,7 @@ public class GormRuntimeHints implements RuntimeHintsRegistrar {
                 catch (IOException | RuntimeException ex) {
                     continue;
                 }
-                if (!resolves(className, loader)) {
+                if (!RegistrableTypes.loads(className, loader)) {
                     continue;
                 }
                 hints.reflection().registerTypeIfPresent(loader, className,
@@ -107,16 +109,4 @@ public class GormRuntimeHints implements RuntimeHintsRegistrar {
         logger.debug("Registered " + registered + " persistence runtime types for reflection");
     }
 
-    /**
-     * Whether the type, and the class declaring it, resolve here. A datastore compiles against a
-     * driver an application need not have, and registering a type the image analysis then cannot
-     * parse fails the build rather than degrading at run time.
-     */
-    private boolean resolves(String className, ClassLoader loader) {
-        int declaring = className.indexOf('$');
-        if (declaring > 0 && !ClassUtils.isPresent(className.substring(0, declaring), loader)) {
-            return false;
-        }
-        return ClassUtils.isPresent(className, loader);
-    }
 }
