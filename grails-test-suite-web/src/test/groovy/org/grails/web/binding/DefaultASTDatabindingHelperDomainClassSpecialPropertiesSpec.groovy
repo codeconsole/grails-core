@@ -37,7 +37,7 @@ class DefaultASTDatabindingHelperDomainClassSpecialPropertiesSpec extends
     def setup() {
         ConstraintEvalUtils.clearDefaultConstraints()
         originalConfig = Holders.config
-        Holders.setConfig(new PropertySourcesConfig([(Settings.LEGACY_BINDABLE_DEFAULT): false]))
+        Holders.setConfig(new PropertySourcesConfig([(Settings.DATABINDING_DENY_BY_DEFAULT): true]))
         grails.web.databinding.DataBindingUtils.clearBindingCaches()
         grails.web.databinding.GrailsWebDataBinder.resetWarnedBindingShapes()
     }

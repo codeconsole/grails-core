@@ -26,7 +26,7 @@ import org.grails.config.PropertySourcesConfig
 import spock.lang.Specification
 import spock.lang.Unroll
 
-class LegacyBindableDefaultConfigSpec extends Specification {
+class DenyByDefaultConfigSpec extends Specification {
 
     private Config originalConfig
     private Object originalApplication
@@ -46,47 +46,47 @@ class LegacyBindableDefaultConfigSpec extends Specification {
     }
 
     @Unroll
-    void 'flat configuration value #configuredValue binds according to the compatibility setting'() {
+    void 'flat deny-by-default configuration value #configuredValue controls secure binding'() {
         given:
         if (configuredValue != null) {
-            Holders.setConfig(new PropertySourcesConfig([(Settings.LEGACY_BINDABLE_DEFAULT): configuredValue]))
+            Holders.setConfig(new PropertySourcesConfig([(Settings.DATABINDING_DENY_BY_DEFAULT): configuredValue]))
         } else {
             Holders.setConfig(new PropertySourcesConfig([:]))
         }
-        def target = new LegacyBindableTarget()
+        def target = new DenyByDefaultTarget()
 
         when:
         new GrailsWebDataBinder(Holders.findApplication()).bind(
-                target, new SimpleMapDataBindingSource([allowed: 'allowed', legacy: 'legacy']))
+                target, new SimpleMapDataBindingSource([allowed: 'allowed', compatibilityProperty: 'compatibility']))
 
         then:
         target.allowed == 'allowed'
-        target.legacy == expectedLegacyValue
+        target.compatibilityProperty == expectedCompatibilityValue
 
         where:
-        configuredValue || expectedLegacyValue
-        null            || 'legacy'
-        true            || 'legacy'
-        'true'          || 'legacy'
-        false           || null
-        'false'         || null
-        'FALSE'         || null
-        ' false '       || null
+        configuredValue || expectedCompatibilityValue
+        null            || 'compatibility'
+        false           || 'compatibility'
+        'false'         || 'compatibility'
+        'FALSE'         || 'compatibility'
+        ' false '       || 'compatibility'
+        true            || null
+        'true'          || null
     }
 
     @Unroll
     void 'unrecognised configuration value #configuredValue fails closed through the public binding API'() {
         given:
-        Holders.setConfig(new PropertySourcesConfig([(Settings.LEGACY_BINDABLE_DEFAULT): configuredValue]))
-        def target = new LegacyBindableTarget()
+        Holders.setConfig(new PropertySourcesConfig([(Settings.DATABINDING_DENY_BY_DEFAULT): configuredValue]))
+        def target = new DenyByDefaultTarget()
 
         when:
         DataBindingUtils.bindObjectToDomainInstance(
-                null, target, [allowed: 'allowed', legacy: 'legacy'], null, null, null)
+                null, target, [allowed: 'allowed', compatibilityProperty: 'compatibility'], null, null, null)
 
         then:
         target.allowed == 'allowed'
-        target.legacy == null
+        target.compatibilityProperty == null
 
         where:
         configuredValue << ['flase', '', 'off', 'no', 'yes', 'on', 0, 1]
@@ -94,10 +94,10 @@ class LegacyBindableDefaultConfigSpec extends Specification {
 
 }
 
-class LegacyBindableTarget {
+class DenyByDefaultTarget {
     public static final List $defaultDatabindingWhiteList = ['allowed']
-    public static final List $legacyDatabindingWhiteList = ['allowed', 'legacy']
+    public static final List $legacyDatabindingWhiteList = ['allowed', 'compatibilityProperty']
 
     String allowed
-    String legacy
+    String compatibilityProperty
 }

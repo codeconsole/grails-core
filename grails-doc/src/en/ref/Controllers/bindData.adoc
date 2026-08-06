@@ -89,11 +89,11 @@ class PersonController {
 }
 ----
 
-See the link:{constraintsRefFromRef}bindable.html[bindable] constraint documentation for more information on controlling default bindability.  Applications may set `grails.databinding.legacyBindableDefault=false` to opt into deny-by-default binding allowlists.  In secure mode, permit a property with `bindable: true`, an explicit `include` list, or `@BindAllowed` on a controller action command object parameter.
+See the link:{constraintsRefFromRef}bindable.html[bindable] constraint documentation for more information on controlling default bindability.  Applications may set `grails.databinding.denyByDefault=true` to opt into deny-by-default binding allowlists.  In secure mode, permit a property with `bindable: true`, an explicit `include` list, or `@BindAllowed` on a controller action command object parameter.
 
 `nullMissing` is opt-in and only applies when an `include` list is provided. This is useful for update forms where an omitted allowed field should clear an existing value instead of leaving stale persisted data. Excluded properties are not cleared.
 
-Only boolean values and the strings `'true'` and `'false'` are recognised for `grails.databinding.legacyBindableDefault`.  String matching ignores case and surrounding whitespace.  An unrecognised value logs a warning and enables secure binding.
+Only boolean values and the strings `'true'` and `'false'` are recognised for `grails.databinding.denyByDefault`.  String matching ignores case and surrounding whitespace.  An unrecognised value logs a warning and enables secure binding.
 
 The underlying implementation uses Spring's Data Binding framework. If the target is a domain class, type conversion errors are stored in the `errors` property of the domain class.
 

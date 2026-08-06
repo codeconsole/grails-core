@@ -392,7 +392,7 @@ interface Settings {
 
     String DATE_LENIENT_PARSING = 'grails.databinding.dateParsingLenient'
 
-    String LEGACY_BINDABLE_DEFAULT = 'grails.databinding.legacyBindableDefault'
+    String DATABINDING_DENY_BY_DEFAULT = 'grails.databinding.denyByDefault'
 
     String I18N_CACHE_SECONDS = 'grails.i18n.cache.seconds'
 

@@ -53,6 +53,7 @@ final class NullMissingPropertyClearer {
 
     private NullMissingPropertyClearer() {
     }
+
     static void clearMissingIncludedProperties(Object object, DataBindingSource bindingSource, List include, List exclude,
                                                String filter, BindingResult bindingResult) {
         BindingResult previousBindingResult = BINDING_RESULT.get();
@@ -170,6 +171,7 @@ final class NullMissingPropertyClearer {
         }
         return false;
     }
+
     private static boolean isNullMissingPropertyPathAllowed(String propertyName, List generatedIncludeList, List explicitIncludeList, List excludeList) {
         if (isFrameworkManagedProperty(propertyName) || isPropertyExcluded(propertyName, excludeList)) {
             return false;
