@@ -22,6 +22,9 @@ import groovy.transform.CompileStatic
 
 import org.gradle.api.Plugin
 import org.gradle.api.Project
+import org.gradle.api.plugins.BasePlugin
+import org.gradle.api.tasks.Sync
+import org.gradle.api.tasks.util.PatternFilterable
 import org.gradle.api.file.CopySpec
 import org.gradle.api.file.Directory
 import org.gradle.api.file.DuplicatesStrategy
@@ -33,6 +36,7 @@ import org.gradle.api.tasks.TaskContainer
 import org.gradle.api.tasks.bundling.Jar
 import org.gradle.api.tasks.bundling.War
 
+import org.grails.gradle.plugin.scaffolding.GenerateScaffoldedViewsTask
 import org.grails.gradle.plugin.util.SourceSets
 
 /**
@@ -69,12 +73,44 @@ class GroovyPagePlugin implements Plugin<Project> {
                 ].findAll { it }
         )
 
+        // Scaffolded views are expanded from their templates here and staged alongside the
+        // application's own, so a single compile produces a single gsp/views.properties. Compiling
+        // them separately would produce a second manifest, and the jar's duplicate handling would
+        // silently keep only one of them.
+        Provider<Directory> stagedViews = project.layout.buildDirectory.dir('generated/views')
+        def generateScaffoldedViews = tasks.register(
+                'generateScaffoldedViews', GenerateScaffoldedViewsTask) { GenerateScaffoldedViewsTask it ->
+            it.group = BasePlugin.BUILD_GROUP
+            it.description = 'Expands the views of scaffolded controllers so they can be precompiled'
+            it.classesDirs.from(classesDirs)
+            it.templateClasspath.from(project.configurations.named('compileClasspath'))
+            it.templateOverrides.from(
+                    project.fileTree(project.layout.projectDirectory.dir('src/main/templates/scaffolding'))
+                            .matching { PatternFilterable p -> p.include('*.gsp') })
+            it.applicationViews.from(
+                    project.fileTree(project.layout.projectDirectory.dir('grails-app/views'))
+                            .matching { PatternFilterable p -> p.include('**/*.gsp') })
+            it.outputDirectory.set(project.layout.buildDirectory.dir('generated/scaffolded-views'))
+        }
+
+        def stageGroovyPages = tasks.register('stageGroovyPages', Sync) { Sync it ->
+            it.description = 'Collects the application and scaffolded views for GSP compilation'
+            it.into(stagedViews)
+            it.from(project.layout.projectDirectory.dir('grails-app/views'))
+            it.from(generateScaffoldedViews)
+            // the application's own page wins, matching how the view resolvers are ordered
+            it.duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+        }
+
         def compileGroovyPages = tasks.register('compileGroovyPages', GroovyPageForkCompileTask) {
             it.destinationDirectory.set(destDir)
             it.tmpDirPath = getTmpDirPath(project)
-            it.source = project.layout.projectDirectory.dir('grails-app/views')
+            // resolved here because the setter takes a directory, not a provider: it has to set
+            // both srcDir and the SourceTask inputs, and setting srcDir alone compiles nothing
+            it.source = stagedViews.get()
             it.serverpath.set('/WEB-INF/grails-app/views/')
             it.classpath = allClasspath
+            it.dependsOn(stageGroovyPages)
         }
 
         def compileWebappGroovyPages = tasks.register('compileWebappGroovyPages', GroovyPageForkCompileTask) {
