@@ -1,0 +1,130 @@
+/*
+ *  Licensed to the Apache Software Foundation (ASF) under one
+ *  or more contributor license agreements.  See the NOTICE file
+ *  distributed with this work for additional information
+ *  regarding copyright ownership.  The ASF licenses this file
+ *  to you under the Apache License, Version 2.0 (the
+ *  "License"); you may not use this file except in compliance
+ *  with the License.  You may obtain a copy of the License at
+ *
+ *    https://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing,
+ *  software distributed under the License is distributed on an
+ *  "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ *  KIND, either express or implied.  See the License for the
+ *  specific language governing permissions and limitations
+ *  under the License.
+ */
+package org.grails.plugins.web.taglib.aot;
+
+import java.io.IOException;
+
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
+
+import org.springframework.aot.hint.MemberCategory;
+import org.springframework.aot.hint.RuntimeHints;
+import org.springframework.aot.hint.RuntimeHintsRegistrar;
+import org.springframework.core.io.Resource;
+import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
+import org.springframework.core.io.support.ResourcePatternResolver;
+import org.springframework.core.type.classreading.CachingMetadataReaderFactory;
+import org.springframework.core.type.classreading.MetadataReaderFactory;
+import org.springframework.lang.Nullable;
+import org.springframework.util.ClassUtils;
+
+/**
+ * Registers the tag libraries and page runtime a rendered page dispatches through.
+ *
+ * <p>A tag is resolved by name and invoked reflectively, so an image that keeps only the members
+ * something asked for renders a page until it reaches a tag it stripped. Which tags those are
+ * depends on what the page does: a field is only rendered by a form, and a flash message only
+ * exists after a redirect that set one, so a walk of an application's pages exercises neither and
+ * they fail for the first person who edits something.</p>
+ *
+ * <p>Tag libraries are found rather than named. A plugin declares its own in whatever package it
+ * chooses, and its tags are as reachable from a page as the framework's own.</p>
+ *
+ * @since 8.0
+ */
+public class TagLibRuntimeHints implements RuntimeHintsRegistrar {
+
+    private static final Log logger = LogFactory.getLog(TagLibRuntimeHints.class);
+
+    /** A tag library is identified by its name, wherever it is declared. */
+    private static final String TAGLIB_PATTERN =
+            ResourcePatternResolver.CLASSPATH_ALL_URL_PREFIX + "**/*TagLib.class";
+
+    /**
+     * The page rendering runtime. Registered by package rather than by name: a compiled page reaches
+     * all of it through Groovy, down to writing its output with an operator, and naming the types
+     * one at a time only ever describes the pages that have been rendered so far.
+     */
+    private static final String[] RUNTIME_PATTERNS = {
+            ResourcePatternResolver.CLASSPATH_ALL_URL_PREFIX + "org/grails/gsp/**/*.class",
+            ResourcePatternResolver.CLASSPATH_ALL_URL_PREFIX + "org/grails/taglib/**/*.class",
+            ResourcePatternResolver.CLASSPATH_ALL_URL_PREFIX + "org/grails/buffer/**/*.class"
+    };
+
+    /**
+     * Whether the type, and the class declaring it, resolve on this classpath. The JSP integration
+     * is compiled against an API an application need not have, and registering a type the analysis
+     * then cannot parse fails the build rather than degrading at run time.
+     */
+    private boolean resolves(String className, ClassLoader loader) {
+        int declaring = className.indexOf("$");
+        if (declaring > 0 && !ClassUtils.isPresent(className.substring(0, declaring), loader)) {
+            return false;
+        }
+        return ClassUtils.isPresent(className, loader);
+    }
+
+    private static String[] patterns() {
+        String[] all = new String[RUNTIME_PATTERNS.length + 1];
+        System.arraycopy(RUNTIME_PATTERNS, 0, all, 0, RUNTIME_PATTERNS.length);
+        all[RUNTIME_PATTERNS.length] = TAGLIB_PATTERN;
+        return all;
+    }
+
+    @Override
+    public void registerHints(RuntimeHints hints, @Nullable ClassLoader classLoader) {
+        ClassLoader loader = (classLoader != null) ? classLoader : ClassUtils.getDefaultClassLoader();
+        ResourcePatternResolver resolver = new PathMatchingResourcePatternResolver(loader);
+        MetadataReaderFactory metadataReaderFactory = new CachingMetadataReaderFactory(resolver);
+        int registered = 0;
+        for (String pattern : patterns()) {
+            Resource[] resources;
+            try {
+                resources = resolver.getResources(pattern);
+            }
+            catch (IOException ex) {
+                logger.warn("Unable to scan for " + pattern, ex);
+                continue;
+            }
+            for (Resource resource : resources) {
+                String className;
+                try {
+                    className = metadataReaderFactory.getMetadataReader(resource)
+                            .getClassMetadata().getClassName();
+                }
+                catch (IOException | RuntimeException ex) {
+                    continue;
+                }
+                if (!resolves(className, loader)) {
+                    continue;
+                }
+                // declared rather than public throughout: a tag's body may call a private helper on
+                // its own library, and a page reads the shared empty body as a field
+                hints.reflection().registerTypeIfPresent(loader, className,
+                        MemberCategory.INVOKE_DECLARED_METHODS,
+                        MemberCategory.INVOKE_PUBLIC_METHODS,
+                        MemberCategory.INVOKE_DECLARED_CONSTRUCTORS,
+                        MemberCategory.ACCESS_DECLARED_FIELDS,
+                        MemberCategory.ACCESS_PUBLIC_FIELDS);
+                registered++;
+            }
+        }
+        logger.debug("Registered " + registered + " tag library and page runtime types");
+    }
+}

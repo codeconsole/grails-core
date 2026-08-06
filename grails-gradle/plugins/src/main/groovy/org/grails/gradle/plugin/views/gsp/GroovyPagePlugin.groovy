@@ -82,6 +82,14 @@ class GroovyPagePlugin implements Plugin<Project> {
                 'generateScaffoldedViews', GenerateScaffoldedViewsTask) { GenerateScaffoldedViewsTask it ->
             it.group = BasePlugin.BUILD_GROUP
             it.description = 'Expands the views of scaffolded controllers so they can be precompiled'
+            // the classes directory is written by more than one task, so the dependency is stated
+            // against the compilation rather than inferred from the directory
+            it.dependsOn(tasks.named('compileJava'))
+            ['compileGroovy', 'copyAstClasses'].each { String name ->
+                if (project.tasks.findByName(name)) {
+                    it.dependsOn(tasks.named(name))
+                }
+            }
             it.classesDirs.from(classesDirs)
             it.templateClasspath.from(project.configurations.named('compileClasspath'))
             it.templateOverrides.from(

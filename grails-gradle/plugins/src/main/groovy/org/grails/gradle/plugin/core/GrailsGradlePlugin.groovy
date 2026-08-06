@@ -1130,6 +1130,15 @@ ${importStatements}
                 'generateNativeMetadata', GenerateNativeMetadataTask) { GenerateNativeMetadataTask task ->
             task.group = BasePlugin.BUILD_GROUP
             task.description = 'Records the application classes and pages a native image must keep'
+            // The classes directory is written by more than one task, so the dependency has to be
+            // stated. It is stated against the compilation rather than the classes task, because
+            // the classes task also runs processResources, which consumes this task's output.
+            task.dependsOn(project.tasks.named(sourceSet.compileJavaTaskName))
+            ['compileGroovy', 'copyAstClasses'].each { String name ->
+                if (project.tasks.findByName(name)) {
+                    task.dependsOn(project.tasks.named(name))
+                }
+            }
             task.classesDirs.from(sourceSet.output.classesDirs)
             task.pageClassesDirs.from(project.layout.buildDirectory.dir('gsp-classes/main'))
             task.pageClasspath.from(project.configurations.named('runtimeClasspath'))
