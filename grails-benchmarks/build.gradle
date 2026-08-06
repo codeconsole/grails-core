@@ -54,7 +54,8 @@ sourceSets {
 }
 
 // The Groovy fixtures under src/main/groovy build the framework objects whose APIs are
-// closure-based (the URL mappings DSL and view templates). The JMH
+// closure-based (the URL mappings DSL and view templates) or require a Groovy trait
+// (grails.artefact.Interceptor). The JMH
 // benchmarks themselves live in src/jmh/java and only *call* those fixtures, so that the
 // measured code path is plain Java and does not include Groovy's dynamic dispatch.
 // me.champeau.jmh puts the main source set's output on the jmh compile classpath, which is
@@ -118,8 +119,8 @@ tasks.register('jmhCompare', JavaExec) {
 configurations.jmh.extendsFrom(configurations.implementation)
 
 // Every JMH knob the CI workflow needs to override is exposed as a Gradle property so that
-// .github/workflows/benchmark.yml can run a fast PR profile and a slower scheduled profile
-// from the same build. Defaults here are the quick local-development profile.
+// .github/workflows/benchmark.yml can configure the PR profile from the same build.
+// Defaults here are the quick local-development profile.
 jmh {
     jmhVersion = '1.37'
     includes = providers.gradleProperty('jmh.include')

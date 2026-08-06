@@ -16,7 +16,7 @@ limitations under the License.
 
 = Grails Benchmarks
 
-JMH microbenchmarks for Grails framework hot paths -- the code that runs on every request or
+JMH microbenchmarks for Grails framework hot paths - the code that runs on every request or
 every bound object, where a regression directly costs users latency.
 
 This module is a build-time-only harness. It is *not published*, is not part of the BOM, and
@@ -33,7 +33,7 @@ Run everything from the repository root:
 
 [source,bash]
 ----
-JAVA_HOME=/path/to/jdk-21 ./gradlew :grails-benchmarks:jmh
+JAVA_HOME=/path/to/jdk-21 ./gradlew --no-daemon :grails-benchmarks:jmh
 ----
 
 A full run at default settings takes several minutes. While iterating, narrow it to one class
@@ -41,7 +41,7 @@ and cut the iteration counts:
 
 [source,bash]
 ----
-JAVA_HOME=/path/to/jdk-21 ./gradlew :grails-benchmarks:jmh \
+JAVA_HOME=/path/to/jdk-21 ./gradlew --no-daemon :grails-benchmarks:jmh \
   -Pjmh.include=UrlMappingsBenchmark \
   -Pjmh.forks=1 -Pjmh.warmupIterations=1 -Pjmh.iterations=1
 ----
@@ -89,8 +89,8 @@ The comparison tool is Groovy in the `report` source set, under `src/report/groo
 
 That split is intentional. A benchmark written in Groovy measures Groovy's dynamic call-site
 machinery as much as the Grails API under test, so the measured method stays in Java. Fixtures
-are Groovy only where the Grails API genuinely requires it -- the URL mappings DSL, the
-`Validateable` trait, and view templates are all closure-based. Fixtures live in `main` rather
+are Groovy only where the Grails API genuinely requires it - the URL mappings DSL and view
+templates are closure-based, and `grails.artefact.Interceptor` is a Groovy trait. Fixtures live in `main` rather
 than `src/jmh/groovy` because the `me.champeau.jmh` plugin puts the main source set's output on
 the jmh compile classpath, which keeps the benchmark source set pure Java and preserves normal
 JMH annotation processing.

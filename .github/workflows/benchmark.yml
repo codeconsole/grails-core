@@ -25,10 +25,9 @@ on:
       - '**/*.md'
       - '**/*.adoc'
       - 'grails-doc/**'
-  workflow_dispatch:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}-${{ github.event.action == 'labeled' && github.event.label.name != 'performance' && github.run_id || 'benchmark' }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
@@ -44,9 +43,8 @@ jobs:
   benchmark:
     name: "Paired JMH benchmarks (${{ matrix.shard }})"
     if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (contains(github.event.pull_request.labels.*.name, 'performance') &&
-       (github.event.action != 'labeled' || github.event.label.name == 'performance'))
+      contains(github.event.pull_request.labels.*.name, 'performance') &&
+      (github.event.action != 'labeled' || github.event.label.name == 'performance')
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
@@ -163,7 +161,7 @@ jobs:
             local staging_file="$result_file.partial"
             rm -f "$staging_file" "$result_file"
             if (
-              cd "$revision_dir" && ./gradlew :grails-benchmarks:jmh \
+              cd "$revision_dir" && ./gradlew --no-daemon :grails-benchmarks:jmh \
                 -Pjmh.include="$JMH_INCLUDE" \
                 -Pjmh.forks=2 \
                 -Pjmh.warmupIterations=3 \
