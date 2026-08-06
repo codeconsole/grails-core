@@ -56,12 +56,14 @@ class GrailsClosureRuntimeHintsSpec extends Specification {
             hint.memberCategories.contains(MemberCategory.INVOKE_DECLARED_METHODS)
     }
 
-    void 'only framework closures are registered'() {
+    void 'only framework and plugin descriptor closures are registered'() {
         when:
             new GrailsClosureRuntimeHints().registerHints(hints, getClass().classLoader)
 
-        then: 'an application registers its own; this must not reach outside the framework'
-            registeredTypes().every { it.startsWith('grails.') || it.startsWith('org.grails.') }
+        then: 'a plugin may sit in any package, but nothing else should be swept up'
+            registeredTypes().every {
+                it.startsWith('grails.') || it.startsWith('org.grails.') || it.contains('GrailsPlugin$')
+            }
     }
 
     void 'a class loader that resolves nothing yields no hints rather than failing'() {

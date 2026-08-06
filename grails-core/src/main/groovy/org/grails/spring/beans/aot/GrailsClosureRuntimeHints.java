@@ -64,10 +64,16 @@ public class GrailsClosureRuntimeHints implements RuntimeHintsRegistrar {
 
     private static final Log logger = LogFactory.getLog(GrailsClosureRuntimeHints.class);
 
-    /** Closures live under the framework's own packages; an application's are registered elsewhere. */
+    /**
+     * Where the framework's closures are found. The first two cover its own packages; the third
+     * covers plugin descriptors, which a plugin may declare in any package of its choosing -- the
+     * asset pipeline names its own {@code asset.pipeline}, and its bean definitions are closures
+     * the container calls while the context is built.
+     */
     private static final String[] PATTERNS = {
             ResourcePatternResolver.CLASSPATH_ALL_URL_PREFIX + "grails/**/*_closure*.class",
-            ResourcePatternResolver.CLASSPATH_ALL_URL_PREFIX + "org/grails/**/*_closure*.class"
+            ResourcePatternResolver.CLASSPATH_ALL_URL_PREFIX + "org/grails/**/*_closure*.class",
+            ResourcePatternResolver.CLASSPATH_ALL_URL_PREFIX + "**/*GrailsPlugin$*_closure*.class"
     };
 
     @Override

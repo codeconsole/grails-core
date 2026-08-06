@@ -65,6 +65,8 @@ import org.grails.gradle.plugin.commands.GrailsCliGradlePlugin
 import org.grails.gradle.plugin.exploded.ExplodedCompatibilityRule
 import org.grails.gradle.plugin.exploded.ExplodedDisambiguationRule
 import org.grails.gradle.plugin.exploded.GrailsExplodedPlugin
+import org.gradle.api.plugins.BasePlugin
+import org.grails.gradle.plugin.aot.GenerateNativeMetadataTask
 import org.grails.gradle.plugin.model.GrailsClasspathToolingModelBuilder
 import org.grails.gradle.plugin.run.FindMainClassTask
 import org.grails.gradle.plugin.util.SourceSets
@@ -131,6 +133,8 @@ class GrailsGradlePlugin implements Plugin<Project> {
         String grailsVersion = resolveGrailsVersion(project)
 
         enableNative2Ascii(project, grailsVersion)
+
+        configureNativeMetadata(project)
 
         configureTemplateResources(project)
 
@@ -1112,6 +1116,28 @@ ${importStatements}
             task.from(project.layout.projectDirectory.dir('src/main/templates')) { CopySpec spec ->
                 spec.into('META-INF/templates')
             }
+        }
+    }
+
+    /**
+     * Records the application's own classes and pages so a native image keeps them usable. The build
+     * output already names both, so an application does not have to be traced to be buildable.
+     */
+    protected void configureNativeMetadata(Project project) {
+        SourceSet sourceSet = SourceSets.findMainSourceSet(project)
+
+        TaskProvider<GenerateNativeMetadataTask> metadataTask = project.tasks.register(
+                'generateNativeMetadata', GenerateNativeMetadataTask) { GenerateNativeMetadataTask task ->
+            task.group = BasePlugin.BUILD_GROUP
+            task.description = 'Records the application classes and pages a native image must keep'
+            task.classesDirs.from(sourceSet.output.classesDirs)
+            task.pageClassesDirs.from(project.layout.buildDirectory.dir('gsp-classes/main'))
+            task.pageClasspath.from(project.configurations.named('runtimeClasspath'))
+            task.outputDirectory.set(project.layout.buildDirectory.dir('generated-resources/grails-native'))
+        }
+
+        project.tasks.named(sourceSet.processResourcesTaskName, ProcessResources).configure { ProcessResources task ->
+            task.from(metadataTask)
         }
     }
 
