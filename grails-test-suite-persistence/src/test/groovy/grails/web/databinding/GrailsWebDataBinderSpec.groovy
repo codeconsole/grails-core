@@ -58,6 +58,9 @@ class GrailsWebDataBinderSpec extends Specification implements DataTest {
     
     void cleanup() {
         Locale.setDefault(defaultLocale)
+        grailsApplication.config.setAt(Settings.DATABINDING_DENY_BY_DEFAULT, null)
+        DataBindingUtils.clearBindingCaches()
+        GrailsWebDataBinder.resetWarnedBindingShapes()
     }
 
     @CompileStatic
@@ -470,7 +473,7 @@ class GrailsWebDataBinderSpec extends Specification implements DataTest {
 
     void 'Test generated parent allowlist applies persisted association child allowlist'() {
         given:
-        grailsApplication.config.setAt(Settings.LEGACY_BINDABLE_DEFAULT, false)
+        grailsApplication.config.setAt(Settings.DATABINDING_DENY_BY_DEFAULT, true)
         def child = new GeneratedBindingChild(name: 'Original').save(flush: true, failOnError: true)
         def parent = new GeneratedBindingParent(child: child).save(flush: true, failOnError: true)
 
@@ -487,7 +490,7 @@ class GrailsWebDataBinderSpec extends Specification implements DataTest {
 
     void 'Test generated allowlist applies to persisted domain instances in typed arrays'() {
         given:
-        grailsApplication.config.setAt(Settings.LEGACY_BINDABLE_DEFAULT, false)
+        grailsApplication.config.setAt(Settings.DATABINDING_DENY_BY_DEFAULT, true)
         def child = new GeneratedBindingChild(name: 'Original').save(flush: true, failOnError: true)
         def holder = new GeneratedBindingArrayHolder()
 
@@ -506,7 +509,7 @@ class GrailsWebDataBinderSpec extends Specification implements DataTest {
 
     void 'Test null public include list resolves generated allowlist'() {
         given:
-        grailsApplication.config.setAt(Settings.LEGACY_BINDABLE_DEFAULT, false)
+        grailsApplication.config.setAt(Settings.DATABINDING_DENY_BY_DEFAULT, true)
         def child = new GeneratedBindingChild(name: 'Original')
 
         when:
@@ -549,7 +552,7 @@ class GrailsWebDataBinderSpec extends Specification implements DataTest {
 
     void 'Test Map constructor fallback fails closed without a no-arg constructor'() {
         given:
-        grailsApplication.config.setAt(Settings.LEGACY_BINDABLE_DEFAULT, false)
+        grailsApplication.config.setAt(Settings.DATABINDING_DENY_BY_DEFAULT, true)
         def holder = new SecureMapConstructorHolder()
         def indexedHolder = new SecureMapConstructorHolder()
         def arrayHolder = new SecureMapConstructorHolder()
@@ -586,7 +589,7 @@ class GrailsWebDataBinderSpec extends Specification implements DataTest {
 
     void 'Test Map constructor fallback remains permissive in compatibility mode'() {
         given:
-        grailsApplication.config.setAt(Settings.LEGACY_BINDABLE_DEFAULT, true)
+        grailsApplication.config.setAt(Settings.DATABINDING_DENY_BY_DEFAULT, false)
         def holder = new SecureMapConstructorHolder()
 
         when:
@@ -602,7 +605,7 @@ class GrailsWebDataBinderSpec extends Specification implements DataTest {
         !holder.arrayValues[0].admin
 
         cleanup:
-        grailsApplication.config.setAt(Settings.LEGACY_BINDABLE_DEFAULT, null)
+        grailsApplication.config.setAt(Settings.DATABINDING_DENY_BY_DEFAULT, null)
     }
 
     void 'Test Map constructor fallback binds unconfigured properties but not bindable false by default'() {
@@ -640,6 +643,7 @@ class GrailsWebDataBinderSpec extends Specification implements DataTest {
 
     void 'Test Map constructor fallback fails closed for a narrow explicit include'() {
         given:
+        grailsApplication.config.setAt(Settings.DATABINDING_DENY_BY_DEFAULT, true)
         def holder = new SecureMapConstructorHolder()
 
         when:

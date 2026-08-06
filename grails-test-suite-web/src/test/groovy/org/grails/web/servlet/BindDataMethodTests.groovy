@@ -38,7 +38,7 @@ import spock.lang.Specification
 class BindDataMethodTests extends Specification implements ControllerUnitTest<BindingController> {
 
     void cleanup() {
-        grailsApplication.config.setAt(Settings.LEGACY_BINDABLE_DEFAULT, null)
+        grailsApplication.config.setAt(Settings.DATABINDING_DENY_BY_DEFAULT, null)
         DataBindingUtils.clearBindingCaches()
         GrailsWebDataBinder.resetWarnedBindingShapes()
     }
@@ -193,7 +193,7 @@ class BindDataMethodTests extends Specification implements ControllerUnitTest<Bi
                     'Secure data binding is enabled and binds only allowlisted properties to prevent mass assignment (CWE-915). ' +
                     'To bind [username], declare it bindable - `static constraints = { username bindable: true }` on the class, ' +
                     'add it to the binding `include:` list, or annotate the controller action parameter with `@BindAllowed([\'username\'])`. ' +
-                    'To restore compatibility binding for the whole application, remove `grails.databinding.legacyBindableDefault` or set it to `true`.'
+                    'To restore compatibility binding for the whole application, remove `grails.databinding.denyByDefault` or set it to `false`.'
         ]
     }
 
@@ -241,7 +241,7 @@ class BindDataMethodTests extends Specification implements ControllerUnitTest<Bi
 
     void 'Test explicit compatibility configuration uses the legacy allowlist'() {
         given:
-        grailsApplication.config.setAt(Settings.LEGACY_BINDABLE_DEFAULT, true)
+        grailsApplication.config.setAt(Settings.DATABINDING_DENY_BY_DEFAULT, false)
 
         when:
         def model = controller.bindWithDefaultAllowlist()
@@ -522,7 +522,7 @@ class BindDataMethodTests extends Specification implements ControllerUnitTest<Bi
 
     void 'Test explicit compatibility configuration permits all child properties through generated parent allowlist'() {
         given:
-        grailsApplication.config.setAt(Settings.LEGACY_BINDABLE_DEFAULT, true)
+        grailsApplication.config.setAt(Settings.DATABINDING_DENY_BY_DEFAULT, false)
         def target = new GeneratedNestedContainerCommandObject()
 
         when:
@@ -558,7 +558,7 @@ class BindDataMethodTests extends Specification implements ControllerUnitTest<Bi
 
     void 'Test compatibility mode falls back to an old default allowlist field'() {
         given:
-        grailsApplication.config.setAt(Settings.LEGACY_BINDABLE_DEFAULT, true)
+        grailsApplication.config.setAt(Settings.DATABINDING_DENY_BY_DEFAULT, false)
 
         when:
         def model = controller.bindPrecompiledLegacyTarget()
@@ -654,7 +654,7 @@ class BindDataMethodTests extends Specification implements ControllerUnitTest<Bi
     }
 
     private void enableSecureBinding() {
-        grailsApplication.config.setAt(Settings.LEGACY_BINDABLE_DEFAULT, false)
+        grailsApplication.config.setAt(Settings.DATABINDING_DENY_BY_DEFAULT, true)
         DataBindingUtils.clearBindingCaches()
         GrailsWebDataBinder.resetWarnedBindingShapes()
     }

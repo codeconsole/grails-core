@@ -37,10 +37,10 @@
             "defaultValue": false
         },
         {
-            "name": "grails.databinding.legacyBindableDefault",
+            "name": "grails.databinding.denyByDefault",
             "type": "java.lang.Boolean",
-            "description": "Whether properties without an explicit bindable: true constraint are eligible for mass data binding. Set to false to enable deny-by-default binding allowlists.",
-            "defaultValue": true
+            "description": "Whether mass data binding is denied for properties without an explicit bindable: true constraint or other allowlist entry.",
+            "defaultValue": false
         }
     ]
 }

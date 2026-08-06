@@ -199,7 +199,11 @@ class GrailsWebDataBinder extends SimpleDataBinder {
 
         List<DataBindingListener> allListeners = []
         allListeners << errorHandlingListener
-        if (listener != null && !(listener instanceof DataBindingEventMulticastListener)) {
+        if (listener instanceof DataBindingEventMulticastListener) {
+            allListeners.addAll(listener.listeners.findAll { DataBindingListener nestedListener ->
+                !(nestedListener instanceof GrailsWebDataBindingListener) && !listeners.contains(nestedListener)
+            })
+        } else if (listener != null) {
             allListeners << listener
         }
         allListeners.addAll(listeners.findAll { DataBindingListener l -> l.supports(object.getClass()) })
@@ -268,7 +272,7 @@ class GrailsWebDataBinder extends SimpleDataBinder {
                 'Secure data binding is enabled and binds only allowlisted properties to prevent mass assignment (CWE-915). ' +
                 "To bind [${propertyName}], declare it bindable - `static constraints = { ${propertyName} bindable: true }` on the class, " +
                 "add it to the binding `include:` list, or annotate the controller action parameter with `@BindAllowed(['${propertyName}'])`. " +
-                'To restore compatibility binding for the whole application, remove `grails.databinding.legacyBindableDefault` or set it to `true`.'
+                'To restore compatibility binding for the whole application, remove `grails.databinding.denyByDefault` or set it to `false`.'
     }
 
     private static boolean markBindingShapeWarned(String warningKey) {
@@ -631,7 +635,7 @@ class GrailsWebDataBinder extends SimpleDataBinder {
         } catch (NoSuchMethodException | IllegalAccessException ignored) {
             if (value instanceof Map) {
                 if (isBindAllBindingIncludeList(includeList) ||
-                        DataBindingUtils.isLegacyBindableDefaultEnabled()) {
+                        !DataBindingUtils.isDenyByDefaultEnabled()) {
                     return referencedType.newInstance(filterUnbindableMapConstructorArguments(referencedType, (Map) value))
                 }
                 if (DataBindingUtils.isGeneratedBindingIncludeList(bindingIncludeList.get())) {
@@ -675,7 +679,7 @@ class GrailsWebDataBinder extends SimpleDataBinder {
     static String missingNoArgConstructorMessage(Class<?> targetType) {
         "Cannot securely data-bind [${targetType.name}] because it has no accessible no-arg constructor. " +
                 'Add a no-arg constructor and bindable constraints, pass an explicit bind-all include for this element, ' +
-                'or set `grails.databinding.legacyBindableDefault=true`.'
+                'or set `grails.databinding.denyByDefault=false`.'
     }
 
     static void resetWarnedBindingShapes() {

@@ -41,7 +41,6 @@ import org.codehaus.groovy.ast.expr.ListExpression;
 import org.codehaus.groovy.classgen.GeneratorContext;
 import org.codehaus.groovy.control.SourceUnit;
 
-import grails.config.Settings;
 import grails.util.CollectionUtils;
 import grails.util.GrailsNameUtils;
 import org.grails.compiler.injection.GrailsASTUtils;
@@ -53,8 +52,6 @@ public class DefaultASTDatabindingHelper implements ASTDatabindingHelper {
     public static final String DEFAULT_DATABINDING_WHITELIST = "$defaultDatabindingWhiteList";
     public static final String LEGACY_DATABINDING_WHITELIST = "$legacyDatabindingWhiteList";
     public static final String NO_BINDABLE_PROPERTIES = "$_NO_BINDABLE_PROPERTIES_$";
-    public static final String LEGACY_BINDABLE_DEFAULT = Settings.LEGACY_BINDABLE_DEFAULT;
-
     private static Map<ClassNode, Set<String>> CLASS_NODE_TO_WHITE_LIST_PROPERTY_NAMES = new HashMap<>();
 
     private static Map<ClassNode, Set<String>> CLASS_NODE_TO_LEGACY_WHITE_LIST_PROPERTY_NAMES = new HashMap<>();

@@ -40,6 +40,7 @@ import jakarta.servlet.ServletRequest;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
 import org.springframework.context.ApplicationContext;
 import org.springframework.validation.BeanPropertyBindingResult;
 import org.springframework.validation.BindingResult;
@@ -136,9 +137,9 @@ public class DataBindingUtils {
     }
 
     protected static List getBindingIncludeList(final Object object) {
-        final boolean legacyBindableDefaultEnabled = isLegacyBindableDefaultEnabled();
-        final Map<Class, List> includeListCache = legacyBindableDefaultEnabled ?
-                CLASS_TO_LEGACY_BINDING_INCLUDE_LIST : CLASS_TO_BINDING_INCLUDE_LIST;
+        final boolean denyByDefaultEnabled = isDenyByDefaultEnabled();
+        final Map<Class, List> includeListCache = denyByDefaultEnabled ?
+                CLASS_TO_BINDING_INCLUDE_LIST : CLASS_TO_LEGACY_BINDING_INCLUDE_LIST;
         List includeList = null;
         try {
             final Class<? extends Object> objectClass = object.getClass();
@@ -150,14 +151,14 @@ public class DataBindingUtils {
             } else {
                 // Resolve the runtime-derived bindable names only on a cache miss - this walks the
                 // target's constraints/metaclass and would otherwise run on every bind of a cached class.
-                final List runtimeBindableNames = legacyBindableDefaultEnabled ? null : getBindablePropertyNames(object);
+                final List runtimeBindableNames = denyByDefaultEnabled ? getBindablePropertyNames(object) : null;
                 includeList = runtimeBindableNames;
                 final Field legacyWhiteListField = getField(objectClass, DefaultASTDatabindingHelper.LEGACY_DATABINDING_WHITELIST);
-                final Field defaultWhiteListField = legacyBindableDefaultEnabled ?
-                        getField(objectClass, DefaultASTDatabindingHelper.DEFAULT_DATABINDING_WHITELIST) :
+                final Field defaultWhiteListField = denyByDefaultEnabled ?
                         getPairedField(objectClass, DefaultASTDatabindingHelper.DEFAULT_DATABINDING_WHITELIST,
-                                DefaultASTDatabindingHelper.LEGACY_DATABINDING_WHITELIST);
-                if (legacyBindableDefaultEnabled) {
+                                DefaultASTDatabindingHelper.LEGACY_DATABINDING_WHITELIST) :
+                        getField(objectClass, DefaultASTDatabindingHelper.DEFAULT_DATABINDING_WHITELIST);
+                if (!denyByDefaultEnabled) {
                     includeList = getStaticListFieldValue(legacyWhiteListField);
                     if (includeList == null) {
                         includeList = getStaticListFieldValue(defaultWhiteListField);
@@ -173,7 +174,7 @@ public class DataBindingUtils {
                     }
                     includeList = new ArrayList(combinedIncludeList);
                 }
-                if (!legacyBindableDefaultEnabled) {
+                if (denyByDefaultEnabled) {
                     includeList = asGeneratedBindingIncludeList(includeList);
                 }
                 if (!Environment.getCurrent().isReloadEnabled()) {
@@ -182,7 +183,7 @@ public class DataBindingUtils {
             }
         } catch (Exception e) {
         }
-        if (!legacyBindableDefaultEnabled) {
+        if (denyByDefaultEnabled) {
             includeList = asGeneratedBindingIncludeList(includeList);
         }
         return includeList;
@@ -394,22 +395,21 @@ public class DataBindingUtils {
         return combinedExcludes;
     }
 
-    static boolean isLegacyBindableDefaultEnabled() {
+    static boolean isDenyByDefaultEnabled() {
         GrailsApplication application = Holders.findApplication();
         if (application != null) {
-            return resolveLegacyBindableDefault(
-                    application.getConfig().getProperty(Settings.LEGACY_BINDABLE_DEFAULT, Object.class, null));
+            return resolveDenyByDefault(
+                    application.getConfig().getProperty(Settings.DATABINDING_DENY_BY_DEFAULT, Object.class, null));
         }
-        return resolveLegacyBindableDefault(Holders.getFlatConfig().get(Settings.LEGACY_BINDABLE_DEFAULT));
+        return resolveDenyByDefault(Holders.getFlatConfig().get(Settings.DATABINDING_DENY_BY_DEFAULT));
     }
 
     /**
-     * Resolves the configured value of {@code grails.databinding.legacyBindableDefault} against the
-     * permissive default.
+     * Resolves the configured value of {@code grails.databinding.denyByDefault} against the permissive default.
      * <p>
      * The raw value must be resolved here rather than through a typed {@code Boolean} config lookup:
      * a config value that converts to {@code Boolean.FALSE} is discarded in favour of the supplied
-     * default, which would silently ignore an explicit opt-in to the secure deny-by-default mode from
+     * default, which would silently ignore an explicit value from
      * any string-valued source such as a properties file, a system property or an environment variable.
      * <p>
      * A navigable config answers an absent key with a placeholder object rather than {@code null}, so
@@ -417,11 +417,11 @@ public class DataBindingUtils {
      * fails closed, because this switch governs mass-assignment protection.
      *
      * @param value the raw configured value, which may be {@code null} or an absent-key placeholder
-     * @return true when the legacy (permissive) binding default applies
+     * @return true when secure deny-by-default binding applies
      */
-    static boolean resolveLegacyBindableDefault(final Object value) {
+    static boolean resolveDenyByDefault(final Object value) {
         if (value == null || value instanceof NavigableMap.NullSafeNavigator) {
-            return true;
+            return false;
         }
         if (value instanceof Boolean) {
             return (Boolean) value;
@@ -436,8 +436,8 @@ public class DataBindingUtils {
             }
         }
         LOG.warn("Unrecognised value [{}] for configuration property [{}]; secure data binding will be enabled.",
-                value, Settings.LEGACY_BINDABLE_DEFAULT);
-        return false;
+                value, Settings.DATABINDING_DENY_BY_DEFAULT);
+        return true;
     }
 
     static void clearBindingCaches() {
@@ -516,7 +516,7 @@ public class DataBindingUtils {
      */
     public static BindingResult bindObjectToInstance(Object object, Object source, List include, List exclude, String filter) {
         if (include == null) {
-            if (exclude == null || !isLegacyBindableDefaultEnabled()) {
+            if (exclude == null || isDenyByDefaultEnabled()) {
                 include = getBindingIncludeList(object);
             } else {
                 // Exclude-only in compatibility mode must not intersect the class allowlist.
@@ -556,7 +556,7 @@ public class DataBindingUtils {
     public static BindingResult bindObjectToDomainInstance(PersistentEntity entity, Object object,
                                                            Object source, List include, List exclude, String filter) {
         if (include == null) {
-            if (exclude == null || !isLegacyBindableDefaultEnabled()) {
+            if (exclude == null || isDenyByDefaultEnabled()) {
                 include = getBindingIncludeList(object);
             } else {
                 include = SimpleDataBinder.getBindAllBindingIncludeList();
