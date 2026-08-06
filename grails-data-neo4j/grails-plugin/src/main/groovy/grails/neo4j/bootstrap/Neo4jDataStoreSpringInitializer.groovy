@@ -85,7 +85,8 @@ class Neo4jDataStoreSpringInitializer extends AbstractDatastoreInitializer {
             neo4jConnectionSourceFactory(Neo4jConnectionSourceFactory) { bean ->
                 bean.autowire = true
             }
-            neo4jDatastore(Neo4jDatastore, configuration, ref("neo4jConnectionSourceFactory"), eventPublisher, collectMappedClasses(DATASTORE_TYPE))
+            Object configurationReference = configurationReference(beanDefinitionRegistry)
+            neo4jDatastore(Neo4jDatastore, configurationReference, ref("neo4jConnectionSourceFactory"), eventPublisher, collectMappedClasses(DATASTORE_TYPE))
             neo4jMappingContext(neo4jDatastore: "getMappingContext")
             neo4jTransactionManager(neo4jDatastore: "getTransactionManager")
             neo4jAutoTimestampEventListener(neo4jDatastore: "getAutoTimestampEventListener")

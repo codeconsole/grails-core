@@ -24,14 +24,17 @@ import java.beans.Introspector
 import groovy.transform.CompileDynamic
 import groovy.transform.CompileStatic
 
+import org.springframework.beans.factory.config.RuntimeBeanReference
 import org.springframework.beans.factory.support.BeanDefinitionRegistry
 import org.springframework.context.ApplicationContext
 import org.springframework.context.ApplicationEventPublisher
 import org.springframework.context.ConfigurableApplicationContext
 import org.springframework.context.MessageSource
 import org.springframework.context.ResourceLoaderAware
+import org.springframework.context.aot.AbstractAotProcessor
 import org.springframework.context.support.GenericApplicationContext
 import org.springframework.context.support.StaticMessageSource
+import org.springframework.core.SpringProperties
 import org.springframework.core.env.ConfigurableEnvironment
 import org.springframework.core.env.PropertyResolver
 import org.springframework.core.env.StandardEnvironment
@@ -77,6 +80,33 @@ abstract class AbstractDatastoreInitializer implements ResourceLoaderAware {
     Collection<Class> persistentClasses = []
     Collection<String> packages = []
     PropertyResolver configuration = new StandardEnvironment()
+
+    /**
+     * What a bean definition should hold in place of the configuration itself.
+     *
+     * <p>A definition holding the resolver is a definition holding everything the resolver can
+     * reach, and generating code for such a definition writes those values out: an environment
+     * carries the machine's own variables, so the generated source ends up containing the
+     * environment of whatever machine built it, along with whatever was in it -- credentials among
+     * them -- and the application then reads its settings from there rather than from where it
+     * runs.</p>
+     *
+     * <p>So while code is being generated, and only then, the context's environment is named
+     * instead, which leaves the lookup to be made where the application runs. Every other time the
+     * resolver is held as it always was, which matters for a datastore brought up on its own: its
+     * configuration is whatever the caller passed and there is no environment holding it.</p>
+     */
+    protected Object configurationReference(BeanDefinitionRegistry registry) {
+        if (!SpringProperties.getFlag(AbstractAotProcessor.AOT_PROCESSING)) {
+            return configuration
+        }
+        boolean insideContainer = registry instanceof ConfigurableApplicationContext ||
+                resourcePatternResolver.resourceLoader instanceof ConfigurableApplicationContext
+        insideContainer
+                ? new RuntimeBeanReference(ConfigurableApplicationContext.ENVIRONMENT_BEAN_NAME)
+                : configuration
+    }
+
     boolean registerApplicationIfNotPresent = true
     Object originalConfiguration
 
@@ -266,11 +296,21 @@ abstract class AbstractDatastoreInitializer implements ResourceLoaderAware {
         return {}
     }
 
-    protected Collection<Class> collectMappedClasses(String datastoreType) {
-        def classes = !secondaryDatastore ? persistentClasses : persistentClasses.findAll() { Class cls ->
+    /**
+     * The classes this datastore maps, as the array its constructor takes.
+     *
+     * <p>The array type is what makes this survive ahead-of-time processing. A datastore takes its
+     * classes as a variable-argument parameter, so the constructor argument the generator writes out
+     * is looked up by that parameter's type when the bean is rebuilt. A collection does not answer to
+     * {@code Class[]}, so the lookup misses it and the argument is resolved as a dependency instead,
+     * which for an array type means every {@code Class} bean in the context: none. The datastore is
+     * then built mapping nothing, and the first call on a domain class reports that it is not one.</p>
+     */
+    protected Class[] collectMappedClasses(String datastoreType) {
+        Collection<Class> classes = !secondaryDatastore ? persistentClasses : persistentClasses.findAll() { Class cls ->
             isMappedClass(datastoreType, cls)
         }
-        return classes
+        return classes as Class[]
     }
 
     protected boolean isMappedClass(String datastoreType, Class cls) {

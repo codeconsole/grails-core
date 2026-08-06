@@ -99,15 +99,21 @@ class MongoDbDataStoreSpringInitializer extends AbstractDatastoreInitializer {
             else {
                 grailsDatastoreEventPublisher(DefaultApplicationEventPublisher)
             }
+            // The configuration is referenced rather than passed. Passing it puts the resolver
+            // itself in the definition, and generating code for a definition means writing out
+            // whatever it holds: an environment carries the machine's own variables, so the
+            // generated source ends up containing the build machine's environment, and the
+            // application reads its settings from wherever it was built rather than where it runs.
+            Object configurationReference = configurationReference(beanDefinitionRegistry)
             if (mongo == null) {
                 mongoConnectionSourceFactory(MongoConnectionSourceFactory) { bean ->
                     bean.autowire = true
                 }
-                mongoDatastore(MongoDatastore, configuration, ref('mongoConnectionSourceFactory'), ref('grailsDatastoreEventPublisher'), collectMappedClasses(DATASTORE_TYPE))
+                mongoDatastore(MongoDatastore, configurationReference, ref('mongoConnectionSourceFactory'), ref('grailsDatastoreEventPublisher'), collectMappedClasses(DATASTORE_TYPE))
                 mongo(mongoDatastore: 'getMongoClient')
             }
             else {
-                mongoDatastore(MongoDatastore, mongo, configuration, ref('grailsDatastoreEventPublisher'), collectMappedClasses(DATASTORE_TYPE))
+                mongoDatastore(MongoDatastore, mongo, configurationReference, ref('grailsDatastoreEventPublisher'), collectMappedClasses(DATASTORE_TYPE))
             }
 
             mongoMappingContext(mongoDatastore: 'getMappingContext')
