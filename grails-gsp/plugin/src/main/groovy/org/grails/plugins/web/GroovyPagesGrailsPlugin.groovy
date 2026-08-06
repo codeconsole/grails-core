@@ -276,7 +276,6 @@ class GroovyPagesGrailsPlugin extends Plugin {
             // Configure a Spring MVC view resolver if none is defined
             groovyPagesPostProcessor(GroovyPagesPostProcessor)
 
-
             errorsViewStackTracePrinter(ErrorsViewStackTracePrinter, ref('grailsResourceLocator'))
             filteringCodecsByContentTypeSettings(FilteringCodecsByContentTypeSettings, ref('grailsApplication'))
 
