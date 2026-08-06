@@ -2,6 +2,7 @@
 <%@ page import="org.springframework.boot.SpringBootVersion"%>
 <%@ page import="org.springframework.core.SpringVersion"%>
 <%@ page import="org.springframework.util.ClassUtils"%>
+<%@ page import="org.springframework.util.ReflectionUtils"%>
 <g:set var="pluginManager" bean="pluginManager"/>
 <g:set var="servletContext" bean="servletContext"/>
 <g:set var="pluginsWithOrder"
@@ -71,9 +72,13 @@
                                 </span>
                                 ${SpringVersion.getVersion()}
                             </li>
-                            <%-- Spring Security: only when the dependency is present --%>
+                            <%-- Spring Security: only when the dependency is present. The call goes
+                                 through ReflectionUtils because invoking Method.invoke from Groovy
+                                 resolves to a caller-sensitive overload that a native image rejects. --%>
+                            <g:set var="springSecurityCoreVersionClass"
+                                   value="${ClassUtils.isPresent('org.springframework.security.core.SpringSecurityCoreVersion', null) ? ClassUtils.forName('org.springframework.security.core.SpringSecurityCoreVersion', null) : null}"/>
                             <g:set var="springSecurityVersion"
-                                   value="${ClassUtils.isPresent('org.springframework.security.core.SpringSecurityCoreVersion', null) ? ClassUtils.forName('org.springframework.security.core.SpringSecurityCoreVersion', null).getMethod('getVersion').invoke(null) : null}"/>
+                                   value="${springSecurityCoreVersionClass ? ReflectionUtils.invokeMethod(ReflectionUtils.findMethod(springSecurityCoreVersionClass, 'getVersion'), null) : null}"/>
                             <g:if test="${springSecurityVersion}">
                                 <li class="list-group-item d-flex justify-content-between align-items-center px-0">
                                     <span class="d-inline-flex align-items-center text-body-secondary">
