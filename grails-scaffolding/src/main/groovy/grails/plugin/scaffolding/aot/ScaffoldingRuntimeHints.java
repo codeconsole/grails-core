@@ -35,9 +35,9 @@ import org.springframework.lang.Nullable;
 public class ScaffoldingRuntimeHints implements RuntimeHintsRegistrar {
 
     private static final String[] DISPATCHED_TYPES = {
-            "grails.plugin.scaffolding.RestfulServiceController",
-            "grails.plugin.scaffolding.ScaffoldingViewResolver",
-            "grails.plugin.scaffolding.annotation.Scaffold"
+        "grails.plugin.scaffolding.RestfulServiceController",
+        "grails.plugin.scaffolding.ScaffoldingViewResolver",
+        "grails.plugin.scaffolding.annotation.Scaffold"
     };
 
     @Override

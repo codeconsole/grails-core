@@ -39,9 +39,9 @@ public class MimeTypeRuntimeHints implements RuntimeHintsRegistrar {
      * correct for an application that does not use every plugin.
      */
     private static final String[] DISPATCHED_TYPES = {
-            "grails.web.mime.MimeType",
-            "org.grails.web.mime.DefaultAcceptHeaderParser",
-            "org.grails.web.mime.DefaultMimeUtility"
+        "grails.web.mime.MimeType",
+        "org.grails.web.mime.DefaultAcceptHeaderParser",
+        "org.grails.web.mime.DefaultMimeUtility"
     };
 
     @Override

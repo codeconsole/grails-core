@@ -20,8 +20,6 @@ package org.grails.datastore.gorm.aot;
 
 import java.io.IOException;
 
-import org.grails.aot.RegistrableTypes;
-
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
@@ -35,6 +33,8 @@ import org.springframework.core.type.classreading.CachingMetadataReaderFactory;
 import org.springframework.core.type.classreading.MetadataReaderFactory;
 import org.springframework.lang.Nullable;
 import org.springframework.util.ClassUtils;
+
+import org.grails.aot.RegistrableTypes;
 
 /**
  * Registers the persistence runtime a datastore reaches through Groovy.
@@ -66,8 +66,8 @@ public class GormRuntimeHints implements RuntimeHintsRegistrar {
      * the operations that have been run so far, and every datastore adds its own.
      */
     private static final String[] PATTERNS = {
-            ResourcePatternResolver.CLASSPATH_ALL_URL_PREFIX + "org/grails/datastore/mapping/**/*.class",
-            ResourcePatternResolver.CLASSPATH_ALL_URL_PREFIX + "org/grails/datastore/gorm/**/*.class"
+        ResourcePatternResolver.CLASSPATH_ALL_URL_PREFIX + "org/grails/datastore/mapping/**/*.class",
+        ResourcePatternResolver.CLASSPATH_ALL_URL_PREFIX + "org/grails/datastore/gorm/**/*.class"
     };
 
     @Override

@@ -39,14 +39,14 @@ public class DataBindingRuntimeHints implements RuntimeHintsRegistrar {
      * correct for an application that does not use every plugin.
      */
     private static final String[] DISPATCHED_TYPES = {
-            "grails.web.databinding.WebDataBinding",
-            "grails.web.databinding.DataBindingUtils",
-            "grails.databinding.DataBindingSource",
-            "grails.databinding.BindingHelper",
-            "grails.databinding.converters.ValueConverter",
-            // binding asks a target type whether it is an array, and Groovy makes that call
-            // reflectively on the Class object rather than directly
-            "java.lang.Class"
+        "grails.web.databinding.WebDataBinding",
+        "grails.web.databinding.DataBindingUtils",
+        "grails.databinding.DataBindingSource",
+        "grails.databinding.BindingHelper",
+        "grails.databinding.converters.ValueConverter",
+        // binding asks a target type whether it is an array, and Groovy makes that call
+        // reflectively on the Class object rather than directly
+        "java.lang.Class"
     };
 
     @Override

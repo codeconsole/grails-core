@@ -45,15 +45,15 @@ public class ControllerRuntimeHints implements RuntimeHintsRegistrar {
      * when present, so this stays correct for an application that does not use every plugin.
      */
     private static final String[] DISPATCHED_TYPES = {
-            "grails.artefact.Controller",
-            "grails.artefact.controller.support.AllowedMethodsHelper",
-            "grails.artefact.controller.support.RequestForwarder",
-            "grails.artefact.controller.support.ResponseRedirector",
-            "grails.artefact.controller.support.ResponseRenderer",
-            "grails.artefact.controller.RestResponder",
-            // a view asking who is logged in reaches the request's principal, and Groovy makes that
-            // call on the interface rather than the implementation the container supplies
-            "java.security.Principal"
+        "grails.artefact.Controller",
+        "grails.artefact.controller.support.AllowedMethodsHelper",
+        "grails.artefact.controller.support.RequestForwarder",
+        "grails.artefact.controller.support.ResponseRedirector",
+        "grails.artefact.controller.support.ResponseRenderer",
+        "grails.artefact.controller.RestResponder",
+        // a view asking who is logged in reaches the request's principal, and Groovy makes that
+        // call on the interface rather than the implementation the container supplies
+        "java.security.Principal"
     };
 
     @Override

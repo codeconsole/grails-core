@@ -40,12 +40,12 @@ public class UrlMappingRuntimeHints implements RuntimeHintsRegistrar {
      * correct for an application that does not use every plugin.
      */
     private static final String[] DISPATCHED_TYPES = {
-            "grails.web.mapping.UrlMappingInfo",
-            "grails.web.mapping.UrlMapping",
-            "grails.web.mapping.UrlMappings",
-            "grails.web.mapping.UrlCreator",
-            "grails.web.mapping.LinkGenerator",
-            "grails.web.mapping.UrlMappingData"
+        "grails.web.mapping.UrlMappingInfo",
+        "grails.web.mapping.UrlMapping",
+        "grails.web.mapping.UrlMappings",
+        "grails.web.mapping.UrlCreator",
+        "grails.web.mapping.LinkGenerator",
+        "grails.web.mapping.UrlMappingData"
     };
 
     @Override

@@ -34,6 +34,7 @@ import java.util.concurrent.CopyOnWriteArraySet;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
+import org.springframework.aot.AotDetector;
 import org.springframework.beans.BeansException;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.ApplicationContextAware;
@@ -47,8 +48,6 @@ import grails.plugins.GrailsPluginManager;
 import grails.plugins.PluginManagerAware;
 import grails.util.CollectionUtils;
 import grails.util.Environment;
-
-import org.springframework.aot.AotDetector;
 import org.grails.gsp.GroovyPage;
 import org.grails.gsp.GroovyPageBinding;
 import org.grails.io.support.GrailsResourceUtils;

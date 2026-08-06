@@ -20,8 +20,6 @@ package org.grails.plugins.web.taglib.aot;
 
 import java.io.IOException;
 
-import org.grails.aot.RegistrableTypes;
-
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
@@ -35,6 +33,8 @@ import org.springframework.core.type.classreading.CachingMetadataReaderFactory;
 import org.springframework.core.type.classreading.MetadataReaderFactory;
 import org.springframework.lang.Nullable;
 import org.springframework.util.ClassUtils;
+
+import org.grails.aot.RegistrableTypes;
 
 /**
  * Registers the tag libraries and page runtime a rendered page dispatches through.
@@ -68,9 +68,9 @@ public class TagLibRuntimeHints implements RuntimeHintsRegistrar {
      * one at a time only ever describes the pages that have been rendered so far.
      */
     private static final String[] RUNTIME_PATTERNS = {
-            ResourcePatternResolver.CLASSPATH_ALL_URL_PREFIX + "org/grails/gsp/**/*.class",
-            ResourcePatternResolver.CLASSPATH_ALL_URL_PREFIX + "org/grails/taglib/**/*.class",
-            ResourcePatternResolver.CLASSPATH_ALL_URL_PREFIX + "org/grails/buffer/**/*.class"
+        ResourcePatternResolver.CLASSPATH_ALL_URL_PREFIX + "org/grails/gsp/**/*.class",
+        ResourcePatternResolver.CLASSPATH_ALL_URL_PREFIX + "org/grails/taglib/**/*.class",
+        ResourcePatternResolver.CLASSPATH_ALL_URL_PREFIX + "org/grails/buffer/**/*.class"
     };
 
     private static String[] patterns() {
@@ -85,7 +85,7 @@ public class TagLibRuntimeHints implements RuntimeHintsRegistrar {
      * class is dispatched dynamically and needs the class to survive.
      */
     private static final String[] CALLED_FROM_DESCRIPTORS = {
-            "org.springframework.aot.AotDetector"
+        "org.springframework.aot.AotDetector"
     };
 
     @Override

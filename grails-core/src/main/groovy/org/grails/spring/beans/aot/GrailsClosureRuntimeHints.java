@@ -20,11 +20,8 @@ package org.grails.spring.beans.aot;
 
 import java.io.IOException;
 
-import org.grails.aot.RegistrableTypes;
-
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-
 
 import org.springframework.aot.hint.MemberCategory;
 import org.springframework.aot.hint.RuntimeHints;
@@ -36,6 +33,8 @@ import org.springframework.core.type.classreading.CachingMetadataReaderFactory;
 import org.springframework.core.type.classreading.MetadataReaderFactory;
 import org.springframework.lang.Nullable;
 import org.springframework.util.ClassUtils;
+
+import org.grails.aot.RegistrableTypes;
 
 /**
  * Registers the framework closures Groovy dispatches through.
@@ -65,9 +64,9 @@ public class GrailsClosureRuntimeHints implements RuntimeHintsRegistrar {
      * the container calls while the context is built.
      */
     private static final String[] PATTERNS = {
-            ResourcePatternResolver.CLASSPATH_ALL_URL_PREFIX + "grails/**/*_closure*.class",
-            ResourcePatternResolver.CLASSPATH_ALL_URL_PREFIX + "org/grails/**/*_closure*.class",
-            ResourcePatternResolver.CLASSPATH_ALL_URL_PREFIX + "**/*GrailsPlugin$*_closure*.class"
+        ResourcePatternResolver.CLASSPATH_ALL_URL_PREFIX + "grails/**/*_closure*.class",
+        ResourcePatternResolver.CLASSPATH_ALL_URL_PREFIX + "org/grails/**/*_closure*.class",
+        ResourcePatternResolver.CLASSPATH_ALL_URL_PREFIX + "**/*GrailsPlugin$*_closure*.class"
     };
 
     @Override
