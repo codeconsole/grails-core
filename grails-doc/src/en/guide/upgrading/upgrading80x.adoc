@@ -2271,17 +2271,19 @@ Boot's auto-configuration backed off. It is now honoured in full — `encoding`,
 `fallback-to-system-locale`, `always-use-message-format`, `use-code-as-default-message` and
 `common-messages`.
 
-Two Grails settings are removed in favour of it:
+Two Grails settings give way to it:
 
-[cols="1,1"]
+[cols="2,2,3"]
 |===
-|Removed |Replacement
+|Setting |Replacement |Status
 
 |`grails.i18n.cache.seconds`
 |`spring.messages.cache-duration`
+|Deprecated, still honoured for now — see below
 
 |`grails.i18n.filecache.seconds`
-|`spring.messages.cache-duration`
+|None
+|Ignored
 |===
 
 `grails.i18n.cache.seconds` is still honoured as a temporary upgrade aid: it is translated into
