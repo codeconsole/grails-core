@@ -50,7 +50,7 @@ class ReportRenderer {
     }
 
     static String identity(String value) {
-        safe(removePrefix(value, BENCHMARK_PACKAGE))
+        formatIdentity(value, BENCHMARK_PACKAGE)
     }
 
     static String score(Benchmark value) {
@@ -80,17 +80,20 @@ class ReportRenderer {
                 ? 'INCOMPLETE/unreliable (missing or non-finite ruler measurements)'
                 : worst == null
                         ? 'not measured'
-                        : "worst ruler deviation: ${String.format(Locale.ROOT, '%.1f%%', deviation(worst.speedup) * 100D)}${worst.shard ? ' in ' + safe(worst.shard) : ''} (${safe(removePrefix(worst.identity, BenchmarkComparator.RULER_PACKAGE))})"
+                        : "worst ruler deviation: ${String.format(Locale.ROOT, '%.1f%%', deviation(worst.speedup) * 100D)}${worst.shard ? ' in ' + safe(worst.shard) : ''} (${rulerIdentity(worst.identity)})"
         List<String> lines = ['### JMH Benchmark Report', '', "**Regressions:** ${regressions}".toString(), "**Improvements:** ${improvements}".toString(), "**Runner health:** ${health}".toString(), 'Ruler benchmarks are excluded from verdicts and group summaries; runner health is a stability check, not a calibration factor.']
         if (comparison.missingShards) lines.addAll(['', '> **Warning:** No usable base/head pair was produced by ' + comparison.missingShards.collect { String item -> safe(item) }.join(', ') + ". This comparison rests on ${comparison.pairedShards.size()} shard pair(s) instead of the expected ${comparison.pairedShards.size() + comparison.missingShards.size()}, so the alternating measurement order did not fully cancel and the result is weaker than a normal run."])
         if (deviations) {
+            if (comparison.missingShards) {
+                lines.add('')
+            }
             lines.add('**Ruler movements:** ' + deviations.collect { RulerDeviation item ->
                 (item.shard ? safe(item.shard) + ': ' : '') +
-                        safe(removePrefix(item.identity, BenchmarkComparator.RULER_PACKAGE)) +
+                        rulerIdentity(item.identity) +
                         ': ' + speedup(item.speedup)
             }.join(', '))
         }
-        if (comparison.rulerIncomplete) lines.addAll(['', '> **Warning:** Runner health is INCOMPLETE because expected ruler measurements were missing or non-finite. Treat results as unreliable.', '', '**Incomplete ruler measurements:** ' + comparison.rulerIncomplete.collect { String item -> safe(item) }.join(', ')])
+        if (comparison.rulerIncomplete) lines.addAll(['', '> **Warning:** Runner health is INCOMPLETE because expected ruler measurements were missing or non-finite. Treat results as unreliable.', '', '**Incomplete ruler measurements:** ' + comparison.rulerIncomplete.collect { String item -> incompleteRulerIdentity(item) }.join(', ')])
         if (deviations.any { RulerDeviation item -> Math.max(item.speedup, 1D / item.speedup) > 1.05D }) lines.addAll(['', '> **Warning:** The runner was unstable BETWEEN the two halves of the A/B run. Treat results as unreliable. Runner health is a stability check, not a calibration factor.'])
         lines.addAll(['', 'Group geometric means are descriptive only, not verdicts.', ''])
         if (comparison.groupSpeedups) {
@@ -109,11 +112,11 @@ class ReportRenderer {
         sortedRows.sort(rowOrder)
         sortedRows.each { ComparisonRow row -> lines.add("| ${identity(row.identity)} | ${score(row.base)} | ${score(row.head)} | ${speedup(row.speedup)} | ${row.verdict} | ${allocation(row)} |".toString()) }
         lines.addAll(['', '</details>'])
-        if (comparison.onlyHead) lines.addAll(['', '**Only in head:** ' + comparison.onlyHead.collect { String item -> safe(item) }.join(', ')])
-        if (comparison.onlyBase) lines.addAll(['', '**Only in base:** ' + comparison.onlyBase.collect { String item -> safe(item) }.join(', ')])
+        if (comparison.onlyHead) lines.addAll(['', '**Only in head:** ' + comparison.onlyHead.collect { String item -> identity(item) }.join(', ')])
+        if (comparison.onlyBase) lines.addAll(['', '**Only in base:** ' + comparison.onlyBase.collect { String item -> identity(item) }.join(', ')])
         if (comparison.dropped) {
             lines.add('')
-            lines.add(("**Dropped unpaired shard samples (${comparison.dropped.size()}):** " + comparison.dropped.collect { String item -> safe(item) }.join(', ')).toString())
+            lines.add(("**Dropped unpaired shard samples (${comparison.dropped.size()}):** " + comparison.dropped.collect { String item -> identity(item) }.join(', ')).toString())
         }
         if (comparison.malformed) {
             lines.add('')
@@ -144,5 +147,27 @@ class ReportRenderer {
 
     private static String removePrefix(String value, String prefix) {
         value.startsWith(prefix) ? value.substring(prefix.length()) : value
+    }
+
+    private static String rulerIdentity(String value) {
+        formatIdentity(value, BenchmarkComparator.RULER_PACKAGE)
+    }
+
+    private static String incompleteRulerIdentity(String value) {
+        int separator = value.indexOf(': ')
+        separator >= 0
+                ? safe(value.substring(0, separator)) + ': ' + rulerIdentity(value.substring(separator + 2))
+                : rulerIdentity(value)
+    }
+
+    private static String formatIdentity(String value, String prefix) {
+        String withoutPrefix = removePrefix(value, prefix)
+        int qualifierStart = withoutPrefix.indexOf('[mode=')
+        if (qualifierStart < 0 || !withoutPrefix.endsWith(']')) {
+            return safe(withoutPrefix)
+        }
+        String name = safe(withoutPrefix.substring(0, qualifierStart))
+        String qualifiers = safe(withoutPrefix.substring(qualifierStart + 1, withoutPrefix.length() - 1))
+        return "${name} (${qualifiers})"
     }
 }

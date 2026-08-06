@@ -28,7 +28,22 @@ class BenchmarkComparatorSpec extends Specification {
     def "missing interval is insufficient data"() { expect: compare(item(120D, 'ns/op', null, null), item(100D, 'ns/op', null, null)).rows[0].verdict == 'insufficient data' }
     def "nan score error is unavailable"() { expect: JmhResults.confidenceInterval([score: 100D, scoreError: 'NaN']) == null }
     def "one-sided benchmarks are excluded"() { expect: BenchmarkComparator.compare(['a': item(100D), 'head': item(100D)], ['a': item(100D), 'base': item(100D)], .1D).with { rows.size() == 1 && onlyHead == ['head'] && onlyBase == ['base'] } }
-    def "identity sorts parameters"() { expect: JmhResults.identity('sample.Run', [z: '2', a: '1']) == 'sample.Run[a=1,z=2]' }
+    def "identity sorts parameters and normalizes mode"() { expect: JmhResults.identity('sample.Run', 'AVGT', [z: '2', a: '1']) == 'sample.Run[mode=avgt,a=1,z=2]' }
+    def "parser preserves same benchmark parameters in separate modes"() {
+        given:
+        List entries = [
+                [benchmark: 'sample.Run', mode: 'avgt', params: [size: '10'], primaryMetric: [score: 100D, scoreError: 1D, scoreUnit: 'ns/op']],
+                [benchmark: 'sample.Run', mode: 'thrpt', params: [size: '10'], primaryMetric: [score: 200D, scoreError: 1D, scoreUnit: 'ops/s']]
+        ]
+
+        when:
+        Map<String, Benchmark> benchmarks = JmhResults.parseEntries(entries)
+        Comparison comparison = BenchmarkComparator.compare(benchmarks, benchmarks, .1D)
+
+        then:
+        benchmarks.keySet() == ['sample.Run[mode=avgt,size=10]', 'sample.Run[mode=thrpt,size=10]'] as Set
+        comparison.rows*.identity == ['sample.Run[mode=avgt,size=10]', 'sample.Run[mode=thrpt,size=10]']
+    }
     def "invalid scores are malformed"() { expect: compare(item(0D), item(100D)).malformed == 1 }
     def "allocation requires percentage and absolute thresholds"() { expect: compare(item(100D, 'ns/op', [99D, 101D], 1D, 117D), item(100D, 'ns/op', [99D, 101D], 1D, 100D)).rows[0].allocationCandidate }
     def "unit changes are not comparable"() { expect: compare(item(5000D, 'ops/s'), item(200D)).malformed == 1 }

@@ -72,10 +72,13 @@ class JmhCompareSpec extends Specification {
     def "shards drop unpaired data and expose missing runners"() {
         given:
         Benchmark value = benchmark(100)
-        Comparison result = BenchmarkComparator.compareShards(['a.json': ['sample.Run': value]], ['a.json': ['sample.Run': value]], .1D, ['a.json', 'b.json'])
+        Benchmark ruler = new Benchmark('org.apache.grails.benchmarks.ruler.CpuRuler.run', 100D, 1D, [99D, 101D], 'ns/op', 'avgt', null)
+        Comparison result = BenchmarkComparator.compareShards(['a.json': ['sample.Run': value, (ruler.identity): ruler]], ['a.json': ['sample.Run': value, (ruler.identity): ruler]], .1D, ['a.json', 'b.json'])
         expect:
         result.missingShards == ['b.json']
-        ReportRenderer.render(result).contains('1 shard pair(s) instead of the expected 2')
+        String report = ReportRenderer.render(result)
+        report.contains('1 shard pair(s) instead of the expected 2')
+        report.contains('normal run.\n\n**Ruler movements:**')
     }
 
     def "number formatting matches percent-g style rendering"() {
@@ -86,6 +89,14 @@ class JmhCompareSpec extends Specification {
         100D     || '100'
         4.07D    || '4.07'
         18300D   || '1.83e+04'
+    }
+
+    def "identity formatting separates safe benchmark qualifiers"() {
+        expect:
+        ReportRenderer.identity('org.apache.grails.benchmarks.sample.Run[mode=avgt,size=10]') == 'sample.Run (mode=avgt,size=10)'
+        ReportRenderer.identity('sample.Run[mode=avgt,pattern=[a-z]+]') == 'sample.Run (mode=avgt,pattern=a-z+)'
+        ReportRenderer.identity('sample.<Run>[mode=<script>|]') == 'sample.Run (mode=script)'
+        ReportRenderer.identity('sample.Bang.run![x](y)[mode=avgt]') == 'sample.Bang.runxy (mode=avgt)'
     }
 
     def "head only output writes no workflow summary and null PR does not post"() {

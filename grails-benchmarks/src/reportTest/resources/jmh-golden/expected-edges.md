@@ -18,18 +18,18 @@ Group geometric means are descriptive only, not verdicts.
 
 | Benchmark | Base score | Head score | Speedup | Verdict | Allocation delta (ADVISORY) |
 | --- | ---: | ---: | ---: | --- | ---: |
-| feature.Subject.runlabel=Ruler | 100 ns/op | 80 ns/op | 1.25x | IMPROVED | — |
-| e.Insufficient.run | 100 ns/op | 120 ns/op | 0.83x | insufficient data | — |
-| e.NonFinite.run | 100 ns/op | 120 ns/op | 0.83x | insufficient data | — |
-| e.Shared.run | 100 ns/op | 100 ns/op | 1.00x | no clear change | — |
-| sample.binjected.run | 100 ns/op | 100 ns/op | 1.00x | no clear change | — |
-| sample.Bang.runxy | 100 ns/op | 100 ns/op | 1.00x | no clear change | — |
-| sample.Evil.runlabel=xhttp://example.com | 100 ns/op | 100 ns/op | 1.00x | no clear change | — |
+| feature.Subject.run (mode=avgt,label=Ruler) | 100 ns/op | 80 ns/op | 1.25x | IMPROVED | — |
+| e.Insufficient.run (mode=avgt) | 100 ns/op | 120 ns/op | 0.83x | insufficient data | — |
+| e.NonFinite.run (mode=avgt) | 100 ns/op | 120 ns/op | 0.83x | insufficient data | — |
+| e.Shared.run (mode=avgt) | 100 ns/op | 100 ns/op | 1.00x | no clear change | — |
+| sample.binjected.run (mode=avgt) | 100 ns/op | 100 ns/op | 1.00x | no clear change | — |
+| sample.Bang.runxy (mode=avgt) | 100 ns/op | 100 ns/op | 1.00x | no clear change | — |
+| sample.Evil.runlabel=xhttp://example.com (mode=avgt) | 100 ns/op | 100 ns/op | 1.00x | no clear change | — |
 
 </details>
 
-**Dropped unpaired shard samples (2):** e.BaseOnly.run, e.HeadOnly.run
+**Dropped unpaired shard samples (4):** e.BaseOnly.run (mode=avgt), e.HeadOnly.run (mode=avgt), e.ModeSwitch.run (mode=avgt), e.ModeSwitch.run (mode=sample)
 
-**Malformed comparisons skipped:** 3
+**Malformed comparisons skipped:** 2
 
 <!-- grails-jmh-benchmark -->

@@ -16,8 +16,8 @@ Group geometric means are descriptive only, not verdicts.
 
 | Benchmark | Base score | Head score | Speedup | Verdict | Allocation delta (ADVISORY) |
 | --- | ---: | ---: | ---: | --- | ---: |
-| g.group.First.run | 100 ns/op | 200 ns/op | 0.50x | REGRESSED | — |
-| g.group.Second.run | 100 ns/op | 50 ns/op | 2.00x | IMPROVED | — |
+| g.group.First.run (mode=avgt) | 100 ns/op | 200 ns/op | 0.50x | REGRESSED | — |
+| g.group.Second.run (mode=avgt) | 100 ns/op | 50 ns/op | 2.00x | IMPROVED | — |
 
 </details>
 

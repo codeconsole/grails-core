@@ -53,13 +53,14 @@ class JmhResults {
         return score != null && error != null && error >= 0D ? [score - error, score + error] : null
     }
 
-    static String identity(String name, Map<String, Object> params) {
-        if (params == null || params.isEmpty()) {
-            return name
+    static String identity(String name, String mode, Map<String, Object> params) {
+        List<String> components = ['mode=' + mode.trim().toLowerCase(Locale.ROOT)]
+        if (params != null && !params.isEmpty()) {
+            List<String> keys = new ArrayList<>(params.keySet())
+            keys.sort()
+            components.addAll(keys.collect { String key -> key + '=' + params.get(key) })
         }
-        List<String> keys = new ArrayList<>(params.keySet())
-        keys.sort()
-        return name + '[' + keys.collect { String key -> key + '=' + params.get(key) }.join(',') + ']'
+        return name + '[' + components.join(',') + ']'
     }
 
     static Map<String, Benchmark> parseEntries(List<?> entries) {
@@ -80,7 +81,7 @@ class JmhResults {
             Map<String, Object> allocationMetric = secondary?.get(ALLOCATION_METRIC) instanceof Map ? (Map<String, Object>) secondary.get(ALLOCATION_METRIC) : null
             Double allocation = allocationMetric?.get('scoreUnit') == 'B/op' ? finiteNumber(allocationMetric.get('score')) : null
             String mode = item.get('mode') instanceof String ? ((String) item.get('mode')).trim() : ''
-            String benchmarkId = identity((String) name, params)
+            String benchmarkId = identity((String) name, mode, params)
             benchmarks.put(benchmarkId, new Benchmark(benchmarkId, finiteNumber(metric.get('score')), finiteNumber(metric.get('scoreError')), confidenceInterval(metric), String.valueOf(metric.getOrDefault('scoreUnit', '')), mode, allocation))
         }
         return benchmarks
