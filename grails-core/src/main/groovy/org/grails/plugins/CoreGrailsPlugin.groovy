@@ -30,6 +30,9 @@ import org.springframework.beans.factory.xml.XmlBeanDefinitionReader
 import org.springframework.boot.autoconfigure.AutoConfiguration
 import org.springframework.boot.autoconfigure.AutoConfigureOrder
 import org.springframework.boot.autoconfigure.context.PropertyPlaceholderAutoConfiguration
+import org.springframework.context.ApplicationContext
+import org.springframework.context.ConfigurableApplicationContext
+import org.springframework.context.annotation.AnnotationConfigUtils
 import org.springframework.context.annotation.ConfigurationClassPostProcessor
 import org.springframework.context.support.GenericApplicationContext
 import org.springframework.context.support.PropertySourcesPlaceholderConfigurer
@@ -120,6 +123,21 @@ class CoreGrailsPlugin extends Plugin {
     }
 
     /**
+     * Whether the context already has a processor that parses configuration classes.
+     *
+     * <p>Spring registers one under a well-known name as part of setting up annotation
+     * configuration, which is every application context that reads annotations. A context assembled
+     * without that step -- a test slice registering this plugin's beans on a bare registry -- has
+     * none, and is what the plugin's own processor is for.</p>
+     */
+    private static boolean hasConfigurationClassPostProcessor(GrailsApplication application) {
+        ApplicationContext context = application.mainContext
+        context instanceof ConfigurableApplicationContext &&
+                ((ConfigurableApplicationContext) context).beanFactory.containsBeanDefinition(
+                        AnnotationConfigUtils.CONFIGURATION_ANNOTATION_PROCESSOR_BEAN_NAME)
+    }
+
+    /**
      * Scans the packages named by {@code grails.spring.bean.packages}. Contributed here rather
      * than through {@code doWithSpring}'s {@code grailsContext:component-scan} element, which
      * needs the XML namespace handler and therefore the bean builder DSL.
@@ -133,8 +151,13 @@ class CoreGrailsPlugin extends Plugin {
             // enable post-processing of @Configuration beans defined by plugins. An AOT-optimized
             // context has no ConfigurationClassPostProcessor of its own: the configuration classes
             // were parsed at build time and their beans are already in the generated initializer,
-            // so registering one here would parse them a second time.
-            if (!AotDetector.useGeneratedArtifacts()) {
+            // so registering one here would parse them a second time. A context that annotation
+            // configuration has already been set up on has one of its own, which sees the plugin
+            // definitions because they are registered ahead of it; a second processor over the same
+            // registry parses everything a second time, and while code is being generated the two of
+            // them write out the same import-aware post-processor twice, so one registration
+            // replaces the other on every start.
+            if (!AotDetector.useGeneratedArtifacts() && !hasConfigurationClassPostProcessor(application)) {
                 registry.registerBean('grailsConfigurationClassPostProcessor', ConfigurationClassPostProcessor)
             }
 

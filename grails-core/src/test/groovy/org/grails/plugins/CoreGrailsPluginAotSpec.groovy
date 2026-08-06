@@ -25,6 +25,7 @@ import org.springframework.aot.generate.InMemoryGeneratedFiles
 import org.springframework.beans.factory.BeanRegistrar
 import org.springframework.beans.factory.support.BeanRegistryAdapter
 import org.springframework.beans.factory.support.GenericBeanDefinition
+import org.springframework.context.annotation.AnnotationConfigUtils
 import org.springframework.context.aot.ApplicationContextAotGenerator
 import org.springframework.context.support.GenericApplicationContext
 import org.springframework.core.SpringProperties
@@ -100,6 +101,21 @@ class CoreGrailsPluginAotSpec extends Specification {
         then: 'the configuration classes were parsed at build time, so parsing them again would ' +
                 'collide with the definitions already generated'
             !context.containsBeanDefinition('grailsConfigurationClassPostProcessor')
+    }
+
+    void 'a second configuration class post-processor is not added to a context that has one'() {
+        given: 'the processor Spring registers as part of setting up annotation configuration'
+            SpringProperties.setProperty(AotDetector.AOT_ENABLED, 'false')
+            AnnotationConfigUtils.registerAnnotationConfigProcessors(context)
+
+        when:
+            applyCorePluginRegistrar()
+
+        then: 'the one already there sees the plugin definitions, which are registered ahead of it; ' +
+                'a second parses the same registry again and, while code is being generated, writes ' +
+                'out the same import-aware post-processor a second time'
+            !context.containsBeanDefinition('grailsConfigurationClassPostProcessor')
+            context.containsBeanDefinition(AnnotationConfigUtils.CONFIGURATION_ANNOTATION_PROCESSOR_BEAN_NAME)
     }
 
     void 'the core plugin bean definitions can be generated ahead of time'() {
