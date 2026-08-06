@@ -22,7 +22,6 @@ import com.mongodb.client.MongoClient
 
 import org.springframework.beans.factory.support.BeanDefinitionRegistry
 import org.springframework.context.ApplicationContext
-import org.springframework.context.ApplicationEventPublisher
 import org.springframework.context.ConfigurableApplicationContext
 import org.springframework.context.support.GenericApplicationContext
 import org.springframework.util.ClassUtils
@@ -89,25 +88,26 @@ class MongoDbDataStoreSpringInitializer extends AbstractDatastoreInitializer {
             def callable = getCommonConfiguration(beanDefinitionRegistry, 'mongo')
             callable.delegate = delegate
             callable.call()
-            ApplicationEventPublisher eventPublisher
-            if (beanDefinitionRegistry instanceof ConfigurableApplicationContext) {
-                eventPublisher = new ConfigurableApplicationContextEventPublisher((ConfigurableApplicationContext) beanDefinitionRegistry)
-            }
-            else if (resourcePatternResolver.resourceLoader instanceof ConfigurableApplicationContext) {
-                eventPublisher = new ConfigurableApplicationContextEventPublisher((ConfigurableApplicationContext) resourcePatternResolver.resourceLoader)
+            // The publisher is registered as a definition rather than constructed here so that the
+            // datastore holds a reference the container can build, which is what lets the context
+            // be processed ahead of time. Outside an application context there is nothing to
+            // publish through, so the no-op publisher stands in as it did before.
+            if (beanDefinitionRegistry instanceof ConfigurableApplicationContext
+                    || resourcePatternResolver.resourceLoader instanceof ConfigurableApplicationContext) {
+                grailsDatastoreEventPublisher(ConfigurableApplicationContextEventPublisher)
             }
             else {
-                eventPublisher = new DefaultApplicationEventPublisher()
+                grailsDatastoreEventPublisher(DefaultApplicationEventPublisher)
             }
             if (mongo == null) {
                 mongoConnectionSourceFactory(MongoConnectionSourceFactory) { bean ->
                     bean.autowire = true
                 }
-                mongoDatastore(MongoDatastore, configuration, ref('mongoConnectionSourceFactory'), eventPublisher, collectMappedClasses(DATASTORE_TYPE))
+                mongoDatastore(MongoDatastore, configuration, ref('mongoConnectionSourceFactory'), ref('grailsDatastoreEventPublisher'), collectMappedClasses(DATASTORE_TYPE))
                 mongo(mongoDatastore: 'getMongoClient')
             }
             else {
-                mongoDatastore(MongoDatastore, mongo, configuration, eventPublisher, collectMappedClasses(DATASTORE_TYPE))
+                mongoDatastore(MongoDatastore, mongo, configuration, ref('grailsDatastoreEventPublisher'), collectMappedClasses(DATASTORE_TYPE))
             }
 
             mongoMappingContext(mongoDatastore: 'getMappingContext')

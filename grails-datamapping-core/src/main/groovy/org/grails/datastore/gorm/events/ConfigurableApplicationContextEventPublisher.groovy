@@ -21,6 +21,8 @@ package org.grails.datastore.gorm.events
 
 import groovy.transform.CompileStatic
 
+import org.springframework.context.ApplicationContext
+import org.springframework.context.ApplicationContextAware
 import org.springframework.context.ApplicationEvent
 import org.springframework.context.ApplicationListener
 import org.springframework.context.ConfigurableApplicationContext
@@ -32,12 +34,24 @@ import org.springframework.context.ConfigurableApplicationContext
  * @since 6.0
  */
 @CompileStatic
-class ConfigurableApplicationContextEventPublisher implements ConfigurableApplicationEventPublisher {
+class ConfigurableApplicationContextEventPublisher implements ConfigurableApplicationEventPublisher, ApplicationContextAware {
 
-    final ConfigurableApplicationContext applicationContext
+    ConfigurableApplicationContext applicationContext
+
+    /**
+     * Takes the context from the container. A bean definition built this way holds no
+     * already-constructed object, which is what allows it to be processed ahead of time.
+     */
+    ConfigurableApplicationContextEventPublisher() {
+    }
 
     ConfigurableApplicationContextEventPublisher(ConfigurableApplicationContext applicationContext) {
         this.applicationContext = applicationContext
+    }
+
+    @Override
+    void setApplicationContext(ApplicationContext applicationContext) {
+        this.applicationContext = (ConfigurableApplicationContext) applicationContext
     }
 
     @Override
