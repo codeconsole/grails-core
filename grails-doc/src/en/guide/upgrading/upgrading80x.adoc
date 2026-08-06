@@ -2338,6 +2338,16 @@ unaffected. Code that cast the bean to either type, or called `getBundleCodes()`
 inject `MessageSource` and use its interface, or declare your own bean, which Boot's auto-configuration
 backs off from.
 
+===== Language selectors read the same plugin set as message resolution
+
+The locales offered by `g:localeSelect available="true"` now come from the recorded bundles rather than a
+classpath scan, and they follow exactly the plugin set that message resolution uses. A plugin that was
+evicted, excluded, or failed to load no longer contributes a language entry, so a selector can no longer
+offer a translation whose messages will not resolve.
+
+An application that declares its own `AvailableLocaleResolver` bean must supply the effective descriptors
+instead of a `ClassLoader`; most applications simply rely on the one Grails registers.
+
 ===== Reloading during development
 
 Editing a value in an existing bundle still reloads without a restart. Adding or removing a base name
