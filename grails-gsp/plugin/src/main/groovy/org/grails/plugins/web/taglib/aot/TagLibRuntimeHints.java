@@ -52,9 +52,13 @@ public class TagLibRuntimeHints implements RuntimeHintsRegistrar {
 
     private static final Log logger = LogFactory.getLog(TagLibRuntimeHints.class);
 
-    /** A tag library is identified by its name, wherever it is declared. */
+    /**
+     * A tag library is identified by its name, wherever it is declared. The trailing wildcard also
+     * takes the classes it declares inside itself: the fields plugin keeps the stack a nested tag
+     * reads its bean from in one, and a tag that never nests does not reach it.
+     */
     private static final String TAGLIB_PATTERN =
-            ResourcePatternResolver.CLASSPATH_ALL_URL_PREFIX + "**/*TagLib.class";
+            ResourcePatternResolver.CLASSPATH_ALL_URL_PREFIX + "**/*TagLib*.class";
 
     /**
      * The page rendering runtime. Registered by package rather than by name: a compiled page reaches
