@@ -303,6 +303,10 @@ In this example we create an abstract bean of type `KnightOfTheRoundTable` and u
 
 Since Spring 2.0, users of Spring have had easier access to key features via XML namespaces. You can use a Spring namespace in BeanBuilder by declaring it with this syntax:
 
+Spring namespace support in BeanBuilder is a compatibility feature backed by Spring's XML namespace handlers.
+BeanBuilder only initializes that XML namespace infrastructure when `xmlns` is used.
+For ordinary bean definitions in `resources.groovy`, BeanBuilder registers programmatic Spring bean definitions without using Spring XML configuration.
+
 [source,groovy]
 ----
 xmlns context:"https://www.springframework.org/schema/context"
