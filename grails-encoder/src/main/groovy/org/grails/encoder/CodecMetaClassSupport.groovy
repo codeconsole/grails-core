@@ -24,6 +24,7 @@ import com.github.benmanes.caffeine.cache.Cache
 import com.github.benmanes.caffeine.cache.Caffeine
 
 import groovy.transform.CompileStatic
+import groovy.transform.EqualsAndHashCode
 import org.codehaus.groovy.runtime.GStringImpl
 import org.codehaus.groovy.runtime.NullObject
 
@@ -44,13 +45,6 @@ class CodecMetaClassSupport {
     static final String ENCODE_AS_PREFIX = 'encodeAs'
     static final String DECODE_PREFIX = 'decode'
     private static final Cache<CodecFactory, Set<MetaMethodRegistrationKey>> REGISTERED_META_METHODS = Caffeine.newBuilder()
-            .weakKeys()
-            .build()
-    /**
-     * Per-factory locks keep claim+register atomic for the same CodecFactory without
-     * synchronizing on globally shared ExpandoMetaClass instances (String, Object, ...).
-     */
-    private static final Cache<CodecFactory, Object> FACTORY_REGISTRATION_LOCKS = Caffeine.newBuilder()
             .weakKeys()
             .build()
 
@@ -116,14 +110,15 @@ class CodecMetaClassSupport {
             }
         }
 
-        addMetaMethod(targetMetaClasses, encodeMethodName, encoderClosure, cacheLookup, codecFactory)
+        Set<MetaMethodRegistrationKey> registeredMetaMethodKeys = cacheLookup ? registeredMetaMethodKeys(codecFactory) : null
+        registerMetaMethod(targetMetaClasses, encodeMethodName, encoderClosure, cacheLookup, registeredMetaMethodKeys)
         if (codecFactory.encoder) {
-            addAliasMetaMethods(targetMetaClasses, codecFactory.encoder.codecIdentifier.codecAliases, encodeMethodNameClosure, encoderClosure, cacheLookup, codecFactory)
+            addAliasMetaMethods(targetMetaClasses, codecFactory.encoder.codecIdentifier.codecAliases, encodeMethodNameClosure, encoderClosure, cacheLookup, registeredMetaMethodKeys)
         }
 
-        addMetaMethod(targetMetaClasses, decodeMethodName, decoderClosure, cacheLookup, codecFactory)
+        registerMetaMethod(targetMetaClasses, decodeMethodName, decoderClosure, cacheLookup, registeredMetaMethodKeys)
         if (codecFactory.decoder) {
-            addAliasMetaMethods(targetMetaClasses, codecFactory.decoder.codecIdentifier.codecAliases, decodeMethodNameClosure, decoderClosure, cacheLookup, codecFactory)
+            addAliasMetaMethods(targetMetaClasses, codecFactory.decoder.codecIdentifier.codecAliases, decodeMethodNameClosure, decoderClosure, cacheLookup, registeredMetaMethodKeys)
         }
     }
 
@@ -145,9 +140,9 @@ class CodecMetaClassSupport {
 
     @CompileStatic
     private addAliasMetaMethods(List<ExpandoMetaClass> targetMetaClasses, Set<String> aliases, Closure<String> methodNameClosure, Closure methodClosure,
-            boolean cacheLookup, CodecFactory codecFactory) {
+            boolean cacheLookup, Set<MetaMethodRegistrationKey> registeredMetaMethodKeys) {
         aliases?.each { String aliasName ->
-            addMetaMethod(targetMetaClasses, methodNameClosure(aliasName), methodClosure, cacheLookup, codecFactory)
+            registerMetaMethod(targetMetaClasses, methodNameClosure(aliasName), methodClosure, cacheLookup, registeredMetaMethodKeys)
         }
     }
 
@@ -168,29 +163,32 @@ class CodecMetaClassSupport {
     }
 
     protected void addMetaMethod(List<ExpandoMetaClass> targetMetaClasses, String methodName, Closure closure) {
-        addMetaMethod(targetMetaClasses, methodName, closure, false, null)
+        targetMetaClasses.each { ExpandoMetaClass emc ->
+            emc."${methodName}" << closure
+        }
     }
 
-    protected void addMetaMethod(List<ExpandoMetaClass> targetMetaClasses, String methodName, Closure closure, boolean cacheLookup, CodecFactory codecFactory) {
-        targetMetaClasses.each { ExpandoMetaClass emc ->
-            if (!cacheLookup) {
-                emc."${methodName}" << closure
+    private void registerMetaMethod(List<ExpandoMetaClass> targetMetaClasses, String methodName, Closure closure, boolean cacheLookup,
+            Set<MetaMethodRegistrationKey> registeredMetaMethodKeys) {
+        if (!cacheLookup) {
+            addMetaMethod(targetMetaClasses, methodName, closure)
+            return
+        }
+
+        synchronized (registeredMetaMethodKeys) {
+            List<ExpandoMetaClass> metaClassesToRegister = targetMetaClasses.findAll { ExpandoMetaClass emc ->
+                shouldRegisterMetaMethod(emc, methodName, registeredMetaMethodKeys)
             }
-            else {
-                // Serialize only this factory's registrations; never lock the shared EMC.
-                synchronized (factoryRegistrationLock(codecFactory)) {
-                    if (shouldRegisterMetaMethod(emc, methodName, codecFactory)) {
-                        emc."${methodName}" << closure
-                    }
-                }
+            if (metaClassesToRegister) {
+                addMetaMethod(metaClassesToRegister, methodName, closure)
             }
         }
     }
 
     @CompileStatic
-    private static boolean shouldRegisterMetaMethod(ExpandoMetaClass emc, String methodName, CodecFactory codecFactory) {
+    private static boolean shouldRegisterMetaMethod(ExpandoMetaClass emc, String methodName, Set<MetaMethodRegistrationKey> registeredMetaMethodKeys) {
         MetaMethodRegistrationKey key = registrationKey(emc, methodName)
-        registeredMetaMethodKeys(codecFactory).add(key) || emc.getMetaMethod(methodName, EMPTY_ARGS) == null
+        registeredMetaMethodKeys.add(key) || emc.getMetaMethod(methodName, EMPTY_ARGS) == null
     }
 
     @CompileStatic
@@ -206,13 +204,7 @@ class CodecMetaClassSupport {
     }
 
     @CompileStatic
-    private static Object factoryRegistrationLock(CodecFactory codecFactory) {
-        FACTORY_REGISTRATION_LOCKS.get(codecFactory) { CodecFactory ignored ->
-            new Object()
-        }
-    }
-
-    @CompileStatic
+    @EqualsAndHashCode(includeFields = true)
     private static class MetaMethodRegistrationKey {
 
         private final Class<?> targetClass
@@ -223,24 +215,5 @@ class CodecMetaClassSupport {
             this.methodName = methodName
         }
 
-        @Override
-        boolean equals(Object other) {
-            if (this.is(other)) {
-                return true
-            }
-            if (!(other instanceof MetaMethodRegistrationKey)) {
-                return false
-            }
-
-            MetaMethodRegistrationKey otherKey = (MetaMethodRegistrationKey) other
-            targetClass == otherKey.targetClass &&
-                    methodName == otherKey.methodName
-        }
-
-        @Override
-        int hashCode() {
-            int result = targetClass.hashCode()
-            31 * result + methodName.hashCode()
-        }
     }
 }

@@ -34,6 +34,7 @@ class CodecMetaClassSupportSpec extends Specification {
 
     void cleanup() {
         GroovySystem.metaClassRegistry.removeMetaClass(CodecMetaClassSupportSpecTarget)
+        GroovySystem.metaClassRegistry.removeMetaClass(CodecMetaClassSupportSecondSpecTarget)
     }
 
     void 'cached codec registration is idempotent for the same codec factory'() {
@@ -127,17 +128,32 @@ class CodecMetaClassSupportSpec extends Specification {
     void 'cached codec registration keeps distinct codec factories isolated'() {
         given:
             CodecMetaClassSupport support = new CodecMetaClassSupport()
-            List<ExpandoMetaClass> targetMetaClasses = [GrailsMetaClassUtils.getExpandoMetaClass(CodecMetaClassSupportSpecTarget)]
+            List<ExpandoMetaClass> targetMetaClasses = [
+                GrailsMetaClassUtils.getExpandoMetaClass(CodecMetaClassSupportSpecTarget),
+                GrailsMetaClassUtils.getExpandoMetaClass(CodecMetaClassSupportSecondSpecTarget)
+            ]
 
         when:
             support.configureCodecMethods(new BenchmarkCodecFactory('&amp;'), true, targetMetaClasses)
             Object firstResult = InvokerHelper.invokeMethod(new CodecMetaClassSupportSpecTarget('a&b'), 'encodeAsBenchmark', null)
-            support.configureCodecMethods(new BenchmarkCodecFactory('|'), true, targetMetaClasses)
+            Object firstDecodedResult = InvokerHelper.invokeMethod(new CodecMetaClassSupportSpecTarget('a&amp;b'), 'decodeBenchmark', null)
+            Object firstSecondTargetResult = InvokerHelper.invokeMethod(new CodecMetaClassSupportSecondSpecTarget('a&b'), 'encodeAsBenchmark', null)
+            Object firstSecondTargetDecodedResult = InvokerHelper.invokeMethod(new CodecMetaClassSupportSecondSpecTarget('a&amp;b'), 'decodeBenchmark', null)
+            support.configureCodecMethods(new BenchmarkCodecFactory('|', '|'), true, targetMetaClasses)
             Object secondResult = InvokerHelper.invokeMethod(new CodecMetaClassSupportSpecTarget('a&b'), 'encodeAsBenchmark', null)
+            Object secondDecodedResult = InvokerHelper.invokeMethod(new CodecMetaClassSupportSpecTarget('a&amp;b'), 'decodeBenchmark', null)
+            Object secondSecondTargetResult = InvokerHelper.invokeMethod(new CodecMetaClassSupportSecondSpecTarget('a&b'), 'encodeAsBenchmark', null)
+            Object secondSecondTargetDecodedResult = InvokerHelper.invokeMethod(new CodecMetaClassSupportSecondSpecTarget('a&amp;b'), 'decodeBenchmark', null)
 
         then:
             firstResult == 'a&amp;b'
+            firstDecodedResult == 'a&b'
+            firstSecondTargetResult == 'a&amp;b'
+            firstSecondTargetDecodedResult == 'a&b'
             secondResult == 'a|b'
+            secondDecodedResult == 'a|b'
+            secondSecondTargetResult == 'a|b'
+            secondSecondTargetDecodedResult == 'a|b'
     }
 
     void 'cached codec registration remains correct after unrelated factory churn'() {
@@ -154,6 +170,20 @@ class CodecMetaClassSupportSpec extends Specification {
             support.configureCodecMethods(originalCodecFactory, true, targetMetaClasses)
 
         then:
+            InvokerHelper.invokeMethod(new CodecMetaClassSupportSpecTarget('a&b'), 'encodeAsBenchmark', null) == 'a&amp;b'
+    }
+
+    void 'cached codec registration dispatches through the add meta method extension hook'() {
+        given:
+            HookTrackingCodecMetaClassSupport support = new HookTrackingCodecMetaClassSupport()
+            BenchmarkCodecFactory codecFactory = new BenchmarkCodecFactory()
+            List<ExpandoMetaClass> targetMetaClasses = [GrailsMetaClassUtils.getExpandoMetaClass(CodecMetaClassSupportSpecTarget)]
+
+        when:
+            support.configureCodecMethods(codecFactory, true, targetMetaClasses)
+
+        then:
+            support.registeredMethodNames.contains('encodeAsBenchmark')
             InvokerHelper.invokeMethod(new CodecMetaClassSupportSpecTarget('a&b'), 'encodeAsBenchmark', null) == 'a&amp;b'
     }
 
@@ -189,13 +219,39 @@ class CodecMetaClassSupportSpec extends Specification {
         }
     }
 
+    private static class HookTrackingCodecMetaClassSupport extends CodecMetaClassSupport {
+
+        private final List<String> registeredMethodNames = []
+
+        @Override
+        protected void addMetaMethod(List<ExpandoMetaClass> targetMetaClasses, String methodName, Closure closure) {
+            registeredMethodNames << methodName
+            super.addMetaMethod(targetMetaClasses, methodName, closure)
+        }
+    }
+
+    private static class CodecMetaClassSupportSecondSpecTarget {
+
+        private final String value
+
+        CodecMetaClassSupportSecondSpecTarget(String value) {
+            this.value = value
+        }
+
+        @Override
+        String toString() {
+            value
+        }
+    }
+
     private static class BenchmarkCodecFactory implements CodecFactory {
 
         private BenchmarkEncoder encoder
-        private final BenchmarkDecoder decoder = new BenchmarkDecoder()
+        private final BenchmarkDecoder decoder
 
-        BenchmarkCodecFactory(String ampersandReplacement = '&amp;') {
+        BenchmarkCodecFactory(String ampersandReplacement = '&amp;', String decodedAmpersand = '&') {
             this.encoder = new BenchmarkEncoder(ampersandReplacement)
+            this.decoder = new BenchmarkDecoder(decodedAmpersand)
         }
 
         @Override
@@ -261,6 +317,11 @@ class CodecMetaClassSupportSpec extends Specification {
     private static class BenchmarkDecoder implements Decoder {
 
         private final CodecIdentifier codecIdentifier = new DefaultCodecIdentifier('Benchmark', 'Bench')
+        private final String decodedAmpersand
+
+        BenchmarkDecoder(String decodedAmpersand = '&') {
+            this.decodedAmpersand = decodedAmpersand
+        }
 
         @Override
         CodecIdentifier getCodecIdentifier() {
@@ -269,7 +330,7 @@ class CodecMetaClassSupportSpec extends Specification {
 
         @Override
         Object decode(Object o) {
-            o?.toString()?.replace('&amp;', '&')
+            o?.toString()?.replace('&amp;', decodedAmpersand)
         }
     }
 }
