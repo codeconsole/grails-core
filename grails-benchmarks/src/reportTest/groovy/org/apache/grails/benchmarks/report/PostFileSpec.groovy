@@ -106,6 +106,14 @@ class PostFileSpec extends Specification {
         GitHubComments.latestMatchingCommentId(comments) == 12L
     }
 
+    def "marker ownership requires the GitHub Actions bot login"() {
+        expect:
+        GitHubComments.latestMatchingCommentId([[id: 12, body: 'report <!-- grails-jmh-benchmark -->', user: author]]) == null
+
+        where:
+        author << [null, [:], [login: 'someone-else'], 'github-actions[bot]']
+    }
+
     private Path write(String name, String content) {
         Path path = temporaryDirectory.resolve(name)
         Files.writeString(path, content)

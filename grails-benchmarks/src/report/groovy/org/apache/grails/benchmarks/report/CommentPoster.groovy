@@ -36,7 +36,17 @@ class GitHubComments implements CommentPoster {
 
     static final int MAX_BODY = 65000
     static final String TRUNCATION = '\n\n_Report truncated. The full report is available in the workflow artifacts._\n\n<!-- grails-jmh-benchmark -->'
-    private final HttpClient client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(15)).build()
+    private final HttpClient client
+    private final String apiBase
+
+    GitHubComments() {
+        this('https://api.github.com')
+    }
+
+    GitHubComments(String apiBase) {
+        this.apiBase = apiBase
+        this.client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(15)).build()
+    }
 
     @Override
     void post(String report, String repo, String prNumber, String token) {
@@ -44,7 +54,7 @@ class GitHubComments implements CommentPoster {
         Long commentId = null
         for (int page = 1; page <= 100; page++) {
             Object response = request(
-                    "https://api.github.com/repos/${repo}/issues/${prNumber}/comments?per_page=100&page=${page}",
+                    "${apiBase}/repos/${repo}/issues/${prNumber}/comments?per_page=100&page=${page}",
                     token,
                     'GET',
                     null)
@@ -61,8 +71,8 @@ class GitHubComments implements CommentPoster {
             }
         }
         String endpoint = commentId == null
-                ? "https://api.github.com/repos/${repo}/issues/${prNumber}/comments"
-                : "https://api.github.com/repos/${repo}/issues/comments/${commentId}"
+                ? "${apiBase}/repos/${repo}/issues/${prNumber}/comments"
+                : "${apiBase}/repos/${repo}/issues/comments/${commentId}"
         request(endpoint, token, commentId == null ? 'POST' : 'PATCH', JsonOutput.toJson([body: body]))
     }
 
@@ -98,7 +108,7 @@ class GitHubComments implements CommentPoster {
         Object body = comment.get('body')
         Object user = comment.get('user')
         Object login = user instanceof Map ? ((Map<String, Object>) user).get('login') : null
-        return body instanceof String && ((String) body).contains(ReportRenderer.MARKER) && (!(login instanceof String) || login == 'github-actions[bot]')
+        return body instanceof String && ((String) body).contains(ReportRenderer.MARKER) && login == 'github-actions[bot]'
     }
 
     private Object request(String url, String token, String method, String body) {
