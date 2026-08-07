@@ -23,6 +23,10 @@ import org.springframework.aot.hint.RuntimeHints
 import org.springframework.aot.hint.TypeReference
 import spock.lang.Specification
 
+import org.springframework.context.ApplicationContext
+import org.springframework.core.env.Environment
+import org.springframework.core.env.PropertyResolver
+
 import grails.config.Config
 import grails.config.ConfigMap
 import grails.core.GrailsApplication
@@ -64,6 +68,13 @@ class GrailsApiRuntimeHintsSpec extends Specification {
     void 'what a plugin asks about the plugins can be called'() {
         expect:
             invocable(GrailsPluginManager)
+    }
+
+    void 'what Spring hands a plugin can be called'() {
+        expect: 'a descriptor is given these and calls them the same dynamic way'
+            invocable(PropertyResolver)
+            invocable(Environment)
+            invocable(ApplicationContext)
     }
 
     void 'the call that stopped a context from starting is covered'() {

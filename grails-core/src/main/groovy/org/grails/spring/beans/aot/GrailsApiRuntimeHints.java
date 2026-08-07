@@ -21,6 +21,12 @@ package org.grails.spring.beans.aot;
 import org.springframework.aot.hint.MemberCategory;
 import org.springframework.aot.hint.RuntimeHints;
 import org.springframework.aot.hint.RuntimeHintsRegistrar;
+import org.springframework.context.ApplicationContext;
+import org.springframework.context.ConfigurableApplicationContext;
+import org.springframework.core.env.ConfigurableEnvironment;
+import org.springframework.core.env.Environment;
+import org.springframework.core.env.PropertyResolver;
+import org.springframework.core.io.ResourceLoader;
 import org.springframework.lang.Nullable;
 
 import grails.config.Config;
@@ -31,7 +37,8 @@ import grails.plugins.GrailsPlugin;
 import grails.plugins.GrailsPluginManager;
 
 /**
- * Registers the framework's own interfaces, which a plugin reaches through dynamically.
+ * Registers the interfaces a plugin reaches through dynamically: the framework's own, and the
+ * Spring ones it is handed.
  *
  * <p>A plugin descriptor is Groovy, and much of it is written without static compilation -- so
  * reading a configuration value, asking the application for its artefacts, or asking the plugin
@@ -43,6 +50,11 @@ import grails.plugins.GrailsPluginManager;
  * image refuses the call where it is made, and what it reports is a method of an interface that
  * appears nowhere in the application -- the last of them stopping a context from starting on
  * {@code ConfigMap.getProperty}, which is how nearly every plugin reads its settings.</p>
+ *
+ * <p>The Spring interfaces are here for the same reason rather than a different one: a descriptor is
+ * given the environment and the context and calls them the same dynamic way, and an application does
+ * not name them either. Reading a setting from the environment stopped a Hibernate application from
+ * starting in exactly the way reading one from the configuration stopped every application.</p>
  *
  * <p>Only the interfaces are named. What implements them is reached through them, and registering
  * the implementations would be registering most of the framework.</p>
@@ -58,7 +70,14 @@ public class GrailsApiRuntimeHints implements RuntimeHintsRegistrar {
         GrailsApplication.class,
         GrailsClass.class,
         GrailsPlugin.class,
-        GrailsPluginManager.class
+        GrailsPluginManager.class,
+        // What a descriptor is handed by Spring and calls the same way
+        Environment.class,
+        ConfigurableEnvironment.class,
+        PropertyResolver.class,
+        ApplicationContext.class,
+        ConfigurableApplicationContext.class,
+        ResourceLoader.class
     };
 
     @Override
