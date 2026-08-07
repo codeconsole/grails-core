@@ -20,6 +20,7 @@ package org.grails.spring.beans.aot
 
 import org.springframework.aot.hint.MemberCategory
 import org.springframework.aot.hint.RuntimeHints
+import org.springframework.aot.hint.predicate.RuntimeHintsPredicates
 import org.springframework.aot.hint.TypeReference
 import spock.lang.Specification
 
@@ -64,6 +65,14 @@ class GrailsClosureRuntimeHintsSpec extends Specification {
             registeredTypes().every {
                 it.startsWith('grails.') || it.startsWith('org.grails.') || it.contains('GrailsPlugin$')
             }
+    }
+
+    void 'where the plugins are listed is carried'() {
+        given:
+            new GrailsClosureRuntimeHints().registerHints(hints, getClass().classLoader)
+
+        expect: 'read to find the plugins at all, and an image carries a resource only when asked'
+            RuntimeHintsPredicates.resource().forResource('META-INF/grails.factories').test(hints)
     }
 
     void 'a class loader that resolves nothing yields no hints rather than failing'() {

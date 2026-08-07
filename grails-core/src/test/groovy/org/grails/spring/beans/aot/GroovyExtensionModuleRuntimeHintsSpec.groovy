@@ -21,6 +21,7 @@ package org.grails.spring.beans.aot
 import org.springframework.aot.hint.MemberCategory
 import org.springframework.aot.hint.RuntimeHints
 import org.springframework.aot.hint.TypeReference
+import org.springframework.aot.hint.predicate.RuntimeHintsPredicates
 import spock.lang.Specification
 
 /**
@@ -85,6 +86,20 @@ class GroovyExtensionModuleRuntimeHintsSpec extends Specification {
     void 'every extension named by a descriptor can have its methods called'() {
         expect: 'registering the type without its methods still leaves the call refused'
             registeredTypes().findAll { it.endsWith('Extension') }.every { invocable(it) }
+    }
+
+    void 'what the Groovy runtime reads as it starts is carried'() {
+        expect: 'without these it cannot build its metaclasses, and fails before any application code'
+            resourceRegistered('META-INF/dgminfo')
+            resourceRegistered('META-INF/groovy-release-info.properties')
+
+        and: 'and the descriptors naming the extensions, which is how it finds them'
+            resourceRegistered('META-INF/services/org.codehaus.groovy.runtime.ExtensionModule')
+            resourceRegistered('META-INF/groovy/org.codehaus.groovy.runtime.ExtensionModule')
+    }
+
+    private boolean resourceRegistered(String resource) {
+        RuntimeHintsPredicates.resource().forResource(resource).test(hints)
     }
 
     void 'a class loader that resolves nothing yields no hints rather than failing'() {

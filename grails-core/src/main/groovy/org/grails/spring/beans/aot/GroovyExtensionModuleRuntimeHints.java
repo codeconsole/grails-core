@@ -55,6 +55,11 @@ import org.grails.aot.RegistrableTypes;
  * <p>Read from the descriptors while the hints are written, so a module added later is covered
  * without being named here, whether it belongs to the framework, a plugin or the application.</p>
  *
+ * <p>The descriptors themselves are carried into the image too, along with the table of methods
+ * Groovy adds to every type. Both are read as the runtime starts, and an image carries a resource
+ * only when it has been asked to: without them Groovy cannot build its metaclasses at all, and
+ * fails before any application code runs.</p>
+ *
  * @since 8.0
  */
 public class GroovyExtensionModuleRuntimeHints implements RuntimeHintsRegistrar {
@@ -72,8 +77,22 @@ public class GroovyExtensionModuleRuntimeHints implements RuntimeHintsRegistrar 
     /** The two kinds of extension a descriptor names: one extends instances, the other the type. */
     private static final String[] CLASS_PROPERTIES = { "extensionClasses", "staticExtensionClasses" };
 
+    /**
+     * What the Groovy runtime reads as it starts: the table of the methods it adds to every type,
+     * the version it reports, and the descriptors naming the extensions above.
+     */
+    private static final String[] RESOURCES = {
+        "META-INF/dgminfo",
+        "META-INF/groovy-release-info.properties",
+        "META-INF/services/" + DESCRIPTOR_NAME,
+        "META-INF/groovy/" + DESCRIPTOR_NAME
+    };
+
     @Override
     public void registerHints(RuntimeHints hints, @Nullable ClassLoader classLoader) {
+        for (String resource : RESOURCES) {
+            hints.resources().registerPattern(resource);
+        }
         ClassLoader loader = (classLoader != null) ? classLoader : ClassUtils.getDefaultClassLoader();
         ResourcePatternResolver resolver = new PathMatchingResourcePatternResolver(loader);
         Set<String> extensionClasses = new LinkedHashSet<>();

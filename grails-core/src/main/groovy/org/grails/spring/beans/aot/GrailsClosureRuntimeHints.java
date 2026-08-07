@@ -51,11 +51,20 @@ import org.grails.aot.RegistrableTypes;
  * task is on the compile classpath but Ant is not on the runtime one, and registering it would make
  * the image analysis parse a class whose supertype is absent, failing the build.</p>
  *
+ * <p>Where the plugins are listed is carried into the image as well, since that is read to find
+ * them at all and an image carries a resource only when it has been asked to.</p>
+ *
  * @since 8.0
  */
 public class GrailsClosureRuntimeHints implements RuntimeHintsRegistrar {
 
     private static final Log logger = LogFactory.getLog(GrailsClosureRuntimeHints.class);
+
+    /**
+     * Where the plugins are listed, read to find them at all. Written out rather than taken from
+     * {@code FactoriesLoaderSupport}, whose constant is a Groovy property and so not visible here.
+     */
+    private static final String PLUGIN_LISTING = "META-INF/grails.factories";
 
     /**
      * Where the framework's closures are found. The first two cover its own packages; the third
@@ -71,6 +80,7 @@ public class GrailsClosureRuntimeHints implements RuntimeHintsRegistrar {
 
     @Override
     public void registerHints(RuntimeHints hints, @Nullable ClassLoader classLoader) {
+        hints.resources().registerPattern(PLUGIN_LISTING);
         ClassLoader loader = (classLoader != null) ? classLoader : ClassUtils.getDefaultClassLoader();
         ResourcePatternResolver resolver = new PathMatchingResourcePatternResolver(loader);
         MetadataReaderFactory metadataReaderFactory = new CachingMetadataReaderFactory(resolver);
