@@ -94,6 +94,11 @@ class GrailsGradlePlugin implements Plugin<Project> {
 
     private static final String SPRING_BOOT_PLUGIN = 'org.springframework.boot'
 
+    private static final String ASSET_COMPILE_TASK = 'assetCompile'
+
+    /** Where an executable jar reads its classpath from, and so where assets have to be to be found. */
+    private static final String CLASSPATH_ASSETS_PATH = 'BOOT-INF/classes/assets'
+
     private static final int TRAINING_PORT = 18080
 
     private static final int TRAINING_START_TIMEOUT_SECONDS = 180
@@ -852,6 +857,39 @@ ${importStatements}
             }
             project.tasks.named('assetCompile').configure {
                 it.destinationDirectory = project.layout.buildDirectory.dir('assetCompile/assets')
+            }
+        }
+        configureAssetsOnTheClasspath(project)
+    }
+
+    /**
+     * Packages the compiled assets where an executable jar can read them.
+     *
+     * <p>The asset pipeline plugin puts them at the root of whatever archive is built, which is
+     * where a war serves its web content from and is therefore right for a war. An executable jar
+     * has no web content: it serves assets by reading them off the classpath, and its classpath is
+     * {@code BOOT-INF/classes} -- so the same assets, at the same place, in a jar rather than a war,
+     * are packaged but unreachable, and every asset a page asks for is a 404 while the page itself
+     * renders. Adding them under the classpath directory is what makes them found.</p>
+     *
+     * <p>Only for {@code bootJar}. A war already serves them from the root, and putting them on its
+     * classpath as well would ship the same bytes twice.</p>
+     */
+    private void configureAssetsOnTheClasspath(Project project) {
+        project.pluginManager.withPlugin(SPRING_BOOT_PLUGIN) {
+            // Read after the build script has run, and by the task the pipeline registers rather
+            // than by the plugin that registers it: the asset pipeline's plugin id has changed
+            // once already, and the task name has not.
+            project.afterEvaluate {
+                Task assetCompile = project.tasks.findByName(ASSET_COMPILE_TASK)
+                if (assetCompile == null) {
+                    return
+                }
+                project.tasks.named('bootJar', AbstractCopyTask).configure { AbstractCopyTask task ->
+                    task.from(assetCompile.outputs.files) { CopySpec spec ->
+                        spec.into(CLASSPATH_ASSETS_PATH)
+                    }
+                }
             }
         }
     }
