@@ -19,7 +19,10 @@
 package org.grails.spring.beans.aot;
 
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 
 import javax.lang.model.element.Modifier;
 
@@ -32,6 +35,8 @@ import org.springframework.javapoet.CodeBlock;
 import org.springframework.lang.Nullable;
 
 import grails.core.GrailsApplication;
+import grails.plugins.GrailsPlugin;
+import grails.plugins.GrailsPluginManager;
 
 /**
  * Writes down the artefacts an application is made of, while they can still be found.
@@ -85,12 +90,35 @@ public class ArtefactClassesBeanFactoryInitializationAotProcessor implements Bea
         if (allClasses == null) {
             return artefacts;
         }
+        Set<Class<?>> providedByPlugins = providedByPlugins(beanFactory);
         for (Class<?> artefact : allClasses) {
-            if (artefact != null && isNamed(artefact)) {
+            if (artefact != null && isNamed(artefact) && !providedByPlugins.contains(artefact)) {
                 artefacts.add(artefact);
             }
         }
         return artefacts;
+    }
+
+    /**
+     * The artefacts the plugins bring with them, which are not the application's to declare.
+     *
+     * <p>They are registered from the plugins on every start, so writing them down here would have
+     * the application claim them as its own -- and a codec or a tag library registered twice, once
+     * as a plugin's and once as the application's, is not the same as registered once.</p>
+     */
+    private Set<Class<?>> providedByPlugins(ConfigurableListableBeanFactory beanFactory) {
+        Set<Class<?>> provided = new LinkedHashSet<>();
+        Object manager = beanFactory.getSingleton(GrailsPluginManager.BEAN_NAME);
+        if (!(manager instanceof GrailsPluginManager pluginManager)) {
+            return provided;
+        }
+        for (GrailsPlugin plugin : pluginManager.getAllPlugins()) {
+            Class<?>[] artefacts = plugin.getProvidedArtefacts();
+            if (artefacts != null) {
+                provided.addAll(Arrays.asList(artefacts));
+            }
+        }
+        return provided;
     }
 
     /**

@@ -29,6 +29,8 @@ import spock.lang.Specification
 
 import grails.core.DefaultGrailsApplication
 import grails.core.GrailsApplication
+import grails.plugins.GrailsPlugin
+import grails.plugins.GrailsPluginManager
 
 /**
  * Covers the artefacts an application is made of being written down while they can still be found.
@@ -110,6 +112,47 @@ class ArtefactClassesBeanFactoryInitializationAotProcessorSpec extends Specifica
                 'from not having looked'
             new ArtefactClassesBeanFactoryInitializationAotProcessor()
                     .processAheadOfTime(context.beanFactory) == null
+    }
+
+    void "what the plugins bring with them is not written down"() {
+        given: "a plugin manager whose plugins provide one of the classes the application holds"
+            GrailsApplication application = new DefaultGrailsApplication(DemoController, DemoService)
+            application.applicationContext = context
+            application.initialise()
+            context.beanFactory.registerSingleton(GrailsApplication.APPLICATION_ID, application)
+            context.beanFactory.registerSingleton(GrailsPluginManager.BEAN_NAME,
+                    Stub(GrailsPluginManager) {
+                        getAllPlugins() >> ([Stub(GrailsPlugin) {
+                            getProvidedArtefacts() >> ([DemoService] as Class[])
+                        }] as GrailsPlugin[])
+                    })
+
+        when:
+            def contribution = new ArtefactClassesBeanFactoryInitializationAotProcessor()
+                    .processAheadOfTime(context.beanFactory)
+
+        then: "they are registered from the plugins on every start, and a codec or tag library " +
+                "registered twice is not the same as registered once"
+            contribution != null
+
+        and:
+            def written = writtenBy(contribution)
+            written.contains(DemoController)
+            !written.contains(DemoService)
+    }
+
+    /** The classes the contribution would write, read back off the code it generates. */
+    private List<Class> writtenBy(contribution) {
+        InMemoryGeneratedFiles files = new InMemoryGeneratedFiles()
+        DefaultGenerationContext generation = new DefaultGenerationContext(
+                new ClassNameGenerator(ClassName.get('com.example', 'Written')), files)
+        new ApplicationContextAotGenerator().processAheadOfTime(context, generation)
+        generation.writeGeneratedContent()
+        String source = files.getGeneratedFiles(GeneratedFiles.Kind.SOURCE)
+                .keySet()
+                .collect { files.getGeneratedFileContent(GeneratedFiles.Kind.SOURCE, it) }
+                .join('\n')
+        [DemoController, DemoService].findAll { source.contains(it.simpleName + '.class') }
     }
 
     static class DemoController {
