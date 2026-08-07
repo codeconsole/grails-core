@@ -92,7 +92,7 @@ public class FlapdoodleMongoBackend implements EmbeddedMongoBackend {
         if (settings.isPersistent()) {
             mongod = persistentIn(mongod, settings.getDatabaseDir());
         }
-        return new RunningMongod(mongod.start(version));
+        return new RunningMongod(mongod, version);
     }
 
     /**
@@ -116,13 +116,20 @@ public class FlapdoodleMongoBackend implements EmbeddedMongoBackend {
 
     private static final class RunningMongod implements RunningEmbeddedMongo {
 
-        private final TransitionWalker.ReachedState<RunningMongodProcess> running;
+        /** Held so {@link #restart()} can start the same mongod again after a CRaC restore. */
+        private final ImmutableMongod mongod;
+
+        private final Version.Main version;
+
+        private volatile TransitionWalker.ReachedState<RunningMongodProcess> running;
 
         private final ServerAddress address;
 
-        private RunningMongod(TransitionWalker.ReachedState<RunningMongodProcess> running) {
-            this.running = running;
-            this.address = running.current().getServerAddress();
+        private RunningMongod(ImmutableMongod mongod, Version.Main version) {
+            this.mongod = mongod;
+            this.version = version;
+            this.running = mongod.start(version);
+            this.address = this.running.current().getServerAddress();
         }
 
         @Override
@@ -138,6 +145,16 @@ public class FlapdoodleMongoBackend implements EmbeddedMongoBackend {
         @Override
         public void stop() {
             this.running.close();
+        }
+
+        /**
+         * The replacement binds the same port because {@code Net} was fixed when the server
+         * was first configured. Only a persistent {@code database-dir} carries data across;
+         * mongod is a separate process, so a checkpoint image does not contain it.
+         */
+        @Override
+        public void restart() {
+            this.running = this.mongod.start(this.version);
         }
     }
 }

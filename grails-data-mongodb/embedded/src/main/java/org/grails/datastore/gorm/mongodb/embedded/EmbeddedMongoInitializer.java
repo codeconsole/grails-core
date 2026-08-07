@@ -188,6 +188,15 @@ public class EmbeddedMongoInitializer implements ApplicationContextInitializer<C
             published.put(propertyName, url);
         }
         environment.getPropertySources().addFirst(new MapPropertySource(PROPERTY_SOURCE_NAME, published));
+
+        // Registered as a singleton rather than a bean definition because this runs before
+        // any definitions are read, and the server it manages already exists by now. The
+        // JVM shutdown hook above still covers the case where the context never refreshes.
+        RunningEmbeddedMongo running = STARTED.get(port);
+        if (running != null) {
+            applicationContext.getBeanFactory()
+                    .registerSingleton(EmbeddedMongoLifecycle.BEAN_NAME, new EmbeddedMongoLifecycle(running));
+        }
     }
 
     /**

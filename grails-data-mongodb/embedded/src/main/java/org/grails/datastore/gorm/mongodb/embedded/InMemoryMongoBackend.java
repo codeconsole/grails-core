@@ -63,21 +63,53 @@ public class InMemoryMongoBackend implements EmbeddedMongoBackend {
                     "directory to accept a database that is discarded when the server stops.");
         }
 
-        MongoServer server = new MongoServer(new MemoryBackend());
+        MemoryBackend backend = new RetainingMemoryBackend();
+        MongoServer server = new MongoServer(backend);
         server.bind("localhost", settings.getPort());
-        InetSocketAddress address = server.getLocalAddress();
-        return new RunningInMemoryMongo(server, address);
+        return new RunningInMemoryMongo(backend, server);
+    }
+
+    /**
+     * A backend that keeps its collections when the server it is attached to shuts down.
+     *
+     * <p>{@code MongoServer.shutdownNow()} closes the backend, and
+     * {@code AbstractMongoBackend.close()} clears every database. That is right for a server
+     * that is finished with, but {@link RunningInMemoryMongo#restart()} shuts the server down
+     * only to release its sockets for a CRaC checkpoint and then binds a new one onto the
+     * same data. Without this, a restored process comes back with an empty database.
+     *
+     * <p>Nothing is leaked by not clearing: the data is unreachable once the last server
+     * using it is gone, and the JVM is exiting in the ordinary shutdown case.
+     */
+    private static final class RetainingMemoryBackend extends MemoryBackend {
+
+        @Override
+        public void close() {
+            // Deliberately empty; see the class comment.
+        }
     }
 
     private static final class RunningInMemoryMongo implements RunningEmbeddedMongo {
 
-        private final MongoServer server;
+        /**
+         * Held so {@link #restart()} can bind a new server onto the data that is already
+         * there. The data lives on the heap, so a CRaC checkpoint image preserves it and a
+         * restored process comes back with the collections it had.
+         */
+        private final MemoryBackend backend;
 
-        private final InetSocketAddress address;
+        private volatile MongoServer server;
 
-        private RunningInMemoryMongo(MongoServer server, InetSocketAddress address) {
+        /**
+         * The port that was actually bound, which is not the requested one when that was 0.
+         * Restarting reuses it so the url published into the environment stays correct.
+         */
+        private final int port;
+
+        private RunningInMemoryMongo(MemoryBackend backend, MongoServer server) {
+            this.backend = backend;
             this.server = server;
-            this.address = address;
+            this.port = server.getLocalAddress().getPort();
         }
 
         @Override
@@ -87,12 +119,19 @@ public class InMemoryMongoBackend implements EmbeddedMongoBackend {
 
         @Override
         public int getPort() {
-            return this.address.getPort();
+            return this.port;
         }
 
         @Override
         public void stop() {
             this.server.shutdownNow();
+        }
+
+        @Override
+        public void restart() {
+            MongoServer restarted = new MongoServer(this.backend);
+            restarted.bind("localhost", this.port);
+            this.server = restarted;
         }
     }
 }
