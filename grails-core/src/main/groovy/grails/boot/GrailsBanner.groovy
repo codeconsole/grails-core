@@ -332,9 +332,19 @@ class GrailsBanner implements Banner {
      * @param className the fully qualified class name
      * @return the implementation version, or 'unknown' if not found
      */
-    private static String findVersion(String className) {
+    /**
+     * The version a library records in the manifest of the jar it ships in.
+     *
+     * <p>Loaded without being initialised. A version is read <em>about</em> a library rather than
+     * <em>from</em> it, and running a static initialiser to find one lets the library do whatever it
+     * does on the way -- Spring Security logs a line of its own from there, which arrived in the
+     * middle of the banner, between the mark and the very versions it was being read for. The
+     * manifest is attached to the package when the class is loaded, and loading is all this
+     * needs.</p>
+     */
+    protected static String findVersion(String className) {
         try {
-            def pkg = Class.forName(className).package
+            Package pkg = Class.forName(className, false, GrailsBanner.classLoader).package
             return pkg?.implementationVersion ?: 'unknown'
         } catch (ClassNotFoundException ignore) {
             return 'unknown'
