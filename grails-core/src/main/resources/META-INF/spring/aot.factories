@@ -9,3 +9,6 @@ org.grails.spring.beans.aot.GroovyExtensionModuleRuntimeHints
 org.springframework.beans.factory.aot.BeanRegistrationAotProcessor=\
 org.grails.spring.beans.aot.AutowireModeBeanRegistrationAotProcessor,\
 org.grails.spring.beans.aot.VarargsBeanRegistrationAotProcessor
+
+org.springframework.beans.factory.aot.BeanFactoryInitializationAotProcessor=\
+org.grails.spring.beans.aot.ArtefactClassesBeanFactoryInitializationAotProcessor
