@@ -65,6 +65,13 @@ abstract class TrainAotCacheTask extends DefaultTask {
     @Input
     abstract Property<String> getJavaExecutable()
 
+    /** The version of the JDK above, which is the JDK the cache will only ever be readable by. */
+    @Input
+    abstract Property<String> getJavaVersion()
+
+    @Input
+    abstract Property<String> getJavaVendor()
+
     /** Given to the training run, and to be given to every run that reads the cache. */
     @Input
     abstract ListProperty<String> getJvmArguments()
@@ -152,9 +159,8 @@ abstract class TrainAotCacheTask extends DefaultTask {
         properties.setProperty('application.sha256', sha256(archive))
         properties.setProperty('training.arguments', jvmArguments.get().join(' '))
         properties.setProperty('training.paths', paths.get().join(' '))
-        properties.setProperty('java.vendor', System.getProperty('java.vendor', ''))
-        properties.setProperty('java.runtime.version', System.getProperty('java.runtime.version', ''))
-        properties.setProperty('java.vm.version', System.getProperty('java.vm.version', ''))
+        properties.setProperty('java.vendor', javaVendor.get())
+        properties.setProperty('java.runtime.version', javaVersion.get())
         properties.setProperty('os.name', System.getProperty('os.name', ''))
         properties.setProperty('os.arch', System.getProperty('os.arch', ''))
         metadataFile.get().asFile.withOutputStream { OutputStream out ->
@@ -175,8 +181,13 @@ abstract class TrainAotCacheTask extends DefaultTask {
     }
 
     /**
-     * Waits for the application to say it has started, and stops waiting if the run ends first --
+     * Waits for the application to start serving, and stops waiting if the run ends first --
      * otherwise a run that fails immediately is waited on for the whole timeout.
+     *
+     * <p>Either the run says it started or its port answers. The message is Spring Boot's and is
+     * the earlier and clearer of the two, but it is an INFO log an application is free to turn off
+     * or reword; a port that accepts a connection is the application's own doing and cannot be
+     * configured away while it is still an application worth training.</p>
      */
     private void awaitStarted(Process process, File output) {
         long deadline = System.currentTimeMillis() + Duration.ofSeconds(startTimeoutSeconds.get()).toMillis()
@@ -188,10 +199,26 @@ abstract class TrainAotCacheTask extends DefaultTask {
             if (output.isFile() && output.text.contains('Started ')) {
                 return
             }
+            if (serving()) {
+                return
+            }
             Thread.sleep(250L)
         }
         throw new GradleException("The training run did not start within ${startTimeoutSeconds.get()}s. " +
                 "What it printed is in ${output}")
+    }
+
+    /** Whether anything is accepting connections on the port the run was told to listen on. */
+    private boolean serving() {
+        try {
+            new Socket().withCloseable { Socket socket ->
+                socket.connect(new InetSocketAddress('localhost', port.get()), 500)
+                true
+            }
+        }
+        catch (IOException ignored) {
+            false
+        }
     }
 
     /**

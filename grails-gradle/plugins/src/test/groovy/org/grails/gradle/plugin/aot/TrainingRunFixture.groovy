@@ -56,8 +56,10 @@ class TrainingRunFixture {
             cache.text = 'a cache is what a run leaves behind as it goes'
         }))
 
-        println 'Started Application in 0.05 seconds'
-        System.out.flush()
+        if (args.length < 4 || args[3] != 'quiet') {
+            println 'Started Application in 0.05 seconds'
+            System.out.flush()
+        }
 
         new CountDownLatch(1).await()
     }

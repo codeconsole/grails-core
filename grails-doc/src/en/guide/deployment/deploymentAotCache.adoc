@@ -41,7 +41,7 @@ grails {
 }
 ----
 
-That adds two tasks. `extractAotCacheApplication` unpacks the executable jar into `build/aot-cache/application`, and `trainAotCache` runs what it unpacked, asks for each path, and stops it:
+That adds two tasks. `extractAotCacheApplication` unpacks the executable jar into `build/aot-cache/application`, and `trainAotCache` runs what it unpacked, asks for each path, stops it, and leaves the cache beside the extracted application:
 
 [source,bash]
 ----
@@ -59,13 +59,26 @@ The application is unpacked first because a cache is read against the layout it 
 === Running with the cache
 
 
-The extracted directory is what is deployed, and the cache is read from beside it:
+`build/aot-cache` is what is deployed: the extracted application, and beside it the cache and what it was trained from.
+
+[source]
+----
+build/aot-cache/
+├── application/          <1>
+├── myapp.aot             <2>
+└── aot-cache.properties  <3>
+----
+<1> the extracted application, which is the layout the cache was trained against
+<2> the cache
+<3> what the cache was trained from
 
 [source,bash]
 ----
 cd build/aot-cache/application
-java -XX:AOTCache=myapp.aot -Dspring.aot.enabled=true -Dgrails.env=production -jar myapp.jar
+java -XX:AOTCache=../myapp.aot -Dspring.aot.enabled=true -Dgrails.env=production -jar myapp.jar
 ----
+
+Run it from the extracted directory, as the training run was run: a cache records the classpath it saw, and reaching the same jar by a different path is a different classpath.
 
 A JVM given a cache it cannot use does not fail. It reports why, ignores the cache, and starts as it would have anyway — so an invalid cache costs the startup time it was meant to save, silently, and without any other symptom.
 
@@ -118,6 +131,8 @@ Because those arguments have to be reproduced at deployment time, they are recor
 
 A cache is read only by the JDK build that wrote it, against the archive it was trained on, with the arguments it was trained with. Any of those changing invalidates it, and the only symptom is that startup is no longer fast.
 
+Training runs on the project's Java toolchain where it declares one, so the JDK recorded here is the one the application is compiled for rather than whichever one happened to run Gradle.
+
 So the training run writes `aot-cache.properties` beside the cache, recording what it was made from:
 
 [source]
@@ -128,8 +143,8 @@ application.archive=myapp-0.1.jar
 application.sha256=6f1b...
 training.arguments=-Dspring.aot.enabled=true -Dgrails.env=production
 training.paths=/ /login /book/index /book/show/1
-java.runtime.version=26+30-2422
-java.vm.version=26+30-2422
+java.runtime.version=26.0.2+13
+java.vendor=BellSoft
 os.name=Mac OS X
 os.arch=aarch64
 ----

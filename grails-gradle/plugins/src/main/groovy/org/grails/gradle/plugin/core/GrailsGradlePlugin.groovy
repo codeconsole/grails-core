@@ -60,6 +60,7 @@ import org.gradle.api.tasks.TaskContainer
 import org.gradle.api.tasks.TaskProvider
 import org.gradle.api.tasks.compile.GroovyCompile
 import org.gradle.api.tasks.testing.Test
+import org.gradle.jvm.toolchain.JavaLauncher
 import org.gradle.jvm.toolchain.JavaToolchainService
 import org.gradle.language.jvm.tasks.ProcessResources
 import org.gradle.process.JavaForkOptions
@@ -1192,6 +1193,7 @@ ${importStatements}
         project.pluginManager.withPlugin(SPRING_BOOT_PLUGIN) {
             TaskProvider<?> bootJar = project.tasks.named('bootJar')
             Provider<Directory> application = project.layout.buildDirectory.dir('aot-cache/application')
+            Provider<JavaLauncher> launcher = trainingLauncher(project)
 
             TaskProvider<Exec> extract = project.tasks.register('extractAotCacheApplication', Exec) { Exec task ->
                 task.group = BasePlugin.BUILD_GROUP
@@ -1203,12 +1205,15 @@ ${importStatements}
                 task.inputs.file(project.provider { archiveOf(bootJar) })
                 task.outputs.dir(application)
                 task.doFirst {
-                    project.delete(application.get().asFile)
-                    application.get().asFile.mkdirs()
+                    File destination = application.get().asFile
+                    project.delete(destination)
+                    destination.mkdirs()
+                    // Set here rather than while the build is configured, so the JDK the toolchain
+                    // resolves to is not provisioned by every build that merely reads this project.
+                    task.commandLine(launcher.get().executablePath.asFile.absolutePath,
+                            '-Djarmode=tools', '-jar', archiveOf(bootJar).absolutePath, 'extract',
+                            '--destination', destination.absolutePath)
                 }
-                task.commandLine(javaExecutable(project), '-Djarmode=tools', '-jar',
-                        archiveOf(bootJar).absolutePath, 'extract',
-                        '--destination', application.get().asFile.absolutePath)
             }
 
             project.tasks.register('trainAotCache', TrainAotCacheTask) { TrainAotCacheTask task ->
@@ -1218,11 +1223,19 @@ ${importStatements}
                 task.dependsOn(extract)
                 task.applicationDirectory.set(application)
                 task.archiveFileName.set(project.provider { archiveOf(bootJar).name })
-                task.cacheFile.set(application.map { Directory dir ->
-                    dir.file("${project.name}.aot")
-                })
-                task.metadataFile.set(application.map { Directory dir -> dir.file('aot-cache.properties') })
-                task.javaExecutable.set(javaExecutable(project))
+                // Beside the extracted application rather than inside it. Inside, the cache and its
+                // metadata land in the directory this task declares as its input, so writing them
+                // changes that input and the task can never be up to date -- every build would run
+                // the application again to record what the last one already recorded.
+                Provider<Directory> beside = project.layout.buildDirectory.dir('aot-cache')
+                task.cacheFile.set(beside.map { Directory dir -> dir.file("${project.name}.aot") })
+                task.metadataFile.set(beside.map { Directory dir -> dir.file('aot-cache.properties') })
+                task.javaExecutable.set(launcher.map { JavaLauncher java -> java.executablePath.asFile.absolutePath })
+                // Recorded from the JDK that will run the training, not the one running the build.
+                // A cache is read only by the JDK build that wrote it, and this is what a deployment
+                // checks that against -- so naming the wrong one is worse than naming none.
+                task.javaVersion.set(launcher.map { JavaLauncher java -> java.metadata.jvmVersion })
+                task.javaVendor.set(launcher.map { JavaLauncher java -> java.metadata.vendor })
                 task.jvmArguments.set(extension.jvmArguments)
                 task.paths.set(extension.paths)
                 task.port.set(extension.port)
@@ -1237,9 +1250,22 @@ ${importStatements}
         archive.get().asFile
     }
 
-    /** The JDK running the build, which is the JDK the cache is tied to. */
-    private static String javaExecutable(Project project) {
-        new File(System.getProperty('java.home'), 'bin/java').absolutePath
+    /**
+     * The JDK the cache will be trained on, which is the project's toolchain where it declares one.
+     *
+     * <p>A cache is read only by the JDK build that wrote it, so training has to happen on the JDK
+     * the application is compiled for rather than whichever one happens to be running Gradle. A
+     * project on the Java 21 baseline with a Java 25 toolchain compiles with 25 and would otherwise
+     * have trained with 21, where the cache options do not exist -- and the failure it reported was
+     * that the training run ended before it started serving.</p>
+     *
+     * <p>Where no toolchain is declared this resolves to the JDK running the build, which is also
+     * the one that compiled the application.</p>
+     */
+    private static Provider<JavaLauncher> trainingLauncher(Project project) {
+        JavaToolchainService toolchains = project.extensions.getByType(JavaToolchainService)
+        JavaPluginExtension java = project.extensions.getByType(JavaPluginExtension)
+        toolchains.launcherFor(java.toolchain)
     }
 
     /**

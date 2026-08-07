@@ -62,7 +62,7 @@ class TrainAotCacheTaskSpec extends Specification {
      * {@code -XX:AOTCacheOutput}, which a JDK before 25 refuses outright, and a test of this task
      * should not also be a test of which JDK the build is running on.</p>
      */
-    private TrainAotCacheTask servingTask(List<String> paths) {
+    private TrainAotCacheTask servingTask(List<String> paths, boolean announcesItself = true) {
         File application = new File(temporaryFolder, 'serving')
         application.mkdirs()
         new File(application, 'served.jar').text = 'stands in for the archive, and is what is digested'
@@ -81,7 +81,7 @@ for arg in "\$@"; do
 done
 exec '${new File(System.getProperty('java.home'), 'bin/java').absolutePath}' \\
   -cp '${System.getProperty('java.class.path')}' \\
-  ${TrainingRunFixture.name} "\$cache" "\$port" '${requestedFile.absolutePath}'
+  ${TrainingRunFixture.name} "\$cache" "\$port" '${requestedFile.absolutePath}' ${announcesItself ? 'loud' : 'quiet'}
 """
         script.setExecutable(true)
 
@@ -91,6 +91,8 @@ exec '${new File(System.getProperty('java.home'), 'bin/java').absolutePath}' \\
         task.cacheFile.set(new File(application, 'demo.aot'))
         task.metadataFile.set(new File(application, 'aot-cache.properties'))
         task.javaExecutable.set(script.absolutePath)
+        task.javaVersion.set('25.0.1+9')
+        task.javaVendor.set('A Vendor')
         task.jvmArguments.set(['-Dspring.aot.enabled=true'])
         task.paths.set(paths)
         task.port.set(18098)
@@ -108,6 +110,8 @@ exec '${new File(System.getProperty('java.home'), 'bin/java').absolutePath}' \\
         task.cacheFile.set(new File(application, 'demo.aot'))
         task.metadataFile.set(new File(application, 'aot-cache.properties'))
         task.javaExecutable.set(new File(System.getProperty('java.home'), 'bin/java').absolutePath)
+        task.javaVersion.set('25.0.1+9')
+        task.javaVendor.set('A Vendor')
         task.jvmArguments.set(arguments)
         task.paths.set([])
         task.port.set(18099)
@@ -152,7 +156,8 @@ exec '${new File(System.getProperty('java.home'), 'bin/java').absolutePath}' \\
             described.'application.sha256' == sha256Of(new File(task.applicationDirectory.get().asFile, 'served.jar'))
             described.'training.paths' == '/ /login /missing'
             described.'training.arguments' == '-Dspring.aot.enabled=true'
-            described.'java.runtime.version' == System.getProperty('java.runtime.version')
+            described.'java.runtime.version' == '25.0.1+9'
+            described.'java.vendor' == 'A Vendor'
 
         and: 'every path was asked for, including the one that answered with an error'
             requested == ['/', '/login', '/missing']
@@ -169,6 +174,18 @@ exec '${new File(System.getProperty('java.home'), 'bin/java').absolutePath}' \\
             noExceptionThrown()
 
         and: 'the paths that are URIs were still asked for'
+            requested == ['/']
+    }
+
+    void 'a run that says nothing is found by its port'() {
+        given: 'an application that has turned off the log line Spring Boot starts with'
+            TrainAotCacheTask task = servingTask(['/'], false)
+
+        when:
+            task.train()
+
+        then: 'a message an application may reword or silence is not the only way to know it is up'
+            noExceptionThrown()
             requested == ['/']
     }
 
