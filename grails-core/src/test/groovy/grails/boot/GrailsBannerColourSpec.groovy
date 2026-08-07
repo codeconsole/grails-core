@@ -18,8 +18,10 @@
  */
 package grails.boot
 
+import org.springframework.boot.ansi.Ansi8BitColor
 import org.springframework.boot.ansi.AnsiColor
 import org.springframework.boot.ansi.AnsiOutput
+import org.springframework.core.env.MapPropertySource
 import org.springframework.core.env.StandardEnvironment
 import spock.lang.Specification
 
@@ -34,22 +36,30 @@ class GrailsBannerColourSpec extends Specification {
 
     GrailsBanner banner = new GrailsBanner()
 
+    StandardEnvironment environment = new StandardEnvironment()
+
     void cleanup() {
         AnsiOutput.setEnabled(AnsiOutput.Enabled.DETECT)
     }
 
+    private void configured(String colour) {
+        environment.propertySources.addFirst(
+                new MapPropertySource('test', ['grails.banner.art.color': colour]))
+    }
+
     private String printed() {
         ByteArrayOutputStream bytes = new ByteArrayOutputStream()
-        banner.printBanner(new StandardEnvironment(), GrailsBannerColourSpec, new PrintStream(bytes))
+        banner.printBanner(environment, GrailsBannerColourSpec, new PrintStream(bytes))
         bytes.toString()
     }
 
-    void 'the art is yellow where colour is on'() {
+    void 'the art is the framework amber where nothing is configured'() {
         given:
             AnsiOutput.setEnabled(AnsiOutput.Enabled.ALWAYS)
 
         expect:
-            banner.colour('art').startsWith(AnsiOutput.encode(AnsiColor.YELLOW))
+            banner.colour('art', environment)
+                    .startsWith(AnsiOutput.encode(Ansi8BitColor.foreground(214)))
     }
 
     void 'the art is left as it stands where colour is off'() {
@@ -57,7 +67,46 @@ class GrailsBannerColourSpec extends Specification {
             AnsiOutput.setEnabled(AnsiOutput.Enabled.NEVER)
 
         expect: 'a redirected log, or an application that has turned colour off'
-            banner.colour('art') == 'art'
+            banner.colour('art', environment) == 'art'
+    }
+
+    void 'an application chooses one of the 256 colours by number'() {
+        given:
+            AnsiOutput.setEnabled(AnsiOutput.Enabled.ALWAYS)
+            configured('45')
+
+        expect:
+            banner.colour('art', environment)
+                    .startsWith(AnsiOutput.encode(Ansi8BitColor.foreground(45)))
+    }
+
+    void 'an application chooses one of the eight by name'() {
+        given:
+            AnsiOutput.setEnabled(AnsiOutput.Enabled.ALWAYS)
+            configured('bright_blue')
+
+        expect: 'read without regard to case, as configuration is written either way'
+            banner.colour('art', environment)
+                    .startsWith(AnsiOutput.encode(AnsiColor.BRIGHT_BLUE))
+    }
+
+    void 'an application asks for no colour at all'() {
+        given:
+            AnsiOutput.setEnabled(AnsiOutput.Enabled.ALWAYS)
+            configured('none')
+
+        expect: 'colour everywhere else, and a banner left as it stands'
+            banner.colour('art', environment) == 'art'
+    }
+
+    void 'a colour that means nothing falls back rather than failing to start'() {
+        given:
+            AnsiOutput.setEnabled(AnsiOutput.Enabled.ALWAYS)
+            configured('chartreuse')
+
+        expect:
+            banner.colour('art', environment)
+                    .startsWith(AnsiOutput.encode(Ansi8BitColor.foreground(214)))
     }
 
     void 'the banner carries the colour through to what is printed'() {
@@ -65,7 +114,7 @@ class GrailsBannerColourSpec extends Specification {
             AnsiOutput.setEnabled(AnsiOutput.Enabled.ALWAYS)
 
         expect:
-            printed().contains(AnsiOutput.encode(AnsiColor.YELLOW))
+            printed().contains(AnsiOutput.encode(Ansi8BitColor.foreground(214)))
     }
 
     void 'the versions stay where they were before the art was coloured'() {

@@ -24,7 +24,9 @@ import groovy.transform.stc.ClosureParams
 import groovy.transform.stc.SimpleType
 
 import org.springframework.boot.Banner
+import org.springframework.boot.ansi.Ansi8BitColor
 import org.springframework.boot.ansi.AnsiColor
+import org.springframework.boot.ansi.AnsiElement
 import org.springframework.boot.ansi.AnsiOutput
 import org.springframework.boot.SpringBootVersion
 import org.springframework.core.SpringVersion
@@ -44,6 +46,13 @@ class GrailsBanner implements Banner {
 
     private static final int FALLBACK_BANNER_WIDTH = 0
     private static final String DEFAULT_BANNER_FILE = 'grails-banner.txt'
+
+    private static final String ART_COLOR_PROPERTY = 'grails.banner.art.color'
+
+    /** One of the 256 colours a terminal offers: the amber the framework is shown in. */
+    private static final String DEFAULT_ART_COLOR = '214'
+
+    private static final String NO_COLOR = 'none'
 
     String bannerFile = DEFAULT_BANNER_FILE
     int bannerPaddingTop = 1
@@ -68,7 +77,7 @@ class GrailsBanner implements Banner {
             // measured before colouring, so the escapes do not count towards the width the
             // versions below are centred on
             bannerWidth = longestLineLength(art) ?: FALLBACK_BANNER_WIDTH
-            out.println(colour(art))
+            out.println(colour(art, environment))
             artPaddingBottom.times { out.println() }
         }
         if (shouldDisplayVersions(environment)) {
@@ -79,14 +88,39 @@ class GrailsBanner implements Banner {
     }
 
     /**
-     * The art in the framework's colour, or as it stands where colour is off.
+     * The art in the configured colour, or as it stands where none is wanted.
      *
-     * <p>{@link AnsiOutput} writes the escapes only where it has been enabled, so this is the same
-     * string on a terminal that cannot colour, in a redirected log, and wherever an application has
-     * turned colour off.</p>
+     * <p>{@link AnsiOutput} writes the escapes only where colour has been enabled, so this is the
+     * same string on a terminal that cannot colour, in a redirected log, and wherever an application
+     * has turned colour off.</p>
      */
-    protected String colour(String art) {
-        AnsiOutput.toString(AnsiColor.YELLOW, art, AnsiColor.DEFAULT)
+    protected String colour(String art, Environment environment) {
+        AnsiElement colour = resolveArtColour(environment)
+        colour == null ? art : AnsiOutput.toString(colour, art, AnsiColor.DEFAULT)
+    }
+
+    /**
+     * The colour to show the art in, read from {@code grails.banner.art.color}.
+     *
+     * <p>Takes a number for one of the 256 colours a terminal offers, a name for one of the eight
+     * it has always had ({@code red}, {@code bright_blue}), or {@code none} to leave the art as it
+     * stands. A value that is neither falls back to the default rather than failing to start over
+     * the colour of a banner.</p>
+     */
+    protected AnsiElement resolveArtColour(Environment environment) {
+        String configured = environment.getProperty(ART_COLOR_PROPERTY, String, DEFAULT_ART_COLOR)
+        if (!configured || configured.equalsIgnoreCase(NO_COLOR)) {
+            return null
+        }
+        if (configured.isInteger()) {
+            return Ansi8BitColor.foreground(configured.toInteger())
+        }
+        try {
+            return AnsiColor.valueOf(configured.toUpperCase())
+        }
+        catch (IllegalArgumentException ignored) {
+            return Ansi8BitColor.foreground(DEFAULT_ART_COLOR.toInteger())
+        }
     }
 
     /**
