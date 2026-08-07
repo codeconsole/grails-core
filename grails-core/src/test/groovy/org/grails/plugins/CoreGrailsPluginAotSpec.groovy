@@ -25,6 +25,7 @@ import org.springframework.aot.generate.InMemoryGeneratedFiles
 import org.springframework.beans.factory.BeanRegistrar
 import org.springframework.beans.factory.support.BeanRegistryAdapter
 import org.springframework.beans.factory.support.GenericBeanDefinition
+import org.springframework.beans.factory.support.RootBeanDefinition
 import org.springframework.context.annotation.AnnotationConfigUtils
 import org.springframework.context.aot.ApplicationContextAotGenerator
 import org.springframework.context.support.GenericApplicationContext
@@ -116,6 +117,29 @@ class CoreGrailsPluginAotSpec extends Specification {
                 'out the same import-aware post-processor a second time'
             !context.containsBeanDefinition('grailsConfigurationClassPostProcessor')
             context.containsBeanDefinition(AnnotationConfigUtils.CONFIGURATION_ANNOTATION_PROCESSOR_BEAN_NAME)
+    }
+
+    void "a datastore's own proxy handler is not replaced"() {
+        given: 'what a GORM implementation declares from doWithSpring, which runs earlier'
+            SpringProperties.setProperty(AotDetector.AOT_ENABLED, 'false')
+            context.registerBeanDefinition('proxyHandler', new RootBeanDefinition(String))
+
+        when:
+            applyCorePluginRegistrar()
+
+        then: 'it knows how to unwrap that datastore\'s proxies, and this one does not'
+            context.getBeanDefinition('proxyHandler').beanClassName == String.name
+    }
+
+    void 'the proxy handler is registered where no datastore declared one'() {
+        given:
+            SpringProperties.setProperty(AotDetector.AOT_ENABLED, 'false')
+
+        when:
+            applyCorePluginRegistrar()
+
+        then:
+            context.containsBeanDefinition('proxyHandler')
     }
 
     void 'the core plugin bean definitions can be generated ahead of time'() {

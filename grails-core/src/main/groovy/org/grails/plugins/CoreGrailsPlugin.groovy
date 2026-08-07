@@ -131,10 +131,20 @@ class CoreGrailsPlugin extends Plugin {
      * none, and is what the plugin's own processor is for.</p>
      */
     private static boolean hasConfigurationClassPostProcessor(GrailsApplication application) {
+        hasBeanDefinition(application, AnnotationConfigUtils.CONFIGURATION_ANNOTATION_PROCESSOR_BEAN_NAME)
+    }
+
+    /**
+     * Whether the context already has a definition under this name.
+     *
+     * <p>These registrars run after the {@code doWithSpring} drain, so a plugin that has already
+     * declared a bean under one of these names has declared the one that should stand: registering
+     * over it replaces something chosen for the application with the general case.</p>
+     */
+    private static boolean hasBeanDefinition(GrailsApplication application, String beanName) {
         ApplicationContext context = application.mainContext
         context instanceof ConfigurableApplicationContext &&
-                ((ConfigurableApplicationContext) context).beanFactory.containsBeanDefinition(
-                        AnnotationConfigUtils.CONFIGURATION_ANNOTATION_PROCESSOR_BEAN_NAME)
+                ((ConfigurableApplicationContext) context).beanFactory.containsBeanDefinition(beanName)
     }
 
     /**
@@ -218,7 +228,12 @@ class CoreGrailsPlugin extends Plugin {
                 }
             }
 
-            registry.registerBean('proxyHandler', DefaultProxyHandler)
+            // The GORM implementations register a proxy handler that knows how to unwrap their own
+            // proxies; this is the one for an application that has none. Registering it over theirs
+            // left a Hibernate application unwrapping Hibernate proxies with the general case.
+            if (!hasBeanDefinition(application, 'proxyHandler')) {
+                registry.registerBean('proxyHandler', DefaultProxyHandler)
+            }
 
             // an abstract parent definition, which registerBean cannot express since it always
             // takes a class; third-party plugins inherit their search locations from it
