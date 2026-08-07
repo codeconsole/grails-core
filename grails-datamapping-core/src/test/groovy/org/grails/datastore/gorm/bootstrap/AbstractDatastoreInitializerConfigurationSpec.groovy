@@ -1,0 +1,132 @@
+/*
+ *  Licensed to the Apache Software Foundation (ASF) under one
+ *  or more contributor license agreements.  See the NOTICE file
+ *  distributed with this work for additional information
+ *  regarding copyright ownership.  The ASF licenses this file
+ *  to you under the Apache License, Version 2.0 (the
+ *  "License"); you may not use this file except in compliance
+ *  with the License.  You may obtain a copy of the License at
+ *
+ *    https://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing,
+ *  software distributed under the License is distributed on an
+ *  "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ *  KIND, either express or implied.  See the License for the
+ *  specific language governing permissions and limitations
+ *  under the License.
+ */
+package org.grails.datastore.gorm.bootstrap
+
+import org.springframework.beans.factory.config.RuntimeBeanReference
+import org.springframework.beans.factory.support.BeanDefinitionRegistry
+import org.springframework.beans.factory.support.DefaultListableBeanFactory
+import org.springframework.context.ConfigurableApplicationContext
+import org.springframework.context.aot.AbstractAotProcessor
+import org.springframework.context.support.GenericApplicationContext
+import org.springframework.core.env.MapPropertySource
+import spock.lang.Specification
+
+/**
+ * Covers what a datastore's bean definition holds in place of the configuration.
+ *
+ * <p>A definition holding the resolver is a definition holding everything that resolver can reach,
+ * and generating code for it writes those values out -- the environment of whatever machine ran the
+ * build, credentials among them, and settings that are meant to differ where the application runs.
+ * So while code is being generated the environment is named instead. Every other time the resolver
+ * is held as before, which is what a datastore brought up on its own depends on: its configuration
+ * is whatever the caller passed, and no environment holds it.</p>
+ */
+class AbstractDatastoreInitializerConfigurationSpec extends Specification {
+
+    GenericApplicationContext context = new GenericApplicationContext()
+
+    void cleanup() {
+        System.clearProperty(AbstractAotProcessor.AOT_PROCESSING)
+        context.close()
+    }
+
+    private void whileGeneratingCode(boolean generating) {
+        generating ? System.setProperty(AbstractAotProcessor.AOT_PROCESSING, 'true')
+                : System.clearProperty(AbstractAotProcessor.AOT_PROCESSING)
+    }
+
+    private Initializer initializerFor(Map configuration) {
+        context.environment.propertySources.addFirst(new MapPropertySource('test', configuration))
+        new Initializer(configuration)
+    }
+
+    void 'the configuration is held as it stands on an ordinary start'() {
+        given:
+            Initializer initializer = initializerFor(['grails.mongodb.databaseName': 'foo'])
+            whileGeneratingCode(false)
+
+        when:
+            Object held = initializer.configurationReferenceFor(context)
+
+        then: 'a datastore brought up on its own has no environment carrying its settings'
+            held.is(initializer.configuration)
+    }
+
+    void 'the environment is named while code is being generated'() {
+        given:
+            Initializer initializer = initializerFor(['grails.mongodb.databaseName': 'foo'])
+            whileGeneratingCode(true)
+
+        when:
+            Object held = initializer.configurationReferenceFor(context)
+
+        then: 'so the lookup is made where the application runs, not written down where it was built'
+            held instanceof RuntimeBeanReference
+            ((RuntimeBeanReference) held).beanName == ConfigurableApplicationContext.ENVIRONMENT_BEAN_NAME
+    }
+
+    void 'a registry that is not a container keeps the configuration'() {
+        given:
+            Initializer initializer = new Initializer(['grails.mongodb.databaseName': 'foo'])
+            whileGeneratingCode(true)
+
+        when: 'a bare registry, with no environment to name'
+            Object held = initializer.configurationReferenceFor(new DefaultListableBeanFactory())
+
+        then:
+            held.is(initializer.configuration)
+    }
+
+    void 'the classes a datastore maps are the array its constructor takes'() {
+        given:
+            Initializer initializer = new Initializer([:])
+            initializer.persistentClasses = [String, Integer]
+
+        expect: 'a collection does not answer to Class[], and the argument is then missed when the ' +
+                'definition is read to generate code for it'
+            initializer.mappedClassesFor('mongo') instanceof Class[]
+            initializer.mappedClassesFor('mongo').toList() == [String, Integer]
+    }
+
+    /** Reaches the protected members through a subclass, the way a datastore's own initializer does. */
+    static class Initializer extends AbstractDatastoreInitializer {
+
+        Initializer(Map configuration) {
+            super(configuration)
+        }
+
+        Object configurationReferenceFor(BeanDefinitionRegistry registry) {
+            configurationReference(registry)
+        }
+
+        Class[] mappedClassesFor(String datastoreType) {
+            collectMappedClasses(datastoreType)
+        }
+
+        @Override
+        Closure getBeanDefinitions(BeanDefinitionRegistry beanDefinitionRegistry) {
+            return { }
+        }
+
+        @Override
+        Class getPersistenceInterceptorClass() {
+            Object
+        }
+    }
+}

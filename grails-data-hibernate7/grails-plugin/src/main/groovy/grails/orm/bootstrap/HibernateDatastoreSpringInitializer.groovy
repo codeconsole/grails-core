@@ -165,6 +165,7 @@ class HibernateDatastoreSpringInitializer extends AbstractDatastoreInitializer {
             hibernateBytecodeProvider(GrailsBytecodeProvider)
 
             def config = this.configuration
+            Object configurationReference = configurationReference(beanDefinitionRegistry)
             final boolean isGrailsPresent = isGrailsPresent()
             def appContext = this.applicationContext
             dataSourceConnectionSourceFactory(CachedDataSourceConnectionSourceFactory)
@@ -175,7 +176,7 @@ class HibernateDatastoreSpringInitializer extends AbstractDatastoreInitializer {
                     applicationContext = appContext
                 }
             }
-            hibernateDatastore(HibernateDatastore, config, hibernateConnectionSourceFactory, eventPublisher) { bean ->
+            hibernateDatastore(HibernateDatastore, configurationReference, hibernateConnectionSourceFactory, eventPublisher) { bean ->
                 bean.primary = true
             }
             sessionFactory(hibernateDatastore: 'getSessionFactory') { bean ->

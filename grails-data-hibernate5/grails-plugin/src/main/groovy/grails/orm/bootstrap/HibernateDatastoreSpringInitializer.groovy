@@ -145,13 +145,14 @@ class HibernateDatastoreSpringInitializer extends AbstractDatastoreInitializer {
             hibernateProxyHandler(HibernateProxyHandler)
 
             def config = this.configuration
+            Object configurationReference = configurationReference(beanDefinitionRegistry)
             final boolean isGrailsPresent = isGrailsPresent()
             dataSourceConnectionSourceFactory(CachedDataSourceConnectionSourceFactory)
             hibernateConnectionSourceFactory(HibernateConnectionSourceFactory, persistentClasses as Class[]) { bean ->
                 bean.autowire = true
                 dataSourceConnectionSourceFactory = ref('dataSourceConnectionSourceFactory')
             }
-            hibernateDatastore(HibernateDatastore, config, hibernateConnectionSourceFactory, eventPublisher) { bean ->
+            hibernateDatastore(HibernateDatastore, configurationReference, hibernateConnectionSourceFactory, eventPublisher) { bean ->
                 bean.primary = true
             }
             sessionFactory(hibernateDatastore: 'getSessionFactory') { bean ->
