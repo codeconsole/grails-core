@@ -18,6 +18,8 @@
  */
 package grails.boot
 
+import java.lang.management.ManagementFactory
+
 import groovy.transform.CompileStatic
 import groovy.transform.MapConstructor
 import groovy.transform.stc.ClosureParams
@@ -29,6 +31,8 @@ import org.springframework.boot.ansi.AnsiColor
 import org.springframework.boot.ansi.AnsiElement
 import org.springframework.boot.ansi.AnsiOutput
 import org.springframework.boot.SpringBootVersion
+import org.springframework.aot.AotDetector
+import org.springframework.core.NativeDetector
 import org.springframework.core.SpringVersion
 import org.springframework.core.env.Environment
 import org.springframework.core.io.ClassPathResource
@@ -48,6 +52,20 @@ class GrailsBanner implements Banner {
     private static final String DEFAULT_BANNER_FILE = 'grails-banner.txt'
 
     private static final String ART_COLOR_PROPERTY = 'grails.banner.art.color'
+
+    private static final String MARK_DISPLAY_PROPERTY = 'grails.banner.mark.display'
+
+    private static final String MARK_TEXT_PROPERTY = 'grails.banner.mark.text'
+
+    private static final String MARK_COLOR_PROPERTY = 'grails.banner.mark.color'
+
+    /** Bright yellow, so the mark reads as its own thing rather than the last line of the art. */
+    private static final String DEFAULT_MARK_COLOR = '226'
+
+    /** What an application was started as, strongest first. */
+    private static final String NATIVE_MARK = 'NATIVE'
+    private static final String CACHE_MARK = 'AOT CACHE'
+    private static final String AOT_MARK = 'AOT'
 
     /** One of the 256 colours a terminal offers: the amber the framework is shown in. */
     private static final String DEFAULT_ART_COLOR = '214'
@@ -80,11 +98,81 @@ class GrailsBanner implements Banner {
             out.println(colour(art, environment))
             artPaddingBottom.times { out.println() }
         }
+        printMark(environment, out, bannerWidth)
         if (shouldDisplayVersions(environment)) {
             createVersionsFormatter().format(createBannerVersions(environment), bannerWidth)
                     .forEach { out.println(it) }
         }
         bannerPaddingBottom.times { out.println() }
+    }
+
+    /**
+     * Marks how the application was started, centred under the art and above the versions.
+     *
+     * <p>Only where it is worth saying: an image, a JVM given a cache to read, or one running bean
+     * definitions that were generated. An ordinary start says nothing.</p>
+     *
+     * <p>Written plainly, and deliberately: a banner is printed on the thread that is starting the
+     * application, which cannot get on until this returns. Anything drawn over time here is time the
+     * application is not starting, and an image that starts in two thirds of a second should not
+     * spend a third of it on its own announcement.</p>
+     */
+    protected void printMark(Environment environment, PrintStream out, int bannerWidth) {
+        if (!environment.getProperty(MARK_DISPLAY_PROPERTY, Boolean, true)) {
+            return
+        }
+        String mark = resolveMark(environment)
+        if (!mark) {
+            return
+        }
+        String label = spaced(mark)
+        String indent = ' ' * Math.max(0, (bannerWidth - label.length()).intdiv(2))
+        AnsiElement colour = resolveMarkColour(environment)
+        out.println(indent + (colour == null ? label : AnsiOutput.toString(colour, label, AnsiColor.DEFAULT)))
+    }
+
+    /**
+     * What to say, strongest first, or nothing where an application started the ordinary way.
+     *
+     * <p>An image has already done all of it. A cache means the JDK was handed what a previous run
+     * worked out. Generated bean definitions are the smaller half of the same idea, and worth
+     * saying on their own because an application can be run either with them or without.</p>
+     */
+    protected String resolveMark(Environment environment) {
+        String configured = environment.getProperty(MARK_TEXT_PROPERTY, String)
+        if (configured != null) {
+            return configured.trim() ?: null
+        }
+        if (isNativeImage()) {
+            return NATIVE_MARK
+        }
+        if (readsAotCache()) {
+            return CACHE_MARK
+        }
+        AotDetector.useGeneratedArtifacts() ? AOT_MARK : null
+    }
+
+    /**
+     * Whether the JDK was given a cache to read.
+     *
+     * <p>Asked of the arguments the JVM was started with rather than of the cache: a JVM handed one
+     * it cannot use declines it and starts as it would have anyway, and this is the banner rather
+     * than a diagnostic.</p>
+     */
+    protected boolean readsAotCache() {
+        ManagementFactory.runtimeMXBean.inputArguments.any { String argument ->
+            argument.startsWith('-XX:AOTCache=') || argument.startsWith('-XX:AOTMode=')
+        }
+    }
+
+    /** Spaced so it reads as a mark rather than a word. */
+    private static String spaced(String word) {
+        word.toUpperCase().toCharArray().join(' ')
+    }
+
+    /** Whether this is running as an image. A seam, so the mark can be covered without being one. */
+    protected boolean isNativeImage() {
+        NativeDetector.inNativeImage()
     }
 
     /**
@@ -108,7 +196,22 @@ class GrailsBanner implements Banner {
      * the colour of a banner.</p>
      */
     protected AnsiElement resolveArtColour(Environment environment) {
-        String configured = environment.getProperty(ART_COLOR_PROPERTY, String, DEFAULT_ART_COLOR)
+        resolveColour(environment, ART_COLOR_PROPERTY, DEFAULT_ART_COLOR)
+    }
+
+    /**
+     * The colour to show the mark in, read from {@code grails.banner.mark.color}.
+     *
+     * <p>Its own colour rather than the art's, and brighter, so that what an application was started
+     * as is not read as the last line of the drawing above it. Takes the same values as
+     * {@code grails.banner.art.color}.</p>
+     */
+    protected AnsiElement resolveMarkColour(Environment environment) {
+        resolveColour(environment, MARK_COLOR_PROPERTY, DEFAULT_MARK_COLOR)
+    }
+
+    private AnsiElement resolveColour(Environment environment, String property, String fallback) {
+        String configured = environment.getProperty(property, String, fallback)
         if (!configured || configured.equalsIgnoreCase(NO_COLOR)) {
             return null
         }
@@ -116,18 +219,18 @@ class GrailsBanner implements Banner {
             int code = configured.toInteger()
             // A terminal offers 256 of them, and anything else writes an escape it does not
             // understand -- which shows as the escape itself, printed into the banner.
-            return code in 0..255 ? Ansi8BitColor.foreground(code) : defaultArtColour()
+            return code in 0..255 ? Ansi8BitColor.foreground(code) : defaultColour(fallback)
         }
         try {
             return AnsiColor.valueOf(configured.toUpperCase())
         }
         catch (IllegalArgumentException ignored) {
-            return defaultArtColour()
+            return defaultColour(fallback)
         }
     }
 
-    private AnsiElement defaultArtColour() {
-        Ansi8BitColor.foreground(DEFAULT_ART_COLOR.toInteger())
+    private static AnsiElement defaultColour(String fallback) {
+        Ansi8BitColor.foreground(fallback.toInteger())
     }
 
     /**

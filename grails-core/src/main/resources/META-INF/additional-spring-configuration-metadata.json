@@ -19,6 +19,23 @@
       "defaultValue": "214"
     },
     {
+      "name": "grails.banner.mark.display",
+      "type": "java.lang.Boolean",
+      "description": "Whether to say under the banner art how the application was started: NATIVE for an image, AOT CACHE for a JVM given a cache to read, AOT for one running generated bean definitions. An ordinary start says nothing.",
+      "defaultValue": true
+    },
+    {
+      "name": "grails.banner.mark.color",
+      "type": "java.lang.String",
+      "description": "The colour to show the mark in, separate from the art so it is not read as part of it. Takes the same values as grails.banner.art.color: a number for one of the 256 colours a terminal offers, a name for one of the eight it has always had, or none.",
+      "defaultValue": "226"
+    },
+    {
+      "name": "grails.banner.mark.text",
+      "type": "java.lang.String",
+      "description": "Says this instead of what was detected. Shown spaced and in upper case, and an empty value shows nothing."
+    },
+    {
       "name": "grails.banner.versions.display",
       "description": "Whether to display version information in the Grails banner.",
       "type": "java.lang.Boolean",

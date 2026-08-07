@@ -101,6 +101,16 @@ grails:
       #   bright_black, bright_red, bright_green, bright_yellow,
       #   bright_blue, bright_magenta, bright_cyan, bright_white
       color: 214
+    mark:
+      # Says how the application was started, centred under the art and above the versions:
+      # NATIVE for a GraalVM image, AOT CACHE for a JVM given a cache to read with
+      # -XX:AOTCache, AOT for one running bean definitions that were generated ahead of time.
+      # An ordinary start says nothing at all.
+      display: true # (default: true)
+      # Its own colour, brighter than the art, so the mark is not read as the last line of the
+      # drawing above it. Same values as grails.banner.art.color (default: 226, bright yellow).
+      color: 226
+      text: '' # Say this instead of what was detected; empty shows nothing.
     versions:
       display: true # Whether to display version information (default: true).
       include:
