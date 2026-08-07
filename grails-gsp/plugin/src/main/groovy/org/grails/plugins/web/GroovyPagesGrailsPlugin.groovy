@@ -21,12 +21,12 @@ package org.grails.plugins.web
 import groovy.transform.CompileStatic
 import groovy.util.logging.Slf4j
 
-import org.springframework.aot.AotDetector
 import org.springframework.beans.factory.BeanRegistry
 import org.springframework.beans.factory.BeanRegistrar
 import org.springframework.beans.factory.config.PropertiesFactoryBean
 import org.springframework.boot.web.servlet.ServletRegistrationBean
-import org.springframework.core.io.Resource
+import org.springframework.context.aot.AbstractAotProcessor
+import org.springframework.core.SpringProperties
 import org.springframework.util.ClassUtils
 import org.springframework.web.servlet.view.InternalResourceViewResolver
 
@@ -187,32 +187,22 @@ class GroovyPagesGrailsPlugin extends Plugin {
                 }
             }
 
-            // An ahead-of-time image reads the pages compiled at build time whatever its
-            // surroundings suggest. It can be run from the directory it was built in, where a
-            // development environment is available, and it still cannot compile a page: defining a
-            // class at run time is what such an image gives up.
-            def deployed = !Metadata.getCurrent().isDevelopmentEnvironmentAvailable() ||
-                    AotDetector.useGeneratedArtifacts()
             groovyPageLocator(CachingGrailsConventionGroovyPageLocator) { bean ->
                 bean.lazyInit = true
                 if (customResourceLoader) {
                     resourceLoader = groovyPageResourceLoader
                 }
-                if (deployed) {
-                    Resource defaultViews = applicationContext?.getResource('gsp/views.properties')
-
-                    if (defaultViews != null) {
-                        if (!defaultViews.exists()) {
-                            defaultViews = applicationContext?.getResource('classpath:gsp/views.properties')
-                        }
-                    }
-
-                    if (defaultViews?.exists()) {
-                        precompiledGspMap = { PropertiesFactoryBean pfb ->
-                            ignoreResourceNotFound = true
-                            locations = [defaultViews] as Resource[]
-                        }
-                    }
+                // Where the pages compiled at build time are listed. Attached whatever the
+                // surroundings, because whether to read from it is decided where a page is looked
+                // up, at run time, and only there is the answer knowable: deciding it here settles
+                // it while the definition is being generated, in the directory the application was
+                // built in, where a development environment is available -- so an image would be
+                // built believing it has to compile its pages, which is the one thing it cannot do.
+                // Named rather than resolved, so that what is written down is a location to look in
+                // and not a path on the machine that did the building.
+                precompiledGspMap = { PropertiesFactoryBean pfb ->
+                    ignoreResourceNotFound = true
+                    locations = ['gsp/views.properties', 'classpath:gsp/views.properties']
                 }
                 if (enableReload) {
                     cacheTimeout = gspCacheTimeout
@@ -289,7 +279,21 @@ class GroovyPagesGrailsPlugin extends Plugin {
         }
     }
 
+    /**
+     * Whether the application is being developed, which decides where its pages are read from and
+     * whether they are watched for change.
+     *
+     * <p>While code is being generated the answer is no, whatever the machine doing the generating
+     * looks like. Generation runs in the project directory, so a development environment is
+     * available there and the question would otherwise be answered for the machine that built the
+     * application rather than the one that runs it: the pages would be read from a directory that
+     * exists only on the build machine, whose path would be written into the artifact, and an image
+     * cannot compile a page it finds there in any case.</p>
+     */
     protected boolean isDevelopmentMode() {
+        if (SpringProperties.getFlag(AbstractAotProcessor.AOT_PROCESSING)) {
+            return false
+        }
         Metadata.getCurrent().isDevelopmentEnvironmentAvailable()
     }
 
