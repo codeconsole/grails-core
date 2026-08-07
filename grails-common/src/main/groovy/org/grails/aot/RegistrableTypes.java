@@ -25,6 +25,10 @@ import java.util.Set;
 
 import org.springframework.asm.ClassReader;
 import org.springframework.asm.ClassVisitor;
+import org.springframework.asm.ConstantDynamic;
+import org.springframework.asm.FieldVisitor;
+import org.springframework.asm.Handle;
+import org.springframework.asm.Label;
 import org.springframework.asm.MethodVisitor;
 import org.springframework.asm.SpringAsmInfo;
 import org.springframework.asm.Type;
@@ -104,13 +108,66 @@ public final class RegistrableTypes {
         }
 
         private void add(@Nullable String internalName) {
-            if (internalName == null || internalName.startsWith("[")) {
+            if (internalName == null) {
+                return;
+            }
+            if (internalName.startsWith("[")) {
+                // an array names its element type, which is the class that has to be there
+                addType(Type.getType(internalName));
                 return;
             }
             String className = ClassUtils.convertResourcePathToClassName(internalName);
             // the JDK is always present, and skipping it keeps this to the classes that can be absent
             if (!className.startsWith("java.") && !className.startsWith("jdk.")) {
                 referenced.add(className);
+            }
+        }
+
+        /** Adds a type, reducing an array to the element type it is an array of. */
+        private void addType(@Nullable Type type) {
+            if (type == null) {
+                return;
+            }
+            Type element = type;
+            while (element.getSort() == Type.ARRAY) {
+                element = element.getElementType();
+            }
+            if (element.getSort() == Type.OBJECT) {
+                add(element.getInternalName());
+            }
+        }
+
+        /** Adds every type a method descriptor names: what it takes and what it gives back. */
+        private void addMethodDescriptor(@Nullable String descriptor) {
+            if (descriptor == null) {
+                return;
+            }
+            for (Type argument : Type.getArgumentTypes(descriptor)) {
+                addType(argument);
+            }
+            addType(Type.getReturnType(descriptor));
+        }
+
+        /** Adds whichever constant carries a type: a class literal, a handle, or a method type. */
+        private void addConstant(@Nullable Object constant) {
+            if (constant instanceof Type type) {
+                if (type.getSort() == Type.METHOD) {
+                    addMethodDescriptor(type.getDescriptor());
+                }
+                else {
+                    addType(type);
+                }
+            }
+            else if (constant instanceof Handle handle) {
+                add(handle.getOwner());
+                addMethodDescriptor(handle.getDesc());
+            }
+            else if (constant instanceof ConstantDynamic dynamic) {
+                addType(Type.getType(dynamic.getDescriptor()));
+                add(dynamic.getBootstrapMethod().getOwner());
+                for (int i = 0; i < dynamic.getBootstrapMethodArgumentCount(); i++) {
+                    addConstant(dynamic.getBootstrapMethodArgument(i));
+                }
             }
         }
 
@@ -126,10 +183,20 @@ public final class RegistrableTypes {
         }
 
         @Override
+        public FieldVisitor visitField(int access, String name, String descriptor, String signature,
+                Object value) {
+            addType(Type.getType(descriptor));
+            return null;
+        }
+
+        @Override
         public MethodVisitor visitMethod(int access, String name, String descriptor, String signature,
                 String[] exceptions) {
-            for (Type argument : Type.getArgumentTypes(descriptor)) {
-                add(argument.getSort() == Type.OBJECT ? argument.getInternalName() : null);
+            addMethodDescriptor(descriptor);
+            if (exceptions != null) {
+                for (String each : exceptions) {
+                    add(each);
+                }
             }
             return new MethodVisitor(SpringAsmInfo.ASM_VERSION) {
                 @Override
@@ -141,12 +208,41 @@ public final class RegistrableTypes {
                 public void visitMethodInsn(int opcode, String owner, String methodName,
                         String methodDescriptor, boolean isInterface) {
                     add(owner);
+                    addMethodDescriptor(methodDescriptor);
                 }
 
                 @Override
                 public void visitFieldInsn(int opcode, String owner, String fieldName,
                         String fieldDescriptor) {
                     add(owner);
+                    addType(Type.getType(fieldDescriptor));
+                }
+
+                @Override
+                public void visitLdcInsn(Object value) {
+                    // a class literal, which names a type without ever calling anything on it
+                    addConstant(value);
+                }
+
+                @Override
+                public void visitInvokeDynamicInsn(String methodName, String methodDescriptor,
+                        Handle bootstrap, Object... arguments) {
+                    // how a Groovy call site names what it dispatches on
+                    addMethodDescriptor(methodDescriptor);
+                    addConstant(bootstrap);
+                    for (Object argument : arguments) {
+                        addConstant(argument);
+                    }
+                }
+
+                @Override
+                public void visitMultiANewArrayInsn(String descriptor, int dimensions) {
+                    addType(Type.getType(descriptor));
+                }
+
+                @Override
+                public void visitTryCatchBlock(Label start, Label end, Label handler, String type) {
+                    add(type);
                 }
             };
         }

@@ -18,6 +18,13 @@
  */
 package org.grails.aot
 
+import org.springframework.asm.ClassWriter
+import org.springframework.asm.Handle
+import org.springframework.asm.Label
+import org.springframework.asm.MethodVisitor
+import org.springframework.asm.Opcodes
+import org.springframework.asm.Type
+
 import spock.lang.Specification
 
 /**
@@ -70,6 +77,109 @@ class RegistrableTypesSpec extends Specification {
         expect:
             !RegistrableTypes.loads(RegistrableTypes.name, empty)
             RegistrableTypes.loads('java.lang.String', empty)
+    }
+
+    void 'bytecode is rejected wherever the absent type is named'() {
+        expect: 'each of these names it once and nowhere else, so each stands or falls on its own'
+            !RegistrableTypes.referencesLoad(namingAbsent(shape), loader)
+
+        where:
+            shape << Shape.values()
+    }
+
+    void 'the same shapes naming a type that loads are accepted'() {
+        expect: 'so the rejections above are the absent type and not the shape it was named in'
+            RegistrableTypes.referencesLoad(naming('java/lang/Number', shape), loader)
+
+        where:
+            shape << Shape.values()
+    }
+
+    /** The places a class file can name a type, one per shape. */
+    private enum Shape {
+        FIELD_TYPE, ARRAY_FIELD_TYPE, RETURN_TYPE, PARAMETER_TYPE, THROWN_TYPE,
+        CLASS_LITERAL, CAUGHT_TYPE, CALL_ARGUMENT_TYPE, INVOKEDYNAMIC_ARGUMENT
+    }
+
+    private InputStream namingAbsent(Shape shape) {
+        naming('com/example/Absent', shape)
+    }
+
+    /**
+     * A class naming the given type in one place only.
+     *
+     * <p>Written rather than compiled because the point is the single mention: a fixture compiled
+     * from source names its own package, its supertypes and whatever the compiler adds, and would
+     * pass or fail for reasons other than the one under test.</p>
+     */
+    private InputStream naming(String internalName, Shape shape) {
+        ClassWriter writer = new ClassWriter(0)
+        writer.visit(Opcodes.V21, Opcodes.ACC_PUBLIC | Opcodes.ACC_ABSTRACT,
+                'org/grails/aot/Written', null, 'java/lang/Object', null)
+        String descriptor = "L${internalName};"
+
+        switch (shape) {
+            case Shape.FIELD_TYPE ->
+                    writer.visitField(Opcodes.ACC_PRIVATE, 'held', descriptor, null, null).visitEnd()
+            case Shape.ARRAY_FIELD_TYPE ->
+                    writer.visitField(Opcodes.ACC_PRIVATE, 'held', "[[${descriptor}", null, null).visitEnd()
+            case Shape.RETURN_TYPE ->
+                    writer.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_ABSTRACT,
+                            'give', "()${descriptor}", null, null).visitEnd()
+            case Shape.PARAMETER_TYPE ->
+                    writer.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_ABSTRACT,
+                            'take', "(${descriptor})V", null, null).visitEnd()
+            case Shape.THROWN_TYPE ->
+                    writer.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_ABSTRACT,
+                            'fail', '()V', null, [internalName] as String[]).visitEnd()
+            default -> withBody(writer, internalName, descriptor, shape)
+        }
+
+        writer.visitEnd()
+        new ByteArrayInputStream(writer.toByteArray())
+    }
+
+    private void withBody(ClassWriter writer, String internalName, String descriptor, Shape shape) {
+        MethodVisitor method = writer.visitMethod(Opcodes.ACC_PUBLIC, 'body', '()V', null, null)
+        method.visitCode()
+        switch (shape) {
+            case Shape.CLASS_LITERAL -> {
+                method.visitLdcInsn(Type.getObjectType(internalName))
+                method.visitInsn(Opcodes.POP)
+            }
+            case Shape.CAUGHT_TYPE -> {
+                Label start = new Label(), end = new Label(), handler = new Label()
+                method.visitTryCatchBlock(start, end, handler, internalName)
+                method.visitLabel(start)
+                method.visitLabel(end)
+                method.visitLabel(handler)
+                method.visitInsn(Opcodes.POP)
+            }
+            case Shape.CALL_ARGUMENT_TYPE -> {
+                // the owner is present; only what the call takes is not
+                method.visitInsn(Opcodes.ACONST_NULL)
+                method.visitInsn(Opcodes.ACONST_NULL)
+                method.visitMethodInsn(Opcodes.INVOKEVIRTUAL, 'java/lang/Object',
+                        'equals', "(${descriptor})Z", false)
+                method.visitInsn(Opcodes.POP)
+            }
+            case Shape.INVOKEDYNAMIC_ARGUMENT -> {
+                Handle bootstrap = new Handle(Opcodes.H_INVOKESTATIC,
+                        'java/lang/invoke/LambdaMetafactory', 'metafactory',
+                        '(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;' +
+                                'Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;' +
+                                'Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)' +
+                                'Ljava/lang/invoke/CallSite;',
+                        false)
+                method.visitInvokeDynamicInsn('run', '()Ljava/lang/Runnable;', bootstrap,
+                        Type.getType('()V'), bootstrap, Type.getType("(${descriptor})V"))
+                method.visitInsn(Opcodes.POP)
+            }
+            default -> throw new IllegalArgumentException("${shape} has no body")
+        }
+        method.visitInsn(Opcodes.RETURN)
+        method.visitMaxs(3, 1)
+        method.visitEnd()
     }
 
     static class Outer {
