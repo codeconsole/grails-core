@@ -44,11 +44,15 @@ import org.gradle.api.attributes.Category
 import org.gradle.api.file.CopySpec
 import org.gradle.api.file.DuplicatesStrategy
 import org.gradle.api.file.FileCollection
+import org.gradle.api.file.Directory
 import org.gradle.api.file.RegularFile
+import org.gradle.api.plugins.BasePlugin
+import org.gradle.api.plugins.ExtensionAware
 import org.gradle.api.plugins.ExtraPropertiesExtension
 import org.gradle.api.plugins.GroovyPlugin
 import org.gradle.api.plugins.JavaPluginExtension
 import org.gradle.api.provider.Provider
+import org.gradle.api.tasks.Exec
 import org.gradle.api.tasks.AbstractCopyTask
 import org.gradle.api.tasks.JavaExec
 import org.gradle.api.tasks.SourceSet
@@ -65,8 +69,9 @@ import org.grails.gradle.plugin.commands.GrailsCliGradlePlugin
 import org.grails.gradle.plugin.exploded.ExplodedCompatibilityRule
 import org.grails.gradle.plugin.exploded.ExplodedDisambiguationRule
 import org.grails.gradle.plugin.exploded.GrailsExplodedPlugin
-import org.gradle.api.plugins.BasePlugin
+import org.grails.gradle.plugin.aot.AotCacheExtension
 import org.grails.gradle.plugin.aot.GenerateNativeMetadataTask
+import org.grails.gradle.plugin.aot.TrainAotCacheTask
 import org.grails.gradle.plugin.model.GrailsClasspathToolingModelBuilder
 import org.grails.gradle.plugin.run.FindMainClassTask
 import org.grails.gradle.plugin.util.SourceSets
@@ -84,8 +89,14 @@ import javax.inject.Inject
  */
 @CompileStatic
 class GrailsGradlePlugin implements Plugin<Project> {
+
     private static final String NATIVE_IMAGE_PLUGIN = 'org.graalvm.buildtools.native'
 
+    private static final String SPRING_BOOT_PLUGIN = 'org.springframework.boot'
+
+    private static final int TRAINING_PORT = 18080
+
+    private static final int TRAINING_START_TIMEOUT_SECONDS = 180
 
     private static final String CLI_PID_FILE_PROPERTY = 'grails.cli.pid.file'
     private static final String RUN_APP_PID_FILE_NAME = 'run-app.pid'
@@ -137,6 +148,7 @@ class GrailsGradlePlugin implements Plugin<Project> {
         enableNative2Ascii(project, grailsVersion)
 
         configureNativeMetadata(project)
+        configureAotCache(project)
 
         configureTemplateResources(project)
 
@@ -1119,6 +1131,73 @@ ${importStatements}
                 spec.into('META-INF/templates')
             }
         }
+    }
+
+    /**
+     * Wires up the cache the JDK can write for an application, so the next start reads what a
+     * training run worked out rather than working it out again.
+     *
+     * <p>Three steps, because the cache is only usable against the layout it was trained on: the
+     * archive is extracted, the extracted application is run and asked for its pages, and what the
+     * run recorded is left beside it. An application asks for this with
+     * {@code grails.aotCache.enabled}, and says which of its pages matter.</p>
+     */
+    protected void configureAotCache(Project project) {
+        AotCacheExtension extension = ((ExtensionAware) project.extensions.getByName('grails'))
+                .extensions.create('aotCache', AotCacheExtension)
+        extension.enabled.convention(false)
+        extension.paths.convention([])
+        extension.jvmArguments.convention(['-Dspring.aot.enabled=true', '-Dgrails.env=production'])
+        extension.port.convention(TRAINING_PORT)
+        extension.startTimeoutSeconds.convention(TRAINING_START_TIMEOUT_SECONDS)
+
+        project.pluginManager.withPlugin(SPRING_BOOT_PLUGIN) {
+            TaskProvider<?> bootJar = project.tasks.named('bootJar')
+            Provider<Directory> application = project.layout.buildDirectory.dir('aot-cache/application')
+
+            TaskProvider<Exec> extract = project.tasks.register('extractAotCacheApplication', Exec) { Exec task ->
+                task.group = BasePlugin.BUILD_GROUP
+                task.description = 'Extracts the application, which is the form the cache is read against'
+                task.onlyIf { extension.enabled.get() }
+                task.dependsOn(bootJar)
+                task.doFirst {
+                    project.delete(application.get().asFile)
+                    application.get().asFile.mkdirs()
+                }
+                task.commandLine(javaExecutable(project), '-Djarmode=tools', '-jar',
+                        archiveOf(bootJar).absolutePath, 'extract',
+                        '--destination', application.get().asFile.absolutePath)
+            }
+
+            project.tasks.register('trainAotCache', TrainAotCacheTask) { TrainAotCacheTask task ->
+                task.group = BasePlugin.BUILD_GROUP
+                task.description = 'Runs the application once so the JDK can write down what starting it needs'
+                task.onlyIf { extension.enabled.get() }
+                task.dependsOn(extract)
+                task.applicationDirectory.set(application)
+                task.archiveFileName.set(project.provider { archiveOf(bootJar).name })
+                task.cacheFile.set(application.map { Directory dir ->
+                    dir.file("${project.name}.aot")
+                })
+                task.metadataFile.set(application.map { Directory dir -> dir.file('aot-cache.properties') })
+                task.javaExecutable.set(javaExecutable(project))
+                task.jvmArguments.set(extension.jvmArguments)
+                task.paths.set(extension.paths)
+                task.port.set(extension.port)
+                task.startTimeoutSeconds.set(extension.startTimeoutSeconds)
+            }
+        }
+    }
+
+    /** The archive to extract, read when the task runs rather than while the build is configured. */
+    private static File archiveOf(TaskProvider<?> bootJar) {
+        Provider<RegularFile> archive = (Provider<RegularFile>) bootJar.get().property('archiveFile')
+        archive.get().asFile
+    }
+
+    /** The JDK running the build, which is the JDK the cache is tied to. */
+    private static String javaExecutable(Project project) {
+        new File(System.getProperty('java.home'), 'bin/java').absolutePath
     }
 
     /**
