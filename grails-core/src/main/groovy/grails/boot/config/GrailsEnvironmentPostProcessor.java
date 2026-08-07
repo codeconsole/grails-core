@@ -22,6 +22,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -32,6 +33,7 @@ import org.springframework.boot.bootstrap.ConfigurableBootstrapContext;
 import org.springframework.core.Ordered;
 import org.springframework.core.env.ConfigurableEnvironment;
 import org.springframework.core.env.EnumerablePropertySource;
+import org.springframework.core.env.MapPropertySource;
 import org.springframework.core.env.MutablePropertySources;
 import org.springframework.core.env.PropertySource;
 import org.springframework.core.io.Resource;
@@ -74,8 +76,15 @@ public class GrailsEnvironmentPostProcessor implements EnvironmentPostProcessor,
         return Ordered.HIGHEST_PRECEDENCE + 15;
     }
 
+    /** Where Spring Boot reads whether to colour its output. */
+    private static final String ANSI_ENABLED = "spring.output.ansi.enabled";
+
+    /** Set in an image, and in nothing else. */
+    private static final String IMAGE_CODE = "org.graalvm.nativeimage.imagecode";
+
     @Override
     public void postProcessEnvironment(ConfigurableEnvironment environment, SpringApplication application) {
+        colourTheOutputOfAnImageThatHasATerminal(environment);
         try {
             PluginDiscovery pluginDiscovery = bootstrapContext.get(PluginDiscovery.class);
             if (pluginDiscovery == null) {
@@ -90,6 +99,43 @@ public class GrailsEnvironmentPostProcessor implements EnvironmentPostProcessor,
             LOG.error("Error loading Grails plugin configurations early: ", e);
             throw new GrailsConfigurationException("Unable to load Grails Plugins", e);
         }
+    }
+
+    /**
+     * Colours the output of an image running at a terminal, which it otherwise cannot tell it has.
+     *
+     * <p>Spring Boot decides by asking for the console, and an image answers that it has none even
+     * when it is being watched at a terminal. So the same application whose start-up is coloured
+     * under {@code bootRun} arrives plain once it is built, for a reason that has nothing to do with
+     * the terminal it is running at.</p>
+     *
+     * <p>What the environment names as the terminal is read instead, which an image does carry.
+     * That does not distinguish output being watched from output being redirected -- nothing in an
+     * image does, which is the whole difficulty -- so a shell that redirects to a file still gets
+     * the escapes. It does distinguish a shell from the places that name no terminal at all: a
+     * build, a container, a service manager, where the output is only ever read later and stays
+     * plain. An application that has said either way is left alone.</p>
+     */
+    void colourTheOutputOfAnImageThatHasATerminal(ConfigurableEnvironment environment) {
+        if (!isImage() || environment.containsProperty(ANSI_ENABLED)) {
+            return;
+        }
+        String terminal = terminal();
+        if (terminal == null || terminal.isEmpty() || "dumb".equals(terminal)) {
+            return;
+        }
+        environment.getPropertySources().addLast(new MapPropertySource("grails.ansi.output",
+                Map.of(ANSI_ENABLED, "always")));
+    }
+
+    /** Whether this is running as an image, which only a run can answer. */
+    protected boolean isImage() {
+        return System.getProperty(IMAGE_CODE) != null;
+    }
+
+    /** What the environment names as the terminal, if it names one. */
+    protected String terminal() {
+        return System.getenv("TERM");
     }
 
     /**
