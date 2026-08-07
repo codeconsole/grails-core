@@ -30,6 +30,8 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication
 import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.ApplicationContext
+import org.springframework.context.aot.AbstractAotProcessor
+import org.springframework.core.SpringProperties
 import org.springframework.core.env.Environment
 import org.springframework.web.filter.CorsFilter
 
@@ -117,8 +119,7 @@ class UrlMappingsGrailsPlugin extends Plugin {
                 grailsApplication.addArtefact(UrlMappingsArtefactHandler.TYPE, DefaultUrlMappings)
             }
 
-            boolean reloadEnabled = GrailsEnvironment.developmentMode ||
-                    GrailsEnvironment.current.reloadEnabled
+            boolean reloadEnabled = isReloadEnabled()
             boolean corsFilterEnabled = environment.getProperty(Settings.SETTING_CORS_FILTER, Boolean, true)
 
             // The url-mapping holder is a ProxyFactoryBean (reload mode) whose produced UrlMappings
@@ -153,6 +154,25 @@ class UrlMappingsGrailsPlugin extends Plugin {
         if (linkGenerator instanceof CachingLinkGenerator) {
             linkGenerator.clearCache()
         }
+    }
+
+    /**
+     * Whether the mappings are to be reloadable, which decides how the holder is defined.
+     *
+     * <p>Not while the code is being generated, whatever the machine generating it looks like.
+     * Reloading swaps the mappings behind a proxy, and the proxy produces its {@code UrlMappings}
+     * through a target source rather than declaring the type -- so Spring can only learn what it
+     * produces by building it, which is exactly what reading a generated definition avoids.
+     * Generated that way nothing could be autowired by that type, and the application did not
+     * start. An image cannot reload anything in any case.</p>
+     */
+    protected boolean isReloadEnabled() {
+        !SpringProperties.getFlag(AbstractAotProcessor.AOT_PROCESSING) && environmentReloadable
+    }
+
+    /** Whether the surroundings are ones that reload, which only a run can answer. */
+    protected boolean isEnvironmentReloadable() {
+        GrailsEnvironment.developmentMode || GrailsEnvironment.current.reloadEnabled
     }
 
     @CompileStatic
