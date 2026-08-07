@@ -256,7 +256,12 @@ class GrailsApplicationPostProcessor implements BeanDefinitionRegistryPostProces
             pluginManager.doRuntimeConfiguration(springConfig)
         }
 
-        if (loadExternalBeans) {
+        // Running on generated artifacts these beans are already registered: the application's own
+        // definitions were read while the artifacts were being generated and what they declared was
+        // written out as code. Reading them again would register them a second time, and reading
+        // the Groovy one means compiling a script -- which an image cannot do at all, so an
+        // application that has a spring/resources.groovy did not start.
+        if (loadExternalBeans && !AotDetector.useGeneratedArtifacts()) {
             // now allow overriding via application
 
             def context = application.mainContext
