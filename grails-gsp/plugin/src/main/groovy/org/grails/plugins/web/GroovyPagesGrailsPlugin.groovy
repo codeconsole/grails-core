@@ -290,6 +290,7 @@ class GroovyPagesGrailsPlugin extends Plugin {
      * exists only on the build machine, whose path would be written into the artifact, and an image
      * cannot compile a page it finds there in any case.</p>
      */
+    @CompileStatic
     protected boolean isDevelopmentMode() {
         if (SpringProperties.getFlag(AbstractAotProcessor.AOT_PROCESSING)) {
             return false
