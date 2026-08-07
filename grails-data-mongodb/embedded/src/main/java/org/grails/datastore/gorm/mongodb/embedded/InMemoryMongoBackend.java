@@ -18,8 +18,6 @@
  */
 package org.grails.datastore.gorm.mongodb.embedded;
 
-import java.net.InetSocketAddress;
-
 import de.bwaldvogel.mongo.MongoServer;
 import de.bwaldvogel.mongo.backend.memory.MemoryBackend;
 
