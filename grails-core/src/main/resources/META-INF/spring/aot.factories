@@ -2,6 +2,7 @@ org.springframework.beans.factory.aot.BeanRegistrationExcludeFilter=\
 org.grails.spring.beans.aot.AbstractBeanDefinitionExcludeFilter
 
 org.springframework.aot.hint.RuntimeHintsRegistrar=\
+org.grails.spring.beans.aot.BeanRegistrarRuntimeHints,\
 org.grails.spring.beans.aot.GrailsClosureRuntimeHints
 
 org.springframework.beans.factory.aot.BeanRegistrationAotProcessor=\
