@@ -71,9 +71,9 @@ A JVM given a cache it cannot use does not fail. It reports why, ignores the cac
 === What the training run should do
 
 
-A cache makes the next start fast at whatever the training run did. Training a run that only refreshes the context records the framework starting, and that alone is most of what the startup time is.
+A cache makes the next start fast at whatever the training run did. Training a run that only refreshes the context records the framework starting, and that alone is most of what the startup time is — so most of the benefit is there before any path is named.
 
-Asking for paths as well does not make startup faster still — the two caches reach the same figure. What it changes is the first request. Each path asked for during training profiles the code that answers it — URL mapping, the controller, GSP rendering, the data access behind it — so the first real request finds that work done rather than doing it itself. On the same application, the first hit of four cold paths cost around 0.95s against a cache trained on refresh alone, and around 0.48s against one trained over those paths.
+Asking for paths adds a little to that and a good deal more to the first request. Each path asked for during training profiles the code that answers it — URL mapping, the controller, GSP rendering, the data access behind it — so the first real request finds that work done rather than doing it itself.
 
 So `paths` is worth setting for the pages that matter on a cold start: the ones a load balancer hits first, and the ones a user sees first. An application whose startup time is all that matters can leave it empty and still get most of the benefit.
 
@@ -143,22 +143,22 @@ Measured on a Grails application with GORM for Hibernate, security and asset pip
 | Start | Startup | First hit of four cold paths
 
 | Ordinary
-| 3.150s
+| 2.594s
 |
 
 | Spring AOT
-| 2.489s
+| 2.284s
 |
 
 | Spring AOT with a cache trained on refresh only
-| 1.079s
-| 0.847s
+| 1.015s
+| 0.495s
 
 | Spring AOT with a cache trained over those paths
-| 1.026s
-| 0.445s
+| 0.933s
+| 0.332s
 |===
 
-The shape of that is the point. Spring's AOT processing on its own moves less than might be expected, because deciding what the beans are was never most of the cost — loading and linking the classes was, and that is what the cache removes, more than halving startup. The two caches then reach the same startup figure, and differ in what the application is fast at once it is up.
+The shape of that is the point. Spring's AOT processing on its own moves less than might be expected, because deciding what the beans are was never most of the cost — loading and linking the classes was, and that is what the cache removes, cutting startup by more than half. Naming the paths takes a further tenth off startup and a third off the first requests.
 
 An AOT cache and a native image solve the same problem differently and are not combined: a native image has no cache to read because it has already done all of this at build time. The cache is what an application gets when it stays on the JVM — including applications a native image cannot yet build, which is most of those using Hibernate.
