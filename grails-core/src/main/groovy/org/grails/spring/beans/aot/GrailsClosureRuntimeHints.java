@@ -114,7 +114,7 @@ public class GrailsClosureRuntimeHints implements RuntimeHintsRegistrar {
      * a method body.
      */
     private boolean registrable(String className, Resource resource, ClassLoader loader) {
-        if (!RegistrableTypes.loads(className, loader)) {
+        if (!RegistrableTypes.loads(className, loader) || !enclosingLoads(className, loader)) {
             return false;
         }
         try {
@@ -123,6 +123,24 @@ public class GrailsClosureRuntimeHints implements RuntimeHintsRegistrar {
         catch (IOException ex) {
             return false;
         }
+    }
+
+    /**
+     * Whether the class the closure was written inside can be loaded.
+     *
+     * <p>A closure loads without it -- it extends {@code Closure} and nothing else -- so asking only
+     * about the closure lets one through whose surroundings are absent. Registering it makes the
+     * image analyse it, and analysing a closure means reading the method it was written in: the test
+     * support ships closures written inside a Spock specification, and an application that does not
+     * test with Spock has no {@code spock.lang.Specification} for the image to read, which fails the
+     * build rather than the closure.</p>
+     */
+    boolean enclosingLoads(String className, ClassLoader loader) {
+        int closure = className.indexOf("$_");
+        if (closure < 0) {
+            return true;
+        }
+        return RegistrableTypes.loads(className.substring(0, closure), loader);
     }
 
     @Nullable

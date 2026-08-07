@@ -75,6 +75,22 @@ class GrailsClosureRuntimeHintsSpec extends Specification {
             RuntimeHintsPredicates.resource().forResource('META-INF/grails.factories').test(hints)
     }
 
+    void 'a closure is skipped when the class it was written inside cannot be loaded'() {
+        given:
+            def registrar = new GrailsClosureRuntimeHints()
+            ClassLoader loader = getClass().classLoader
+
+        expect: 'analysing a closure means reading the method it was written in, so a closure whose ' +
+                'surroundings are absent fails the build rather than being left out of it'
+            !registrar.enclosingLoads('com.example.NotHere$_someMethod_closure1', loader)
+
+        and: 'one written inside a class that is present is kept'
+            registrar.enclosingLoads('org.grails.config.NavigableMap$_flattenKeys_closure3', loader)
+
+        and: 'a class that is not a closure has no surroundings to ask about'
+            registrar.enclosingLoads('org.grails.config.NavigableMap', loader)
+    }
+
     void 'a class loader that resolves nothing yields no hints rather than failing'() {
         when:
             new GrailsClosureRuntimeHints().registerHints(hints, new URLClassLoader(new URL[0], null))
