@@ -23,6 +23,7 @@ import com.mongodb.client.MongoClients
 
 import org.bson.Document
 
+import org.springframework.context.aot.AbstractAotProcessor
 import org.springframework.context.support.GenericApplicationContext
 import org.springframework.core.env.MapPropertySource
 
@@ -262,6 +263,42 @@ class EmbeddedMongoInitializerSpec extends Specification {
             def collection = client.getDatabase('bookstore').getCollection('probe')
             collection.insertOne(new Document('backend', url.contains('27981') ? 'in-memory' : 'flapdoodle'))
             collection.find().first().getString('backend')
+        }
+    }
+
+    void 'nothing is started while bean definitions are being generated'() {
+        given: 'a configuration that would otherwise start a server, on a port no other feature ' +
+                'here uses -- servers started in this spec outlive the feature that started them'
+        assert !listening(27991)
+        GenericApplicationContext context = contextWith([
+                (EmbeddedMongoInitializer.ENABLED): 'true',
+                (EmbeddedMongoInitializer.BACKEND): InMemoryMongoBackend.NAME,
+                (EmbeddedMongoInitializer.PORT)   : '27991',
+                'grails.mongodb.url'              : 'mongodb://localhost:27017/bookstore',
+        ])
+        System.setProperty(AbstractAotProcessor.AOT_PROCESSING, 'true')
+
+        when:
+        new EmbeddedMongoInitializer().initialize(context)
+
+        then: 'generation reads definitions rather than running them, and a server that started ' +
+                'would listen on a non-daemon thread and hang the build that started it'
+        context.environment.getProperty('grails.mongodb.url') == 'mongodb://localhost:27017/bookstore'
+        context.environment.propertySources.every { it.name != 'embeddedMongoDB' }
+
+        and: 'nothing is listening on the port it was told to use'
+        !listening(27991)
+
+        cleanup:
+        System.clearProperty(AbstractAotProcessor.AOT_PROCESSING)
+    }
+
+    private static boolean listening(int port) {
+        try {
+            new Socket('localhost', port).withCloseable { true }
+        }
+        catch (IOException ignored) {
+            false
         }
     }
 

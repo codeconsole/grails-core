@@ -34,6 +34,8 @@ import org.slf4j.LoggerFactory;
 
 import org.springframework.context.ApplicationContextInitializer;
 import org.springframework.context.ConfigurableApplicationContext;
+import org.springframework.context.aot.AbstractAotProcessor;
+import org.springframework.core.SpringProperties;
 import org.springframework.core.env.ConfigurableEnvironment;
 import org.springframework.core.env.MapPropertySource;
 import org.springframework.util.ClassUtils;
@@ -150,6 +152,15 @@ public class EmbeddedMongoInitializer implements ApplicationContextInitializer<C
     public void initialize(ConfigurableApplicationContext applicationContext) {
         ConfigurableEnvironment environment = applicationContext.getEnvironment();
         if (!Boolean.parseBoolean(environment.getProperty(ENABLED, "false"))) {
+            return;
+        }
+        if (SpringProperties.getFlag(AbstractAotProcessor.AOT_PROCESSING)) {
+            // Ahead-of-time processing writes bean definitions out as code. It refreshes a context
+            // to read them, but nothing in it is meant to run, and a database no one will query is
+            // of no use to it. Starting one is also unrecoverable: the server listens on a
+            // non-daemon thread and is stopped only by a JVM shutdown hook, so generation finished
+            // and then hung, holding the port, until it was killed.
+            log.debug("Not starting an embedded MongoDB: this is ahead-of-time processing");
             return;
         }
 
