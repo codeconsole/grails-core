@@ -189,6 +189,58 @@ class EmbeddedMongoInitializerSpec extends Specification {
         intruder.close()
     }
 
+    void 'the initializer is created without flapdoodle on the classpath'() {
+        given: 'flapdoodle is compileOnly, so an application that has not added it sees this'
+            ClassLoader withoutFlapdoodle = hiding('de.flapdoodle.')
+
+        when: 'the backends are worked out the way the public constructor works them out'
+            List<EmbeddedMongoBackend> backends =
+                    EmbeddedMongoInitializer.defaultBackends(withoutFlapdoodle)
+
+        then: 'holding the flapdoodle backend would load it, and loading it resolves the types its ' +
+                'methods name -- so merely offering it threw NoClassDefFoundError and no embedded ' +
+                'server could start at all'
+            backends*.name == [InMemoryMongoBackend.NAME]
+    }
+
+    void 'flapdoodle is offered when it is on the classpath'() {
+        expect:
+            EmbeddedMongoInitializer.defaultBackends(getClass().classLoader)*.name ==
+                    [FlapdoodleMongoBackend.NAME, InMemoryMongoBackend.NAME]
+    }
+
+    void 'asking for flapdoodle without it on the classpath says so'() {
+        given:
+            GenericApplicationContext context = new GenericApplicationContext()
+            context.environment.propertySources.addFirst(new MapPropertySource('test', [
+                    'embedded.mongodb.enabled': 'true',
+                    'embedded.mongodb.backend': FlapdoodleMongoBackend.NAME
+            ]))
+
+        when: 'the backend it asked for is not among the ones offered'
+            new EmbeddedMongoInitializer([new InMemoryMongoBackend()]).initialize(context)
+
+        then: 'which is a missing library rather than a name that means nothing'
+            IllegalStateException e = thrown()
+            e.message.contains('not on the classpath')
+
+        cleanup:
+            context.close()
+    }
+
+    /** A loader that cannot see the named package, standing in for it not being on the classpath. */
+    private ClassLoader hiding(String packagePrefix) {
+        new ClassLoader(getClass().classLoader) {
+            @Override
+            Class<?> loadClass(String name, boolean resolve) throws ClassNotFoundException {
+                if (name.startsWith(packagePrefix)) {
+                    throw new ClassNotFoundException(name)
+                }
+                super.loadClass(name, resolve)
+            }
+        }
+    }
+
     void 'an unknown backend is reported by name'() {
         given:
         GenericApplicationContext context = contextWith([

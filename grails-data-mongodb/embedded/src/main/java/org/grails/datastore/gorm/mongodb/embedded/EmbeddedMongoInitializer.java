@@ -19,7 +19,6 @@
 package org.grails.datastore.gorm.mongodb.embedded;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -37,6 +36,7 @@ import org.springframework.context.ApplicationContextInitializer;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.core.env.ConfigurableEnvironment;
 import org.springframework.core.env.MapPropertySource;
+import org.springframework.util.ClassUtils;
 
 /**
  * Starts an embedded MongoDB before the application context refreshes and publishes its
@@ -118,7 +118,28 @@ public class EmbeddedMongoInitializer implements ApplicationContextInitializer<C
     private final List<EmbeddedMongoBackend> backends;
 
     public EmbeddedMongoInitializer() {
-        this(Arrays.asList(new FlapdoodleMongoBackend(), new InMemoryMongoBackend()));
+        this(defaultBackends(EmbeddedMongoInitializer.class.getClassLoader()));
+    }
+
+    /**
+     * The backends to offer, which is only ever the ones whose library is present.
+     *
+     * <p>Asking a backend whether it is available means holding one, and holding one means loading
+     * its class -- which resolves the types named in its methods, so constructing the flapdoodle
+     * backend without flapdoodle fails before it can answer. Since it is deliberately not a
+     * dependency of this module, that is the ordinary case: the initializer could not be created at
+     * all, and an application asking for the in-memory server got a NoClassDefFoundError naming a
+     * library it never asked for.</p>
+     *
+     * <p>So the question is asked of the class loader instead, by a name rather than by a type.</p>
+     */
+    static List<EmbeddedMongoBackend> defaultBackends(ClassLoader classLoader) {
+        List<EmbeddedMongoBackend> backends = new ArrayList<>();
+        if (ClassUtils.isPresent(FlapdoodleMongoBackend.MONGOD_CLASS, classLoader)) {
+            backends.add(new FlapdoodleMongoBackend());
+        }
+        backends.add(new InMemoryMongoBackend());
+        return backends;
     }
 
     EmbeddedMongoInitializer(List<EmbeddedMongoBackend> backends) {
@@ -204,6 +225,11 @@ public class EmbeddedMongoInitializer implements ApplicationContextInitializer<C
                     }
                     return backend;
                 }
+            }
+            if (FlapdoodleMongoBackend.NAME.equals(requested)) {
+                throw new IllegalStateException(BACKEND + "=" + requested +
+                        " but its library is not on the classpath. Add it as a dependency, or choose one of " +
+                        availableNames() + ".");
             }
             throw new IllegalStateException(BACKEND + "=" + requested + " is not a known backend. Use one of " +
                     this.backends.stream().map(EmbeddedMongoBackend::getName).collect(Collectors.joining(", ")) +

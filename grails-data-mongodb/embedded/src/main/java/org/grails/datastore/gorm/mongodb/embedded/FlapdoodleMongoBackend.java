@@ -56,7 +56,11 @@ public class FlapdoodleMongoBackend implements EmbeddedMongoBackend {
 
     public static final String NAME = "flapdoodle";
 
-    private static final String MONGOD_CLASS = "de.flapdoodle.embed.mongo.transitions.Mongod";
+    /**
+     * Package-private, and a compile-time constant, so that {@link EmbeddedMongoInitializer} can ask
+     * whether flapdoodle is present without naming this class in a way that would load it.
+     */
+    static final String MONGOD_CLASS = "de.flapdoodle.embed.mongo.transitions.Mongod";
 
     private static final String DEFAULT_VERSION = "V8_0";
 
