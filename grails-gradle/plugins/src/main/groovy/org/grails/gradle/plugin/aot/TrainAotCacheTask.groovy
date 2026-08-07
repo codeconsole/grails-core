@@ -32,6 +32,7 @@ import org.gradle.api.tasks.Input
 import org.gradle.api.tasks.InputDirectory
 import org.gradle.api.tasks.OutputFile
 import org.gradle.api.tasks.TaskAction
+import org.gradle.work.DisableCachingByDefault
 
 /**
  * Runs the application once so the JDK can write down what starting it needs.
@@ -48,6 +49,7 @@ import org.gradle.api.tasks.TaskAction
  * @since 8.0
  */
 @CompileStatic
+@DisableCachingByDefault(because = 'Runs the application and records what it did, which is not reproducible')
 abstract class TrainAotCacheTask extends DefaultTask {
 
     /** The extracted application: the cache is only usable against the layout it was trained on. */
@@ -83,6 +85,7 @@ abstract class TrainAotCacheTask extends DefaultTask {
 
     @TaskAction
     void train() {
+        refuseWhereTheRunCannotBeAskedToStop()
         File directory = applicationDirectory.get().asFile
         File cache = cacheFile.get().asFile
         cache.delete()
@@ -113,6 +116,24 @@ abstract class TrainAotCacheTask extends DefaultTask {
         describe(cache, new File(directory, archiveFileName.get()))
         logger.lifecycle('Trained {} ({} MB) over {} paths',
                 cache.name, (cache.length() / (1024 * 1024)) as long, paths.get().size())
+    }
+
+    /**
+     * Refuses to start a run that could not be ended properly, before it is started.
+     *
+     * <p>The cache is written as the training JVM exits normally, so the run has to be asked to
+     * stop rather than killed. {@link Process#destroy()} asks on POSIX and kills on Windows, where
+     * it is {@code TerminateProcess} and no shutdown runs -- so on Windows the run would be
+     * exercised in full, killed, and leave no cache, and the build would fail at the end saying the
+     * cache was not written rather than saying why it could not be.</p>
+     */
+    private static void refuseWhereTheRunCannotBeAskedToStop() {
+        String os = System.getProperty('os.name', '')
+        if (os.toLowerCase(Locale.ROOT).contains('win')) {
+            throw new GradleException('Training an AOT cache needs the training run to be asked to ' +
+                    'stop, and on Windows a child process can only be killed -- which writes no ' +
+                    'cache. Train on Linux or macOS, or set grails.aotCache.enabled to false.')
+        }
     }
 
     /**
@@ -177,6 +198,11 @@ abstract class TrainAotCacheTask extends DefaultTask {
      * Asks for each path. A path that answers with an error still profiled the code that produced
      * the error, which is code an application runs too, so nothing here fails the build: the run is
      * a recording, not a test.
+     *
+     * <p>That covers a path that is not a URI as much as one that answers with a 500. A path
+     * written without its leading slash makes a URI with no valid authority, and rejecting it here
+     * would fail a build over a typo in a list whose whole purpose is to make the next start
+     * quicker.</p>
      */
     private void exercise() {
         for (String path : paths.get()) {
@@ -193,7 +219,7 @@ abstract class TrainAotCacheTask extends DefaultTask {
                 body?.withCloseable { it.bytes }
                 logger.info('Trained {} -> {}', path, status)
             }
-            catch (IOException e) {
+            catch (IOException | RuntimeException e) {
                 logger.info('Could not reach {} while training: {}', path, e.message)
             }
         }

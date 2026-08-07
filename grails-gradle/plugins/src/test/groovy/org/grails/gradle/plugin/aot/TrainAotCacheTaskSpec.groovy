@@ -38,6 +38,66 @@ class TrainAotCacheTaskSpec extends Specification {
 
     Project project = ProjectBuilder.builder().build()
 
+    /** Where the fixture writes the paths it was asked for, so the spec can read them back. */
+    private File requestedFile
+
+    List<String> getRequested() {
+        requestedFile?.isFile() ? requestedFile.readLines().findAll { it } : []
+    }
+
+    private static Properties describedBy(TrainAotCacheTask task) {
+        Properties properties = new Properties()
+        task.metadataFile.get().asFile.withInputStream { properties.load(it) }
+        properties
+    }
+
+    private static String sha256Of(File file) {
+        java.security.MessageDigest.getInstance('SHA-256').digest(file.bytes).encodeHex().toString()
+    }
+
+    /**
+     * A task whose training run really starts, serves and stops.
+     *
+     * <p>Launched through a script standing in for the JVM: the run is given
+     * {@code -XX:AOTCacheOutput}, which a JDK before 25 refuses outright, and a test of this task
+     * should not also be a test of which JDK the build is running on.</p>
+     */
+    private TrainAotCacheTask servingTask(List<String> paths) {
+        File application = new File(temporaryFolder, 'serving')
+        application.mkdirs()
+        new File(application, 'served.jar').text = 'stands in for the archive, and is what is digested'
+        requestedFile = new File(temporaryFolder, 'requested.txt')
+        requestedFile.text = ''
+
+        File script = new File(temporaryFolder, 'fake-jvm.sh')
+        script.text = """#!/bin/sh
+cache=""
+port=""
+for arg in "\$@"; do
+  case "\$arg" in
+    -XX:AOTCacheOutput=*) cache="\${arg#-XX:AOTCacheOutput=}" ;;
+    --server.port=*) port="\${arg#--server.port=}" ;;
+  esac
+done
+exec '${new File(System.getProperty('java.home'), 'bin/java').absolutePath}' \\
+  -cp '${System.getProperty('java.class.path')}' \\
+  ${TrainingRunFixture.name} "\$cache" "\$port" '${requestedFile.absolutePath}'
+"""
+        script.setExecutable(true)
+
+        TrainAotCacheTask task = project.tasks.create('trainServing', TrainAotCacheTask)
+        task.applicationDirectory.set(application)
+        task.archiveFileName.set('served.jar')
+        task.cacheFile.set(new File(application, 'demo.aot'))
+        task.metadataFile.set(new File(application, 'aot-cache.properties'))
+        task.javaExecutable.set(script.absolutePath)
+        task.jvmArguments.set(['-Dspring.aot.enabled=true'])
+        task.paths.set(paths)
+        task.port.set(18098)
+        task.startTimeoutSeconds.set(60)
+        task
+    }
+
     private TrainAotCacheTask task(String archiveName, List<String> arguments) {
         File application = new File(temporaryFolder, 'application')
         application.mkdirs()
@@ -79,11 +139,53 @@ class TrainAotCacheTaskSpec extends Specification {
             new File(e.message.replaceAll(/(?s).*is in /, '').trim()).isFile()
     }
 
-    void 'the arguments the run is trained with are the ones it is given'() {
-        given:
-            TrainAotCacheTask task = task('not-an-archive.jar', ['-Dspring.aot.enabled=true'])
+    void 'a run that starts is exercised and described'() {
+        given: 'a run that says it started, serves what it is asked for, and stops when asked'
+            TrainAotCacheTask task = servingTask(['/', '/login', '/missing'])
 
-        expect: 'a run configured differently from the training run reads a cache of another application'
-            task.jvmArguments.get() == ['-Dspring.aot.enabled=true']
+        when:
+            task.train()
+
+        then: 'the cache the run left behind is described by what it was made from'
+            Properties described = describedBy(task)
+            described.'application.archive' == 'served.jar'
+            described.'application.sha256' == sha256Of(new File(task.applicationDirectory.get().asFile, 'served.jar'))
+            described.'training.paths' == '/ /login /missing'
+            described.'training.arguments' == '-Dspring.aot.enabled=true'
+            described.'java.runtime.version' == System.getProperty('java.runtime.version')
+
+        and: 'every path was asked for, including the one that answered with an error'
+            requested == ['/', '/login', '/missing']
+    }
+
+    void 'a path that is not a URI is skipped rather than failing the build'() {
+        given: 'a leading slash left off, which makes a URI with no valid authority'
+            TrainAotCacheTask task = servingTask(['login', '/'])
+
+        when:
+            task.train()
+
+        then: 'a typo in a list that exists to make the next start quicker does not fail a build'
+            noExceptionThrown()
+
+        and: 'the paths that are URIs were still asked for'
+            requested == ['/']
+    }
+
+    void 'a run is refused where it could not be asked to stop'() {
+        given: 'Windows, where a child process can only be killed, and a killed run writes no cache'
+            String os = System.getProperty('os.name')
+            System.setProperty('os.name', 'Windows 11')
+            TrainAotCacheTask task = task('not-an-archive.jar', [])
+
+        when:
+            task.train()
+
+        then: 'said before the run rather than after it, as "no cache was written"'
+            GradleException e = thrown()
+            e.message.contains('can only be killed')
+
+        cleanup:
+            System.setProperty('os.name', os)
     }
 }

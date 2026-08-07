@@ -23,6 +23,8 @@ The JDK can record a run of an application — the classes it loaded and linked,
 
 It requires JDK 25 or later.
 
+Training is POSIX-only. The cache is written as the training JVM exits normally, so the run has to be asked to stop rather than killed — and a child process on Windows can only be killed. `trainAotCache` says so and stops rather than training a run it could not end. Reading a cache has no such restriction; only producing one does.
+
 
 === Enabling the cache
 
@@ -107,6 +109,8 @@ grails {
 ----
 
 `jvmArguments` is given to the training run *and* has to be given to every run that reads the cache. A cache records what it saw; a run configured differently from the training run is a different application as far as the cache is concerned, and its cache will be declined.
+
+Because those arguments have to be reproduced at deployment time, they are recorded in `aot-cache.properties`, which ships beside the cache. Keep credentials out of them and pass them to the training run another way.
 
 
 === Knowing whether a cache still applies

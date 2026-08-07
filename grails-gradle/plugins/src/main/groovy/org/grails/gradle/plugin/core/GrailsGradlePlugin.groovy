@@ -1198,6 +1198,10 @@ ${importStatements}
                 task.description = 'Extracts the application, which is the form the cache is read against'
                 task.onlyIf { extension.enabled.get() }
                 task.dependsOn(bootJar)
+                // Named so the extraction is skipped when the archive it came from has not moved,
+                // rather than repeated on every run because nothing said what it produced.
+                task.inputs.file(project.provider { archiveOf(bootJar) })
+                task.outputs.dir(application)
                 task.doFirst {
                     project.delete(application.get().asFile)
                     application.get().asFile.mkdirs()
