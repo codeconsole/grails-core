@@ -288,7 +288,10 @@ class GrailsBanner implements Banner {
                 }
             }
         }
-        includedVersions.collectEntries { key ->
+        // A library that is not there, or that records no version, is left out rather than shown
+        // as unknown. That is what lets a version be on by default: an application without Spring
+        // Security says nothing about it, instead of saying it does not know.
+        Map<String, String> versions = includedVersions.collectEntries { key ->
             switch (VersionOption.fromString(key)) {
                 case VersionOption.APP:
                     [(env.getProperty('info.app.name') ?: 'app'): env.getProperty('info.app.version') ?: 'unknown']
@@ -312,7 +315,11 @@ class GrailsBanner implements Banner {
                     ['Spring Security': findVersion('org.springframework.security.core.SpringSecurityCoreVersion')]
                     break
                 case VersionOption.TOMCAT:
-                    ['Tomcat': findVersion('org.apache.catalina.util.ServerInfo')]
+                    // Tomcat ships its version in a resource rather than only in a manifest, and a
+                    // resource survives being repackaged into an executable jar or built into an
+                    // image, where the manifest's attributes are no longer attached to the package.
+                    ['Tomcat': findVersionInResource('org/apache/catalina/util/ServerInfo.properties',
+                            'server.number') ?: findVersion('org.apache.catalina.util.ServerInfo')]
                     break
                 case VersionOption.JETTY:
                     ['Jetty': findVersion('org.eclipse.jetty.util.Jetty')]
@@ -324,14 +331,9 @@ class GrailsBanner implements Banner {
                     null
             }
         } as Map<String, String>
+        versions.findAll { String label, String version -> version != null }
     }
 
-    /**
-     * Finds the implementation version of the specified class.
-     *
-     * @param className the fully qualified class name
-     * @return the implementation version, or 'unknown' if not found
-     */
     /**
      * The version a library records in the manifest of the jar it ships in.
      *
@@ -342,12 +344,35 @@ class GrailsBanner implements Banner {
      * manifest is attached to the package when the class is loaded, and loading is all this
      * needs.</p>
      */
+    /**
+     * A version a library records in a resource it ships, read without loading any of its classes.
+     *
+     * <p>The manifest route only works while a jar is a plain entry on the classpath. Repackaged
+     * into an executable jar its attributes are no longer attached to the package, and an image has
+     * no jars at all -- which is why a container version read that way reads as nothing in exactly
+     * the two places it is most worth having. A resource is still a resource in both.</p>
+     */
+    protected static String findVersionInResource(String resource, String key) {
+        InputStream stream = GrailsBanner.classLoader.getResourceAsStream(resource)
+        if (stream == null) {
+            return null
+        }
+        try {
+            Properties properties = new Properties()
+            stream.withCloseable { properties.load(it) }
+            return properties.getProperty(key)
+        }
+        catch (IOException ignored) {
+            return null
+        }
+    }
+
     protected static String findVersion(String className) {
         try {
             Package pkg = Class.forName(className, false, GrailsBanner.classLoader).package
-            return pkg?.implementationVersion ?: 'unknown'
+            return pkg?.implementationVersion
         } catch (ClassNotFoundException ignore) {
-            return 'unknown'
+            return null
         }
     }
 
@@ -521,7 +546,8 @@ class GrailsBanner implements Banner {
         GRAILS,
         GROOVY,
         SPRING_BOOT,
-        SPRING
+        SPRING,
+        SPRING_SECURITY
 
         final String key
 
@@ -535,7 +561,6 @@ class GrailsBanner implements Banner {
      */
     @CompileStatic
     enum OptionalVersionOption {
-        SPRING_SECURITY,
         TOMCAT,
         JETTY,
         UNDERTOW

@@ -110,7 +110,7 @@ class GrailsBannerNativeMarkSpec extends Specification {
 
         then:
             output.indexOf('N A T I V E') > output.indexOf('grails.apache.org')
-            output.indexOf('N A T I V E') < output.indexOf('Grails:')
+            output.indexOf('N A T I V E') < output.indexOf('JVM')
     }
 
     void 'the mark is centred on the art'() {
@@ -162,6 +162,26 @@ class GrailsBannerNativeMarkSpec extends Specification {
             printed(new StartedAs(image: true)).readLines()
                     .find { it.contains('N A T I V E') }
                     .contains(AnsiOutput.encode(Ansi8BitColor.foreground(39)))
+    }
+
+    void 'spring security is a default rather than something to ask for'() {
+        expect: 'so an application with it on the classpath shows it without configuring anything'
+            GrailsBanner.DefaultVersionOption.values()*.key.contains('spring-security')
+            !GrailsBanner.OptionalVersionOption.values()*.key.contains('spring-security')
+    }
+
+    void 'a library that is not there is left out rather than shown as unknown'() {
+        expect: 'jetty and undertow are not on this classpath; asking for them says nothing'
+            configured(['grails.banner.versions.include': 'jetty,undertow'])
+            String output = plain(new StartedAs())
+            !output.contains('Jetty')
+            !output.contains('Undertow')
+    }
+
+    void 'an application can turn spring security off'() {
+        expect: 'it is a default now, so exclude is what removes it'
+            configured(['grails.banner.versions.exclude': 'spring-security'])
+            !plain(new StartedAs()).contains('Spring Security')
     }
 
     void 'an application can turn the mark off altogether'() {

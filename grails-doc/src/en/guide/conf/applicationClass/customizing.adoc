@@ -114,16 +114,15 @@ grails:
     versions:
       display: true # Whether to display version information (default: true).
       include:
-        # Include optional versions (default: []).
-        # These will trigger class loading to determine the version
-        # and show 'unknown' if the class is not found.
+        # Include an optional version (default: []). A library that is not on the classpath, or
+        # that records no version, is left out rather than shown as unknown -- so including one
+        # costs nothing where it does not apply.
         # Valid options are:
-        - spring-security
         - tomcat
         - jetty
         - undertow
       exclude:
-        # Exclude any of the versions included by default (default: []).
+        # Exclude any of the versions shown by default (default: []).
         # Valid options are:
         - app
         - grails
@@ -131,6 +130,7 @@ grails:
         - jvm
         - spring-boot
         - spring
+        - spring-security
       order:
         # Optional ordering in which to display the versions in the banner.
         # You can specify any number of the options listed below

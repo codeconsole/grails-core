@@ -60,14 +60,14 @@ class GrailsBannerVersionLookupSpec extends Specification {
             Record.noisyRan
     }
 
-    void 'a library that is not there is unknown rather than an error'() {
-        expect:
-            GrailsBanner.findVersion('com.example.NotOnTheClasspath') == 'unknown'
+    void 'a library that is not there has no version rather than an error'() {
+        expect: 'nothing, so the banner leaves it out rather than saying it does not know'
+            GrailsBanner.findVersion('com.example.NotOnTheClasspath') == null
     }
 
-    void 'a library with no version in its manifest is unknown'() {
+    void 'a library with no version in its manifest has none'() {
         expect: 'test classes carry no Implementation-Version, and that is not a failure'
-            GrailsBanner.findVersion(Noisy.name) == 'unknown'
+            GrailsBanner.findVersion(Noisy.name) == null
     }
 
     void 'a version recorded in a manifest is read'() {
