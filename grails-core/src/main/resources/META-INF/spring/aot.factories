@@ -3,7 +3,8 @@ org.grails.spring.beans.aot.AbstractBeanDefinitionExcludeFilter
 
 org.springframework.aot.hint.RuntimeHintsRegistrar=\
 org.grails.spring.beans.aot.BeanRegistrarRuntimeHints,\
-org.grails.spring.beans.aot.GrailsClosureRuntimeHints
+org.grails.spring.beans.aot.GrailsClosureRuntimeHints,\
+org.grails.spring.beans.aot.GroovyExtensionModuleRuntimeHints
 
 org.springframework.beans.factory.aot.BeanRegistrationAotProcessor=\
 org.grails.spring.beans.aot.AutowireModeBeanRegistrationAotProcessor,\
