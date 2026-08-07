@@ -24,6 +24,8 @@ import groovy.transform.stc.ClosureParams
 import groovy.transform.stc.SimpleType
 
 import org.springframework.boot.Banner
+import org.springframework.boot.ansi.AnsiColor
+import org.springframework.boot.ansi.AnsiOutput
 import org.springframework.boot.SpringBootVersion
 import org.springframework.core.SpringVersion
 import org.springframework.core.env.Environment
@@ -63,8 +65,10 @@ class GrailsBanner implements Banner {
         bannerPaddingTop.times { out.println() }
         if (shouldDisplayArt(environment)) {
             def art = createBannerArt(environment)
+            // measured before colouring, so the escapes do not count towards the width the
+            // versions below are centred on
             bannerWidth = longestLineLength(art) ?: FALLBACK_BANNER_WIDTH
-            out.println(art)
+            out.println(colour(art))
             artPaddingBottom.times { out.println() }
         }
         if (shouldDisplayVersions(environment)) {
@@ -72,6 +76,17 @@ class GrailsBanner implements Banner {
                     .forEach { out.println(it) }
         }
         bannerPaddingBottom.times { out.println() }
+    }
+
+    /**
+     * The art in the framework's colour, or as it stands where colour is off.
+     *
+     * <p>{@link AnsiOutput} writes the escapes only where it has been enabled, so this is the same
+     * string on a terminal that cannot colour, in a redirected log, and wherever an application has
+     * turned colour off.</p>
+     */
+    protected String colour(String art) {
+        AnsiOutput.toString(AnsiColor.YELLOW, art, AnsiColor.DEFAULT)
     }
 
     /**
