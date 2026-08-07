@@ -93,6 +93,14 @@ grails:
     art:
       display: true # Whether to display the banner art (default: true).
       file: 'banner.txt' # Path to a custom banner file on the classpath (default: null).
+      # The colour to show the art in, where the terminal colours output at all (default: 214).
+      # A number selects one of the 256 colours a terminal offers; a name selects one of the
+      # eight it has always had; 'none' leaves the art uncoloured. A value that is neither
+      # falls back to the default. Named colours are:
+      #   black, red, green, yellow, blue, magenta, cyan, white
+      #   bright_black, bright_red, bright_green, bright_yellow,
+      #   bright_blue, bright_magenta, bright_cyan, bright_white
+      color: 214
     versions:
       display: true # Whether to display version information (default: true).
       include:

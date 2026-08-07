@@ -84,6 +84,8 @@ import javax.inject.Inject
  */
 @CompileStatic
 class GrailsGradlePlugin implements Plugin<Project> {
+    private static final String NATIVE_IMAGE_PLUGIN = 'org.graalvm.buildtools.native'
+
 
     private static final String CLI_PID_FILE_PROPERTY = 'grails.cli.pid.file'
     private static final String RUN_APP_PID_FILE_NAME = 'run-app.pid'
@@ -1124,6 +1126,17 @@ ${importStatements}
      * output already names both, so an application does not have to be traced to be buildable.
      */
     protected void configureNativeMetadata(Project project) {
+        // Only where an image is actually being built. The metadata is read by nothing else, and
+        // generating it means reading the compiled classes and the pages compiled into every
+        // dependency -- so wiring it into processResources unconditionally made a build that only
+        // wanted to write a resource compile its sources and resolve its whole runtime classpath
+        // first, which a project that had declared no repositories could not do.
+        project.pluginManager.withPlugin(NATIVE_IMAGE_PLUGIN) {
+            configureNativeMetadataTask(project)
+        }
+    }
+
+    private void configureNativeMetadataTask(Project project) {
         SourceSet sourceSet = SourceSets.findMainSourceSet(project)
 
         TaskProvider<GenerateNativeMetadataTask> metadataTask = project.tasks.register(
@@ -1141,7 +1154,13 @@ ${importStatements}
             }
             task.classesDirs.from(sourceSet.output.classesDirs)
             task.pageClassesDirs.from(project.layout.buildDirectory.dir('gsp-classes/main'))
-            task.pageClasspath.from(project.configurations.named('runtimeClasspath'))
+            // Leniently: the pages compiled into dependencies are worth finding, but not at the
+            // price of making every build that writes a resource resolve the whole runtime
+            // classpath first. A dependency that cannot be resolved contributes no pages rather
+            // than failing a build that never asked for a native image.
+            task.pageClasspath.from(project.configurations.named('runtimeClasspath').map { conf ->
+                conf.incoming.artifactView { view -> view.lenient(true) }.files
+            })
             task.outputDirectory.set(project.layout.buildDirectory.dir('generated-resources/grails-native'))
         }
 

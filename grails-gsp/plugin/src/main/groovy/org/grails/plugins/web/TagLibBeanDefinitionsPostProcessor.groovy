@@ -21,7 +21,6 @@ package org.grails.plugins.web
 import groovy.transform.CompileStatic
 import groovy.util.logging.Slf4j
 
-import org.springframework.beans.factory.config.BeanDefinition
 import org.springframework.beans.factory.config.ConfigurableListableBeanFactory
 import org.springframework.beans.factory.support.AbstractBeanDefinition
 import org.springframework.beans.factory.support.BeanDefinitionRegistry
@@ -47,8 +46,10 @@ import org.grails.core.artefact.gsp.TagLibArtefactHandler
  *
  * <p>The artefacts are read from the application rather than named individually, so a tag library
  * belongs to whoever declared it: the application, another plugin, or one supplied through
- * {@code providedArtefacts}. An existing definition for the same name wins, which preserves the
- * ability to override a tag library.</p>
+ * {@code providedArtefacts}. An existing definition for the same name wins untouched, which
+ * preserves the ability to override a tag library -- including one deliberately declared without
+ * by-name autowiring, which cannot be told apart from a generated one. What a generated definition
+ * needs is carried into it while it is generated, by the processor that reads the autowire mode.</p>
  *
  * @since 8.0
  */
@@ -71,7 +72,6 @@ class TagLibBeanDefinitionsPostProcessor implements BeanDefinitionRegistryPostPr
                 continue
             }
             if (registry.containsBeanDefinition(beanName)) {
-                restoreAutowiringByName(registry.getBeanDefinition(beanName), beanName)
                 continue
             }
             GenericBeanDefinition definition = new GenericBeanDefinition(
@@ -81,26 +81,6 @@ class TagLibBeanDefinitionsPostProcessor implements BeanDefinitionRegistryPostPr
             )
             registry.registerBeanDefinition(beanName, definition)
             log.debug('Registered tag library {}', beanName)
-        }
-    }
-
-    /**
-     * Restores by-name autowiring on a definition that already exists.
-     *
-     * <p>A tag library takes some of its collaborators by name rather than by annotation, and
-     * ahead-of-time processing does not carry that over: it generates the injection it can see from
-     * the annotations and leaves the mode at none, so a message source or an asset resolver arrives
-     * null. The mode is only ever raised, never lowered, so a definition that asks for something
-     * else keeps it.</p>
-     */
-    private void restoreAutowiringByName(BeanDefinition existing, String beanName) {
-        if (!(existing instanceof AbstractBeanDefinition)) {
-            return
-        }
-        AbstractBeanDefinition definition = (AbstractBeanDefinition) existing
-        if (definition.autowireMode == AbstractBeanDefinition.AUTOWIRE_NO) {
-            definition.autowireMode = AbstractBeanDefinition.AUTOWIRE_BY_NAME
-            log.debug('Restored autowiring by name on tag library {}', beanName)
         }
     }
 

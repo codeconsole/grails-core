@@ -2,15 +2,21 @@
   "properties": [
     {
       "name": "grails.banner.art.display",
-        "description": "Whether to display the Grails banner art.",
+      "description": "Whether to display the Grails banner art.",
       "type": "java.lang.Boolean",
       "defaultValue": true
     },
     {
-        "name": "grails.banner.art.file",
-        "description": "The file path on the classpath to the Grails banner art to display.",
-        "type": "java.lang.String",
-        "defaultValue": "grails-banner.txt"
+      "name": "grails.banner.art.file",
+      "description": "The file path on the classpath to the Grails banner art to display.",
+      "type": "java.lang.String",
+      "defaultValue": "grails-banner.txt"
+    },
+    {
+      "name": "grails.banner.art.color",
+      "type": "java.lang.String",
+      "description": "The colour to show the banner art in, where the terminal colours output at all. A number selects one of the 256 colours a terminal offers; a name selects one of the eight it has always had, such as red or bright_blue; none leaves the art uncoloured. A value that is neither falls back to the default.",
+      "defaultValue": "214"
     },
     {
       "name": "grails.banner.versions.display",
@@ -56,10 +62,22 @@
     {
       "name": "grails.i18n.localeResolver",
       "values": [
-        { "value": "session", "description": "Resolve the locale from the HTTP session (mutable; ?lang= switching works). The default." },
-        { "value": "cookie", "description": "Resolve the locale from a cookie (mutable; ?lang= switching works)." },
-        { "value": "acceptHeader", "description": "Resolve the locale from the Accept-Language header (read-only; ?lang= is ignored)." },
-        { "value": "fixed", "description": "Use a fixed locale from grails.i18n.default.locale, falling back to the JVM default (read-only; ?lang= is ignored)." }
+        {
+          "value": "session",
+          "description": "Resolve the locale from the HTTP session (mutable; ?lang= switching works). The default."
+        },
+        {
+          "value": "cookie",
+          "description": "Resolve the locale from a cookie (mutable; ?lang= switching works)."
+        },
+        {
+          "value": "acceptHeader",
+          "description": "Resolve the locale from the Accept-Language header (read-only; ?lang= is ignored)."
+        },
+        {
+          "value": "fixed",
+          "description": "Use a fixed locale from grails.i18n.default.locale, falling back to the JVM default (read-only; ?lang= is ignored)."
+        }
       ]
     }
   ]

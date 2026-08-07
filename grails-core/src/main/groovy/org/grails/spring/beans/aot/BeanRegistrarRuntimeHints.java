@@ -23,6 +23,9 @@ import org.springframework.aot.hint.RuntimeHints;
 import org.springframework.aot.hint.RuntimeHintsRegistrar;
 import org.springframework.beans.factory.BeanRegistrar;
 import org.springframework.beans.factory.BeanRegistry;
+import org.springframework.beans.factory.ListableBeanFactory;
+import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
+import org.springframework.beans.factory.support.BeanDefinitionRegistry;
 import org.springframework.lang.Nullable;
 
 /**
@@ -37,6 +40,10 @@ import org.springframework.lang.Nullable;
  * first call and the context does not start, reporting a method of an interface that appears nowhere
  * in the application -- a plugin declaring a bean with a specification, which most of them do.</p>
  *
+ * <p>The same is true of the registry the older bean DSL is handed: a plugin that still declares
+ * its beans that way asks whether one is already registered, and that call is made the same
+ * reflective way. It failed later than the others, once a datastore came to be configured.</p>
+ *
  * <p>The types are named here rather than scanned for, because they belong to Spring and are few.</p>
  *
  * @since 8.0
@@ -48,7 +55,12 @@ public class BeanRegistrarRuntimeHints implements RuntimeHintsRegistrar {
         BeanRegistrar.class,
         BeanRegistry.class,
         BeanRegistry.Spec.class,
-        BeanRegistry.SupplierContext.class
+        BeanRegistry.SupplierContext.class,
+        // The registry the older bean DSL is handed, which the plugins that still use it call the
+        // same way: asking whether a bean is already there, registering one, naming an alias.
+        BeanDefinitionRegistry.class,
+        ListableBeanFactory.class,
+        ConfigurableListableBeanFactory.class
     };
 
     @Override

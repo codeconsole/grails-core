@@ -109,6 +109,24 @@ class GrailsBannerColourSpec extends Specification {
                     .startsWith(AnsiOutput.encode(Ansi8BitColor.foreground(214)))
     }
 
+    void 'a number outside the 256 a terminal has falls back'() {
+        given:
+            AnsiOutput.setEnabled(AnsiOutput.Enabled.ALWAYS)
+
+        expect: 'anything else writes an escape the terminal does not understand, which it then shows'
+            banner.colour('art', configuredWith('999'))
+                    .startsWith(AnsiOutput.encode(Ansi8BitColor.foreground(214)))
+            banner.colour('art', configuredWith('-1'))
+                    .startsWith(AnsiOutput.encode(Ansi8BitColor.foreground(214)))
+    }
+
+    /** A fresh environment each time, so the two values above do not fight over one property source. */
+    private StandardEnvironment configuredWith(String colour) {
+        StandardEnvironment fresh = new StandardEnvironment()
+        fresh.propertySources.addFirst(new MapPropertySource('test', ['grails.banner.art.color': colour]))
+        fresh
+    }
+
     void 'the banner carries the colour through to what is printed'() {
         given:
             AnsiOutput.setEnabled(AnsiOutput.Enabled.ALWAYS)

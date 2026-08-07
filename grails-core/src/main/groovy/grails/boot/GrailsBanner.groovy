@@ -113,14 +113,21 @@ class GrailsBanner implements Banner {
             return null
         }
         if (configured.isInteger()) {
-            return Ansi8BitColor.foreground(configured.toInteger())
+            int code = configured.toInteger()
+            // A terminal offers 256 of them, and anything else writes an escape it does not
+            // understand -- which shows as the escape itself, printed into the banner.
+            return code in 0..255 ? Ansi8BitColor.foreground(code) : defaultArtColour()
         }
         try {
             return AnsiColor.valueOf(configured.toUpperCase())
         }
         catch (IllegalArgumentException ignored) {
-            return Ansi8BitColor.foreground(DEFAULT_ART_COLOR.toInteger())
+            return defaultArtColour()
         }
+    }
+
+    private AnsiElement defaultArtColour() {
+        Ansi8BitColor.foreground(DEFAULT_ART_COLOR.toInteger())
     }
 
     /**

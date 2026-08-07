@@ -26,6 +26,9 @@ import org.springframework.aot.hint.TypeHint
 import org.springframework.aot.hint.TypeReference
 import org.springframework.beans.factory.BeanRegistrar
 import org.springframework.beans.factory.BeanRegistry
+import org.springframework.beans.factory.ListableBeanFactory
+import org.springframework.beans.factory.config.ConfigurableListableBeanFactory
+import org.springframework.beans.factory.support.BeanDefinitionRegistry
 import spock.lang.Specification
 
 /**
@@ -61,6 +64,14 @@ class BeanRegistrarRuntimeHintsSpec extends Specification {
     void 'what hands a plugin to the registry can be called'() {
         expect:
             hintFor(BeanRegistrar)?.memberCategories?.contains(MemberCategory.INVOKE_DECLARED_METHODS)
+    }
+
+    void 'the registry the older bean DSL is handed can be called'() {
+        expect: 'a plugin that still declares its beans that way asks whether one is already there'
+            hintFor(BeanDefinitionRegistry)?.memberCategories?.contains(MemberCategory.INVOKE_DECLARED_METHODS)
+            hintFor(ListableBeanFactory)?.memberCategories?.contains(MemberCategory.INVOKE_DECLARED_METHODS)
+            hintFor(ConfigurableListableBeanFactory)?.memberCategories
+                    ?.contains(MemberCategory.INVOKE_DECLARED_METHODS)
     }
 
     void 'the call a plugin actually makes is covered'() {

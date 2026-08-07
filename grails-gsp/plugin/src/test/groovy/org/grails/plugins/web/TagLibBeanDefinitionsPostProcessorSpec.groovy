@@ -80,30 +80,31 @@ class TagLibBeanDefinitionsPostProcessorSpec extends Specification {
             registry.getBeanDefinition(DemoTagLib.name).is(generated)
     }
 
-    void 'autowiring by name is restored on a definition that lost it'() {
-        given: 'the generator does not write the mode out, so it arrives as none'
-            RootBeanDefinition generated = new RootBeanDefinition(DemoTagLib)
-            generated.autowireMode = AbstractBeanDefinition.AUTOWIRE_NO
-            registry.registerBeanDefinition(DemoTagLib.name, generated)
+    void 'a definition that declares no autowiring is left declaring none'() {
+        given: 'an application that deliberately took by-name autowiring off its own tag library'
+            RootBeanDefinition declared = new RootBeanDefinition(DemoTagLib)
+            declared.autowireMode = AbstractBeanDefinition.AUTOWIRE_NO
+            registry.registerBeanDefinition(DemoTagLib.name, declared)
+
+        when:
+            process()
+
+        then: 'which cannot be told apart from a generated one, so neither is touched -- what a ' +
+                'generated definition needs is carried into it while it is generated'
+            declared.autowireMode == AbstractBeanDefinition.AUTOWIRE_NO
+    }
+
+    void 'a definition asking for something else keeps it'() {
+        given:
+            RootBeanDefinition declared = new RootBeanDefinition(DemoTagLib)
+            declared.autowireMode = AbstractBeanDefinition.AUTOWIRE_BY_TYPE
+            registry.registerBeanDefinition(DemoTagLib.name, declared)
 
         when:
             process()
 
         then:
-            generated.autowireMode == AbstractBeanDefinition.AUTOWIRE_BY_NAME
-    }
-
-    void 'a definition asking for something else keeps it'() {
-        given:
-            RootBeanDefinition generated = new RootBeanDefinition(DemoTagLib)
-            generated.autowireMode = AbstractBeanDefinition.AUTOWIRE_BY_TYPE
-            registry.registerBeanDefinition(DemoTagLib.name, generated)
-
-        when:
-            process()
-
-        then: 'the mode is only ever raised, never lowered'
-            generated.autowireMode == AbstractBeanDefinition.AUTOWIRE_BY_TYPE
+            declared.autowireMode == AbstractBeanDefinition.AUTOWIRE_BY_TYPE
     }
 
     /** Recognised as a tag library by its name, which is what the artefact handler reads. */
