@@ -88,10 +88,10 @@ abstract class GenerateNativeMetadataTask extends DefaultTask {
 
         List<Map<String, Object>> reflection = types.sort().collect { String type ->
             [
-                    type                       : type,
-                    allDeclaredMethods         : true,
-                    allDeclaredFields          : true,
-                    allDeclaredConstructors    : true
+                    type: type,
+                    allDeclaredMethods: true,
+                    allDeclaredFields: true,
+                    allDeclaredConstructors: true
             ] as Map<String, Object>
         }
 
