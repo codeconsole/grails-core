@@ -5,9 +5,6 @@ plugins {
 
 tasks.register('inspectDefaults') {
     doLast {
-        def args = project.extensions.getByName('graalvmNative').binaries.getByName('main').buildArgs.get()
         println "INDY=${project.extensions.getByName('grails').indy.get()}"
-        println "HAS_ASSETS=${args.contains('-H:IncludeResources=assets/.*')}"
-        println "HAS_PROPERTIES=${args.contains('-H:IncludeResources=.*[.]properties')}"
     }
 }

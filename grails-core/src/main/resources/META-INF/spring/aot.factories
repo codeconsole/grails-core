@@ -6,6 +6,7 @@ org.grails.spring.beans.aot.BeanRegistrarRuntimeHints,\
 org.grails.spring.beans.aot.GrailsApiRuntimeHints,\
 org.grails.spring.beans.aot.GrailsBannerRuntimeHints,\
 org.grails.spring.beans.aot.GrailsClosureRuntimeHints,\
+org.grails.spring.beans.aot.GrailsResourceRuntimeHints,\
 org.grails.spring.beans.aot.GroovyExtensionModuleRuntimeHints
 
 org.springframework.beans.factory.aot.BeanRegistrationAotProcessor=\

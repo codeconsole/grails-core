@@ -68,9 +68,5 @@ class GrailsNativeImageDefaultsSpec extends GradleSpecification {
 
         then: 'a classic call site defines a class as it runs, which an image has no way to do'
             result.output.contains('INDY=true')
-
-        and: 'nothing proves a stylesheet or a message bundle is reached, so nothing includes them'
-            result.output.contains('HAS_ASSETS=true')
-            result.output.contains('HAS_PROPERTIES=true')
     }
 }
