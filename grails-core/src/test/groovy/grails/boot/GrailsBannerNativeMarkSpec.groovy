@@ -137,7 +137,19 @@ class GrailsBannerNativeMarkSpec extends Specification {
     void 'an application can say something else'() {
         expect:
             configured(['grails.banner.mark.text': 'Leyden'])
-            plain(new StartedAs(cache: true)).contains('L E Y D E N')
+            plain(new StartedAs(cache: true)).contains('L e y d e n')
+    }
+
+    void 'a mark is spaced as it was written rather than shouted'() {
+        expect: 'a name whose case is part of it keeps it -- CRaC is not CRAC'
+            configured(['grails.banner.mark.text': 'CRaC'])
+            plain(new StartedAs()).contains('C R a C')
+    }
+
+    void 'the marks it works out for itself are still upper case'() {
+        expect: 'they are written that way, rather than made that way'
+            plain(new StartedAs(image: true)).contains('N A T I V E')
+            plain(new StartedAs(cache: true)).contains('A O T   C A C H E')
     }
 
     void 'the mark is a different colour from the art'() {

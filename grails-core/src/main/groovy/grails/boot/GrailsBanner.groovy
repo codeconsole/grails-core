@@ -165,9 +165,15 @@ class GrailsBanner implements Banner {
         }
     }
 
-    /** Spaced so it reads as a mark rather than a word. */
+    /**
+     * Spaced so it reads as a mark rather than a word.
+     *
+     * <p>Spaced as written rather than shouted: the marks this draws are already upper case, and
+     * an application that says what it wants the mark to be gets what it said. A name whose case
+     * is part of it -- CRaC -- keeps it.</p>
+     */
     private static String spaced(String word) {
-        word.toUpperCase().toCharArray().join(' ')
+        word.toCharArray().join(' ')
     }
 
     /** Whether this is running as an image. A seam, so the mark can be covered without being one. */
