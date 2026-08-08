@@ -50,9 +50,8 @@ class EmbeddedMongoLifecycleSpec extends Specification {
     void 'the lifecycle of the server it started is managed by the application context'() {
         given:
         GenericApplicationContext context = contextWith([
-                (EmbeddedMongoInitializer.ENABLED): 'true',
                 (EmbeddedMongoInitializer.BACKEND): InMemoryMongoBackend.NAME,
-                (EmbeddedMongoInitializer.PORT)   : '27994',
+                'grails.mongodb.url'              : 'mongodb://embedded:27994',
         ])
 
         when:
@@ -74,10 +73,8 @@ class EmbeddedMongoLifecycleSpec extends Specification {
     void 'the in-memory backend keeps its data across the stop a checkpoint needs'() {
         given: 'a server holding a document, as an application would before it is checkpointed'
         GenericApplicationContext context = contextWith([
-                (EmbeddedMongoInitializer.ENABLED) : 'true',
                 (EmbeddedMongoInitializer.BACKEND) : InMemoryMongoBackend.NAME,
-                (EmbeddedMongoInitializer.PORT)    : '27995',
-                (EmbeddedMongoInitializer.DATABASE): 'bookstore',
+                'grails.mongodb.url'              : 'mongodb://embedded:27995/bookstore',
         ])
         new EmbeddedMongoInitializer().initialize(context)
         String url = context.environment.getProperty('grails.mongodb.url')
@@ -111,10 +108,8 @@ class EmbeddedMongoLifecycleSpec extends Specification {
     void 'stopping and starting more than once does the work only once'() {
         given:
         GenericApplicationContext context = contextWith([
-                (EmbeddedMongoInitializer.ENABLED) : 'true',
                 (EmbeddedMongoInitializer.BACKEND) : InMemoryMongoBackend.NAME,
-                (EmbeddedMongoInitializer.PORT)    : '27996',
-                (EmbeddedMongoInitializer.DATABASE): 'bookstore',
+                'grails.mongodb.url'              : 'mongodb://embedded:27996/bookstore',
         ])
         new EmbeddedMongoInitializer().initialize(context)
         String url = context.environment.getProperty('grails.mongodb.url')
@@ -148,11 +143,9 @@ class EmbeddedMongoLifecycleSpec extends Specification {
         given: 'a real mongod told to keep its data, which is how a production application runs'
         String databaseDir = temp.resolve('prodDb').toString()
         GenericApplicationContext context = contextWith([
-                (EmbeddedMongoInitializer.ENABLED)     : 'true',
                 (EmbeddedMongoInitializer.BACKEND)     : FlapdoodleMongoBackend.NAME,
-                (EmbeddedMongoInitializer.PORT)        : '27997',
-                (EmbeddedMongoInitializer.DATABASE)    : 'bookstore',
                 (EmbeddedMongoInitializer.DATABASE_DIR): databaseDir,
+                'grails.mongodb.url'              : 'mongodb://embedded:27997/bookstore',
         ])
         new EmbeddedMongoInitializer().initialize(context)
         String url = context.environment.getProperty('grails.mongodb.url')

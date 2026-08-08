@@ -49,23 +49,42 @@ import org.springframework.util.ClassUtils;
  * because the URL has to be in the {@code Environment} before the datastore bean that
  * reads it is created.
  *
- * <p>Configured with:
+ * <p>Asked for by the URL, the way an in-memory SQL database is. An application names the
+ * embedded server where it would otherwise name a host, and the environment that wants one says
+ * so where it already says which database to talk to:
+ *
+ * <pre>
+ * environments:
+ *     development:
+ *         grails:
+ *             mongodb:
+ *                 url: mongodb://embedded/bookstore
+ *     production:
+ *         grails:
+ *             mongodb:
+ *                 url: mongodb://localhost:27017/bookstore
+ * </pre>
+ *
+ * <p>Nothing else switches it on, and nothing switches it off: a URL naming a host is served by
+ * the driver and no server is started, exactly as an application with {@code h2} on the classpath
+ * and a PostgreSQL URL never starts H2. A port may be given -- {@code mongodb://embedded:27018/db}
+ * -- and is otherwise chosen below.
+ *
+ * <p>The rest configures the server behind that URL rather than which server to reach:
  * <table>
  * <caption>Supported properties</caption>
- * <tr><td>{@code embedded.mongodb.enabled}</td><td>off unless set to true</td></tr>
  * <tr><td>{@code embedded.mongodb.backend}</td><td>{@code in-memory} or {@code flapdoodle};
  *     defaults to flapdoodle when it is on the classpath, otherwise in-memory</td></tr>
- * <tr><td>{@code embedded.mongodb.property-names}</td><td>comma separated properties to
- *     publish the URL into, {@code grails.mongodb.url} by default</td></tr>
- * <tr><td>{@code embedded.mongodb.port}</td><td>defaults to 27017 offset by however far
- *     {@code server.port} has moved from 8080</td></tr>
- * <tr><td>{@code embedded.mongodb.database}</td><td>defaults to the database already named
- *     in one of the target properties</td></tr>
+ * <tr><td>{@code embedded.mongodb.property-names}</td><td>comma separated properties that may
+ *     name an embedded server, {@code grails.mongodb.url} by default</td></tr>
  * <tr><td>{@code embedded.mongodb.database-dir}</td><td>keeps the data after the server
  *     stops, which only the flapdoodle backend can do</td></tr>
  * <tr><td>{@code embedded.mongodb.version}</td><td>the MongoDB version, where the backend
  *     can choose one</td></tr>
  * </table>
+ *
+ * <p>A host genuinely named {@code embedded} cannot be reached through these properties; name it
+ * by its address or its fully qualified name instead.
  *
  * <p>Making the target property configurable is what keeps this useful outside Grails
  * Data: point {@code property-names} at {@code spring.data.mongodb.uri} and it serves a
@@ -78,15 +97,14 @@ import org.springframework.util.ClassUtils;
  */
 public class EmbeddedMongoInitializer implements ApplicationContextInitializer<ConfigurableApplicationContext> {
 
-    public static final String ENABLED = "embedded.mongodb.enabled";
+    /**
+     * The host that means "start one and connect me to it" rather than an address to reach.
+     */
+    public static final String EMBEDDED_HOST = "embedded";
 
     public static final String BACKEND = "embedded.mongodb.backend";
 
     public static final String PROPERTY_NAMES = "embedded.mongodb.property-names";
-
-    public static final String PORT = "embedded.mongodb.port";
-
-    public static final String DATABASE = "embedded.mongodb.database";
 
     public static final String DATABASE_DIR = "embedded.mongodb.database-dir";
 
@@ -104,7 +122,13 @@ public class EmbeddedMongoInitializer implements ApplicationContextInitializer<C
 
     private static final int DEFAULT_SERVER_PORT = 8080;
 
-    private static final Pattern DATABASE_IN_URL = Pattern.compile("^mongodb(?:\\+srv)?://[^/]+/([^?]+)");
+    /**
+     * A URL asking for an embedded server, with the port and database it asks for. Credentials are
+     * matched so that one copied from a real connection is still recognised, and then ignored:
+     * there is nothing to authenticate against.
+     */
+    private static final Pattern EMBEDDED_URL = Pattern.compile(
+            "^mongodb(?:\\+srv)?://(?:[^@/]*@)?" + EMBEDDED_HOST + "(?::(\\d+))?(?:/([^?]*))?(?:\\?.*)?$");
 
     /**
      * The servers this JVM started, by port. Keyed rather than a single field because two
@@ -151,7 +175,10 @@ public class EmbeddedMongoInitializer implements ApplicationContextInitializer<C
     @Override
     public void initialize(ConfigurableApplicationContext applicationContext) {
         ConfigurableEnvironment environment = applicationContext.getEnvironment();
-        if (!Boolean.parseBoolean(environment.getProperty(ENABLED, "false"))) {
+
+        Set<String> propertyNames = propertyNames(environment);
+        Matcher asked = firstAskingForEmbedded(environment, propertyNames);
+        if (asked == null) {
             return;
         }
         if (SpringProperties.getFlag(AbstractAotProcessor.AOT_PROCESSING)) {
@@ -164,9 +191,8 @@ public class EmbeddedMongoInitializer implements ApplicationContextInitializer<C
             return;
         }
 
-        Set<String> propertyNames = propertyNames(environment);
-        int port = resolvePort(environment);
-        String database = resolveDatabase(environment, propertyNames);
+        int port = resolvePort(environment, asked.group(1));
+        String database = resolveDatabase(asked.group(2));
 
         String url;
         RunningEmbeddedMongo started = STARTED.get(port);
@@ -218,8 +244,9 @@ public class EmbeddedMongoInitializer implements ApplicationContextInitializer<C
         }
         catch (Exception ex) {
             throw new IllegalStateException("Failed to start the " + backend.getName() +
-                    " embedded MongoDB on port " + port + ", which something else may already be using. Set " +
-                    PORT + " to a free port, or set " + ENABLED + "=false to use an external MongoDB.", ex);
+                    " embedded MongoDB on port " + port + ", which something else may already be using. " +
+                    "Name a free port as mongodb://" + EMBEDDED_HOST + ":<port>/<database>, or name a host " +
+                    "instead of " + EMBEDDED_HOST + " to use an external MongoDB.", ex);
         }
 
         STARTED.put(port, running);
@@ -261,7 +288,8 @@ public class EmbeddedMongoInitializer implements ApplicationContextInitializer<C
                 return backend;
             }
         }
-        throw new IllegalStateException(ENABLED + "=true but no embedded MongoDB backend is on the classpath. " +
+        throw new IllegalStateException("A url asked for " + EMBEDDED_HOST +
+                " but no embedded MongoDB backend is on the classpath. " +
                 "Add de.bwaldvogel:mongo-java-server for an in-memory server, or " +
                 "de.flapdoodle.embed:de.flapdoodle.embed.mongo for a real mongod.");
     }
@@ -291,38 +319,43 @@ public class EmbeddedMongoInitializer implements ApplicationContextInitializer<C
     }
 
     /**
-     * Offsets the MongoDB port by however far the server port has moved, so two
-     * applications run side by side without colliding.
+     * The first of the configured properties asking for an embedded server, or null when none is.
+     *
+     * <p>The properties are read in the order they were named, so an application publishing the
+     * same URL into several of them settles which one describes the server by the order it listed
+     * them rather than by which happened to be looked at first.</p>
      */
-    private int resolvePort(ConfigurableEnvironment environment) {
-        String configured = environment.getProperty(PORT);
-        if (configured != null && !configured.isEmpty()) {
-            return Integer.parseInt(configured);
+    private Matcher firstAskingForEmbedded(ConfigurableEnvironment environment, Set<String> propertyNames) {
+        for (String propertyName : propertyNames) {
+            String url = environment.getProperty(propertyName);
+            if (url != null) {
+                Matcher matcher = EMBEDDED_URL.matcher(url.trim());
+                if (matcher.matches()) {
+                    return matcher;
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * The port the URL asked for, or one offset by however far the server port has moved, so two
+     * applications that did not name a port run side by side without colliding.
+     */
+    private int resolvePort(ConfigurableEnvironment environment, String urlPort) {
+        if (urlPort != null && !urlPort.isEmpty()) {
+            return Integer.parseInt(urlPort);
         }
         int serverPort = Integer.parseInt(environment.getProperty("server.port", String.valueOf(DEFAULT_SERVER_PORT)));
         return serverPort == 0 ? DEFAULT_PORT : DEFAULT_PORT + (serverPort - DEFAULT_SERVER_PORT);
     }
 
     /**
-     * Leaves the application's own configuration as the single source of truth for the
-     * database name, so enabling this does not silently move an application to a
-     * different database.
+     * The database the URL named, which is the application's own configuration and the only place
+     * one is written down now that the URL is what asks for a server at all.
      */
-    private String resolveDatabase(ConfigurableEnvironment environment, Set<String> propertyNames) {
-        String configured = environment.getProperty(DATABASE);
-        if (configured != null && !configured.isEmpty()) {
-            return configured;
-        }
-        for (String propertyName : propertyNames) {
-            String existing = environment.getProperty(propertyName);
-            if (existing != null) {
-                Matcher matcher = DATABASE_IN_URL.matcher(existing);
-                if (matcher.find()) {
-                    return matcher.group(1);
-                }
-            }
-        }
-        return DEFAULT_DATABASE;
+    private String resolveDatabase(String urlDatabase) {
+        return urlDatabase == null || urlDatabase.isEmpty() ? DEFAULT_DATABASE : urlDatabase;
     }
 
 }

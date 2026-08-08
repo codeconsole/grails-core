@@ -41,7 +41,23 @@ class EmbeddedMongoInitializerSpec extends Specification {
     @TempDir
     Path temp
 
-    void 'nothing is started until it is switched on'() {
+
+    void 'a url naming a host is left to the driver'() {
+        given: 'what a production environment configures'
+        GenericApplicationContext context = contextWith([
+                'grails.mongodb.url': 'mongodb://localhost:27017/bookstore',
+        ])
+
+        when:
+        new EmbeddedMongoInitializer().initialize(context)
+
+        then: 'nothing was started and the url was not touched, the way an application with h2 on ' +
+                'the classpath and a PostgreSQL url never starts H2'
+        context.environment.getProperty('grails.mongodb.url') == 'mongodb://localhost:27017/bookstore'
+        context.environment.propertySources.every { it.name != 'embeddedMongoDB' }
+    }
+
+    void 'nothing is started when no url is configured at all'() {
         given:
         GenericApplicationContext context = contextWith([:])
 
@@ -56,17 +72,15 @@ class EmbeddedMongoInitializerSpec extends Specification {
     void 'the in-memory backend serves a real MongoDB connection'() {
         given:
         GenericApplicationContext context = contextWith([
-                (EmbeddedMongoInitializer.ENABLED): 'true',
                 (EmbeddedMongoInitializer.BACKEND): InMemoryMongoBackend.NAME,
-                (EmbeddedMongoInitializer.PORT)   : '27981',
-                'grails.mongodb.url'              : 'mongodb://localhost:27017/bookstore',
+                'grails.mongodb.url'              : 'mongodb://embedded:27981/bookstore',
         ])
 
         when:
         new EmbeddedMongoInitializer().initialize(context)
         String url = context.environment.getProperty('grails.mongodb.url')
 
-        then: 'the database name came from the application configuration'
+        then: 'the database name came from the url that asked for the server'
         url == 'mongodb://localhost:27981/bookstore'
 
         and: 'a driver can round-trip a document through it'
@@ -76,10 +90,8 @@ class EmbeddedMongoInitializerSpec extends Specification {
     void 'the flapdoodle backend serves a real MongoDB connection'() {
         given:
         GenericApplicationContext context = contextWith([
-                (EmbeddedMongoInitializer.ENABLED): 'true',
                 (EmbeddedMongoInitializer.BACKEND): FlapdoodleMongoBackend.NAME,
-                (EmbeddedMongoInitializer.PORT)   : '27982',
-                'grails.mongodb.url'              : 'mongodb://localhost:27017/bookstore',
+                'grails.mongodb.url'              : 'mongodb://embedded:27982/bookstore',
         ])
 
         when:
@@ -94,8 +106,7 @@ class EmbeddedMongoInitializerSpec extends Specification {
     void 'flapdoodle is preferred when both backends are on the classpath'() {
         given: 'no backend is named, and this module has both available in tests'
         GenericApplicationContext context = contextWith([
-                (EmbeddedMongoInitializer.ENABLED): 'true',
-                (EmbeddedMongoInitializer.PORT)   : '27983',
+                'grails.mongodb.url': 'mongodb://embedded:27983',
         ])
 
         when: 'adding flapdoodle is the opt-in for a real mongod'
@@ -105,14 +116,41 @@ class EmbeddedMongoInitializerSpec extends Specification {
         context.environment.getProperty('grails.mongodb.url') == 'mongodb://localhost:27983/test'
     }
 
+    void 'a url that names no port is offset by however far the server port has moved'() {
+        given:
+        GenericApplicationContext context = contextWith([
+                (EmbeddedMongoInitializer.BACKEND): InMemoryMongoBackend.NAME,
+                'server.port'                     : '9050',
+                'grails.mongodb.url'              : 'mongodb://embedded/bookstore',
+        ])
+
+        when:
+        new EmbeddedMongoInitializer().initialize(context)
+
+        then: 'so two applications that did not name a port do not collide'
+        context.environment.getProperty('grails.mongodb.url') == 'mongodb://localhost:27987/bookstore'
+    }
+
+    void 'credentials copied from a real url do not stop it being recognised'() {
+        given: 'there is nothing to authenticate against, but the url still asks for embedded'
+        GenericApplicationContext context = contextWith([
+                (EmbeddedMongoInitializer.BACKEND): InMemoryMongoBackend.NAME,
+                'grails.mongodb.url'              : 'mongodb://user:secret@embedded:28002/bookstore',
+        ])
+
+        when:
+        new EmbeddedMongoInitializer().initialize(context)
+
+        then:
+        context.environment.getProperty('grails.mongodb.url') == 'mongodb://localhost:28002/bookstore'
+    }
+
     void 'the url is published into every configured property'() {
         given:
         GenericApplicationContext context = contextWith([
-                (EmbeddedMongoInitializer.ENABLED)       : 'true',
                 (EmbeddedMongoInitializer.BACKEND)       : InMemoryMongoBackend.NAME,
-                (EmbeddedMongoInitializer.PORT)          : '27984',
                 (EmbeddedMongoInitializer.PROPERTY_NAMES): 'grails.mongodb.url, spring.data.mongodb.uri',
-                (EmbeddedMongoInitializer.DATABASE)      : 'bookstore',
+                'grails.mongodb.url'                     : 'mongodb://embedded:27984/bookstore',
         ])
 
         when:
@@ -127,19 +165,15 @@ class EmbeddedMongoInitializerSpec extends Specification {
     void 'a second context reuses the server the first one started'() {
         given:
         GenericApplicationContext first = contextWith([
-                (EmbeddedMongoInitializer.ENABLED) : 'true',
-                (EmbeddedMongoInitializer.BACKEND) : InMemoryMongoBackend.NAME,
-                (EmbeddedMongoInitializer.PORT)    : '27985',
-                (EmbeddedMongoInitializer.DATABASE): 'bookstore',
+                (EmbeddedMongoInitializer.BACKEND): InMemoryMongoBackend.NAME,
+                'grails.mongodb.url'              : 'mongodb://embedded:27985/bookstore',
         ])
         new EmbeddedMongoInitializer().initialize(first)
 
         and:
         GenericApplicationContext restarted = contextWith([
-                (EmbeddedMongoInitializer.ENABLED) : 'true',
-                (EmbeddedMongoInitializer.BACKEND) : InMemoryMongoBackend.NAME,
-                (EmbeddedMongoInitializer.PORT)    : '27985',
-                (EmbeddedMongoInitializer.DATABASE): 'bookstore',
+                (EmbeddedMongoInitializer.BACKEND): InMemoryMongoBackend.NAME,
+                'grails.mongodb.url'              : 'mongodb://embedded:27985/bookstore',
         ])
 
         when: 'the port is already owned, as it is after a devtools restart'
@@ -152,10 +186,9 @@ class EmbeddedMongoInitializerSpec extends Specification {
     void 'the in-memory backend refuses to pretend it can persist'() {
         given:
         GenericApplicationContext context = contextWith([
-                (EmbeddedMongoInitializer.ENABLED)     : 'true',
                 (EmbeddedMongoInitializer.BACKEND)     : InMemoryMongoBackend.NAME,
-                (EmbeddedMongoInitializer.PORT)        : '27986',
                 (EmbeddedMongoInitializer.DATABASE_DIR): temp.resolve('data').toString(),
+                'grails.mongodb.url'                   : 'mongodb://embedded:27986/bookstore',
         ])
 
         when:
@@ -171,9 +204,8 @@ class EmbeddedMongoInitializerSpec extends Specification {
         given: 'an unrelated service holding the port, on the address a backend binds'
         ServerSocket intruder = new ServerSocket(27990, 1, InetAddress.getByName('localhost'))
         GenericApplicationContext context = contextWith([
-                (EmbeddedMongoInitializer.ENABLED): 'true',
                 (EmbeddedMongoInitializer.BACKEND): InMemoryMongoBackend.NAME,
-                (EmbeddedMongoInitializer.PORT)   : '27990',
+                'grails.mongodb.url'              : 'mongodb://embedded:27990/bookstore',
         ])
 
         when:
@@ -183,8 +215,9 @@ class EmbeddedMongoInitializerSpec extends Specification {
         IllegalStateException e = thrown()
         e.message.contains('something else may already be using')
 
-        and: 'no url was published'
-        !context.environment.getProperty('grails.mongodb.url')
+        and: 'the url still asks for a server rather than naming that one'
+        context.environment.getProperty('grails.mongodb.url') == 'mongodb://embedded:27990/bookstore'
+        context.environment.propertySources.every { it.name != 'embeddedMongoDB' }
 
         cleanup:
         intruder.close()
@@ -214,8 +247,8 @@ class EmbeddedMongoInitializerSpec extends Specification {
         given:
             GenericApplicationContext context = new GenericApplicationContext()
             context.environment.propertySources.addFirst(new MapPropertySource('test', [
-                    'embedded.mongodb.enabled': 'true',
-                    'embedded.mongodb.backend': FlapdoodleMongoBackend.NAME
+                    'embedded.mongodb.backend': FlapdoodleMongoBackend.NAME,
+                    'grails.mongodb.url'      : 'mongodb://embedded:27992/bookstore',
             ]))
 
         when: 'the backend it asked for is not among the ones offered'
@@ -245,8 +278,8 @@ class EmbeddedMongoInitializerSpec extends Specification {
     void 'a known backend whose library is missing names the ones that are left'() {
         given: 'mongo-java-server excluded from an application that still asked for it'
         GenericApplicationContext context = contextWith([
-                (EmbeddedMongoInitializer.ENABLED): 'true',
                 (EmbeddedMongoInitializer.BACKEND): InMemoryMongoBackend.NAME,
+                'grails.mongodb.url'              : 'mongodb://embedded',
         ])
 
         when:
@@ -262,7 +295,7 @@ class EmbeddedMongoInitializerSpec extends Specification {
     void 'no backend at all is reported as the missing dependency it is'() {
         given: 'both libraries excluded, so nothing can serve the url this was asked to publish'
         GenericApplicationContext context = contextWith([
-                (EmbeddedMongoInitializer.ENABLED): 'true',
+        'grails.mongodb.url'              : 'mongodb://embedded',
         ])
 
         when: 'no backend is named either, so this is the fall through rather than a bad choice'
@@ -277,9 +310,8 @@ class EmbeddedMongoInitializerSpec extends Specification {
     void 'an unknown backend is reported by name'() {
         given:
         GenericApplicationContext context = contextWith([
-                (EmbeddedMongoInitializer.ENABLED): 'true',
                 (EmbeddedMongoInitializer.BACKEND): 'sqlite',
-                (EmbeddedMongoInitializer.PORT)   : '27989',
+                'grails.mongodb.url'              : 'mongodb://embedded:27989/bookstore',
         ])
 
         when:
@@ -293,9 +325,9 @@ class EmbeddedMongoInitializerSpec extends Specification {
     void 'the MongoDB port moves with the server port so two applications run side by side'() {
         given: 'the second application on a machine, which moved its own port to start at all'
         GenericApplicationContext context = contextWith([
-                (EmbeddedMongoInitializer.ENABLED): 'true',
                 (EmbeddedMongoInitializer.BACKEND): InMemoryMongoBackend.NAME,
                 'server.port'                     : '9055',
+                'grails.mongodb.url'              : 'mongodb://embedded',
         ])
 
         when: 'no MongoDB port is configured, so it follows'
@@ -308,10 +340,8 @@ class EmbeddedMongoInitializerSpec extends Specification {
     void 'a url that names no database leaves the default in place'() {
         given:
         GenericApplicationContext context = contextWith([
-                (EmbeddedMongoInitializer.ENABLED): 'true',
                 (EmbeddedMongoInitializer.BACKEND): InMemoryMongoBackend.NAME,
-                (EmbeddedMongoInitializer.PORT)   : '27987',
-                'grails.mongodb.url'              : 'mongodb://localhost:27017',
+                'grails.mongodb.url'              : 'mongodb://embedded:27987',
         ])
 
         when:
@@ -324,11 +354,9 @@ class EmbeddedMongoInitializerSpec extends Specification {
     void 'a property-names list of nothing but separators still publishes somewhere'() {
         given:
         GenericApplicationContext context = contextWith([
-                (EmbeddedMongoInitializer.ENABLED)       : 'true',
                 (EmbeddedMongoInitializer.BACKEND)       : InMemoryMongoBackend.NAME,
-                (EmbeddedMongoInitializer.PORT)          : '27988',
                 (EmbeddedMongoInitializer.PROPERTY_NAMES): ' , ',
-                (EmbeddedMongoInitializer.DATABASE)      : 'bookstore',
+                'grails.mongodb.url'              : 'mongodb://embedded:27988/bookstore',
         ])
 
         when:
@@ -341,11 +369,9 @@ class EmbeddedMongoInitializerSpec extends Specification {
     void 'a setting left blank is a setting that was not made'() {
         given: 'the keys are present with nothing after them, which is what empty yaml entries give'
         GenericApplicationContext context = contextWith([
-                (EmbeddedMongoInitializer.ENABLED) : 'true',
                 (EmbeddedMongoInitializer.BACKEND) : '',
-                (EmbeddedMongoInitializer.PORT)    : '',
-                (EmbeddedMongoInitializer.DATABASE): '',
                 'server.port'                      : '9064',
+                'grails.mongodb.url'              : 'mongodb://embedded',
         ])
 
         when:
@@ -359,8 +385,7 @@ class EmbeddedMongoInitializerSpec extends Specification {
     void 'a backend whose library is missing is passed over rather than chosen'() {
         given: 'flapdoodle offered first, as it always is, but excluded by the application'
         GenericApplicationContext context = contextWith([
-                (EmbeddedMongoInitializer.ENABLED): 'true',
-                (EmbeddedMongoInitializer.PORT)   : '28000',
+        'grails.mongodb.url'              : 'mongodb://embedded:28000',
         ])
 
         when: 'no backend is named, so the first one that can actually run is used'
@@ -374,10 +399,9 @@ class EmbeddedMongoInitializerSpec extends Specification {
     void 'a MongoDB version flapdoodle does not know is reported before anything is downloaded'() {
         given:
         GenericApplicationContext context = contextWith([
-                (EmbeddedMongoInitializer.ENABLED): 'true',
                 (EmbeddedMongoInitializer.BACKEND): FlapdoodleMongoBackend.NAME,
-                (EmbeddedMongoInitializer.PORT)   : '27993',
                 (EmbeddedMongoInitializer.VERSION): 'V9_9',
+                'grails.mongodb.url'              : 'mongodb://embedded:27993',
         ])
 
         when:
@@ -397,10 +421,9 @@ class EmbeddedMongoInitializerSpec extends Specification {
         Path file = temp.resolve('prodDb')
         file.toFile().text = 'not a directory'
         GenericApplicationContext context = contextWith([
-                (EmbeddedMongoInitializer.ENABLED)     : 'true',
                 (EmbeddedMongoInitializer.BACKEND)     : FlapdoodleMongoBackend.NAME,
-                (EmbeddedMongoInitializer.PORT)        : '27998',
                 (EmbeddedMongoInitializer.DATABASE_DIR): file.toString(),
+                'grails.mongodb.url'              : 'mongodb://embedded:27998',
         ])
 
         when:
@@ -453,10 +476,8 @@ class EmbeddedMongoInitializerSpec extends Specification {
                 'here uses -- servers started in this spec outlive the feature that started them'
         assert !listening(27991)
         GenericApplicationContext context = contextWith([
-                (EmbeddedMongoInitializer.ENABLED): 'true',
                 (EmbeddedMongoInitializer.BACKEND): InMemoryMongoBackend.NAME,
-                (EmbeddedMongoInitializer.PORT)   : '27991',
-                'grails.mongodb.url'              : 'mongodb://localhost:27017/bookstore',
+                'grails.mongodb.url'              : 'mongodb://embedded:27991/bookstore',
         ])
         System.setProperty(AbstractAotProcessor.AOT_PROCESSING, 'true')
 
@@ -465,7 +486,7 @@ class EmbeddedMongoInitializerSpec extends Specification {
 
         then: 'generation reads definitions rather than running them, and a server that started ' +
                 'would listen on a non-daemon thread and hang the build that started it'
-        context.environment.getProperty('grails.mongodb.url') == 'mongodb://localhost:27017/bookstore'
+        context.environment.getProperty('grails.mongodb.url') == 'mongodb://embedded:27991/bookstore'
         context.environment.propertySources.every { it.name != 'embeddedMongoDB' }
 
         and: 'nothing is listening on the port it was told to use'

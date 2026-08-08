@@ -19,35 +19,47 @@ under the License.
 
 === Embedded MongoDB
 
-`grails-data-mongodb-embedded` starts a MongoDB server as the application starts and points
-`grails.mongodb.url` at it, so development and testing need neither a MongoDB installation
-nor Docker. Applications created by Grails Forge with MongoDB selected include it, enabled
-for the development and test environments.
+`grails-data-mongodb-embedded` starts a MongoDB server as the application starts, so
+development and testing need neither a MongoDB installation nor Docker. Applications created
+by Grails Forge with MongoDB selected include it, asked for by the development and test
+environments.
 
-To add it to an existing application:
+A server is asked for by the URL, the way an in-memory SQL database is. Where an application
+would name a host, it names `embedded` instead:
 
 [source,groovy]
 ----
 implementation "org.apache.grails:grails-data-mongodb-embedded"
 ----
 
-and enable it for the environments that should use one:
-
 [source,yaml]
 ----
 environments:
     development:
-        embedded:
+        grails:
             mongodb:
-                enabled: true
+                url: mongodb://embedded/bookstore
     test:
-        embedded:
+        grails:
             mongodb:
-                enabled: true
+                url: mongodb://embedded/bookstore
+    production:
+        grails:
+            mongodb:
+                url: mongodb://localhost:27017/bookstore
 ----
 
-It does nothing unless `embedded.mongodb.enabled` is `true`, so adding the dependency alone
-never changes how an application connects.
+Nothing else switches it on and nothing switches it off. A URL naming a host is served by the
+driver and no server is started, so adding the dependency alone never changes how an
+application connects — in the same way that an application with `h2` on its classpath and a
+PostgreSQL URL never starts H2.
+
+A port may be given as `mongodb://embedded:27018/bookstore`. Without one, the port is 27017
+offset by however far `server.port` has moved from 8080, so two applications run side by side
+without colliding.
+
+NOTE: A host genuinely named `embedded` cannot be reached this way. Name it by its address or
+its fully qualified name instead.
 
 ==== Choosing a backend
 
@@ -94,23 +106,16 @@ implementation "de.flapdoodle.embed:de.flapdoodle.embed.mongo:4.33.0"
 
 ==== Configuration
 
+Whether to start a server, which port, and which database are all read from the URL. These
+configure the server behind it.
+
 [cols="1,2"]
 |===
 |Property |Description
 
-|`embedded.mongodb.enabled`
-|Whether to start a server. Defaults to `false`.
-
 |`embedded.mongodb.backend`
 |`in-memory` or `flapdoodle`. Defaults to flapdoodle when it is on the classpath,
 otherwise `in-memory`.
-
-|`embedded.mongodb.port`
-|The port to bind. Defaults to `27017` offset by however far `server.port` has moved from
-`8080`, so two applications can run side by side.
-
-|`embedded.mongodb.database`
-|The database name. Defaults to the one already named in the target url.
 
 |`embedded.mongodb.database-dir`
 |Where to keep the data so it outlives the server. Only the flapdoodle backend supports
@@ -120,26 +125,26 @@ this; the `in-memory` backend reports an error rather than discarding the data s
 |The MongoDB version for backends that can choose one, such as `V8_0` for flapdoodle.
 
 |`embedded.mongodb.property-names`
-|Comma separated properties to publish the url into. Defaults to `grails.mongodb.url`.
+|Comma separated properties that may name an embedded server. Defaults to
+`grails.mongodb.url`.
 |===
 
 ==== Production
 
-Leave this disabled in production, which is how a generated application is configured.
-The url is published ahead of every other property source, so a server started in
-production takes precedence over `grails.mongodb.url` and the application would use a
-local database rather than the one it was deployed against.
+A generated application names a real host in production, so nothing is started there.
 
-Where an embedded server in production is genuinely wanted, enable it for that environment
-and use flapdoodle with a directory, so the data survives a restart:
+Where an embedded server in production is genuinely wanted, ask for one in that
+environment's url and use flapdoodle with a directory, so the data survives a restart:
 
 [source,yaml]
 ----
 environments:
     production:
+        grails:
+            mongodb:
+                url: mongodb://embedded/bookstore
         embedded:
             mongodb:
-                enabled: true
                 backend: flapdoodle
                 database-dir: ./prodMongoDb
 ----
@@ -150,7 +155,7 @@ A server started by this module runs until the JVM exits, so a Spring Boot DevTo
 restart reuses it instead of starting another. Only a server this module started is
 reused: if anything else is already holding the port, startup fails with an error naming
 the port rather than connecting to an unrelated service. To use a MongoDB started by hand,
-set `embedded.mongodb.enabled` to `false` and configure `grails.mongodb.url` as usual.
+name its host in `grails.mongodb.url` as usual.
 
 ==== Outside Grails
 
@@ -159,9 +164,12 @@ so `embedded.mongodb.property-names` makes it usable from any Spring application
 
 [source,yaml]
 ----
+spring:
+    data:
+        mongodb:
+            uri: mongodb://embedded/bookstore
 embedded:
     mongodb:
-        enabled: true
         property-names: spring.data.mongodb.uri
 ----
 
