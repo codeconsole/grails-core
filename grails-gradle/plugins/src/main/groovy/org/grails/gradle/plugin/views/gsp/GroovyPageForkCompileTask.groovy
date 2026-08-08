@@ -34,7 +34,6 @@ import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.file.FileTree
 import org.gradle.api.model.ObjectFactory
 import org.gradle.api.provider.Property
-import org.gradle.api.tasks.CacheableTask
 import org.gradle.api.tasks.Input
 import org.gradle.api.tasks.InputDirectory
 import org.gradle.api.tasks.InputFiles
@@ -46,6 +45,7 @@ import org.gradle.api.tasks.PathSensitive
 import org.gradle.api.tasks.PathSensitivity
 import org.gradle.api.tasks.TaskAction
 import org.gradle.api.tasks.compile.AbstractCompile
+import org.gradle.work.DisableCachingByDefault
 import org.gradle.process.ExecOperations
 import org.gradle.process.ExecResult
 import org.gradle.process.JavaExecSpec
@@ -60,8 +60,19 @@ import org.grails.gradle.plugin.views.ViewCompileOptions
  * @author David Estes
  * @since 4.0
  */
+/**
+ * Not cacheable. A page is compiled by a forked Groovy, and what comes out depends on which Groovy
+ * and which Java did it -- neither of which this task's inputs describe: an application building a
+ * native image resolves Groovy 6 and builds for JDK 25, and one training a cache resolves Groovy 5
+ * and builds for a later JDK. Cached, the first build's pages were handed to the second, which
+ * failed at the moment a page was first rendered, with
+ * {@code BUG! your call tried to do a property set} or an
+ * {@code UnsupportedClassVersionError} -- long after the build said it had succeeded.
+ *
+ * <p>Compiling them again costs seconds. Getting this wrong costs an afternoon.</p>
+ */
 @CompileStatic
-@CacheableTask
+@DisableCachingByDefault(because = 'What a forked compiler produces is not described by this task\'s inputs')
 abstract class GroovyPageForkCompileTask extends AbstractCompile {
 
     @Input
