@@ -168,6 +168,10 @@ class GrailsGradlePlugin implements Plugin<Project> {
 
         configureBootRunPidFile(project)
 
+        configureAheadOfTimeProcessing(project)
+
+        configureNativeImage(project)
+
         configureJavaCompatibilityArgs(project)
 
         configureGrailsSourceDirs(project)
@@ -941,6 +945,69 @@ ${importStatements}
         tasks.withType(JavaExec).configureEach(systemPropertyConfigurer.curry(grailsEnvSystemProperty ?: Environment.DEVELOPMENT.getName()))
 
         configureToolchainForForkTasks(project)
+    }
+
+    /**
+     * Generates the application's bean definitions for the environment it will be run in.
+     *
+     * <p>Generation reads the definitions to write them out as code, and an application declares
+     * different ones in different environments -- development declares reloadable beans, which
+     * cannot be expressed as generated code. Left at the default the definitions written out are
+     * development's, and an application built from them is not the application that was asked
+     * for.</p>
+     *
+     * <p>Nothing here runs unless the application applies Spring Boot's AOT plugin, which is what
+     * asks for generated definitions in the first place.</p>
+     */
+    protected void configureAheadOfTimeProcessing(Project project) {
+        project.pluginManager.withPlugin('org.springframework.boot.aot') {
+            project.tasks.named('processAot', JavaExec) { JavaExec task ->
+                task.systemProperty(Environment.KEY, Environment.PRODUCTION.name)
+            }
+        }
+    }
+
+    /**
+     * What a Grails application needs of a native image that an image cannot work out for itself.
+     *
+     * <p>An image includes what it can prove is reached. Resources are reached by name at run time
+     * -- a compiled asset by request path, a message bundle by locale -- so nothing proves they are
+     * needed and an image is built without them: the application starts and then answers every
+     * page with a missing stylesheet and an untranslated string.</p>
+     *
+     * <p>Applications resolve calls through invokedynamic here, because the classic call site
+     * defines a class as it runs and an image has no way to define one. The framework has to be
+     * built the same way. This is a convention, so an application that has said otherwise keeps
+     * what it said.</p>
+     *
+     * <p>Nothing here runs unless the application applies GraalVM's plugin, which is what asks for
+     * an image in the first place. An application that never builds one is untouched.</p>
+     */
+    protected void configureNativeImage(Project project) {
+        project.pluginManager.withPlugin('org.graalvm.buildtools.native') {
+            GrailsExtension grailsExt = project.extensions.getByType(GrailsExtension)
+            grailsExt.indy.convention(true)
+            addNativeImageResources(project)
+        }
+    }
+
+    /**
+     * Adds the resource patterns above to the image being built.
+     *
+     * <p>Configured dynamically because the extension's type ships with GraalVM's plugin, which is
+     * not a dependency of this one -- an application that never builds an image should not have to
+     * resolve it. This only runs where that plugin has been applied, so the extension is there.</p>
+     */
+    @CompileDynamic
+    protected void addNativeImageResources(Project project) {
+        Object graalvmNative = project.extensions.findByName('graalvmNative')
+        if (graalvmNative == null) {
+            return
+        }
+        graalvmNative.binaries.named('main') { binary ->
+            binary.buildArgs.add('-H:IncludeResources=assets/.*')
+            binary.buildArgs.add('-H:IncludeResources=.*[.]properties')
+        }
     }
 
     protected void configureBootRunPidFile(Project project) {
