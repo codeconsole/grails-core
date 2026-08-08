@@ -383,8 +383,16 @@ jobs:
             indy: false
             job_name: Java 21, indy=false
             gradle_task: 'bootJar check'
-            artifact_suffix: java21-indyfalse
+            artifact_suffix: java21-indyfalse-shard0
             cache_writer: true
+            shard_arguments: '-PtestShardCount=2 -PtestShardIndex=0'
+          - java: 21
+            indy: false
+            job_name: Java 21, indy=false, shard 1
+            gradle_task: testShard
+            artifact_suffix: java21-indyfalse-shard1
+            cache_writer: false
+            shard_arguments: '-PtestShardCount=2 -PtestShardIndex=1'
           - java: 21
             indy: true
             job_name: Java 21, indy=true
@@ -476,12 +484,23 @@ jobs:
           path: '**/build/geb-reports/'
           if-no-files-found: ignore
   security:
-    name: "Spring Security Tests"
+    name: "Spring Security Tests (${{ matrix.job_name }})"
     if: ${{ !contains(github.event.head_commit.message, '[skip tests]') }}
     strategy:
       fail-fast: false
       matrix:
-        java: [ 21, 25 ]
+        include:
+          - java: 21
+            job_name: Java 21
+            gradle_task: 'bootJar check'
+          - java: 25
+            job_name: Java 25
+            gradle_task: 'bootJar check'
+            shard_arguments: '-PtestShardCount=2 -PtestShardIndex=0'
+          - java: 25
+            job_name: Java 25, shard 1
+            gradle_task: testShard
+            shard_arguments: '-PtestShardCount=2 -PtestShardIndex=1'
     runs-on: ubuntu-24.04
     steps:
       - name: "Output Agent IP" # in the event RAO blocks this agent, this can be used to debug it
@@ -502,12 +521,13 @@ jobs:
         uses: testlens-app/setup-testlens@3f82d2dc6cd5c03f02ce5f7885a21195d85f8d14 # v1.9.3
       - name: "🏃 Run Functional Tests"
         run: >
-          ./gradlew bootJar check
+          ./gradlew ${{ matrix.gradle_task }}
           --continue
           --rerun-tasks
           --stacktrace
           -PonlySpringSecurityTests
           -PskipCodeStyle
+          ${{ matrix.shard_arguments }}
   securityConfig:
     name: "Spring Security Config Functional Tests"
     if: ${{ !contains(github.event.head_commit.message, '[skip tests]') }}
@@ -699,12 +719,17 @@ jobs:
             indy: false
             job_name: Java 21, indy=false
             gradle_task: 'bootJar check'
-            shard_arguments: '-PtestShardCount=2 -PtestShardIndex=0'
+            shard_arguments: '-PtestShardCount=3 -PtestShardIndex=0'
           - java: 21
             indy: false
             job_name: Java 21, indy=false, shard 1
             gradle_task: testShard
-            shard_arguments: '-PtestShardCount=2 -PtestShardIndex=1'
+            shard_arguments: '-PtestShardCount=3 -PtestShardIndex=1'
+          - java: 21
+            indy: false
+            job_name: Java 21, indy=false, shard 2
+            gradle_task: testShard
+            shard_arguments: '-PtestShardCount=3 -PtestShardIndex=2'
           - java: 21
             indy: true
             job_name: Java 21, indy=true
