@@ -31,6 +31,8 @@ import org.gradle.api.provider.Property
 import org.gradle.api.tasks.Input
 import org.gradle.api.tasks.InputDirectory
 import org.gradle.api.tasks.OutputFile
+import org.gradle.api.tasks.PathSensitive
+import org.gradle.api.tasks.PathSensitivity
 import org.gradle.api.tasks.TaskAction
 import org.gradle.work.DisableCachingByDefault
 
@@ -52,8 +54,17 @@ import org.gradle.work.DisableCachingByDefault
 @DisableCachingByDefault(because = 'Runs the application and records what it did, which is not reproducible')
 abstract class TrainAotCacheTask extends DefaultTask {
 
-    /** The extracted application: the cache is only usable against the layout it was trained on. */
+    /**
+     * The extracted application: the cache is only usable against the layout it was trained on.
+     *
+     * <p>Compared by what is in it and where each file sits within it, not by where the directory
+     * itself is. Without saying so, Gradle takes the absolute path to be part of the input and
+     * refuses to validate the task at all -- and a build that did run would key its result to a
+     * path, so the same application checked out somewhere else, or built on CI, would agree about
+     * everything and still share nothing.</p>
+     */
     @InputDirectory
+    @PathSensitive(PathSensitivity.RELATIVE)
     abstract DirectoryProperty getApplicationDirectory()
 
     @Input
