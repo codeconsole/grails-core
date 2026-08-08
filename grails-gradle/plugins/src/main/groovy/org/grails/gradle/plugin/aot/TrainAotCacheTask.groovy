@@ -204,8 +204,8 @@ abstract class TrainAotCacheTask extends DefaultTask {
         long deadline = System.currentTimeMillis() + Duration.ofSeconds(startTimeoutSeconds.get()).toMillis()
         while (System.currentTimeMillis() < deadline) {
             if (!process.isAlive()) {
-                throw new GradleException('The training run ended before it started serving. ' +
-                        "What it printed is in ${output}")
+                throw new GradleException('The training run ended before it started serving.' +
+                        whyItEnded(output) + " What it printed is in ${output}")
             }
             if (output.isFile() && output.text.contains('Started ')) {
                 return
@@ -217,6 +217,38 @@ abstract class TrainAotCacheTask extends DefaultTask {
         }
         throw new GradleException("The training run did not start within ${startTimeoutSeconds.get()}s. " +
                 "What it printed is in ${output}")
+    }
+
+    /**
+     * What the run said was wrong, for the message that reports it ended.
+     *
+     * <p>Spring Boot prints why it could not start, and the reason is what someone reading a failed
+     * build needs -- the build said only that the run had ended and named a file, and finding out
+     * that an environment variable had quietly replaced a configured property meant reading a log
+     * that scrolls for eighty lines and is mostly a banner and a class list.</p>
+     *
+     * <p>Read defensively: this runs while reporting a failure, and a log that cannot be read is no
+     * reason to lose the failure that was already being reported.</p>
+     */
+    private static String whyItEnded(File output) {
+        List<String> reason = []
+        try {
+            if (output.isFile()) {
+                List<String> lines = output.readLines()
+                int failed = lines.findLastIndexOf { String line -> line.contains('APPLICATION FAILED TO START') }
+                if (failed >= 0) {
+                    // Description, then the reason under it, without the box drawing or the blank lines.
+                    reason = lines[failed..<Math.min(failed + 12, lines.size())]
+                            .collect { String line -> line.replaceAll(/\[[0-9;]*m/, '').trim() }
+                            .findAll { String line -> line && !(line ==~ /[*]+/) && line != 'APPLICATION FAILED TO START' }
+                            .take(4)
+                }
+            }
+        }
+        catch (IOException ignored) {
+            return ''
+        }
+        reason ? "\n\n${reason.join('\n')}\n" : ''
     }
 
     /** Whether anything is accepting connections on the port the run was told to listen on. */

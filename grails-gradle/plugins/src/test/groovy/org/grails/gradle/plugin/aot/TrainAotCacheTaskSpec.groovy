@@ -143,6 +143,49 @@ exec '${new File(System.getProperty('java.home'), 'bin/java').absolutePath}' \\
             new File(e.message.replaceAll(/(?s).*is in /, '').trim()).isFile()
     }
 
+    void 'a run that could not start is reported with what it said was wrong'() {
+        given: 'a run that prints why it could not start, the way Spring Boot does, and ends'
+            File application = new File(temporaryFolder, 'failing')
+            application.mkdirs()
+            new File(application, 'failing.jar').text = 'stands in for the archive'
+            File script = new File(temporaryFolder, 'failing-jvm.sh')
+            script.text = '''#!/bin/sh
+echo "***************************"
+echo "APPLICATION FAILED TO START"
+echo "***************************"
+echo ""
+echo "Description:"
+echo ""
+echo "Invalid value for configuration property grails.mongodb.url, originating from System Environment Property GRAILS_MONGODB_URL"
+exit 1
+'''
+            script.setExecutable(true)
+            TrainAotCacheTask task = project.tasks.create('trainFailing', TrainAotCacheTask)
+            task.applicationDirectory.set(application)
+            task.archiveFileName.set('failing.jar')
+            task.cacheFile.set(new File(application, 'demo.aot'))
+            task.metadataFile.set(new File(application, 'aot-cache.properties'))
+            task.javaExecutable.set(script.absolutePath)
+            task.javaVersion.set('25.0.1+9')
+            task.javaVendor.set('A Vendor')
+            task.jvmArguments.set([])
+            task.paths.set([])
+            task.port.set(18097)
+            task.startTimeoutSeconds.set(5)
+
+        when:
+            task.train()
+
+        then: 'the reason is in the failure, rather than only a file to go and read'
+            GradleException e = thrown()
+            e.message.contains('ended before it started serving')
+            e.message.contains('grails.mongodb.url')
+            e.message.contains('GRAILS_MONGODB_URL')
+
+        and: 'without the box it was printed in'
+            !e.message.contains('****')
+    }
+
     void 'a run that starts is exercised and described'() {
         given: 'a run that says it started, serves what it is asked for, and stops when asked'
             TrainAotCacheTask task = servingTask(['/', '/login', '/missing'])
