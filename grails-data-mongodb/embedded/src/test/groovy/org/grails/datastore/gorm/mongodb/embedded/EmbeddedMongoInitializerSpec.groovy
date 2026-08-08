@@ -242,6 +242,38 @@ class EmbeddedMongoInitializerSpec extends Specification {
         }
     }
 
+    void 'a known backend whose library is missing names the ones that are left'() {
+        given: 'mongo-java-server excluded from an application that still asked for it'
+        GenericApplicationContext context = contextWith([
+                (EmbeddedMongoInitializer.ENABLED): 'true',
+                (EmbeddedMongoInitializer.BACKEND): InMemoryMongoBackend.NAME,
+        ])
+
+        when:
+        new EmbeddedMongoInitializer([new MissingLibraryBackend(InMemoryMongoBackend.NAME),
+                                      new FlapdoodleMongoBackend()]).initialize(context)
+
+        then: 'the message points at the library, and at what could be used instead'
+        IllegalStateException e = thrown()
+        e.message.contains('not on the classpath')
+        e.message.contains('choose one of [flapdoodle]')
+    }
+
+    void 'no backend at all is reported as the missing dependency it is'() {
+        given: 'both libraries excluded, so nothing can serve the url this was asked to publish'
+        GenericApplicationContext context = contextWith([
+                (EmbeddedMongoInitializer.ENABLED): 'true',
+        ])
+
+        when: 'no backend is named either, so this is the fall through rather than a bad choice'
+        new EmbeddedMongoInitializer([]).initialize(context)
+
+        then:
+        IllegalStateException e = thrown()
+        e.message.contains('no embedded MongoDB backend is on the classpath')
+        e.message.contains('de.bwaldvogel:mongo-java-server')
+    }
+
     void 'an unknown backend is reported by name'() {
         given:
         GenericApplicationContext context = contextWith([
@@ -256,6 +288,156 @@ class EmbeddedMongoInitializerSpec extends Specification {
         then:
         IllegalStateException e = thrown()
         e.message.contains('is not a known backend')
+    }
+
+    void 'the MongoDB port moves with the server port so two applications run side by side'() {
+        given: 'the second application on a machine, which moved its own port to start at all'
+        GenericApplicationContext context = contextWith([
+                (EmbeddedMongoInitializer.ENABLED): 'true',
+                (EmbeddedMongoInitializer.BACKEND): InMemoryMongoBackend.NAME,
+                'server.port'                     : '9055',
+        ])
+
+        when: 'no MongoDB port is configured, so it follows'
+        new EmbeddedMongoInitializer().initialize(context)
+
+        then: '27017 offset by however far 8080 moved'
+        context.environment.getProperty('grails.mongodb.url') == 'mongodb://localhost:27992/test'
+    }
+
+    void 'a url that names no database leaves the default in place'() {
+        given:
+        GenericApplicationContext context = contextWith([
+                (EmbeddedMongoInitializer.ENABLED): 'true',
+                (EmbeddedMongoInitializer.BACKEND): InMemoryMongoBackend.NAME,
+                (EmbeddedMongoInitializer.PORT)   : '27987',
+                'grails.mongodb.url'              : 'mongodb://localhost:27017',
+        ])
+
+        when:
+        new EmbeddedMongoInitializer().initialize(context)
+
+        then: 'there was no database name to preserve, rather than an empty one to publish'
+        context.environment.getProperty('grails.mongodb.url') == 'mongodb://localhost:27987/test'
+    }
+
+    void 'a property-names list of nothing but separators still publishes somewhere'() {
+        given:
+        GenericApplicationContext context = contextWith([
+                (EmbeddedMongoInitializer.ENABLED)       : 'true',
+                (EmbeddedMongoInitializer.BACKEND)       : InMemoryMongoBackend.NAME,
+                (EmbeddedMongoInitializer.PORT)          : '27988',
+                (EmbeddedMongoInitializer.PROPERTY_NAMES): ' , ',
+                (EmbeddedMongoInitializer.DATABASE)      : 'bookstore',
+        ])
+
+        when:
+        new EmbeddedMongoInitializer().initialize(context)
+
+        then: 'a started server no application can reach is worse than falling back to the default'
+        context.environment.getProperty('grails.mongodb.url') == 'mongodb://localhost:27988/bookstore'
+    }
+
+    void 'a setting left blank is a setting that was not made'() {
+        given: 'the keys are present with nothing after them, which is what empty yaml entries give'
+        GenericApplicationContext context = contextWith([
+                (EmbeddedMongoInitializer.ENABLED) : 'true',
+                (EmbeddedMongoInitializer.BACKEND) : '',
+                (EmbeddedMongoInitializer.PORT)    : '',
+                (EmbeddedMongoInitializer.DATABASE): '',
+                'server.port'                      : '9064',
+        ])
+
+        when:
+        new EmbeddedMongoInitializer().initialize(context)
+
+        then: 'rather than an unknown backend named the empty string, a port that will not parse, ' +
+                'or a database with no name'
+        context.environment.getProperty('grails.mongodb.url') == 'mongodb://localhost:28001/test'
+    }
+
+    void 'a backend whose library is missing is passed over rather than chosen'() {
+        given: 'flapdoodle offered first, as it always is, but excluded by the application'
+        GenericApplicationContext context = contextWith([
+                (EmbeddedMongoInitializer.ENABLED): 'true',
+                (EmbeddedMongoInitializer.PORT)   : '28000',
+        ])
+
+        when: 'no backend is named, so the first one that can actually run is used'
+        new EmbeddedMongoInitializer([new MissingLibraryBackend(FlapdoodleMongoBackend.NAME),
+                                      new InMemoryMongoBackend()]).initialize(context)
+
+        then:
+        context.environment.getProperty('grails.mongodb.url') == 'mongodb://localhost:28000/test'
+    }
+
+    void 'a MongoDB version flapdoodle does not know is reported before anything is downloaded'() {
+        given:
+        GenericApplicationContext context = contextWith([
+                (EmbeddedMongoInitializer.ENABLED): 'true',
+                (EmbeddedMongoInitializer.BACKEND): FlapdoodleMongoBackend.NAME,
+                (EmbeddedMongoInitializer.PORT)   : '27993',
+                (EmbeddedMongoInitializer.VERSION): 'V9_9',
+        ])
+
+        when:
+        new EmbeddedMongoInitializer().initialize(context)
+
+        then: 'the constant it needed, rather than a download that fails halfway'
+        IllegalStateException e = thrown()
+        e.message.contains('is not a Version.Main constant')
+        e.message.contains('V8_0')
+
+        and:
+        !listening(27993)
+    }
+
+    void 'a database directory that cannot be created is reported by path'() {
+        given: 'a file where the directory should be, which is how a mistyped path usually looks'
+        Path file = temp.resolve('prodDb')
+        file.toFile().text = 'not a directory'
+        GenericApplicationContext context = contextWith([
+                (EmbeddedMongoInitializer.ENABLED)     : 'true',
+                (EmbeddedMongoInitializer.BACKEND)     : FlapdoodleMongoBackend.NAME,
+                (EmbeddedMongoInitializer.PORT)        : '27998',
+                (EmbeddedMongoInitializer.DATABASE_DIR): file.toString(),
+        ])
+
+        when:
+        new EmbeddedMongoInitializer().initialize(context)
+
+        then: 'rather than a mongod that starts and writes where nobody looks'
+        IllegalStateException e = thrown()
+        e.message.contains('Could not create the embedded MongoDB directory')
+        e.message.contains(file.toString())
+
+        and:
+        !listening(27998)
+    }
+
+    /** A backend whose library an application excluded, which only its absence distinguishes. */
+    private static class MissingLibraryBackend implements EmbeddedMongoBackend {
+
+        private final String name
+
+        MissingLibraryBackend(String name) {
+            this.name = name
+        }
+
+        @Override
+        String getName() {
+            name
+        }
+
+        @Override
+        boolean isAvailable() {
+            false
+        }
+
+        @Override
+        RunningEmbeddedMongo start(EmbeddedMongoSettings settings) {
+            throw new UnsupportedOperationException('not available')
+        }
     }
 
     private static String roundTrip(String url) {
