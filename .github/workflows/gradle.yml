@@ -123,19 +123,38 @@ jobs:
           -PskipCodeStyle
   build:
     if: ${{ !contains(github.event.head_commit.message, '[skip tests]') }}
-    name: 'Build Grails-Core'
+    name: 'Build Grails-Core (${{ matrix.job_name }})'
     strategy:
       fail-fast: false
       matrix:
         include:
           - os: ubuntu-latest
             java: 21
+            job_name: Ubuntu JDK 21
+            gradle_task: 'build :grails-shell-cli:installDist groovydoc'
+            cache_writer: true
           - os: ubuntu-latest
             java: 25
+            job_name: Ubuntu JDK 25
+            gradle_task: 'build :grails-shell-cli:installDist groovydoc'
+            cache_writer: false
           - os: macos-latest
             java: 21
+            job_name: macOS JDK 21
+            gradle_task: 'build :grails-shell-cli:installDist groovydoc'
+            cache_writer: true
           - os: windows-latest
             java: 25
+            job_name: Windows JDK 25 shard 0
+            gradle_task: 'build :grails-shell-cli:installDist groovydoc'
+            shard_arguments: '-PtestShardCount=2 -PtestShardIndex=0'
+            cache_writer: true
+          - os: windows-latest
+            java: 25
+            job_name: Windows JDK 25 shard 1
+            gradle_task: testShard
+            shard_arguments: '-PtestShardCount=2 -PtestShardIndex=1'
+            cache_writer: false
     runs-on: ${{ matrix.os }}
     steps:
       - name: "Output Agent IP" # in the event RAO blocks this agent, this can be used to debug it
@@ -148,7 +167,8 @@ jobs:
           distribution: liberica
           java-version: ${{ matrix.java }}
       - name: "🗄️ Restore dependency jar cache"
-        uses: actions/cache@v4
+        id: dependency-cache
+        uses: actions/cache/restore@v4
         with:
           # Cache only downloaded dependency jars and wrapper distributions, never Grails build outputs.
           # Keyed by branch version so each release branch maintains its own warm cache.
@@ -172,11 +192,20 @@ jobs:
         # and included automatically on JDK 25+. So the Java 21 entries build everything
         # except the island and the Java 25 entries build the full graph - no flag needed.
         run: >
-          ./gradlew build :grails-shell-cli:installDist groovydoc
+          ./gradlew ${{ matrix.gradle_task }}
           --continue
           --stacktrace
           -PonlyCoreTests
           -PskipCodeStyle
+          ${{ matrix.shard_arguments }}
+      - name: "🗄️ Save dependency jar cache"
+        if: ${{ success() && matrix.cache_writer && steps.dependency-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/.gradle/caches/modules-2
+            ~/.gradle/wrapper
+          key: gradle-deps-${{ runner.os }}-${{ github.base_ref || github.ref_name }}-${{ hashFiles('**/dependencies.gradle', '**/gradle-wrapper.properties') }}
   buildRerunTasks:
     if: ${{ !contains(github.event.head_commit.message, '[skip tests]') }}
     name: 'Build Grails-Core Rerunning all Tasks'
