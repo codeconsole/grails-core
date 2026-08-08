@@ -221,21 +221,27 @@ jobs:
         include:
           - os: ubuntu-latest
             java: 21
-            job_name: Ubuntu JDK 21 shard 0
+            job_name: Ubuntu JDK 21 build
             gradle_task: 'build :grails-shell-cli:installDist groovydoc'
-            shard_arguments: '-PtestShardCount=3 -PtestShardIndex=0'
+            extra_arguments: '-PskipTests'
             cache_writer: true
+          - os: ubuntu-latest
+            java: 21
+            job_name: Ubuntu JDK 21 shard 0
+            gradle_task: testShard
+            extra_arguments: '-PtestShardCount=3 -PtestShardIndex=0'
+            cache_writer: false
           - os: ubuntu-latest
             java: 21
             job_name: Ubuntu JDK 21 shard 1
             gradle_task: testShard
-            shard_arguments: '-PtestShardCount=3 -PtestShardIndex=1'
+            extra_arguments: '-PtestShardCount=3 -PtestShardIndex=1'
             cache_writer: false
           - os: ubuntu-latest
             java: 21
             job_name: Ubuntu JDK 21 shard 2
             gradle_task: testShard
-            shard_arguments: '-PtestShardCount=3 -PtestShardIndex=2'
+            extra_arguments: '-PtestShardCount=3 -PtestShardIndex=2'
             cache_writer: false
     runs-on: ${{ matrix.os }}
     steps:
@@ -277,7 +283,7 @@ jobs:
           --stacktrace
           -PonlyCoreTests
           -PskipCodeStyle
-          ${{ matrix.shard_arguments }}
+          ${{ matrix.extra_arguments }}
       - name: "🗄️ Save dependency jar cache"
         if: ${{ success() && matrix.cache_writer && steps.dependency-cache.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@v4
@@ -713,6 +719,12 @@ jobs:
             indy: false
             job_name: Java 25, indy=false
             gradle_task: 'bootJar check'
+            shard_arguments: '-PtestShardCount=2 -PtestShardIndex=0'
+          - java: 25
+            indy: false
+            job_name: Java 25, indy=false, shard 1
+            gradle_task: testShard
+            shard_arguments: '-PtestShardCount=2 -PtestShardIndex=1'
     steps:
       - name: "Output Agent IP" # in the event RAO blocks this agent, this can be used to debug it
         run: curl -s https://api.ipify.org
