@@ -263,7 +263,6 @@ class GrailsBanner implements Banner {
      * @param env the current env
      * @return a map of version labels to version values
      */
-    @SuppressWarnings('GrMethodMayBeStatic')
     protected Map<String,String> createBannerVersions(Environment env) {
         def defaultIncluded = (DefaultVersionOption.values()).collect { it.key }
         def sortOrder = findConfiguredVersions(env, 'grails.banner.versions.order') { it in VersionOption.values()*.key }
@@ -314,18 +313,17 @@ class GrailsBanner implements Banner {
                 case VersionOption.SPRING_SECURITY:
                     ['Spring Security': findVersion('org.springframework.security.core.SpringSecurityCoreVersion')]
                     break
+                case VersionOption.CONTAINER:
+                    findContainerVersion()
+                    break
                 case VersionOption.TOMCAT:
-                    // Tomcat ships its version in a resource rather than only in a manifest, and a
-                    // resource survives being repackaged into an executable jar or built into an
-                    // image, where the manifest's attributes are no longer attached to the package.
-                    ['Tomcat': findVersionInResource('org/apache/catalina/util/ServerInfo.properties',
-                            'server.number') ?: findVersion('org.apache.catalina.util.ServerInfo')]
+                    ['Tomcat': findTomcatVersion()]
                     break
                 case VersionOption.JETTY:
-                    ['Jetty': findVersion('org.eclipse.jetty.util.Jetty')]
+                    ['Jetty': findJettyVersion()]
                     break
                 case VersionOption.UNDERTOW:
-                    ['Undertow': findVersion('io.undertow.Undertow')]
+                    ['Undertow': findUndertowVersion()]
                     break
                 default:
                     null
@@ -352,6 +350,53 @@ class GrailsBanner implements Banner {
      * no jars at all -- which is why a container version read that way reads as nothing in exactly
      * the two places it is most worth having. A resource is still a resource in both.</p>
      */
+    /**
+     * The servlet container the application is running on, and the version it records.
+     *
+     * <p>An application runs on one container: choosing another is done by excluding the starter
+     * for this one, so two are not on the classpath together. They are therefore tried in the order
+     * they are commonly used and the first one found is the answer -- an application on Tomcat
+     * never goes looking for Jetty.</p>
+     *
+     * <p>On a container that records no version, or on none of these, this is empty and the banner
+     * leaves the line out rather than saying it does not know.</p>
+     */
+    protected Map<String, String> findContainerVersion() {
+        String tomcat = findTomcatVersion()
+        if (tomcat != null) {
+            return ['Tomcat': tomcat]
+        }
+        String jetty = findJettyVersion()
+        if (jetty != null) {
+            return ['Jetty': jetty]
+        }
+        String undertow = findUndertowVersion()
+        if (undertow != null) {
+            return ['Undertow': undertow]
+        }
+        return [:]
+    }
+
+    /**
+     * Tomcat's version, read from the resource it ships rather than only from its manifest.
+     *
+     * <p>A resource survives being repackaged into an executable jar or built into an image, where
+     * the manifest's attributes are no longer attached to the package -- which is why the manifest
+     * route reads as nothing in exactly the two places a version is most worth having.</p>
+     */
+    protected String findTomcatVersion() {
+        findVersionInResource('org/apache/catalina/util/ServerInfo.properties', 'server.number')
+                ?: findVersion('org.apache.catalina.util.ServerInfo')
+    }
+
+    protected String findJettyVersion() {
+        findVersion('org.eclipse.jetty.util.Jetty')
+    }
+
+    protected String findUndertowVersion() {
+        findVersion('io.undertow.Undertow')
+    }
+
     protected static String findVersionInResource(String resource, String key) {
         InputStream stream = GrailsBanner.classLoader.getResourceAsStream(resource)
         if (stream == null) {
@@ -517,6 +562,7 @@ class GrailsBanner implements Banner {
         SPRING_BOOT,
         SPRING,
         SPRING_SECURITY,
+        CONTAINER,
         TOMCAT,
         JETTY,
         UNDERTOW
@@ -547,7 +593,8 @@ class GrailsBanner implements Banner {
         GROOVY,
         SPRING_BOOT,
         SPRING,
-        SPRING_SECURITY
+        SPRING_SECURITY,
+        CONTAINER
 
         final String key
 
@@ -558,6 +605,10 @@ class GrailsBanner implements Banner {
 
     /**
      * Enumeration of optional version options.
+     *
+     * <p>The container being run is shown by default under {@code container}, which is the one an
+     * application is on. These name a particular container instead, for an application that wants
+     * to be told about one whether or not it is the one serving.</p>
      */
     @CompileStatic
     enum OptionalVersionOption {

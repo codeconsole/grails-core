@@ -117,12 +117,16 @@ grails:
         # Include an optional version (default: []). A library that is not on the classpath, or
         # that records no version, is left out rather than shown as unknown -- so including one
         # costs nothing where it does not apply.
+        # The container being served on is already shown by default, under 'container'. These name
+        # a particular one instead, for an application that wants to be told about it whether or
+        # not it is the one serving.
         # Valid options are:
         - tomcat
         - jetty
         - undertow
       exclude:
         # Exclude any of the versions shown by default (default: []).
+        # Use 'container' to leave out the servlet container, whichever one it is.
         # Valid options are:
         - app
         - grails
@@ -131,6 +135,7 @@ grails:
         - spring-boot
         - spring
         - spring-security
+        - container
       order:
         # Optional ordering in which to display the versions in the banner.
         # You can specify any number of the options listed below
@@ -143,6 +148,7 @@ grails:
         - spring-boot
         - spring
         - spring-security
+        - container
         - tomcat
         - jetty
         - undertow

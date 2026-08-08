@@ -18,6 +18,8 @@
  */
 package grails.boot
 
+import org.springframework.core.env.MapPropertySource
+import org.springframework.core.env.StandardEnvironment
 import spock.lang.Specification
 
 /**
@@ -73,5 +75,114 @@ class GrailsBannerVersionLookupSpec extends Specification {
     void 'a version recorded in a manifest is read'() {
         expect: 'Spock ships one, so this proves the lookup reads rather than always saying unknown'
             GrailsBanner.findVersion(Specification.name) ==~ /\d+\..*/
+    }
+
+    void 'a version recorded in a resource is read'() {
+        expect: 'the route a container version takes, which a manifest cannot take out of a jar'
+            GrailsBanner.findVersionInResource('grails/boot/version-in-a-resource.properties',
+                    'server.number') == '1.2.3'
+    }
+
+    void 'a resource that is not there has no version rather than an error'() {
+        expect:
+            GrailsBanner.findVersionInResource('grails/boot/no-such-resource.properties',
+                    'server.number') == null
+    }
+
+    void 'a resource that records no such version has none'() {
+        expect: 'a library may ship the file and still not answer this question'
+            GrailsBanner.findVersionInResource('grails/boot/version-in-a-resource.properties',
+                    'server.unrecorded') == null
+    }
+
+    /** A banner told which containers are there, and remembering which it was asked about. */
+    static class Serving extends GrailsBanner {
+
+        Map<String, String> present = [:]
+
+        List<String> asked = []
+
+        @Override
+        protected String findTomcatVersion() {
+            asked << 'tomcat'
+            present['tomcat']
+        }
+
+        @Override
+        protected String findJettyVersion() {
+            asked << 'jetty'
+            present['jetty']
+        }
+
+        @Override
+        protected String findUndertowVersion() {
+            asked << 'undertow'
+            present['undertow']
+        }
+    }
+
+    private static StandardEnvironment configured(Map<String, Object> properties = [:]) {
+        StandardEnvironment environment = new StandardEnvironment()
+        environment.propertySources.addFirst(new MapPropertySource('test', properties))
+        environment
+    }
+
+    void 'the container being served on is shown, named as itself'() {
+        expect:
+            new Serving(present: ['tomcat': '1.1.1']).findContainerVersion() == ['Tomcat': '1.1.1']
+    }
+
+    void 'the ones it cannot also be running on are not looked for'() {
+        given: 'an application serves on one container, so the second is not a question worth asking'
+            Serving banner = new Serving(present: ['tomcat': '1.1.1', 'jetty': '2.2.2'])
+
+        when:
+            Map<String, String> container = banner.findContainerVersion()
+
+        then: 'the most commonly used of the two, and only that one shown'
+            container == ['Tomcat': '1.1.1']
+
+        and: 'and only that one asked about'
+            banner.asked == ['tomcat']
+    }
+
+    void 'the next one is tried when the one before it is not there'() {
+        expect:
+            new Serving(present: ['jetty': '2.2.2']).findContainerVersion() == ['Jetty': '2.2.2']
+            new Serving(present: ['undertow': '3.3.3']).findContainerVersion() == ['Undertow': '3.3.3']
+    }
+
+    void 'an application on none of them says nothing rather than that it does not know'() {
+        when:
+            Serving banner = new Serving()
+
+        then:
+            banner.findContainerVersion().isEmpty()
+
+        and: 'having asked about each, since any of them could have been the one'
+            banner.asked == ['tomcat', 'jetty', 'undertow']
+    }
+
+    void 'the container is shown without an application asking for it'() {
+        expect:
+            new Serving(present: ['tomcat': '1.1.1']).createBannerVersions(configured())['Tomcat'] == '1.1.1'
+    }
+
+    void 'an application can leave the container out'() {
+        expect: 'one key covers whichever container it is, so this is how it is turned off'
+            !new Serving(present: ['tomcat': '1.1.1'])
+                    .createBannerVersions(configured(['grails.banner.versions.exclude': 'container']))
+                    .containsKey('Tomcat')
+    }
+
+    void 'naming the container as well as being shown it by default shows it once'() {
+        when: 'an application that asked for tomcat before it was shown by default keeps working'
+            Serving banner = new Serving(present: ['tomcat': '1.1.1'])
+            ByteArrayOutputStream bytes = new ByteArrayOutputStream()
+            banner.printBanner(configured(['grails.banner.versions.include': 'tomcat']),
+                    GrailsBannerVersionLookupSpec, new PrintStream(bytes))
+
+        then:
+            bytes.toString().count('Tomcat') == 1
     }
 }
