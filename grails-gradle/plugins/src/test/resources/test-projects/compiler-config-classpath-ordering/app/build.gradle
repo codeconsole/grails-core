@@ -1,0 +1,15 @@
+plugins {
+    id 'org.apache.grails.gradle.grails-app'
+}
+
+dependencies {
+    implementation project(':producer')
+}
+
+tasks.register('inspectOrder') {
+    doLast {
+        def gen = tasks.named('generateCompileGroovyGrailsCompilerConfig').get()
+        def deps = gen.taskDependencies.getDependencies(gen)*.path
+        println "GENERATOR_DEPENDS_ON_PRODUCER_JAR=${deps.any { it == ':producer:jar' }}"
+    }
+}

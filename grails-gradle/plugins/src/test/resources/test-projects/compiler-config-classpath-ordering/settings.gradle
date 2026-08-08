@@ -1,0 +1,3 @@
+rootProject.name = 'compiler-config-classpath-ordering'
+include 'producer'
+include 'app'

@@ -18,6 +18,8 @@
  */
 package org.grails.gradle.plugin.core
 
+import java.util.concurrent.Callable
+import java.util.concurrent.ConcurrentHashMap
 import java.util.zip.ZipFile
 
 import grails.util.BuildSettings
@@ -52,6 +54,7 @@ import org.gradle.api.provider.Provider
 import org.gradle.api.tasks.AbstractCopyTask
 import org.gradle.api.tasks.JavaExec
 import org.gradle.api.tasks.SourceSet
+import org.gradle.api.tasks.SourceSetContainer
 import org.gradle.api.tasks.TaskContainer
 import org.gradle.api.tasks.TaskProvider
 import org.gradle.api.tasks.compile.GroovyCompile
@@ -85,6 +88,14 @@ class GrailsGradlePlugin implements Plugin<Project> {
 
     private static final String CLI_PID_FILE_PROPERTY = 'grails.cli.pid.file'
     private static final String RUN_APP_PID_FILE_NAME = 'run-app.pid'
+
+    /**
+     * A {@code configurationScript} configured on a GroovyCompile task, keyed by compile task name
+     * and captured when the task graph is ready, for the generator task to fold into the combined
+     * script it writes. An instance field rather than a static one so it is scoped to this project
+     * and this build, and cannot leak a stale script into a later build in the same daemon.
+     */
+    private final Map<String, File> userGroovyCompilerConfigScripts = new ConcurrentHashMap<>()
 
     List<Class<Plugin>> basePluginClasses = [IntegrationTestGradlePlugin] as List<Class<Plugin>>
     List<String> excludedGrailsAppSourceDirs = ['migrations', 'assets']
@@ -201,63 +212,7 @@ class GrailsGradlePlugin implements Plugin<Project> {
             }
         }
 
-        // The combined compiler configuration script is produced by its own task rather than from a
-        // doFirst on the compile task. Gradle finalizes task properties before any task action runs,
-        // so assigning groovyOptions.configurationScript from doFirst fails from Gradle 9.7 on, where
-        // GroovyCompileOptions became a lazy property — "The value for task ':compileGroovy' property
-        // 'groovyOptions.configurationScriptFile' is final and cannot be changed any further." Once
-        // the property is assigned during configuration, Gradle also treats the script as an input
-        // file that has to exist before the compile task runs, which a producing task guarantees
-        // across a `clean build` and a doFirst cannot.
-        //
-        // Wiring happens after evaluation so a configurationScript set by the build script is already
-        // in place and gets folded into the combined file rather than clobbered. Names are read via
-        // TaskCollection.names, which does not realize the tasks.
-        project.afterEvaluate {
-            project.tasks.withType(GroovyCompile).names.each { String compileTaskName ->
-                TaskProvider<GroovyCompile> compileTask = project.tasks.named(compileTaskName, GroovyCompile)
-                // Use a task-specific config file to avoid overlapping outputs when multiple
-                // GroovyCompile tasks exist in the same project (e.g. compileGroovy, compileTestGroovy).
-                Provider<RegularFile> groovyCompilerConfigFile = project.layout.buildDirectory.file("grailsGroovyCompilerConfig-${compileTaskName}.groovy")
-                File[] userConfigurationScript = new File[1]
-
-                TaskProvider<Task> generateGroovyCompilerConfig = project.tasks.register("generate${compileTaskName.capitalize()}GrailsCompilerConfig") { Task t ->
-                    t.description = "Generates the Grails Groovy compiler configuration script for ${compileTaskName}"
-                    t.outputs.file(groovyCompilerConfigFile)
-                    // Generating the script needs the resolved compile classpath, and declaring that as
-                    // an input would pull the runtimeClasspath into this task's up-to-date check. Since
-                    // the inputs to this task would effectively be the runtimeClasspath, dependency
-                    // problems can arise if another task changes the runtimeClasspath. Generating the
-                    // script is cheap, so skip state tracking and regenerate on every build instead.
-                    t.doNotTrackState('Depends on the resolved compile classpath; cheap to regenerate')
-                    t.doLast {
-                        File combinedFile = groovyCompilerConfigFile.get().asFile
-                        combinedFile.parentFile.mkdirs()
-
-                        String configuredScript = null
-                        if (userConfigurationScript[0]?.exists()) {
-                            configuredScript = userConfigurationScript[0].text?.trim() ?: null
-                        }
-                        String grailsScript = getGroovyCompilerScript(compileTask.get(), project)?.call()
-
-                        String combinedScripts = """
-                            // Grails groovy compilation configuration to ensure ASTs are applied correctly
-
-                            ${grailsScript?.trim() ?: ''}
-
-                            ${configuredScript?.trim() ?: ''}
-                        """
-                        combinedFile.write(combinedScripts)
-                    }
-                }
-
-                compileTask.configure { GroovyCompile c ->
-                    userConfigurationScript[0] = c.groovyOptions.configurationScript
-                    c.groovyOptions.configurationScript = groovyCompilerConfigFile.get().asFile
-                    c.dependsOn(generateGroovyCompilerConfig)
-                }
-            }
-        }
+        configureGroovyCompilerConfigScript(project)
 
         // Configure indy and log status after evaluation so user's grails { } block has been applied
         GrailsExtension grailsExtension = project.extensions.findByType(GrailsExtension)
@@ -279,6 +234,119 @@ class GrailsGradlePlugin implements Plugin<Project> {
                 project.logger.info('        To enable invokedynamic: grails { indy = true } in build.gradle')
             }
         }
+    }
+
+    /**
+     * Wires each {@link GroovyCompile} task to a combined Groovy compiler configuration script
+     * produced by a dedicated generator task.
+     *
+     * <p>The script cannot be written from a {@code doFirst} on the compile task: Gradle finalizes
+     * task properties before any task action runs, so assigning {@code groovyOptions.configurationScript}
+     * from {@code doFirst} fails from Gradle 9.7 on, where {@code GroovyCompileOptions} became a lazy
+     * property — "The value for task ':compileGroovy' property 'groovyOptions.configurationScriptFile'
+     * is final and cannot be changed any further." Once the property is assigned during configuration,
+     * Gradle also treats the script as an input file that has to exist before the compile task runs,
+     * which a producing task guarantees across a {@code clean build} and a {@code doFirst} cannot.</p>
+     */
+    private void configureGroovyCompilerConfigScript(Project project) {
+        // Generator tasks are registered from the source-set container, not from a GroovyCompile
+        // configuration action: registering a task while the task container is being configured
+        // throws TaskCreationException. Source sets are what create GroovyCompile tasks, and this
+        // hook is live, so a source set added after the project is evaluated is still covered.
+        SourceSetContainer sourceSets = project.extensions.findByType(SourceSetContainer)
+        if (sourceSets == null) {
+            return
+        }
+        sourceSets.configureEach { SourceSet sourceSet ->
+            registerGroovyCompilerConfigGenerator(project, sourceSet.getCompileTaskName('groovy'))
+        }
+
+        project.tasks.withType(GroovyCompile).configureEach { GroovyCompile c ->
+            // Resolved lazily and tolerant of a GroovyCompile that has no matching source set
+            // (and therefore no generator): such a task simply keeps whatever script it already had.
+            c.dependsOn({
+                String generatorName = groovyCompilerConfigGeneratorName(c.name)
+                project.tasks.names.contains(generatorName) ? [project.tasks.named(generatorName)] : []
+            } as Callable)
+        }
+
+        // The combined script is assigned once the task graph is ready — the last point before
+        // execution and after every configuration callback has run. Assigning earlier (during
+        // afterEvaluate) loses a configurationScript that a later callback assigns, because that
+        // assignment simply overwrites ours and the Grails imports vanish silently.
+        project.gradle.taskGraph.whenReady {
+            project.tasks.withType(GroovyCompile).names.each { String compileTaskName ->
+                String generatorName = groovyCompilerConfigGeneratorName(compileTaskName)
+                if (!project.tasks.names.contains(generatorName)) {
+                    return
+                }
+                GroovyCompile c = project.tasks.named(compileTaskName, GroovyCompile).get()
+                File combinedFile = groovyCompilerConfigFile(project, compileTaskName).get().asFile
+                File configured = c.groovyOptions.configurationScript
+                if (configured != null && configured != combinedFile) {
+                    userGroovyCompilerConfigScripts.put(compileTaskName, configured)
+                } else {
+                    userGroovyCompilerConfigScripts.remove(compileTaskName)
+                }
+                c.groovyOptions.configurationScript = combinedFile
+            }
+        }
+    }
+
+    private void registerGroovyCompilerConfigGenerator(Project project, String compileTaskName) {
+        String generatorName = groovyCompilerConfigGeneratorName(compileTaskName)
+        if (project.tasks.names.contains(generatorName)) {
+            return
+        }
+        // Use a task-specific config file to avoid overlapping outputs when multiple
+        // GroovyCompile tasks exist in the same project (e.g. compileGroovy, compileTestGroovy).
+        Provider<RegularFile> groovyCompilerConfigFile = groovyCompilerConfigFile(project, compileTaskName)
+
+        project.tasks.register(generatorName) { Task t ->
+            t.description = "Generates the Grails Groovy compiler configuration script for ${compileTaskName}"
+            t.outputs.file(groovyCompilerConfigFile)
+            // Generating the script needs the resolved compile classpath, and declaring that as
+            // an input would pull the runtimeClasspath into this task's up-to-date check. Since
+            // the inputs to this task would effectively be the runtimeClasspath, dependency
+            // problems can arise if another task changes the runtimeClasspath. Generating the
+            // script is cheap, so skip state tracking and regenerate on every build instead.
+            t.doNotTrackState('Depends on the resolved compile classpath; cheap to regenerate')
+            // doNotTrackState suppresses up-to-date checking; it does not order this task against
+            // the tasks that produce the compile classpath it reads. Depend on the classpath's own
+            // build dependencies so the probes below see the artifacts, without declaring the
+            // classpath as an input and dragging it into the up-to-date check.
+            t.dependsOn({
+                project.tasks.named(compileTaskName, GroovyCompile).get().classpath
+            } as Callable)
+            t.doLast {
+                File combinedFile = groovyCompilerConfigFile.get().asFile
+                combinedFile.parentFile.mkdirs()
+
+                File userScript = userGroovyCompilerConfigScripts.get(compileTaskName)
+                String configuredScript = null
+                if (userScript?.exists()) {
+                    configuredScript = userScript.text?.trim() ?: null
+                }
+                String grailsScript = getGroovyCompilerScript(project.tasks.named(compileTaskName, GroovyCompile).get(), project)?.call()
+
+                String combinedScripts = """
+                    // Grails groovy compilation configuration to ensure ASTs are applied correctly
+
+                    ${grailsScript?.trim() ?: ''}
+
+                    ${configuredScript?.trim() ?: ''}
+                """
+                combinedFile.write(combinedScripts)
+            }
+        }
+    }
+
+    private static String groovyCompilerConfigGeneratorName(String compileTaskName) {
+        "generate${compileTaskName.capitalize()}GrailsCompilerConfig"
+    }
+
+    private static Provider<RegularFile> groovyCompilerConfigFile(Project project, String compileTaskName) {
+        project.layout.buildDirectory.file("grailsGroovyCompilerConfig-${compileTaskName}.groovy")
     }
 
     protected Closure<String> getGroovyCompilerScript(GroovyCompile compile, Project project) {
