@@ -128,6 +128,34 @@ exec '${new File(System.getProperty('java.home'), 'bin/java').absolutePath}' \\
             !posted.contains('go=')
     }
 
+    void 'a form can be told what to put in it'() {
+        given: 'a form that authenticates is only worth submitting with credentials that work'
+            TraceNativeMetadataTask task = task([], ['/create?title=a-known-title'])
+
+        when:
+            task.trace()
+
+        then:
+            String posted = requested.find { it.startsWith('POST /save') }
+            posted.contains('title=a-known-title')
+
+        and: 'while the rest of the form is still filled in'
+            posted.contains('_csrf=a-token')
+            posted.contains('published=on')
+    }
+
+    void 'a value for a field the form does not have is not sent'() {
+        given:
+            TraceNativeMetadataTask task = task([], ['/create?nosuchfield=x'])
+
+        when:
+            task.trace()
+
+        then: 'rather than posting something the application will ignore and calling it covered'
+            String posted = requested.find { it.startsWith('POST /save') }
+            !posted.contains('nosuchfield')
+    }
+
     void 'a path that answers with an error fails the trace'() {
         given: 'because what would be recorded is the error page rather than the page'
             TraceNativeMetadataTask task = task(['/broken'], [])

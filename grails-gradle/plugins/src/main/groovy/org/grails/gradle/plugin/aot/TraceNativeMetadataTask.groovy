@@ -198,7 +198,25 @@ abstract class TraceNativeMetadataTask extends DefaultTask {
      * <p>The fields come from the page rather than from a list here, because a list here is a list
      * to keep up to date, and the one thing a trace must not do is submit less than the form does.</p>
      */
-    private String submit(String path) {
+    private String submit(String declared) {
+        // A form may say what to put in it: /login?username=admin&password=... Most do not need to,
+        // and a generated value is better than one to keep up to date -- but a form that authenticates
+        // is only worth submitting with credentials that work, and what it does on success is the
+        // half worth recording.
+        int query = declared.indexOf('?')
+        String path = query < 0 ? declared : declared.substring(0, query)
+        Map<String, String> given = [:]
+        if (query >= 0) {
+            for (String pair : declared.substring(query + 1).split('&')) {
+                if (!pair) {
+                    continue
+                }
+                int equals = pair.indexOf('=')
+                String name = URLDecoder.decode(equals < 0 ? pair : pair.substring(0, equals), 'UTF-8')
+                given[name] = equals < 0 ? '' : URLDecoder.decode(pair.substring(equals + 1), 'UTF-8')
+            }
+        }
+
         HttpURLConnection page = open(path, 'GET')
         String html = body(page)
         Matcher form = FORM.matcher(html ?: '')
@@ -212,6 +230,16 @@ abstract class TraceNativeMetadataTask extends DefaultTask {
         Map<String, String> fields = fieldsOf(markup)
         if (!fields) {
             return "FORM ${path} -> the form declares no fields".toString()
+        }
+        // What was asked for wins, but only for a field the form has: a value for a field that is
+        // not there was meant for a form that has changed, and silently posting it says nothing.
+        given.each { String name, String value ->
+            if (fields.containsKey(name)) {
+                fields[name] = value
+            }
+            else {
+                logger.warn('{} has no field named {}, so that value was not sent', path, name)
+            }
         }
 
         String encoded = fields.collect { String name, String value ->
