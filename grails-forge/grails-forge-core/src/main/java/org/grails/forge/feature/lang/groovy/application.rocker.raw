@@ -71,7 +71,11 @@ class Application extends GrailsAutoConfiguration {
 
         bean('filterChain', SecurityFilterChain) { HttpSecurity http ->
             http
-                .authorizeHttpRequests { it.anyRequest().permitAll() }
+                .authorizeHttpRequests {
+                    it.requestMatchers('/', '/index', '/index.gsp', '/error', '/assets/**').permitAll()
+                      .requestMatchers('/user/**').hasRole('ADMIN')
+                      .anyRequest().authenticated()
+                }
                 .formLogin { }
                 .logout { it.logoutSuccessUrl('/') }
             http.build()

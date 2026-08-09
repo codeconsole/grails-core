@@ -68,6 +68,12 @@ class SpringBootStarterSecuritySpec extends ApplicationContextSpec implements Co
         application.contains(".logout { it.logoutSuccessUrl('/') }")
         !application.contains('@Import(SecurityConfig)')
 
+        and: 'the home page and static assets are public, the user admin is ROLE_ADMIN, the rest requires login'
+        application.contains("it.requestMatchers('/', '/index', '/index.gsp', '/error', '/assets/**').permitAll()")
+        application.contains(".requestMatchers('/user/**').hasRole('ADMIN')")
+        application.contains('.anyRequest().authenticated()')
+        !application.contains('anyRequest().permitAll()')
+
         and: 'BootStrap seeds an admin user with a generated password'
         def bootStrap = output['grails-app/init/example/grails/BootStrap.groovy']
         bootStrap.contains('import org.springframework.security.crypto.factory.PasswordEncoderFactories')
