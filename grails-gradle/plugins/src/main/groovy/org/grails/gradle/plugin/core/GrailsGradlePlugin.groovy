@@ -71,6 +71,8 @@ import org.grails.gradle.plugin.exploded.ExplodedCompatibilityRule
 import org.grails.gradle.plugin.exploded.ExplodedDisambiguationRule
 import org.grails.gradle.plugin.exploded.GrailsExplodedPlugin
 import org.grails.gradle.plugin.aot.AotCacheExtension
+import org.grails.gradle.plugin.aot.TraceNativeMetadataTask
+import org.grails.gradle.plugin.aot.NativeMetadataExtension
 import org.grails.gradle.plugin.aot.GenerateNativeMetadataTask
 import org.grails.gradle.plugin.aot.TrainAotCacheTask
 import org.grails.gradle.plugin.model.GrailsClasspathToolingModelBuilder
@@ -101,6 +103,9 @@ class GrailsGradlePlugin implements Plugin<Project> {
     private static final String CLASSPATH_ASSETS_PATH = 'BOOT-INF/classes/assets'
 
     private static final int TRAINING_PORT = 18080
+
+    /** Not the training port: a trace and a training run are both a started application. */
+    private static final int TRACING_PORT = 18081
 
     private static final int TRAINING_START_TIMEOUT_SECONDS = 180
 
@@ -982,6 +987,55 @@ ${importStatements}
         project.pluginManager.withPlugin('org.graalvm.buildtools.native') {
             GrailsExtension grailsExt = project.extensions.getByType(GrailsExtension)
             grailsExt.indy.convention(true)
+        }
+        configureNativeMetadataTrace(project)
+    }
+
+    /**
+     * Records the reflection a running application does, which is the half of an image's metadata
+     * that reading the build output cannot supply.
+     *
+     * <p>{@code generateNativeMetadata} writes down the application's own artefacts without running
+     * anything. What it cannot see is the framework reflecting along a request path -- a controller
+     * method reached through Groovy's dispatch, a conversion asked for while binding a form -- and an
+     * image built without those starts, serves its home page, and fails on the first request that
+     * needs one.</p>
+     *
+     * <p>Run deliberately rather than as part of a build: it starts the application, and what it
+     * writes belongs in the sources beside the code, where the next person can see which paths an
+     * image was built to cover.</p>
+     */
+    protected void configureNativeMetadataTrace(Project project) {
+        NativeMetadataExtension extension = ((ExtensionAware) project.extensions.getByName('grails'))
+                .extensions.create('nativeMetadata', NativeMetadataExtension)
+        extension.paths.convention(['/'])
+        extension.forms.convention([])
+        extension.jvmArguments.convention(['-Dgrails.env=production'])
+        extension.port.convention(TRACING_PORT)
+        extension.startTimeoutSeconds.convention(TRAINING_START_TIMEOUT_SECONDS)
+        extension.outputDirectory.convention(project.layout.projectDirectory
+                .dir('src/native/resources/META-INF/native-image'))
+
+        project.pluginManager.withPlugin(SPRING_BOOT_PLUGIN) {
+            TaskProvider<?> bootJar = project.tasks.named('bootJar')
+            Provider<JavaLauncher> launcher = trainingLauncher(project)
+
+            project.tasks.register('traceNativeMetadata', TraceNativeMetadataTask) { TraceNativeMetadataTask task ->
+                task.group = BasePlugin.BUILD_GROUP
+                task.description = 'Runs the application under the tracing agent and records the reflection it does'
+                task.dependsOn(bootJar)
+                task.archiveFile.set(project.provider { project.layout.projectDirectory.file(archiveOf(bootJar).absolutePath) })
+                // The project's toolchain unless told otherwise, which for a project that builds an
+                // image is the GraalVM the image is built with -- and the agent is only there.
+                task.javaExecutable.set(extension.javaExecutable
+                        .orElse(launcher.map { JavaLauncher java -> java.executablePath.asFile.absolutePath }))
+                task.jvmArguments.set(extension.jvmArguments)
+                task.paths.set(extension.paths)
+                task.forms.set(extension.forms)
+                task.port.set(extension.port)
+                task.startTimeoutSeconds.set(extension.startTimeoutSeconds)
+                task.outputDirectory.set(extension.outputDirectory)
+            }
         }
     }
 

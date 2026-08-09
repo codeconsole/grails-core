@@ -99,3 +99,36 @@ Reference another bean by name instead, or express the collaborator as a nested 
 Abstract bean definitions — templates that exist only to be inherited through `bean.parent` — are excluded from generation, because Spring has no representation for them in generated code. Definitions that inherit from one are unaffected: they are generated from their merged definition, with the inherited values already folded in.
 
 AOT processing on its own does not make an application ready for a native image. A native image additionally requires reachability metadata covering the resources and reflection an application performs at runtime.
+
+==== Recording reflection for a native image
+
+Some of that metadata is written for you. The build reads its own output — the compiled artefacts, and the manifest naming each compiled page — and registers them, so a controller, a domain class or a GSP survives into an image without anything having to run.
+
+What that cannot describe is the framework reflecting on its own behalf while a request is served: a controller method reached through Groovy's dispatch, a conversion asked for while a form is bound. Those are not the application's classes, so nothing in the build output names them. An image built without them starts, serves its home page, and fails on the first request that takes such a path — with `MissingReflectionRegistrationError`, naming a method nobody wrote.
+
+`traceNativeMetadata` runs the application under GraalVM's tracing agent and records what it actually did:
+
+[source,groovy]
+----
+grails {
+    nativeMetadata {
+        paths = ['/', '/login', '/book', '/book/create']
+        forms = ['/book/create']
+    }
+}
+----
+
+[source,bash]
+----
+./gradlew traceNativeMetadata
+----
+
+The result is merged into `src/native/resources/META-INF/native-image`, alongside the source rather than under `build`, because which paths an image was built to cover is worth reviewing and worth committing.
+
+`paths` are asked for. `forms` are asked for *and submitted*: the page is read, the fields the form declares are filled in, and they are posted to the action the form names. Submitting matters separately from rendering, because binding a form is a different half of the framework from rendering one — and it is the half that converts. A checkbox arrives as a string and lands on a boolean property, so a form submitted without one never asks the conversion service anything, and the image is built without the answer.
+
+The task fails if a path answers with a server error, because what a failed request records is the error page rather than the page.
+
+NOTE: The agent ships with GraalVM rather than with a JDK, and it must trace the archive the image will be built from — which is compiled for GraalVM's Java. The task uses the project toolchain, which for a project that builds an image is already a GraalVM; `grails.nativeMetadata.javaExecutable` points it elsewhere.
+
+WARNING: The agent records only what ran. A path that is not listed is not covered, and it will be missing in the way that only appears when somebody uses that page. Treat the list as the coverage it is, and extend it as the application grows.
