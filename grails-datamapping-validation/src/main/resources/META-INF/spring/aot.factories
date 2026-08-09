@@ -1,0 +1,2 @@
+org.springframework.aot.hint.RuntimeHintsRegistrar=\
+grails.gorm.validation.aot.ConstrainedPropertyRuntimeHints
