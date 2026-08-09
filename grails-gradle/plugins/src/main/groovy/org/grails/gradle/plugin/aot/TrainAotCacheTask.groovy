@@ -116,11 +116,12 @@ abstract class TrainAotCacheTask extends DefaultTask {
         command << "--server.port=${port.get()}".toString()
 
         File output = new File(temporaryDir, 'training.log')
-        Process process = new ProcessBuilder(command)
+        ProcessBuilder builder = new ProcessBuilder(command)
                 .directory(directory)
                 .redirectErrorStream(true)
                 .redirectOutput(output)
-                .start()
+        withoutEmptyVariables(builder.environment())
+        Process process = builder.start()
         try {
             awaitStarted(process, output)
             exercise()
@@ -134,6 +135,30 @@ abstract class TrainAotCacheTask extends DefaultTask {
         describe(cache, new File(directory, archiveFileName.get()))
         logger.lifecycle('Trained {} ({} MB) over {} paths',
                 cache.name, (cache.length() / (1024 * 1024)) as long, paths.get().size())
+    }
+
+    /**
+     * Drops the variables that are present but empty from what the run will inherit.
+     *
+     * <p>The run inherits the daemon's environment, and the daemon's is not the one the build was
+     * started from. A daemon that once ran a build with a variable set keeps the name afterwards
+     * and empties the value, so a later build started from a shell that never mentioned it hands
+     * the run {@code SOME_VARIABLE=""} all the same.</p>
+     *
+     * <p>Spring Boot binds an environment variable over the application's own configuration, and
+     * relaxed binding means {@code GRAILS_MONGODB_URL} is {@code grails.mongodb.url}. So an empty
+     * leftover replaced a configured value with nothing, and the training run failed on a property
+     * the application had set correctly -- reporting it against a name nobody had typed, in a
+     * build that had run cleanly minutes earlier from a different shell.</p>
+     *
+     * <p>An empty variable says nothing that an absent one does not, so it is not passed on. What
+     * the build was actually given, empty or not, still arrives: this drops only what the daemon
+     * kept after the build that set it had finished.</p>
+     */
+    private static void withoutEmptyVariables(Map<String, String> environment) {
+        environment.entrySet().removeIf { Map.Entry<String, String> variable ->
+            !variable.value
+        }
     }
 
     /**

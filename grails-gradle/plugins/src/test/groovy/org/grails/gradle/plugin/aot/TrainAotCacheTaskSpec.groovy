@@ -119,6 +119,49 @@ exec '${new File(System.getProperty('java.home'), 'bin/java').absolutePath}' \\
         task
     }
 
+    void 'a variable the daemon kept but emptied is not handed to the run'() {
+        given: 'a run that writes down the environment it was given, and ends'
+            File application = new File(temporaryFolder, 'environment')
+            application.mkdirs()
+            new File(application, 'reports.jar').text = 'stands in for the archive'
+            File seen = new File(temporaryFolder, 'seen-environment.txt')
+            File script = new File(temporaryFolder, 'reporting-jvm.sh')
+            script.text = """#!/bin/sh
+env > '${seen.absolutePath}'
+exit 1
+"""
+            script.setExecutable(true)
+            TrainAotCacheTask task = project.tasks.create('trainEnvironment', TrainAotCacheTask)
+            task.applicationDirectory.set(application)
+            task.archiveFileName.set('reports.jar')
+            task.cacheFile.set(new File(application, 'demo.aot'))
+            task.metadataFile.set(new File(application, 'aot-cache.properties'))
+            task.javaExecutable.set(script.absolutePath)
+            task.javaVersion.set('25.0.1+9')
+            task.javaVendor.set('A Vendor')
+            task.jvmArguments.set([])
+            task.paths.set([])
+            task.port.set(18096)
+            task.startTimeoutSeconds.set(5)
+
+        and: 'which this build gives the test worker, because an environment cannot be written'
+            assert System.getenv().containsKey('GRAILS_TRAINING_LEFTOVER')
+            assert !System.getenv('GRAILS_TRAINING_LEFTOVER')
+
+        when:
+            task.train()
+
+        then:
+            thrown(GradleException)
+
+        and: 'Spring Boot binds an environment variable over the application configuration, so an ' +
+                'empty one left behind by a daemon replaces a configured value with nothing'
+            !seen.readLines().any { String line -> line.startsWith('GRAILS_TRAINING_LEFTOVER=') }
+
+        and: 'while the environment the build was actually given still arrives'
+            seen.readLines().any { String line -> line.startsWith('PATH=') }
+    }
+
     void 'a run that never starts serving fails the build'() {
         given: 'an archive that is not one, so the run ends immediately'
             TrainAotCacheTask task = task('not-an-archive.jar', [])
