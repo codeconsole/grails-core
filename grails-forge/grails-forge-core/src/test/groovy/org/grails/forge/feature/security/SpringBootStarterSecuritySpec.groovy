@@ -77,8 +77,13 @@ class SpringBootStarterSecuritySpec extends ApplicationContextSpec implements Co
         and: 'BootStrap seeds an admin user with a generated password'
         def bootStrap = output['grails-app/init/example/grails/BootStrap.groovy']
         bootStrap.contains('import org.springframework.security.crypto.factory.PasswordEncoderFactories')
-        bootStrap.contains('PasswordEncoderFactories.createDelegatingPasswordEncoder().encode(password)')
+        bootStrap.contains('PasswordEncoderFactories.createDelegatingPasswordEncoder()')
+        bootStrap.contains('passwordEncoder.encode(password)')
         bootStrap.contains('Generated admin credentials: admin')
+
+        and: 'BootStrap also seeds a non-admin account so the ROLE_ADMIN rules are exercised'
+        bootStrap.contains("roles: ['ROLE_USER']")
+        bootStrap.contains('Generated user credentials: user')
 
         and: 'a domain spec covering constraints and authorities is generated'
         def userSpec = output['src/test/groovy/example/grails/UserSpec.groovy']
