@@ -71,9 +71,9 @@ import org.grails.gradle.plugin.exploded.ExplodedCompatibilityRule
 import org.grails.gradle.plugin.exploded.ExplodedDisambiguationRule
 import org.grails.gradle.plugin.exploded.GrailsExplodedPlugin
 import org.grails.gradle.plugin.aot.AotCacheExtension
-import org.grails.gradle.plugin.aot.TraceNativeMetadataTask
-import org.grails.gradle.plugin.aot.NativeMetadataExtension
 import org.grails.gradle.plugin.aot.GenerateNativeMetadataTask
+import org.grails.gradle.plugin.aot.NativeMetadataExtension
+import org.grails.gradle.plugin.aot.TraceNativeMetadataTask
 import org.grails.gradle.plugin.aot.TrainAotCacheTask
 import org.grails.gradle.plugin.model.GrailsClasspathToolingModelBuilder
 import org.grails.gradle.plugin.run.FindMainClassTask
