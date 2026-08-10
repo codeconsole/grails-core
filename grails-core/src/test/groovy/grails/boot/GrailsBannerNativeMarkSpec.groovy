@@ -129,9 +129,14 @@ class GrailsBannerNativeMarkSpec extends Specification {
         when: 'a terminal, a redirected log, or an application that has turned colour off'
             String output = plain(new StartedAs(image: true))
 
-        then: 'one word, once, and nothing drawn over'
+        then: 'one word, once'
             output.count('N A T I V E') == 1
-            !output.contains('\r')
+
+        and: 'nothing drawn over -- a return only ever ends a line, never rewinds one'
+            // A banner is printed with println, so the line ending is the platform's: \n where
+            // this is read on Linux or macOS, \r\n on Windows. What over-drawing looks like is a
+            // return on its own, so that is what this asks about, on every platform alike.
+            !output.replace('\r\n', '\n').contains('\r')
     }
 
     void 'an application can say something else'() {
