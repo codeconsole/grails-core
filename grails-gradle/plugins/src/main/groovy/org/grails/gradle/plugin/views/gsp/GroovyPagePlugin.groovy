@@ -29,12 +29,15 @@ import org.gradle.api.file.CopySpec
 import org.gradle.api.file.Directory
 import org.gradle.api.file.DuplicatesStrategy
 import org.gradle.api.file.FileCollection
+import org.gradle.api.plugins.JavaPluginExtension
 import org.gradle.api.provider.Provider
 import org.gradle.api.tasks.SourceSet
 import org.gradle.api.tasks.SourceSetOutput
 import org.gradle.api.tasks.TaskContainer
 import org.gradle.api.tasks.bundling.Jar
 import org.gradle.api.tasks.bundling.War
+import org.gradle.jvm.toolchain.JavaLauncher
+import org.gradle.jvm.toolchain.JavaToolchainService
 
 import org.grails.gradle.plugin.scaffolding.GenerateScaffoldedViewsTask
 import org.grails.gradle.plugin.util.SourceSets
@@ -72,6 +75,13 @@ class GroovyPagePlugin implements Plugin<Project> {
                         project.configurations.findByName('providedCompile') ?: null
                 ].findAll { it }
         )
+
+        // The Java the rest of the project is built with, so that pages are built with it too.
+        // Absent a toolchain this resolves to the JVM running Gradle, which is what compiling
+        // pages fell back to before and remains the right answer when nothing else was asked for.
+        JavaPluginExtension javaExtension = project.extensions.getByType(JavaPluginExtension)
+        JavaToolchainService toolchains = project.extensions.getByType(JavaToolchainService)
+        Provider<JavaLauncher> launcher = toolchains.launcherFor(javaExtension.toolchain)
 
         // A scaffolded controller has no views of its own, so they are expanded from their
         // templates and compiled with the rest. They are staged together rather than compiled
@@ -128,6 +138,7 @@ class GroovyPagePlugin implements Plugin<Project> {
             it.source = viewsToCompile
             it.serverpath.set('/WEB-INF/grails-app/views/')
             it.classpath = allClasspath
+            it.javaLauncher.convention(launcher)
             if (scaffolds) {
                 it.dependsOn(tasks.named('stageGroovyPages'))
             }
@@ -139,6 +150,7 @@ class GroovyPagePlugin implements Plugin<Project> {
             it.tmpDirPath = getTmpDirPath(project)
             it.serverpath.set('/')
             it.classpath = allClasspath
+            it.javaLauncher.convention(launcher)
         }
 
         compileGroovyPages.configure {
