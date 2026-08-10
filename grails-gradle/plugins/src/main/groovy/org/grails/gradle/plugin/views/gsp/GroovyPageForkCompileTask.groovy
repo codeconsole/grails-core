@@ -58,21 +58,21 @@ import org.grails.gradle.plugin.views.ViewCompileOptions
  * This Task is a Forked Java Task that is configurable with fork options provided
  * by {@link ViewCompileOptions}
  *
- * @author David Estes
- * @since 4.0
- */
-/**
- * Not cacheable. A page is compiled by a forked Groovy, and what comes out depends on which Groovy
- * did it -- which this task's inputs do not describe, because {@code AbstractCompile} does not
- * track its own classpath: an application building a native image resolves Groovy 6, and one
+ * <p>Not cacheable. A page is compiled by a forked Groovy, and what comes out depends on which
+ * Groovy did it -- which this task's inputs do not describe, because {@code AbstractCompile} does
+ * not track its own classpath: an application building a native image resolves Groovy 6, and one
  * training a cache resolves Groovy 5. Cached, the first build's pages were handed to the second,
  * which failed at the moment a page was first rendered, with
- * {@code BUG! your call tried to do a property set} -- long after the build said it had succeeded.
+ * {@code BUG! your call tried to do a property set} -- long after the build said it had
+ * succeeded.</p>
  *
  * <p>Which Java did the compiling is described, by {@link #getJavaLauncher()}. Which Groovy is
  * not, and this stays uncacheable until it is.</p>
  *
  * <p>Compiling them again costs seconds. Getting this wrong costs an afternoon.</p>
+ *
+ * @author David Estes
+ * @since 4.0
  */
 @CompileStatic
 @DisableCachingByDefault(because = 'What a forked compiler produces is not described by this task\'s inputs')
