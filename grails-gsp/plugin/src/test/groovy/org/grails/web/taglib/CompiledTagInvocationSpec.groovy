@@ -69,4 +69,45 @@ class CompiledTagInvocationSpec extends Specification implements TagLibUnitTest<
         GrailsTagException e = thrown()
         e.message.contains('link')
     }
+
+    void 'arguments forwarded as written are read the same way dynamic dispatch reads them'() {
+        given: 'the shapes TagLibraryMetaUtils.methodMissingForTagLib distinguishes'
+        Map attrs = [controller: 'book', action: 'show']
+
+        expect: 'a map alone is the attributes'
+        CompiledTagInvocation.invokeArguments(lookup, 'g', 'link', attrs).toString() ==
+                CompiledTagInvocation.invoke(lookup, 'g', 'link', attrs, null).toString()
+
+        and: 'a map and a body are both taken'
+        CompiledTagInvocation.invokeArguments(lookup, 'g', 'link', attrs, { 'inside' }).toString() ==
+                CompiledTagInvocation.invoke(lookup, 'g', 'link', attrs, { 'inside' }).toString()
+
+        and: 'a closure alone is the body'
+        CompiledTagInvocation.invokeArguments(lookup, 'g', 'link', { 'inside' }).toString() ==
+                CompiledTagInvocation.invoke(lookup, 'g', 'link', [:], { 'inside' }).toString()
+
+        and: 'no arguments means no attributes and no body'
+        CompiledTagInvocation.invokeArguments(lookup, 'g', 'link').toString() ==
+                CompiledTagInvocation.invoke(lookup, 'g', 'link', [:], null).toString()
+    }
+
+    void 'a single value that is neither a map nor a body is read under the tag name'() {
+        when: 'a number cannot be a body, so it becomes an attribute named after the tag'
+        String asAttribute = CompiledTagInvocation.invokeArguments(lookup, 'g', 'link', 5).toString()
+
+        then: 'which is what dynamic dispatch does with such a call'
+        asAttribute == CompiledTagInvocation.invoke(lookup, 'g', 'link', [link: 5], null).toString()
+
+        and: 'and it is not rendered as the body would be'
+        !asAttribute.contains('>5<')
+    }
+
+    void 'a single value that is text is the body'() {
+        when:
+        String asBody = CompiledTagInvocation.invokeArguments(lookup, 'g', 'link', 'inside').toString()
+
+        then: 'a CharSequence is a body, as it is on the dynamic route'
+        asBody == CompiledTagInvocation.invoke(lookup, 'g', 'link', [:], 'inside').toString()
+        asBody.contains('inside')
+    }
 }

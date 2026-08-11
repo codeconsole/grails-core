@@ -19,7 +19,10 @@
 package org.grails.taglib;
 
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.Map;
+
+import groovy.lang.Closure;
 
 import org.grails.taglib.encoder.OutputContext;
 import org.grails.taglib.encoder.OutputContextLookupHelper;
@@ -40,6 +43,8 @@ import org.grails.taglib.encoder.OutputContextLookupHelper;
  * @since 8.0.0
  */
 public final class CompiledTagInvocation {
+
+    private static final Object[] EMPTY_ARGUMENTS = new Object[0];
 
     private CompiledTagInvocation() {
     }
@@ -82,5 +87,71 @@ public final class CompiledTagInvocation {
         // into a cast failure.
         Object tagBody = body instanceof CharSequence ? new TagOutput.ConstantClosure((CharSequence) body) : body;
         return TagOutput.captureTagOutput(lookup, namespace, tagName, attributes, tagBody, outputContext);
+    }
+
+    /**
+     * Invokes a tag with whatever arguments the call was written with.
+     *
+     * <p>A tag call is written in more shapes than attributes and a body: with nothing, with a body
+     * alone, or with a single value that the tag reads under its own name. Where the shape is not
+     * evident in the source - a map held in a variable, say - the arguments are only known once they
+     * have been evaluated, which is what this takes.
+     *
+     * @param lookup the tag libraries available to the caller
+     * @param namespace the tag library namespace
+     * @param tagName the tag name within that namespace
+     * @param args the evaluated arguments, in the order they were written
+     * @return whatever the tag produces
+     */
+    public static Object invokeArguments(TagLibraryLookup lookup, String namespace, String tagName,
+            Object... args) {
+        return invokeArgumentsInContext(lookup, namespace, tagName,
+                OutputContextLookupHelper.lookupOutputContext(), args);
+    }
+
+    /**
+     * Invokes a tag with whatever arguments the call was written with, against a known output context.
+     *
+     * @param lookup the tag libraries available to the caller
+     * @param namespace the tag library namespace
+     * @param tagName the tag name within that namespace
+     * @param outputContext where the tag writes
+     * @param args the evaluated arguments, in the order they were written
+     * @return whatever the tag produces
+     */
+    public static Object invokeArgumentsInContext(TagLibraryLookup lookup, String namespace,
+            String tagName, OutputContext outputContext, Object... args) {
+        Object[] arguments = args != null ? args : EMPTY_ARGUMENTS;
+        Map<?, ?> attrs = Collections.emptyMap();
+        Object body = null;
+        // Deliberately the same shapes, in the same order, as the dynamic dispatch in
+        // TagLibraryMetaUtils.methodMissingForTagLib, including its treatment of argument lists that
+        // match none of them: a call that produced an empty invocation there must produce one here.
+        switch (arguments.length) {
+            case 0:
+                break;
+            case 1:
+                if (arguments[0] instanceof Map<?, ?> map) {
+                    attrs = map;
+                }
+                else if (arguments[0] instanceof Closure || arguments[0] instanceof CharSequence) {
+                    body = arguments[0];
+                }
+                else {
+                    Map<String, Object> named = new LinkedHashMap<>(1);
+                    named.put(tagName, arguments[0]);
+                    attrs = named;
+                }
+                break;
+            case 2:
+                if (arguments[0] instanceof Map<?, ?> map) {
+                    attrs = map;
+                    body = arguments[1];
+                }
+                break;
+            default:
+                break;
+        }
+        return invoke(lookup, namespace, tagName, attrs, body, outputContext);
     }
 }
