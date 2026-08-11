@@ -58,13 +58,14 @@ final class MissingPropertyClearer {
 
     static void clearMissingIncludedProperties(Object object, DataBindingSource bindingSource, List include, List exclude,
                                                String filter, BindingResult bindingResult) {
+        List expandedInclude = expandWildcardIncludes(object, include);
         BindingResult previousBindingResult = BINDING_RESULT.get();
         BINDING_RESULT.set(bindingResult);
         try {
-            for (Object includedProperty : include) {
+            for (Object includedProperty : expandedInclude) {
                 if (includedProperty instanceof CharSequence) {
                     String propertyName = includedProperty.toString();
-                    if (propertyName.indexOf('*') == -1 && isClearMissingPropertyBindable(object, propertyName, include, exclude)) {
+                    if (isClearMissingPropertyBindable(object, propertyName, expandedInclude, exclude)) {
                         if (assignNullToMissingIndexedProperties(object, bindingSource, propertyName, filter)) {
                             continue;
                         }
@@ -83,6 +84,73 @@ final class MissingPropertyClearer {
                 BINDING_RESULT.set(previousBindingResult);
             }
         }
+    }
+
+    private static List expandWildcardIncludes(Object object, List include) {
+        List expandedInclude = new ArrayList();
+        for (Object includedProperty : include) {
+            if (!(includedProperty instanceof CharSequence)) {
+                expandedInclude.add(includedProperty);
+                continue;
+            }
+            String propertyName = includedProperty.toString();
+            if (propertyName.endsWith(".*")) {
+                expandNestedWildcard(object, propertyName.substring(0, propertyName.length() - 2), expandedInclude);
+            }
+            else if (propertyName.endsWith("_*")) {
+                expandSiblingWildcard(object, propertyName.substring(0, propertyName.length() - 2), expandedInclude);
+            }
+            else {
+                expandedInclude.add(propertyName);
+            }
+        }
+        return expandedInclude;
+    }
+
+    private static void expandNestedWildcard(Object object, String propertyPath, List expandedInclude) {
+        Object nestedObject = getPropertyValue(object, propertyPath);
+        if (nestedObject instanceof Collection) {
+            int index = 0;
+            for (Object item : (Collection) nestedObject) {
+                expandObjectProperties(item, propertyPath + "[" + index + "]", expandedInclude);
+                index++;
+            }
+        }
+        else if (nestedObject instanceof Map) {
+            for (Object entryObject : ((Map) nestedObject).entrySet()) {
+                Map.Entry entry = (Map.Entry) entryObject;
+                expandObjectProperties(entry.getValue(), propertyPath + "[" + entry.getKey() + "]", expandedInclude);
+            }
+        }
+        else {
+            expandObjectProperties(nestedObject, propertyPath, expandedInclude);
+        }
+    }
+
+    private static void expandSiblingWildcard(Object object, String propertyPrefix, List expandedInclude) {
+        for (Object property : getMetaProperties(object)) {
+            String propertyName = ((MetaProperty) property).getName();
+            if (propertyName.startsWith(propertyPrefix + "_")) {
+                expandedInclude.add(propertyName);
+            }
+        }
+    }
+
+    private static void expandObjectProperties(Object object, String propertyPath, List expandedInclude) {
+        if (object == null) {
+            return;
+        }
+        for (Object property : getMetaProperties(object)) {
+            expandedInclude.add(propertyPath + "." + ((MetaProperty) property).getName());
+        }
+    }
+
+    private static List getMetaProperties(Object object) {
+        if (object == null) {
+            return Collections.emptyList();
+        }
+        MetaClass metaClass = GroovySystem.getMetaClassRegistry().getMetaClass(object.getClass());
+        return metaClass.getProperties();
     }
 
     private static boolean isClearMissingPropertyBindable(Object object, String propertyName, List include, List exclude) {
@@ -175,17 +243,17 @@ final class MissingPropertyClearer {
     }
 
     private static boolean isClearMissingPropertyPathAllowed(String propertyName, List generatedIncludeList, List explicitIncludeList, List excludeList) {
-        if (isFrameworkManagedProperty(propertyName) || isPropertyExcluded(propertyName, excludeList)) {
+        if (isIntrinsicRuntimeProperty(propertyName) || isPropertyExcluded(propertyName, excludeList)) {
             return false;
         }
         return isClearMissingPropertyIncluded(propertyName, generatedIncludeList) ||
                 isClearMissingPropertyIncluded(propertyName, explicitIncludeList);
     }
 
-    private static boolean isFrameworkManagedProperty(String propertyName) {
+    private static boolean isIntrinsicRuntimeProperty(String propertyName) {
         int separator = propertyPathSeparator(propertyName);
         String rootPropertyName = separator == -1 ? propertyName : propertyName.substring(0, separator);
-        return FrameworkPropertyNames.FRAMEWORK_MANAGED_PROPERTIES.contains(rootPropertyName);
+        return FrameworkPropertyNames.INTRINSIC_RUNTIME_PROPERTIES.contains(rootPropertyName);
     }
 
     private static boolean isClearMissingPropertyIncluded(String propertyName, List includeList) {
