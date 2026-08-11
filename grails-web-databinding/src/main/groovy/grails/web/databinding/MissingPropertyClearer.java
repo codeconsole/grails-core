@@ -44,14 +44,16 @@ import static grails.web.databinding.DataBindingUtils.getBindingIncludeList;
 
 /**
  * Clears explicitly included properties omitted from a binding source.
+ *
+ * @since 8.0
  */
-final class NullMissingPropertyClearer {
+final class MissingPropertyClearer {
 
     private static final String BLANK = "";
     private static final ThreadLocal<BindingResult> BINDING_RESULT = new ThreadLocal<>();
     private static final ThreadLocal<String> CLEAR_PATH = new ThreadLocal<>();
 
-    private NullMissingPropertyClearer() {
+    private MissingPropertyClearer() {
     }
 
     static void clearMissingIncludedProperties(Object object, DataBindingSource bindingSource, List include, List exclude,
@@ -62,7 +64,7 @@ final class NullMissingPropertyClearer {
             for (Object includedProperty : include) {
                 if (includedProperty instanceof CharSequence) {
                     String propertyName = includedProperty.toString();
-                    if (propertyName.indexOf('*') == -1 && isNullMissingPropertyBindable(object, propertyName, include, exclude)) {
+                    if (propertyName.indexOf('*') == -1 && isClearMissingPropertyBindable(object, propertyName, include, exclude)) {
                         if (assignNullToMissingIndexedProperties(object, bindingSource, propertyName, filter)) {
                             continue;
                         }
@@ -83,14 +85,14 @@ final class NullMissingPropertyClearer {
         }
     }
 
-    private static boolean isNullMissingPropertyBindable(Object object, String propertyName, List include, List exclude) {
+    private static boolean isClearMissingPropertyBindable(Object object, String propertyName, List include, List exclude) {
         if (object == null) {
             return false;
         }
         String allowlistPropertyName = removePropertyIndexes(propertyName);
         List bindingIncludeList = getBindingIncludeList(object);
         List bindingExcludeList = normalizePropertyIndexes(addUnbindablePropertyNames(object, exclude));
-        if (!isNullMissingPropertyPathAllowed(allowlistPropertyName, bindingIncludeList, include, bindingExcludeList)) {
+        if (!isClearMissingPropertyPathAllowed(allowlistPropertyName, bindingIncludeList, include, bindingExcludeList)) {
             return false;
         }
         int separator = propertyPathSeparator(propertyName);
@@ -102,7 +104,7 @@ final class NullMissingPropertyClearer {
         String nestedPropertyName = propertyName.substring(separator + 1);
         if (nestedObject instanceof Collection) {
             for (Object item : (Collection) nestedObject) {
-                if (item != null && !isNullMissingPropertyBindable(item, nestedPropertyName, getNestedIncludeList(include, propertyName), null)) {
+                if (item != null && !isClearMissingPropertyBindable(item, nestedPropertyName, getNestedIncludeList(include, propertyName), null)) {
                     return false;
                 }
             }
@@ -110,13 +112,13 @@ final class NullMissingPropertyClearer {
         }
         if (nestedObject instanceof Map) {
             for (Object value : ((Map) nestedObject).values()) {
-                if (value != null && !isNullMissingPropertyBindable(value, nestedPropertyName, getNestedIncludeList(include, propertyName), null)) {
+                if (value != null && !isClearMissingPropertyBindable(value, nestedPropertyName, getNestedIncludeList(include, propertyName), null)) {
                     return false;
                 }
             }
             return true;
         }
-        return nestedObject == null || isNullMissingPropertyBindable(nestedObject, nestedPropertyName, getNestedIncludeList(include, propertyName), null);
+        return nestedObject == null || isClearMissingPropertyBindable(nestedObject, nestedPropertyName, getNestedIncludeList(include, propertyName), null);
     }
 
     private static String removePropertyIndexes(String propertyName) {
@@ -172,12 +174,12 @@ final class NullMissingPropertyClearer {
         return false;
     }
 
-    private static boolean isNullMissingPropertyPathAllowed(String propertyName, List generatedIncludeList, List explicitIncludeList, List excludeList) {
+    private static boolean isClearMissingPropertyPathAllowed(String propertyName, List generatedIncludeList, List explicitIncludeList, List excludeList) {
         if (isFrameworkManagedProperty(propertyName) || isPropertyExcluded(propertyName, excludeList)) {
             return false;
         }
-        return isNullMissingPropertyIncluded(propertyName, generatedIncludeList) ||
-                isNullMissingPropertyIncluded(propertyName, explicitIncludeList);
+        return isClearMissingPropertyIncluded(propertyName, generatedIncludeList) ||
+                isClearMissingPropertyIncluded(propertyName, explicitIncludeList);
     }
 
     private static boolean isFrameworkManagedProperty(String propertyName) {
@@ -186,7 +188,7 @@ final class NullMissingPropertyClearer {
         return FrameworkPropertyNames.FRAMEWORK_MANAGED_PROPERTIES.contains(rootPropertyName);
     }
 
-    private static boolean isNullMissingPropertyIncluded(String propertyName, List includeList) {
+    private static boolean isClearMissingPropertyIncluded(String propertyName, List includeList) {
         if (includeList == null) {
             return false;
         }
