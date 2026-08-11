@@ -55,7 +55,7 @@ class SingleIndexProducerSpec extends Specification {
         manifest(output).isFile()
     }
 
-    void 'a tag library the build already described writes no second descriptor'() {
+    void 'a tag library writes no descriptor when the build writes the index'() {
         given: 'the build described it from source before compiling it'
         Path output = compile(true)
 
@@ -64,12 +64,12 @@ class SingleIndexProducerSpec extends Specification {
         !manifest(output).isFile()
     }
 
-    void 'a tag library the build could not describe still describes itself'() {
-        given: 'the build generated an index, but skipped this tag library, as an unresolvable one is'
+    void 'nothing is written even for a tag library the index on the classpath does not name'() {
+        given: 'a build that writes the index reads the source of what a tag library refers to, so it'
         Path output = compileWithIndexDescribing('some.other.TagLib', 'other', 'somethingElse')
 
-        expect: 'otherwise it would be described by nothing at all and vanish from the index'
-        descriptor(output, 'ProducerCheckTagLib').isFile()
+        expect: 'describes all of them, and a copy here could only go stale beside it'
+        !descriptor(output, 'ProducerCheckTagLib').isFile()
     }
 
     private static File descriptor(Path output, String className) {

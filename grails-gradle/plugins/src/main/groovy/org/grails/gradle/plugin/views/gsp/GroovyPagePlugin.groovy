@@ -101,6 +101,15 @@ class GroovyPagePlugin implements Plugin<Project> {
         }
     }
 
+    /**
+     * The Groovy source roots of a source set, which is where a type this project declares is found.
+     */
+    @CompileDynamic
+    private static Set<File> resolveGroovySourceRoots(SourceSet sourceSet) {
+        Object groovy = sourceSet?.extensions?.findByName('groovy')
+        groovy ? (groovy.srcDirs as Set<File>) : ([] as Set<File>)
+    }
+
     private void configureProject(Project project) {
         TaskContainer tasks = project.tasks
 
@@ -127,6 +136,9 @@ class GroovyPagePlugin implements Plugin<Project> {
             it.sourceDirectories.from(project.layout.projectDirectory.dir('grails-app/taglib'))
             it.destinationDirectory.set(tagLibIndexDir)
             it.generatorClasspath.from(project.configurations.named('compileClasspath'))
+            // A tag library referring to a service, base class or trait of this project needs that
+            // source to be read, not guessed, or it would be described wrongly or not at all.
+            it.resolutionSourceRoots.from(project.provider { resolveGroovySourceRoots(mainSourceSet) })
             it.parameterNamesRetained.set(resolvePreserveParameterNames(project))
             it.strictTags.set(resolveStrictTags(project))
             it.dynamicTagNamespaces.set(resolveDynamicTagNamespaces(project))

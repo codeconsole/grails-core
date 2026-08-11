@@ -73,11 +73,12 @@ public class TagLibArtefactTypeAstTransformation extends ArtefactTypeAstTransfor
             // descriptor; those callers resolve tags at runtime.
             return;
         }
-        if (alreadyDescribed(sourceUnit, classNode)) {
-            // The build described this tag library ahead of compiling it. A second copy written into
-            // the class output would be merged with that one on the classpath and packaged alongside
-            // it, and being written class by class it would keep describing the tag library after it
-            // had been renamed or deleted. One thing describes each tag library.
+        if (buildOwnsIndex(sourceUnit)) {
+            // The build writes the index itself, reading the source of anything a tag library refers
+            // to so that it can describe all of them. Writing a copy here as well would put a second
+            // index into the class output, competing with that one for the same path when packaged,
+            // and nothing would remove it when this tag library was renamed or deleted: an incremental
+            // compilation does not revisit a source that has not changed, so it would simply stay.
             return;
         }
         String namespace = TagLibraryAstDiscovery.resolveNamespace(classNode);
@@ -101,20 +102,15 @@ public class TagLibArtefactTypeAstTransformation extends ArtefactTypeAstTransfor
     }
 
     /**
-     * Whether something has already described this tag library, which the Grails Gradle plugin does
-     * ahead of compiling by generating the index from source.
+     * Whether the build writes the index itself, which the Grails Gradle plugin does and signals by
+     * putting the settings it declared on the compile classpath.
      *
-     * <p>Asked per tag library rather than per build, because generating the index ahead of
-     * compilation cannot always describe every one of them: a tag library referring to a class of the
-     * same project that has not been compiled yet is skipped there. Treating the build as
-     * authoritative for all of them would leave such a tag library described by nothing at all.
+     * <p>Where no build does - compiling outside the Grails Gradle plugin, as this framework's own
+     * build and a plain Groovy compilation do - each tag library describes itself as it compiles.
      */
-    private static boolean alreadyDescribed(SourceUnit sourceUnit, ClassNode classNode) {
+    private static boolean buildOwnsIndex(SourceUnit sourceUnit) {
         ClassLoader classLoader = sourceUnit.getClassLoader();
-        if (classLoader == null) {
-            return false;
-        }
-        return TagLibraryIndex.forClassLoader(classLoader).isClassDescribed(classNode.getName());
+        return classLoader != null && classLoader.getResource(TagLibraryIndex.SETTINGS_LOCATION) != null;
     }
 
     /**

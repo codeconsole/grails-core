@@ -210,8 +210,12 @@ generateTagLibraryIndex {
 }
 ----
 
-A tag library nothing has described that way describes itself as it is compiled instead, which makes
-it resolvable to anything compiled after it. That covers a plain Groovy compilation, a build that does
-not apply the Grails Gradle plugin, a tag library in a directory the task was not given, and one the
-task could not read ahead of compilation — a tag library referring to a class of the same project
-cannot be resolved before that project is built, and is described when it is compiled instead.
+A tag library referring to something the same project declares — a service it injects, a base class it
+extends, a trait it carries — is described too: the task reads that source alongside it, so an
+inherited namespace, a tag a trait contributes and an attributes parameter of a project-declared type
+are all read rather than guessed. A tag library naming a type that does not exist is left out, as it
+would be by the compiler.
+
+Where no build writes the index — a plain Groovy compilation, or one that does not apply the Grails
+Gradle plugin — each tag library describes itself as it is compiled instead, which makes it resolvable
+to anything compiled after it.

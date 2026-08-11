@@ -30,6 +30,7 @@ import java.util.stream.Stream;
 
 import org.codehaus.groovy.ast.AnnotationNode;
 import org.codehaus.groovy.ast.ClassNode;
+import org.codehaus.groovy.control.ClassNodeResolver;
 import org.codehaus.groovy.control.CompilationUnit;
 import org.codehaus.groovy.control.CompilerConfiguration;
 import org.codehaus.groovy.control.Phases;
@@ -62,22 +63,25 @@ public final class TagLibraryIndexGenerator {
     }
 
     /**
-     * @param args the output directory, whether parameter names are retained, the source encoding,
-     *        and then every source directory to describe
+     * @param args the output directory, whether parameter names are retained, the source encoding, how
+     *        many source directories follow, those directories, and then the source roots a type this
+     *        project declares may be resolved from
      */
     public static void main(String[] args) throws IOException {
         if (args.length < 4) {
-            throw new IllegalArgumentException(
-                    "Usage: <outputDir> <parameterNamesRetained> <sourceEncoding> <sourceDir>...");
+            throw new IllegalArgumentException("Usage: <outputDir> <parameterNamesRetained> " +
+                    "<sourceEncoding> <sourceDirCount> <sourceDir>... <resolutionRoot>...");
         }
         File outputDir = new File(args[0]);
         boolean parameterNamesRetained = Boolean.parseBoolean(args[1]);
         String encoding = args[2].isEmpty() ? "UTF-8" : args[2];
-        List<File> sourceDirs = new ArrayList<>(args.length - 3);
-        for (int i = 3; i < args.length; i++) {
-            sourceDirs.add(new File(args[i]));
+        int sourceDirCount = Integer.parseInt(args[3]);
+        List<File> sourceDirs = new ArrayList<>(sourceDirCount);
+        List<File> resolutionRoots = new ArrayList<>();
+        for (int i = 4; i < args.length; i++) {
+            (i - 4 < sourceDirCount ? sourceDirs : resolutionRoots).add(new File(args[i]));
         }
-        generate(sourceDirs, outputDir, parameterNamesRetained, encoding);
+        generate(sourceDirs, resolutionRoots, outputDir, parameterNamesRetained, encoding);
     }
 
     /**
@@ -91,7 +95,22 @@ public final class TagLibraryIndexGenerator {
      */
     public static void generate(File sourceDir, File outputDir, boolean parameterNamesRetained,
             String encoding) throws IOException {
-        generate(Collections.singletonList(sourceDir), outputDir, parameterNamesRetained, encoding);
+        generate(Collections.singletonList(sourceDir), Collections.emptyList(), outputDir,
+                parameterNamesRetained, encoding);
+    }
+
+    /**
+     * Regenerates the index, resolving a type this project declares from its source.
+     *
+     * @param sourceDirs the directories to scan for tag libraries
+     * @param outputDir the directory the index is written beneath
+     * @param parameterNamesRetained whether the compilation writes parameter names into class files
+     * @param encoding the source encoding
+     * @throws IOException if the index cannot be written
+     */
+    public static void generate(List<File> sourceDirs, File outputDir, boolean parameterNamesRetained,
+            String encoding) throws IOException {
+        generate(sourceDirs, Collections.emptyList(), outputDir, parameterNamesRetained, encoding);
     }
 
     /**
@@ -102,13 +121,15 @@ public final class TagLibraryIndexGenerator {
      * that have since been renamed or deleted.
      *
      * @param sourceDirs the directories to scan for tag libraries
+     * @param resolutionRoots the source roots a type this project declares may be resolved from, so
+     *        that a base class, trait or parameter type it supplies is read rather than guessed
      * @param outputDir the directory the index is written beneath
      * @param parameterNamesRetained whether the compilation writes parameter names into class files
      * @param encoding the source encoding
      * @throws IOException if the index cannot be written
      */
-    public static void generate(List<File> sourceDirs, File outputDir, boolean parameterNamesRetained,
-            String encoding) throws IOException {
+    public static void generate(List<File> sourceDirs, List<File> resolutionRoots, File outputDir,
+            boolean parameterNamesRetained, String encoding) throws IOException {
         TagLibraryIndexWriter.clear(outputDir);
         List<File> sources = new ArrayList<>();
         if (sourceDirs != null) {
@@ -122,7 +143,8 @@ public final class TagLibraryIndexGenerator {
             return;
         }
 
-        for (ClassNode classNode : parse(sources, parameterNamesRetained, encoding)) {
+        List<File> roots = resolutionRoots != null ? resolutionRoots : Collections.emptyList();
+        for (ClassNode classNode : parse(sources, roots, parameterNamesRetained, encoding)) {
             if (!isTagLibrary(classNode)) {
                 continue;
             }
@@ -147,17 +169,17 @@ public final class TagLibraryIndexGenerator {
      * compiler as it is built, and until then its tags resolve dynamically, exactly as a tag library
      * with no descriptor does.
      */
-    private static List<ClassNode> parse(List<File> sources, boolean parameterNamesRetained,
-            String encoding) {
+    private static List<ClassNode> parse(List<File> sources, List<File> resolutionRoots,
+            boolean parameterNamesRetained, String encoding) {
         try {
-            return collectClassNodes(compile(sources, parameterNamesRetained, encoding));
+            return collectClassNodes(compile(sources, resolutionRoots, parameterNamesRetained, encoding));
         } catch (Exception wholeSourceSetFailed) {
             List<ClassNode> classNodes = new ArrayList<>();
             List<String> skipped = new ArrayList<>();
             for (File source : sources) {
                 try {
                     classNodes.addAll(collectClassNodes(
-                            compile(List.of(source), parameterNamesRetained, encoding)));
+                            compile(List.of(source), resolutionRoots, parameterNamesRetained, encoding)));
                 } catch (Exception singleSourceFailed) {
                     skipped.add(source.getName());
                 }
@@ -171,12 +193,15 @@ public final class TagLibraryIndexGenerator {
         }
     }
 
-    private static CompilationUnit compile(List<File> sources, boolean parameterNamesRetained,
-            String encoding) {
+    private static CompilationUnit compile(List<File> sources, List<File> resolutionRoots,
+            boolean parameterNamesRetained, String encoding) {
         CompilerConfiguration configuration = new CompilerConfiguration();
         configuration.setParameters(parameterNamesRetained);
         configuration.setSourceEncoding(encoding);
         CompilationUnit unit = new CompilationUnit(configuration);
+        if (!resolutionRoots.isEmpty()) {
+            unit.setClassNodeResolver(new SourceRootClassNodeResolver(resolutionRoots));
+        }
         for (File source : sources) {
             unit.addSource(source);
         }
@@ -184,6 +209,58 @@ public final class TagLibraryIndexGenerator {
         // annotations resolved, and it stops short of generating or loading any class.
         unit.compile(Phases.CANONICALIZATION);
         return unit;
+    }
+
+    /**
+     * Resolves a type this project declares by compiling its source alongside the tag library that
+     * refers to it.
+     *
+     * <p>A tag library commonly refers to something the same project declares - a service it injects,
+     * a base class it extends, a trait it carries - and none of those exist as classes yet when the
+     * index is generated. Compiling their source too is what the Groovy compiler does for types within
+     * one compilation, and is what lets a tag library be described exactly as it will be once built.
+     *
+     * <p>Deliberately not a stand-in class node. What is missing decides what a tag library declares:
+     * a base class carries the namespace, a trait carries tags, and a parameter type decides whether a
+     * method is a tag at all. Answering with a placeholder would file a tag library under the wrong
+     * namespace, or leave out tags the running application has, and the index would then disagree with
+     * what the application does - which is the one thing it must never do. A type that cannot be found
+     * in source is left unresolved, and the tag library referring to it is skipped as before.
+     */
+    private static final class SourceRootClassNodeResolver extends ClassNodeResolver {
+
+        private final List<File> roots;
+
+        private SourceRootClassNodeResolver(List<File> roots) {
+            this.roots = roots;
+        }
+
+        @Override
+        public LookupResult resolveName(String name, CompilationUnit compilationUnit) {
+            LookupResult onTheClasspath = super.resolveName(name, compilationUnit);
+            if (onTheClasspath != null) {
+                return onTheClasspath;
+            }
+            File source = findSource(name);
+            if (source == null) {
+                // Not something this project declares. Left unresolved so that resolution carries on
+                // to the next candidate a star import offers, and so that a name that is simply
+                // misspelled still fails rather than being quietly invented.
+                return null;
+            }
+            return new LookupResult(compilationUnit.addSource(source), null);
+        }
+
+        private File findSource(String name) {
+            String relativePath = name.replace('.', File.separatorChar) + ".groovy";
+            for (File root : roots) {
+                File candidate = new File(root, relativePath);
+                if (candidate.isFile()) {
+                    return candidate;
+                }
+            }
+            return null;
+        }
     }
 
     private static List<ClassNode> collectClassNodes(CompilationUnit unit) {

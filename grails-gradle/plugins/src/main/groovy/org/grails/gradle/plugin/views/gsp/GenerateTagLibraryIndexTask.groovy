@@ -85,6 +85,18 @@ abstract class GenerateTagLibraryIndexTask extends DefaultTask {
     abstract ConfigurableFileCollection getSourceDirectories()
 
     /**
+     * The source roots a type this project declares may be resolved from.
+     *
+     * <p>A tag library commonly refers to a service, base class or trait of the same project, none of
+     * which exist as classes yet. Their source is compiled alongside it so that what they contribute -
+     * a namespace, tags, a parameter type - is read rather than guessed.
+     */
+    @InputFiles
+    @IgnoreEmptyDirectories
+    @PathSensitive(PathSensitivity.RELATIVE)
+    abstract ConfigurableFileCollection getResolutionSourceRoots()
+
+    /**
      * Where the index is written. Placed on the compile classpath and packaged with the artifact.
      */
     @OutputDirectory
@@ -141,12 +153,15 @@ abstract class GenerateTagLibraryIndexTask extends DefaultTask {
         // A directory that exists but holds no sources is not worth forking a process to read, and a
         // project with no tag libraries at all must not need the generator on its classpath to build.
         if (directories && !sourceDirectories.asFileTree.matching(new PatternSet().include('**/*.groovy')).empty) {
+            List<File> roots = new ArrayList<File>(resolutionSourceRoots.files.findAll { File dir -> dir.isDirectory() })
             List<String> arguments = [
                     destination.canonicalPath,
                     String.valueOf(parameterNamesRetained.getOrElse(true)),
-                    sourceEncoding.getOrElse('UTF-8')
+                    sourceEncoding.getOrElse('UTF-8'),
+                    String.valueOf(directories.size())
             ]
             arguments.addAll(directories.collect { File source -> source.canonicalPath })
+            arguments.addAll(roots.collect { File root -> root.canonicalPath })
             // One process for every source directory at once: the generator rewrites the index in
             // full, so a second process would erase what the first wrote.
             execOperations.javaexec { JavaExecSpec spec ->
