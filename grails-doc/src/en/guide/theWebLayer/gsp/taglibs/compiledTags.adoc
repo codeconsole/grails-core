@@ -148,8 +148,9 @@ ${g.createLink(controller: 'book')}   <%-- someObject.createLink, not the tag --
 ----
 
 A tag written as markup, as `<g:createLink controller="book"/>` is, already compiles into a direct
-call naming the tag and needs no rewriting. Both forms are checked against the same descriptions in
-every page, so a misspelling is reported whether or not the page is compiled statically.
+call naming the tag and needs no rewriting. It is unambiguously a tag whatever the page does, so under
+strict checking it is checked in every page. An expression is checked only where it is resolved, in a
+page declaring `compileStatic`, since elsewhere the receiver may be part of the model.
 
 ==== Reporting unknown tags
 
