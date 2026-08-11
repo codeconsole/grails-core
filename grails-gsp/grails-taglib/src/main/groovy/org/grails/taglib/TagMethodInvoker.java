@@ -45,7 +45,16 @@ public final class TagMethodInvoker {
      * Method names from framework traits, Spring lifecycle interfaces, and the like
      * that must never be treated as tag methods regardless of the declaring class.
      */
-    private static final Set<String> FRAMEWORK_METHOD_NAMES = Set.of(
+    /**
+     * Names that live on every tag library through the framework traits and are therefore never tags.
+     * <p>
+     * Exposed so that the compile-time tag library index derives the same tag names from the AST that
+     * this class derives by reflection at runtime. A name recorded in the index but rejected here
+     * would resolve when a GSP is compiled and then fail to dispatch when it renders.
+     *
+     * @since 8.0.0
+     */
+    public static final Set<String> FRAMEWORK_METHOD_NAMES = Set.of(
             "afterPropertiesSet",
             "currentRequestAttributes",
             "destroy",

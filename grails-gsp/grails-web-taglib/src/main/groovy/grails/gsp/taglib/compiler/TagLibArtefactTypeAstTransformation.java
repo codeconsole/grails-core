@@ -19,6 +19,9 @@
 
 package grails.gsp.taglib.compiler;
 
+import java.io.File;
+import java.io.IOException;
+
 import groovy.lang.Closure;
 import org.codehaus.groovy.ast.AnnotationNode;
 import org.codehaus.groovy.ast.ClassNode;
@@ -29,6 +32,8 @@ import org.codehaus.groovy.transform.GroovyASTTransformation;
 
 import grails.gsp.TagLib;
 import org.grails.compiler.injection.ArtefactTypeAstTransformation;
+import org.grails.compiler.injection.GrailsASTUtils;
+import org.grails.taglib.index.TagLibraryIndexWriter;
 
 @GroovyASTTransformation(phase = CompilePhase.CANONICALIZATION)
 public class TagLibArtefactTypeAstTransformation extends ArtefactTypeAstTransformation {
@@ -45,7 +50,35 @@ public class TagLibArtefactTypeAstTransformation extends ArtefactTypeAstTransfor
     @Override
     protected String resolveArtefactType(SourceUnit sourceUnit, AnnotationNode annotationNode, ClassNode classNode) {
         addClosureTagDeprecationWarnings(sourceUnit, classNode);
+        writeIndexEntry(sourceUnit, classNode);
         return "TagLibrary";
+    }
+
+    /**
+     * Records the namespace and tag names this tag library declares, so that a GSP compiled later can
+     * resolve a tag call without loading the tag library or consulting its metaclass.
+     *
+     * <p>Failure to write is never fatal: the index is an optimisation, and a missing descriptor
+     * degrades to the runtime resolution that applies when a tag library is registered dynamically.
+     */
+    protected void writeIndexEntry(SourceUnit sourceUnit, ClassNode classNode) {
+        File targetDirectory = sourceUnit.getConfiguration() != null ?
+                sourceUnit.getConfiguration().getTargetDirectory() :
+                null;
+        if (targetDirectory == null) {
+            // In-memory compilation, as used by GSP unit tests and the shell, has nowhere to put the
+            // descriptor; those callers resolve tags at runtime.
+            return;
+        }
+        try {
+            TagLibraryIndexWriter.write(targetDirectory, classNode.getName(),
+                    TagLibraryAstScanner.resolveNamespace(classNode),
+                    TagLibraryAstScanner.findTagNames(classNode));
+        } catch (IOException | RuntimeException e) {
+            GrailsASTUtils.warning(sourceUnit, classNode,
+                    "Could not write the tag library index entry for [" + classNode.getName() + "]: " +
+                            e.getMessage() + ". Tags in this library will be resolved at runtime.");
+        }
     }
 
     @Override
