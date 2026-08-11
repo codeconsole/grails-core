@@ -52,7 +52,6 @@ import org.grails.plugins.web.taglib.UrlMappingTagLib
 import org.grails.plugins.web.taglib.ValidationTagLib
 import org.grails.spring.RuntimeSpringConfiguration
 import org.grails.taglib.TagLibraryLookup
-import org.grails.taglib.TagLibraryMetaUtils
 import org.grails.web.errors.ErrorsViewStackTracePrinter
 import org.grails.web.gsp.GroovyPagesTemplateRenderer
 import org.grails.web.gsp.io.CachingGrailsConventionGroovyPageLocator
