@@ -19,7 +19,9 @@
 package org.grails.taglib.discovery;
 
 import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
+import java.util.Map;
 import java.util.Set;
 
 import groovy.lang.Closure;
@@ -29,6 +31,8 @@ import org.codehaus.groovy.ast.FieldNode;
 import org.codehaus.groovy.ast.MethodNode;
 import org.codehaus.groovy.ast.expr.ConstantExpression;
 import org.codehaus.groovy.ast.expr.Expression;
+
+import org.grails.taglib.index.TagLibraryIndexEntry;
 
 /**
  * Reads a tag library's namespace and tag names from its syntax tree.
@@ -83,6 +87,32 @@ public final class TagLibraryAstDiscovery {
      * @param parameterNamesRetained whether this compilation writes parameter names into the class file
      * @return every tag the library declares, whether as a tag method or a legacy closure field
      */
+    /**
+     * @param classNode the tag library
+     * @param parameterNamesRetained whether this compilation writes parameter names into the class file
+     * @return each tag mapped to how it is implemented, so that a caller can tell a tag it can bind to
+     *         from one it must dispatch dynamically
+     */
+    public static Map<String, TagLibraryIndexEntry.Kind> findTags(ClassNode classNode,
+            boolean parameterNamesRetained) {
+        Map<String, TagLibraryIndexEntry.Kind> tags = new LinkedHashMap<>();
+        for (MethodNode method : classNode.getMethods()) {
+            if (method.getDeclaringClass() != null && !classNode.equals(method.getDeclaringClass())) {
+                continue;
+            }
+            if (TagDiscoveryRules.isTagMethod(new AstTagMethodView(method, parameterNamesRetained))) {
+                tags.put(method.getName(), TagLibraryIndexEntry.Kind.METHOD);
+            }
+        }
+        for (FieldNode field : classNode.getFields()) {
+            if (!field.isStatic() && field.getType() != null && CLOSURE_TYPE.equals(field.getType())) {
+                // A closure carries no signature, so a call to it cannot be bound when compiled.
+                tags.put(field.getName(), TagLibraryIndexEntry.Kind.LEGACY_CLOSURE);
+            }
+        }
+        return tags;
+    }
+
     public static Collection<String> findTagNames(ClassNode classNode, boolean parameterNamesRetained) {
         Set<String> tagNames = new LinkedHashSet<>();
         for (MethodNode method : classNode.getMethods()) {

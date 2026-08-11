@@ -38,6 +38,7 @@ import org.codehaus.groovy.control.SourceUnit;
 
 import org.grails.taglib.CompiledTagInvocation;
 import org.grails.taglib.index.TagLibraryIndex;
+import org.grails.taglib.index.TagLibraryIndexEntry;
 
 /**
  * Rewrites a call to a known tag into a direct invocation.
@@ -114,8 +115,13 @@ public class CompiledTagCallRewriter extends ClassCodeExpressionTransformer {
             return null;
         }
         String tagName = methodName.getValue().toString();
-        if (index.lookup(namespace, tagName) == null) {
+        TagLibraryIndexEntry entry = index.lookup(namespace, tagName);
+        if (entry == null) {
             // Unknown here, or declared by more than one tag library and so deliberately unresolved.
+            return null;
+        }
+        if (!entry.isBindable()) {
+            // A closure-based tag carries no signature to bind to, so it keeps being dispatched.
             return null;
         }
         // A field or property of the same name as the namespace is that member, not a tag library.

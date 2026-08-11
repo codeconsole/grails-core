@@ -43,7 +43,7 @@ class ControllerTagCallRewriteSpec extends Specification {
             import grails.artefact.gsp.TagLibraryInvoker
             class TagCallingController implements TagLibraryInvoker {
                 def index() {
-                    g.link(controller: 'book')
+                    g.createLink(controller: 'book')
                 }
             }
         ''', 'TagCallingController')
@@ -57,7 +57,7 @@ class ControllerTagCallRewriteSpec extends Specification {
         byte[] compiled = compile('''
             class PlainService {
                 def index() {
-                    g.link(controller: 'book')
+                    g.createLink(controller: 'book')
                 }
             }
         ''', 'PlainService')

@@ -28,7 +28,9 @@ import java.io.Writer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.Collection;
+import java.util.Map;
 import java.util.Properties;
+import java.util.TreeMap;
 import java.util.TreeSet;
 
 /**
@@ -81,6 +83,24 @@ public final class TagLibraryIndexWriter {
      */
     public static void write(File outputDirectory, String className, String namespace,
             Collection<String> tagNames) throws IOException {
+        Map<String, TagLibraryIndexEntry.Kind> asMethods = new TreeMap<>();
+        for (String tagName : tagNames) {
+            asMethods.put(tagName, TagLibraryIndexEntry.Kind.METHOD);
+        }
+        write(outputDirectory, className, namespace, asMethods);
+    }
+
+    /**
+     * Writes the descriptor for a tag library, recording how each tag is implemented.
+     *
+     * @param outputDirectory the compilation target directory; nothing is written when {@code null}
+     * @param className the binary name of the tag library
+     * @param namespace the namespace the tag library declares
+     * @param tags each tag mapped to how it is implemented
+     * @throws IOException if the descriptor cannot be written
+     */
+    public static void write(File outputDirectory, String className, String namespace,
+            Map<String, TagLibraryIndexEntry.Kind> tags) throws IOException {
         if (outputDirectory == null || className == null || className.isEmpty() ||
                 namespace == null || namespace.isEmpty()) {
             return;
@@ -96,7 +116,16 @@ public final class TagLibraryIndexWriter {
         descriptor.setProperty(TagLibraryIndex.CLASS_KEY, className);
         // Sorted so that recompiling unchanged sources produces byte-identical output, which keeps
         // the build reproducible and avoids spurious up-to-date checks failing downstream.
-        descriptor.setProperty(TagLibraryIndex.TAGS_KEY, String.join(",", new TreeSet<>(tagNames)));
+        // Recorded as "name:KIND" so that a caller can tell a tag it can bind to from one that has to
+        // be dispatched dynamically, without a second file or a nested format.
+        StringBuilder encoded = new StringBuilder();
+        for (Map.Entry<String, TagLibraryIndexEntry.Kind> tag : new TreeMap<>(tags).entrySet()) {
+            if (encoded.length() > 0) {
+                encoded.append(',');
+            }
+            encoded.append(tag.getKey()).append(':').append(tag.getValue().name());
+        }
+        descriptor.setProperty(TagLibraryIndex.TAGS_KEY, encoded.toString());
         store(new File(indexDirectory, className + ".properties"), descriptor);
 
         File manifest = new File(indexDirectory, "index.properties");

@@ -41,6 +41,25 @@ class TagLibraryIndexGeneratorSpec extends Specification {
         output = Files.createDirectories(tempDir.resolve('out'))
     }
 
+    void 'a closure based tag is recorded as such'() {
+        given:
+        write('Legacy.groovy', '''
+            import grails.gsp.TagLib
+            @TagLib
+            class LegacyTagLib {
+                static namespace = 'legacy'
+                def asMethod(Map attrs) { }
+                Closure asClosure = { Map attrs -> }
+            }
+        ''')
+
+        when:
+        TagLibraryIndexGenerator.generate(sources.toFile(), output.toFile(), true, 'UTF-8')
+
+        then: 'the closure form is marked so that callers keep dispatching it dynamically'
+        descriptor('LegacyTagLib').tags == 'asClosure:LEGACY_CLOSURE,asMethod:METHOD'
+    }
+
     void 'a tag library is described without being loaded or executed'() {
         given: 'a tag library whose static initialiser would fail if it ran'
         write('Explosive.groovy', '''
@@ -59,7 +78,7 @@ class TagLibraryIndexGeneratorSpec extends Specification {
 
         then: 'its tags are described from the source alone'
         descriptor('ExplosiveTagLib').namespace == 'boom'
-        descriptor('ExplosiveTagLib').tags == 'alpha,beta'
+        descriptor('ExplosiveTagLib').tags == 'alpha:METHOD,beta:METHOD'
     }
 
     void 'a renamed tag library leaves nothing behind'() {
@@ -130,7 +149,7 @@ class TagLibraryIndexGeneratorSpec extends Specification {
 
         then: 'the one that reads is described'
         descriptorFile('FineTagLib').exists()
-        descriptor('FineTagLib').tags == 'present'
+        descriptor('FineTagLib').tags == 'present:METHOD'
 
         and: 'the one that does not is left out, to be described when it is compiled'
         !descriptorFile('UnresolvableTagLib').exists()

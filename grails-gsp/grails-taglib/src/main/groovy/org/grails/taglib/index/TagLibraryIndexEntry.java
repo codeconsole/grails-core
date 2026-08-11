@@ -24,7 +24,34 @@ package org.grails.taglib.index;
  * @param namespace the tag library namespace the tag is reachable through
  * @param tagName the tag name within that namespace
  * @param tagLibraryClassName the binary name of the tag library declaring the tag
+ * @param kind how the tag is implemented, which decides whether a call to it can be resolved
+ * @param acceptsBody whether the tag can be called with a body
  * @since 8.0.0
  */
-public record TagLibraryIndexEntry(String namespace, String tagName, String tagLibraryClassName) {
+public record TagLibraryIndexEntry(String namespace, String tagName, String tagLibraryClassName,
+        Kind kind, boolean acceptsBody) {
+
+    /**
+     * How a tag is implemented.
+     */
+    public enum Kind {
+
+        /**
+         * A method, which carries a signature and so can be bound when a caller is compiled.
+         */
+        METHOD,
+
+        /**
+         * A {@code Closure} field, the deprecated form. It carries no signature, so a call to it
+         * cannot be bound when the caller is compiled and is dispatched dynamically.
+         */
+        LEGACY_CLOSURE
+    }
+
+    /**
+     * @return true when a call to this tag can be compiled into a direct invocation
+     */
+    public boolean isBindable() {
+        return kind == Kind.METHOD;
+    }
 }

@@ -142,6 +142,34 @@ class TagLibraryIndexSpec extends Specification {
         loader.close()
     }
 
+    void 'a closure based tag is recorded but is not bindable'() {
+        given:
+        Path jarPath = tempDir.resolve('legacy.jar')
+        new JarOutputStream(Files.newOutputStream(jarPath)).withCloseable { jar ->
+            jar.putNextEntry(new JarEntry(TagLibraryIndex.INDEX_LOCATION + 'index.properties'))
+            jar.write('com.legacy.OldTagLib=\n'.bytes)
+            jar.closeEntry()
+            jar.putNextEntry(new JarEntry(TagLibraryIndex.INDEX_LOCATION + 'com.legacy.OldTagLib.properties'))
+            jar.write(("version=${TagLibraryIndex.FORMAT_VERSION}\nclass=com.legacy.OldTagLib\n" +
+                    'namespace=legacy\ntags=asMethod:METHOD,asClosure:LEGACY_CLOSURE\n').bytes)
+            jar.closeEntry()
+        }
+        URLClassLoader loader = loaderOver(jarPath)
+
+        when:
+        TagLibraryIndex index = TagLibraryIndex.load(loader)
+
+        then: 'both are known, so neither is reported as a misspelling'
+        index.getTagNames('legacy') == ['asClosure', 'asMethod'] as Set
+
+        and: 'only the method form can be compiled into a direct invocation'
+        index.lookup('legacy', 'asMethod').isBindable()
+        !index.lookup('legacy', 'asClosure').isBindable()
+
+        cleanup:
+        loader.close()
+    }
+
     void 'a descriptor written by a different format version is ignored'() {
         given:
         Path other = tempDir.resolve('future.jar')
@@ -170,8 +198,10 @@ class TagLibraryIndexSpec extends Specification {
             jar.closeEntry()
             tagLibs.each { String className, List<String> namespaceAndTags ->
                 jar.putNextEntry(new JarEntry(TagLibraryIndex.INDEX_LOCATION + className + '.properties'))
+                String encodedTags = namespaceAndTags[1].split(',')
+                        .collect { "${it}:METHOD" }.join(',')
                 jar.write(("version=${TagLibraryIndex.FORMAT_VERSION}\nclass=${className}\n" +
-                        "namespace=${namespaceAndTags[0]}\ntags=${namespaceAndTags[1]}\n").bytes)
+                        "namespace=${namespaceAndTags[0]}\ntags=${encodedTags}\n").bytes)
                 jar.closeEntry()
             }
         }

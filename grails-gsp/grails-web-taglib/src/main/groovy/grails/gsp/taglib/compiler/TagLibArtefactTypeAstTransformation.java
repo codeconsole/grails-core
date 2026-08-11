@@ -85,7 +85,7 @@ public class TagLibArtefactTypeAstTransformation extends ArtefactTypeAstTransfor
         boolean parameterNamesRetained = sourceUnit.getConfiguration().getParameters();
         try {
             TagLibraryIndexWriter.write(targetDirectory, classNode.getName(), namespace,
-                    TagLibraryAstDiscovery.findTagNames(classNode, parameterNamesRetained));
+                    TagLibraryAstDiscovery.findTags(classNode, parameterNamesRetained));
         } catch (IOException | RuntimeException e) {
             GrailsASTUtils.warning(sourceUnit, classNode,
                     "Could not write the tag library index entry for [" + classNode.getName() + "]: " +

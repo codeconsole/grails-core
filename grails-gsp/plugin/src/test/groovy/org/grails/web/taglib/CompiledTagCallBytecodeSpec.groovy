@@ -44,7 +44,7 @@ class CompiledTagCallBytecodeSpec extends Specification {
             class BytecodeCheckTagLib {
                 static namespace = 'bytecheck'
                 def calls(Map attrs) {
-                    out << g.link(controller: 'book')
+                    out << g.createLink(controller: 'book')
                 }
             }
         ''', 'BytecodeCheckTagLib')
@@ -68,6 +68,26 @@ class CompiledTagCallBytecodeSpec extends Specification {
 
         then: 'nothing was rewritten, so it resolves as it did before'
         !references(compiled, 'org/grails/taglib/CompiledTagInvocation')
+    }
+
+    void 'a closure based tag is left dynamic even though it is known'() {
+        when: 'g.link is declared as a Closure field, so it carries no signature to bind to'
+        byte[] compiled = compile('''
+            import grails.gsp.TagLib
+            @TagLib
+            class ClosureTagCallerTagLib {
+                static namespace = 'closurecaller'
+                def calls(Map attrs) {
+                    out << g.link(controller: 'book')
+                }
+            }
+        ''', 'ClosureTagCallerTagLib')
+
+        then:
+        !references(compiled, 'org/grails/taglib/CompiledTagInvocation')
+
+        and: 'it is still known, so it is never reported as a misspelling'
+        TagLibraryIndex.load(getClass().classLoader).lookup('g', 'link') != null
     }
 
     void 'the index this build compiles against is populated'() {

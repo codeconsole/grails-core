@@ -60,7 +60,7 @@ public final class TagLibraryIndex {
      * produced by a different version of Grails and is ignored, so its tags resolve dynamically rather
      * than being read under the wrong set of rules.
      */
-    public static final int FORMAT_VERSION = 1;
+    public static final int FORMAT_VERSION = 2;
 
     static final String VERSION_KEY = "version";
     static final String NAMESPACE_KEY = "namespace";
@@ -108,11 +108,24 @@ public final class TagLibraryIndex {
             }
             Map<String, TagLibraryIndexEntry> tagsForNamespace =
                     merged.computeIfAbsent(namespace, k -> new TreeMap<>());
-            for (String tagName : tags.split(",")) {
-                String trimmed = tagName.trim();
+            for (String encodedTag : tags.split(",")) {
+                String trimmed = encodedTag.trim();
                 if (trimmed.isEmpty()) {
                     continue;
                 }
+                // Recorded as "name:KIND"; an unrecognised kind is treated as the dynamic one so that a
+                // descriptor from a later version cannot cause a call to be bound wrongly.
+                int separator = trimmed.lastIndexOf(':');
+                String tagName = separator > 0 ? trimmed.substring(0, separator) : trimmed;
+                TagLibraryIndexEntry.Kind kind = TagLibraryIndexEntry.Kind.LEGACY_CLOSURE;
+                if (separator > 0) {
+                    try {
+                        kind = TagLibraryIndexEntry.Kind.valueOf(trimmed.substring(separator + 1));
+                    } catch (IllegalArgumentException unknownKind) {
+                        kind = TagLibraryIndexEntry.Kind.LEGACY_CLOSURE;
+                    }
+                }
+                trimmed = tagName;
                 TagLibraryIndexEntry existing = tagsForNamespace.get(trimmed);
                 if (existing != null && !existing.tagLibraryClassName().equals(className)) {
                     // At runtime the tag library registered last wins, and registration order comes
@@ -123,7 +136,8 @@ public final class TagLibraryIndex {
                     ambiguous.computeIfAbsent(namespace, k -> new TreeSet<>()).add(trimmed);
                     continue;
                 }
-                tagsForNamespace.put(trimmed, new TagLibraryIndexEntry(namespace, trimmed, className));
+                tagsForNamespace.put(trimmed,
+                        new TagLibraryIndexEntry(namespace, trimmed, className, kind, true));
             }
         }
         return new TagLibraryIndex(merged, ambiguous);
