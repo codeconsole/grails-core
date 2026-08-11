@@ -193,8 +193,9 @@ public final class TagLibraryIndexGenerator {
      * <p>A tag library referring to something outside this directory and off the classpath given here,
      * such as a service in the same project, cannot be resolved before that project is compiled. Those
      * are parsed on their own and skipped when they still fail, rather than losing the index for every
-     * other tag library alongside them. A skipped tag library still has its descriptor written by the
-     * compiler as it is built, and until then its tags resolve dynamically, exactly as a tag library
+     * other tag library alongside them. What was skipped is recorded, so that nothing in a namespace
+     * missing some of its tags is reported; a build that writes the index describes it again once the
+     * project has been compiled, and until then its tags resolve dynamically, exactly as a tag library
      * with no descriptor does.
      */
     private static List<ClassNode> parse(List<File> sources, List<File> resolutionRoots,
@@ -227,14 +228,15 @@ public final class TagLibraryIndexGenerator {
     /**
      * The namespace a source that could not be described declares, read from its syntax tree.
      *
-     * <p>Parsed rather than matched against the text: a namespace named in a comment or a string
-     * would otherwise be taken for the declaration, and recording the wrong namespace as incomplete
-     * leaves the real one looking complete - which is exactly when a call to a tag that does exist
-     * gets reported as one that does not.
+     * <p>Only ever used to record which namespace is missing some of its tags. Naming the wrong one
+     * leaves the real one looking complete, which is exactly when a call to a tag that does exist gets
+     * reported as one that does not, so this claims a namespace only where the source leaves no room
+     * for doubt: one tag library in the file, declaring its own namespace as a constant.
      *
-     * <p>Only a namespace the class states itself is trusted. One inherited from a base class cannot
-     * be read here, because whether the base class was resolved is the very thing in doubt, and
-     * guessing would attribute the gap to the wrong namespace.
+     * <p>Anything else - a namespace field on some other class in the file, more than one tag library,
+     * a namespace inherited from a base class that may not have resolved, or none stated at all -
+     * yields nothing, and every namespace is then treated as incomplete. That costs diagnostics rather
+     * than inventing an error.
      *
      * @return the namespace, or {@code null} when this source does not plainly state one
      */
@@ -247,24 +249,34 @@ public final class TagLibraryIndexGenerator {
             // Conversion builds the tree and stops before resolving anything, so a type this project
             // has not compiled yet cannot make it fail.
             unit.compile(Phases.CONVERSION);
-            String namespace = null;
+
+            ClassNode candidate = null;
             for (ClassNode classNode : collectClassNodes(unit)) {
-                FieldNode field = classNode.getDeclaredField(NAMESPACE_FIELD);
-                if (field == null || !field.isStatic()) {
+                if (!isTagLibrary(classNode)) {
                     continue;
                 }
-                if (!(field.getInitialExpression() instanceof ConstantExpression constant) ||
-                        constant.getValue() == null) {
+                if (candidate != null) {
+                    // Which of them failed is not knowable, so neither is claimed.
                     return null;
                 }
-                if (namespace != null) {
-                    // More than one tag library in the file, declaring different namespaces. Which
-                    // one failed is not knowable, so neither is claimed.
-                    return null;
-                }
-                namespace = constant.getValue().toString().trim();
+                candidate = classNode;
             }
-            return namespace == null || namespace.isEmpty() ? null : namespace;
+            if (candidate == null) {
+                return null;
+            }
+
+            FieldNode field = candidate.getDeclaredField(NAMESPACE_FIELD);
+            if (field == null || !field.isStatic()) {
+                // Either the default namespace or one inherited from a base class whose resolution is
+                // the very thing in doubt. Not distinguishable here, so not claimed.
+                return null;
+            }
+            if (!(field.getInitialExpression() instanceof ConstantExpression constant) ||
+                    constant.getValue() == null) {
+                return null;
+            }
+            String namespace = constant.getValue().toString().trim();
+            return namespace.isEmpty() ? null : namespace;
         }
         catch (Exception unparseable) {
             return null;

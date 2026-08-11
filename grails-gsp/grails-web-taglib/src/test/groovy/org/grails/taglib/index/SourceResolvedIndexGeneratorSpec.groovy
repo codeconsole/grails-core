@@ -336,6 +336,79 @@ class SourceResolvedIndexGeneratorSpec extends Specification {
         indexOf().isNamespaceComplete('decoy')
     }
 
+    void 'a namespace field on some other class in the file is not the tag library\'s'() {
+        given: 'claiming it would leave the namespace the tag library is really in looking complete'
+        taglib('Neighboured.groovy', '''
+            import com.example.NoSuchService
+            import grails.gsp.TagLib
+
+            class Helper {
+                static namespace = 'decoy'
+            }
+
+            @TagLib
+            class NeighbouredTagLib {
+                NoSuchService service
+                def show(Map attrs) { }
+            }
+        ''')
+
+        when:
+        generate()
+
+        then: 'the tag library declares none of its own, so nothing is complete'
+        !indexOf().isNamespaceComplete('g')
+        !indexOf().isNamespaceComplete('decoy')
+    }
+
+    void 'a file holding more than one tag library claims neither namespace'() {
+        given: 'which of them could not be read is not knowable'
+        taglib('Pair.groovy', '''
+            import com.example.NoSuchService
+            import grails.gsp.TagLib
+
+            @TagLib
+            class FirstPairTagLib {
+                static namespace = 'first'
+                NoSuchService service
+                def show(Map attrs) { }
+            }
+
+            @TagLib
+            class SecondPairTagLib {
+                static namespace = 'second'
+                def show(Map attrs) { }
+            }
+        ''')
+
+        when:
+        generate()
+
+        then:
+        !indexOf().isNamespaceComplete('first')
+        !indexOf().isNamespaceComplete('second')
+    }
+
+    void 'a skipped tag library in the default namespace leaves that namespace incomplete'() {
+        given: 'it states no namespace, so the one it is in cannot be claimed from the source alone'
+        taglib('Defaulted.groovy', '''
+            import com.example.NoSuchService
+            import grails.gsp.TagLib
+
+            @TagLib
+            class DefaultedTagLib {
+                NoSuchService service
+                def show(Map attrs) { }
+            }
+        ''')
+
+        when:
+        generate()
+
+        then:
+        !indexOf().isNamespaceComplete('g')
+    }
+
     private TagLibraryIndex indexOf() {
         URLClassLoader loader = new URLClassLoader([output.toUri().toURL()] as URL[], (ClassLoader) null)
         try {
