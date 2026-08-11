@@ -190,6 +190,91 @@ class TagLibraryIndexSpec extends Specification {
         loader.close()
     }
 
+    void 'the tags a tag library declares are read from its own descriptor'() {
+        given: 'two tag libraries in one namespace, one of whose tags the other also declares'
+        URLClassLoader loader = loaderOver(
+                jar('a.jar', [('com.a.OneTagLib'): ['g', 'alpha,shared']]),
+                jar('b.jar', [('com.b.TwoTagLib'): ['g', 'shared']]))
+
+        when:
+        TagLibraryIndex index = TagLibraryIndex.load(loader)
+
+        then: 'each is described by what it declares, whatever the other declares'
+        index.getTagNamesForClass('com.a.OneTagLib') == ['alpha', 'shared'] as Set
+        index.getTagNamesForClass('com.b.TwoTagLib') == ['shared'] as Set
+
+        and: 'which of them answers to the shared name is still left to runtime'
+        index.isAmbiguous('g', 'shared')
+        index.lookup('g', 'shared') == null
+
+        and: 'but the tag exists, so it is never reported as a misspelling'
+        index.isKnown('g', 'shared')
+
+        cleanup:
+        loader.close()
+    }
+
+    void 'a tag library with no descriptor is described by nothing'() {
+        given:
+        URLClassLoader loader = loaderOver(jar('a.jar', [('com.a.OneTagLib'): ['g', 'alpha']]))
+
+        expect:
+        TagLibraryIndex.load(loader).getTagNamesForClass('com.other.AbsentTagLib').isEmpty()
+
+        cleanup:
+        loader.close()
+    }
+
+    void 'the index is read once per class loader'() {
+        given: 'reading walks every jar on the classpath, so a compiler must not repeat it per file'
+        URLClassLoader loader = loaderOver(jar('a.jar', [('com.a.OneTagLib'): ['g', 'alpha']]))
+
+        expect:
+        TagLibraryIndex.forClassLoader(loader).is(TagLibraryIndex.forClassLoader(loader))
+
+        and: 'and a different class loader, as the next compilation has, reads its own'
+        !TagLibraryIndex.forClassLoader(loader).is(
+                TagLibraryIndex.forClassLoader(loaderOver(jar('c.jar', [('com.c.TagLib'): ['g', 'beta']]))))
+
+        cleanup:
+        loader.close()
+    }
+
+    void 'the settings the build declared are read alongside the descriptors'() {
+        given:
+        Path settings = tempDir.resolve('settings.jar')
+        new JarOutputStream(Files.newOutputStream(settings)).withCloseable { jar ->
+            jar.putNextEntry(new JarEntry(TagLibraryIndex.SETTINGS_LOCATION))
+            jar.write('strictTags=true\ndynamicTagNamespaces=legacy, other\n'.bytes)
+            jar.closeEntry()
+        }
+        URLClassLoader loader = loaderOver(settings, jar('a.jar', [('com.a.OneTagLib'): ['g', 'alpha']]))
+
+        when:
+        TagLibraryIndex index = TagLibraryIndex.load(loader)
+
+        then:
+        index.strict
+        index.dynamicNamespaces == ['legacy', 'other'] as Set
+        index.isDynamicNamespace('legacy')
+        !index.isDynamicNamespace('g')
+
+        cleanup:
+        loader.close()
+    }
+
+    void 'a build that declared nothing is left permissive'() {
+        given:
+        URLClassLoader loader = loaderOver(jar('a.jar', [('com.a.OneTagLib'): ['g', 'alpha']]))
+
+        expect:
+        !TagLibraryIndex.load(loader).strict
+        TagLibraryIndex.load(loader).dynamicNamespaces.isEmpty()
+
+        cleanup:
+        loader.close()
+    }
+
     private Path jar(String name, Map<String, List<String>> tagLibs) {
         Path path = tempDir.resolve(name)
         new JarOutputStream(Files.newOutputStream(path)).withCloseable { jar ->
