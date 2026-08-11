@@ -73,6 +73,13 @@ public class TagLibArtefactTypeAstTransformation extends ArtefactTypeAstTransfor
             // descriptor; those callers resolve tags at runtime.
             return;
         }
+        if (alreadyDescribed(sourceUnit, classNode)) {
+            // The build described this tag library ahead of compiling it. A second copy written into
+            // the class output would be merged with that one on the classpath and packaged alongside
+            // it, and being written class by class it would keep describing the tag library after it
+            // had been renamed or deleted. One thing describes each tag library.
+            return;
+        }
         String namespace = TagLibraryAstDiscovery.resolveNamespace(classNode);
         if (namespace == null) {
             // The namespace is only known once the tag library's initialiser runs, so recording the
@@ -94,11 +101,28 @@ public class TagLibArtefactTypeAstTransformation extends ArtefactTypeAstTransfor
     }
 
     /**
+     * Whether something has already described this tag library, which the Grails Gradle plugin does
+     * ahead of compiling by generating the index from source.
+     *
+     * <p>Asked per tag library rather than per build, because generating the index ahead of
+     * compilation cannot always describe every one of them: a tag library referring to a class of the
+     * same project that has not been compiled yet is skipped there. Treating the build as
+     * authoritative for all of them would leave such a tag library described by nothing at all.
+     */
+    private static boolean alreadyDescribed(SourceUnit sourceUnit, ClassNode classNode) {
+        ClassLoader classLoader = sourceUnit.getClassLoader();
+        if (classLoader == null) {
+            return false;
+        }
+        return TagLibraryIndex.forClassLoader(classLoader).isClassDescribed(classNode.getName());
+    }
+
+    /**
      * Replaces calls to tags this build already knows about with direct invocations, leaving anything
      * it cannot resolve to be dispatched as before.
      */
     protected void rewriteResolvedTagCalls(SourceUnit sourceUnit, ClassNode classNode) {
-        TagLibraryIndex index = TagLibraryIndex.load(sourceUnit.getClassLoader());
+        TagLibraryIndex index = TagLibraryIndex.forClassLoader(sourceUnit.getClassLoader());
         if (index.isEmpty()) {
             return;
         }
