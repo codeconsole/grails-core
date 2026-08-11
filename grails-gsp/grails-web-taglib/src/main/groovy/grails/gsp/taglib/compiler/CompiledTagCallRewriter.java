@@ -18,13 +18,19 @@
  */
 package grails.gsp.taglib.compiler;
 
+import java.util.Collections;
 import java.util.List;
+import java.util.Set;
 
+import org.codehaus.groovy.ast.AnnotationNode;
 import org.codehaus.groovy.ast.ClassCodeExpressionTransformer;
 import org.codehaus.groovy.ast.ClassHelper;
 import org.codehaus.groovy.ast.ClassNode;
+import org.codehaus.groovy.ast.ConstructorNode;
 import org.codehaus.groovy.ast.DynamicVariable;
+import org.codehaus.groovy.ast.FieldNode;
 import org.codehaus.groovy.ast.MethodNode;
+import org.codehaus.groovy.ast.Parameter;
 import org.codehaus.groovy.ast.Variable;
 import org.codehaus.groovy.ast.expr.ArgumentListExpression;
 import org.codehaus.groovy.ast.expr.ClosureExpression;
@@ -36,11 +42,13 @@ import org.codehaus.groovy.ast.expr.PropertyExpression;
 import org.codehaus.groovy.ast.expr.StaticMethodCallExpression;
 import org.codehaus.groovy.ast.expr.TupleExpression;
 import org.codehaus.groovy.ast.expr.VariableExpression;
+import org.codehaus.groovy.ast.stmt.Statement;
 import org.codehaus.groovy.control.SourceUnit;
 
+import org.grails.compiler.injection.GrailsASTUtils;
 import org.grails.taglib.CompiledTagInvocation;
+import org.grails.taglib.discovery.TagLibraryAstDiscovery;
 import org.grails.taglib.index.TagLibraryIndex;
-import org.grails.taglib.index.TagLibraryIndexEntry;
 
 /**
  * Rewrites a call to a known tag into a direct invocation.
@@ -48,13 +56,16 @@ import org.grails.taglib.index.TagLibraryIndexEntry;
  * <p>Writing {@code g.message(code: 'x')} reaches the tag library through {@code propertyMissing} to
  * find the namespace and {@code invokeMethod} to find the tag, which is a dynamic call site even in a
  * statically compiled class. Both the namespace and the tag name are fixed in the source, and the tag
- * library index says whether that tag exists, so the call is replaced with
- * {@link CompiledTagInvocation#invoke}, an ordinary static method call.
+ * library index says whether that tag exists, so the call is replaced with a call to
+ * {@link CompiledTagInvocation}, an ordinary static method call.
  *
- * <p>Only calls whose shape is evident from the source are rewritten: a tag takes attributes, a body,
- * both or neither, and where the arguments cannot be recognised as that the call is left alone and
- * resolves as it did before. A namespace the index does not know, or a tag it does not hold, is also
- * left alone, which is what keeps a tag library registered at runtime working.
+ * <p>The tag is still selected by name at runtime, through the same lookup the dynamic path uses, so
+ * a tag library registered later, one that overrides another, and the order tag libraries are
+ * registered in all decide the outcome exactly as they did before. Nothing is bound to a particular
+ * tag library class.
+ *
+ * <p>A namespace the index does not know is left alone, which is what keeps a tag library registered
+ * at runtime working, as is a name that something else in scope already answers to.
  *
  * @since 8.0.0
  */
@@ -62,17 +73,50 @@ public class CompiledTagCallRewriter extends ClassCodeExpressionTransformer {
 
     private static final ClassNode INVOCATION_TYPE = ClassHelper.make(CompiledTagInvocation.class);
     private static final String LOOKUP_ACCESSOR = "getTagLibraryLookup";
+    private static final String OUTPUT_CONTEXT_ACCESSOR = "getOutputContext";
     private static final String INVOKE = "invoke";
+    private static final String INVOKE_ARGUMENTS = "invokeArguments";
+    private static final String INVOKE_ARGUMENTS_IN_CONTEXT = "invokeArgumentsInContext";
+    private static final String GROOVY_PAGE_TYPE = "org.grails.gsp.GroovyPage";
+    private static final String COMPILE_STATIC_TYPE = "groovy.transform.CompileStatic";
+    private static final String GRAILS_COMPILE_STATIC_TYPE = "grails.compiler.GrailsCompileStatic";
+    private static final String MARKUP_TAG_CALL = "invokeTag";
+    private static final String DEFAULT_NAMESPACE = "g";
+
+    /**
+     * Names the dispatch treats as its own before it ever considers a tag, so an unqualified call to
+     * one of them is not a tag call however the index reads.
+     */
+    private static final Set<String> RESERVED_NAMES = Set.of("body", "render");
+
+    private static final String REWRITTEN_MARKER = CompiledTagCallRewriter.class.getName();
 
     private final SourceUnit sourceUnit;
     private final TagLibraryIndex index;
     private final ClassNode classNode;
+    private final String callerNamespace;
+    private final boolean page;
+    private final boolean rewritingPermitted;
+    private Set<String> localNames = Collections.emptySet();
+    private Set<String> pageBindings = Collections.emptySet();
     private int rewritten;
 
     public CompiledTagCallRewriter(SourceUnit sourceUnit, TagLibraryIndex index, ClassNode classNode) {
         this.sourceUnit = sourceUnit;
         this.index = index;
         this.classNode = classNode;
+        this.page = isGroovyPage(classNode);
+        // A page resolves a name against the model it was rendered with before it reaches a tag
+        // library, and that model is not visible here, so rewriting a page's tag call can only be
+        // sound where the page has given up dynamic resolution. Declaring compileStatic is that: it
+        // reserves the namespace names for tag libraries. A page that has not declared it keeps
+        // resolving its tags exactly as before.
+        this.rewritingPermitted = !this.page || isCompileStatic(classNode);
+        // An unqualified call is offered to the caller's own namespace before the default one, which is
+        // what a tag library declaring a namespace does at runtime. A page and a controller have no
+        // namespace of their own, so for them the two are the same.
+        String declared = this.page ? DEFAULT_NAMESPACE : TagLibraryAstDiscovery.resolveNamespace(classNode);
+        this.callerNamespace = declared != null ? declared : DEFAULT_NAMESPACE;
     }
 
     /**
@@ -83,6 +127,16 @@ public class CompiledTagCallRewriter extends ClassCodeExpressionTransformer {
     }
 
     public void rewrite() {
+        // A tag library is reached both as an artefact and as a class carrying the invoker trait, so
+        // rewriting can be asked for twice. Rewriting again would be harmless, but reporting a
+        // misspelled tag twice would not be.
+        if (classNode.getNodeMetaData(REWRITTEN_MARKER) != null) {
+            return;
+        }
+        classNode.putNodeMetaData(REWRITTEN_MARKER, Boolean.TRUE);
+        if (page) {
+            pageBindings = PageBindingCollector.collect(classNode);
+        }
         for (MethodNode method : classNode.getMethods()) {
             // getMethods() reaches inherited methods, whose bodies belong to the class that declared
             // them. Rewriting one here would change a superclass through a subclass that happens to be
@@ -91,9 +145,36 @@ public class CompiledTagCallRewriter extends ClassCodeExpressionTransformer {
                 continue;
             }
             if (method.getCode() != null && !method.isAbstract()) {
-                visitClassCodeContainer(method.getCode());
+                rewriteBody(method.getCode(), method.getParameters());
             }
         }
+        for (ConstructorNode constructor : classNode.getDeclaredConstructors()) {
+            if (constructor.getCode() != null) {
+                rewriteBody(constructor.getCode(), constructor.getParameters());
+            }
+        }
+        for (FieldNode field : classNode.getFields()) {
+            if (field.getDeclaringClass() != null && !classNode.equals(field.getDeclaringClass())) {
+                continue;
+            }
+            Expression initial = field.getInitialExpression();
+            if (initial != null) {
+                localNames = Collections.emptySet();
+                field.setInitialValueExpression(transform(initial));
+            }
+        }
+        for (Statement statement : classNode.getObjectInitializerStatements()) {
+            rewriteBody(statement, null);
+        }
+    }
+
+    private void rewriteBody(Statement code, Parameter[] parameters) {
+        // An unqualified call reaches a tag only when nothing nearer answers to the name, and a local
+        // holding a closure answers to it. Which locals are in scope at a given point is not tracked
+        // here: a name declared anywhere in the body is treated as claimed throughout it, which can
+        // leave a call dispatched dynamically but never sends one to the wrong place.
+        localNames = LocalNameCollector.collect(code, parameters);
+        visitClassCodeContainer(code);
     }
 
     @Override
@@ -103,41 +184,118 @@ public class CompiledTagCallRewriter extends ClassCodeExpressionTransformer {
 
     @Override
     public Expression transform(Expression expression) {
+        if (expression instanceof ClosureExpression closure) {
+            // ClassCodeExpressionTransformer deliberately does not descend into closures, and documents
+            // this override as the way to reach them. Without it a tag call written in a tag body, in a
+            // withFormat block, or in anything else taking a closure is never resolved - which is most
+            // of the tag calls in a real tag library.
+            closure.visit(this);
+            return closure;
+        }
         if (expression instanceof MethodCallExpression call) {
             Expression rewrite = rewriteTagCall(call);
             if (rewrite != null) {
                 rewritten++;
                 return rewrite;
             }
+            validateMarkupTagCall(call);
         }
         return super.transform(expression);
     }
 
     private Expression rewriteTagCall(MethodCallExpression call) {
-        String namespace = namespaceOf(call.getObjectExpression());
-        if (namespace == null || !index.hasNamespace(namespace)) {
-            return null;
-        }
         if (!(call.getMethod() instanceof ConstantExpression methodName) ||
                 methodName.getValue() == null) {
             return null;
         }
         String tagName = methodName.getValue().toString();
-        TagLibraryIndexEntry entry = index.lookup(namespace, tagName);
-        if (entry == null) {
-            // Unknown here, or declared by more than one tag library and so deliberately unresolved.
+        String namespace = namespaceOf(call.getObjectExpression());
+        if (namespace != null) {
+            // A namespace the build declared as filled in at runtime is left alone entirely: that
+            // declaration is how an application says its tags are decided while it runs, whether by a
+            // tag library registered then or by metaprogramming, and binding a call now would settle
+            // what it asked to keep open.
+            if (index.isDynamicNamespace(namespace)) {
+                return null;
+            }
+            if (!index.hasNamespace(namespace) || isShadowed(call.getObjectExpression(), namespace) ||
+                    pageBindings.contains(namespace)) {
+                return null;
+            }
+            if (!index.isKnown(namespace, tagName)) {
+                // Only where the name means a tag library for certain. In a page that has not given up
+                // dynamic resolution the receiver may just as well be the model it was rendered with,
+                // and reporting there would reject a call this release deliberately still allows.
+                if (this.rewritingPermitted) {
+                    reportUnknownTag(namespace, tagName, call);
+                }
+                return null;
+            }
+        }
+        else {
+            namespace = unqualifiedNamespaceOf(call, tagName);
+            if (namespace == null) {
+                return null;
+            }
+        }
+        if (!this.rewritingPermitted) {
             return null;
         }
-        if (!entry.isBindable()) {
-            // A closure-based tag carries no signature to bind to, so it keeps being dispatched.
-            return null;
+        Expression invocation = invocation(namespace, tagName, call.getArguments());
+        if (invocation != null) {
+            // Kept where the tag was written, so a stack trace and any later diagnostic still point at
+            // the line the author wrote rather than at the start of the file.
+            setSourcePosition(invocation, call);
         }
-        if (isShadowed(call.getObjectExpression(), namespace)) {
-            return null;
-        }
+        return invocation;
+    }
 
-        Expression[] attrsAndBody = attributesAndBody(call.getArguments());
-        if (attrsAndBody == null) {
+    /**
+     * The namespace an unqualified call such as {@code message(code: 'x')} resolves in.
+     *
+     * <p>Only a name nothing else answers to reaches a tag at all: a real method of the class, an
+     * inherited one, a field, a property or a local wins, and whether such a member exists is what
+     * decides the call. Where nothing claims the name, dispatch offers it to the caller's own
+     * namespace and then to the default one, which is the order reproduced here.
+     *
+     * @return the namespace to invoke in, or {@code null} when the call is not resolvably a tag
+     */
+    private String unqualifiedNamespaceOf(MethodCallExpression call, String tagName) {
+        if (page) {
+            // A page resolves an unqualified name against its binding before it reaches a tag, and what
+            // a page's binding holds - the model it was rendered with - is not visible here. A call
+            // written with its namespace says which tag library it means and is rewritten; one without
+            // is left to resolve as it did.
+            return null;
+        }
+        if (!call.isImplicitThis() || RESERVED_NAMES.contains(tagName)) {
+            return null;
+        }
+        if (declaresMember(tagName) || localNames.contains(tagName)) {
+            return null;
+        }
+        if (index.isDynamicNamespace(callerNamespace) || index.isDynamicNamespace(DEFAULT_NAMESPACE)) {
+            // The namespaces an unqualified call could reach were declared as decided at runtime.
+            return null;
+        }
+        if (index.isKnown(callerNamespace, tagName)) {
+            return callerNamespace;
+        }
+        if (index.isKnown(DEFAULT_NAMESPACE, tagName)) {
+            return DEFAULT_NAMESPACE;
+        }
+        // Not a tag this build knows about. It is not reported: an unqualified name in a controller is
+        // as likely to be a dynamic finder, an injected service method or anything else contributed at
+        // runtime as it is a misspelled tag.
+        return null;
+    }
+
+    /**
+     * Builds the invocation, passing the attributes and body directly where the source says what they
+     * are and forwarding the arguments as written where it does not.
+     */
+    private Expression invocation(String namespace, String tagName, Expression arguments) {
+        if (!(arguments instanceof TupleExpression tuple)) {
             return null;
         }
         ArgumentListExpression invocationArgs = new ArgumentListExpression();
@@ -145,19 +303,40 @@ public class CompiledTagCallRewriter extends ClassCodeExpressionTransformer {
                 LOOKUP_ACCESSOR, MethodCallExpression.NO_ARGUMENTS));
         invocationArgs.addExpression(new ConstantExpression(namespace));
         invocationArgs.addExpression(new ConstantExpression(tagName));
-        invocationArgs.addExpression(attrsAndBody[0]);
-        invocationArgs.addExpression(attrsAndBody[1]);
-        return new StaticMethodCallExpression(INVOCATION_TYPE, INVOKE, invocationArgs);
+
+        Expression[] attrsAndBody = attributesAndBody(tuple);
+        if (attrsAndBody != null) {
+            invocationArgs.addExpression(attrsAndBody[0]);
+            invocationArgs.addExpression(attrsAndBody[1]);
+            if (page) {
+                invocationArgs.addExpression(outputContext());
+            }
+            return new StaticMethodCallExpression(INVOCATION_TYPE, INVOKE, invocationArgs);
+        }
+
+        // The shape is only known once the arguments have been evaluated - a map held in a variable, a
+        // single value the tag reads under its own name, and so on - so they are forwarded as written
+        // and sorted out by the same rules the dynamic path applies.
+        if (page) {
+            invocationArgs.addExpression(outputContext());
+        }
+        for (Expression argument : tuple.getExpressions()) {
+            invocationArgs.addExpression(transform(argument));
+        }
+        return new StaticMethodCallExpression(INVOCATION_TYPE,
+                page ? INVOKE_ARGUMENTS_IN_CONTEXT : INVOKE_ARGUMENTS, invocationArgs);
+    }
+
+    private Expression outputContext() {
+        return new MethodCallExpression(VariableExpression.THIS_EXPRESSION, OUTPUT_CONTEXT_ACCESSOR,
+                MethodCallExpression.NO_ARGUMENTS);
     }
 
     /**
-     * @return the attributes and body to pass, or {@code null} when the arguments are not recognisably
-     *         a tag call and it should be left to resolve as before
+     * @return the attributes and body to pass, or {@code null} when the source does not say what they
+     *         are and the arguments have to be forwarded instead
      */
-    private Expression[] attributesAndBody(Expression arguments) {
-        if (!(arguments instanceof TupleExpression tuple)) {
-            return null;
-        }
+    private Expression[] attributesAndBody(TupleExpression tuple) {
         List<Expression> args = tuple.getExpressions();
         Expression noAttributes = new MapExpression();
         Expression noBody = ConstantExpression.NULL;
@@ -180,6 +359,53 @@ public class CompiledTagCallRewriter extends ClassCodeExpressionTransformer {
             default:
                 return null;
         }
+    }
+
+    /**
+     * Checks a tag written as markup, which a page compiles into a call naming the tag and namespace
+     * directly. Such a call is already an ordinary method call and needs no rewriting, but the names in
+     * it are worth the same check as the ones written in an expression.
+     */
+    private void validateMarkupTagCall(MethodCallExpression call) {
+        if (!page || !MARKUP_TAG_CALL.equals(call.getMethodAsString()) ||
+                !(call.getArguments() instanceof TupleExpression tuple) ||
+                tuple.getExpressions().size() < 2) {
+            return;
+        }
+        if (!(tuple.getExpression(0) instanceof ConstantExpression tagName) ||
+                !(tuple.getExpression(1) instanceof ConstantExpression namespace) ||
+                tagName.getValue() == null || namespace.getValue() == null) {
+            return;
+        }
+        String namespaceName = namespace.getValue().toString();
+        String tag = tagName.getValue().toString();
+        if (index.isDynamicNamespace(namespaceName)) {
+            return;
+        }
+        if (index.hasNamespace(namespaceName) && !index.isKnown(namespaceName, tag)) {
+            reportUnknownTag(namespaceName, tag, call);
+        }
+    }
+
+    /**
+     * Reports a tag that no compiled tag library declares.
+     *
+     * <p>Silent unless the build declared its tag libraries complete. A namespace holding some
+     * compiled tag libraries is not the same as one holding all of them: a plugin built before
+     * descriptors existed contributes tags to {@code g} without one, and a tag library registered
+     * while an application runs contributes more. Reporting by default would mean warning about calls
+     * that are perfectly correct - this framework calls one such tag itself - so a build says when it
+     * knows better.
+     */
+    private void reportUnknownTag(String namespace, String tagName, Expression call) {
+        if (!index.isStrict() || index.isDynamicNamespace(namespace)) {
+            return;
+        }
+        String message = "No such tag [" + tagName + "] in namespace [" + namespace + "]. Known tags: " +
+                String.join(", ", index.getTagNames(namespace));
+        // Collected rather than fatal, so that every misspelling in a file is reported at once instead
+        // of one per build.
+        GrailsASTUtils.error(sourceUnit, call, message, false);
     }
 
     /**
@@ -217,9 +443,25 @@ public class CompiledTagCallRewriter extends ClassCodeExpressionTransformer {
         }
         // Reached as this.g, or as a bare name resolved dynamically: a field or property of that name
         // anywhere in the hierarchy is the member, not a namespace.
-        return classNode.getField(namespace) != null ||
-                classNode.getProperty(namespace) != null ||
-                hasGetter(namespace);
+        return declaresProperty(namespace);
+    }
+
+    /**
+     * Whether the class, or anything it inherits from, reads a property of this name. A method of the
+     * same name does not count: {@code g.link()} reads {@code g} as a property whatever methods exist.
+     */
+    private boolean declaresProperty(String name) {
+        return classNode.getField(name) != null ||
+                classNode.getProperty(name) != null ||
+                hasGetter(name);
+    }
+
+    /**
+     * Whether the class, or anything it inherits from, already answers to a name at all. An
+     * unqualified call reaches a tag only when nothing else does, so here a method counts too.
+     */
+    private boolean declaresMember(String name) {
+        return declaresProperty(name) || !classNode.getMethods(name).isEmpty();
     }
 
     /**
@@ -235,6 +477,34 @@ public class CompiledTagCallRewriter extends ClassCodeExpressionTransformer {
             ClassNode returnType = candidate.getReturnType();
             if (returnType != null && (ClassHelper.isPrimitiveBoolean(returnType) ||
                     ClassHelper.isWrapperBoolean(returnType))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Whether this class is a compiled GSP. Matched by name rather than by type so that rewriting tag
+     * calls in a page needs no dependency on the page runtime.
+     */
+    private static boolean isGroovyPage(ClassNode classNode) {
+        for (ClassNode current = classNode.getSuperClass(); current != null;
+                current = current.getSuperClass()) {
+            if (GROOVY_PAGE_TYPE.equals(current.getName())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Whether the class gave up dynamic resolution. A page compiled with {@code compileStatic="true"}
+     * carries the annotation, which is what makes the namespace names mean tag libraries there.
+     */
+    private static boolean isCompileStatic(ClassNode classNode) {
+        for (AnnotationNode annotation : classNode.getAnnotations()) {
+            String name = annotation.getClassNode().getName();
+            if (COMPILE_STATIC_TYPE.equals(name) || GRAILS_COMPILE_STATIC_TYPE.equals(name)) {
                 return true;
             }
         }
