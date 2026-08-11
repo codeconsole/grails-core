@@ -76,6 +76,19 @@ Use `include` to allow only the properties needed for a request:
 bindData(target, params, [include: ['firstName', 'lastName']])
 ----
 
+Include entries may use wildcard suffixes for nested properties. `address.*` includes all
+properties nested under `address`, while `address_*` is the corresponding underscore-form
+used for nested binding paths and generated binding allowlists:
+
+[source,groovy]
+----
+bindData(target, params, [include: ['address.*']])
+bindData(target, params, [include: ['address_*']])
+----
+
+When `clearMissing: true` is used, omitted properties matched by either wildcard form are
+cleared, subject to the normal `exclude` and bindability rules.
+
 For controller action command object parameters, use `grails.web.databinding.BindAllowed` to allow request binding for only the listed properties:
 
 [source,groovy]
