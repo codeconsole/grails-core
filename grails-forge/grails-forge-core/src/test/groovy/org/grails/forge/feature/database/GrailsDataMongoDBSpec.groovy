@@ -73,12 +73,12 @@ class GrailsDataMongoDBSpec extends ApplicationContextSpec implements CommandOut
 
         then: 'development and test name the server where they would name a host, so the app runs ' +
                 'with no MongoDB installed'
-        ctx.configuration.get("environments.development.grails.mongodb.url") == 'mongodb://embedded/foo'
-        ctx.configuration.get("environments.test.grails.mongodb.url") == 'mongodb://embedded/foo'
+        ctx.configuration.get("environments.development.grails.mongodb.url") == 'mongodb://embedded/devDb'
+        ctx.configuration.get("environments.test.grails.mongodb.url") == 'mongodb://embedded/testDb'
 
         and: 'production keeps the configured url, so deploying with MONGO_HOST set reaches that database'
         !ctx.configuration.containsKey("environments.production.grails.mongodb.url")
-        ctx.configuration.get("grails.mongodb.url") == 'mongodb://${MONGO_HOST:localhost}:${MONGO_PORT:27017}/foo'
+        ctx.configuration.get("grails.mongodb.url") == 'mongodb://${MONGO_HOST:localhost}:${MONGO_PORT:27017}/prodDb'
     }
 
     void "test no initializer is copied into the generated application"() {
