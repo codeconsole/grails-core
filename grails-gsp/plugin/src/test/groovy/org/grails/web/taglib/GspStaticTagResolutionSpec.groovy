@@ -58,28 +58,43 @@ class GspStaticTagResolutionSpec extends Specification {
         t.metaInfo.compilationException == null
     }
 
-    void 'an unknown tag fails compilation'() {
-        given: 'a misspelled tag in a namespace the index knows'
-        String template = '''<%@ page compileStatic="true" %>${g.mesage(code: 'typo')}'''
-
-        when:
-        def t = gpte.createTemplate(template, 'unknown-tag-strict')
-
-        then: 'it is reported when the page is compiled rather than when it renders'
-        t.metaInfo.compilationException != null
-        t.metaInfo.compilationException.message.contains('No such tag [mesage]')
-        t.metaInfo.compilationException.message.contains('namespace [g]')
-    }
-
-    void 'the check can be turned down to a warning'() {
-        given:
-        System.setProperty(GroovyPageTypeCheckingExtension.STRICT_TAG_CHECKING_PROPERTY, 'false')
+    void 'an unrecognised tag does not fail the build by default'() {
+        given: 'a namespace can hold tag libraries the index never saw, so absence is not a misspelling'
         String template = '''<%@ page compileStatic="true" %>${g.mesage(code: 'typo')}'''
 
         when:
         def t = gpte.createTemplate(template, 'unknown-tag-lenient')
 
-        then: 'the page compiles, for a build that would rather not fail on this'
+        then: 'it is reported as a warning and the page still compiles'
+        t.metaInfo.compilationException == null
+    }
+
+    void 'an unrecognised tag fails compilation under strict checking'() {
+        given:
+        System.setProperty(GroovyPageTypeCheckingExtension.STRICT_TAG_CHECKING_PROPERTY, 'true')
+        String template = '''<%@ page compileStatic="true" %>${g.mesage(code: 'typo')}'''
+
+        when:
+        def t = gpte.createTemplate(template, 'unknown-tag-strict')
+
+        then: 'the misspelling is reported when the page is compiled rather than when it renders'
+        t.metaInfo.compilationException != null
+        t.metaInfo.compilationException.message.contains('No such tag [mesage]')
+        t.metaInfo.compilationException.message.contains('namespace [g]')
+
+        cleanup:
+        System.clearProperty(GroovyPageTypeCheckingExtension.STRICT_TAG_CHECKING_PROPERTY)
+    }
+
+    void 'a tag declared by two tag libraries is never reported as unknown'() {
+        given: 'ambiguity means the tag exists but which one runs is decided at runtime'
+        System.setProperty(GroovyPageTypeCheckingExtension.STRICT_TAG_CHECKING_PROPERTY, 'true')
+        String template = '''<%@ page compileStatic="true" %>${g.link(controller: 'book')}'''
+
+        when:
+        def t = gpte.createTemplate(template, 'ambiguous-not-unknown')
+
+        then: 'a resolvable tag still compiles under strict checking'
         t.metaInfo.compilationException == null
 
         cleanup:

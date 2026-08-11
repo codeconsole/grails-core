@@ -129,7 +129,7 @@ public class TagLibraryLookup implements ApplicationContextAware, GrailsApplicat
             tagNamespaces.put(namespace, tags);
         }
 
-        for (String tagName : resolveTagNames(taglib)) {
+        for (String tagName : resolveTagNames(taglib, isInitialization)) {
             putTagLib(tags, tagName, taglib);
             tagsThatReturnObject.remove(tagName);
         }
@@ -161,7 +161,14 @@ public class TagLibraryLookup implements ApplicationContextAware, GrailsApplicat
      * Prefers the tags recorded when the tag library was compiled, falling back to discovering them
      * from the class when it has no descriptor.
      */
-    private Collection<String> resolveTagNames(GrailsTagLibClass taglib) {
+    private Collection<String> resolveTagNames(GrailsTagLibClass taglib, boolean isInitialization) {
+        if (!isInitialization) {
+            // Registering after startup means the tag library has been supplied directly, as reloading
+            // a changed class during development and registering one from a test both do. The
+            // descriptor describes the class as it was compiled, which is no longer what is being
+            // registered, so the class itself is asked.
+            return taglib.getTagNames();
+        }
         if (tagLibraryIndex == null) {
             tagLibraryIndex = TagLibraryIndex.load(resolveClassLoader());
         }

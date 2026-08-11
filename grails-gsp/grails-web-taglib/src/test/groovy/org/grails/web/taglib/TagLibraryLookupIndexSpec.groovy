@@ -70,6 +70,20 @@ class TagLibraryLookupIndexSpec extends Specification {
         lookup.lookupTagLibrary('late', 'arrived') != null
     }
 
+    void 'a string body is accepted by the namespaced dispatcher'() {
+        given: 'a dispatcher for a namespace, as a statically compiled page uses'
+        TagLibraryLookup lookup = newLookup(BodyTagLib)
+        lookup.registerTagLib(new DefaultGrailsTagLibClass(BodyTagLib))
+        def dispatcher = new org.grails.taglib.TagLibNamespaceMethodDispatcher(
+                'body', lookup, org.grails.taglib.encoder.OutputContextLookupHelper.lookupOutputContext())
+
+        when: 'the tag is called with a string body rather than a closure'
+        dispatcher.invokeMethod('wrap', [[:], 'text body'] as Object[])
+
+        then: 'it is adapted rather than failing to cast'
+        noExceptionThrown()
+    }
+
     private static TagLibraryLookup newLookup(Class<?>... tagLibClasses) {
         def lookup = new TagLibraryLookup() {
             @Override
@@ -89,6 +103,12 @@ class FallbackTagLib {
     static namespace = 'fallback'
     def discovered(Map attrs) { 'discovered' }
     String helper(String a, int b) { a }
+}
+
+@TagLib
+class BodyTagLib {
+    static namespace = 'body'
+    def wrap(Map attrs, Closure body) { body() }
 }
 
 @TagLib

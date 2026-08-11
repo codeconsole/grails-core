@@ -21,8 +21,6 @@ package org.grails.taglib;
 import java.util.Collections;
 import java.util.Map;
 
-import groovy.lang.Closure;
-
 import org.grails.taglib.encoder.OutputContext;
 import org.grails.taglib.encoder.OutputContextLookupHelper;
 
@@ -53,11 +51,11 @@ public final class CompiledTagInvocation {
      * @param namespace the tag library namespace
      * @param tagName the tag name within that namespace
      * @param attrs the tag attributes, treated as empty when {@code null}
-     * @param body the tag body, or {@code null} when the tag was called without one
+     * @param body the tag body as a closure or as text, or {@code null} when there is none
      * @return whatever the tag produces, which for a tag that writes to the output is its output
      */
     public static Object invoke(TagLibraryLookup lookup, String namespace, String tagName,
-            Map<?, ?> attrs, Closure<?> body) {
+            Map<?, ?> attrs, Object body) {
         return invoke(lookup, namespace, tagName, attrs, body,
                 OutputContextLookupHelper.lookupOutputContext());
     }
@@ -69,16 +67,20 @@ public final class CompiledTagInvocation {
      * @param namespace the tag library namespace
      * @param tagName the tag name within that namespace
      * @param attrs the tag attributes, treated as empty when {@code null}
-     * @param body the tag body, or {@code null} when the tag was called without one
+     * @param body the tag body as a closure or as text, or {@code null} when there is none
      * @param outputContext where the tag writes
      * @return whatever the tag produces
      */
     public static Object invoke(TagLibraryLookup lookup, String namespace, String tagName,
-            Map<?, ?> attrs, Closure<?> body, OutputContext outputContext) {
+            Map<?, ?> attrs, Object body, OutputContext outputContext) {
         if (lookup == null) {
             throw new GrailsTagException("Tag [" + tagName + "] cannot be invoked without a tag library lookup");
         }
         Map<?, ?> attributes = attrs != null ? attrs : Collections.emptyMap();
-        return TagOutput.captureTagOutput(lookup, namespace, tagName, attributes, body, outputContext);
+        // A body may be a closure or the text a caller wrote directly, which the dynamic path accepted
+        // through overloads that wrapped the text. Narrowing this to Closure would turn a string body
+        // into a cast failure.
+        Object tagBody = body instanceof CharSequence ? new TagOutput.ConstantClosure((CharSequence) body) : body;
+        return TagOutput.captureTagOutput(lookup, namespace, tagName, attributes, tagBody, outputContext);
     }
 }

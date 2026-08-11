@@ -56,20 +56,22 @@ class GroovyPageTypeCheckingExtension extends GroovyTypeCheckingExtensionSupport
             GroovyPageTypeCheckingExtension.classLoader)
 
     /**
-     * Set to {@code false} to report an unrecognised tag as a warning rather than failing the build.
+     * Set to {@code true} to fail compilation on a tag no compiled tag library declares.
      *
-     * <p>An unrecognised tag is an error by default. The index is generated from source before
-     * anything that resolves tag calls is compiled, so it describes the tag libraries of this project
-     * as well as those of its dependencies, and a namespace it does not know about is left to runtime
-     * resolution rather than reported. What remains is a tag that no tag library in a namespace the
-     * index does know declares, which is a misspelling.
+     * <p>Off by default, because knowing that a namespace holds some compiled tag libraries is not the
+     * same as knowing it holds all of them. A plugin built before the index existed contributes tags
+     * to {@code g} without a descriptor, a tag library registered while an application runs
+     * contributes more, and the index generator skips a source it cannot resolve ahead of compilation.
+     * In each case the namespace is known but incomplete, and a tag missing from it is not necessarily
+     * a misspelling. Until a namespace can state that it is complete, an unrecognised tag is reported
+     * as a warning.
      */
     public static final String STRICT_TAG_CHECKING_PROPERTY = 'grails.views.gsp.strictTagChecking'
 
     private static boolean isStrictTagChecking() {
         // Read per report rather than cached: this is only reached once a tag has already failed to
         // resolve, so it costs nothing on the common path and stays settable within a running compiler.
-        !'false'.equalsIgnoreCase(System.getProperty(STRICT_TAG_CHECKING_PROPERTY))
+        Boolean.getBoolean(STRICT_TAG_CHECKING_PROPERTY)
     }
 
     @Override
@@ -199,6 +201,11 @@ class GroovyPageTypeCheckingExtension extends GroovyTypeCheckingExtensionSupport
             return
         }
         if (TAG_LIBRARY_INDEX.lookup(namespace, tagName) != null) {
+            return
+        }
+        if (TAG_LIBRARY_INDEX.isAmbiguous(namespace, tagName)) {
+            // Declared by more than one tag library, so which one runs is decided by registration
+            // order at runtime. The tag exists; it just cannot be bound here.
             return
         }
         String message = "No such tag [${tagName}] in namespace [${namespace}]. Known tags: " +
