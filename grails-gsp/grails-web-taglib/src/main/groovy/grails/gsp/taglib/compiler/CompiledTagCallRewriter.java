@@ -23,7 +23,9 @@ import java.util.List;
 import org.codehaus.groovy.ast.ClassCodeExpressionTransformer;
 import org.codehaus.groovy.ast.ClassHelper;
 import org.codehaus.groovy.ast.ClassNode;
+import org.codehaus.groovy.ast.DynamicVariable;
 import org.codehaus.groovy.ast.MethodNode;
+import org.codehaus.groovy.ast.Variable;
 import org.codehaus.groovy.ast.expr.ArgumentListExpression;
 import org.codehaus.groovy.ast.expr.ClosureExpression;
 import org.codehaus.groovy.ast.expr.ConstantExpression;
@@ -82,6 +84,12 @@ public class CompiledTagCallRewriter extends ClassCodeExpressionTransformer {
 
     public void rewrite() {
         for (MethodNode method : classNode.getMethods()) {
+            // getMethods() reaches inherited methods, whose bodies belong to the class that declared
+            // them. Rewriting one here would change a superclass through a subclass that happens to be
+            // able to call tags. Trait methods are woven as declarations on this class and so remain.
+            if (method.getDeclaringClass() != null && !classNode.equals(method.getDeclaringClass())) {
+                continue;
+            }
             if (method.getCode() != null && !method.isAbstract()) {
                 visitClassCodeContainer(method.getCode());
             }
@@ -124,8 +132,7 @@ public class CompiledTagCallRewriter extends ClassCodeExpressionTransformer {
             // A closure-based tag carries no signature to bind to, so it keeps being dispatched.
             return null;
         }
-        // A field or property of the same name as the namespace is that member, not a tag library.
-        if (classNode.getDeclaredField(namespace) != null) {
+        if (isShadowed(call.getObjectExpression(), namespace)) {
             return null;
         }
 
@@ -189,5 +196,34 @@ public class CompiledTagCallRewriter extends ClassCodeExpressionTransformer {
             return property.getPropertyAsString();
         }
         return null;
+    }
+
+    /**
+     * Whether something in scope has already claimed the name, in which case it is that thing rather
+     * than a tag library namespace.
+     *
+     * <p>A namespace is not declared anywhere: it is reached because nothing else answers to the name.
+     * A local variable, a parameter or a field called {@code g} does answer to it, and rewriting such a
+     * call would silently send it to a tag library instead of the object the author wrote.
+     */
+    private boolean isShadowed(Expression objectExpression, String namespace) {
+        if (objectExpression instanceof VariableExpression variable) {
+            Variable accessed = variable.getAccessedVariable();
+            // A name that resolves to something - a local, a parameter, a field, a property - is that
+            // thing. Only a name nothing has claimed is left to mean a namespace.
+            if (accessed != null && !(accessed instanceof DynamicVariable)) {
+                return true;
+            }
+        }
+        // Reached as this.g, or as a bare name resolved dynamically: a field or property of that name
+        // anywhere in the hierarchy is the member, not a namespace.
+        return classNode.getField(namespace) != null ||
+                classNode.getProperty(namespace) != null ||
+                hasGetter(namespace);
+    }
+
+    private boolean hasGetter(String namespace) {
+        String getterName = "get" + Character.toUpperCase(namespace.charAt(0)) + namespace.substring(1);
+        return !classNode.getMethods(getterName).isEmpty();
     }
 }
