@@ -214,6 +214,41 @@ class TagLibraryIndexSpec extends Specification {
         loader.close()
     }
 
+    void 'a tag library declaring no tags is still known to have been described'() {
+        given: 'otherwise it would be described a second time by the compiler'
+        Path empty = tempDir.resolve('empty.jar')
+        new JarOutputStream(Files.newOutputStream(empty)).withCloseable { jar ->
+            jar.putNextEntry(new JarEntry(TagLibraryIndex.INDEX_LOCATION + 'index.properties'))
+            jar.write('com.a.NoTagsTagLib=\n'.bytes)
+            jar.closeEntry()
+            jar.putNextEntry(new JarEntry(TagLibraryIndex.INDEX_LOCATION + 'com.a.NoTagsTagLib.properties'))
+            jar.write("version=${TagLibraryIndex.FORMAT_VERSION}\nclass=com.a.NoTagsTagLib\nnamespace=empty\ntags=\n".bytes)
+            jar.closeEntry()
+        }
+        URLClassLoader loader = loaderOver(empty)
+
+        when:
+        TagLibraryIndex index = TagLibraryIndex.load(loader)
+
+        then:
+        index.isClassDescribed('com.a.NoTagsTagLib')
+        index.getTagNamesForClass('com.a.NoTagsTagLib').isEmpty()
+
+        cleanup:
+        loader.close()
+    }
+
+    void 'a tag library with no descriptor is not described'() {
+        given:
+        URLClassLoader loader = loaderOver(jar('a.jar', [('com.a.OneTagLib'): ['g', 'alpha']]))
+
+        expect:
+        !TagLibraryIndex.load(loader).isClassDescribed('com.other.AbsentTagLib')
+
+        cleanup:
+        loader.close()
+    }
+
     void 'a tag library with no descriptor is described by nothing'() {
         given:
         URLClassLoader loader = loaderOver(jar('a.jar', [('com.a.OneTagLib'): ['g', 'alpha']]))

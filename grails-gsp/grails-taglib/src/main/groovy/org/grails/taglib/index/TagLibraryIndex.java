@@ -151,6 +151,10 @@ public final class TagLibraryIndex {
             if (namespace == null || namespace.isEmpty() || className == null || className.isEmpty()) {
                 continue;
             }
+            // Recorded from the descriptor rather than from its tags, so that a tag library declaring
+            // none of them is still known to have been described. Deciding that from the tags alone
+            // would have such a tag library described twice.
+            byClass.computeIfAbsent(className, k -> new TreeSet<>());
             Map<String, TagLibraryIndexEntry> tagsForNamespace =
                     merged.computeIfAbsent(namespace, k -> new TreeMap<>());
             for (String encodedTag : tags.split(",")) {
