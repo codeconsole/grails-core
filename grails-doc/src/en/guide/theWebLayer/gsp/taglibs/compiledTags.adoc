@@ -212,12 +212,16 @@ the authoritative one: pages are compiled against it, it travels with the artifa
 depending on this one reads it. Every run replaces the directory, so a tag library that is renamed or
 deleted disappears from it.
 
-A project keeping tag libraries elsewhere adds those directories to both tasks:
+A project keeping tag libraries elsewhere adds those directories once, by task type, so that both
+indexes describe the same set — configuring them separately would let the index this project compiles
+against differ from the one it publishes:
 
 [source,groovy]
 .build.gradle
 ----
-tasks.matching { it.name in ['generateTagLibraryIndex', 'packageTagLibraryIndex'] }.configureEach {
+import org.grails.gradle.plugin.views.gsp.GenerateTagLibraryIndexTask
+
+tasks.withType(GenerateTagLibraryIndexTask).configureEach {
     sourceDirectories.from(file('src/main/groovy'))
 }
 ----

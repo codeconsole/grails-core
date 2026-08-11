@@ -135,18 +135,31 @@ class GroovyPagePlugin implements Plugin<Project> {
         // the build, is left out, and what was missed is recorded so that nothing in an incompletely
         // described namespace is reported as a misspelling. It is never packaged - a consumer must not
         // be given a partial description - and pages are not compiled against it either.
+        // Everything both indexes must agree on is configured once, by type. Configuring the two
+        // tasks separately would let them describe different sets of tag libraries, and the one that
+        // is published is not the one this project compiles against - so they would diverge silently.
+        // A project keeping tag libraries elsewhere adds them the same way.
+        tasks.withType(GenerateTagLibraryIndexTask).configureEach { GenerateTagLibraryIndexTask index ->
+            index.sourceDirectories.from(project.layout.projectDirectory.dir('grails-app/taglib'))
+            index.parameterNamesRetained.set(resolvePreserveParameterNames(project))
+            index.strictTags.set(resolveStrictTags(project))
+            index.dynamicTagNamespaces.set(resolveDynamicTagNamespaces(project))
+            index.javaLauncher.convention(launcher)
+        }
+
+        // The settings live apart from the descriptors. The descriptors are published; the settings
+        // say how this project is compiled and must reach no one else, and a directory on the runtime
+        // classpath is copied wholesale into an executable archive, where excluding a file from an
+        // archive task cannot reach it.
+        Provider<Directory> settingsDir = project.layout.buildDirectory.dir('generated/grails-taglib-settings')
         Provider<Directory> tagLibIndexDir = project.layout.buildDirectory.dir('generated/grails-taglibs')
         def generateTagLibraryIndex = tasks.register('generateTagLibraryIndex', GenerateTagLibraryIndexTask) {
-            it.sourceDirectories.from(project.layout.projectDirectory.dir('grails-app/taglib'))
             it.destinationDirectory.set(tagLibIndexDir)
+            it.settingsDirectory.set(settingsDir)
             it.generatorClasspath.from(project.configurations.named('compileClasspath'))
             // A tag library referring to a service, base class or trait of this project needs that
             // source to be read, not guessed, or it would be described wrongly or not at all.
             it.resolutionSourceRoots.from(project.provider { resolveGroovySourceRoots(mainSourceSet) })
-            it.parameterNamesRetained.set(resolvePreserveParameterNames(project))
-            it.strictTags.set(resolveStrictTags(project))
-            it.dynamicTagNamespaces.set(resolveDynamicTagNamespaces(project))
-            it.javaLauncher.convention(launcher)
         }
         FileCollection tagLibIndex = project.files(tagLibIndexDir).builtBy(generateTagLibraryIndex)
 
@@ -157,18 +170,18 @@ class GroovyPagePlugin implements Plugin<Project> {
         // deleted tag library cannot survive in it.
         Provider<Directory> packagedIndexDir =
                 project.layout.buildDirectory.dir('generated/grails-taglibs-packaged')
+        Provider<Directory> packagedSettingsDir =
+                project.layout.buildDirectory.dir('generated/grails-taglib-settings-packaged')
         def packageTagLibraryIndex = tasks.register('packageTagLibraryIndex', GenerateTagLibraryIndexTask) {
             it.description = 'Regenerates the tag library index against the compiled project'
-            it.sourceDirectories.from(project.layout.projectDirectory.dir('grails-app/taglib'))
             it.destinationDirectory.set(packagedIndexDir)
+            it.settingsDirectory.set(packagedSettingsDir)
             // The whole output, which is built by classes, so this waits for everything that writes
             // into it rather than for the compile tasks alone.
             it.generatorClasspath.from(project.configurations.named('compileClasspath'), output)
-            it.parameterNamesRetained.set(resolvePreserveParameterNames(project))
-            it.strictTags.set(resolveStrictTags(project))
-            it.dynamicTagNamespaces.set(resolveDynamicTagNamespaces(project))
-            it.javaLauncher.convention(launcher)
         }
+        FileCollection packagedSettings =
+                project.files(packagedSettingsDir).builtBy(packageTagLibraryIndex)
         FileCollection packagedTagLibIndex =
                 project.files(packagedIndexDir).builtBy(packageTagLibraryIndex)
 
@@ -179,6 +192,7 @@ class GroovyPagePlugin implements Plugin<Project> {
                         project.configurations.named('compileClasspath'),
                         classesDirs,
                         packagedTagLibIndex,
+                        packagedSettings,
                         project.configurations.findByName('providedCompile') ?: null
                 ].findAll { it }
         )
@@ -193,17 +207,15 @@ class GroovyPagePlugin implements Plugin<Project> {
         // call to a tag the same project declares cannot be resolved. The directory joins the compile
         // classpath rather than the source set output, which would make the index wait for the
         // compilation it exists to precede.
+        FileCollection tagLibSettings = project.files(settingsDir).builtBy(generateTagLibraryIndex)
         tasks.named('compileGroovy', GroovyCompile).configure { GroovyCompile compile ->
-            compile.classpath = compile.classpath.plus(tagLibIndex)
+            compile.classpath = compile.classpath.plus(tagLibIndex).plus(tagLibSettings)
         }
 
-        String settingsPath = "${TagLibraryIndexFiles.INDEX_LOCATION}/${TagLibraryIndexFiles.SETTINGS_FILE}"
+        // Only the descriptors. The settings are on no archive and no runtime classpath, so there is
+        // nothing for an exclusion to have to catch.
         tasks.withType(Jar).configureEach { Jar archive ->
-            archive.from(packagedTagLibIndex) { CopySpec spec ->
-                // The settings say how this project is compiled, not what its tag libraries declare,
-                // so they stay out of the artifact: a consumer must not inherit them.
-                spec.exclude(settingsPath)
-            }
+            archive.from(packagedTagLibIndex)
         }
 
         def compileGroovyPages = tasks.register('compileGroovyPages', GroovyPageForkCompileTask) {

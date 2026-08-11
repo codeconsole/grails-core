@@ -103,6 +103,20 @@ abstract class GenerateTagLibraryIndexTask extends DefaultTask {
     abstract DirectoryProperty getDestinationDirectory()
 
     /**
+     * Where the settings this build declared are written.
+     *
+     * <p>Kept apart from the descriptors because the two travel differently: the descriptors are
+     * published, and the settings say how this project is compiled and must reach no one else. Sharing
+     * a directory would put them wherever the descriptors go, including into an executable archive
+     * built from the runtime classpath, where no exclusion on an archive task can reach them.
+     *
+     * <p>Written beside the descriptors when unset, which suits a caller with nothing to publish.
+     */
+    @OutputDirectory
+    @Optional
+    abstract DirectoryProperty getSettingsDirectory()
+
+    /**
      * The classpath the generator runs against, which supplies the framework's discovery rules.
      */
     @Classpath
@@ -176,7 +190,9 @@ abstract class GenerateTagLibraryIndexTask extends DefaultTask {
         else {
             TagLibraryIndexFiles.clearIndex(destination)
         }
-        TagLibraryIndexFiles.writeSettings(destination, strictTags.getOrElse(false),
+        File settingsDestination = settingsDirectory.present ? settingsDirectory.get().asFile : destination
+        settingsDestination.mkdirs()
+        TagLibraryIndexFiles.writeSettings(settingsDestination, strictTags.getOrElse(false),
                 dynamicTagNamespaces.getOrElse([] as Set))
     }
 }

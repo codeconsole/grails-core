@@ -169,9 +169,9 @@ class GenerateTagLibraryIndexTaskSpec extends Specification {
         when:
         task.generate()
 
-        then:
+        then: 'written apart from the descriptors, so it can never travel with them'
         File settings = new File(emptyDir,
-                'build/generated/grails-taglibs/META-INF/grails/taglibs/compile-settings.properties')
+                'build/generated/grails-taglib-settings/META-INF/grails/taglibs/compile-settings.properties')
         settings.isFile()
         settings.text.contains('dynamicTagNamespaces=legacy')
         settings.text.contains('strictTags=false')

@@ -104,6 +104,20 @@ class TagLibraryIndexIncrementalSpec extends Specification {
         packagedDescriptor('demo.AlphaTagLib').text.contains('renamedTag')
     }
 
+    void 'the settings this build declared reach no archive'() {
+        given: 'they say how this project compiles; a consumer inheriting them would compile by them'
+        build()
+
+        expect: 'not in the jar'
+        !jarNames().any { it.endsWith('compile-settings.properties') }
+
+        and: 'and not anywhere in the tree an executable archive is built from, which copies whole'
+        !new File(projectDir, 'build/generated/grails-taglibs-packaged')
+                .listFiles({ File dir, String name -> name == 'META-INF' } as FilenameFilter)
+                .collect { new File(it, 'grails/taglibs/compile-settings.properties') }
+                .any { it.exists() }
+    }
+
     void 'nothing writes a second index into the class output'() {
         given: 'a build that writes the index owns it, so a copy there could only compete and go stale'
         build()
