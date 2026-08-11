@@ -104,6 +104,24 @@ class TagLibraryIndexIncrementalSpec extends Specification {
         packagedDescriptor('demo.AlphaTagLib').text.contains('renamedTag')
     }
 
+    void 'an executable archive carries the descriptors and not the settings'() {
+        given: 'a war copies whole directories off the runtime classpath, which is how the settings'
+        buildTask('war')
+
+        when: 'used to escape an exclusion declared on the archive task'
+        List<String> entries = archiveNames('build/libs', '.war')
+
+        then: 'the descriptors are there, where a page compiled at runtime can read them'
+        entries.any { it == "WEB-INF/classes/${INDEX}/demo.AlphaTagLib.properties" as String }
+        entries.any { it == "WEB-INF/classes/${INDEX}/index.properties" as String }
+
+        and: 'the settings are nowhere in it'
+        !entries.any { it.endsWith('compile-settings.properties') }
+
+        and: 'and no descriptor is carried twice, in two places that would then disagree'
+        entries.findAll { it.endsWith('demo.AlphaTagLib.properties') }.size() == 1
+    }
+
     void 'the settings this build declared reach no archive'() {
         given: 'they say how this project compiles; a consumer inheriting them would compile by them'
         build()
@@ -127,8 +145,12 @@ class TagLibraryIndexIncrementalSpec extends Specification {
     }
 
     private void build() {
+        buildTask('jar')
+    }
+
+    private void buildTask(String task) {
         Process process = new ProcessBuilder(System.getProperty('grails.e2e.gradlew'),
-                '-p', projectDir.absolutePath, 'jar', '--stacktrace')
+                '-p', projectDir.absolutePath, task, '--stacktrace')
                 .redirectErrorStream(true)
                 .start()
         String output = process.inputStream.getText('UTF-8')
@@ -147,9 +169,13 @@ class TagLibraryIndexIncrementalSpec extends Specification {
     }
 
     private List<String> jarNames() {
-        File jar = new File(projectDir, 'build/libs').listFiles()?.find { it.name.endsWith('.jar') }
-        assert jar != null : 'the project produced no jar'
-        new ZipFile(jar).withCloseable { zip -> zip.entries().collect { it.name } }
+        archiveNames('build/libs', '.jar')
+    }
+
+    private List<String> archiveNames(String directory, String extension) {
+        File archive = new File(projectDir, directory).listFiles()?.find { it.name.endsWith(extension) }
+        assert archive != null : "the project produced no ${extension} in ${directory}"
+        new ZipFile(archive).withCloseable { zip -> zip.entries().collect { it.name } }
     }
 
     private void writeTagLib(String className, String namespace, String tagName) {
@@ -196,6 +222,7 @@ class TagLibraryIndexIncrementalSpec extends Specification {
         new File(projectDir, 'build.gradle').text = """
             plugins {
                 id 'groovy'
+                id 'war'
                 id 'org.apache.grails.gradle.grails-gsp' version '${version}'
             }
 

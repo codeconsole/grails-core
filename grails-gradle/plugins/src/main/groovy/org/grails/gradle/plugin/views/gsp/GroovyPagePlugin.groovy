@@ -212,9 +212,12 @@ class GroovyPagePlugin implements Plugin<Project> {
             compile.classpath = compile.classpath.plus(tagLibIndex).plus(tagLibSettings)
         }
 
-        // Only the descriptors. The settings are on no archive and no runtime classpath, so there is
-        // nothing for an exclusion to have to catch.
-        tasks.withType(Jar).configureEach { Jar archive ->
+        // The library artifact alone. A war or an executable archive is built from the runtime
+        // classpath, which already carries the descriptors into the place that archive puts classes;
+        // adding them here as well would put a second copy at the archive root, where nothing reads it
+        // and where it would disagree with the first as soon as one was rebuilt. A plain jar is not
+        // built from the runtime classpath, so it is the one that needs them added.
+        tasks.named('jar', Jar).configure { Jar archive ->
             archive.from(packagedTagLibIndex)
         }
 
