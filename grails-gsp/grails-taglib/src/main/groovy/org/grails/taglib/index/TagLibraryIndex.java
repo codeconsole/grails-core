@@ -55,14 +55,25 @@ public final class TagLibraryIndex {
      */
     public static final String INDEX_LOCATION = "META-INF/grails/taglibs/";
 
+    /**
+     * Descriptor format this build writes and understands. A descriptor carrying anything else was
+     * produced by a different version of Grails and is ignored, so its tags resolve dynamically rather
+     * than being read under the wrong set of rules.
+     */
+    public static final int FORMAT_VERSION = 1;
+
+    static final String VERSION_KEY = "version";
     static final String NAMESPACE_KEY = "namespace";
     static final String CLASS_KEY = "class";
     static final String TAGS_KEY = "tags";
 
     private final Map<String, Map<String, TagLibraryIndexEntry>> byNamespace;
+    private final Map<String, Set<String>> ambiguousByNamespace;
 
-    private TagLibraryIndex(Map<String, Map<String, TagLibraryIndexEntry>> byNamespace) {
+    private TagLibraryIndex(Map<String, Map<String, TagLibraryIndexEntry>> byNamespace,
+            Map<String, Set<String>> ambiguousByNamespace) {
         this.byNamespace = byNamespace;
+        this.ambiguousByNamespace = ambiguousByNamespace;
     }
 
     /**
@@ -74,8 +85,9 @@ public final class TagLibraryIndex {
     public static TagLibraryIndex load(ClassLoader classLoader) {
         ClassLoader loader = classLoader != null ? classLoader : Thread.currentThread().getContextClassLoader();
         Map<String, Map<String, TagLibraryIndexEntry>> merged = new TreeMap<>();
+        Map<String, Set<String>> ambiguous = new TreeMap<>();
         if (loader == null) {
-            return new TagLibraryIndex(merged);
+            return new TagLibraryIndex(merged, ambiguous);
         }
         // A directory resource enumerates its children on some classpath layouts but not inside jars,
         // so the descriptors are discovered through the manifest of names each descriptor records
@@ -83,6 +95,9 @@ public final class TagLibraryIndex {
         for (URL url : listDescriptors(loader)) {
             Properties properties = read(url);
             if (properties == null) {
+                continue;
+            }
+            if (!String.valueOf(FORMAT_VERSION).equals(properties.getProperty(VERSION_KEY))) {
                 continue;
             }
             String namespace = properties.getProperty(NAMESPACE_KEY);
@@ -95,14 +110,23 @@ public final class TagLibraryIndex {
                     merged.computeIfAbsent(namespace, k -> new TreeMap<>());
             for (String tagName : tags.split(",")) {
                 String trimmed = tagName.trim();
-                if (!trimmed.isEmpty()) {
-                    // Later descriptors win, matching TagLibraryLookup.registerTagLib where a tag
-                    // library registered afterwards replaces an earlier definition of the same tag.
-                    tagsForNamespace.put(trimmed, new TagLibraryIndexEntry(namespace, trimmed, className));
+                if (trimmed.isEmpty()) {
+                    continue;
                 }
+                TagLibraryIndexEntry existing = tagsForNamespace.get(trimmed);
+                if (existing != null && !existing.tagLibraryClassName().equals(className)) {
+                    // At runtime the tag library registered last wins, and registration order comes
+                    // from artefact scanning rather than from classpath order, so which of these two
+                    // will win cannot be known here. Resolving it either way risks compiling against
+                    // one implementation and dispatching to the other, so the tag is marked ambiguous
+                    // and left to runtime resolution.
+                    ambiguous.computeIfAbsent(namespace, k -> new TreeSet<>()).add(trimmed);
+                    continue;
+                }
+                tagsForNamespace.put(trimmed, new TagLibraryIndexEntry(namespace, trimmed, className));
             }
         }
-        return new TagLibraryIndex(merged);
+        return new TagLibraryIndex(merged, ambiguous);
     }
 
     private static Set<URL> listDescriptors(ClassLoader loader) {
@@ -156,8 +180,34 @@ public final class TagLibraryIndex {
      * @return the declaring tag library, or {@code null} when the tag is not statically known
      */
     public TagLibraryIndexEntry lookup(String namespace, String tagName) {
+        if (isAmbiguous(namespace, tagName)) {
+            return null;
+        }
         Map<String, TagLibraryIndexEntry> tags = byNamespace.get(namespace);
         return tags != null ? tags.get(tagName) : null;
+    }
+
+    /**
+     * Whether more than one tag library declares this tag, in which case which one the runtime will
+     * dispatch to depends on registration order and cannot be decided here.
+     *
+     * @param namespace a tag library namespace
+     * @param tagName a tag name within that namespace
+     * @return true when the tag is declared by more than one tag library
+     */
+    public boolean isAmbiguous(String namespace, String tagName) {
+        Set<String> ambiguousTags = ambiguousByNamespace.get(namespace);
+        return ambiguousTags != null && ambiguousTags.contains(tagName);
+    }
+
+    /**
+     * @param namespace a tag library namespace
+     * @return the tags in that namespace declared by more than one tag library
+     */
+    public Set<String> getAmbiguousTagNames(String namespace) {
+        Set<String> ambiguousTags = ambiguousByNamespace.get(namespace);
+        return ambiguousTags != null ? Collections.unmodifiableSet(new TreeSet<>(ambiguousTags)) :
+                Collections.emptySet();
     }
 
     /**

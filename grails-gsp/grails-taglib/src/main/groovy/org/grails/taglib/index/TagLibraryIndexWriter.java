@@ -67,6 +67,7 @@ public final class TagLibraryIndexWriter {
         }
 
         Properties descriptor = new Properties();
+        descriptor.setProperty(TagLibraryIndex.VERSION_KEY, String.valueOf(TagLibraryIndex.FORMAT_VERSION));
         descriptor.setProperty(TagLibraryIndex.NAMESPACE_KEY, namespace);
         descriptor.setProperty(TagLibraryIndex.CLASS_KEY, className);
         // Sorted so that recompiling unchanged sources produces byte-identical output, which keeps

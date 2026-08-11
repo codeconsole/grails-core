@@ -107,6 +107,61 @@ class TagLibraryIndexSpec extends Specification {
         new URLClassLoader(jars.collect { it.toUri().toURL() } as URL[], (ClassLoader) null)
     }
 
+    void 'a tag declared by two tag libraries is ambiguous and is not resolved statically'() {
+        given: 'two jars whose tag libraries both declare g:shared'
+        URLClassLoader loader = loaderOver(
+                jar('a.jar', [('com.a.OneTagLib'): ['g', 'shared,onlyA']]),
+                jar('b.jar', [('com.b.TwoTagLib'): ['g', 'shared,onlyB']]))
+
+        when:
+        TagLibraryIndex index = TagLibraryIndex.load(loader)
+
+        then: 'which one wins depends on registration order at runtime, so it is left unresolved'
+        index.isAmbiguous('g', 'shared')
+        index.lookup('g', 'shared') == null
+        index.getAmbiguousTagNames('g') == ['shared'] as Set
+
+        and: 'tags declared by only one of them still resolve'
+        index.lookup('g', 'onlyA').tagLibraryClassName() == 'com.a.OneTagLib'
+        index.lookup('g', 'onlyB').tagLibraryClassName() == 'com.b.TwoTagLib'
+
+        cleanup:
+        loader.close()
+    }
+
+    void 'the same tag library seen twice on the classpath is not ambiguous'() {
+        given: 'the same descriptor present in two jars, as a duplicated dependency produces'
+        URLClassLoader loader = loaderOver(
+                jar('a.jar', [('com.a.OneTagLib'): ['g', 'shared']]),
+                jar('b.jar', [('com.a.OneTagLib'): ['g', 'shared']]))
+
+        expect: 'it names one implementation, so there is nothing to disambiguate'
+        TagLibraryIndex.load(loader).lookup('g', 'shared').tagLibraryClassName() == 'com.a.OneTagLib'
+
+        cleanup:
+        loader.close()
+    }
+
+    void 'a descriptor written by a different format version is ignored'() {
+        given:
+        Path other = tempDir.resolve('future.jar')
+        new JarOutputStream(Files.newOutputStream(other)).withCloseable { jar ->
+            jar.putNextEntry(new JarEntry(TagLibraryIndex.INDEX_LOCATION + 'index.properties'))
+            jar.write('com.future.NewTagLib=\n'.bytes)
+            jar.closeEntry()
+            jar.putNextEntry(new JarEntry(TagLibraryIndex.INDEX_LOCATION + 'com.future.NewTagLib.properties'))
+            jar.write("version=${TagLibraryIndex.FORMAT_VERSION + 1}\nclass=com.future.NewTagLib\nnamespace=g\ntags=future\n".bytes)
+            jar.closeEntry()
+        }
+        URLClassLoader loader = loaderOver(other)
+
+        expect: 'its tags resolve dynamically rather than being read under the wrong rules'
+        TagLibraryIndex.load(loader).lookup('g', 'future') == null
+
+        cleanup:
+        loader.close()
+    }
+
     private Path jar(String name, Map<String, List<String>> tagLibs) {
         Path path = tempDir.resolve(name)
         new JarOutputStream(Files.newOutputStream(path)).withCloseable { jar ->
@@ -115,7 +170,8 @@ class TagLibraryIndexSpec extends Specification {
             jar.closeEntry()
             tagLibs.each { String className, List<String> namespaceAndTags ->
                 jar.putNextEntry(new JarEntry(TagLibraryIndex.INDEX_LOCATION + className + '.properties'))
-                jar.write("class=${className}\nnamespace=${namespaceAndTags[0]}\ntags=${namespaceAndTags[1]}\n".bytes)
+                jar.write(("version=${TagLibraryIndex.FORMAT_VERSION}\nclass=${className}\n" +
+                        "namespace=${namespaceAndTags[0]}\ntags=${namespaceAndTags[1]}\n").bytes)
                 jar.closeEntry()
             }
         }
