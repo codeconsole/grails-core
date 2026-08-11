@@ -295,14 +295,29 @@ class BookController {
 }
 ----
 
-A tag that no compiled tag library declares is reported as a compilation warning, which
-`-Dgrails.views.gsp.strictTagChecking=true` turns into an error. Calls that cannot be resolved when
-compiled — attributes assembled at runtime, a namespace no compiled tag library declares, a tag
-declared by more than one of them, a tag defined as a closure, or a name something else in scope
-answers to — are dispatched exactly as before. Expressions in a GSP page are checked the same way but
-are not rewritten; a page still selects the tag by name as it renders, without touching a metaclass.
+The same applies to a call written without a namespace, to calls written inside a closure such as a
+tag body, and to a tag expression in a GSP declaring `compileStatic`. The tag itself is still selected
+by name when the call runs, so a tag library that overrides another, one registered while the
+application is running, and the order tag libraries are registered in all behave exactly as before. A
+namespace no compiled tag library declares, and a name something else in scope answers to, are left to
+dispatch as they did.
+
+A tag that no compiled tag library declares is left to resolve at runtime with nothing reported, since
+a namespace can legitimately hold tag libraries carrying no description. An application whose tag
+libraries are all described can ask for an error instead:
+
+[source,groovy]
+.build.gradle
+----
+grails {
+    compileStatic {
+        strictTags = true
+        dynamicTagNamespaces = ['legacy']   // registered while the application runs
+    }
+}
+----
 
 Defining a tag as a `Closure` field remains supported but is deprecated and now warns at compile time:
-a closure has no signature to resolve against, so calls to such a tag stay dynamic. Define tags as
+a closure carries no signature, so nothing about a call to such a tag can be checked. Define tags as
 methods taking `Map attrs` and, where a body is needed, `Closure body`. See
 link:theWebLayer.html#compiledTags[Compiled Tag Resolution].
