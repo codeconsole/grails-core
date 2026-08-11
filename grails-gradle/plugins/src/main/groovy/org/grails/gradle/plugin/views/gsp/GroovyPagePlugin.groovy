@@ -35,6 +35,7 @@ import org.gradle.api.tasks.SourceSetOutput
 import org.gradle.api.tasks.TaskContainer
 import org.gradle.api.tasks.bundling.Jar
 import org.gradle.api.tasks.bundling.War
+import org.gradle.language.jvm.tasks.ProcessResources
 import org.gradle.jvm.toolchain.JavaLauncher
 import org.gradle.jvm.toolchain.JavaToolchainService
 
@@ -73,6 +74,33 @@ class GroovyPagePlugin implements Plugin<Project> {
         }
     }
 
+    /**
+     * Whether the build declared that every tag library it uses is described at compile time, so that
+     * a tag missing from the index is a mistake rather than something contributed later.
+     */
+    @CompileDynamic
+    private static Provider<Boolean> resolveStrictTags(Project project) {
+        project.provider {
+            Object compileStatic = project.extensions.findByName('grails')?.compileStatic
+            Object strict = compileStatic?.hasProperty('strictTags') ? compileStatic.strictTags : null
+            strict instanceof Provider ? ((Provider) strict).getOrElse(false) as Boolean : Boolean.FALSE
+        }
+    }
+
+    /**
+     * The namespaces the build declared as filled in while the application runs.
+     */
+    @CompileDynamic
+    private static Provider<Set<String>> resolveDynamicTagNamespaces(Project project) {
+        project.provider {
+            Object compileStatic = project.extensions.findByName('grails')?.compileStatic
+            Object namespaces = compileStatic?.hasProperty('dynamicTagNamespaces') ?
+                    compileStatic.dynamicTagNamespaces : null
+            namespaces instanceof Provider ?
+                    (((Provider) namespaces).getOrElse([] as Set) as Set<String>) : ([] as Set<String>)
+        }
+    }
+
     private void configureProject(Project project) {
         TaskContainer tasks = project.tasks
 
@@ -82,14 +110,6 @@ class GroovyPagePlugin implements Plugin<Project> {
         Provider<Directory> destDir = project.layout.buildDirectory.dir('gsp-classes/main')
         Provider<Directory> webappDestDir = project.layout.buildDirectory.dir('gsp-classes/webapp')
         output?.dir('gsp-classes')
-
-        FileCollection allClasspath = project.getObjects().fileCollection().from(
-                [
-                        project.configurations.named('compileClasspath'),
-                        classesDirs,
-                        project.configurations.findByName('providedCompile') ?: null
-                ].findAll { it }
-        )
 
         // The Java the rest of the project is built with, so that pages are built with it too.
         // Absent a toolchain this resolves to the JVM running Gradle, which is what compiling
@@ -108,17 +128,39 @@ class GroovyPagePlugin implements Plugin<Project> {
             it.destinationDirectory.set(tagLibIndexDir)
             it.generatorClasspath.from(project.configurations.named('compileClasspath'))
             it.parameterNamesRetained.set(resolvePreserveParameterNames(project))
+            it.strictTags.set(resolveStrictTags(project))
+            it.dynamicTagNamespaces.set(resolveDynamicTagNamespaces(project))
+            it.javaLauncher.convention(launcher)
         }
+        FileCollection tagLibIndex = project.files(tagLibIndexDir).builtBy(generateTagLibraryIndex)
+
+        // Pages resolve tag calls against the index and are compiled in a process of their own, so the
+        // index has to be on their classpath. The source set's class directories do not carry it: it
+        // is a resource, and waiting for processResources would mean waiting for the compilation this
+        // is meant to precede.
+        FileCollection allClasspath = project.getObjects().fileCollection().from(
+                [
+                        project.configurations.named('compileClasspath'),
+                        classesDirs,
+                        tagLibIndex,
+                        project.configurations.findByName('providedCompile') ?: null
+                ].findAll { it }
+        )
+
         mainSourceSet?.resources?.srcDir(tagLibIndexDir)
-        tasks.named('processResources').configure { it.dependsOn(generateTagLibraryIndex) }
+        tasks.named('processResources', ProcessResources).configure { ProcessResources processResources ->
+            processResources.dependsOn(generateTagLibraryIndex)
+            // The settings say how this project is compiled, not what its tag libraries declare, so
+            // they stay out of the artifact: a consumer must not inherit them.
+            processResources.exclude("${TagLibraryIndexFiles.INDEX_LOCATION}/${TagLibraryIndexFiles.SETTINGS_FILE}")
+        }
 
         // Compiling this project's own controllers and tag libraries has to see the index too, or a
         // call to a tag the same project declares cannot be resolved. The directory joins the compile
         // classpath rather than the source set output, which would make the index wait for the
         // compilation it exists to precede.
         tasks.named('compileGroovy', GroovyCompile).configure { GroovyCompile compile ->
-            compile.dependsOn(generateTagLibraryIndex)
-            compile.classpath = compile.classpath.plus(project.files(tagLibIndexDir))
+            compile.classpath = compile.classpath.plus(tagLibIndex)
         }
 
         def compileGroovyPages = tasks.register('compileGroovyPages', GroovyPageForkCompileTask) {

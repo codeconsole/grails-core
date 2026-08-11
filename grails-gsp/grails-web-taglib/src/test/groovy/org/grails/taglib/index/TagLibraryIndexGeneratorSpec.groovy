@@ -151,7 +151,7 @@ class TagLibraryIndexGeneratorSpec extends Specification {
         descriptorFile('FineTagLib').exists()
         descriptor('FineTagLib').tags == 'present:METHOD'
 
-        and: 'the one that does not is left out, to be described when it is compiled'
+        and: 'the one that does not is left out here, and describes itself when it is compiled'
         !descriptorFile('UnresolvableTagLib').exists()
         manifest() == ['FineTagLib']
     }
@@ -167,20 +167,34 @@ class TagLibraryIndexGeneratorSpec extends Specification {
         manifest().isEmpty()
     }
 
-    void 'a second source directory adds to the index rather than replacing it'() {
+    void 'several source directories are described in one pass'() {
         given: 'tag libraries in two directories, as a project keeping some outside grails-app has'
         Path other = Files.createDirectories(tempDir.resolve('other'))
         write('First.groovy', taglib('FirstTagLib', 'first', 'one'))
         other.resolve('Second.groovy').toFile().text = taglib('SecondTagLib', 'second', 'two')
 
-        when: 'the first pass clears and the second adds'
-        TagLibraryIndexGenerator.generate(sources.toFile(), output.toFile(), true, 'UTF-8', true)
-        TagLibraryIndexGenerator.generate(other.toFile(), output.toFile(), true, 'UTF-8', false)
+        when:
+        TagLibraryIndexGenerator.generate([sources.toFile(), other.toFile()], output.toFile(), true, 'UTF-8')
 
         then: 'both are described'
         manifest() == ['FirstTagLib', 'SecondTagLib']
         descriptor('FirstTagLib').namespace == 'first'
         descriptor('SecondTagLib').namespace == 'second'
+    }
+
+    void 'a tag library removed from one of several directories leaves nothing behind'() {
+        given: 'describing each directory in turn would either erase the last or keep the deleted one'
+        Path other = Files.createDirectories(tempDir.resolve('other'))
+        write('First.groovy', taglib('FirstTagLib', 'first', 'one'))
+        other.resolve('Second.groovy').toFile().text = taglib('SecondTagLib', 'second', 'two')
+        TagLibraryIndexGenerator.generate([sources.toFile(), other.toFile()], output.toFile(), true, 'UTF-8')
+
+        when: 'one of them is deleted and the index regenerated'
+        other.resolve('Second.groovy').toFile().delete()
+        TagLibraryIndexGenerator.generate([sources.toFile(), other.toFile()], output.toFile(), true, 'UTF-8')
+
+        then: 'only the one that still exists is described'
+        manifest() == ['FirstTagLib']
     }
 
     private void write(String name, String source) {

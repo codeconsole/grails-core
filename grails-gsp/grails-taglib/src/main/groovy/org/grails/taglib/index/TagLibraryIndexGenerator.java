@@ -23,6 +23,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.stream.Stream;
@@ -61,20 +62,22 @@ public final class TagLibraryIndexGenerator {
     }
 
     /**
-     * @param args source directory, output directory, whether parameter names are retained, the
-     *        source encoding, and whether to discard an index already present
+     * @param args the output directory, whether parameter names are retained, the source encoding,
+     *        and then every source directory to describe
      */
     public static void main(String[] args) throws IOException {
-        if (args.length < 2) {
+        if (args.length < 4) {
             throw new IllegalArgumentException(
-                    "Usage: <sourceDir> <outputDir> [parameterNamesRetained] [sourceEncoding]");
+                    "Usage: <outputDir> <parameterNamesRetained> <sourceEncoding> <sourceDir>...");
         }
-        File sourceDir = new File(args[0]);
-        File outputDir = new File(args[1]);
-        boolean parameterNamesRetained = args.length < 3 || Boolean.parseBoolean(args[2]);
-        String encoding = args.length > 3 && !args[3].isEmpty() ? args[3] : "UTF-8";
-        boolean clearExisting = args.length < 5 || Boolean.parseBoolean(args[4]);
-        generate(sourceDir, outputDir, parameterNamesRetained, encoding, clearExisting);
+        File outputDir = new File(args[0]);
+        boolean parameterNamesRetained = Boolean.parseBoolean(args[1]);
+        String encoding = args[2].isEmpty() ? "UTF-8" : args[2];
+        List<File> sourceDirs = new ArrayList<>(args.length - 3);
+        for (int i = 3; i < args.length; i++) {
+            sourceDirs.add(new File(args[i]));
+        }
+        generate(sourceDirs, outputDir, parameterNamesRetained, encoding);
     }
 
     /**
@@ -88,29 +91,33 @@ public final class TagLibraryIndexGenerator {
      */
     public static void generate(File sourceDir, File outputDir, boolean parameterNamesRetained,
             String encoding) throws IOException {
-        generate(sourceDir, outputDir, parameterNamesRetained, encoding, true);
+        generate(Collections.singletonList(sourceDir), outputDir, parameterNamesRetained, encoding);
     }
 
     /**
-     * Regenerates the index, optionally adding to what is already there.
+     * Regenerates the index describing every tag library under any of several source directories.
      *
-     * @param sourceDir the directory to scan for tag libraries
+     * <p>All of them are described in one pass. Describing them one at a time would mean either
+     * erasing the previous directory's descriptors or leaving behind descriptors for tag libraries
+     * that have since been renamed or deleted.
+     *
+     * @param sourceDirs the directories to scan for tag libraries
      * @param outputDir the directory the index is written beneath
      * @param parameterNamesRetained whether the compilation writes parameter names into class files
      * @param encoding the source encoding
-     * @param clearExisting whether to discard an index already present, which several source
-     *        directories contributing to one index must do only on the first of them
      * @throws IOException if the index cannot be written
      */
-    public static void generate(File sourceDir, File outputDir, boolean parameterNamesRetained,
-            String encoding, boolean clearExisting) throws IOException {
-        if (clearExisting) {
-            TagLibraryIndexWriter.clear(outputDir);
+    public static void generate(List<File> sourceDirs, File outputDir, boolean parameterNamesRetained,
+            String encoding) throws IOException {
+        TagLibraryIndexWriter.clear(outputDir);
+        List<File> sources = new ArrayList<>();
+        if (sourceDirs != null) {
+            for (File sourceDir : sourceDirs) {
+                if (sourceDir != null && sourceDir.isDirectory()) {
+                    sources.addAll(findGroovySources(sourceDir));
+                }
+            }
         }
-        if (sourceDir == null || !sourceDir.isDirectory()) {
-            return;
-        }
-        List<File> sources = findGroovySources(sourceDir);
         if (sources.isEmpty()) {
             return;
         }

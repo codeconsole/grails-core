@@ -32,10 +32,12 @@ import org.gradle.api.tasks.Input
 import org.gradle.api.tasks.InputFiles
 import org.gradle.api.tasks.Optional
 import org.gradle.api.tasks.OutputDirectory
+import org.gradle.api.provider.SetProperty
+import org.gradle.api.tasks.Nested
 import org.gradle.api.tasks.PathSensitive
 import org.gradle.api.tasks.PathSensitivity
-import org.gradle.api.tasks.SkipWhenEmpty
 import org.gradle.api.tasks.TaskAction
+import org.gradle.jvm.toolchain.JavaLauncher
 import org.gradle.process.ExecOperations
 import org.gradle.process.JavaExecSpec
 
@@ -77,7 +79,6 @@ abstract class GenerateTagLibraryIndexTask extends DefaultTask {
      * is compiled afterwards.
      */
     @InputFiles
-    @SkipWhenEmpty
     @IgnoreEmptyDirectories
     @PathSensitive(PathSensitivity.RELATIVE)
     abstract ConfigurableFileCollection getSourceDirectories()
@@ -109,28 +110,55 @@ abstract class GenerateTagLibraryIndexTask extends DefaultTask {
     @Optional
     abstract Property<String> getSourceEncoding()
 
+    /**
+     * Whether a tag no compiled tag library declares fails compilation rather than being reported as a
+     * warning. Recorded alongside the index, where the compiler reads it.
+     */
+    @Input
+    abstract Property<Boolean> getStrictTags()
+
+    /**
+     * Namespaces the build declares as filled in while the application runs. Tags in them are never
+     * reported as unknown.
+     */
+    @Input
+    abstract SetProperty<String> getDynamicTagNamespaces()
+
+    /**
+     * The Java the index is generated with. It runs against the project's own compile classpath, so it
+     * has to be the Java that classpath was built for rather than whichever one happens to be running
+     * Gradle.
+     */
+    @Nested
+    abstract Property<JavaLauncher> getJavaLauncher()
+
     @TaskAction
     void generate() {
         File destination = destinationDirectory.get().asFile
         destination.mkdirs()
         List<File> directories = new ArrayList<File>(sourceDirectories.files.findAll { File dir -> dir.isDirectory() })
-        if (!directories) {
-            return
-        }
-        directories.eachWithIndex { File source, int position ->
+        if (directories) {
+            List<String> arguments = [
+                    destination.canonicalPath,
+                    String.valueOf(parameterNamesRetained.getOrElse(true)),
+                    sourceEncoding.getOrElse('UTF-8')
+            ]
+            arguments.addAll(directories.collect { File source -> source.canonicalPath })
+            // One process for every source directory at once: the generator rewrites the index in
+            // full, so a second process would erase what the first wrote.
             execOperations.javaexec { JavaExecSpec spec ->
                 spec.mainClass.set(GENERATOR_CLASS)
                 spec.classpath = generatorClasspath
-                spec.args(
-                        source.canonicalPath,
-                        destination.canonicalPath,
-                        String.valueOf(parameterNamesRetained.getOrElse(true)),
-                        sourceEncoding.getOrElse('UTF-8'),
-                        // Only the first pass clears what was written before, so that several source
-                        // directories contribute to one index rather than each erasing the last.
-                        String.valueOf(position == 0)
-                )
+                if (javaLauncher.present) {
+                    spec.executable = javaLauncher.get().executablePath.asFile.absolutePath
+                }
+                spec.args(arguments)
             }.assertNormalExitValue()
         }
+        else {
+            TagLibraryIndexFiles.clearIndex(destination)
+        }
+        TagLibraryIndexFiles.writeSettings(destination, strictTags.getOrElse(false),
+                dynamicTagNamespaces.getOrElse([] as Set))
     }
 }

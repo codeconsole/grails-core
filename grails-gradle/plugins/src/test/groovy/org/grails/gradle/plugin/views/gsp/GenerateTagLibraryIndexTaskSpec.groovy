@@ -28,6 +28,8 @@ import org.gradle.testfixtures.ProjectBuilder
 import spock.lang.Specification
 import spock.lang.TempDir
 
+import org.grails.gradle.plugin.core.GrailsExtension
+
 /**
  * The index has to be generated before anything that resolves tag calls is compiled, and has to travel
  * with the artifact so that a project depending on this one can resolve its tags too. Both are
@@ -41,8 +43,9 @@ class GenerateTagLibraryIndexTaskSpec extends Specification {
     Project project
 
     def setup() {
-        // A tag library has to be present for the task to have any input: it is skipped when the
-        // source directory is absent or empty, which is what a project with no tag libraries wants.
+        // The task runs whether or not a project declares tag libraries of its own, because it also
+        // records what the build declared about the tag libraries it uses. A tag library is present
+        // here so that the ordinary case is what most of these check.
         File taglibDir = new File(projectDir.toFile(), 'grails-app/taglib/demo')
         taglibDir.mkdirs()
         new File(taglibDir, 'DemoTagLib.groovy').text = '''
@@ -109,6 +112,79 @@ class GenerateTagLibraryIndexTaskSpec extends Specification {
 
         and: 'and resource processing waits for it to be written'
         dependencyNames(project.tasks.getByName('processResources')).contains('generateTagLibraryIndex')
+    }
+
+    void 'compiling pages sees the index this project generates'() {
+        given: 'a page calling a tag the same project declares can only resolve it from the index'
+        Task compilePages = project.tasks.getByName('compileGroovyPages')
+
+        expect: 'on the classpath itself, not merely produced before it'
+        compilePages.classpath.files*.canonicalFile.contains(
+                new File(projectDir.toFile(), 'build/generated/grails-taglibs').canonicalFile)
+    }
+
+    void 'the settings the build declares are not packaged'() {
+        given: 'they say how this project compiles, so a project depending on it must not inherit them'
+        Task processResources = project.tasks.getByName('processResources')
+
+        expect:
+        processResources.excludes.contains('META-INF/grails/taglibs/compile-settings.properties')
+    }
+
+    void 'the strictness and dynamic namespaces the build declares are task inputs'() {
+        given: 'the settings are read when the task runs, so declaring them later still reaches it'
+        GenerateTagLibraryIndexTask task = project.tasks.getByName('generateTagLibraryIndex') as GenerateTagLibraryIndexTask
+        GrailsExtension grails = project.extensions.create('grails', GrailsExtension, project)
+
+        when:
+        grails.compileStatic.strictTags.set(true)
+        grails.compileStatic.dynamicTagNamespaces.set(['legacy'] as Set)
+
+        then: 'read from the build rather than from a system property, so a change recompiles'
+        task.strictTags.get()
+        task.dynamicTagNamespaces.get() == ['legacy'] as Set
+    }
+
+    void 'a project with no tag libraries of its own still records what the build declared'() {
+        given: 'the settings apply to compiling the project, whether or not it declares tag libraries'
+        File emptyDir = File.createTempDir('no-taglibs', '')
+        Project empty = ProjectBuilder.builder().withProjectDir(emptyDir).build()
+        empty.pluginManager.apply('groovy')
+        empty.pluginManager.apply(GroovyPagePlugin)
+        GrailsExtension grails = empty.extensions.create('grails', GrailsExtension, empty)
+        grails.compileStatic.dynamicTagNamespaces.set(['legacy'] as Set)
+        GenerateTagLibraryIndexTask task =
+                empty.tasks.getByName('generateTagLibraryIndex') as GenerateTagLibraryIndexTask
+
+        when:
+        task.generate()
+
+        then:
+        File settings = new File(emptyDir,
+                'build/generated/grails-taglibs/META-INF/grails/taglibs/compile-settings.properties')
+        settings.isFile()
+        settings.text.contains('dynamicTagNamespaces=legacy')
+        settings.text.contains('strictTags=false')
+
+        cleanup:
+        emptyDir.deleteDir()
+    }
+
+    void 'a build that declares nothing is left as permissive as before'() {
+        given:
+        GenerateTagLibraryIndexTask task = project.tasks.getByName('generateTagLibraryIndex') as GenerateTagLibraryIndexTask
+
+        expect:
+        !task.strictTags.get()
+        task.dynamicTagNamespaces.get().isEmpty()
+    }
+
+    void 'the index is generated with the java the project is built with'() {
+        given: 'it runs against the project compile classpath, so it needs the java that built it'
+        GenerateTagLibraryIndexTask task = project.tasks.getByName('generateTagLibraryIndex') as GenerateTagLibraryIndexTask
+
+        expect:
+        task.javaLauncher.present
     }
 
     private static Set<String> dependencyNames(Task task) {
