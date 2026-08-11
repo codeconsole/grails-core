@@ -18,6 +18,7 @@
  */
 package org.grails.taglib;
 
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -39,6 +40,7 @@ import grails.core.support.GrailsApplicationAware;
 import org.grails.core.artefact.gsp.TagLibArtefactHandler;
 import org.grails.core.exceptions.GrailsConfigurationException;
 import org.grails.taglib.encoder.WithCodecHelper;
+import org.grails.taglib.index.TagLibraryIndex;
 
 /**
  * Looks up tag library instances.
@@ -53,6 +55,14 @@ public class TagLibraryLookup implements ApplicationContextAware, GrailsApplicat
     protected Map<String, NamespacedTagDispatcher> namespaceDispatchers = new LinkedHashMap<>();
     protected Map<String, Set<String>> tagsThatReturnObjectForNamespace = new LinkedHashMap<>();
     protected Map<String, Map<String, Map<String, Object>>> encodeAsForTagNamespaces = new LinkedHashMap<>();
+
+    /**
+     * The tags recorded when the tag libraries on the classpath were compiled. Registering from these
+     * avoids discovering tags by reflecting over, and touching the metaclass of, every tag library as
+     * the application starts. A tag library without a descriptor, as one from a plugin built before
+     * the index existed or one registered while developing, is discovered the previous way.
+     */
+    private TagLibraryIndex tagLibraryIndex;
 
     public void afterPropertiesSet() throws Exception {
         if (grailsApplication == null || applicationContext == null) {
@@ -119,7 +129,7 @@ public class TagLibraryLookup implements ApplicationContextAware, GrailsApplicat
             tagNamespaces.put(namespace, tags);
         }
 
-        for (String tagName : taglib.getTagNames()) {
+        for (String tagName : resolveTagNames(taglib)) {
             putTagLib(tags, tagName, taglib);
             tagsThatReturnObject.remove(tagName);
         }
@@ -145,6 +155,25 @@ public class TagLibraryLookup implements ApplicationContextAware, GrailsApplicat
                 encodeAsForTagNamespace.put(tagName, codecInfoMap);
             }
         }
+    }
+
+    /**
+     * Prefers the tags recorded when the tag library was compiled, falling back to discovering them
+     * from the class when it has no descriptor.
+     */
+    private Collection<String> resolveTagNames(GrailsTagLibClass taglib) {
+        if (tagLibraryIndex == null) {
+            tagLibraryIndex = TagLibraryIndex.load(resolveClassLoader());
+        }
+        Set<String> indexed = tagLibraryIndex.getTagNamesForClass(taglib.getClazz().getName());
+        return !indexed.isEmpty() ? indexed : taglib.getTagNames();
+    }
+
+    private ClassLoader resolveClassLoader() {
+        if (grailsApplication != null && grailsApplication.getClassLoader() != null) {
+            return grailsApplication.getClassLoader();
+        }
+        return getClass().getClassLoader();
     }
 
     protected void putTagLib(Map<String, Object> tags, String name, GrailsTagLibClass taglib) {

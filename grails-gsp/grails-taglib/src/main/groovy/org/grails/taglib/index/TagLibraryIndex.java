@@ -228,6 +228,38 @@ public final class TagLibraryIndex {
     }
 
     /**
+     * The tags a given tag library declares, as recorded when it was compiled.
+     *
+     * <p>Lets a tag library be registered without discovering its tags by reflection, which otherwise
+     * means touching the metaclass of every tag library as an application starts.
+     *
+     * @param tagLibraryClassName the binary name of a tag library
+     * @return its tags, or an empty set when it has no descriptor, in which case the caller must
+     *         discover them itself
+     */
+    public Set<String> getTagNamesForClass(String tagLibraryClassName) {
+        if (tagLibraryClassName == null) {
+            return Collections.emptySet();
+        }
+        Set<String> tagNames = new TreeSet<>();
+        for (Map<String, TagLibraryIndexEntry> tags : byNamespace.values()) {
+            for (TagLibraryIndexEntry entry : tags.values()) {
+                if (tagLibraryClassName.equals(entry.tagLibraryClassName())) {
+                    tagNames.add(entry.tagName());
+                }
+            }
+        }
+        // A tag this class declares that another also declares is ambiguous and was not recorded
+        // against either, so fall back to discovery rather than register an incomplete set.
+        for (Set<String> ambiguousTags : ambiguousByNamespace.values()) {
+            if (!ambiguousTags.isEmpty() && !tagNames.isEmpty()) {
+                return Collections.emptySet();
+            }
+        }
+        return Collections.unmodifiableSet(tagNames);
+    }
+
+    /**
      * @return true when no compiled tag library was found, in which case callers must fall back to
      *         runtime resolution
      */
