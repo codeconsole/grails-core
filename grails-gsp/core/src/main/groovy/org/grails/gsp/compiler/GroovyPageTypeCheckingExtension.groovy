@@ -31,6 +31,9 @@ import org.codehaus.groovy.ast.expr.VariableExpression
 import org.codehaus.groovy.transform.stc.GroovyTypeCheckingExtensionSupport
 import org.codehaus.groovy.transform.stc.StaticTypesMarker
 
+import org.grails.gsp.GroovyPage
+import org.grails.taglib.index.TagLibraryIndex
+
 /**
  * CompileStatic type checking extension for GSPs
  *
@@ -38,6 +41,17 @@ import org.codehaus.groovy.transform.stc.StaticTypesMarker
  *
  */
 class GroovyPageTypeCheckingExtension extends GroovyTypeCheckingExtensionSupport.TypeCheckingDSL {
+
+    /**
+     * Tag libraries compiled ahead of this page, discovered from their compile-time descriptors.
+     * <p>
+     * Where the {@code taglibs} directive only states which namespaces a page is permitted to use,
+     * this states which tags actually exist. That turns a call to a misspelled tag from something
+     * deferred to runtime dispatch into a compilation error, and removes the need to declare
+     * namespaces by hand for tag libraries that were on the compile classpath.
+     */
+    private static final TagLibraryIndex TAG_LIBRARY_INDEX = TagLibraryIndex.load(
+            GroovyPageTypeCheckingExtension.classLoader)
 
     @Override
     Object run() {
@@ -56,6 +70,8 @@ class GroovyPageTypeCheckingExtension extends GroovyTypeCheckingExtensionSupport
                     currentScope.allowedTagLibs = ListExpression.cast(taglibsExpression).expressions.collect([] as Set) { it.text.trim() }
                 }
             }
+            // Namespaces backed by a compiled tag library need no declaration: their tags are known.
+            currentScope.allowedTagLibs.addAll(TAG_LIBRARY_INDEX.namespaces)
         }
 
         unresolvedProperty { PropertyExpression pe ->
@@ -74,6 +90,9 @@ class GroovyPageTypeCheckingExtension extends GroovyTypeCheckingExtensionSupport
 
         methodNotFound { receiver, name, argList, argTypes, call ->
             if (isThisTheReceiver(call)) {
+                // An unqualified call in a GSP is a tag in the default namespace. When that namespace
+                // has compiled tag libraries, the tag has to be one of them.
+                reportUnknownTagIfIndexed(GroovyPage.DEFAULT_NAMESPACE, name, call)
                 return makeDynamic(call)
             }
             def objectExpression = call.objectExpression
@@ -81,12 +100,14 @@ class GroovyPageTypeCheckingExtension extends GroovyTypeCheckingExtensionSupport
                 return null
             }
             if (currentScope.dynamicProperties.contains(objectExpression)) {
+                reportUnknownTagIfIndexed(namespaceNameOf(objectExpression), name, call)
                 return makeDynamic(call)
             }
             // GROOVY-12041: Groovy 5 resolves receivers inherited through getProperty(String) as dynamic
             // before unresolvedVariable/unresolvedProperty can record them. Use the marker Groovy places on
             // those expressions, but still require the receiver name to be an allowed taglib namespace.
             if (isAllowedDynamicTaglibNamespace(objectExpression)) {
+                reportUnknownTagIfIndexed(namespaceNameOf(objectExpression), name, call)
                 return makeDynamic(call)
             }
             if (objectExpression instanceof VariableExpression && isUndeclaredDynamicVariable(objectExpression)) {
@@ -145,5 +166,34 @@ class GroovyPageTypeCheckingExtension extends GroovyTypeCheckingExtensionSupport
 
     def isThisTheReceiver(expr) {
         expr.implicitThis || (expr.objectExpression instanceof VariableExpression && expr.objectExpression.thisExpression)
+    }
+
+    /**
+     * Fails compilation when a namespace has compiled tag libraries but none of them declares the tag.
+     *
+     * <p>Silent when the namespace is unknown to the index, because a tag library registered at runtime
+     * or supplied by a plugin compiled separately is still legitimate and must keep resolving
+     * dynamically.
+     */
+    private void reportUnknownTagIfIndexed(String namespace, String tagName, Expression call) {
+        if (namespace == null || !TAG_LIBRARY_INDEX.hasNamespace(namespace)) {
+            return
+        }
+        if (TAG_LIBRARY_INDEX.lookup(namespace, tagName) != null) {
+            return
+        }
+        typeCheckingVisitor.addStaticTypeError(
+                "No such tag [${tagName}] in namespace [${namespace}]. Known tags: " +
+                        TAG_LIBRARY_INDEX.getTagNames(namespace).join(', '), call)
+    }
+
+    private static String namespaceNameOf(Expression objectExpression) {
+        if (objectExpression instanceof VariableExpression) {
+            return ((VariableExpression) objectExpression).name
+        }
+        if (objectExpression instanceof PropertyExpression) {
+            return ((PropertyExpression) objectExpression).propertyAsString
+        }
+        null
     }
 }
