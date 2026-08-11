@@ -32,6 +32,18 @@ import grails.core.gsp.GrailsTagLibClass
 import grails.util.GrailsClassUtils
 import org.grails.taglib.encoder.OutputContextLookupHelper
 
+/**
+ * Installs tags onto metaclasses.
+ *
+ * <p>Tags are resolved through {@link TagLibraryLookup} and invoked through
+ * {@link CompiledTagInvocation}, so nothing needs installing onto a metaclass to call a tag. What
+ * remains here is the dynamic dispatch that a tag library registered at runtime still relies on,
+ * reachable through {@code methodMissingForTagLib} with metaclass installation switched off.
+ *
+ * @deprecated Installing tags onto metaclasses is no longer part of dispatching a tag. Resolve
+ *             through {@link TagLibraryLookup} and invoke through {@link CompiledTagInvocation}.
+ */
+@Deprecated
 class TagLibraryMetaUtils {
 
     private static final Log LOG = LogFactory.getLog(TagLibraryMetaUtils)

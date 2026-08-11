@@ -306,8 +306,9 @@ class GroovyPagesGrailsPlugin extends Plugin {
                 // The tag library lookup class caches 'tag -> taglib class'
                 // so we need to update it now.
                 def lookup = applicationContext.getBean('gspTagLibraryLookup', TagLibraryLookup)
+                // Registering with the lookup is enough: tags are resolved through it rather than
+                // installed onto each tag library's metaclass.
                 lookup.registerTagLib(taglibClass)
-                TagLibraryMetaUtils.enhanceTagLibMetaClass(taglibClass, lookup)
             }
         }
         // clear uri cache after changes

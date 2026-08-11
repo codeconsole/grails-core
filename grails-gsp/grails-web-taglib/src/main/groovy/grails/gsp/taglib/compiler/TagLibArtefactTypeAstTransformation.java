@@ -108,8 +108,10 @@ public class TagLibArtefactTypeAstTransformation extends ArtefactTypeAstTransfor
                 continue;
             }
             if (field.getType() != null && CLOSURE_TYPE.equals(field.getType())) {
-                String message = "Closure-based tag definition [" + field.getName() + "] in TagLib [" + classNode.getName() + "] is deprecated. " +
-                        "Define tag handlers as methods instead.";
+                String message = "Closure-based tag definition [" + field.getName() + "] in TagLib [" +
+                        classNode.getName() + "] is deprecated and is not resolved when a page is " +
+                        "compiled, so calls to it stay dynamic. Define the tag as a method instead: " +
+                        "def " + field.getName() + "(Map attrs) { ... }";
                 org.grails.compiler.injection.GrailsASTUtils.warning(sourceUnit, field, message);
             }
         }
