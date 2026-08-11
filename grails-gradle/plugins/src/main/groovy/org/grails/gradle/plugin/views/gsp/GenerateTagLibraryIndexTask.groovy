@@ -38,6 +38,7 @@ import org.gradle.api.tasks.PathSensitive
 import org.gradle.api.tasks.PathSensitivity
 import org.gradle.api.tasks.TaskAction
 import org.gradle.jvm.toolchain.JavaLauncher
+import org.gradle.api.tasks.util.PatternSet
 import org.gradle.process.ExecOperations
 import org.gradle.process.JavaExecSpec
 
@@ -137,7 +138,9 @@ abstract class GenerateTagLibraryIndexTask extends DefaultTask {
         File destination = destinationDirectory.get().asFile
         destination.mkdirs()
         List<File> directories = new ArrayList<File>(sourceDirectories.files.findAll { File dir -> dir.isDirectory() })
-        if (directories) {
+        // A directory that exists but holds no sources is not worth forking a process to read, and a
+        // project with no tag libraries at all must not need the generator on its classpath to build.
+        if (directories && !sourceDirectories.asFileTree.matching(new PatternSet().include('**/*.groovy')).empty) {
             List<String> arguments = [
                     destination.canonicalPath,
                     String.valueOf(parameterNamesRetained.getOrElse(true)),

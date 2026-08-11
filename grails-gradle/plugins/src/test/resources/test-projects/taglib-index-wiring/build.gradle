@@ -1,0 +1,23 @@
+// Verifies where the tag library index is written and what it is wired into. No tag library sources
+// are present, which is itself the case under test: a project with none must not fork the generator,
+// and so must not need it on a classpath it has no reason to have.
+plugins {
+    id 'groovy'
+    id 'org.apache.grails.gradle.grails-gsp'
+}
+
+tasks.register('inspectTagLibraryIndexWiring') {
+    def compileGroovyClasspath = tasks.named('compileGroovy').get().classpath.files.collect { path(it) }
+    def pagesClasspath = tasks.named('compileGroovyPages').get().classpath.files.collect { path(it) }
+    def resourceDirs = sourceSets.main.resources.srcDirs.collect { path(it) }
+
+    doLast {
+        println "COMPILE_SEES_INDEX=${compileGroovyClasspath.any { it.endsWith('/generated/grails-taglibs') }}"
+        println "PAGES_SEE_INDEX=${pagesClasspath.any { it.endsWith('/generated/grails-taglibs') }}"
+        println "INDEX_IS_A_RESOURCE=${resourceDirs.any { it.endsWith('/generated/grails-taglibs') }}"
+    }
+}
+
+static String path(File file) {
+    file.absolutePath.replace('\\', '/')
+}
