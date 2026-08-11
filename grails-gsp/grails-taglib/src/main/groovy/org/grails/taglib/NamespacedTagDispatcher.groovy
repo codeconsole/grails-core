@@ -45,22 +45,14 @@ class NamespacedTagDispatcher extends GroovyObjectSupport {
         this.developmentMode = Environment.isDevelopmentMode()
         this.lookup = lookup
         this.type = callingType ?: this.getClass()
-        initializeMetaClass()
     }
 
-    void initializeMetaClass() {
-        // use per-instance metaclass
-        ExpandoMetaClass emc = new ExpandoMetaClass(getClass(), false, true)
-        emc.initialize()
-        setMetaClass(emc)
-        registerTagMetaMethods(emc)
-    }
-
-    protected void registerTagMetaMethods(ExpandoMetaClass emc) {
-        TagLibraryMetaUtils.registerTagMetaMethods(emc, lookup, namespace)
-    }
-
+    /**
+     * Every dispatcher used to be given its own ExpandoMetaClass carrying a method for each tag in the
+     * namespace, built and populated as the dispatcher was constructed. Tags are dispatched through
+     * the lookup instead, so no metaclass is created or written to here.
+     */
     def methodMissing(String name, Object args) {
-        TagLibraryMetaUtils.methodMissingForTagLib(getMetaClass(), type, lookup, namespace, name, args, !developmentMode)
+        TagLibraryMetaUtils.methodMissingForTagLib(getMetaClass(), type, lookup, namespace, name, args, false)
     }
 }
