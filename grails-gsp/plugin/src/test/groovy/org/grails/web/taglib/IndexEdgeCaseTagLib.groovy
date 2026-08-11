@@ -28,7 +28,7 @@ import grails.gsp.TagLib
  * agree on all of them.
  */
 @TagLib
-class IndexEdgeCaseTagLib {
+class IndexEdgeCaseTagLib extends BaseEdgeTagLib {
 
     static namespace = 'edge'
 
@@ -51,4 +51,15 @@ class IndexEdgeCaseTagLib {
 
     /** An ordinary helper that happens to live on the tag library. */
     String helper(String a, int b) { a }
+
+    /**
+     * A Map parameter not named {@code attrs}. Runtime requires the name to be {@code attrs} whenever
+     * parameter names are retained, which this build does.
+     */
+    def renamedAttrs(Map options) { 'renamedAttrs' }
+}
+
+/** A tag declared on a base class, which reflection's declared-only scan does not see. */
+abstract class BaseEdgeTagLib {
+    def inherited(Map attrs) { 'inherited' }
 }

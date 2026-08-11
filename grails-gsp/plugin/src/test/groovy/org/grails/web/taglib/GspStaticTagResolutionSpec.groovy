@@ -19,6 +19,7 @@
 package org.grails.web.taglib
 
 import org.grails.gsp.GroovyPagesTemplateEngine
+import org.grails.gsp.compiler.GroovyPageTypeCheckingExtension
 import org.grails.taglib.index.TagLibraryIndex
 import spock.lang.Specification
 
@@ -57,29 +58,32 @@ class GspStaticTagResolutionSpec extends Specification {
         t.metaInfo.compilationException == null
     }
 
-    void 'a statically compiled page calling an unknown tag fails to compile'() {
-        given:
+    void 'an unknown tag is reported without failing the build by default'() {
+        given: 'strict checking off, as it is by default'
         String template = '''<%@ page compileStatic="true" %>${g.mesage(code: 'typo')}'''
 
         when:
-        def t = gpte.createTemplate(template, 'unknown-tag')
+        def t = gpte.createTemplate(template, 'unknown-tag-lenient')
+
+        then: 'the page still compiles, so a stale index cannot break a correct build'
+        t.metaInfo.compilationException == null
+    }
+
+    void 'an unknown tag fails compilation under strict checking'() {
+        given:
+        System.setProperty(GroovyPageTypeCheckingExtension.STRICT_TAG_CHECKING_PROPERTY, 'true')
+        String template = '''<%@ page compileStatic="true" %>${g.mesage(code: 'typo')}'''
+
+        when:
+        def t = gpte.createTemplate(template, 'unknown-tag-strict')
 
         then: 'the misspelling is reported when the page is compiled rather than when it renders'
         t.metaInfo.compilationException != null
         t.metaInfo.compilationException.message.contains('No such tag [mesage]')
         t.metaInfo.compilationException.message.contains('namespace [g]')
-    }
 
-    void 'an unknown tag in the default namespace fails to compile'() {
-        given:
-        String template = '''<%@ page compileStatic="true" %>${mesage(code: 'typo')}'''
-
-        when:
-        def t = gpte.createTemplate(template, 'unknown-default-ns-tag')
-
-        then:
-        t.metaInfo.compilationException != null
-        t.metaInfo.compilationException.message.contains('No such tag [mesage]')
+        cleanup:
+        System.clearProperty(GroovyPageTypeCheckingExtension.STRICT_TAG_CHECKING_PROPERTY)
     }
 
     void 'a namespace with no compiled tag library still resolves dynamically'() {

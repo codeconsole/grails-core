@@ -71,19 +71,29 @@ final class TagLibraryAstScanner {
     }
 
     /**
+     * Resolves the namespace the way {@code DefaultGrailsTagLibClass} does at runtime, which reads the
+     * static {@code namespace} property through the class hierarchy.
+     *
      * @param classNode the tag library
-     * @return the declared {@code static namespace}, or {@value #DEFAULT_NAMESPACE} when absent
+     * @return the namespace, or {@code null} when it cannot be determined without running the code, in
+     *         which case no descriptor should be written and the tag library resolves dynamically
      */
     static String resolveNamespace(ClassNode classNode) {
-        FieldNode namespaceField = classNode.getDeclaredField(NAMESPACE_FIELD);
-        if (namespaceField != null && namespaceField.isStatic()) {
+        for (ClassNode current = classNode; current != null && !ClassHelper.isObjectType(current);
+                current = current.getSuperClass()) {
+            FieldNode namespaceField = current.getDeclaredField(NAMESPACE_FIELD);
+            if (namespaceField == null || !namespaceField.isStatic()) {
+                continue;
+            }
             Expression initial = namespaceField.getInitialExpression();
             if (initial instanceof ConstantExpression constant && constant.getValue() != null) {
                 String value = constant.getValue().toString().trim();
-                if (!value.isEmpty()) {
-                    return value;
-                }
+                return value.isEmpty() ? DEFAULT_NAMESPACE : value;
             }
+            // Declared, but its value is only known once the initialiser runs - a reference to a shared
+            // constant, a concatenation, and so on. Guessing "g" here would file the tags under the
+            // wrong namespace, so the tag library is left out of the index entirely.
+            return null;
         }
         return DEFAULT_NAMESPACE;
     }
@@ -92,10 +102,16 @@ final class TagLibraryAstScanner {
      * @param classNode the tag library
      * @return every tag the library declares, whether as a tag method or a legacy closure field
      */
-    static Collection<String> findTagNames(ClassNode classNode) {
+    static Collection<String> findTagNames(ClassNode classNode, boolean parameterNamesRetained) {
         Set<String> tagNames = new LinkedHashSet<>();
         for (MethodNode method : classNode.getMethods()) {
-            if (isTagMethodCandidate(method)) {
+            // TagMethodInvoker scans getDeclaredMethods(), so a method inherited from a superclass is
+            // not dispatchable and must not be recorded. Trait methods are woven as declarations on the
+            // implementing class and so are still seen here.
+            if (method.getDeclaringClass() != null && !classNode.equals(method.getDeclaringClass())) {
+                continue;
+            }
+            if (isTagMethodCandidate(method, parameterNamesRetained)) {
                 tagNames.add(method.getName());
             }
         }
@@ -108,7 +124,7 @@ final class TagLibraryAstScanner {
         return tagNames;
     }
 
-    private static boolean isTagMethodCandidate(MethodNode method) {
+    private static boolean isTagMethodCandidate(MethodNode method, boolean parameterNamesRetained) {
         if (!method.isPublic() || method.isStatic() || method.isAbstract() || method.isSynthetic()) {
             return false;
         }
@@ -140,7 +156,7 @@ final class TagLibraryAstScanner {
         if (name.startsWith("set") && parameters.length == 1) {
             return false;
         }
-        return hasConventionalTagSignature(parameters);
+        return hasConventionalTagSignature(parameters, parameterNamesRetained);
     }
 
     /**
@@ -154,7 +170,7 @@ final class TagLibraryAstScanner {
      * derived here instead; otherwise such a tag is recorded as absent and silently falls back to
      * dynamic dispatch.
      */
-    private static boolean hasConventionalTagSignature(Parameter[] parameters) {
+    private static boolean hasConventionalTagSignature(Parameter[] parameters, boolean parameterNamesRetained) {
         int required = 0;
         for (Parameter parameter : parameters) {
             if (!parameter.hasInitialExpression()) {
@@ -163,19 +179,19 @@ final class TagLibraryAstScanner {
         }
         // Every arity from the required count up to the full parameter list is callable.
         for (int arity = Math.max(required, 1); arity <= parameters.length; arity++) {
-            if (matchesTagShape(parameters, arity)) {
+            if (matchesTagShape(parameters, arity, parameterNamesRetained)) {
                 return true;
             }
         }
         return false;
     }
 
-    private static boolean matchesTagShape(Parameter[] parameters, int arity) {
+    private static boolean matchesTagShape(Parameter[] parameters, int arity, boolean parameterNamesRetained) {
         if (arity == 1) {
-            return isMap(parameters[0]) || isClosure(parameters[0]);
+            return isAttrs(parameters[0], parameterNamesRetained) || isBody(parameters[0], parameterNamesRetained);
         }
         if (arity == 2) {
-            return isMap(parameters[0]) && isClosure(parameters[1]);
+            return isAttrs(parameters[0], parameterNamesRetained) && isBody(parameters[1], parameterNamesRetained);
         }
         return false;
     }
@@ -186,6 +202,23 @@ final class TagLibraryAstScanner {
      * an attributes parameter, so a tag declared as {@code def foo(attrs)} is not dispatchable and must
      * not be recorded here either.
      */
+    private static boolean isAttrs(Parameter parameter, boolean parameterNamesRetained) {
+        return isMap(parameter) && namedOrUnnamed(parameter, "attrs", parameterNamesRetained);
+    }
+
+    private static boolean isBody(Parameter parameter, boolean parameterNamesRetained) {
+        return isClosure(parameter) && namedOrUnnamed(parameter, "body", parameterNamesRetained);
+    }
+
+    /**
+     * Runtime accepts a parameter as attrs or body when it carries the expected name, or when the class
+     * was compiled without retaining parameter names and no name is available to check. Mirroring that
+     * requires knowing which of those the compilation will produce.
+     */
+    private static boolean namedOrUnnamed(Parameter parameter, String expectedName, boolean parameterNamesRetained) {
+        return !parameterNamesRetained || expectedName.equals(parameter.getName());
+    }
+
     private static boolean isMap(Parameter parameter) {
         ClassNode type = parameter.getType();
         return type != null && (MAP_TYPE.equals(type) || type.isDerivedFrom(MAP_TYPE) ||

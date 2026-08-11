@@ -70,10 +70,19 @@ public class TagLibArtefactTypeAstTransformation extends ArtefactTypeAstTransfor
             // descriptor; those callers resolve tags at runtime.
             return;
         }
+        String namespace = TagLibraryAstScanner.resolveNamespace(classNode);
+        if (namespace == null) {
+            // The namespace is only known once the tag library's initialiser runs, so recording the
+            // tags would file them under the wrong namespace. Leave them to runtime resolution.
+            return;
+        }
+        // Runtime only treats a parameter as attrs or body when it carries that name, unless the class
+        // was compiled without parameter names, in which case any name is accepted. The same
+        // compilation setting therefore decides which methods are dispatchable.
+        boolean parameterNamesRetained = sourceUnit.getConfiguration().getParameters();
         try {
-            TagLibraryIndexWriter.write(targetDirectory, classNode.getName(),
-                    TagLibraryAstScanner.resolveNamespace(classNode),
-                    TagLibraryAstScanner.findTagNames(classNode));
+            TagLibraryIndexWriter.write(targetDirectory, classNode.getName(), namespace,
+                    TagLibraryAstScanner.findTagNames(classNode, parameterNamesRetained));
         } catch (IOException | RuntimeException e) {
             GrailsASTUtils.warning(sourceUnit, classNode,
                     "Could not write the tag library index entry for [" + classNode.getName() + "]: " +

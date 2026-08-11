@@ -29,6 +29,8 @@ import org.codehaus.groovy.ast.expr.ListExpression
 import org.codehaus.groovy.ast.expr.PropertyExpression
 import org.codehaus.groovy.ast.expr.VariableExpression
 import org.codehaus.groovy.transform.stc.GroovyTypeCheckingExtensionSupport
+import org.codehaus.groovy.control.SourceUnit
+import org.codehaus.groovy.control.messages.WarningMessage
 import org.codehaus.groovy.transform.stc.StaticTypesMarker
 
 import org.grails.gsp.GroovyPage
@@ -52,6 +54,19 @@ class GroovyPageTypeCheckingExtension extends GroovyTypeCheckingExtensionSupport
      */
     private static final TagLibraryIndex TAG_LIBRARY_INDEX = TagLibraryIndex.load(
             GroovyPageTypeCheckingExtension.classLoader)
+
+    /**
+     * Turns an unrecognised tag from a warning into a compilation error. Off by default: the index
+     * holds the tag libraries compiled before this page, so a stale or partial index would fail a
+     * build whose pages are correct.
+     */
+    public static final String STRICT_TAG_CHECKING_PROPERTY = 'grails.views.gsp.strictTagChecking'
+
+    private static boolean isStrictTagChecking() {
+        // Read per report rather than cached: this is only reached once a tag has already failed to
+        // resolve, so it costs nothing on the common path and stays settable within a running compiler.
+        Boolean.getBoolean(STRICT_TAG_CHECKING_PROPERTY)
+    }
 
     @Override
     Object run() {
@@ -182,9 +197,20 @@ class GroovyPageTypeCheckingExtension extends GroovyTypeCheckingExtensionSupport
         if (TAG_LIBRARY_INDEX.lookup(namespace, tagName) != null) {
             return
         }
-        typeCheckingVisitor.addStaticTypeError(
-                "No such tag [${tagName}] in namespace [${namespace}]. Known tags: " +
-                        TAG_LIBRARY_INDEX.getTagNames(namespace).join(', '), call)
+        String message = "No such tag [${tagName}] in namespace [${namespace}]. Known tags: " +
+                TAG_LIBRARY_INDEX.getTagNames(namespace).join(', ')
+        if (isStrictTagChecking()) {
+            typeCheckingVisitor.addStaticTypeError(message, call)
+            return
+        }
+        // A warning by default. The index reflects the tag libraries present when this page is
+        // compiled, and a tag added to an existing namespace without a rebuild of that library, or a
+        // library registered at runtime, would otherwise fail a build that is in fact correct.
+        // Set the system property to turn the warning into an error once a build regenerates the
+        // index reliably.
+        SourceUnit sourceUnit = typeCheckingVisitor.sourceUnit
+        sourceUnit?.errorCollector?.addWarning(
+                new WarningMessage(WarningMessage.LIKELY_ERRORS, message, null, sourceUnit))
     }
 
     private static String namespaceNameOf(Expression objectExpression) {
