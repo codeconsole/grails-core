@@ -65,6 +65,45 @@ class TagCallShadowingSpec extends Specification {
         'a typed local'     | 'TypedLocalShadow'   | ''                | ''        | 'Object g = null'
     }
 
+    @Unroll
+    void 'a getter named like a namespace shadows it: #description'() {
+        when:
+        byte[] compiled = compile('''
+            import grails.artefact.gsp.TagLibraryInvoker
+            class SUBJECT implements TagLibraryInvoker {
+                GETTER
+                def index() {
+                    this.g.createLink(controller: 'book')
+                }
+            }
+        '''.replace('SUBJECT', className).replace('GETTER', getter), className)
+
+        then: 'the getter answers to the name, so it is not the tag library namespace'
+        !references(compiled, 'org/grails/taglib/CompiledTagInvocation')
+
+        where:
+        description            | className         | getter
+        'a getX getter'        | 'GetterShadow'    | 'Object getG() { null }'
+        'a boolean isX getter' | 'BooleanIsShadow' | 'boolean isG() { true }'
+    }
+
+    void 'a namespace shadowed by an inherited getter is not rewritten'() {
+        when:
+        byte[] compiled = compile('''
+            import grails.artefact.gsp.TagLibraryInvoker
+            class GetterBase {
+                Object getG() { null }
+            }
+            class InheritedGetterShadow extends GetterBase implements TagLibraryInvoker {
+                def index() {
+                    this.g.createLink(controller: 'book')
+                }
+            }
+        ''', 'InheritedGetterShadow')
+
+        then:
+        !references(compiled, 'org/grails/taglib/CompiledTagInvocation')
+    }
     void 'a call on the namespace itself is still rewritten'() {
         when: 'nothing in scope claims the name'
         byte[] compiled = compile('''

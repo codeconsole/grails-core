@@ -222,8 +222,22 @@ public class CompiledTagCallRewriter extends ClassCodeExpressionTransformer {
                 hasGetter(namespace);
     }
 
+    /**
+     * Whether a getter answers to the name. Groovy reads a property from {@code getX()} and, when the
+     * return type is boolean, from {@code isX()} as well, so both forms claim the name.
+     */
     private boolean hasGetter(String namespace) {
-        String getterName = "get" + Character.toUpperCase(namespace.charAt(0)) + namespace.substring(1);
-        return !classNode.getMethods(getterName).isEmpty();
+        String capitalised = Character.toUpperCase(namespace.charAt(0)) + namespace.substring(1);
+        if (!classNode.getMethods("get" + capitalised).isEmpty()) {
+            return true;
+        }
+        for (MethodNode candidate : classNode.getMethods("is" + capitalised)) {
+            ClassNode returnType = candidate.getReturnType();
+            if (returnType != null && (ClassHelper.isPrimitiveBoolean(returnType) ||
+                    ClassHelper.isWrapperBoolean(returnType))) {
+                return true;
+            }
+        }
+        return false;
     }
 }
