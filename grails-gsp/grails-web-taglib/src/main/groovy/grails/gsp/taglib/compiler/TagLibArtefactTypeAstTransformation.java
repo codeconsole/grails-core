@@ -34,6 +34,7 @@ import grails.gsp.TagLib;
 import org.grails.compiler.injection.ArtefactTypeAstTransformation;
 import org.grails.compiler.injection.GrailsASTUtils;
 import org.grails.taglib.discovery.TagLibraryAstDiscovery;
+import org.grails.taglib.index.TagLibraryIndex;
 import org.grails.taglib.index.TagLibraryIndexWriter;
 
 @GroovyASTTransformation(phase = CompilePhase.CANONICALIZATION)
@@ -52,6 +53,7 @@ public class TagLibArtefactTypeAstTransformation extends ArtefactTypeAstTransfor
     protected String resolveArtefactType(SourceUnit sourceUnit, AnnotationNode annotationNode, ClassNode classNode) {
         addClosureTagDeprecationWarnings(sourceUnit, classNode);
         writeIndexEntry(sourceUnit, classNode);
+        rewriteResolvedTagCalls(sourceUnit, classNode);
         return "TagLibrary";
     }
 
@@ -89,6 +91,18 @@ public class TagLibArtefactTypeAstTransformation extends ArtefactTypeAstTransfor
                     "Could not write the tag library index entry for [" + classNode.getName() + "]: " +
                             e.getMessage() + ". Tags in this library will be resolved at runtime.");
         }
+    }
+
+    /**
+     * Replaces calls to tags this build already knows about with direct invocations, leaving anything
+     * it cannot resolve to be dispatched as before.
+     */
+    protected void rewriteResolvedTagCalls(SourceUnit sourceUnit, ClassNode classNode) {
+        TagLibraryIndex index = TagLibraryIndex.load(sourceUnit.getClassLoader());
+        if (index.isEmpty()) {
+            return;
+        }
+        new CompiledTagCallRewriter(sourceUnit, index, classNode).rewrite();
     }
 
     @Override
