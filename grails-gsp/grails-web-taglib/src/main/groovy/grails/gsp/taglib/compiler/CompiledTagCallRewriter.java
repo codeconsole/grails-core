@@ -55,7 +55,7 @@ import org.grails.taglib.index.TagLibraryIndex;
  *
  * @since 8.0.0
  */
-class CompiledTagCallRewriter extends ClassCodeExpressionTransformer {
+public class CompiledTagCallRewriter extends ClassCodeExpressionTransformer {
 
     private static final ClassNode INVOCATION_TYPE = ClassHelper.make(CompiledTagInvocation.class);
     private static final String LOOKUP_ACCESSOR = "getTagLibraryLookup";
@@ -66,7 +66,7 @@ class CompiledTagCallRewriter extends ClassCodeExpressionTransformer {
     private final ClassNode classNode;
     private int rewritten;
 
-    CompiledTagCallRewriter(SourceUnit sourceUnit, TagLibraryIndex index, ClassNode classNode) {
+    public CompiledTagCallRewriter(SourceUnit sourceUnit, TagLibraryIndex index, ClassNode classNode) {
         this.sourceUnit = sourceUnit;
         this.index = index;
         this.classNode = classNode;
@@ -75,11 +75,11 @@ class CompiledTagCallRewriter extends ClassCodeExpressionTransformer {
     /**
      * @return how many calls were rewritten, for tests to assert against
      */
-    int getRewrittenCount() {
+    public int getRewrittenCount() {
         return rewritten;
     }
 
-    void rewrite() {
+    public void rewrite() {
         for (MethodNode method : classNode.getMethods()) {
             if (method.getCode() != null && !method.isAbstract()) {
                 visitClassCodeContainer(method.getCode());
