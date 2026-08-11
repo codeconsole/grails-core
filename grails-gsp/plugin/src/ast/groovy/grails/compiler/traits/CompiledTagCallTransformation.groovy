@@ -38,7 +38,8 @@ import org.grails.taglib.index.TagLibraryIndex
  * <p>A tag library rewrites its own calls as it is compiled, but a controller can call tags too, and
  * gains that ability from the {@link TagLibraryInvoker} trait rather than from being a tag library.
  * Any class carrying that trait is therefore a candidate, which covers controllers without naming
- * them and without a second copy of the rewriting rules.
+ * them and without a second copy of the rewriting rules. A compiled GSP calls tags as well, and
+ * reaches them through {@code GroovyPage} rather than through the trait, so it is matched separately.
  *
  * <p>Runs after trait injection, since whether a class can call tags is only settled once its traits
  * have been applied.
@@ -50,6 +51,12 @@ import org.grails.taglib.index.TagLibraryIndex
 class CompiledTagCallTransformation implements ASTTransformation {
 
     private static final ClassNode TAG_LIBRARY_INVOKER = ClassHelper.make(TagLibraryInvoker)
+
+    /**
+     * Matched by name rather than by type: the page runtime is not on the classpath this
+     * transformation is compiled against, and need not be.
+     */
+    private static final String GROOVY_PAGE = 'org.grails.gsp.GroovyPage'
 
     @Override
     void visit(ASTNode[] nodes, SourceUnit source) {
@@ -63,7 +70,7 @@ class CompiledTagCallTransformation implements ASTTransformation {
                 continue
             }
             if (index == null) {
-                index = TagLibraryIndex.load(source.getClassLoader())
+                index = TagLibraryIndex.forClassLoader(source.getClassLoader())
                 if (index.isEmpty()) {
                     return
                 }
@@ -74,9 +81,18 @@ class CompiledTagCallTransformation implements ASTTransformation {
 
     /**
      * @return true when the class can call tags, which is what carrying the tag library invoker trait
-     *         means, whether it is a controller, a tag library or anything else given that ability
+     *         means, whether it is a controller, a tag library or anything else given that ability,
+     *         or what being a compiled page means
      */
     private static boolean callsTags(ClassNode classNode) {
-        classNode.implementsInterface(TAG_LIBRARY_INVOKER) || classNode.declaresInterface(TAG_LIBRARY_INVOKER)
+        if (classNode.implementsInterface(TAG_LIBRARY_INVOKER) || classNode.declaresInterface(TAG_LIBRARY_INVOKER)) {
+            return true
+        }
+        for (ClassNode current = classNode.superClass; current != null; current = current.superClass) {
+            if (GROOVY_PAGE == current.name) {
+                return true
+            }
+        }
+        false
     }
 }

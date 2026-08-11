@@ -257,6 +257,19 @@ public abstract class GroovyPage extends Script {
     }
 
     /**
+     * The tag libraries this page can reach.
+     *
+     * <p>Named as the tag library invoker trait names it, so that a tag call compiled into a direct
+     * invocation reads the same whether it was written in a page, a tag library or a controller.
+     *
+     * @return the lookup, or {@code null} before the page has been initialised
+     * @since 8.0.0
+     */
+    public TagLibraryLookup getTagLibraryLookup() {
+        return this.gspTagLibraryLookup;
+    }
+
+    /**
      * Obtains a reference to the JSP tag library resolver instance
      *
      * @return The JSP TagLibraryResolver instance
