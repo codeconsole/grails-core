@@ -36,8 +36,8 @@ import groovy.lang.Closure;
 import groovy.lang.GroovyObject;
 import groovy.lang.MissingMethodException;
 
-import grails.gsp.NotATag;
-import grails.gsp.Tag;
+import org.grails.taglib.discovery.ReflectedTagMethodView;
+import org.grails.taglib.discovery.TagDiscoveryRules;
 
 public final class TagMethodInvoker {
 
@@ -54,27 +54,7 @@ public final class TagMethodInvoker {
      *
      * @since 8.0.0
      */
-    public static final Set<String> FRAMEWORK_METHOD_NAMES = Set.of(
-            "afterPropertiesSet",
-            "currentRequestAttributes",
-            "destroy",
-            "initializeTagLibrary",
-            "onApplicationEvent",
-            "raw",
-            "throwTagError",
-            "withCodec"
-    );
-
-    private static final Set<String> OBJECT_METHOD_SIGNATURES = collectSignatures(Object.class);
-    private static final Set<String> GROOVY_OBJECT_METHOD_SIGNATURES = collectSignatures(GroovyObject.class);
-
-    private static Set<String> collectSignatures(Class<?> type) {
-        Set<String> signatures = new HashSet<>();
-        for (Method method : type.getMethods()) {
-            signatures.add(signature(method));
-        }
-        return Collections.unmodifiableSet(signatures);
-    }
+    public static final Set<String> FRAMEWORK_METHOD_NAMES = TagDiscoveryRules.getFrameworkMethodNames();
 
     private static final ClassValue<Map<String, Field>> CLOSURE_FIELDS_BY_NAME = new ClassValue<>() {
         @Override
@@ -285,46 +265,7 @@ public final class TagMethodInvoker {
     }
 
     public static boolean isTagMethodCandidate(Method method) {
-        int modifiers = method.getModifiers();
-        if (!Modifier.isPublic(modifiers) || Modifier.isStatic(modifiers) || method.isBridge() || method.isSynthetic()) {
-            return false;
-        }
-        if (method.isAnnotationPresent(NotATag.class)) {
-            return false;
-        }
-        if (method.isAnnotationPresent(Tag.class)) {
-            return true;
-        }
-        String name = method.getName();
-        if (name.startsWith("get") && method.getParameterCount() == 0) {
-            return false;
-        }
-        if (name.startsWith("is") && method.getParameterCount() == 0 &&
-                (method.getReturnType() == boolean.class || method.getReturnType() == Boolean.class)) {
-            return false;
-        }
-        if (name.startsWith("set") && method.getParameterCount() == 1) {
-            return false;
-        }
-        if ("invokeMethod".equals(name) || "methodMissing".equals(name) || "propertyMissing".equals(name)) {
-            return false;
-        }
-        if (FRAMEWORK_METHOD_NAMES.contains(name)) {
-            return false;
-        }
-        String signature = signature(method);
-        if (OBJECT_METHOD_SIGNATURES.contains(signature) || GROOVY_OBJECT_METHOD_SIGNATURES.contains(signature)) {
-            return false;
-        }
-        return hasConventionalTagSignature(method);
-    }
-
-    private static boolean hasConventionalTagSignature(Method method) {
-        Parameter[] parameters = method.getParameters();
-        if (parameters.length == 1) {
-            return isAttrsParameter(parameters[0]) || isBodyParameter(parameters[0]);
-        }
-        return parameters.length == 2 && isAttrsParameter(parameters[0]) && isBodyParameter(parameters[1]);
+        return TagDiscoveryRules.isTagMethod(new ReflectedTagMethodView(method));
     }
 
     private static boolean isAttrsParameter(Parameter parameter) {
