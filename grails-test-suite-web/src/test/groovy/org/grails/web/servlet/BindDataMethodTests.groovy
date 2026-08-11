@@ -43,7 +43,7 @@ class BindDataMethodTests extends Specification implements ControllerUnitTest<Bi
         GrailsWebDataBinder.resetWarnedBindingShapes()
     }
 
-    void 'Test bindData with Map'() {
+    void 'bindData binds a map'() {
         when:
         def model = controller.bindWithMap()
         def target = model.target
@@ -52,7 +52,7 @@ class BindDataMethodTests extends Specification implements ControllerUnitTest<Bi
         target.name == 'Marc Palmer'
     }
 
-    void 'Test bindData With Excludes'() {
+    void 'bindData applies excludes'() {
         when:
         def model = controller.bindWithExcludes()
         def target = model.target
@@ -62,7 +62,7 @@ class BindDataMethodTests extends Specification implements ControllerUnitTest<Bi
         target.email == null
     }
 
-    void 'Test unconfigured bindData with only excludes still binds non-allowlisted properties'() {
+    void 'unconfigured bindData with only excludes still binds non-allowlisted properties'() {
         when:
         def target = new CommandObject(email: 'keep-me')
         controller.bindData target, [name: 'Marc Palmer', email: 'dontwantthis', dynamicField: 'bound'], [exclude: ['email']]
@@ -73,7 +73,7 @@ class BindDataMethodTests extends Specification implements ControllerUnitTest<Bi
         target.dynamicField == 'bound'
     }
 
-    void 'Test bindData With Includes'() {
+    void 'bindData applies includes'() {
         when:
         def model = controller.bindWithIncludes()
         def target = model.target
@@ -83,7 +83,7 @@ class BindDataMethodTests extends Specification implements ControllerUnitTest<Bi
         target.email == null
     }
 
-    void 'Test bindData With Empty Includes/Excludes Map'() {
+    void 'bindData accepts an empty includes/excludes map'() {
         when:
         def model = controller.bindWithEmptyIncludesExcludesMap()
         def target = model.target
@@ -93,7 +93,7 @@ class BindDataMethodTests extends Specification implements ControllerUnitTest<Bi
         target.email == 'dowantthis'
     }
 
-    void 'Test bindData Overriding Included With Excluded'() {
+    void 'excludes take precedence over includes'() {
         when:
         def model = controller.bindWithIncludeOverriddenByExclude()
         def target = model.target
@@ -103,7 +103,7 @@ class BindDataMethodTests extends Specification implements ControllerUnitTest<Bi
         target.email == null
     }
 
-    void 'Test bindData With Prefix Filter'() {
+    void 'bindData applies a prefix filter'() {
         when:
         def model = controller.bindWithPrefixFilter()
         def target = model.target
@@ -113,7 +113,7 @@ class BindDataMethodTests extends Specification implements ControllerUnitTest<Bi
         target.email == 'lee@mail.com'
     }
 
-    void 'Test bindData With Disallowed And GrailsParameterMap'() {
+    void 'bindData applies disallowed properties to a GrailsParameterMap'() {
         when:
         params.name = 'Marc Palmer'
         params.email = 'dontwantthis'
@@ -127,7 +127,7 @@ class BindDataMethodTests extends Specification implements ControllerUnitTest<Bi
         target.email == null
     }
 
-    void 'Test bindData With Prefix Filter And Disallowed'() {
+    void 'bindData combines a prefix filter with disallowed properties'() {
         when:
         def model = controller.bindWithPrefixFilterAndDisallowed()
         def target = model.target
@@ -137,7 +137,7 @@ class BindDataMethodTests extends Specification implements ControllerUnitTest<Bi
         target.email == null
     }
 
-    void 'Test bindData Converts Single String In Map To List'() {
+    void 'bindData converts a single string in a map to a list'() {
         when:
         def model = controller.bindWithStringConvertedToList()
         def target = model.target
@@ -193,12 +193,43 @@ class BindDataMethodTests extends Specification implements ControllerUnitTest<Bi
         model.target.children[0].name == null
     }
 
-    void 'clearMissing leaves an explicitly included framework property unchanged'() {
+    void 'clearMissing clears omitted properties selected by a nested wildcard'() {
+        when:
+        def model = controller.bindWithClearMissingAndNestedWildcard()
+
+        then:
+        model.target.address.country == null
+        !model.target.address.admin
+    }
+
+    void 'clearMissing clears omitted properties selected by an underscore wildcard'() {
+        when:
+        def model = controller.bindWithClearMissingAndUnderscoreWildcard()
+
+        then:
+        model.target.foo_admin == null
+    }
+
+    void 'clearMissing clears explicitly included Grails-managed properties'() {
         when:
         def model = controller.bindWithClearMissingAndFrameworkProperty()
 
         then:
-        model.target.id == 1L
+        model.target.id == null
+        model.target.version == null
+        model.target.dateCreated == null
+        model.target.lastUpdated == null
+        model.target.errors == null
+    }
+
+    void 'intrinsic runtime properties remain protected when explicitly included'() {
+        when:
+        def model = controller.bindWithClearMissingAndIntrinsicRuntimeProperties()
+
+        then:
+        model.target.class == NoAllowlistCommandObject
+        model.target.metaClass != null
+        model.target.username == 'existing'
     }
 
     void 'clearMissing leaves an excluded omitted field unchanged'() {
@@ -299,7 +330,7 @@ class BindDataMethodTests extends Specification implements ControllerUnitTest<Bi
         target.protectedChildren[0].secret == 'keep-me'
     }
 
-    void 'Test bindData uses the allowlist in explicit secure mode and preserves bindable false'() {
+    void 'explicit secure mode uses the allowlist and preserves bindable: false'() {
         given:
         enableSecureBinding()
 
@@ -314,7 +345,7 @@ class BindDataMethodTests extends Specification implements ControllerUnitTest<Bi
         target.role == null
     }
 
-    void 'Test an existing bindable true allowlist works in explicit secure mode'() {
+    void 'an existing bindable: true allowlist works in explicit secure mode'() {
         given:
         enableSecureBinding()
         def binder = new RecordingGrailsWebDataBinder(grailsApplication)
@@ -328,7 +359,7 @@ class BindDataMethodTests extends Specification implements ControllerUnitTest<Bi
         !target.admin
     }
 
-    void 'Test generated complex property wildcards do not allow a sibling property with the same prefix'() {
+    void 'generated complex-property wildcards do not allow a sibling with the same prefix'() {
         given:
         enableSecureBinding()
 
@@ -340,7 +371,7 @@ class BindDataMethodTests extends Specification implements ControllerUnitTest<Bi
         model.target.foo_admin == null
     }
 
-    void 'Test explicit secure mode rejects an unlisted property and emits one actionable warning'() {
+    void 'explicit secure mode rejects an unlisted property and emits one actionable warning'() {
         given:
         enableSecureBinding()
         def binder = new RecordingGrailsWebDataBinder(grailsApplication)
@@ -361,7 +392,7 @@ class BindDataMethodTests extends Specification implements ControllerUnitTest<Bi
         ]
     }
 
-    void 'Test unconfigured binding remains permissive for a class with no allowlist'() {
+    void 'unconfigured binding remains permissive for a class with no allowlist'() {
         given:
         def binder = new RecordingGrailsWebDataBinder(grailsApplication)
         def target = new NoAllowlistCommandObject()
@@ -375,7 +406,7 @@ class BindDataMethodTests extends Specification implements ControllerUnitTest<Bi
 
     }
 
-    void 'Test unconfigured bindData remains permissive for a class with no allowlist'() {
+    void 'unconfigured bindData remains permissive for a class with no allowlist'() {
         when:
         def target = controller.bindNoAllowlist().target
 
@@ -383,7 +414,7 @@ class BindDataMethodTests extends Specification implements ControllerUnitTest<Bi
         target.username == 'ghopper'
     }
 
-    void 'Test unconfigured bindData preserves the generated compatibility allowlist'() {
+    void 'unconfigured bindData preserves the generated compatibility allowlist'() {
         when:
         def target = controller.bindWithDefaultAllowlist().target
 
@@ -394,7 +425,7 @@ class BindDataMethodTests extends Specification implements ControllerUnitTest<Bi
         target.role == null
     }
 
-    void 'Test unconfigured bindData binds typed Map values as before'() {
+    void 'unconfigured bindData binds typed map values as before'() {
         when:
         def target = controller.bindTypedMap().target
 
@@ -403,7 +434,7 @@ class BindDataMethodTests extends Specification implements ControllerUnitTest<Bi
         target.members.zero.admin
     }
 
-    void 'Test explicit compatibility configuration uses the legacy allowlist'() {
+    void 'explicit compatibility configuration uses the legacy allowlist'() {
         given:
         grailsApplication.config.setAt(Settings.DATABINDING_DENY_BY_DEFAULT, false)
 
@@ -419,7 +450,7 @@ class BindDataMethodTests extends Specification implements ControllerUnitTest<Bi
 
     }
 
-    void 'Test direct web data binder in explicit secure mode denies unlisted properties without generated allowlist'() {
+    void 'direct web binding in explicit secure mode denies unlisted properties without a generated allowlist'() {
         given:
         enableSecureBinding()
         def binder = grailsApplication.mainContext.getBean(DataBindingUtils.DATA_BINDER_BEAN_NAME)
@@ -433,7 +464,7 @@ class BindDataMethodTests extends Specification implements ControllerUnitTest<Bi
         target.role == null
     }
 
-    void 'Test bindData in explicit secure mode applies the nested target allowlist'() {
+    void 'bindData in explicit secure mode applies the nested target allowlist'() {
         given:
         enableSecureBinding()
         params.username = 'ghopper'
@@ -450,7 +481,7 @@ class BindDataMethodTests extends Specification implements ControllerUnitTest<Bi
         !target.address.admin
     }
 
-    void 'Test explicit wildcard include binds all nested properties'() {
+    void 'an explicit wildcard include binds all nested properties'() {
         given:
         def target = new RuntimeConstrainedCommandObject()
 
@@ -463,7 +494,7 @@ class BindDataMethodTests extends Specification implements ControllerUnitTest<Bi
         target.address.admin
     }
 
-    void 'Test generated parent allowlist does not widen to nested target allowlist'() {
+    void 'a generated parent allowlist does not widen to the nested target allowlist'() {
         given:
         enableSecureBinding()
         def target = new RuntimeConstrainedCommandObject()
@@ -476,7 +507,7 @@ class BindDataMethodTests extends Specification implements ControllerUnitTest<Bi
         !target.address.admin
     }
 
-    void 'Test generated bare nested property does not bind child allowlisted properties'() {
+    void 'a generated bare nested property does not bind child-allowlisted properties'() {
         given:
         enableSecureBinding()
         def target = new GeneratedBareAddressCommandObject()
@@ -488,7 +519,7 @@ class BindDataMethodTests extends Specification implements ControllerUnitTest<Bi
         !target.address.admin
     }
 
-    void 'Test bindData in explicit secure mode augments inherited generated allowlist with runtime bindable properties'() {
+    void 'bindData in explicit secure mode augments the inherited allowlist with runtime bindable properties'() {
         given:
         enableSecureBinding()
         params.parentDisplayName = 'Parent'
@@ -503,7 +534,7 @@ class BindDataMethodTests extends Specification implements ControllerUnitTest<Bi
         target.childDisplayName == 'Child'
     }
 
-    void 'Test indexed binding applies explicit nested allowlist to collection elements'() {
+    void 'indexed binding applies the explicit nested allowlist to collection elements'() {
         when:
         def model = controller.bindMembersWithNestedInclude()
         def target = model.target
@@ -514,7 +545,7 @@ class BindDataMethodTests extends Specification implements ControllerUnitTest<Bi
         !target.members[0].admin
     }
 
-    void 'Test indexed array binding applies explicit nested allowlist to every element'() {
+    void 'indexed array binding applies the explicit nested allowlist to every element'() {
         given:
         def target = new TeamCommandObject()
 
@@ -527,7 +558,7 @@ class BindDataMethodTests extends Specification implements ControllerUnitTest<Bi
         !target.memberArray[0].admin
     }
 
-    void 'Test JSON list array binding applies explicit nested allowlist to every element'() {
+    void 'JSON list array binding applies the explicit nested allowlist to every element'() {
         given:
         def target = new TeamCommandObject()
 
@@ -540,7 +571,7 @@ class BindDataMethodTests extends Specification implements ControllerUnitTest<Bi
         !target.memberArray[0].admin
     }
 
-    void 'Test JSON list binding applies explicit nested allowlist to collection elements'() {
+    void 'JSON list binding applies the explicit nested allowlist to collection elements'() {
         given:
         def target = new TeamCommandObject()
 
@@ -554,7 +585,7 @@ class BindDataMethodTests extends Specification implements ControllerUnitTest<Bi
         !target.members[0].admin
     }
 
-    void 'Test indexed typed map binding applies explicit nested allowlist to map values'() {
+    void 'indexed typed-map binding applies the explicit nested allowlist to map values'() {
         given:
         def target = new MapTeamCommandObject()
 
@@ -567,7 +598,7 @@ class BindDataMethodTests extends Specification implements ControllerUnitTest<Bi
         !target.members.zero.admin
     }
 
-    void 'Test nested typed map binding applies explicit nested allowlist to map values'() {
+    void 'nested typed-map binding applies the explicit nested allowlist to map values'() {
         given:
         def target = new MapTeamCommandObject()
 
@@ -580,7 +611,7 @@ class BindDataMethodTests extends Specification implements ControllerUnitTest<Bi
         !target.members.zero.admin
     }
 
-    void 'Test generated parent allowlist applies child allowlist to collection elements'() {
+    void 'a generated parent allowlist applies the child allowlist to collection elements'() {
         given:
         enableSecureBinding()
         def indexedTarget = new GeneratedNestedContainerCommandObject()
@@ -599,7 +630,7 @@ class BindDataMethodTests extends Specification implements ControllerUnitTest<Bi
         !nestedTarget.children[0].admin
     }
 
-    void 'Test generated parent allowlist applies child allowlist to array elements'() {
+    void 'a generated parent allowlist applies the child allowlist to array elements'() {
         given:
         enableSecureBinding()
         def target = new GeneratedNestedContainerCommandObject()
@@ -613,7 +644,7 @@ class BindDataMethodTests extends Specification implements ControllerUnitTest<Bi
         !target.childArray[0].admin
     }
 
-    void 'Test generated parent allowlist applies child allowlist to JSON list array elements'() {
+    void 'a generated parent allowlist applies the child allowlist to JSON list array elements'() {
         given:
         enableSecureBinding()
         def target = new GeneratedNestedContainerCommandObject()
@@ -627,7 +658,7 @@ class BindDataMethodTests extends Specification implements ControllerUnitTest<Bi
         !target.childArray[0].admin
     }
 
-    void 'Test listener fallback preserves the explicit nested allowlist'() {
+    void 'listener fallback preserves the explicit nested allowlist'() {
         given:
         def target = new GeneratedNestedContainerCommandObject()
         def binder = grailsApplication.mainContext.getBean(DataBindingUtils.DATA_BINDER_BEAN_NAME) as GrailsWebDataBinder
@@ -647,7 +678,7 @@ class BindDataMethodTests extends Specification implements ControllerUnitTest<Bi
         !target.child.admin
     }
 
-    void 'Test runtime imported bindable true augments the generated allowlist'() {
+    void 'an imported runtime bindable: true constraint augments the generated allowlist'() {
         given:
         enableSecureBinding()
         def target = new RuntimeImportedConstraintCommandObject()
@@ -665,7 +696,7 @@ class BindDataMethodTests extends Specification implements ControllerUnitTest<Bi
         !target.admin
     }
 
-    void 'Test generated parent allowlist applies child allowlist to typed map values'() {
+    void 'a generated parent allowlist applies the child allowlist to typed map values'() {
         given:
         enableSecureBinding()
         def indexedTarget = new GeneratedNestedContainerCommandObject()
@@ -684,7 +715,7 @@ class BindDataMethodTests extends Specification implements ControllerUnitTest<Bi
         !nestedTarget.childrenByKey.nested.admin
     }
 
-    void 'Test explicit compatibility configuration permits all child properties through generated parent allowlist'() {
+    void 'explicit compatibility configuration permits all child properties through the generated parent allowlist'() {
         given:
         grailsApplication.config.setAt(Settings.DATABINDING_DENY_BY_DEFAULT, false)
         def target = new GeneratedNestedContainerCommandObject()
@@ -706,7 +737,7 @@ class BindDataMethodTests extends Specification implements ControllerUnitTest<Bi
 
     }
 
-    void 'Test explicit secure mode ignores an old broad default allowlist field'() {
+    void 'explicit secure mode ignores an old broad default allowlist field'() {
         given:
         enableSecureBinding()
 
@@ -720,7 +751,7 @@ class BindDataMethodTests extends Specification implements ControllerUnitTest<Bi
         target.admin == null
     }
 
-    void 'Test compatibility mode falls back to an old default allowlist field'() {
+    void 'compatibility mode falls back to an old default allowlist field'() {
         given:
         grailsApplication.config.setAt(Settings.DATABINDING_DENY_BY_DEFAULT, false)
 
@@ -735,7 +766,7 @@ class BindDataMethodTests extends Specification implements ControllerUnitTest<Bi
 
     }
 
-    void 'Test explicit secure mode ignores an old subclass broad allowlist paired with an inherited legacy allowlist'() {
+    void 'explicit secure mode ignores an old subclass broad allowlist paired with an inherited legacy allowlist'() {
         given:
         enableSecureBinding()
         params.name = 'trusted'
@@ -754,7 +785,7 @@ class BindDataMethodTests extends Specification implements ControllerUnitTest<Bi
                 DefaultASTDatabindingHelper.LEGACY_DATABINDING_WHITELIST)
     }
 
-    void 'Test explicit secure mode ignores an old nested subclass broad allowlist paired with an inherited legacy allowlist'() {
+    void 'explicit secure mode ignores an old nested subclass broad allowlist paired with an inherited legacy allowlist'() {
         given:
         enableSecureBinding()
         params.'child.name' = 'trusted nested'
@@ -769,7 +800,7 @@ class BindDataMethodTests extends Specification implements ControllerUnitTest<Bi
         !target.child.admin
     }
 
-    void 'Test bindData with empty include list binds no properties'() {
+    void 'bindData with an empty include list binds no properties'() {
         when:
         def model = controller.bindWithEmptyIncludeList()
         def target = model.target
@@ -779,7 +810,7 @@ class BindDataMethodTests extends Specification implements ControllerUnitTest<Bi
         target.email == null
     }
 
-    void 'Test direct DataBindingUtils binding with empty include list binds no properties'() {
+    void 'direct DataBindingUtils binding with an empty include list binds no properties'() {
         given:
         def target = new CommandObject()
 
@@ -791,7 +822,7 @@ class BindDataMethodTests extends Specification implements ControllerUnitTest<Bi
         target.email == null
     }
 
-    void 'Test direct domain binding with empty include list binds no properties'() {
+    void 'direct domain binding with an empty include list binds no properties'() {
         given:
         def target = new CommandObject()
 
@@ -803,7 +834,7 @@ class BindDataMethodTests extends Specification implements ControllerUnitTest<Bi
         target.email == null
     }
 
-    void 'Test direct domain binding with null include uses the explicit secure-mode allowlist'() {
+    void 'direct domain binding with a null include uses the explicit secure-mode allowlist'() {
         given:
         enableSecureBinding()
         def target = new SecureCommandObject()
@@ -1011,9 +1042,39 @@ class BindingController {
         [target: target]
     }
 
+    def bindWithClearMissingAndNestedWildcard() {
+        def target = new CommandObject(address: new Address(country: 'Existing Country', admin: true))
+        bindData target, [address: [admin: false]], [include: ['address.*'], clearMissing: true]
+        [target: target]
+    }
+
+    def bindWithClearMissingAndUnderscoreWildcard() {
+        def target = new ComplexPropertyWildcardSiblingCommandObject(foo_admin: 'existing')
+        bindData target, [:], [include: ['foo_*'], clearMissing: true]
+        [target: target]
+    }
+
+    def bindWithClearMissingAndIntrinsicRuntimeProperties() {
+        def target = new NoAllowlistCommandObject(username: 'existing')
+        def source = [
+                'class': String,
+                'classLoader': String.class.classLoader,
+                'protectionDomain': String.class.protectionDomain,
+                'metaClass': target.metaClass,
+                'metaPropertyValues': target.metaPropertyValues,
+                'properties': [username: 'changed']
+        ]
+        bindData target, source,
+                [include: ['class', 'classLoader', 'protectionDomain', 'metaClass', 'metaPropertyValues', 'properties'],
+                 clearMissing: true]
+        [target: target]
+    }
+
     def bindWithClearMissingAndFrameworkProperty() {
-        def target = new FrameworkManagedCommandObject(id: 1L)
-        bindData target, [:], [include: ['id'], clearMissing: true]
+        def target = new FrameworkManagedCommandObject(
+                id: 1L, version: 2L, dateCreated: new Date(), lastUpdated: new Date(), errors: 'errors')
+        bindData target, [:],
+                [include: ['id', 'version', 'dateCreated', 'lastUpdated', 'errors'], clearMissing: true]
         [target: target]
     }
 
@@ -1346,6 +1407,10 @@ class NoAllowlistChild {
 
 class FrameworkManagedCommandObject {
     Long id
+    Long version
+    Date dateCreated
+    Date lastUpdated
+    String errors
 }
 
 class PrimitiveCommandObject {
