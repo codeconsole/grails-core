@@ -28,12 +28,12 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Set;
 import java.util.TreeSet;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
 import org.codehaus.groovy.ast.AnnotationNode;
 import org.codehaus.groovy.ast.ClassNode;
+import org.codehaus.groovy.ast.FieldNode;
+import org.codehaus.groovy.ast.expr.ConstantExpression;
 import org.codehaus.groovy.control.ClassNodeResolver;
 import org.codehaus.groovy.control.CompilationUnit;
 import org.codehaus.groovy.control.CompilerConfiguration;
@@ -63,8 +63,7 @@ public final class TagLibraryIndexGenerator {
     private static final String ARTEFACT_ANNOTATION = "grails.artefact.Artefact";
     private static final String TAG_LIB_ARTEFACT = "TagLib";
 
-    private static final Pattern NAMESPACE_DECLARATION =
-            Pattern.compile("static\\s+(?:final\\s+)?(?:String\\s+)?namespace\\s*=\\s*['\"]([^'\"]+)['\"]");
+    private static final String NAMESPACE_FIELD = "namespace";
 
     private TagLibraryIndexGenerator() {
     }
@@ -165,18 +164,19 @@ public final class TagLibraryIndexGenerator {
             TagLibraryIndexWriter.write(outputDir, classNode.getName(), namespace,
                     TagLibraryAstDiscovery.findTags(classNode, parameterNamesRetained));
         }
-        recordWhatWasMissed(outputDir, skipped);
+        recordWhatWasMissed(outputDir, skipped, encoding);
     }
 
     /**
      * Records the namespaces left incomplete by whatever could not be read, so that a call to a tag of
      * one of them is never reported as a misspelling.
      */
-    private static void recordWhatWasMissed(File outputDir, List<File> skipped) throws IOException {
+    private static void recordWhatWasMissed(File outputDir, List<File> skipped, String encoding)
+            throws IOException {
         Set<String> namespaces = new TreeSet<>();
         boolean everything = false;
         for (File source : skipped) {
-            String namespace = declaredNamespace(source);
+            String namespace = declaredNamespace(source, encoding);
             if (namespace != null) {
                 namespaces.add(namespace);
             }
@@ -225,22 +225,48 @@ public final class TagLibraryIndexGenerator {
     }
 
     /**
-     * The namespace a source that could not be parsed declares, read from its text.
+     * The namespace a source that could not be described declares, read from its syntax tree.
      *
-     * <p>Only ever used to record that a namespace is missing some of its tags, so that nothing in it
-     * is reported as a misspelling. Reading too many namespaces out of a file costs some diagnostics;
-     * reading too few would let a call to a tag that does exist be reported as one that does not, so
-     * where the text says nothing every namespace is treated as incomplete.
+     * <p>Parsed rather than matched against the text: a namespace named in a comment or a string
+     * would otherwise be taken for the declaration, and recording the wrong namespace as incomplete
+     * leaves the real one looking complete - which is exactly when a call to a tag that does exist
+     * gets reported as one that does not.
      *
-     * @return the namespace, or {@code null} when the text does not state one plainly
+     * <p>Only a namespace the class states itself is trusted. One inherited from a base class cannot
+     * be read here, because whether the base class was resolved is the very thing in doubt, and
+     * guessing would attribute the gap to the wrong namespace.
+     *
+     * @return the namespace, or {@code null} when this source does not plainly state one
      */
-    private static String declaredNamespace(File source) {
+    private static String declaredNamespace(File source, String encoding) {
         try {
-            String text = Files.readString(source.toPath());
-            Matcher matcher = NAMESPACE_DECLARATION.matcher(text);
-            return matcher.find() ? matcher.group(1) : null;
+            CompilerConfiguration configuration = new CompilerConfiguration();
+            configuration.setSourceEncoding(encoding);
+            CompilationUnit unit = new CompilationUnit(configuration);
+            unit.addSource(source);
+            // Conversion builds the tree and stops before resolving anything, so a type this project
+            // has not compiled yet cannot make it fail.
+            unit.compile(Phases.CONVERSION);
+            String namespace = null;
+            for (ClassNode classNode : collectClassNodes(unit)) {
+                FieldNode field = classNode.getDeclaredField(NAMESPACE_FIELD);
+                if (field == null || !field.isStatic()) {
+                    continue;
+                }
+                if (!(field.getInitialExpression() instanceof ConstantExpression constant) ||
+                        constant.getValue() == null) {
+                    return null;
+                }
+                if (namespace != null) {
+                    // More than one tag library in the file, declaring different namespaces. Which
+                    // one failed is not knowable, so neither is claimed.
+                    return null;
+                }
+                namespace = constant.getValue().toString().trim();
+            }
+            return namespace == null || namespace.isEmpty() ? null : namespace;
         }
-        catch (IOException | RuntimeException unreadable) {
+        catch (Exception unparseable) {
             return null;
         }
     }

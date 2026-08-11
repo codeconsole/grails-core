@@ -314,6 +314,28 @@ class SourceResolvedIndexGeneratorSpec extends Specification {
         !indexOf().isNamespaceComplete('other')
     }
 
+    void 'a namespace named in a comment is not mistaken for the declaration'() {
+        given: 'taking the comment would leave the real namespace looking complete, so a call to one'
+        taglib('Commented.groovy', '''
+            import com.example.NoSuchService
+            import grails.gsp.TagLib
+            @TagLib
+            class CommentedTagLib {
+                // static namespace = 'decoy'
+                static namespace = 'actual'
+                NoSuchService service
+                def show(Map attrs) { }
+            }
+        ''')
+
+        when:
+        generate()
+
+        then: 'of its tags that does exist would be reported as one that does not'
+        !indexOf().isNamespaceComplete('actual')
+        indexOf().isNamespaceComplete('decoy')
+    }
+
     private TagLibraryIndex indexOf() {
         URLClassLoader loader = new URLClassLoader([output.toUri().toURL()] as URL[], (ClassLoader) null)
         try {
