@@ -1,0 +1,98 @@
+Tag libraries are described when they are compiled, and that description is used to resolve tag calls
+in pages, tag libraries and controllers compiled afterwards.
+
+==== Defining tags as methods
+
+Define a tag as a method:
+
+[source,groovy]
+----
+class GreetingTagLib {
+
+    static namespace = 'greet'
+
+    def hello(Map attrs) {
+        out << "Hello ${attrs.name}"
+    }
+
+    def wrapped(Map attrs, Closure body) {
+        out << '<div>' << body() << '</div>'
+    }
+}
+----
+
+The attributes parameter must be a `Map` named `attrs`, and the body parameter a `Closure` named
+`body`. A method taking anything else is an ordinary method of the tag library rather than a tag.
+Where that convention does not suit, `@Tag` marks a method as a tag whatever its signature and
+`@NotATag` excludes one that would otherwise match.
+
+The older form, a `Closure` field, still works:
+
+[source,groovy]
+----
+// Deprecated
+Closure hello = { Map attrs ->
+    out << "Hello ${attrs.name}"
+}
+----
+
+A closure has no signature to resolve, so a call to a tag defined this way cannot be resolved when the
+calling code is compiled and is dispatched dynamically instead. Compiling a tag library that declares
+one produces a warning naming the tag.
+
+==== Calling tags
+
+A call to a tag whose namespace and name are known is compiled into a direct invocation rather than
+being dispatched through the metaclass:
+
+[source,groovy]
+----
+class BookController {
+    def index() {
+        String markup = g.link(controller: 'book')      // compiled into a direct invocation
+        String other  = greet.hello(name: 'Grails')      // likewise
+    }
+}
+----
+
+This applies where the call is written with literal attributes, a literal body, both or neither. A
+call whose attributes are assembled at runtime is dispatched as before:
+
+[source,groovy]
+----
+Map attrs = buildAttributes()
+g.link(attrs)    // dispatched dynamically
+----
+
+So is a call into a namespace no compiled tag library declares, which is what allows a tag library
+registered while an application is running to keep working.
+
+==== Reporting unknown tags
+
+By default, a tag that no compiled tag library declares is reported as a compilation warning. It is a
+warning rather than an error because a namespace can hold tag libraries that were not compiled with a
+description: a plugin built against an earlier version of Grails contributes tags without one, and a
+tag library registered at runtime contributes more. A tag missing from the description is therefore
+not necessarily a misspelling.
+
+Set the following system property when building to turn that warning into a compilation error:
+
+[source,bash]
+----
+-Dgrails.views.gsp.strictTagChecking=true
+----
+
+A tag declared by more than one tag library is never reported. Which one runs depends on the order the
+tag libraries are registered, which is not known when the calling code is compiled, so such a call is
+left to be resolved at runtime.
+
+==== Where the description lives
+
+Each tag library contributes one file under `META-INF/grails/taglibs` in the artifact it is packaged
+in. Descriptions from every jar on the classpath are combined, so a plugin's tag libraries are
+resolvable by an application that depends on it without any extra build configuration.
+
+For an application's own tag libraries, the `generateTagLibraryIndex` task writes the description from
+the sources under `grails-app/taglib` before compilation, so tags an application declares are
+resolvable in the same compilation that defines them. Tag libraries elsewhere on the source path are
+described as they are compiled, which makes them resolvable to anything compiled afterwards.

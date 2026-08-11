@@ -154,6 +154,7 @@ theWebLayer:
       logicalTags: Logical Tags
       iterativeTags: Iterative Tags
       namespaces: Tag Namespaces
+      compiledTags: Compiled Tag Resolution
       usingJSPTagLibraries: Using JSP Tag Libraries
       tagReturnValue: Tag return value
   fields:

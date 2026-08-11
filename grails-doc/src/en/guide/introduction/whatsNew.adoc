@@ -277,3 +277,30 @@ be enabled (`grails.mongodb.transactional = true`). Spring Data repositories are
 session are shared, and the two object-mapping models stay separate. See the
 link:{mongodb5Guide}index.html#springDataInterop[Spring Data MongoDB Interoperability] section of the GORM for MongoDB
 guide for details.
+
+=== Compiled Tag Resolution
+
+Tag libraries are now described when they are compiled, and that description resolves tag calls in
+pages, tag libraries and controllers compiled afterwards. A call whose namespace and tag are known is
+compiled into a direct invocation rather than being dispatched through the metaclass, and no tag
+methods are installed onto tag library or dispatcher metaclasses to make dispatch work:
+
+[source,groovy]
+----
+class BookController {
+    def index() {
+        String markup = g.link(controller: 'book')   // compiled into a direct invocation
+    }
+}
+----
+
+A tag that no compiled tag library declares is reported as a compilation warning, which
+`-Dgrails.views.gsp.strictTagChecking=true` turns into an error. Calls that cannot be resolved when
+compiled — attributes assembled at runtime, a namespace no compiled tag library declares, or a tag
+declared by more than one of them — are dispatched exactly as before.
+
+Defining a tag as a `Closure` field remains supported but is deprecated and now warns at compile time:
+a closure has no signature to resolve against, so calls to such a tag stay dynamic. Define tags as
+methods taking `Map attrs` and, where a body is needed, `Closure body`. See
+link:theWebLayer.html#compiledTags[Compiled Tag Resolution].
+

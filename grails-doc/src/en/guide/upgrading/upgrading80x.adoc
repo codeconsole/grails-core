@@ -2255,3 +2255,36 @@ resolved unambiguously before can become ambiguous.
 
 Removing the packages from `grails.spring.bean.packages`, or the stray classes from those packages, restores
 the previous set of beans.
+
+=== Tag Libraries Are Described When Compiled
+
+Tag calls are resolved against a description each tag library contributes as it is compiled, and a
+resolved call is compiled into a direct invocation. Existing applications need no change: a tag that
+cannot be resolved when compiled is dispatched exactly as before, which covers tag libraries from
+plugins built against earlier versions of Grails, tag libraries registered while an application runs,
+and calls whose attributes are assembled at runtime.
+
+Two things are worth knowing when upgrading.
+
+A tag that no compiled tag library declares produces a compilation warning. Building with
+`-Dgrails.views.gsp.strictTagChecking=true` turns those warnings into errors, which is worth doing
+once to find misspelled tags, but is not the default because a namespace can legitimately hold tag
+libraries that carry no description.
+
+Tags defined as `Closure` fields now warn at compile time. They still work, but a closure carries no
+signature, so calls to such a tag cannot be resolved when the calling code is compiled and stay
+dynamic. Convert them to methods:
+
+[source,groovy]
+----
+// Before
+Closure hello = { Map attrs ->
+    out << "Hello ${attrs.name}"
+}
+
+// After
+def hello(Map attrs) {
+    out << "Hello ${attrs.name}"
+}
+----
+
