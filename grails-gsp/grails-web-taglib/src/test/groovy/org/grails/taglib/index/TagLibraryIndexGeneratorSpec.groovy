@@ -111,6 +111,32 @@ class TagLibraryIndexGeneratorSpec extends Specification {
         first == second
     }
 
+    void 'a tag library that cannot be resolved yet does not lose the others'() {
+        given: 'one tag library referring to something not on the classpath, as a service in the same project is'
+        write('Unresolvable.groovy', '''
+            import grails.gsp.TagLib
+            import com.nowhere.NotOnTheClasspath
+            @TagLib
+            class UnresolvableTagLib {
+                static namespace = 'nope'
+                NotOnTheClasspath collaborator
+                def gone(Map attrs) { }
+            }
+        ''')
+        write('Fine.groovy', taglib('FineTagLib', 'fine', 'present'))
+
+        when:
+        TagLibraryIndexGenerator.generate(sources.toFile(), output.toFile(), true, 'UTF-8')
+
+        then: 'the one that reads is described'
+        descriptorFile('FineTagLib').exists()
+        descriptor('FineTagLib').tags == 'present'
+
+        and: 'the one that does not is left out, to be described when it is compiled'
+        !descriptorFile('UnresolvableTagLib').exists()
+        manifest() == ['FineTagLib']
+    }
+
     void 'a class that is not a tag library is ignored'() {
         given:
         write('Service.groovy', 'class SomeService { def doThing(Map attrs) { } }')

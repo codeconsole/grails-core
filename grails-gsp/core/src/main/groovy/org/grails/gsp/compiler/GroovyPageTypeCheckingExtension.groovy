@@ -56,16 +56,20 @@ class GroovyPageTypeCheckingExtension extends GroovyTypeCheckingExtensionSupport
             GroovyPageTypeCheckingExtension.classLoader)
 
     /**
-     * Turns an unrecognised tag from a warning into a compilation error. Off by default: the index
-     * holds the tag libraries compiled before this page, so a stale or partial index would fail a
-     * build whose pages are correct.
+     * Set to {@code false} to report an unrecognised tag as a warning rather than failing the build.
+     *
+     * <p>An unrecognised tag is an error by default. The index is generated from source before
+     * anything that resolves tag calls is compiled, so it describes the tag libraries of this project
+     * as well as those of its dependencies, and a namespace it does not know about is left to runtime
+     * resolution rather than reported. What remains is a tag that no tag library in a namespace the
+     * index does know declares, which is a misspelling.
      */
     public static final String STRICT_TAG_CHECKING_PROPERTY = 'grails.views.gsp.strictTagChecking'
 
     private static boolean isStrictTagChecking() {
         // Read per report rather than cached: this is only reached once a tag has already failed to
         // resolve, so it costs nothing on the common path and stays settable within a running compiler.
-        Boolean.getBoolean(STRICT_TAG_CHECKING_PROPERTY)
+        !'false'.equalsIgnoreCase(System.getProperty(STRICT_TAG_CHECKING_PROPERTY))
     }
 
     @Override
@@ -203,11 +207,7 @@ class GroovyPageTypeCheckingExtension extends GroovyTypeCheckingExtensionSupport
             typeCheckingVisitor.addStaticTypeError(message, call)
             return
         }
-        // A warning by default. The index reflects the tag libraries present when this page is
-        // compiled, and a tag added to an existing namespace without a rebuild of that library, or a
-        // library registered at runtime, would otherwise fail a build that is in fact correct.
-        // Set the system property to turn the warning into an error once a build regenerates the
-        // index reliably.
+        // Reporting rather than failing, for a build that has opted out of the check.
         SourceUnit sourceUnit = typeCheckingVisitor.sourceUnit
         sourceUnit?.errorCollector?.addWarning(
                 new WarningMessage(WarningMessage.LIKELY_ERRORS, message, null, sourceUnit))

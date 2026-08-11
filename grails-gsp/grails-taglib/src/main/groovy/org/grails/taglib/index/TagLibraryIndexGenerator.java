@@ -96,18 +96,7 @@ public final class TagLibraryIndexGenerator {
             return;
         }
 
-        CompilerConfiguration configuration = new CompilerConfiguration();
-        configuration.setParameters(parameterNamesRetained);
-        configuration.setSourceEncoding(encoding);
-        CompilationUnit unit = new CompilationUnit(configuration);
-        for (File source : sources) {
-            unit.addSource(source);
-        }
-        // Canonicalization is the last phase before bytecode, by which point traits are applied and
-        // annotations resolved, and it stops short of generating or loading any class.
-        unit.compile(Phases.CANONICALIZATION);
-
-        for (ClassNode classNode : collectClassNodes(unit)) {
+        for (ClassNode classNode : parse(sources, parameterNamesRetained, encoding)) {
             if (!isTagLibrary(classNode)) {
                 continue;
             }
@@ -120,6 +109,55 @@ public final class TagLibraryIndexGenerator {
             Collection<String> tagNames = TagLibraryAstDiscovery.findTagNames(classNode, parameterNamesRetained);
             TagLibraryIndexWriter.write(outputDir, classNode.getName(), namespace, tagNames);
         }
+    }
+
+    /**
+     * Parses the sources far enough to describe them.
+     *
+     * <p>A tag library referring to something outside this directory and off the classpath given here,
+     * such as a service in the same project, cannot be resolved before that project is compiled. Those
+     * are parsed on their own and skipped when they still fail, rather than losing the index for every
+     * other tag library alongside them. A skipped tag library still has its descriptor written by the
+     * compiler as it is built, and until then its tags resolve dynamically, exactly as a tag library
+     * with no descriptor does.
+     */
+    private static List<ClassNode> parse(List<File> sources, boolean parameterNamesRetained,
+            String encoding) {
+        try {
+            return collectClassNodes(compile(sources, parameterNamesRetained, encoding));
+        } catch (Exception wholeSourceSetFailed) {
+            List<ClassNode> classNodes = new ArrayList<>();
+            List<String> skipped = new ArrayList<>();
+            for (File source : sources) {
+                try {
+                    classNodes.addAll(collectClassNodes(
+                            compile(List.of(source), parameterNamesRetained, encoding)));
+                } catch (Exception singleSourceFailed) {
+                    skipped.add(source.getName());
+                }
+            }
+            if (!skipped.isEmpty()) {
+                System.out.println("Tag library index: could not read " + String.join(", ", skipped) +
+                        " before compilation; their tags resolve dynamically until they are compiled.");
+            }
+            classNodes.sort(Comparator.comparing(ClassNode::getName));
+            return classNodes;
+        }
+    }
+
+    private static CompilationUnit compile(List<File> sources, boolean parameterNamesRetained,
+            String encoding) {
+        CompilerConfiguration configuration = new CompilerConfiguration();
+        configuration.setParameters(parameterNamesRetained);
+        configuration.setSourceEncoding(encoding);
+        CompilationUnit unit = new CompilationUnit(configuration);
+        for (File source : sources) {
+            unit.addSource(source);
+        }
+        // Canonicalization is the last phase before bytecode, by which point traits are applied and
+        // annotations resolved, and it stops short of generating or loading any class.
+        unit.compile(Phases.CANONICALIZATION);
+        return unit;
     }
 
     private static List<ClassNode> collectClassNodes(CompilationUnit unit) {

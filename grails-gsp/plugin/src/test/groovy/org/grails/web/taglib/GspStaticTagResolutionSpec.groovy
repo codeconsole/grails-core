@@ -58,29 +58,29 @@ class GspStaticTagResolutionSpec extends Specification {
         t.metaInfo.compilationException == null
     }
 
-    void 'an unknown tag is reported without failing the build by default'() {
-        given: 'strict checking off, as it is by default'
-        String template = '''<%@ page compileStatic="true" %>${g.mesage(code: 'typo')}'''
-
-        when:
-        def t = gpte.createTemplate(template, 'unknown-tag-lenient')
-
-        then: 'the page still compiles, so a stale index cannot break a correct build'
-        t.metaInfo.compilationException == null
-    }
-
-    void 'an unknown tag fails compilation under strict checking'() {
-        given:
-        System.setProperty(GroovyPageTypeCheckingExtension.STRICT_TAG_CHECKING_PROPERTY, 'true')
+    void 'an unknown tag fails compilation'() {
+        given: 'a misspelled tag in a namespace the index knows'
         String template = '''<%@ page compileStatic="true" %>${g.mesage(code: 'typo')}'''
 
         when:
         def t = gpte.createTemplate(template, 'unknown-tag-strict')
 
-        then: 'the misspelling is reported when the page is compiled rather than when it renders'
+        then: 'it is reported when the page is compiled rather than when it renders'
         t.metaInfo.compilationException != null
         t.metaInfo.compilationException.message.contains('No such tag [mesage]')
         t.metaInfo.compilationException.message.contains('namespace [g]')
+    }
+
+    void 'the check can be turned down to a warning'() {
+        given:
+        System.setProperty(GroovyPageTypeCheckingExtension.STRICT_TAG_CHECKING_PROPERTY, 'false')
+        String template = '''<%@ page compileStatic="true" %>${g.mesage(code: 'typo')}'''
+
+        when:
+        def t = gpte.createTemplate(template, 'unknown-tag-lenient')
+
+        then: 'the page compiles, for a build that would rather not fail on this'
+        t.metaInfo.compilationException == null
 
         cleanup:
         System.clearProperty(GroovyPageTypeCheckingExtension.STRICT_TAG_CHECKING_PROPERTY)
