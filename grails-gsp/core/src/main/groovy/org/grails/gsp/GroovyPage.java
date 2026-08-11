@@ -49,6 +49,7 @@ import org.grails.taglib.GrailsTagException;
 import org.grails.taglib.GroovyPageAttributes;
 import org.grails.taglib.TagBodyClosure;
 import org.grails.taglib.TagLibraryLookup;
+import org.grails.taglib.TagLibraryMetaUtils;
 import org.grails.taglib.TagMethodContext;
 import org.grails.taglib.TagMethodInvoker;
 import org.grails.taglib.TagOutput;
@@ -294,6 +295,23 @@ public abstract class GroovyPage extends Script {
         if (BINDING.equals(property)) return getBinding();
 
         return resolveProperty(property);
+    }
+
+    /**
+     * Resolves a tag called without a namespace, as {@code ${message(code: 'x')}} is.
+     *
+     * <p>A real method rather than one installed onto this page's metaclass. Installing it, along with
+     * a method for every tag and a property for every namespace, meant writing to an
+     * ExpandoMetaClass for every page compiled and made every later tag call a read of an initialised
+     * metaclass, which is guarded by a lock.
+     *
+     * @param name the tag name
+     * @param args the arguments the tag was called with
+     * @return whatever the tag produces
+     */
+    public Object methodMissing(String name, Object args) {
+        return TagLibraryMetaUtils.methodMissingForTagLib(getMetaClass(), getClass(), gspTagLibraryLookup,
+                DEFAULT_NAMESPACE, name, args, false);
     }
 
     protected Object resolveProperty(String property) {

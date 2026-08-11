@@ -67,6 +67,22 @@ class NoMetaClassMutationSpec extends Specification {
                 !dispatcher.metaClass.hasMetaMethod('ping', [Map] as Class[])
     }
 
+    void 'the template namespace resolves without installing the template name'() {
+        given:
+        TagLibraryLookup lookup = newLookup()
+        def dispatcher = new org.grails.taglib.TemplateNamespacedTagDispatcher(
+                QuietTagLib, lookup.grailsApplication, lookup)
+
+        expect: 'using a template name does not add a method for it'
+        !(dispatcher.metaClass instanceof ExpandoMetaClass) ||
+                !dispatcher.metaClass.hasMetaMethod('someTemplate', [Map] as Class[])
+    }
+
+    void 'a page resolves an unqualified tag through a declared method'() {
+        expect: 'declared rather than installed, so compiling a page writes to no metaclass'
+        org.grails.gsp.GroovyPage.getDeclaredMethod('methodMissing', String, Object) != null
+    }
+
     private static TagLibraryLookup newLookup() {
         def lookup = new TagLibraryLookup() {
             @Override
