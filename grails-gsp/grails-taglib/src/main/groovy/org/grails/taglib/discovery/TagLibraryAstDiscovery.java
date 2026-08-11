@@ -16,7 +16,7 @@
  *  specific language governing permissions and limitations
  *  under the License.
  */
-package grails.gsp.taglib.compiler;
+package org.grails.taglib.discovery;
 
 import java.util.Collection;
 import java.util.LinkedHashSet;
@@ -30,11 +30,8 @@ import org.codehaus.groovy.ast.MethodNode;
 import org.codehaus.groovy.ast.expr.ConstantExpression;
 import org.codehaus.groovy.ast.expr.Expression;
 
-import org.grails.taglib.discovery.AstTagMethodView;
-import org.grails.taglib.discovery.TagDiscoveryRules;
-
 /**
- * Reads a tag library's namespace and tag names from its AST.
+ * Reads a tag library's namespace and tag names from its syntax tree.
  *
  * <p>Classification is delegated to {@link TagDiscoveryRules}, the same rules an application applies
  * when it registers tag libraries, so the two cannot disagree about what a tag is. What remains here
@@ -42,15 +39,15 @@ import org.grails.taglib.discovery.TagDiscoveryRules;
  *
  * @since 8.0.0
  */
-final class TagLibraryAstScanner {
+public final class TagLibraryAstDiscovery {
 
-    static final String DEFAULT_NAMESPACE = "g";
+    public static final String DEFAULT_NAMESPACE = "g";
 
     private static final String NAMESPACE_FIELD = "namespace";
 
     private static final ClassNode CLOSURE_TYPE = ClassHelper.make(Closure.class);
 
-    private TagLibraryAstScanner() {
+    private TagLibraryAstDiscovery() {
     }
 
     /**
@@ -61,7 +58,7 @@ final class TagLibraryAstScanner {
      * @return the namespace, or {@code null} when it cannot be determined without running the code, in
      *         which case no descriptor should be written and the tag library resolves dynamically
      */
-    static String resolveNamespace(ClassNode classNode) {
+    public static String resolveNamespace(ClassNode classNode) {
         for (ClassNode current = classNode; current != null && !ClassHelper.isObjectType(current);
                 current = current.getSuperClass()) {
             FieldNode namespaceField = current.getDeclaredField(NAMESPACE_FIELD);
@@ -86,7 +83,7 @@ final class TagLibraryAstScanner {
      * @param parameterNamesRetained whether this compilation writes parameter names into the class file
      * @return every tag the library declares, whether as a tag method or a legacy closure field
      */
-    static Collection<String> findTagNames(ClassNode classNode, boolean parameterNamesRetained) {
+    public static Collection<String> findTagNames(ClassNode classNode, boolean parameterNamesRetained) {
         Set<String> tagNames = new LinkedHashSet<>();
         for (MethodNode method : classNode.getMethods()) {
             // TagMethodInvoker scans getDeclaredMethods(), so a method inherited from a superclass is

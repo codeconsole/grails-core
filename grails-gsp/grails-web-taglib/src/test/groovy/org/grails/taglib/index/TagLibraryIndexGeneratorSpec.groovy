@@ -1,0 +1,163 @@
+/*
+ *  Licensed to the Apache Software Foundation (ASF) under one
+ *  or more contributor license agreements.  See the NOTICE file
+ *  distributed with this work for additional information
+ *  regarding copyright ownership.  The ASF licenses this file
+ *  to you under the Apache License, Version 2.0 (the
+ *  "License"); you may not use this file except in compliance
+ *  with the License.  You may obtain a copy of the License at
+ *
+ *    https://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing,
+ *  software distributed under the License is distributed on an
+ *  "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ *  KIND, either express or implied.  See the License for the
+ *  specific language governing permissions and limitations
+ *  under the License.
+ */
+package org.grails.taglib.index
+
+import java.nio.file.Files
+import java.nio.file.Path
+
+import spock.lang.Specification
+import spock.lang.TempDir
+
+/**
+ * Generating the index for a whole source set, rather than accumulating it as each class compiles,
+ * is what allows a renamed or deleted tag library to disappear from it.
+ */
+class TagLibraryIndexGeneratorSpec extends Specification {
+
+    @TempDir
+    Path tempDir
+
+    Path sources
+    Path output
+
+    def setup() {
+        sources = Files.createDirectories(tempDir.resolve('src'))
+        output = Files.createDirectories(tempDir.resolve('out'))
+    }
+
+    void 'a tag library is described without being loaded or executed'() {
+        given: 'a tag library whose static initialiser would fail if it ran'
+        write('Explosive.groovy', '''
+            import grails.gsp.TagLib
+            @TagLib
+            class ExplosiveTagLib {
+                static { throw new RuntimeException('must not run') }
+                static namespace = 'boom'
+                def alpha(Map attrs) { }
+                def beta(Map attrs, Closure body) { }
+            }
+        ''')
+
+        when:
+        TagLibraryIndexGenerator.generate(sources.toFile(), output.toFile(), true, 'UTF-8')
+
+        then: 'its tags are described from the source alone'
+        descriptor('ExplosiveTagLib').namespace == 'boom'
+        descriptor('ExplosiveTagLib').tags == 'alpha,beta'
+    }
+
+    void 'a renamed tag library leaves nothing behind'() {
+        given:
+        write('First.groovy', taglib('OldNameTagLib', 'old', 'one'))
+        TagLibraryIndexGenerator.generate(sources.toFile(), output.toFile(), true, 'UTF-8')
+        assert descriptorFile('OldNameTagLib').exists()
+
+        when: 'the tag library is renamed and the index regenerated'
+        Files.delete(sources.resolve('First.groovy'))
+        write('First.groovy', taglib('NewNameTagLib', 'old', 'one'))
+        TagLibraryIndexGenerator.generate(sources.toFile(), output.toFile(), true, 'UTF-8')
+
+        then: 'the old descriptor is gone rather than describing a class that no longer exists'
+        !descriptorFile('OldNameTagLib').exists()
+        descriptorFile('NewNameTagLib').exists()
+
+        and: 'the manifest names only what exists'
+        manifest() == ['NewNameTagLib']
+    }
+
+    void 'a deleted tag library leaves nothing behind'() {
+        given:
+        write('Gone.groovy', taglib('GoingTagLib', 'g', 'vanishes'))
+        TagLibraryIndexGenerator.generate(sources.toFile(), output.toFile(), true, 'UTF-8')
+        assert descriptorFile('GoingTagLib').exists()
+
+        when:
+        Files.delete(sources.resolve('Gone.groovy'))
+        TagLibraryIndexGenerator.generate(sources.toFile(), output.toFile(), true, 'UTF-8')
+
+        then:
+        !descriptorFile('GoingTagLib').exists()
+        manifest().isEmpty()
+    }
+
+    void 'regenerating unchanged sources produces an identical index'() {
+        given:
+        write('A.groovy', taglib('AlphaTagLib', 'a', 'one'))
+        write('B.groovy', taglib('BetaTagLib', 'b', 'two'))
+
+        when:
+        TagLibraryIndexGenerator.generate(sources.toFile(), output.toFile(), true, 'UTF-8')
+        String first = descriptorFile('AlphaTagLib').text + manifestFile().text
+        TagLibraryIndexGenerator.generate(sources.toFile(), output.toFile(), true, 'UTF-8')
+        String second = descriptorFile('AlphaTagLib').text + manifestFile().text
+
+        then: 'byte for byte, so the build stays reproducible and up to date checks hold'
+        first == second
+    }
+
+    void 'a class that is not a tag library is ignored'() {
+        given:
+        write('Service.groovy', 'class SomeService { def doThing(Map attrs) { } }')
+
+        when:
+        TagLibraryIndexGenerator.generate(sources.toFile(), output.toFile(), true, 'UTF-8')
+
+        then:
+        manifest().isEmpty()
+    }
+
+    private void write(String name, String source) {
+        sources.resolve(name).toFile().text = source
+    }
+
+    private static String taglib(String className, String namespace, String tag) {
+        """
+            import grails.gsp.TagLib
+            @TagLib
+            class ${className} {
+                static namespace = '${namespace}'
+                def ${tag}(Map attrs) { }
+            }
+        """
+    }
+
+    private File descriptorFile(String simpleName) {
+        new File(output.toFile(), TagLibraryIndex.INDEX_LOCATION + simpleName + '.properties')
+    }
+
+    private File manifestFile() {
+        new File(output.toFile(), TagLibraryIndex.INDEX_LOCATION + 'index.properties')
+    }
+
+    private Properties descriptor(String simpleName) {
+        def properties = new Properties()
+        descriptorFile(simpleName).withReader('UTF-8') { properties.load(it) }
+        properties
+    }
+
+    private List<String> manifest() {
+        File file = manifestFile()
+        if (!file.exists()) {
+            return []
+        }
+        def properties = new Properties()
+        file.withReader('UTF-8') { properties.load(it) }
+        properties.stringPropertyNames().sort()
+    }
+}

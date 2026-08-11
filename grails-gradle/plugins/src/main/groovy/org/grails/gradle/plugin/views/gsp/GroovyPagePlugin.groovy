@@ -23,6 +23,7 @@ import groovy.transform.CompileStatic
 import org.gradle.api.Plugin
 import org.gradle.api.Project
 import org.gradle.api.file.CopySpec
+import groovy.transform.CompileDynamic
 import org.gradle.api.file.Directory
 import org.gradle.api.file.DuplicatesStrategy
 import org.gradle.api.file.FileCollection
@@ -54,6 +55,23 @@ class GroovyPagePlugin implements Plugin<Project> {
         }
     }
 
+    /**
+     * Whether compilation keeps parameter names, which decides whether a tag's attributes and body
+     * parameters have to carry those names to be dispatchable. The index has to be generated under the
+     * same setting the sources are compiled with, or it would describe a different set of tags.
+     */
+    @CompileDynamic
+    private static Provider<Boolean> resolvePreserveParameterNames(Project project) {
+        project.provider {
+            Object grails = project.extensions.findByName('grails')
+            Object preserve = grails?.hasProperty('preserveParameterNames') ? grails.preserveParameterNames : null
+            if (preserve instanceof Provider) {
+                return ((Provider) preserve).getOrElse(true) as Boolean
+            }
+            preserve == null ? Boolean.TRUE : (preserve as Boolean)
+        }
+    }
+
     private void configureProject(Project project) {
         TaskContainer tasks = project.tasks
 
@@ -79,6 +97,20 @@ class GroovyPagePlugin implements Plugin<Project> {
         JavaToolchainService toolchains = project.extensions.getByType(JavaToolchainService)
         Provider<JavaLauncher> launcher = toolchains.launcherFor(javaExtension.toolchain)
 
+        // The index describes the tag libraries in this project and has to exist before anything that
+        // resolves tag calls against it is compiled. It is generated from source rather than from
+        // compiled classes, so its classpath is the compile classpath alone: adding this project's own
+        // output would make it wait for the compilation it is meant to precede.
+        Provider<Directory> tagLibIndexDir = project.layout.buildDirectory.dir('generated/grails-taglibs')
+        def generateTagLibraryIndex = tasks.register('generateTagLibraryIndex', GenerateTagLibraryIndexTask) {
+            it.sourceDirectory.set(project.layout.projectDirectory.dir('grails-app/taglib'))
+            it.destinationDirectory.set(tagLibIndexDir)
+            it.generatorClasspath.from(project.configurations.named('compileClasspath'))
+            it.parameterNamesRetained.set(resolvePreserveParameterNames(project))
+        }
+        mainSourceSet?.resources?.srcDir(tagLibIndexDir)
+        tasks.named('processResources').configure { it.dependsOn(generateTagLibraryIndex) }
+
         def compileGroovyPages = tasks.register('compileGroovyPages', GroovyPageForkCompileTask) {
             it.destinationDirectory.set(destDir)
             it.tmpDirPath = getTmpDirPath(project)
@@ -100,7 +132,9 @@ class GroovyPagePlugin implements Plugin<Project> {
         compileGroovyPages.configure {
             it.dependsOn(
                     tasks.named('classes'),
-                    compileWebappGroovyPages
+                    compileWebappGroovyPages,
+                    // Pages resolve tag calls against the index, so it has to be written first.
+                    generateTagLibraryIndex
             )
         }
 

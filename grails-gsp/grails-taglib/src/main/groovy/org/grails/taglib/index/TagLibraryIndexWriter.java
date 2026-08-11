@@ -47,6 +47,30 @@ public final class TagLibraryIndexWriter {
     }
 
     /**
+     * Removes any index previously written beneath a directory, so that a regenerated index describes
+     * only the tag libraries that exist now. Without this a renamed or deleted tag library would keep
+     * a descriptor, and the manifest naming it, until the build directory was cleaned.
+     *
+     * @param outputDirectory the directory the index is written beneath
+     * @throws IOException if an existing index cannot be removed
+     */
+    public static void clear(File outputDirectory) throws IOException {
+        if (outputDirectory == null) {
+            return;
+        }
+        File indexDirectory = new File(outputDirectory, TagLibraryIndex.INDEX_LOCATION);
+        File[] existing = indexDirectory.listFiles();
+        if (existing == null) {
+            return;
+        }
+        for (File file : existing) {
+            if (file.isFile() && file.getName().endsWith(".properties")) {
+                Files.deleteIfExists(file.toPath());
+            }
+        }
+    }
+
+    /**
      * Writes the descriptor for a tag library into a compiler output directory.
      *
      * @param outputDirectory the compilation target directory; nothing is written when {@code null}

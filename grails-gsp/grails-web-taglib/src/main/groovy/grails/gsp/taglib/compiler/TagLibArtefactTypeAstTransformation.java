@@ -33,6 +33,7 @@ import org.codehaus.groovy.transform.GroovyASTTransformation;
 import grails.gsp.TagLib;
 import org.grails.compiler.injection.ArtefactTypeAstTransformation;
 import org.grails.compiler.injection.GrailsASTUtils;
+import org.grails.taglib.discovery.TagLibraryAstDiscovery;
 import org.grails.taglib.index.TagLibraryIndexWriter;
 
 @GroovyASTTransformation(phase = CompilePhase.CANONICALIZATION)
@@ -70,7 +71,7 @@ public class TagLibArtefactTypeAstTransformation extends ArtefactTypeAstTransfor
             // descriptor; those callers resolve tags at runtime.
             return;
         }
-        String namespace = TagLibraryAstScanner.resolveNamespace(classNode);
+        String namespace = TagLibraryAstDiscovery.resolveNamespace(classNode);
         if (namespace == null) {
             // The namespace is only known once the tag library's initialiser runs, so recording the
             // tags would file them under the wrong namespace. Leave them to runtime resolution.
@@ -82,7 +83,7 @@ public class TagLibArtefactTypeAstTransformation extends ArtefactTypeAstTransfor
         boolean parameterNamesRetained = sourceUnit.getConfiguration().getParameters();
         try {
             TagLibraryIndexWriter.write(targetDirectory, classNode.getName(), namespace,
-                    TagLibraryAstScanner.findTagNames(classNode, parameterNamesRetained));
+                    TagLibraryAstDiscovery.findTagNames(classNode, parameterNamesRetained));
         } catch (IOException | RuntimeException e) {
             GrailsASTUtils.warning(sourceUnit, classNode,
                     "Could not write the tag library index entry for [" + classNode.getName() + "]: " +
