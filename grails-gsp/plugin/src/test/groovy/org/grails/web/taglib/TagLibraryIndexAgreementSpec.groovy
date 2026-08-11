@@ -85,6 +85,23 @@ class TagLibraryIndexAgreementSpec extends Specification {
         'formatDate'  | FormatTagLib
     }
 
+    void 'index and runtime agree on tags decided by annotation or parameter type'() {
+        given:
+        Set<String> runtimeTags = TagMethodInvoker.getInvokableTagMethodNames(IndexEdgeCaseTagLib) as Set
+        Set<String> indexedTags = index.getTagNames('edge')
+
+        expect: 'the two views are identical, including the awkward cases'
+        indexedTags == runtimeTags
+
+        and: 'specifically'
+        'plain' in indexedTags
+        'withBody' in indexedTags
+        'annotated' in indexedTags       // @Tag overrides the signature rule
+        !('excluded' in indexedTags)     // @NotATag overrides it the other way
+        !('untyped' in indexedTags)      // untyped attrs is not Map-assignable, so not dispatchable
+        !('helper' in indexedTags)
+    }
+
     void 'an unknown tag is not resolved'() {
         expect:
         index.lookup('g', 'noSuchTagAnywhere') == null

@@ -33,6 +33,8 @@ import org.codehaus.groovy.ast.expr.ConstantExpression;
 import org.codehaus.groovy.ast.expr.Expression;
 import org.codehaus.groovy.ast.expr.ListExpression;
 
+import grails.gsp.NotATag;
+import grails.gsp.Tag;
 import org.grails.taglib.TagMethodInvoker;
 
 /**
@@ -53,6 +55,8 @@ final class TagLibraryAstScanner {
 
     private static final ClassNode CLOSURE_TYPE = ClassHelper.make(Closure.class);
     private static final ClassNode MAP_TYPE = ClassHelper.MAP_TYPE;
+    private static final ClassNode TAG_ANNOTATION = ClassHelper.make(Tag.class);
+    private static final ClassNode NOT_A_TAG_ANNOTATION = ClassHelper.make(NotATag.class);
 
     /**
      * Names excluded because they are Groovy or Object plumbing rather than tags. The
@@ -108,6 +112,13 @@ final class TagLibraryAstScanner {
         if (!method.isPublic() || method.isStatic() || method.isAbstract() || method.isSynthetic()) {
             return false;
         }
+        // @NotATag and @Tag override the signature rule at runtime, so they must override it here too.
+        if (!method.getAnnotations(NOT_A_TAG_ANNOTATION).isEmpty()) {
+            return false;
+        }
+        if (!method.getAnnotations(TAG_ANNOTATION).isEmpty()) {
+            return true;
+        }
         String name = method.getName();
         if (name.startsWith("<") || NON_TAG_METHOD_NAMES.contains(name) ||
                 TagMethodInvoker.FRAMEWORK_METHOD_NAMES.contains(name)) {
@@ -161,7 +172,7 @@ final class TagLibraryAstScanner {
 
     private static boolean matchesTagShape(Parameter[] parameters, int arity) {
         if (arity == 1) {
-            return isMap(parameters[0]);
+            return isMap(parameters[0]) || isClosure(parameters[0]);
         }
         if (arity == 2) {
             return isMap(parameters[0]) && isClosure(parameters[1]);
@@ -169,16 +180,25 @@ final class TagLibraryAstScanner {
         return false;
     }
 
+    /**
+     * Mirrors {@code TagMethodInvoker.isAttrsParameter}, which requires the declared type to be
+     * assignable to {@link java.util.Map}. An untyped parameter is {@code Object} and is therefore not
+     * an attributes parameter, so a tag declared as {@code def foo(attrs)} is not dispatchable and must
+     * not be recorded here either.
+     */
     private static boolean isMap(Parameter parameter) {
         ClassNode type = parameter.getType();
-        return type == null || ClassHelper.isObjectType(type) || type.isDerivedFrom(MAP_TYPE) ||
-                MAP_TYPE.equals(type) || type.implementsInterface(MAP_TYPE);
+        return type != null && (MAP_TYPE.equals(type) || type.isDerivedFrom(MAP_TYPE) ||
+                type.implementsInterface(MAP_TYPE));
     }
 
+    /**
+     * Mirrors {@code TagMethodInvoker.isBodyParameter}, which requires assignability to
+     * {@link groovy.lang.Closure}.
+     */
     private static boolean isClosure(Parameter parameter) {
         ClassNode type = parameter.getType();
-        return type == null || ClassHelper.isObjectType(type) || CLOSURE_TYPE.equals(type) ||
-                type.isDerivedFrom(CLOSURE_TYPE);
+        return type != null && (CLOSURE_TYPE.equals(type) || type.isDerivedFrom(CLOSURE_TYPE));
     }
 
     /**
