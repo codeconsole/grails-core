@@ -24,6 +24,7 @@ import java.nio.file.Path
 import grails.testing.web.taglib.TagLibUnitTest
 import groovy.text.Template
 import org.grails.gsp.GroovyPagesTemplateEngine
+import org.grails.taglib.TagLibraryLookup
 import org.grails.taglib.index.TagLibraryIndex
 import org.grails.plugins.web.taglib.ApplicationTagLib
 import spock.lang.Requires
@@ -65,10 +66,13 @@ class TagDispatchBenchmarkSpec extends Specification implements TagLibUnitTest<A
     private static final int ROUNDS = intFromEnv('GRAILS_TAGLIB_BENCH_ROUNDS', 7)
 
     void 'a page renders its tags faster once they are compiled into invocations'() {
-        given: 'each page compiled once, so what is timed is rendering rather than compiling'
-        GroovyPagesTemplateEngine engine = applicationContext.getBean(GroovyPagesTemplateEngine)
-        Template dispatched = engine.createTemplate(page(false), 'benchDispatched')
-        Template compiled = engine.createTemplate(page(true), 'benchCompiled')
+        given: 'both pages statically compiled, so only whether their calls were rewritten differs'
+        GroovyPagesTemplateEngine dispatching = engineFor('dynamicTagNamespaces=g\n')
+        GroovyPagesTemplateEngine rewriting = engineFor(null)
+
+        and: 'each compiled once, so what is timed is rendering rather than compiling'
+        Template dispatched = dispatching.createTemplate(page(true), 'benchDispatched')
+        Template compiled = rewriting.createTemplate(page(true), 'benchCompiled')
 
         when:
         List<Double> dynamicRuns = []
@@ -163,6 +167,31 @@ ${body}
             parent = new URLClassLoader([settings.toUri().toURL()] as URL[], parent)
         }
         new GroovyClassLoader(parent).parseClass(source, className + '.groovy')
+    }
+
+    /**
+     * A page compiler that either may or may not rewrite its tag calls, according to what the build
+     * declared. Comparing a statically compiled page against a dynamic one would measure static
+     * compilation of the whole page as well; this varies only the rewriting.
+     */
+    private GroovyPagesTemplateEngine engineFor(String settings) {
+        ClassLoader parent = getClass().classLoader
+        if (settings != null) {
+            File settingsDir = File.createTempDir('taglib-bench', '')
+            settingsDir.deleteOnExit()
+            File indexDir = new File(settingsDir, TagLibraryIndex.INDEX_LOCATION)
+            indexDir.mkdirs()
+            new File(indexDir, 'compile-settings.properties').text = settings
+            parent = new URLClassLoader([settingsDir.toURI().toURL()] as URL[], parent)
+        }
+        GroovyPagesTemplateEngine engine = new GroovyPagesTemplateEngine()
+        engine.classLoader = parent
+        engine.applicationContext = applicationContext
+        // A page reaches its tags through the lookup, whether it was rewritten or not, so an engine
+        // built by hand has to be given the one the application context holds.
+        engine.tagLibraryLookup = applicationContext.getBean(TagLibraryLookup)
+        engine.afterPropertiesSet()
+        engine
     }
 
     private double timePerCall(Template template) {
