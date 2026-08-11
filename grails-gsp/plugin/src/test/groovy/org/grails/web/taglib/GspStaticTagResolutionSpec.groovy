@@ -18,23 +18,47 @@
  */
 package org.grails.web.taglib
 
+import java.nio.file.Files
+import java.nio.file.Path
+
 import org.grails.gsp.GroovyPagesTemplateEngine
-import org.grails.gsp.compiler.GroovyPageTypeCheckingExtension
 import org.grails.taglib.index.TagLibraryIndex
 import spock.lang.Specification
+import spock.lang.TempDir
 
 /**
- * With the framework tag libraries on the compile classpath, their compile-time descriptors let a
- * statically compiled GSP be checked against the tags that actually exist, rather than deferring every
- * tag call to runtime dispatch.
+ * With the framework tag libraries on the compile classpath, their compile-time descriptors let a GSP
+ * be checked against the tags that actually exist, rather than deferring every tag call to runtime
+ * dispatch.
  */
 class GspStaticTagResolutionSpec extends Specification {
+
+    @TempDir
+    Path tempDir
 
     GroovyPagesTemplateEngine gpte
 
     def setup() {
-        gpte = new GroovyPagesTemplateEngine()
-        gpte.afterPropertiesSet()
+        gpte = engineFor(null)
+    }
+
+    /**
+     * The strictness and dynamic namespaces a build declares reach the compiler as a classpath
+     * resource written by the {@code generateTagLibraryIndex} task, so a compilation that is meant to
+     * see them is given a class loader that can.
+     */
+    private GroovyPagesTemplateEngine engineFor(String settings) {
+        ClassLoader parent = getClass().classLoader
+        if (settings != null) {
+            Path settingsDir = Files.createTempDirectory(tempDir, 'settings')
+            Path indexDir = Files.createDirectories(settingsDir.resolve(TagLibraryIndex.INDEX_LOCATION))
+            indexDir.resolve('compile-settings.properties').toFile().text = settings
+            parent = new URLClassLoader([settingsDir.toUri().toURL()] as URL[], parent)
+        }
+        GroovyPagesTemplateEngine engine = new GroovyPagesTemplateEngine()
+        engine.classLoader = parent
+        engine.afterPropertiesSet()
+        engine
     }
 
     void 'the framework tag libraries are visible through their compile-time descriptors'() {
@@ -44,7 +68,7 @@ class GspStaticTagResolutionSpec extends Specification {
         expect:
         index.hasNamespace('g')
         index.lookup('g', 'message') != null
-        index.lookup('g', 'link') != null
+        index.isKnown('g', 'link')
     }
 
     void 'a statically compiled page calling a known tag compiles'() {
@@ -65,40 +89,71 @@ class GspStaticTagResolutionSpec extends Specification {
         when:
         def t = gpte.createTemplate(template, 'unknown-tag-lenient')
 
-        then: 'it is reported as a warning and the page still compiles'
+        then: 'it resolves at runtime as it did before, with nothing reported'
         t.metaInfo.compilationException == null
     }
 
-    void 'an unrecognised tag fails compilation under strict checking'() {
+    void 'a page that has not declared compileStatic is never judged against the index'() {
+        given: 'such a page resolves the receiver against its model, which the build cannot see'
+        GroovyPagesTemplateEngine strict = engineFor('strictTags=true\n')
+        String template = '''${g.custom(code: 'from the model')}'''
+
+        when:
+        def t = strict.createTemplate(template, 'dynamic-page-strict')
+
+        then: 'reporting it would reject a call this release deliberately still allows'
+        t.metaInfo.compilationException == null
+    }
+
+    void 'an unrecognised tag fails compilation when the build declares its tags complete'() {
         given:
-        System.setProperty(GroovyPageTypeCheckingExtension.STRICT_TAG_CHECKING_PROPERTY, 'true')
+        GroovyPagesTemplateEngine strict = engineFor('strictTags=true\n')
         String template = '''<%@ page compileStatic="true" %>${g.mesage(code: 'typo')}'''
 
         when:
-        def t = gpte.createTemplate(template, 'unknown-tag-strict')
+        def t = strict.createTemplate(template, 'unknown-tag-strict')
 
         then: 'the misspelling is reported when the page is compiled rather than when it renders'
         t.metaInfo.compilationException != null
         t.metaInfo.compilationException.message.contains('No such tag [mesage]')
         t.metaInfo.compilationException.message.contains('namespace [g]')
+    }
 
-        cleanup:
-        System.clearProperty(GroovyPageTypeCheckingExtension.STRICT_TAG_CHECKING_PROPERTY)
+    void 'an unrecognised tag in a declared dynamic namespace is never reported'() {
+        given: 'the build said this namespace is filled in while the application runs'
+        GroovyPagesTemplateEngine strict = engineFor('strictTags=true\ndynamicTagNamespaces=g\n')
+        String template = '''<%@ page compileStatic="true" %>${g.mesage(code: 'typo')}'''
+
+        when:
+        def t = strict.createTemplate(template, 'dynamic-namespace-tag')
+
+        then:
+        t.metaInfo.compilationException == null
+    }
+
+    void 'a tag written as markup is checked against the same descriptions'() {
+        given:
+        GroovyPagesTemplateEngine strict = engineFor('strictTags=true\n')
+        String template = '''<%@ page compileStatic="true" %><g:mesage code="typo"/>'''
+
+        when:
+        def t = strict.createTemplate(template, 'unknown-markup-tag')
+
+        then:
+        t.metaInfo.compilationException != null
+        t.metaInfo.compilationException.message.contains('No such tag [mesage]')
     }
 
     void 'a tag declared by two tag libraries is never reported as unknown'() {
         given: 'ambiguity means the tag exists but which one runs is decided at runtime'
-        System.setProperty(GroovyPageTypeCheckingExtension.STRICT_TAG_CHECKING_PROPERTY, 'true')
+        GroovyPagesTemplateEngine strict = engineFor('strictTags=true\n')
         String template = '''<%@ page compileStatic="true" %>${g.link(controller: 'book')}'''
 
         when:
-        def t = gpte.createTemplate(template, 'ambiguous-not-unknown')
+        def t = strict.createTemplate(template, 'ambiguous-not-unknown')
 
-        then: 'a resolvable tag still compiles under strict checking'
+        then: 'a resolvable tag still compiles when the build declares its tags complete'
         t.metaInfo.compilationException == null
-
-        cleanup:
-        System.clearProperty(GroovyPageTypeCheckingExtension.STRICT_TAG_CHECKING_PROPERTY)
     }
 
     void 'a namespace with no compiled tag library still resolves dynamically'() {
