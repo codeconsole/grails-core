@@ -139,6 +139,35 @@ public final class TagLibraryIndexWriter {
         store(manifest, names);
     }
 
+    /**
+     * Records what could not be described, so that a call to a tag of an incompletely described
+     * namespace is never reported as a misspelling.
+     *
+     * @param outputDirectory the directory the index is written beneath
+     * @param namespaces the namespaces known to be missing some of their tags
+     * @param everything true when what was missed could not be attributed to a namespace at all, in
+     *        which case nothing in the index may be treated as complete
+     * @throws IOException if the record cannot be written
+     */
+    public static void writeIncomplete(File outputDirectory, Collection<String> namespaces,
+            boolean everything) throws IOException {
+        if (outputDirectory == null) {
+            return;
+        }
+        if (namespaces.isEmpty() && !everything) {
+            return;
+        }
+        File indexDirectory = new File(outputDirectory, TagLibraryIndex.INDEX_LOCATION);
+        if (!indexDirectory.isDirectory() && !indexDirectory.mkdirs() && !indexDirectory.isDirectory()) {
+            return;
+        }
+        Properties recorded = new Properties();
+        recorded.setProperty(TagLibraryIndex.INCOMPLETE_NAMESPACES_KEY,
+                String.join(",", new TreeSet<>(namespaces)));
+        recorded.setProperty(TagLibraryIndex.INCOMPLETE_ALL_KEY, String.valueOf(everything));
+        store(new File(indexDirectory, "incomplete.properties"), recorded);
+    }
+
     private static void store(File file, Properties properties) throws IOException {
         // Properties.store stamps a comment with the current time, which would make output differ
         // between builds; the entries are written directly instead to keep the descriptor stable.

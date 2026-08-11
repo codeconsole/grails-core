@@ -29,31 +29,72 @@ import org.grails.gradle.plugin.core.GradleSpecification
  */
 class TagLibraryIndexWiringFunctionalSpec extends GradleSpecification {
 
-    def "the index is on the classpath of everything that resolves tag calls against it"() {
-        given:
+    def "the index written before compilation is used only to compile this project"() {
+        given: 'it is read from source, so it cannot describe a tag library it cannot resolve yet'
         setupTestResourceProject('taglib-index-wiring')
 
         when:
         def result = executeTask('inspectTagLibraryIndexWiring')
 
         then: 'this project resolves a call to a tag it declares as it compiles'
-        result.output.contains('COMPILE_SEES_INDEX=true')
+        result.output.contains('COMPILE_SEES_PRE_INDEX=true')
 
-        and: 'so does a page of this project, compiled in a process of its own'
-        result.output.contains('PAGES_SEE_INDEX=true')
+        and: 'and a partial description reaches neither a page nor a project depending on this one'
+        result.output.contains('PAGES_SEE_PRE_INDEX=false')
+        result.output.contains('PRE_INDEX_IS_A_RESOURCE=false')
+    }
 
-        and: 'and it travels with the artifact, so a project depending on this one resolves them too'
-        result.output.contains('INDEX_IS_A_RESOURCE=true')
+    def "the index written after compilation is the one packaged and compiled against"() {
+        given: 'by then every tag library resolves, whatever language its collaborators were written in'
+        setupTestResourceProject('taglib-index-wiring')
+
+        when:
+        def result = executeTask('inspectTagLibraryIndexWiring')
+
+        then:
+        result.output.contains('PAGES_SEE_PACKAGED=true')
+        result.output.contains('RUNTIME_SEES_PACKAGED=true')
+
+        and: 'it waits for everything that writes the class output, not just the compile tasks'
+        result.output.contains('PACKAGED_WAITS_FOR_CLASSES=true')
     }
 
     def "a project with no tag libraries does not fork the generator"() {
         given: 'the generator is only on the compile classpath of a project that has tag libraries'
         setupTestResourceProject('taglib-index-wiring')
 
-        when:
-        def result = executeTask('processResources')
+        when: 'both index tasks run; forking either would fail for want of the generator'
+        def result = executeTask('classes')
 
-        then: 'so forking it here would fail the build of a project with nothing to describe'
-        assertTaskSuccess('processResources', result)
+        then:
+        assertTaskSuccess('generateTagLibraryIndex', result)
+    }
+
+    def "the settings the build declares are not packaged"() {
+        given: 'they say how this project compiles, so a project depending on it must not inherit them'
+        def runner = setupTestResourceProject('taglib-index-wiring')
+
+        when:
+        def result = executeTask('jar')
+
+        then:
+        assertTaskSuccess('jar', result)
+
+        and:
+        File jar = new File(runner.projectDir, 'build/libs').listFiles().find { it.name.endsWith('.jar') }
+        new java.util.zip.ZipFile(jar).withCloseable { zip ->
+            zip.getEntry('META-INF/grails/taglibs/compile-settings.properties') == null
+        }
+    }
+
+    def "the whole build wires together without a dependency cycle"() {
+        given: 'the packaged index waits for classes, and nothing that classes waits for waits for it'
+        setupTestResourceProject('taglib-index-wiring')
+
+        when:
+        def result = executeTask('build')
+
+        then:
+        assertTaskSuccess('packageTagLibraryIndex', result)
     }
 }

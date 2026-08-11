@@ -401,6 +401,12 @@ public class CompiledTagCallRewriter extends ClassCodeExpressionTransformer {
         if (!index.isStrict() || index.isDynamicNamespace(namespace)) {
             return;
         }
+        if (!index.isNamespaceComplete(namespace)) {
+            // Something contributing to this namespace could not be described. A tag missing from it
+            // is as likely to be one of those as a misspelling, and reporting it would fail a build
+            // over code that is correct.
+            return;
+        }
         String message = "No such tag [" + tagName + "] in namespace [" + namespace + "]. Known tags: " +
                 String.join(", ", index.getTagNames(namespace));
         // Collected rather than fatal, so that every misspelling in a file is reported at once instead

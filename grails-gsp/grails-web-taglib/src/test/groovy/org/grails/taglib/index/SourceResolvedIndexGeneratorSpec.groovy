@@ -239,6 +239,91 @@ class SourceResolvedIndexGeneratorSpec extends Specification {
         manifest() == ['UnaffectedTagLib']
     }
 
+    void 'a namespace whose tag library could not be read is recorded as incomplete'() {
+        given: 'so that a call to one of its tags is never reported as a misspelling'
+        taglib('Unreadable.groovy', '''
+            import com.example.NoSuchService
+            import grails.gsp.TagLib
+            @TagLib
+            class UnreadableTagLib {
+                static namespace = 'partial'
+                NoSuchService service
+                def show(Map attrs) { }
+            }
+        ''')
+        taglib('Sibling.groovy', '''
+            import grails.gsp.TagLib
+            @TagLib
+            class SiblingTagLib {
+                static namespace = 'partial'
+                def other(Map attrs) { }
+            }
+        ''')
+
+        when:
+        generate()
+
+        then: 'the namespace exists, but is known to be missing some of its tags'
+        indexOf().hasNamespace('partial')
+        !indexOf().isNamespaceComplete('partial')
+    }
+
+    void 'nothing is recorded as incomplete when everything could be read'() {
+        given:
+        taglib('Whole.groovy', '''
+            import grails.gsp.TagLib
+            @TagLib
+            class WholeTagLib {
+                static namespace = 'whole'
+                def show(Map attrs) { }
+            }
+        ''')
+
+        when:
+        generate()
+
+        then:
+        indexOf().isNamespaceComplete('whole')
+        indexOf().incompleteNamespaces.isEmpty()
+    }
+
+    void 'a tag library whose namespace cannot even be read leaves nothing complete'() {
+        given: 'what was missed cannot be attributed, so no namespace may be treated as complete'
+        taglib('Nameless.groovy', '''
+            import com.example.NoSuchService
+            import grails.gsp.TagLib
+            @TagLib
+            class NamelessTagLib {
+                NoSuchService service
+                def show(Map attrs) { }
+            }
+        ''')
+        taglib('Other.groovy', '''
+            import grails.gsp.TagLib
+            @TagLib
+            class OtherTagLib {
+                static namespace = 'other'
+                def show(Map attrs) { }
+            }
+        ''')
+
+        when:
+        generate()
+
+        then:
+        !indexOf().isNamespaceComplete('other')
+    }
+
+    private TagLibraryIndex indexOf() {
+        URLClassLoader loader = new URLClassLoader([output.toUri().toURL()] as URL[], (ClassLoader) null)
+        try {
+            return TagLibraryIndex.load(loader)
+        }
+        finally {
+            loader.close()
+        }
+    }
+
     private void generate() {
         TagLibraryIndexGenerator.generate([taglibs.toFile()], [app.toFile()], output.toFile(),
                 true, 'UTF-8')

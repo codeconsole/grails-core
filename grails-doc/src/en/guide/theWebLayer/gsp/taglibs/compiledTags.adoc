@@ -196,25 +196,37 @@ Each tag library contributes one file under `META-INF/grails/taglibs` in the art
 in. Descriptions from every jar on the classpath are combined, so a plugin's tag libraries are
 resolvable by an application that depends on it without any extra build configuration.
 
-One thing writes that description per build. Under the Grails Gradle plugin it is the
-`generateTagLibraryIndex` task, which reads the sources under `grails-app/taglib` before compilation —
-so tags an application declares are resolvable in the same compilation that defines them, and a tag
-library that is renamed or deleted disappears from the index. A project keeping tag libraries
-elsewhere adds those directories to the task:
+Under the Grails Gradle plugin the description is written twice, because the two things that read it
+need different guarantees.
+
+`generateTagLibraryIndex` runs before compilation and reads the sources under `grails-app/taglib`, so
+tags an application declares are resolvable in the same compilation that defines them. Being read from
+source it cannot describe everything: a tag library referring to a type written in Java, or generated
+by the build, is left out. What it missed is recorded, and nothing in a namespace it could not fully
+describe is ever reported as an unknown tag, so strict checking cannot fail a build over a tag that
+does exist. This index is used only to compile this project, and is never packaged.
+
+`packageTagLibraryIndex` runs after compilation, with the project's own classes on its classpath,
+where every tag library resolves whatever language its collaborators were written in. That index is
+the authoritative one: pages are compiled against it, it travels with the artifact, and a project
+depending on this one reads it. Every run replaces the directory, so a tag library that is renamed or
+deleted disappears from it.
+
+A project keeping tag libraries elsewhere adds those directories to both tasks:
 
 [source,groovy]
 .build.gradle
 ----
-generateTagLibraryIndex {
+tasks.matching { it.name in ['generateTagLibraryIndex', 'packageTagLibraryIndex'] }.configureEach {
     sourceDirectories.from(file('src/main/groovy'))
 }
 ----
 
-A tag library referring to something the same project declares — a service it injects, a base class it
-extends, a trait it carries — is described too: the task reads that source alongside it, so an
-inherited namespace, a tag a trait contributes and an attributes parameter of a project-declared type
-are all read rather than guessed. A tag library naming a type that does not exist is left out, as it
-would be by the compiler.
+Before compilation, a tag library referring to something the same project declares — a service it
+injects, a base class it extends, a trait it carries — is described too, by reading that Groovy source
+alongside it, so an inherited namespace, a tag a trait contributes and an attributes parameter of a
+project-declared type are all read rather than guessed. A tag library naming a type that does not
+exist is left out, as it would be by the compiler.
 
 Where no build writes the index — a plain Groovy compilation, or one that does not apply the Grails
 Gradle plugin — each tag library describes itself as it is compiled instead, which makes it resolvable

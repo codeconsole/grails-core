@@ -102,33 +102,43 @@ class GenerateTagLibraryIndexTaskSpec extends Specification {
         !dependencyNames(generate).contains('compileGroovy')
     }
 
-    void 'the index is packaged as a resource'() {
-        given:
+    void 'the index written before compilation is not packaged'() {
+        given: 'read from source, it cannot describe a tag library it cannot resolve yet'
         SourceSet main = (project.extensions.getByType(SourceSetContainer)).getByName('main')
 
-        expect: 'so that a project depending on this one can resolve its tags'
-        main.resources.srcDirs*.canonicalFile.contains(
-                new File(projectDir.toFile(), 'build/generated/grails-taglibs').canonicalFile)
-
-        and: 'and resource processing waits for it to be written'
-        dependencyNames(project.tasks.getByName('processResources')).contains('generateTagLibraryIndex')
-    }
-
-    void 'compiling pages sees the index this project generates'() {
-        given: 'a page calling a tag the same project declares can only resolve it from the index'
-        Task compilePages = project.tasks.getByName('compileGroovyPages')
-
-        expect: 'on the classpath itself, not merely produced before it'
-        compilePages.classpath.files*.canonicalFile.contains(
+        expect: 'so a project depending on this one must not be given it'
+        !main.resources.srcDirs*.canonicalFile.contains(
                 new File(projectDir.toFile(), 'build/generated/grails-taglibs').canonicalFile)
     }
 
-    void 'the settings the build declares are not packaged'() {
-        given: 'they say how this project compiles, so a project depending on it must not inherit them'
-        Task processResources = project.tasks.getByName('processResources')
+    void 'the index written after compilation is on the runtime classpath'() {
+        given: 'a page compiled while the application runs resolves its tags against it'
+        SourceSet main = (project.extensions.getByType(SourceSetContainer)).getByName('main')
 
         expect:
-        processResources.excludes.contains('META-INF/grails/taglibs/compile-settings.properties')
+        main.runtimeClasspath.files*.canonicalFile.contains(
+                new File(projectDir.toFile(), 'build/generated/grails-taglibs-packaged').canonicalFile)
+    }
+
+    void 'the index written after compilation waits for everything that writes the class output'() {
+        given: 'not for the compile tasks alone, which others may write into that directory after'
+        Task packageIndex = project.tasks.getByName('packageTagLibraryIndex')
+
+        expect:
+        dependencyNames(packageIndex).contains('classes')
+    }
+
+    void 'compiling pages sees the authoritative index'() {
+        given: 'a page must see every tag, including one only describable once compiled'
+        Task compilePages = project.tasks.getByName('compileGroovyPages')
+
+        expect:
+        compilePages.classpath.files*.canonicalFile.contains(
+                new File(projectDir.toFile(), 'build/generated/grails-taglibs-packaged').canonicalFile)
+
+        and: 'and not the partial one written before compilation'
+        !compilePages.classpath.files*.canonicalFile.contains(
+                new File(projectDir.toFile(), 'build/generated/grails-taglibs').canonicalFile)
     }
 
     void 'the strictness and dynamic namespaces the build declares are task inputs'() {

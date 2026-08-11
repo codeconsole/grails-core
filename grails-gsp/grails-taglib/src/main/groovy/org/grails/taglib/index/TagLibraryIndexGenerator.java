@@ -26,6 +26,10 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Set;
+import java.util.TreeSet;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
 import org.codehaus.groovy.ast.AnnotationNode;
@@ -58,6 +62,9 @@ public final class TagLibraryIndexGenerator {
     private static final String TAG_LIB_ANNOTATION = "grails.gsp.TagLib";
     private static final String ARTEFACT_ANNOTATION = "grails.artefact.Artefact";
     private static final String TAG_LIB_ARTEFACT = "TagLib";
+
+    private static final Pattern NAMESPACE_DECLARATION =
+            Pattern.compile("static\\s+(?:final\\s+)?(?:String\\s+)?namespace\\s*=\\s*['\"]([^'\"]+)['\"]");
 
     private TagLibraryIndexGenerator() {
     }
@@ -144,7 +151,8 @@ public final class TagLibraryIndexGenerator {
         }
 
         List<File> roots = resolutionRoots != null ? resolutionRoots : Collections.emptyList();
-        for (ClassNode classNode : parse(sources, roots, parameterNamesRetained, encoding)) {
+        List<File> skipped = new ArrayList<>();
+        for (ClassNode classNode : parse(sources, roots, parameterNamesRetained, encoding, skipped)) {
             if (!isTagLibrary(classNode)) {
                 continue;
             }
@@ -157,6 +165,26 @@ public final class TagLibraryIndexGenerator {
             TagLibraryIndexWriter.write(outputDir, classNode.getName(), namespace,
                     TagLibraryAstDiscovery.findTags(classNode, parameterNamesRetained));
         }
+        recordWhatWasMissed(outputDir, skipped);
+    }
+
+    /**
+     * Records the namespaces left incomplete by whatever could not be read, so that a call to a tag of
+     * one of them is never reported as a misspelling.
+     */
+    private static void recordWhatWasMissed(File outputDir, List<File> skipped) throws IOException {
+        Set<String> namespaces = new TreeSet<>();
+        boolean everything = false;
+        for (File source : skipped) {
+            String namespace = declaredNamespace(source);
+            if (namespace != null) {
+                namespaces.add(namespace);
+            }
+            else {
+                everything = true;
+            }
+        }
+        TagLibraryIndexWriter.writeIncomplete(outputDir, namespaces, everything);
     }
 
     /**
@@ -170,26 +198,50 @@ public final class TagLibraryIndexGenerator {
      * with no descriptor does.
      */
     private static List<ClassNode> parse(List<File> sources, List<File> resolutionRoots,
-            boolean parameterNamesRetained, String encoding) {
+            boolean parameterNamesRetained, String encoding, List<File> skippedOut) {
         try {
             return collectClassNodes(compile(sources, resolutionRoots, parameterNamesRetained, encoding));
         } catch (Exception wholeSourceSetFailed) {
             List<ClassNode> classNodes = new ArrayList<>();
-            List<String> skipped = new ArrayList<>();
             for (File source : sources) {
                 try {
                     classNodes.addAll(collectClassNodes(
                             compile(List.of(source), resolutionRoots, parameterNamesRetained, encoding)));
                 } catch (Exception singleSourceFailed) {
-                    skipped.add(source.getName());
+                    skippedOut.add(source);
                 }
             }
-            if (!skipped.isEmpty()) {
-                System.out.println("Tag library index: could not read " + String.join(", ", skipped) +
+            if (!skippedOut.isEmpty()) {
+                List<String> names = new ArrayList<>();
+                for (File skipped : skippedOut) {
+                    names.add(skipped.getName());
+                }
+                System.out.println("Tag library index: could not read " + String.join(", ", names) +
                         " before compilation; their tags resolve dynamically until they are compiled.");
             }
             classNodes.sort(Comparator.comparing(ClassNode::getName));
             return classNodes;
+        }
+    }
+
+    /**
+     * The namespace a source that could not be parsed declares, read from its text.
+     *
+     * <p>Only ever used to record that a namespace is missing some of its tags, so that nothing in it
+     * is reported as a misspelling. Reading too many namespaces out of a file costs some diagnostics;
+     * reading too few would let a call to a tag that does exist be reported as one that does not, so
+     * where the text says nothing every namespace is treated as incomplete.
+     *
+     * @return the namespace, or {@code null} when the text does not state one plainly
+     */
+    private static String declaredNamespace(File source) {
+        try {
+            String text = Files.readString(source.toPath());
+            Matcher matcher = NAMESPACE_DECLARATION.matcher(text);
+            return matcher.find() ? matcher.group(1) : null;
+        }
+        catch (IOException | RuntimeException unreadable) {
+            return null;
         }
     }
 
