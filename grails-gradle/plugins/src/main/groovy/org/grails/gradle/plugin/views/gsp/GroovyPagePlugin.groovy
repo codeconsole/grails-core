@@ -103,7 +103,7 @@ class GroovyPagePlugin implements Plugin<Project> {
         // output would make it wait for the compilation it is meant to precede.
         Provider<Directory> tagLibIndexDir = project.layout.buildDirectory.dir('generated/grails-taglibs')
         def generateTagLibraryIndex = tasks.register('generateTagLibraryIndex', GenerateTagLibraryIndexTask) {
-            it.sourceDirectory.set(project.layout.projectDirectory.dir('grails-app/taglib'))
+            it.sourceDirectories.from(project.layout.projectDirectory.dir('grails-app/taglib'))
             it.destinationDirectory.set(tagLibIndexDir)
             it.generatorClasspath.from(project.configurations.named('compileClasspath'))
             it.parameterNamesRetained.set(resolvePreserveParameterNames(project))

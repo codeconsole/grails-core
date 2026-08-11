@@ -62,7 +62,8 @@ public final class TagLibraryIndexGenerator {
     }
 
     /**
-     * @param args source directory, output directory, and whether parameter names are retained
+     * @param args source directory, output directory, whether parameter names are retained, the
+     *        source encoding, and whether to discard an index already present
      */
     public static void main(String[] args) throws IOException {
         if (args.length < 2) {
@@ -73,7 +74,8 @@ public final class TagLibraryIndexGenerator {
         File outputDir = new File(args[1]);
         boolean parameterNamesRetained = args.length < 3 || Boolean.parseBoolean(args[2]);
         String encoding = args.length > 3 && !args[3].isEmpty() ? args[3] : "UTF-8";
-        generate(sourceDir, outputDir, parameterNamesRetained, encoding);
+        boolean clearExisting = args.length < 5 || Boolean.parseBoolean(args[4]);
+        generate(sourceDir, outputDir, parameterNamesRetained, encoding, clearExisting);
     }
 
     /**
@@ -87,7 +89,25 @@ public final class TagLibraryIndexGenerator {
      */
     public static void generate(File sourceDir, File outputDir, boolean parameterNamesRetained,
             String encoding) throws IOException {
-        TagLibraryIndexWriter.clear(outputDir);
+        generate(sourceDir, outputDir, parameterNamesRetained, encoding, true);
+    }
+
+    /**
+     * Regenerates the index, optionally adding to what is already there.
+     *
+     * @param sourceDir the directory to scan for tag libraries
+     * @param outputDir the directory the index is written beneath
+     * @param parameterNamesRetained whether the compilation writes parameter names into class files
+     * @param encoding the source encoding
+     * @param clearExisting whether to discard an index already present, which several source
+     *        directories contributing to one index must do only on the first of them
+     * @throws IOException if the index cannot be written
+     */
+    public static void generate(File sourceDir, File outputDir, boolean parameterNamesRetained,
+            String encoding, boolean clearExisting) throws IOException {
+        if (clearExisting) {
+            TagLibraryIndexWriter.clear(outputDir);
+        }
         if (sourceDir == null || !sourceDir.isDirectory()) {
             return;
         }

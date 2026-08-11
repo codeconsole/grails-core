@@ -148,6 +148,22 @@ class TagLibraryIndexGeneratorSpec extends Specification {
         manifest().isEmpty()
     }
 
+    void 'a second source directory adds to the index rather than replacing it'() {
+        given: 'tag libraries in two directories, as a project keeping some outside grails-app has'
+        Path other = Files.createDirectories(tempDir.resolve('other'))
+        write('First.groovy', taglib('FirstTagLib', 'first', 'one'))
+        other.resolve('Second.groovy').toFile().text = taglib('SecondTagLib', 'second', 'two')
+
+        when: 'the first pass clears and the second adds'
+        TagLibraryIndexGenerator.generate(sources.toFile(), output.toFile(), true, 'UTF-8', true)
+        TagLibraryIndexGenerator.generate(other.toFile(), output.toFile(), true, 'UTF-8', false)
+
+        then: 'both are described'
+        manifest() == ['FirstTagLib', 'SecondTagLib']
+        descriptor('FirstTagLib').namespace == 'first'
+        descriptor('SecondTagLib').namespace == 'second'
+    }
+
     private void write(String name, String source) {
         sources.resolve(name).toFile().text = source
     }

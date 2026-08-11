@@ -67,8 +67,8 @@ class GenerateTagLibraryIndexTaskSpec extends Specification {
         GenerateTagLibraryIndexTask task = project.tasks.getByName('generateTagLibraryIndex') as GenerateTagLibraryIndexTask
 
         expect:
-        task.sourceDirectory.get().asFile.canonicalFile ==
-                new File(projectDir.toFile(), 'grails-app/taglib').canonicalFile
+        task.sourceDirectories.files*.canonicalFile ==
+                [new File(projectDir.toFile(), 'grails-app/taglib').canonicalFile]
         task.destinationDirectory.get().asFile.canonicalFile ==
                 new File(projectDir.toFile(), 'build/generated/grails-taglibs').canonicalFile
     }
@@ -101,6 +101,19 @@ class GenerateTagLibraryIndexTaskSpec extends Specification {
 
     private static Set<String> dependencyNames(Task task) {
         task.taskDependencies.getDependencies(task)*.name as Set
+    }
+
+    void 'further tag library source directories can be added'() {
+        given: 'a project keeping tag libraries outside grails-app/taglib as well'
+        GenerateTagLibraryIndexTask task = project.tasks.getByName('generateTagLibraryIndex') as GenerateTagLibraryIndexTask
+        File extra = new File(projectDir.toFile(), 'src/main/groovy')
+
+        when:
+        task.sourceDirectories.from(extra)
+
+        then: 'both are scanned, so tags declared in either resolve in the same compilation'
+        task.sourceDirectories.files*.canonicalFile.contains(extra.canonicalFile)
+        task.sourceDirectories.files.size() == 2
     }
 
     void 'the task declares its inputs and outputs so it can be skipped and cached'() {

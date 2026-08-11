@@ -29,7 +29,7 @@ import org.gradle.api.tasks.CacheableTask
 import org.gradle.api.tasks.Classpath
 import org.gradle.api.tasks.IgnoreEmptyDirectories
 import org.gradle.api.tasks.Input
-import org.gradle.api.tasks.InputDirectory
+import org.gradle.api.tasks.InputFiles
 import org.gradle.api.tasks.Optional
 import org.gradle.api.tasks.OutputDirectory
 import org.gradle.api.tasks.PathSensitive
@@ -69,13 +69,18 @@ abstract class GenerateTagLibraryIndexTask extends DefaultTask {
     }
 
     /**
-     * The directory holding tag library sources, normally {@code grails-app/taglib}.
+     * The directories holding tag library sources.
+     *
+     * <p>Defaults to {@code grails-app/taglib}. A project keeping tag libraries elsewhere can add
+     * those directories, which is what makes them resolvable in the same compilation that defines
+     * them; without that they are still described as they compile, and so are resolvable to whatever
+     * is compiled afterwards.
      */
-    @InputDirectory
+    @InputFiles
     @SkipWhenEmpty
     @IgnoreEmptyDirectories
     @PathSensitive(PathSensitivity.RELATIVE)
-    abstract DirectoryProperty getSourceDirectory()
+    abstract ConfigurableFileCollection getSourceDirectories()
 
     /**
      * Where the index is written. Placed on the compile classpath and packaged with the artifact.
@@ -106,18 +111,26 @@ abstract class GenerateTagLibraryIndexTask extends DefaultTask {
 
     @TaskAction
     void generate() {
-        File source = sourceDirectory.get().asFile
         File destination = destinationDirectory.get().asFile
         destination.mkdirs()
-        execOperations.javaexec { JavaExecSpec spec ->
-            spec.mainClass.set(GENERATOR_CLASS)
-            spec.classpath = generatorClasspath
-            spec.args(
-                    source.canonicalPath,
-                    destination.canonicalPath,
-                    String.valueOf(parameterNamesRetained.getOrElse(true)),
-                    sourceEncoding.getOrElse('UTF-8')
-            )
-        }.assertNormalExitValue()
+        List<File> directories = new ArrayList<File>(sourceDirectories.files.findAll { File dir -> dir.isDirectory() })
+        if (!directories) {
+            return
+        }
+        directories.eachWithIndex { File source, int position ->
+            execOperations.javaexec { JavaExecSpec spec ->
+                spec.mainClass.set(GENERATOR_CLASS)
+                spec.classpath = generatorClasspath
+                spec.args(
+                        source.canonicalPath,
+                        destination.canonicalPath,
+                        String.valueOf(parameterNamesRetained.getOrElse(true)),
+                        sourceEncoding.getOrElse('UTF-8'),
+                        // Only the first pass clears what was written before, so that several source
+                        // directories contribute to one index rather than each erasing the last.
+                        String.valueOf(position == 0)
+                )
+            }.assertNormalExitValue()
+        }
     }
 }
