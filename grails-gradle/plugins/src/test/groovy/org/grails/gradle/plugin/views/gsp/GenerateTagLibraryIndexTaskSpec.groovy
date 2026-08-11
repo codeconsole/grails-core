@@ -78,6 +78,18 @@ class GenerateTagLibraryIndexTaskSpec extends Specification {
         dependencyNames(project.tasks.getByName('compileGroovyPages')).contains('generateTagLibraryIndex')
     }
 
+    void 'compiling this project sees the index it generates'() {
+        given: 'otherwise a call to a tag this project declares could not be resolved as it compiles'
+        Task compileGroovy = project.tasks.getByName('compileGroovy')
+
+        expect:
+        dependencyNames(compileGroovy).contains('generateTagLibraryIndex')
+
+        and: 'the index is on the compile classpath, not merely produced alongside it'
+        compileGroovy.classpath.files*.canonicalFile.contains(
+                new File(projectDir.toFile(), 'build/generated/grails-taglibs').canonicalFile)
+    }
+
     void 'the generator does not wait for this project to be compiled'() {
         given: 'it reads source, so requiring compiled output would invert the ordering it exists for'
         Task generate = project.tasks.getByName('generateTagLibraryIndex')

@@ -2287,4 +2287,3 @@ def hello(Map attrs) {
     out << "Hello ${attrs.name}"
 }
 ----
-

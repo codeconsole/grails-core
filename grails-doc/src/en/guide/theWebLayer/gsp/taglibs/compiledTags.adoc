@@ -42,15 +42,15 @@ one produces a warning naming the tag.
 
 ==== Calling tags
 
-A call to a tag whose namespace and name are known is compiled into a direct invocation rather than
-being dispatched through the metaclass:
+In a tag library or a controller, a call to a tag whose namespace and name are known is compiled into
+a direct invocation rather than being dispatched through the metaclass:
 
 [source,groovy]
 ----
 class BookController {
     def index() {
-        String markup = g.link(controller: 'book')      // compiled into a direct invocation
-        String other  = greet.hello(name: 'Grails')      // likewise
+        String markup = g.createLink(controller: 'book')   // compiled into a direct invocation
+        String other  = greet.hello(name: 'Grails')        // likewise
     }
 }
 ----
@@ -61,11 +61,32 @@ call whose attributes are assembled at runtime is dispatched as before:
 [source,groovy]
 ----
 Map attrs = buildAttributes()
-g.link(attrs)    // dispatched dynamically
+g.createLink(attrs)    // dispatched dynamically
 ----
 
 So is a call into a namespace no compiled tag library declares, which is what allows a tag library
-registered while an application is running to keep working.
+registered while an application is running to keep working, and so is a call to a tag defined as a
+`Closure` field, which carries no signature to bind to.
+
+A name that something else in scope already answers to is not a namespace. A local variable, a
+parameter or a property called `g` is that thing, and a call on it is left alone:
+
+[source,groovy]
+----
+def index() {
+    def g = someClient
+    g.createLink(controller: 'book')   // someClient.createLink, not the tag
+}
+----
+
+Only a call naming its namespace is rewritten. An unqualified call, as `message(code: 'x')` is, is
+dispatched as before, because whether such a name is a tag or a method of the calling class is decided
+where it is called rather than by the tag libraries on the classpath.
+
+Expressions in a GSP page are checked against the same descriptions when the page is compiled, so a
+misspelled tag is reported there too. They are not rewritten: a page reaches its tags through the
+namespace dispatcher, which resolves the tag by name at render time. It does so without installing
+anything onto a metaclass, but the tag is selected when the page runs rather than when it compiles.
 
 ==== Reporting unknown tags
 

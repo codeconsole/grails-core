@@ -24,6 +24,7 @@ import org.gradle.api.Plugin
 import org.gradle.api.Project
 import org.gradle.api.file.CopySpec
 import groovy.transform.CompileDynamic
+import org.gradle.api.tasks.compile.GroovyCompile
 import org.gradle.api.file.Directory
 import org.gradle.api.file.DuplicatesStrategy
 import org.gradle.api.file.FileCollection
@@ -110,6 +111,15 @@ class GroovyPagePlugin implements Plugin<Project> {
         }
         mainSourceSet?.resources?.srcDir(tagLibIndexDir)
         tasks.named('processResources').configure { it.dependsOn(generateTagLibraryIndex) }
+
+        // Compiling this project's own controllers and tag libraries has to see the index too, or a
+        // call to a tag the same project declares cannot be resolved. The directory joins the compile
+        // classpath rather than the source set output, which would make the index wait for the
+        // compilation it exists to precede.
+        tasks.named('compileGroovy', GroovyCompile).configure { GroovyCompile compile ->
+            compile.dependsOn(generateTagLibraryIndex)
+            compile.classpath = compile.classpath.plus(project.files(tagLibIndexDir))
+        }
 
         def compileGroovyPages = tasks.register('compileGroovyPages', GroovyPageForkCompileTask) {
             it.destinationDirectory.set(destDir)
