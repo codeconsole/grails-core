@@ -24,9 +24,9 @@ import java.util.Set;
  * Property names managed by the language runtime or Grails rather than ordinary request data.
  * <p>
  * Intrinsic runtime properties are never request-bindable. Grails-managed domain properties
- * are excluded from generated allowlists by default, but may still bind when an application
- * explicitly opts them in (for example {@code bindable: true}); neither category is cleared
- * by {@code clearMissing}.
+ * are excluded from generated allowlists by default, but may still bind and be cleared when an
+ * application explicitly opts them in (for example {@code bindable: true}); intrinsic runtime
+ * properties remain protected.
  */
 public final class FrameworkPropertyNames {
 
@@ -37,8 +37,8 @@ public final class FrameworkPropertyNames {
             "class", "classLoader", "protectionDomain", "metaClass", "metaPropertyValues", "properties");
 
     /**
-     * Grails domain lifecycle properties excluded from default binding allowlists and always
-     * excluded from {@code clearMissing} clearing.
+     * Grails domain lifecycle properties excluded from default binding allowlists but eligible
+     * for {@code clearMissing} when explicitly included.
      */
     public static final Set<String> GRAILS_MANAGED_PROPERTIES = Set.of(
             "errors", "id", "version", "dateCreated", "lastUpdated");
