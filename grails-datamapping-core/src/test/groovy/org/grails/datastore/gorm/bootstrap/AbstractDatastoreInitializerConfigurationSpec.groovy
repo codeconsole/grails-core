@@ -108,6 +108,15 @@ class AbstractDatastoreInitializerConfigurationSpec extends Specification {
             initializer.mappedClassesFor('mongo').toList() == [String, Integer]
     }
 
+    void 'a datastore saying which classes are its own is still asked'() {
+        given: 'the seam a datastore outside this repository overrides'
+            Initializer initializer = new Overriding([:])
+            initializer.persistentClasses = [String, Integer]
+
+        expect: 'folding the array into it would leave such an override overriding nothing'
+            initializer.mappedClassesFor('mongo').toList() == [Integer]
+    }
+
     void 'inside a container the publisher class that publishes through it is named'() {
         given:
             Initializer initializer = new Initializer([:])
@@ -152,7 +161,7 @@ class AbstractDatastoreInitializerConfigurationSpec extends Specification {
         }
 
         Class[] mappedClassesFor(String datastoreType) {
-            collectMappedClasses(datastoreType)
+            mappedClasses(datastoreType)
         }
 
         @Override
@@ -163,6 +172,19 @@ class AbstractDatastoreInitializerConfigurationSpec extends Specification {
         @Override
         Class getPersistenceInterceptorClass() {
             Object
+        }
+    }
+
+    /** A datastore that says which of the classes are its own, the way an implementation does. */
+    static class Overriding extends Initializer {
+
+        Overriding(Map configuration) {
+            super(configuration)
+        }
+
+        @Override
+        protected Collection<Class> collectMappedClasses(String datastoreType) {
+            persistentClasses.findAll { Class cls -> cls != String }
         }
     }
 }

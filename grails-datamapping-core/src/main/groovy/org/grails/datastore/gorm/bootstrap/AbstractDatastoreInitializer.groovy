@@ -317,6 +317,18 @@ abstract class AbstractDatastoreInitializer implements ResourceLoaderAware {
     }
 
     /**
+     * The classes this datastore maps.
+     *
+     * @param datastoreType the datastore the classes are being collected for
+     * @return the classes, which a datastore's definition takes through {@link #mappedClasses}
+     */
+    protected Collection<Class> collectMappedClasses(String datastoreType) {
+        !secondaryDatastore ? persistentClasses : persistentClasses.findAll() { Class cls ->
+            isMappedClass(datastoreType, cls)
+        }
+    }
+
+    /**
      * The classes this datastore maps, as the array its constructor takes.
      *
      * <p>The array type is what makes this survive ahead-of-time processing. A datastore takes its
@@ -325,12 +337,17 @@ abstract class AbstractDatastoreInitializer implements ResourceLoaderAware {
      * {@code Class[]}, so the lookup misses it and the argument is resolved as a dependency instead,
      * which for an array type means every {@code Class} bean in the context: none. The datastore is
      * then built mapping nothing, and the first call on a domain class reports that it is not one.</p>
+     *
+     * <p>Kept apart from {@link #collectMappedClasses} rather than folded into it, because that one
+     * is the seam a datastore outside this repository overrides to say which classes are its own.
+     * Changing what it returns would leave such an override no longer overriding anything, and
+     * silently unasked.</p>
+     *
+     * @param datastoreType the datastore the classes are being collected for
+     * @return the classes, as the array a datastore's constructor takes
      */
-    protected Class[] collectMappedClasses(String datastoreType) {
-        Collection<Class> classes = !secondaryDatastore ? persistentClasses : persistentClasses.findAll() { Class cls ->
-            isMappedClass(datastoreType, cls)
-        }
-        return classes as Class[]
+    protected Class[] mappedClasses(String datastoreType) {
+        collectMappedClasses(datastoreType) as Class[]
     }
 
     protected boolean isMappedClass(String datastoreType, Class cls) {

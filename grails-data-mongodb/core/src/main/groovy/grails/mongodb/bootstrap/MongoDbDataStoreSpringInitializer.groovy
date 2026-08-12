@@ -100,11 +100,11 @@ class MongoDbDataStoreSpringInitializer extends AbstractDatastoreInitializer {
                 mongoConnectionSourceFactory(MongoConnectionSourceFactory) { bean ->
                     bean.autowire = true
                 }
-                mongoDatastore(MongoDatastore, configurationReference, ref('mongoConnectionSourceFactory'), ref('grailsDatastoreEventPublisher'), collectMappedClasses(DATASTORE_TYPE))
+                mongoDatastore(MongoDatastore, configurationReference, ref('mongoConnectionSourceFactory'), ref('grailsDatastoreEventPublisher'), mappedClasses(DATASTORE_TYPE))
                 mongo(mongoDatastore: 'getMongoClient')
             }
             else {
-                mongoDatastore(MongoDatastore, mongo, configurationReference, ref('grailsDatastoreEventPublisher'), collectMappedClasses(DATASTORE_TYPE))
+                mongoDatastore(MongoDatastore, mongo, configurationReference, ref('grailsDatastoreEventPublisher'), mappedClasses(DATASTORE_TYPE))
             }
 
             mongoMappingContext(mongoDatastore: 'getMappingContext')
