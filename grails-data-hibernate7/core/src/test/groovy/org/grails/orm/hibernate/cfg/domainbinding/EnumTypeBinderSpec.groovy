@@ -166,7 +166,13 @@ class EnumTypeBinderSpec extends HibernateGormDatastoreSpec {
 
 enum Status01 { AVAILABLE, OUT_OF_STOCK }
 
-@Entity class Person01 { Long id; Status01 status }
+@Entity class Person01 {
+    Long id
+    Status01 status
+    static constraints = {
+        status nullable: false
+    }
+}
 @Entity class Person02 {
     Long id; Status01 status
     static mapping = { status enumType: "string", nullable: true }
