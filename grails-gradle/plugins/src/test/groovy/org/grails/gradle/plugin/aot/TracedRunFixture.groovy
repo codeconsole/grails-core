@@ -55,6 +55,12 @@ class TracedRunFixture {
             <input type="password" name="password"/>
         </form></body></html>'''
 
+    /** A form only a signed-in visitor is shown, which is what makes reaching it worth checking. */
+    private static final String PROTECTED_FORM = '''<html><body>
+        <form id="protectedForm" action="/protected-save" method="post">
+            <input type="text" name="secretTitle"/>
+        </form></body></html>'''
+
     static void main(String[] args) {
         int port = Integer.parseInt(args[0])
         File requested = new File(args[1])
@@ -85,6 +91,18 @@ class TracedRunFixture {
                 status = 302
                 exchange.responseHeaders.add('Location', '/')
                 response = ''
+            }
+            else if (path == '/protected-form') {
+                // the shape that made a redirected form page count as traced: the page it lands on
+                // has a form of its own, so everything after the redirect succeeds
+                if (!signedIn) {
+                    status = 302
+                    exchange.responseHeaders.add('Location', '/login')
+                    response = ''
+                }
+                else {
+                    response = PROTECTED_FORM
+                }
             }
             else if (path == '/protected') {
                 // answered from the login page until the login form has been submitted, which is

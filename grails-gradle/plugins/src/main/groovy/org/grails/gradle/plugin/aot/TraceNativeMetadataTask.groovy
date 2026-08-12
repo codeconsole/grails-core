@@ -298,6 +298,24 @@ abstract class TraceNativeMetadataTask extends DefaultTask {
 
         HttpResponse<String> page = client.send(
                 requestTo(path).GET().build(), HttpResponse.BodyHandlers.ofString())
+        if (page.statusCode() >= 400) {
+            return new Answer("FORM ${path} -> ${page.statusCode()} asking for the page".toString(), false)
+        }
+        // Where the page came from, not only that one did. A form page reached without whatever
+        // makes it reachable answers from the login form instead, and every check after this one
+        // passes: that page has a form, its fields are filled in, it posts, and it answers below
+        // 400. What would be reported is the login form submitted a second time under the name of
+        // the page that was wanted, while the binding this was listed for went unexercised.
+        //
+        // Failed rather than warned, which is where this differs from asking for a path. A path
+        // that redirects still traced a page, and an application is free to send one page to
+        // another; a form that redirects traced a different form, and there is no reading of that
+        // which is what was asked for.
+        String landed = page.uri().path
+        if (landed != uriOf(path).path) {
+            return new Answer("FORM ${path} -> answered from ${landed}, so the form there is not " +
+                    'this one. A page behind a login is reached by listing its form first.', false)
+        }
         List<String> markups = formsIn(page.body())
         if (!markups) {
             return new Answer("FORM ${path} -> no form on the page".toString(), false)

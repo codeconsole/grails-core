@@ -161,7 +161,9 @@ forms = ['/book/create#bookForm']
 
 ==== When the trace fails
 
-The task fails if what was recorded is not what was asked for: a request that answers with an error or a not-found, a page listed under `forms` that carries no form, or a named form that is not on the page. Each of those would otherwise report a successful trace having recorded the wrong page, or nothing at all.
+The task fails if what was recorded is not what was asked for: a request that answers with an error or a not-found, a page listed under `forms` that carries no form, a named form that is not on the page, or a form page that answered from somewhere else.
+
+That last one is the case worth knowing about. A form page reached without whatever makes it reachable answers from the login form instead, and every check after that passes — the page it landed on has a form, its fields are filled in, it posts, and it answers successfully. What would be reported is the login form submitted a second time under the name of the page that was wanted, while the binding the page was listed for went unexercised. So a form that answers from anywhere other than where it was asked for fails the trace, and the message names where it landed.
 
 Redirects are followed, so an application that sends `/` to its real home page records that page. A request that ends up somewhere other than where it was asked for is reported as a warning naming where it landed — usually the sign that a page needs its login form listed under `forms`.
 

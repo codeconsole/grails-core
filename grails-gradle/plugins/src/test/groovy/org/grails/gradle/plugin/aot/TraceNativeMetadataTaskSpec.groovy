@@ -221,6 +221,37 @@ exec '${new File(System.getProperty('java.home'), 'bin/java').absolutePath}' \\
             requested.any { it == 'GET /login' }
     }
 
+    void 'a form page answered from the login page does not count as tracing the form'() {
+        given: 'only the protected form listed, so nothing has made it reachable'
+            TraceNativeMetadataTask task = task([], ['/protected-form'])
+
+        when:
+            task.trace()
+
+        then: 'the page it lands on has a form of its own, so every check after the redirect passes'
+            GradleException e = thrown()
+            e.message.contains('/protected-form')
+            e.message.contains('answered from /login')
+
+        and: 'and the login form it landed on was not submitted under the protected page\'s name'
+            !requested.any { it.startsWith('POST /authenticate') }
+
+        and: 'nor was the binding it was listed for ever exercised'
+            !requested.any { it.startsWith('POST /protected-save') }
+    }
+
+    void 'and is traced once the form that makes it reachable is listed'() {
+        given:
+            TraceNativeMetadataTask task = task([],
+                    ['/login?username=admin&password=s3cret', '/protected-form'])
+
+        when:
+            task.trace()
+
+        then: 'the form on the page that was asked for, rather than the one on the way to it'
+            requested.any { it.startsWith('POST /protected-save') && it.contains('secretTitle=') }
+    }
+
     void 'a form on a page that has none fails the trace'() {
         given:
             TraceNativeMetadataTask task = task([], ['/'])
