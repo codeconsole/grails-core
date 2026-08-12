@@ -151,6 +151,7 @@ def publishedProjects = [
         'grails-data-mongodb',
         'grails-data-mongodb-bson',
         'grails-data-mongodb-core',
+        'grails-data-mongodb-embedded',
         'grails-data-mongodb-ext',
         'grails-data-mongodb-gson-templates',
         'grails-data-mongodb-spring-boot',
