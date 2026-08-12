@@ -148,6 +148,11 @@ abstract class TraceNativeMetadataTask extends DefaultTask {
                 .start()
 
         List<String> answered = []
+        // What carries a session from one request to the next, which is how a form that
+        // authenticates is worth submitting at all. It is the JVM's, and this JVM is a daemon that
+        // outlives the build -- so it is put back, whether the trace finished or threw. Left set, it
+        // would be handed to every task that ran afterwards, holding one application's cookies.
+        CookieHandler inherited = CookieHandler.default
         try {
             awaitStarted(process, output)
             CookieHandler.default = new CookieManager()
@@ -155,6 +160,7 @@ abstract class TraceNativeMetadataTask extends DefaultTask {
             forms.get().each { String path -> answered << submit(path) }
         }
         finally {
+            CookieHandler.default = inherited
             stop(process)
         }
 

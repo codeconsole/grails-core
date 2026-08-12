@@ -18,6 +18,9 @@
  */
 package org.grails.gradle.plugin.aot
 
+import java.net.CookieHandler
+import java.net.CookieManager
+
 import org.gradle.api.GradleException
 import org.gradle.api.Project
 import org.gradle.testfixtures.ProjectBuilder
@@ -179,6 +182,39 @@ exec '${new File(System.getProperty('java.home'), 'bin/java').absolutePath}' \\
         then: 'a save that 500s during tracing records the failure and nothing of the save'
             GradleException e = thrown()
             e.message.contains('answered with an error')
+    }
+
+    void 'the cookie handler the build had is put back after a trace'() {
+        given: 'a daemon outlives the build, so what this sets is handed to every task after it'
+            CookieHandler inherited = new CookieManager()
+            CookieHandler.default = inherited
+            TraceNativeMetadataTask task = task(['/'], [])
+
+        when:
+            task.trace()
+
+        then:
+            CookieHandler.default.is(inherited)
+
+        cleanup:
+            CookieHandler.default = null
+    }
+
+    void 'and after one that failed'() {
+        given:
+            CookieHandler inherited = new CookieManager()
+            CookieHandler.default = inherited
+            TraceNativeMetadataTask task = task(['/broken'], [])
+
+        when:
+            task.trace()
+
+        then:
+            thrown(GradleException)
+            CookieHandler.default.is(inherited)
+
+        cleanup:
+            CookieHandler.default = null
     }
 
     void 'a java without the agent is refused before the application is started'() {
