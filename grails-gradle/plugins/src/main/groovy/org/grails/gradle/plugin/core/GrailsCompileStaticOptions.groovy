@@ -92,6 +92,18 @@ class GrailsCompileStaticOptions implements Serializable {
      */
     final Property<Boolean> tagLibs
 
+    /**
+     * Whether every GSP page under {@code grails-app/views} should be compiled statically, by stating
+     * the {@code grails.views.gsp.compileStatic} configuration setting for both the build and the
+     * running application. Disabled by default.
+     *
+     * <p>Deliberately not covered by {@link #getAll() all}. The artefact opt-ins fail on code that is
+     * doubtful anyway; this one fails on a page that reads a model variable it has not declared, which
+     * describes most pages in an application that has never declared one. Enabling it is a migration,
+     * not a switch, so it is never turned on as a side effect of asking for everything.</p>
+     */
+    final Property<Boolean> gsp
+
     @Inject
     GrailsCompileStaticOptions(ObjectFactory objects) {
         // Only `all` carries a convention. The artefact types are left unset so that setting one to
@@ -101,5 +113,7 @@ class GrailsCompileStaticOptions implements Serializable {
         this.controllers = objects.property(Boolean)
         this.services = objects.property(Boolean)
         this.tagLibs = objects.property(Boolean)
+        // Not part of `all`, so it carries a convention of its own rather than falling back to it.
+        this.gsp = objects.property(Boolean).convention(false)
     }
 }

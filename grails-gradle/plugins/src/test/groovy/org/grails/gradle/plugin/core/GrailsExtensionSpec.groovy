@@ -187,4 +187,35 @@ class GrailsExtensionSpec extends Specification {
         !extension.compileStatic.services.present
         !extension.compileStatic.tagLibs.present
     }
+
+    def "compileStatic gsp defaults to false and is not turned on by the all shortcut"() {
+        given:
+        Project project = ProjectBuilder.builder().build()
+        GrailsExtension extension = new GrailsExtension(project)
+
+        expect:
+        !extension.compileStatic.gsp.get()
+
+        when:
+        extension.compileStatic {
+            all = true
+        }
+
+        then: 'pages are a migration rather than a switch, so asking for everything leaves them alone'
+        !extension.compileStatic.gsp.get()
+    }
+
+    def "compileStatic gsp can be enabled on its own"() {
+        given:
+        Project project = ProjectBuilder.builder().build()
+        GrailsExtension extension = new GrailsExtension(project)
+
+        when:
+        extension.compileStatic {
+            gsp = true
+        }
+
+        then:
+        extension.compileStatic.gsp.get()
+    }
 }

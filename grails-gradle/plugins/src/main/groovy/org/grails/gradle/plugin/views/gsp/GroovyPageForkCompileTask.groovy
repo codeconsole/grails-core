@@ -51,6 +51,7 @@ import org.gradle.process.ExecOperations
 import org.gradle.process.ExecResult
 import org.gradle.process.JavaExecSpec
 
+import grails.util.BuildSettings
 import org.grails.gradle.plugin.views.ViewCompileOptions
 
 /**
@@ -87,6 +88,16 @@ abstract class GroovyPageForkCompileTask extends AbstractCompile {
     @Optional
     final Property<String> serverpath
 
+    /**
+     * Whether the pages this task compiles are compiled statically.
+     *
+     * <p>Stated to the forked compiler as the {@code grails.views.gsp.compileStatic} system property,
+     * which is the same setting {@code grails-app/conf/application.yml} carries and the same one the
+     * running application reads, so that a page compiled here compiles the same way there.</p>
+     */
+    @Input
+    final Property<Boolean> compileStatic
+
     private ExecOperations execOperations
 
     /**
@@ -115,6 +126,7 @@ abstract class GroovyPageForkCompileTask extends AbstractCompile {
         srcDir = objectFactory.directoryProperty()
         compileOptions = objectFactory.newInstance(ViewCompileOptions)
         serverpath = objectFactory.property(String)
+        compileStatic = objectFactory.property(Boolean).convention(false)
         grailsConfigurationPaths = objectFactory.fileCollection()
         grailsConfigurationPaths.from(
                 project.layout.projectDirectory.file('grails-app/conf/application.yml'),
@@ -170,6 +182,10 @@ abstract class GroovyPageForkCompileTask extends AbstractCompile {
                         }
                         javaExecSpec.setMaxHeapSize(compileOptions.forkOptions.memoryMaximumSize)
                         javaExecSpec.setMinHeapSize(compileOptions.forkOptions.memoryInitialSize)
+
+                        if (compileStatic.get()) {
+                            javaExecSpec.systemProperty(BuildSettings.COMPILE_STATIC_GSP, 'true')
+                        }
 
                         String configFiles = grailsConfigurationPaths.files.collect { it.canonicalPath }.join(',')
 

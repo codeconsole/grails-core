@@ -36,6 +36,7 @@ import org.gradle.api.tasks.bundling.War
 import org.gradle.jvm.toolchain.JavaLauncher
 import org.gradle.jvm.toolchain.JavaToolchainService
 
+import org.grails.gradle.plugin.core.GrailsExtension
 import org.grails.gradle.plugin.util.SourceSets
 
 /**
@@ -51,6 +52,19 @@ class GroovyPagePlugin implements Plugin<Project> {
     void apply(Project project) {
         project.pluginManager.withPlugin('groovy') {
             configureProject(project)
+        }
+    }
+
+    /**
+     * Whether pages are compiled statically, from {@code grails { compileStatic { gsp } }}.
+     *
+     * <p>Resolved when the task runs rather than now: this plugin is applied on its own as well as
+     * alongside the one that registers the {@code grails} extension, and there is no ordering between
+     * them. Where the extension is absent, pages compile the way configuration alone says.</p>
+     */
+    private static Provider<Boolean> resolveCompileStaticPages(Project project) {
+        project.provider {
+            project.extensions.findByType(GrailsExtension)?.compileStatic?.gsp?.getOrElse(false) ?: false
         }
     }
 
@@ -79,6 +93,8 @@ class GroovyPagePlugin implements Plugin<Project> {
         JavaToolchainService toolchains = project.extensions.getByType(JavaToolchainService)
         Provider<JavaLauncher> launcher = toolchains.launcherFor(javaExtension.toolchain)
 
+        Provider<Boolean> compileStaticPages = resolveCompileStaticPages(project)
+
         def compileGroovyPages = tasks.register('compileGroovyPages', GroovyPageForkCompileTask) {
             it.destinationDirectory.set(destDir)
             it.tmpDirPath = getTmpDirPath(project)
@@ -86,6 +102,7 @@ class GroovyPagePlugin implements Plugin<Project> {
             it.serverpath.set('/WEB-INF/grails-app/views/')
             it.classpath = allClasspath
             it.javaLauncher.convention(launcher)
+            it.compileStatic.set(compileStaticPages)
         }
 
         def compileWebappGroovyPages = tasks.register('compileWebappGroovyPages', GroovyPageForkCompileTask) {
@@ -95,6 +112,7 @@ class GroovyPagePlugin implements Plugin<Project> {
             it.serverpath.set('/')
             it.classpath = allClasspath
             it.javaLauncher.convention(launcher)
+            it.compileStatic.set(compileStaticPages)
         }
 
         compileGroovyPages.configure {

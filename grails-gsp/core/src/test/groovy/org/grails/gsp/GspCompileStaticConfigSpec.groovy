@@ -29,6 +29,7 @@ import grails.core.GrailsClass
 import grails.core.gsp.GrailsTagLibClass
 import org.grails.config.PropertySourcesConfig
 import org.grails.core.gsp.DefaultGrailsTagLibClass
+import org.grails.gsp.compiler.GroovyPageParser
 import org.grails.taglib.TagLibraryLookup
 
 /**
@@ -242,6 +243,52 @@ class GspCompileStaticConfigSpec extends Specification {
         then:
         template.metaInfo.compilationException == null
         render(template, [params: [id: '9']]) == '9'
+    }
+
+    void 'the build can state compileStatic as a system property so both compile paths agree'() {
+        given:
+        System.setProperty(GroovyPageParser.CONFIG_PROPERTY_GSP_COMPILESTATIC, 'true')
+        GroovyPagesTemplateEngine engine = engineFor([:])
+
+        when: 'no configuration says anything'
+        GroovyPageTemplate template = compile(engine, '${message(code:\'World\')}')
+
+        then:
+        template.metaInfo.compileStaticMode
+        render(template) == 'Hello World'
+
+        cleanup:
+        System.clearProperty(GroovyPageParser.CONFIG_PROPERTY_GSP_COMPILESTATIC)
+    }
+
+    void 'the system property replaces what configuration said'() {
+        given:
+        System.setProperty(GroovyPageParser.CONFIG_PROPERTY_GSP_COMPILESTATIC, 'false')
+        GroovyPagesTemplateEngine engine = engineFor('grails.views.gsp.compileStatic': true)
+
+        when:
+        GroovyPageTemplate template = compile(engine, '${message(code:\'World\')}')
+
+        then:
+        !template.metaInfo.compileStaticMode
+
+        cleanup:
+        System.clearProperty(GroovyPageParser.CONFIG_PROPERTY_GSP_COMPILESTATIC)
+    }
+
+    void 'a page directive still decides for the page that carries it'() {
+        given:
+        System.setProperty(GroovyPageParser.CONFIG_PROPERTY_GSP_COMPILESTATIC, 'true')
+        GroovyPagesTemplateEngine engine = engineFor([:])
+
+        when:
+        GroovyPageTemplate template = compile(engine, '<%@ page compileStatic="false" %>${message(code:\'World\')}')
+
+        then:
+        !template.metaInfo.compileStaticMode
+
+        cleanup:
+        System.clearProperty(GroovyPageParser.CONFIG_PROPERTY_GSP_COMPILESTATIC)
     }
 
     void 'a servlet scope is not typed for a page and has to be declared'() {

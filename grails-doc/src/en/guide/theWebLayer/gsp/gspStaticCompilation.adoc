@@ -101,7 +101,23 @@ grails:
 
 The setting applies both to pages precompiled by the build and to pages compiled on the fly while the application runs in development mode, so a page behaves the same way in both.
 
-An individual page always wins over the application-wide default and can opt back out:
+The same thing can be asked for from the build instead, which is useful where a project prefers to keep build options together:
+
+[source,groovy]
+.build.gradle
+----
+grails {
+    compileStatic {
+        gsp = true
+    }
+}
+----
+
+This states the same `grails.views.gsp.compileStatic` setting, for both the pages the build compiles ahead of time and the application it runs, so a page compiles the same way in either. Where the build states it, it takes precedence over `application.yml` — the same order a system property takes over configuration in a running application. Set it in one place or the other rather than both.
+
+NOTE: `gsp` is not included in the `compileStatic { all = true }` shortcut described in link:staticTypeCheckingAndCompilation.html#grailsCompileStatic[GrailsCompileStatic]. The artefact opt-ins there fail on code that is doubtful anyway, whereas this one fails on any page reading a model variable it has not declared, so it is never enabled as a side effect of asking for everything.
+
+An individual page always wins over either, and can opt back out:
 
 [,xml]
 ----

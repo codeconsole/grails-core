@@ -259,6 +259,7 @@ public class GroovyPageParser implements Tokens {
         if (configMap != null) {
             configure(configMap);
         }
+        applyCompileStaticSystemProperty();
 
         Map<String, String> directives = parseDirectives(gspSource);
         if (isGrailsLayoutPreprocessingEnabled(directives.get(GRAILS_LAYOUT_PREPROCESS_DIRECTIVE))) {
@@ -271,6 +272,28 @@ public class GroovyPageParser implements Tokens {
         environment = Environment.getCurrent();
         makeName(name);
         makeSourceName(filename);
+    }
+
+    /**
+     * Applies {@value #CONFIG_PROPERTY_GSP_COMPILESTATIC} where the build states it as a system
+     * property rather than in configuration.
+     *
+     * <p>Pages are compiled in two places -- ahead of time by the build, and again while the
+     * application runs and a page is changed -- and a build that asks for static compilation has to
+     * reach both, or a page would compile one way while being developed and another way when
+     * packaged. Stating it as a system property reaches both, under the same name it carries in
+     * configuration.</p>
+     *
+     * <p>It is read after configuration and replaces it, for the same reason a system property
+     * outranks {@code application.yml} in the running application: leaving the two paths disagreeing
+     * about precedence would be worse than either order. A {@code compileStatic} page directive is
+     * read afterwards and still decides for the page that carries it.</p>
+     */
+    private void applyCompileStaticSystemProperty() {
+        String value = System.getProperty(CONFIG_PROPERTY_GSP_COMPILESTATIC);
+        if (!GrailsStringUtils.isBlank(value)) {
+            compileStaticMode = GrailsStringUtils.toBoolean(value.trim());
+        }
     }
 
     /**
