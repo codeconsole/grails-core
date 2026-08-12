@@ -22,8 +22,7 @@ import java.lang.management.ManagementFactory
 
 import groovy.transform.CompileStatic
 import groovy.transform.MapConstructor
-import groovy.transform.stc.ClosureParams
-import groovy.transform.stc.SimpleType
+import groovy.util.logging.Slf4j
 
 import org.springframework.boot.Banner
 import org.springframework.boot.ansi.Ansi8BitColor
@@ -44,6 +43,7 @@ import grails.util.BuildSettings
  *
  * @since 7.1
  */
+@Slf4j
 @CompileStatic
 @MapConstructor(noArg = true)
 class GrailsBanner implements Banner {
@@ -72,6 +72,16 @@ class GrailsBanner implements Banner {
 
     private static final String NO_COLOR = 'none'
 
+    private static final String ORDER_PROPERTY = 'grails.banner.versions.order'
+
+    private static final String EXCLUDE_PROPERTY = 'grails.banner.versions.exclude'
+
+    private static final String INCLUDE_PROPERTY = 'grails.banner.versions.include'
+
+    /** Everywhere an application names a version option, and so everywhere one can be misspelt. */
+    private static final List<String> VERSION_PROPERTIES =
+            [ORDER_PROPERTY, EXCLUDE_PROPERTY, INCLUDE_PROPERTY].asImmutable()
+
     String bannerFile = DEFAULT_BANNER_FILE
     int bannerPaddingTop = 1
     int bannerPaddingBottom = 1
@@ -99,11 +109,50 @@ class GrailsBanner implements Banner {
             artPaddingBottom.times { out.println() }
         }
         printMark(environment, out, bannerWidth)
-        if (shouldDisplayVersions(environment)) {
+        boolean displayVersions = shouldDisplayVersions(environment)
+        if (displayVersions) {
             createVersionsFormatter().format(createBannerVersions(environment), bannerWidth)
                     .forEach { out.println(it) }
         }
         bannerPaddingBottom.times { out.println() }
+        if (displayVersions) {
+            warnAboutUnrecognisedVersions(environment)
+        }
+    }
+
+    /**
+     * Says which of the version options an application configured were not recognised.
+     *
+     * <p>An option that names nothing is dropped, and was dropped without a word -- so a name with
+     * a typo in it reads as a banner that quietly ignores what it was told, and the only way to
+     * find out is to notice a line that is not there.</p>
+     *
+     * <p>Said after the banner rather than while one is being built. A line logged partway through
+     * arrives between the mark and the versions, which is the very thing reading a version without
+     * initialising the library it belongs to was for.</p>
+     */
+    protected void warnAboutUnrecognisedVersions(Environment env) {
+        List<String> unrecognised = unrecognisedVersionOptions(env)
+        if (unrecognised) {
+            log.warn('Ignoring unknown banner version option(s) {}; the known options are {}',
+                    unrecognised, VersionOption.values()*.key)
+        }
+    }
+
+    /**
+     * The configured version options that name none of {@link VersionOption}, in the order they
+     * were written.
+     *
+     * <p>Which list an option belongs to is not asked. An option is named by an application to say
+     * that it wants it or does not, and moving one between the shown-by-default set and the
+     * asked-for set is a decision of this class -- so an application that asked for a version that
+     * has since become one of the defaults said something recognisable, and is told nothing.</p>
+     */
+    protected List<String> unrecognisedVersionOptions(Environment env) {
+        List<String> known = VersionOption.values()*.key
+        VERSION_PROPERTIES.collectMany { String property ->
+            readVersionOptions(env, property).findAll { String option -> !(option in known) }
+        }.unique()
     }
 
     /**
@@ -271,9 +320,9 @@ class GrailsBanner implements Banner {
      */
     protected Map<String,String> createBannerVersions(Environment env) {
         def defaultIncluded = (DefaultVersionOption.values()).collect { it.key }
-        def sortOrder = findConfiguredVersions(env, 'grails.banner.versions.order') { it in VersionOption.values()*.key }
-        def configExcluded = findConfiguredVersions(env, 'grails.banner.versions.exclude') { it in DefaultVersionOption.values()*.key }
-        def configIncluded = findConfiguredVersions(env, 'grails.banner.versions.include') { it in OptionalVersionOption.values()*.key }
+        def sortOrder = findConfiguredVersions(env, ORDER_PROPERTY)
+        def configExcluded = findConfiguredVersions(env, EXCLUDE_PROPERTY)
+        def configIncluded = findConfiguredVersions(env, INCLUDE_PROPERTY)
         def includedVersions = defaultIncluded
                 .tap { removeAll(configExcluded) }
                 .tap { addAll(configIncluded) }
@@ -339,24 +388,6 @@ class GrailsBanner implements Banner {
     }
 
     /**
-     * The version a library records in the manifest of the jar it ships in.
-     *
-     * <p>Loaded without being initialised. A version is read <em>about</em> a library rather than
-     * <em>from</em> it, and running a static initialiser to find one lets the library do whatever it
-     * does on the way -- Spring Security logs a line of its own from there, which arrived in the
-     * middle of the banner, between the mark and the very versions it was being read for. The
-     * manifest is attached to the package when the class is loaded, and loading is all this
-     * needs.</p>
-     */
-    /**
-     * A version a library records in a resource it ships, read without loading any of its classes.
-     *
-     * <p>The manifest route only works while a jar is a plain entry on the classpath. Repackaged
-     * into an executable jar its attributes are no longer attached to the package, and an image has
-     * no jars at all -- which is why a container version read that way reads as nothing in exactly
-     * the two places it is most worth having. A resource is still a resource in both.</p>
-     */
-    /**
      * The servlet container the application is running on, and the version it records.
      *
      * <p>An application runs on one container: choosing another is done by excluding the starter
@@ -403,6 +434,18 @@ class GrailsBanner implements Banner {
         findVersion('io.undertow.Undertow')
     }
 
+    /**
+     * A version a library records in a resource it ships, read without loading any of its classes.
+     *
+     * <p>The manifest route only works while a jar is a plain entry on the classpath. Repackaged
+     * into an executable jar its attributes are no longer attached to the package, and an image has
+     * no jars at all -- which is why a container version read that way reads as nothing in exactly
+     * the two places it is most worth having. A resource is still a resource in both.</p>
+     *
+     * @param resource the classpath location of the resource to read
+     * @param key the property within it that carries the version
+     * @return the version, or {@code null} where the resource or the property is absent
+     */
     protected static String findVersionInResource(String resource, String key) {
         InputStream stream = GrailsBanner.classLoader.getResourceAsStream(resource)
         if (stream == null) {
@@ -418,6 +461,19 @@ class GrailsBanner implements Banner {
         }
     }
 
+    /**
+     * The version a library records in the manifest of the jar it ships in.
+     *
+     * <p>Loaded without being initialised. A version is read <em>about</em> a library rather than
+     * <em>from</em> it, and running a static initialiser to find one lets the library do whatever it
+     * does on the way -- Spring Security logs a line of its own from there, which arrived in the
+     * middle of the banner, between the mark and the very versions it was being read for. The
+     * manifest is attached to the package when the class is loaded, and loading is all this
+     * needs.</p>
+     *
+     * @param className the fully qualified name of a class the library ships
+     * @return the version, or {@code null} where the class is absent or records none
+     */
     protected static String findVersion(String className) {
         try {
             Package pkg = Class.forName(className, false, GrailsBanner.classLoader).package
@@ -428,21 +484,20 @@ class GrailsBanner implements Banner {
     }
 
     /**
-     * Finds the configured versions from the environment.
+     * The version options configured under the given property that name something.
      *
      * @param env the current environment
      * @param propertyName the property name to look for
-     * @param filter the filter closure
-     * @return a list of configured versions
+     * @return the options that name a {@link VersionOption}, in the order they were written
      */
-    private static List<String> findConfiguredVersions(
-            Environment env,
-            String propertyName,
-            @ClosureParams(
-                    value = SimpleType,
-                    options = ['java.lang.String']
-            ) Closure<Boolean> filter) {
-        env.getProperty(propertyName, List<String>, [] as List<String>).findAll(filter)
+    private static List<String> findConfiguredVersions(Environment env, String propertyName) {
+        List<String> known = VersionOption.values()*.key
+        readVersionOptions(env, propertyName).findAll { String option -> option in known }
+    }
+
+    /** What an application wrote under the given property, or nothing where it wrote none. */
+    private static List<String> readVersionOptions(Environment env, String propertyName) {
+        env.getProperty(propertyName, List<String>, [] as List<String>)
     }
 
     /**
