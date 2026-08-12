@@ -135,9 +135,11 @@ class GrailsExtensionSpec extends Specification {
 
         then:
         !extension.compileStatic.all.get()
-        !extension.compileStatic.controllers.get()
-        !extension.compileStatic.services.get()
-        !extension.compileStatic.tagLibs.get()
+
+        and: 'the artefact types say nothing of their own, so they follow all'
+        !extension.compileStatic.controllers.present
+        !extension.compileStatic.services.present
+        !extension.compileStatic.tagLibs.present
     }
 
     def "the compileStatic all flag can be enabled as a shortcut for all artefact types"() {
@@ -182,7 +184,7 @@ class GrailsExtensionSpec extends Specification {
 
         then:
         extension.compileStatic.controllers.get()
-        !extension.compileStatic.services.get()
-        !extension.compileStatic.tagLibs.get()
+        !extension.compileStatic.services.present
+        !extension.compileStatic.tagLibs.present
     }
 }

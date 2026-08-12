@@ -56,35 +56,50 @@ class GrailsCompileStaticOptions implements Serializable {
     private static final long serialVersionUID = 0L
 
     /**
-     * Whether every controller, service and tag library should be compiled with {@code @GrailsCompileStatic}.
-     * A shortcut equivalent to enabling {@link #getControllers() controllers}, {@link #getServices() services}
-     * and {@link #getTagLibs() tagLibs} together. Disabled by default.
+     * What every artefact type falls back to where it says nothing of its own. A shortcut for enabling
+     * {@link #getControllers() controllers}, {@link #getServices() services} and {@link #getTagLibs()
+     * tagLibs} together. Disabled by default.
+     *
+     * <p>An artefact type that states a value keeps it, so a single type can be held back from the
+     * shortcut:</p>
+     *
+     * <pre>
+     * grails {
+     *     compileStatic {
+     *         all = true
+     *         services = false   // every artefact type but services
+     *     }
+     * }
+     * </pre>
      */
     final Property<Boolean> all
 
     /**
      * Whether every controller under {@code grails-app/controllers} should be compiled with
-     * {@code @GrailsCompileStatic}. Disabled by default.
+     * {@code @GrailsCompileStatic}. Follows {@link #getAll() all} where it is not set.
      */
     final Property<Boolean> controllers
 
     /**
      * Whether every service under {@code grails-app/services} should be compiled with
-     * {@code @GrailsCompileStatic}. Disabled by default.
+     * {@code @GrailsCompileStatic}. Follows {@link #getAll() all} where it is not set.
      */
     final Property<Boolean> services
 
     /**
      * Whether every tag library under {@code grails-app/taglib} should be compiled with
-     * {@code @GrailsCompileStatic}. Disabled by default.
+     * {@code @GrailsCompileStatic}. Follows {@link #getAll() all} where it is not set.
      */
     final Property<Boolean> tagLibs
 
     @Inject
     GrailsCompileStaticOptions(ObjectFactory objects) {
+        // Only `all` carries a convention. The artefact types are left unset so that setting one to
+        // false is distinguishable from never setting it, which is what lets an explicit value be kept
+        // where `all` would otherwise supply it.
         this.all = objects.property(Boolean).convention(false)
-        this.controllers = objects.property(Boolean).convention(false)
-        this.services = objects.property(Boolean).convention(false)
-        this.tagLibs = objects.property(Boolean).convention(false)
+        this.controllers = objects.property(Boolean)
+        this.services = objects.property(Boolean)
+        this.tagLibs = objects.property(Boolean)
     }
 }
