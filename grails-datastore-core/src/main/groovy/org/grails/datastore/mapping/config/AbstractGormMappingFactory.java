@@ -54,6 +54,7 @@ public abstract class AbstractGormMappingFactory<R extends Entity, T extends Pro
     private Object contextObject;
     protected Closure defaultConstraints;
     protected boolean versionByDefault = true;
+    protected boolean defaultNullable = false;
 
     /**
      * @param contextObject Context object to be passed to mapping blocks
@@ -64,6 +65,10 @@ public abstract class AbstractGormMappingFactory<R extends Entity, T extends Pro
 
     public void setDefaultConstraints(Closure defaultConstraints) {
         this.defaultConstraints = defaultConstraints;
+    }
+
+    public void setDefaultNullable(boolean defaultNullable) {
+        this.defaultNullable = defaultNullable;
     }
 
     /**
@@ -196,7 +201,11 @@ public abstract class AbstractGormMappingFactory<R extends Entity, T extends Pro
             }
         }
         else {
-            return BeanUtils.instantiateClass(getPropertyMappedFormType());
+            T property = BeanUtils.instantiateClass(getPropertyMappedFormType());
+            if (!GormProperties.IDENTITY.equals(mpp.getName()) && !GormProperties.VERSION.equals(mpp.getName())) {
+                property.setNullable(defaultNullable);
+            }
+            return property;
         }
     }
 }
