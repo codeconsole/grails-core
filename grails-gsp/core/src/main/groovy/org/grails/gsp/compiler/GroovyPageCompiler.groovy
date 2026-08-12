@@ -215,24 +215,26 @@ class GroovyPageCompiler {
             File gspgroovyfile = new File(new File(generatedGroovyPagesDirectory, packageDir), className + '.groovy')
             // gspgroovyfile.getParentFile().mkdirs()
 
-            gspfile.withInputStream { InputStream gspinput ->
+            byte[] gspSource = gspfile.bytes
+            // closing a ByteArrayInputStream is a no-op, so there is nothing to release here
+            String sourceChecksum = GroovyPageParser.checksumOf(new ByteArrayInputStream(gspSource))
+
+            new ByteArrayInputStream(gspSource).withStream { InputStream gspinput ->
                 GroovyPageParser gpp = new GroovyPageParser(viewuri - '.gsp', viewuri, gspfile.absolutePath, gspinput, encoding, expressionCodec, configMap)
                 gpp.packageName = packageName
                 gpp.className = className
-                // Do not bake the source file's modification time into the generated class.
+                // Record what the source *is*, not when it was last touched. LAST_MODIFIED is emitted as a
+                // `static final long`, so it belongs to the class's ABI and is inlined into callers, which
+                // even Gradle's COMPILE_CLASSPATH normalization cannot see past. Git stores no modification
+                // times, so every checkout gave each .gsp a new one and identical sources compiled to
+                // different bytes, costing every downstream consumer of the jar its build cache.
                 //
-                // GroovyPageParser emits LAST_MODIFIED as a `static final long` constant, which
-                // makes it part of the compiled class's ABI. Because a fresh checkout gives every
-                // .gsp a new modification time, identical sources compiled on two machines produce
-                // different bytes, so every downstream consumer of the resulting jar re-keys and
-                // misses the build cache -- even consumers using COMPILE_CLASSPATH normalization,
-                // which otherwise ignores everything but the ABI.
-                //
-                // The value is not read at runtime: GroovyPageMetaInfo reads the constant into a
-                // field whose only accessor, getLastModified(), has no callers. Precompiled pages
-                // are not reload-checked. Emit a fixed value so precompilation is reproducible.
-                // The field itself must remain, as GroovyPageMetaInfo looks it up reflectively.
+                // SOURCE_CHECKSUM answers what the timestamp was only ever a proxy for -- has the source
+                // changed? -- and answers it identically on every machine. GroovyPageMetaInfo prefers it and
+                // falls back to LAST_MODIFIED for pages compiled by earlier versions, so the zero here means
+                // "no timestamp recorded", never "never reload".
                 gpp.lastModified = 0L
+                gpp.sourceChecksum = sourceChecksum
                 StringWriter gsptarget = new StringWriter()
                 gpp.generateGsp(gsptarget)
                 gsptarget.flush()

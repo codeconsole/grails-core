@@ -53,6 +53,7 @@ protected void init() {
 }
 public static final String CONTENT_TYPE = 'text/html;charset=UTF-8'
 public static final long LAST_MODIFIED = 0L
+public static final String SOURCE_CHECKSUM = null
 public static final String EXPRESSION_CODEC = 'HTML'
 public static final String STATIC_CODEC = 'none'
 public static final String OUT_CODEC = 'none'

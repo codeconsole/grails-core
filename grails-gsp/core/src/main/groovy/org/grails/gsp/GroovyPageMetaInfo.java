@@ -76,6 +76,7 @@ public class GroovyPageMetaInfo implements GrailsApplicationAware {
     private Class<?> pageClass;
     private Constructor<?> pageClassConstructor;
     private long lastModified;
+    private String sourceChecksum;
     private InputStream groovySource;
     private String contentType;
     private int[] lineNumbers;
@@ -129,6 +130,10 @@ public class GroovyPageMetaInfo implements GrailsApplicationAware {
         contentType = (String) ReflectionUtils.getField(ReflectionUtils.findField(pageClass, GroovyPageParser.CONSTANT_NAME_CONTENT_TYPE), null);
         jspTags = (Map) ReflectionUtils.getField(ReflectionUtils.findField(pageClass, GroovyPageParser.CONSTANT_NAME_JSP_TAGS), null);
         lastModified = (Long) ReflectionUtils.getField(ReflectionUtils.findField(pageClass, GroovyPageParser.CONSTANT_NAME_LAST_MODIFIED), null);
+        Field sourceChecksumField = ReflectionUtils.findField(pageClass, GroovyPageParser.CONSTANT_NAME_SOURCE_CHECKSUM);
+        if (sourceChecksumField != null) {
+            sourceChecksum = (String) ReflectionUtils.getField(sourceChecksumField, null);
+        }
         expressionCodecName = (String) ReflectionUtils.getField(ReflectionUtils.findField(pageClass, GroovyPageParser.CONSTANT_NAME_EXPRESSION_CODEC), null);
         staticCodecName = (String) ReflectionUtils.getField(ReflectionUtils.findField(pageClass, GroovyPageParser.CONSTANT_NAME_STATIC_CODEC), null);
         outCodecName = (String) ReflectionUtils.getField(ReflectionUtils.findField(pageClass, GroovyPageParser.CONSTANT_NAME_OUT_CODEC), null);
@@ -323,6 +328,22 @@ public class GroovyPageMetaInfo implements GrailsApplicationAware {
         this.lastModified = lastModified;
     }
 
+    /**
+     * @return the checksum of the GSP source this page was compiled from, or {@code null} if none was recorded
+     * @since 7.0.16
+     */
+    public String getSourceChecksum() {
+        return this.sourceChecksum;
+    }
+
+    /**
+     * @param sourceChecksum the checksum of the GSP source this page was compiled from
+     * @since 7.0.16
+     */
+    public void setSourceChecksum(String sourceChecksum) {
+        this.sourceChecksum = sourceChecksum;
+    }
+
     public InputStream getGroovySource() {
         return groovySource;
     }
@@ -405,6 +426,29 @@ public class GroovyPageMetaInfo implements GrailsApplicationAware {
     }
 
     /**
+     * Attempts to checksum the given resource. If it cannot be read, {@code null} is returned, which is
+     * treated the same way an unobtainable modification time is: the page is left alone rather than
+     * reloaded on the strength of a failed read.
+     *
+     * @param resource the Resource to digest
+     * @return the checksum, or null if it could not be established
+     */
+    private String establishChecksum(Resource resource) {
+        if (resource == null) {
+            return null;
+        }
+        try (InputStream input = resource.getInputStream()) {
+            return GroovyPageParser.checksumOf(input);
+        }
+        catch (IOException e) {
+            if (LOG.isDebugEnabled()) {
+                LOG.debug("Unable to checksum GSP source [" + resource + "], leaving the compiled page in place", e);
+            }
+            return null;
+        }
+    }
+
+    /**
      * Attempts to establish what the last modified date of the given resource is. If the last modified date cannot
      * be etablished -1 is returned
      *
@@ -474,13 +518,19 @@ public class GroovyPageMetaInfo implements GrailsApplicationAware {
             public Resource call() {
                 Resource resource = resourceCallable.run();
                 if (resource != null && resource.exists()) {
+                    // A page compiled by GroovyPageCompiler records a checksum of its source rather than the
+                    // source's modification time, which git does not preserve across a checkout. Comparing
+                    // content answers the question directly: a page that was merely touched is not stale, and
+                    // an edit is caught however close together the writes fall.
+                    if (sourceChecksum != null) {
+                        String currentChecksum = establishChecksum(resource);
+                        return (currentChecksum != null && !sourceChecksum.equals(currentChecksum)) ? resource : null;
+                    }
+                    // Pages compiled before SOURCE_CHECKSUM existed, and pages compiled at runtime, still carry a
+                    // real timestamp. A lastModified of 0 means none was recorded, so there is nothing to compare.
                     long currentLastmodified = establishLastModified(resource);
                     // granularity is required since lastmodified information is rounded somewhere in copying & war (zip) file information
                     // usually the lastmodified time is 1000L apart in files and in files extracted from the zip (war) file
-                    // A lastModified of 0 means the compiled page carries no source timestamp -- see
-                    // GroovyPageCompiler, which emits a fixed LAST_MODIFIED so that precompiled pages are
-                    // byte-reproducible. There is nothing to compare against in that case, so do not treat
-                    // the page as stale; otherwise every check would report a change and defeat precompilation.
                     if (currentLastmodified > 0 && lastModified > 0 &&
                             Math.abs(currentLastmodified - lastModified) > LASTMODIFIED_CHECK_GRANULARITY) {
                         return resource;
