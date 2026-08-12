@@ -1,0 +1,115 @@
+////
+Licensed to the Apache Software Foundation (ASF) under one
+or more contributor license agreements.  See the NOTICE file
+distributed with this work for additional information
+regarding copyright ownership.  The ASF licenses this file
+to you under the Apache License, Version 2.0 (the
+"License"); you may not use this file except in compliance
+with the License.  You may obtain a copy of the License at
+
+https://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing,
+software distributed under the License is distributed on an
+"AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+KIND, either express or implied.  See the License for the
+specific language governing permissions and limitations
+under the License.
+////
+
+GSP pages are compiled dynamically by default. A page can instead be statically compiled, so that expressions and scriptlets in the page are type checked at compile time and dispatched without dynamic lookup at render time.
+
+Static compilation is enabled per page with the `compileStatic` page directive:
+
+[,xml]
+----
+<%@ page compileStatic="true" %>
+----
+
+==== Declaring the Model
+
+A statically compiled page can only reference model variables it declares, because there is no dynamic property lookup to fall back on. Declare them with the `model` page directive, which names and types each variable the page expects:
+
+[,xml]
+----
+<%@ page model="Book book" %>
+<h1>${book.title}</h1>
+----
+
+Referencing a variable that has not been declared is a compilation error rather than a `null` at render time:
+
+----
+The variable [book] is undeclared.
+----
+
+Separate multiple declarations with semicolons, or use a multi-line value:
+
+[,xml]
+----
+<%@ page model="Book book; List<Review> reviews" %>
+----
+
+Because a declared model is what makes a page type checkable, using the `model` directive enables static compilation on its own — `compileStatic="true"` is implied and does not need to be given as well.
+
+==== Enabling Static Compilation for Every Page
+
+Rather than adding the directive to each page, static compilation can be made the default for an entire application with the `grails.views.gsp.compileStatic` setting:
+
+[source,yaml]
+.grails-app/conf/application.yml
+----
+grails:
+    views:
+        gsp:
+            compileStatic: true
+----
+
+The setting applies both to pages precompiled by the build and to pages compiled on the fly while the application runs in development mode, so a page behaves the same way in both.
+
+An individual page always wins over the application-wide default and can opt back out:
+
+[,xml]
+----
+<%@ page compileStatic="false" %>
+----
+
+[NOTE]
+====
+Enabling this for an existing application is not a transparent change: every page that references an undeclared model variable will fail to compile until it declares its model. Introduce the setting once the views it covers declare their models, and use `compileStatic="false"` for the pages that are not ready yet.
+====
+
+==== Tag Libraries
+
+Tags are dispatched dynamically even in a statically compiled page, but only for namespaces the page knows about. The `g`, `tmpl`, `f`, `asset` and `plugin` namespaces are allowed by default:
+
+[,xml]
+----
+<%@ page compileStatic="true" %>
+${g.message(code: 'book.list.title')}
+----
+
+A tag library in any other namespace must be declared, otherwise its namespace is treated as an undeclared variable. Declare the extra namespaces for a single page with the `taglibs` page directive:
+
+[,xml]
+----
+<%@ page compileStatic="true" taglibs="myns, othertags" %>
+${myns.formatPrice(value: book.price)}
+----
+
+or for every page with the `grails.views.gsp.compileStaticConfig.taglibs` setting, given either as a list or as a comma separated string:
+
+[source,yaml]
+.grails-app/conf/application.yml
+----
+grails:
+    views:
+        gsp:
+            compileStaticConfig:
+                taglibs:
+                    - myns
+                    - othertags
+----
+
+The declared namespaces are added to the defaults rather than replacing them.
+
+TIP: Static compilation of GSP pages is independent of the `grails { compileStatic { } }` build options described in link:staticTypeCheckingAndCompilation.html#grailsCompileStatic[GrailsCompileStatic], which apply to controllers, services and tag library classes.
