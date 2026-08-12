@@ -101,9 +101,13 @@ abstract class TrainAotCacheTask extends DefaultTask {
     @OutputFile
     abstract RegularFileProperty getMetadataFile()
 
+    /** The first JDK that can write one. Before it, {@code -XX:AOTCacheOutput} is not an option. */
+    private static final int MINIMUM_JAVA_VERSION = 25
+
     @TaskAction
     void train() {
         refuseWhereTheRunCannotBeAskedToStop()
+        refuseWhereTheJdkCannotWriteACache()
         File directory = applicationDirectory.get().asFile
         File cache = cacheFile.get().asFile
         cache.delete()
@@ -177,6 +181,41 @@ abstract class TrainAotCacheTask extends DefaultTask {
                     'stop, and on Windows a child process can only be killed -- which writes no ' +
                     'cache. Train on Linux or macOS, or set grails.aotCache.enabled to false.')
         }
+    }
+
+    /**
+     * Refuses on a JDK that has no cache to write, before the run is started.
+     *
+     * <p>{@code -XX:AOTCacheOutput} arrived in JDK 25. An earlier JDK does not recognise it and
+     * stops immediately, so the run would be started, fail at once, and be reported as having
+     * ended before it started serving -- which reads as a broken application rather than as the
+     * wrong JDK, and sends whoever is reading the build into a log of the application's own
+     * start-up that never happened.</p>
+     *
+     * <p>Asked of the JDK the training will run on, which is the project's toolchain rather than
+     * whichever one is running Gradle.</p>
+     */
+    private void refuseWhereTheJdkCannotWriteACache() {
+        String version = javaVersion.get()
+        Integer major = majorVersionOf(version)
+        if (major != null && major < MINIMUM_JAVA_VERSION) {
+            throw new GradleException("Training an AOT cache needs Java ${MINIMUM_JAVA_VERSION} or " +
+                    "later, and the toolchain this would train on is ${version}. Point the project " +
+                    'toolchain at a newer JDK, or set grails.aotCache.enabled to false.')
+        }
+    }
+
+    /**
+     * The feature version of a runtime version string, or {@code null} where it does not begin with
+     * one. Unreadable rather than old: a version this cannot parse is left to the run to answer for,
+     * since refusing over it would fail a build on a JDK that may be perfectly capable.
+     */
+    private static Integer majorVersionOf(String version) {
+        int digits = 0
+        while (digits < version.length() && Character.isDigit(version.charAt(digits))) {
+            digits++
+        }
+        digits > 0 ? Integer.valueOf(version.substring(0, digits)) : null
     }
 
     /**

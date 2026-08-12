@@ -291,4 +291,47 @@ exit 1
         cleanup:
             System.setProperty('os.name', os)
     }
+
+    void 'a run is refused on a JDK that has no cache to write'() {
+        given: 'the toolchain the training would run on, which is not the one running the build'
+            TrainAotCacheTask task = task('not-an-archive.jar', [])
+            task.javaVersion.set('21.0.12+10')
+
+        when:
+            task.train()
+
+        then: 'said as the wrong JDK, rather than as an application that ended before it served'
+            GradleException e = thrown()
+            e.message.contains('Java 25 or later')
+            e.message.contains('21.0.12+10')
+    }
+
+    void 'a JDK that can write one is not refused'() {
+        given:
+            TrainAotCacheTask task = task('not-an-archive.jar', [])
+            task.javaVersion.set(version)
+
+        when:
+            task.train()
+
+        then: 'it gets as far as running, which is where this spec stops caring'
+            GradleException e = thrown()
+            !e.message.contains('Java 25 or later')
+
+        where:
+            version << ['25.0.1+9', '26', '31.0.2+7']
+    }
+
+    void 'a version that cannot be read is left to the run to answer for'() {
+        given: 'refusing over an unreadable version would fail a build on a capable JDK'
+            TrainAotCacheTask task = task('not-an-archive.jar', [])
+            task.javaVersion.set('a vendor string nobody parsed')
+
+        when:
+            task.train()
+
+        then:
+            GradleException e = thrown()
+            !e.message.contains('Java 25 or later')
+    }
 }
