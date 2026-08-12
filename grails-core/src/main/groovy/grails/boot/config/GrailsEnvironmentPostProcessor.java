@@ -116,7 +116,7 @@ public class GrailsEnvironmentPostProcessor implements EnvironmentPostProcessor,
      * build, a container, a service manager, where the output is only ever read later and stays
      * plain. An application that has said either way is left alone.</p>
      */
-    void colourTheOutputOfAnImageThatHasATerminal(ConfigurableEnvironment environment) {
+    private void colourTheOutputOfAnImageThatHasATerminal(ConfigurableEnvironment environment) {
         if (!isImage() || environment.containsProperty(ANSI_ENABLED)) {
             return;
         }

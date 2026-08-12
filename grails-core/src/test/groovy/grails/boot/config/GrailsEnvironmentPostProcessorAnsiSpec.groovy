@@ -18,10 +18,14 @@
  */
 package grails.boot.config
 
+import org.springframework.boot.bootstrap.BootstrapRegistry.InstanceSupplier
 import org.springframework.boot.bootstrap.DefaultBootstrapContext
 import org.springframework.core.env.MapPropertySource
 import org.springframework.core.env.StandardEnvironment
 import spock.lang.Specification
+
+import org.apache.grails.core.plugins.DefaultPluginDiscovery
+import org.apache.grails.core.plugins.PluginDiscovery
 
 /**
  * Covers an image colouring its output when it is being watched at a terminal.
@@ -38,9 +42,23 @@ class GrailsEnvironmentPostProcessorAnsiSpec extends Specification {
 
     StandardEnvironment environment = new StandardEnvironment()
 
+    /**
+     * Runs the post-processor the way Spring Boot runs it, rather than reaching past it for the one
+     * method under test: whether an image colours its output is only worth knowing about through the
+     * hook that decides it.
+     */
     private String ansiAfter(boolean image, String terminal) {
-        new Processor(image, terminal).colourTheOutputOfAnImageThatHasATerminal(environment)
+        DefaultBootstrapContext bootstrapContext = new DefaultBootstrapContext()
+        bootstrapContext.register(PluginDiscovery, InstanceSupplier.of(noPlugins()))
+        new Processor(bootstrapContext, image, terminal).postProcessEnvironment(environment, null)
         environment.getProperty(ANSI)
+    }
+
+    /** Plugin discovery that finds none, so the phase this shares with completes and does nothing. */
+    private static PluginDiscovery noPlugins() {
+        DefaultPluginDiscovery discovery = new DefaultPluginDiscovery(new Class<?>[0])
+        discovery.loadPluginsFromClasspath = false
+        discovery
     }
 
     void 'an image at a terminal colours its output'() {
@@ -77,8 +95,8 @@ class GrailsEnvironmentPostProcessorAnsiSpec extends Specification {
         private final boolean image
         private final String terminal
 
-        Processor(boolean image, String terminal) {
-            super(new DefaultBootstrapContext())
+        Processor(DefaultBootstrapContext bootstrapContext, boolean image, String terminal) {
+            super(bootstrapContext)
             this.image = image
             this.terminal = terminal
         }
