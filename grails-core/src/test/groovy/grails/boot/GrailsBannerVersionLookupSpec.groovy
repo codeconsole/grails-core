@@ -185,4 +185,42 @@ class GrailsBannerVersionLookupSpec extends Specification {
         then:
             bytes.toString().count('Tomcat') == 1
     }
+
+    void 'an option that has moved between the lists is still recognised'() {
+        expect: 'spring-security was asked for before it was shown by default, and an application ' +
+                'that still asks for it named something this understands'
+            new Serving().unrecognisedVersionOptions(
+                    configured(['grails.banner.versions.include': 'spring-security'])).isEmpty()
+    }
+
+    void 'an option shown by default can be named in either list'() {
+        expect: 'which list an option belongs to is this class\'s decision to change, so naming one ' +
+                'is not a mistake an application made'
+            new Serving().unrecognisedVersionOptions(configured([
+                    'grails.banner.versions.include': 'container',
+                    'grails.banner.versions.exclude': 'tomcat'])).isEmpty()
+    }
+
+    void 'an option that names nothing is reported'() {
+        expect: 'dropped silently, a typo reads as a banner ignoring what it was told, and the only ' +
+                'way to find out is to notice a line that is not there'
+            new Serving().unrecognisedVersionOptions(
+                    configured(['grails.banner.versions.include': 'spring-securty'])) == ['spring-securty']
+    }
+
+    void 'every place an option can be written is checked'() {
+        expect:
+            new Serving().unrecognisedVersionOptions(configured([
+                    'grails.banner.versions.order': 'grails,ordr',
+                    'grails.banner.versions.exclude': 'excloode',
+                    'grails.banner.versions.include': 'includ'])) == ['ordr', 'excloode', 'includ']
+    }
+
+    void 'an application that named them all correctly is told nothing'() {
+        expect:
+            new Serving().unrecognisedVersionOptions(configured([
+                    'grails.banner.versions.order': 'grails,groovy',
+                    'grails.banner.versions.exclude': 'app',
+                    'grails.banner.versions.include': 'jetty'])).isEmpty()
+    }
 }
