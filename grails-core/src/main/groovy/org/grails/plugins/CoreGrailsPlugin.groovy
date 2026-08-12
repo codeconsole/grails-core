@@ -167,6 +167,15 @@ class CoreGrailsPlugin extends Plugin {
             // registry parses everything a second time, and while code is being generated the two of
             // them write out the same import-aware post-processor twice, so one registration
             // replaces the other on every start.
+            //
+            // "Registered ahead of it" is what makes standing down safe, and it is a property of how
+            // the application started rather than of this registry. GrailsEarlyPluginRegistrationPostProcessor
+            // is added with addBeanFactoryPostProcessor and so runs before Spring's own processor,
+            // and it runs whenever PluginDiscovery was promoted to the bean factory -- which
+            // GrailsBootstrapRegistryInitializer does, from spring.factories, for every
+            // SpringApplication. A context assembled without SpringApplication would have Spring's
+            // processor already finished by the time these definitions arrive, and would need this
+            // one; it would also not be a Grails application started any supported way.
             if (!AotDetector.useGeneratedArtifacts() && !hasConfigurationClassPostProcessor(application)) {
                 registry.registerBean('grailsConfigurationClassPostProcessor', ConfigurationClassPostProcessor)
             }
