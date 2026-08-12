@@ -91,6 +91,31 @@ class GroovyPageMetaInfoReloadSpec extends Specification {
         !metaInfo.shouldReload(callableFor(resource))
     }
 
+    void 'a recorded checksum decides staleness even when a timestamp is also recorded'() {
+        given: 'a page carrying both a matching checksum and a timestamp long predating its source'
+        Resource resource = sourcePage()
+        GroovyPageMetaInfo metaInfo = new GroovyPageMetaInfo()
+        metaInfo.sourceChecksum = checksumOf(resource)
+        metaInfo.lastModified = resource.getFile().lastModified() - 86_400_000L
+
+        expect: 'the content decides, so the timestamp alone cannot force a reload'
+        !metaInfo.shouldReload(callableFor(resource))
+    }
+
+    void 'a recorded checksum reports an edit even when the timestamp agrees'() {
+        given: 'a page whose source was edited without its timestamp moving'
+        Resource resource = sourcePage()
+        GroovyPageMetaInfo metaInfo = new GroovyPageMetaInfo()
+        metaInfo.sourceChecksum = checksumOf(resource)
+        long originalTimestamp = resource.getFile().lastModified()
+        metaInfo.lastModified = originalTimestamp
+        resource.getFile().text = '<html><body>edited</body></html>'
+        resource.getFile().setLastModified(originalTimestamp)
+
+        expect: 'the content decides, so an agreeing timestamp cannot mask the edit'
+        metaInfo.shouldReload(callableFor(resource))
+    }
+
     void 'an edit within the timestamp granularity window is still reported as stale'() {
         given: 'an edited source whose modification time is unchanged, as a rapid rewrite can leave it'
         Resource resource = sourcePage()
