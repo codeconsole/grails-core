@@ -18,10 +18,11 @@
  */
 package grails.gorm.validation.aot;
 
+import org.jspecify.annotations.Nullable;
+
 import org.springframework.aot.hint.MemberCategory;
 import org.springframework.aot.hint.RuntimeHints;
 import org.springframework.aot.hint.RuntimeHintsRegistrar;
-import org.springframework.lang.Nullable;
 
 /**
  * Registers the constrained property a domain class's constraints are applied to.

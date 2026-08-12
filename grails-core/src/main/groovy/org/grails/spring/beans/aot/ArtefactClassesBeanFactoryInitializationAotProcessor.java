@@ -26,13 +26,14 @@ import java.util.Set;
 
 import javax.lang.model.element.Modifier;
 
+import org.jspecify.annotations.Nullable;
+
 import org.springframework.aot.generate.GeneratedMethod;
 import org.springframework.beans.factory.aot.BeanFactoryInitializationAotContribution;
 import org.springframework.beans.factory.aot.BeanFactoryInitializationAotProcessor;
 import org.springframework.beans.factory.aot.BeanFactoryInitializationCode;
 import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
 import org.springframework.javapoet.CodeBlock;
-import org.springframework.lang.Nullable;
 
 import grails.core.GrailsApplication;
 import grails.plugins.GrailsPlugin;

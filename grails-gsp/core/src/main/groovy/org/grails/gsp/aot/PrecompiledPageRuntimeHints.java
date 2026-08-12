@@ -18,9 +18,10 @@
  */
 package org.grails.gsp.aot;
 
+import org.jspecify.annotations.Nullable;
+
 import org.springframework.aot.hint.RuntimeHints;
 import org.springframework.aot.hint.RuntimeHintsRegistrar;
-import org.springframework.lang.Nullable;
 
 import org.grails.gsp.GroovyPageMetaInfo;
 

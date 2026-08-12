@@ -18,6 +18,8 @@
  */
 package org.grails.spring.beans.aot;
 
+import org.jspecify.annotations.Nullable;
+
 import org.springframework.aot.hint.MemberCategory;
 import org.springframework.aot.hint.RuntimeHints;
 import org.springframework.aot.hint.RuntimeHintsRegistrar;
@@ -27,7 +29,6 @@ import org.springframework.core.env.ConfigurableEnvironment;
 import org.springframework.core.env.Environment;
 import org.springframework.core.env.PropertyResolver;
 import org.springframework.core.io.ResourceLoader;
-import org.springframework.lang.Nullable;
 
 import grails.config.Config;
 import grails.config.ConfigMap;

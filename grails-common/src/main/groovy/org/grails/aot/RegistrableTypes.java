@@ -23,6 +23,8 @@ import java.io.InputStream;
 import java.util.LinkedHashSet;
 import java.util.Set;
 
+import org.jspecify.annotations.Nullable;
+
 import org.springframework.asm.ClassReader;
 import org.springframework.asm.ClassVisitor;
 import org.springframework.asm.ConstantDynamic;
@@ -32,7 +34,6 @@ import org.springframework.asm.Label;
 import org.springframework.asm.MethodVisitor;
 import org.springframework.asm.SpringAsmInfo;
 import org.springframework.asm.Type;
-import org.springframework.lang.Nullable;
 import org.springframework.util.ClassUtils;
 
 /**
