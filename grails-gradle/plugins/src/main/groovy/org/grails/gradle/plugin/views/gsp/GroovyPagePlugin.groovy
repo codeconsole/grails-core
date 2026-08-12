@@ -175,9 +175,17 @@ class GroovyPagePlugin implements Plugin<Project> {
             it.description = 'Regenerates the tag library index against the compiled project'
             it.destinationDirectory.set(packagedIndexDir)
             it.settingsDirectory.set(packagedSettingsDir)
-            // The whole output, which is built by classes, so this waits for everything that writes
-            // into it rather than for the compile tasks alone.
-            it.generatorClasspath.from(project.configurations.named('compileClasspath'), output)
+            // The compiled classes, and a dependency on the task that gathers them, so this waits
+            // for everything that writes into those directories rather than for the compile tasks
+            // alone - the ast classes are copied in after compiling, for one.
+            //
+            // Deliberately the class directories and not the whole source set output. A view compiler
+            // registers its own output directory into that output and runs after the classes task, so
+            // it cannot declare the classes task as its producer without a cycle, and anything reading
+            // the whole output is left consuming a directory nothing says it produced. Compiled views
+            // are no use in resolving what a tag library declares anyway.
+            it.generatorClasspath.from(project.configurations.named('compileClasspath'), classesDirs)
+            it.dependsOn(tasks.named('classes'))
         }
         FileCollection packagedSettings =
                 project.files(packagedSettingsDir).builtBy(packageTagLibraryIndex)
