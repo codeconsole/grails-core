@@ -186,6 +186,94 @@ class GspCompileStaticConfigSpec extends Specification {
         template.metaInfo.compileStaticMode
     }
 
+    void 'the framework supplied names a page never declares are typed'() {
+        given:
+        GroovyPagesTemplateEngine engine = engineFor('grails.views.gsp.compileStatic': true)
+
+        when:
+        GroovyPageTemplate template = compile(engine, source)
+
+        then:
+        template.metaInfo.compilationException == null
+
+        where:
+        source << [
+                '${params.id}',
+                '${flash.message}',
+                '${controllerName}',
+                '${actionName}',
+                '${namespace}',
+                '${grailsApplication.config}',
+                '${applicationContext.displayName}',
+                '<% if (params.id) { %>x<% } %>',
+                '${params.id ? \'y\' : \'n\'}',
+        ]
+    }
+
+    void 'a framework supplied name reads the value bound for the page'() {
+        given:
+        GroovyPagesTemplateEngine engine = engineFor('grails.views.gsp.compileStatic': true)
+
+        when:
+        GroovyPageTemplate template = compile(engine, '${params.id}-${flash.message}-${controllerName}')
+
+        then:
+        render(template, [params: [id: '7'], flash: [message: 'hi'], controllerName: 'book']) == '7-hi-book'
+    }
+
+    void 'a framework supplied name is null when nothing bound it'() {
+        given:
+        GroovyPagesTemplateEngine engine = engineFor('grails.views.gsp.compileStatic': true)
+
+        when:
+        GroovyPageTemplate template = compile(engine, '[${controllerName}]')
+
+        then:
+        render(template) == '[null]'
+    }
+
+    void 'a page may still declare a model variable named after a framework supplied name'() {
+        given:
+        GroovyPagesTemplateEngine engine = engineFor('grails.views.gsp.compileStatic': true)
+
+        when:
+        GroovyPageTemplate template = compile(engine, '<%@ page model="Map params" %>${params.id}')
+
+        then:
+        template.metaInfo.compilationException == null
+        render(template, [params: [id: '9']]) == '9'
+    }
+
+    void 'a servlet scope is not typed for a page and has to be declared'() {
+        given:
+        GroovyPagesTemplateEngine engine = engineFor('grails.views.gsp.compileStatic': true)
+
+        when:
+        GroovyPageTemplate undeclared = compile(engine, '${request.contextPath}')
+        GroovyPageTemplate declared = compile(engine,
+                '<%@ page model="jakarta.servlet.http.HttpServletRequest request" %>${request.contextPath}')
+
+        then:
+        undeclared.metaInfo.compilationException.message.contains('No such property: contextPath for class: java.lang.Object')
+        declared.metaInfo.compilationException == null
+    }
+
+    void 'a name the framework does not supply is still rejected'() {
+        given:
+        GroovyPagesTemplateEngine engine = engineFor('grails.views.gsp.compileStatic': true)
+
+        when:
+        GroovyPageTemplate template = compile(engine, source)
+
+        then:
+        template.metaInfo.compilationException.message.contains(error)
+
+        where:
+        source                       || error
+        '${notAFrameworkName}'       || 'The variable [notAFrameworkName] is undeclared.'
+        '${notAFrameworkName.id}'    || 'No such property: id for class: java.lang.Object'
+    }
+
     private static GroovyPagesTemplateEngine engineFor(Map<String, Object> configValues) {
         GenericApplicationContext context = new GenericApplicationContext().tap {
             beanFactory.registerSingleton(GrailsApplication.APPLICATION_ID,

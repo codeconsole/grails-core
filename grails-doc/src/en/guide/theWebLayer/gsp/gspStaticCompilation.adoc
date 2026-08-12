@@ -51,6 +51,41 @@ Separate multiple declarations with semicolons, or use a multi-line value:
 
 Because a declared model is what makes a page type checkable, using the `model` directive enables static compilation on its own — `compileStatic="true"` is implied and does not need to be given as well.
 
+==== Names Supplied by the Framework
+
+The names a page never declares because the framework provides them do not need to appear in the `model` directive. These are typed for you and can be read directly:
+
+[,xml]
+----
+<%@ page compileStatic="true" %>
+<g:if test="${params.id}">${flash.message} on ${controllerName}/${actionName}</g:if>
+----
+
+|===
+|Name |Type
+
+|`params`
+|`Map`
+
+|`flash`
+|`Map`
+
+|`controllerName`, `actionName`, `namespace`
+|`String`
+
+|`grailsApplication`
+|link:{apiDocs}grails/core/GrailsApplication.html[GrailsApplication]
+
+|`applicationContext`
+|`ApplicationContext`
+|===
+
+Each reads exactly what it would in a dynamically compiled page, and is `null` where a page is rendered outside a web request and nothing bound it.
+
+A page may still declare its own model variable using one of these names, and the declared type then applies for that page.
+
+NOTE: `request`, `response`, `session` and `application` are not in the table and must be declared in the `model` directive to be read from a statically compiled page.
+
 ==== Enabling Static Compilation for Every Page
 
 Rather than adding the directive to each page, static compilation can be made the default for an entire application with the `grails.views.gsp.compileStatic` setting:

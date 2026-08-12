@@ -92,6 +92,9 @@ dependencies {
 //    implementation 'org.springframework:spring-context' // ApplicationContext
 //
     testImplementation 'org.junit.jupiter:junit-jupiter-api'
+    // Not a dependency of this module: pages render outside a servlet container too. Present for the
+    // tests that pin what a page must declare to read the servlet scopes under static compilation.
+    testImplementation 'jakarta.servlet:jakarta.servlet-api'
     testImplementation 'org.slf4j:slf4j-nop' // Prevents warning about missing slf4j implementation during compilation and tests
     testImplementation 'org.spockframework:spock-core'
 }
