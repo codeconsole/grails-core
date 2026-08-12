@@ -25,12 +25,16 @@ import org.gradle.api.Project
 import org.gradle.api.plugins.BasePlugin
 import org.gradle.api.tasks.Sync
 import org.gradle.api.tasks.util.PatternFilterable
+import org.gradle.api.file.ConfigurableFileCollection
 import org.gradle.api.file.CopySpec
 import org.gradle.api.file.Directory
 import org.gradle.api.file.DuplicatesStrategy
 import org.gradle.api.file.FileCollection
 import org.gradle.api.plugins.JavaPluginExtension
 import org.gradle.api.provider.Provider
+import org.gradle.api.provider.ValueSource
+import org.gradle.api.provider.ValueSourceParameters
+import org.gradle.api.provider.ValueSourceSpec
 import org.gradle.api.tasks.SourceSet
 import org.gradle.api.tasks.SourceSetOutput
 import org.gradle.api.tasks.TaskContainer
@@ -91,7 +95,7 @@ class GroovyPagePlugin implements Plugin<Project> {
         // Only a project that scaffolds pays for this. Staging copies the views, and pointing the
         // compilation at the copy would change what every other project compiles for no reason.
         Directory appViews = project.layout.projectDirectory.dir('grails-app/views')
-        boolean scaffolds = scaffoldsAnyController(project)
+        boolean scaffolds = scaffoldsAnyController(project).get()
 
         Directory viewsToCompile = appViews
         if (scaffolds) {
@@ -202,22 +206,43 @@ class GroovyPagePlugin implements Plugin<Project> {
     }
 
     /**
-     * Whether any controller in this project is scaffolded, read from the sources because the
-     * decision is needed before anything is compiled. A project that does not scaffold compiles its
-     * views where they are, as it did before.
+     * Whether any controller in this project is scaffolded, which decides whether the views are
+     * staged before they are compiled. The answer is needed while the build is being configured,
+     * before anything has been compiled, so it is read from the sources.
+     *
+     * <p>Read through a {@link ValueSource} rather than by opening the files here. Gradle re-runs a
+     * value source on every build and invalidates the configuration cache when its answer changes,
+     * so a controller that becomes scaffolded rebuilds the graph that generates its views. Read
+     * directly, the answer would be an undeclared input: settled once, cached, and wrong from then
+     * on.</p>
+     *
+     * <p>The match is deliberately loose. {@link GenerateScaffoldedViewsTask} reads the real
+     * annotation from the compiled class, so a false positive here costs a staging copy and a
+     * generation task that writes nothing -- while a false negative costs a view that is missing
+     * from the artifact, found by whoever opens that page.</p>
      */
-    protected boolean scaffoldsAnyController(Project project) {
-        File controllers = project.layout.projectDirectory.dir('grails-app/controllers').asFile
-        if (!controllers.isDirectory()) {
-            return false
+    protected Provider<Boolean> scaffoldsAnyController(Project project) {
+        project.providers.of(ScaffoldedControllers) { ValueSourceSpec<ScaffoldedControllers.Parameters> spec ->
+            spec.parameters.controllers.from(
+                    project.fileTree(project.layout.projectDirectory.dir('grails-app/controllers'))
+                            .matching { PatternFilterable p -> p.include('**/*.groovy') })
         }
-        boolean found = false
-        controllers.eachFileRecurse { File file ->
-            if (!found && file.name.endsWith('.groovy') && file.text.contains('@Scaffold')) {
-                found = true
-            }
+    }
+
+    /** Reads the controller sources for the mark of a scaffolded one, as a tracked build input. */
+    abstract static class ScaffoldedControllers implements ValueSource<Boolean, ScaffoldedControllers.Parameters> {
+
+        interface Parameters extends ValueSourceParameters {
+
+            ConfigurableFileCollection getControllers()
+
         }
-        found
+
+        @Override
+        Boolean obtain() {
+            parameters.controllers.files.any { File controller -> controller.text.contains('@Scaffold') }
+        }
+
     }
 
     protected FileCollection resolveClassesDirs(SourceSetOutput output, Project project) {
