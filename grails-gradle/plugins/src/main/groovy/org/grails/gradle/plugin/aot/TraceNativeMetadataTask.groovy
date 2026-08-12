@@ -18,6 +18,9 @@
  */
 package org.grails.gradle.plugin.aot
 
+import java.net.http.HttpClient
+import java.net.http.HttpRequest
+import java.net.http.HttpResponse
 import java.time.Duration
 import java.util.concurrent.TimeUnit
 import java.util.regex.Matcher
@@ -65,6 +68,23 @@ import org.gradle.work.DisableCachingByDefault
  * boolean on the domain class, so a form submitted without one never asks the conversion service
  * anything -- and an image built from that trace fails the first time someone ticks a box.</p>
  *
+ * <p>Forms are submitted before paths are asked for, and the session one establishes is carried
+ * through the rest of the trace. A page behind a login is reached by listing the login form, which
+ * makes the pages named after it reachable:</p>
+ *
+ * <pre>
+ * grails {
+ *     nativeMetadata {
+ *         forms = ['/login?username=admin&amp;password=secret', '/book/create']
+ *         paths = ['/', '/book']
+ *     }
+ * }
+ * </pre>
+ *
+ * <p>Where a page carries more than one form -- a layout's search or sign-out beside the page's own
+ * -- the one declaring the most fields is submitted, and which it was is reported. A page whose
+ * wanted form is not the fullest names it: {@code '/book/create#bookForm'}.</p>
+ *
  * <p>Written to the application's sources rather than to the build directory: what an image was
  * built from should be reviewable, and a trace is only as good as the paths someone thought of.</p>
  *
@@ -84,10 +104,20 @@ abstract class TraceNativeMetadataTask extends DefaultTask {
 
     private static final Pattern FORM = Pattern.compile(/(?is)<form\b[^>]*>.*?<\/form>/)
     private static final Pattern ACTION = Pattern.compile(/(?i)\baction\s*=\s*"([^"]*)"/)
+    private static final Pattern ID = Pattern.compile(/(?i)\bid\s*=\s*"([^"]+)"/)
     private static final Pattern FIELD = Pattern.compile(/(?is)<(?:input|select|textarea)\b[^>]*>/)
     private static final Pattern NAME = Pattern.compile(/(?i)\bname\s*=\s*"([^"]+)"/)
     private static final Pattern VALUE = Pattern.compile(/(?i)\bvalue\s*=\s*"([^"]*)"/)
     private static final Pattern TYPE = Pattern.compile(/(?i)\btype\s*=\s*"([^"]+)"/)
+
+    /**
+     * Carries the session from one request to the next, which is what makes a form that
+     * authenticates worth submitting: the pages that follow it are only reachable once it has been.
+     *
+     * <p>Its own cookie store rather than the JVM's. The store belongs to the client, so nothing is
+     * left behind in a daemon that outlives the build and two traces at once cannot share one.</p>
+     */
+    private HttpClient client
 
     /** The archive to run, which has to be the one the image will be built from. */
     @InputFile
@@ -147,32 +177,59 @@ abstract class TraceNativeMetadataTask extends DefaultTask {
                 .redirectOutput(output)
                 .start()
 
-        List<String> answered = []
-        // What carries a session from one request to the next, which is how a form that
-        // authenticates is worth submitting at all. It is the JVM's, and this JVM is a daemon that
-        // outlives the build -- so it is put back, whether the trace finished or threw. Left set, it
-        // would be handed to every task that ran afterwards, holding one application's cookies.
-        CookieHandler inherited = CookieHandler.default
+        client = HttpClient.newBuilder()
+                .cookieHandler(new CookieManager())
+                .followRedirects(HttpClient.Redirect.NORMAL)
+                .connectTimeout(Duration.ofSeconds(10))
+                .build()
+
+        List<Answer> answered = []
         try {
             awaitStarted(process, output)
-            CookieHandler.default = new CookieManager()
-            paths.get().each { String path -> answered << ask(path) }
+            // Forms first, then paths. A form that authenticates is what makes the pages after it
+            // reachable at all: asked for beforehand, a protected page answers with a redirect to
+            // the login form, and what the agent records is the login page under the name of the
+            // page that was wanted. The session the form establishes is carried by this client.
             forms.get().each { String path -> answered << submit(path) }
+            paths.get().each { String path -> answered << ask(path) }
         }
         finally {
-            CookieHandler.default = inherited
             stop(process)
         }
 
-        answered.each { String line -> logger.lifecycle('  {}', line) }
-        List<String> failed = answered.findAll { String line -> line.contains(' -> 5') }
-        if (failed) {
-            throw new GradleException('The application answered with an error while being traced, so ' +
-                    "what was recorded is the error rather than the page:\n  ${failed.join('\n  ')}\n" +
-                    "What it printed is in ${output}")
+        answered.each { Answer answer -> logger.lifecycle('  {}', answer.line) }
+        answered.findAll { Answer answer -> answer.elsewhere }.each { Answer answer ->
+            logger.warn('{} was answered somewhere other than where it was asked for, so what was ' +
+                    'recorded is that page and not this one. A page behind a login is reached by ' +
+                    'listing its form in nativeMetadata.forms.', answer.line)
         }
-        logger.lifecycle('Traced {} paths and {} forms into {}',
-                paths.get().size(), forms.get().size(), metadata)
+
+        List<Answer> failed = answered.findAll { Answer answer -> !answer.recorded }
+        if (failed) {
+            throw new GradleException('The application did not answer with the page while being ' +
+                    'traced, so what was recorded is not what was asked for:\n  ' +
+                    "${failed*.line.join('\n  ')}\nWhat it printed is in ${output}")
+        }
+        logger.lifecycle('Traced {} forms and {} paths into {}',
+                forms.get().size(), paths.get().size(), metadata)
+    }
+
+    /** What one request recorded, and whether it recorded the thing it was asked for. */
+    private static class Answer {
+
+        final String line
+
+        /** Whether the page asked for is the page the agent saw. */
+        final boolean recorded
+
+        /** Whether the answer came from somewhere other than the path asked for. */
+        final boolean elsewhere
+
+        Answer(String line, boolean recorded, boolean elsewhere = false) {
+            this.line = line
+            this.recorded = recorded
+            this.elsewhere = elsewhere
+        }
     }
 
     /**
@@ -191,11 +248,23 @@ abstract class TraceNativeMetadataTask extends DefaultTask {
         }
     }
 
-    /** Asks for a path, reading the body so that rendering it is part of what was recorded. */
-    private String ask(String path) {
-        HttpURLConnection connection = open(path, 'GET')
-        int status = read(connection)
-        "GET  ${path} -> ${status}".toString()
+    /**
+     * Asks for a path, reading the body so that rendering it is part of what was recorded.
+     *
+     * <p>Where the answer came from is reported as well as what it was. A redirect is followed, so
+     * an application that sends {@code /} to its real home page records that page -- but a page
+     * that answers from somewhere else because the request was not allowed to reach it records the
+     * wrong thing under the right name, and only saying where it landed tells the two apart.</p>
+     */
+    private Answer ask(String path) {
+        HttpResponse<String> response = client.send(
+                requestTo(path).GET().build(), HttpResponse.BodyHandlers.ofString())
+        String asked = uriOf(path).path
+        String landed = response.uri().path
+        boolean elsewhere = landed != asked
+        String where = elsewhere ? "  (landed on ${landed})" : ''
+        new Answer("GET  ${path} -> ${response.statusCode()}${where}".toString(),
+                response.statusCode() < 400, elsewhere)
     }
 
     /**
@@ -204,16 +273,20 @@ abstract class TraceNativeMetadataTask extends DefaultTask {
      * <p>The fields come from the page rather than from a list here, because a list here is a list
      * to keep up to date, and the one thing a trace must not do is submit less than the form does.</p>
      */
-    private String submit(String declared) {
-        // A form may say what to put in it: /login?username=admin&password=... Most do not need to,
-        // and a generated value is better than one to keep up to date -- but a form that authenticates
-        // is only worth submitting with credentials that work, and what it does on success is the
-        // half worth recording.
-        int query = declared.indexOf('?')
-        String path = query < 0 ? declared : declared.substring(0, query)
+    private Answer submit(String declared) {
+        // A form may say what to put in it, and which of them it is:
+        //   /login?username=admin&password=...#loginForm
+        // Most need neither. A generated value beats one to keep up to date -- but a form that
+        // authenticates is only worth submitting with credentials that work, and what it does on
+        // success is the half worth recording.
+        int fragment = declared.indexOf('#')
+        String named = fragment < 0 ? null : declared.substring(fragment + 1)
+        String withoutId = fragment < 0 ? declared : declared.substring(0, fragment)
+        int query = withoutId.indexOf('?')
+        String path = query < 0 ? withoutId : withoutId.substring(0, query)
         Map<String, String> given = [:]
         if (query >= 0) {
-            for (String pair : declared.substring(query + 1).split('&')) {
+            for (String pair : withoutId.substring(query + 1).split('&')) {
                 if (!pair) {
                     continue
                 }
@@ -223,19 +296,22 @@ abstract class TraceNativeMetadataTask extends DefaultTask {
             }
         }
 
-        HttpURLConnection page = open(path, 'GET')
-        String html = body(page)
-        Matcher form = FORM.matcher(html ?: '')
-        if (!form.find()) {
-            return "FORM ${path} -> no form on the page".toString()
+        HttpResponse<String> page = client.send(
+                requestTo(path).GET().build(), HttpResponse.BodyHandlers.ofString())
+        List<String> markups = formsIn(page.body())
+        if (!markups) {
+            return new Answer("FORM ${path} -> no form on the page".toString(), false)
         }
-        String markup = form.group()
+        String markup = chooseForm(markups, named)
+        if (markup == null) {
+            return new Answer("FORM ${path} -> no form with id '${named}' on the page".toString(), false)
+        }
         Matcher action = ACTION.matcher(markup)
         String target = action.find() && action.group(1) ? action.group(1) : path
 
         Map<String, String> fields = fieldsOf(markup)
         if (!fields) {
-            return "FORM ${path} -> the form declares no fields".toString()
+            return new Answer("FORM ${path} -> the form declares no fields".toString(), false)
         }
         // What was asked for wins, but only for a field the form has: a value for a field that is
         // not there was meant for a form that has changed, and silently posting it says nothing.
@@ -252,12 +328,56 @@ abstract class TraceNativeMetadataTask extends DefaultTask {
             "${URLEncoder.encode(name, 'UTF-8')}=${URLEncoder.encode(value, 'UTF-8')}"
         }.join('&')
 
-        HttpURLConnection post = open(target, 'POST')
-        post.doOutput = true
-        post.setRequestProperty('Content-Type', 'application/x-www-form-urlencoded')
-        post.outputStream.withCloseable { OutputStream out -> out.write(encoded.bytes) }
-        int status = read(post)
-        "POST ${target} -> ${status}  (${fields.size()} fields, from ${path})".toString()
+        HttpResponse<String> posted = client.send(
+                requestTo(target)
+                        .header('Content-Type', 'application/x-www-form-urlencoded')
+                        .POST(HttpRequest.BodyPublishers.ofString(encoded))
+                        .build(),
+                HttpResponse.BodyHandlers.ofString())
+        // Which form was submitted is said out loud. A page can carry more than one -- a layout's
+        // search or sign-out beside the one that was meant -- and submitting the wrong one records
+        // nothing of the binding it was listed for while reporting that it did.
+        String which = describeChoice(markups, markup, named)
+        new Answer("POST ${target} -> ${posted.statusCode()}  " +
+                "(${fields.size()} fields, from ${path}${which})".toString(),
+                posted.statusCode() < 400)
+    }
+
+    /** Every form on the page, in the order they appear. */
+    private static List<String> formsIn(String html) {
+        List<String> markups = []
+        Matcher form = FORM.matcher(html ?: '')
+        while (form.find()) {
+            markups << form.group()
+        }
+        markups
+    }
+
+    /**
+     * The form to submit: the one named, or the one declaring the most fields.
+     *
+     * <p>Named where a page carries more than one and the wanted one is not the fullest. Otherwise
+     * the fullest is the better guess than the first: a layout's search box or sign-out button
+     * comes before the page's own form and declares almost nothing, and taking the first meant a
+     * trace that reported a submission having recorded none of the binding it was listed for.</p>
+     */
+    private static String chooseForm(List<String> markups, String named) {
+        if (named) {
+            return markups.find { String markup ->
+                Matcher id = ID.matcher(markup)
+                id.find() && id.group(1) == named
+            }
+        }
+        markups.max { String markup -> fieldsOf(markup).size() }
+    }
+
+    /** How the chosen form is reported, said only where there was a choice to make. */
+    private static String describeChoice(List<String> markups, String chosen, String named) {
+        if (markups.size() == 1) {
+            return ''
+        }
+        String position = " form ${markups.indexOf(chosen) + 1} of ${markups.size()}"
+        named ? "${position} named '${named}'" : "${position}, the one with the most fields"
     }
 
     /**
@@ -288,28 +408,14 @@ abstract class TraceNativeMetadataTask extends DefaultTask {
         fields
     }
 
-    private HttpURLConnection open(String path, String method) {
-        URI uri = URI.create("http://localhost:${port.get()}${path.startsWith('/') ? path : '/' + path}")
-        HttpURLConnection connection = (HttpURLConnection) uri.toURL().openConnection()
-        connection.requestMethod = method
-        connection.instanceFollowRedirects = false
-        connection.connectTimeout = 10_000
-        connection.readTimeout = 60_000
-        connection.setRequestProperty('Accept', 'text/html,*/*')
-        connection
+    private HttpRequest.Builder requestTo(String path) {
+        HttpRequest.newBuilder(uriOf(path))
+                .timeout(Duration.ofSeconds(60))
+                .header('Accept', 'text/html,*/*')
     }
 
-    private static int read(HttpURLConnection connection) {
-        int status = connection.responseCode
-        InputStream stream = status >= 400 ? connection.errorStream : connection.inputStream
-        stream?.withCloseable { InputStream it -> it.bytes }
-        status
-    }
-
-    private static String body(HttpURLConnection connection) {
-        int status = connection.responseCode
-        InputStream stream = status >= 400 ? connection.errorStream : connection.inputStream
-        stream?.withCloseable { InputStream it -> new String(it.bytes, 'UTF-8') }
+    private URI uriOf(String path) {
+        URI.create("http://localhost:${port.get()}${path.startsWith('/') ? path : '/' + path}")
     }
 
     private void awaitStarted(Process process, File output) {

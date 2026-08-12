@@ -127,7 +127,43 @@ The result is merged into `src/native/resources/META-INF/native-image`, alongsid
 
 `paths` are asked for. `forms` are asked for *and submitted*: the page is read, the fields the form declares are filled in, and they are posted to the action the form names. Submitting matters separately from rendering, because binding a form is a different half of the framework from rendering one — and it is the half that converts. A checkbox arrives as a string and lands on a boolean property, so a form submitted without one never asks the conversion service anything, and the image is built without the answer.
 
-The task fails if a path answers with a server error, because what a failed request records is the error page rather than the page.
+==== Pages behind a login
+
+Forms are submitted before paths are asked for, whichever order they appear in the configuration, and the session a form establishes is carried through the rest of the trace. That is what makes a protected page traceable: list its login form, and the pages named in `paths` are reached as a signed-in user.
+
+[source,groovy]
+----
+grails {
+    nativeMetadata {
+        forms = ['/login?username=admin&password=secret', '/book/create']
+        paths = ['/', '/book', '/book/show/1']
+    }
+}
+----
+
+A form may be told what to put in it with a query string, as `/login` is above. Only fields the form actually declares are set from it; a value naming a field that is not there is reported rather than posted, because it was meant for a form that has since changed.
+
+==== Choosing which form
+
+A page often carries more than one form — a layout's search box or sign-out button ahead of the page's own. The form declaring the most fields is the one submitted, and the trace output says which it was:
+
+[source]
+----
+POST /book/save -> 200  (4 fields, from /book/create form 2 of 2, the one with the most fields)
+----
+
+Where the wanted form is not the fullest, name it by its `id`:
+
+[source,groovy]
+----
+forms = ['/book/create#bookForm']
+----
+
+==== When the trace fails
+
+The task fails if what was recorded is not what was asked for: a request that answers with an error or a not-found, a page listed under `forms` that carries no form, or a named form that is not on the page. Each of those would otherwise report a successful trace having recorded the wrong page, or nothing at all.
+
+Redirects are followed, so an application that sends `/` to its real home page records that page. A request that ends up somewhere other than where it was asked for is reported as a warning naming where it landed — usually the sign that a page needs its login form listed under `forms`.
 
 NOTE: The agent ships with GraalVM rather than with a JDK, and it must trace the archive the image will be built from — which is compiled for GraalVM's Java. The task uses the project toolchain, which for a project that builds an image is already a GraalVM; `grails.nativeMetadata.javaExecutable` points it elsewhere.
 

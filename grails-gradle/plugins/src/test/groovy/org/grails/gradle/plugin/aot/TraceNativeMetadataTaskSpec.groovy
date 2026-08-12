@@ -159,6 +159,80 @@ exec '${new File(System.getProperty('java.home'), 'bin/java').absolutePath}' \\
             !posted.contains('nosuchfield')
     }
 
+    void 'the form with the most fields is the one submitted'() {
+        given: 'a page carrying a layout search form ahead of its own'
+            TraceNativeMetadataTask task = task([], ['/create'])
+
+        when:
+            task.trace()
+
+        then: 'taking the first would report a submission having recorded none of the binding'
+            requested.any { it.startsWith('POST /save') }
+            !requested.any { it.startsWith('POST /search') }
+    }
+
+    void 'a form can be named where the wanted one is not the fullest'() {
+        given:
+            TraceNativeMetadataTask task = task([], ['/create#searchForm'])
+
+        when:
+            task.trace()
+
+        then:
+            requested.any { it.startsWith('POST /search') }
+            !requested.any { it.startsWith('POST /save') }
+    }
+
+    void 'naming a form that is not on the page fails the trace'() {
+        given: 'rather than falling back to another and reporting that one as covered'
+            TraceNativeMetadataTask task = task([], ['/create#nosuchform'])
+
+        when:
+            task.trace()
+
+        then:
+            GradleException e = thrown()
+            e.message.contains("no form with id 'nosuchform'")
+    }
+
+    void 'a page behind a login is reached because the form is submitted first'() {
+        given: 'the form listed after the path it makes reachable, to show the order is not the list'
+            TraceNativeMetadataTask task = task(['/protected'], ['/login?username=admin&password=s3cret'])
+
+        when:
+            task.trace()
+
+        then: 'the credentials given reach the application'
+            requested.any { it.startsWith('POST /authenticate') && it.contains('username=admin') }
+
+        and: 'and the protected page answers with itself rather than with the login page'
+            requested.any { it == 'GET /protected' }
+            !requested.any { it == 'GET /login' && requested.indexOf(it) > requested.findIndexOf { it.startsWith('POST /authenticate') } }
+    }
+
+    void 'a page answered from somewhere else is reported rather than counted'() {
+        given: 'asked for without the login form that makes it reachable'
+            TraceNativeMetadataTask task = task(['/protected'], [])
+
+        when:
+            task.trace()
+
+        then: 'the redirect is followed, so what the agent recorded is the login page'
+            requested.any { it == 'GET /login' }
+    }
+
+    void 'a form on a page that has none fails the trace'() {
+        given:
+            TraceNativeMetadataTask task = task([], ['/'])
+
+        when:
+            task.trace()
+
+        then: 'listed to be submitted and never submitted is a gap, not a success'
+            GradleException e = thrown()
+            e.message.contains('no form on the page')
+    }
+
     void 'a path that answers with an error fails the trace'() {
         given: 'because what would be recorded is the error page rather than the page'
             TraceNativeMetadataTask task = task(['/broken'], [])
@@ -168,7 +242,7 @@ exec '${new File(System.getProperty('java.home'), 'bin/java').absolutePath}' \\
 
         then:
             GradleException e = thrown()
-            e.message.contains('answered with an error')
+            e.message.contains('did not answer with the page')
             e.message.contains('/broken')
     }
 
@@ -181,7 +255,7 @@ exec '${new File(System.getProperty('java.home'), 'bin/java').absolutePath}' \\
 
         then: 'a save that 500s during tracing records the failure and nothing of the save'
             GradleException e = thrown()
-            e.message.contains('answered with an error')
+            e.message.contains('did not answer with the page')
     }
 
     void 'the cookie handler the build had is put back after a trace'() {
