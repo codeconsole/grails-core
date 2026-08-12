@@ -2255,3 +2255,40 @@ resolved unambiguously before can become ambiguous.
 
 Removing the packages from `grails.spring.bean.packages`, or the stray classes from those packages, restores
 the previous set of beans.
+
+==== 45. Startup Banner Shows the Servlet Container and Spring Security
+
+The banner now reports the servlet container it is running on, and the version of Spring Security where the
+application has it, without being asked for either. Both were previously opt-in through
+`grails.banner.versions.include`.
+
+What made them opt-in was that a version which could not be determined was shown as `unknown`, so turning one
+on by default would have printed `Spring Security: unknown` for every application without it. A version that
+cannot be determined is now left out of the banner entirely, which is what allows the two to be shown by
+default — and which also means a version explicitly asked for, but not resolvable, no longer appears as
+`unknown`. It appears not at all.
+
+The container is named as itself: an application on Tomcat shows `Tomcat`, one on Jetty shows `Jetty`. It is
+configured under the single key `container`, whichever container that turns out to be.
+
+To restore the previous banner, exclude them:
+
+[source, yaml]
+.grails-app/conf/application.yml
+----
+grails:
+    banner:
+        versions:
+            exclude:
+                - container
+                - spring-security
+----
+
+An application that already asked for `spring-security` under `grails.banner.versions.include` keeps working
+and needs no change — the option is still recognised, and the version is shown either way. The same is true
+of `tomcat`, `jetty` and `undertow`, which remain available for an application that wants to be told about a
+particular container whether or not it is the one serving; naming one as well as taking the default shows it
+once, not twice.
+
+A version option that names none of the known keys is now reported as a warning after the banner is printed,
+rather than being dropped in silence.
