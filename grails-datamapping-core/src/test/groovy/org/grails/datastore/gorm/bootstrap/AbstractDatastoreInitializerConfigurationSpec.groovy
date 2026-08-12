@@ -21,11 +21,15 @@ package org.grails.datastore.gorm.bootstrap
 import org.springframework.beans.factory.config.RuntimeBeanReference
 import org.springframework.beans.factory.support.BeanDefinitionRegistry
 import org.springframework.beans.factory.support.DefaultListableBeanFactory
+import org.springframework.context.ApplicationEventPublisher
 import org.springframework.context.ConfigurableApplicationContext
 import org.springframework.context.aot.AbstractAotProcessor
 import org.springframework.context.support.GenericApplicationContext
 import org.springframework.core.env.MapPropertySource
 import spock.lang.Specification
+
+import org.grails.datastore.gorm.events.ConfigurableApplicationContextEventPublisher
+import org.grails.datastore.gorm.events.DefaultApplicationEventPublisher
 
 /**
  * Covers what a datastore's bean definition holds in place of the configuration.
@@ -104,6 +108,34 @@ class AbstractDatastoreInitializerConfigurationSpec extends Specification {
             initializer.mappedClassesFor('mongo').toList() == [String, Integer]
     }
 
+    void 'inside a container the publisher class that publishes through it is named'() {
+        given:
+            Initializer initializer = new Initializer([:])
+
+        expect: 'a class for the container to build, rather than a publisher built here -- which is ' +
+                'a live object, and a definition holding one cannot be generated ahead of time'
+            initializer.eventPublisherClassFor(context) == ConfigurableApplicationContextEventPublisher
+    }
+
+    void 'outside a container the publisher that publishes nowhere is named'() {
+        given:
+            Initializer initializer = new Initializer([:])
+
+        expect: 'the context-aware one would never be given a context here, and would fail on publish'
+            initializer.eventPublisherClassFor(new DefaultListableBeanFactory()) ==
+                    DefaultApplicationEventPublisher
+    }
+
+    void 'the resource loader stands in for a registry that is not a container'() {
+        given: 'how a datastore initialized against a bare registry still reaches the context'
+            Initializer initializer = new Initializer([:])
+            initializer.setResourceLoader(context)
+
+        expect:
+            initializer.eventPublisherClassFor(new DefaultListableBeanFactory()) ==
+                    ConfigurableApplicationContextEventPublisher
+    }
+
     /** Reaches the protected members through a subclass, the way a datastore's own initializer does. */
     static class Initializer extends AbstractDatastoreInitializer {
 
@@ -113,6 +145,10 @@ class AbstractDatastoreInitializerConfigurationSpec extends Specification {
 
         Object configurationReferenceFor(BeanDefinitionRegistry registry) {
             configurationReference(registry)
+        }
+
+        Class<? extends ApplicationEventPublisher> eventPublisherClassFor(BeanDefinitionRegistry registry) {
+            findEventPublisherClass(registry)
         }
 
         Class[] mappedClassesFor(String datastoreType) {

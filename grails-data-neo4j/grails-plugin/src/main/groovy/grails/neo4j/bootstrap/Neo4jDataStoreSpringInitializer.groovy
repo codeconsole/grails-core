@@ -38,7 +38,6 @@ import org.grails.datastore.mapping.services.ServiceDefinition
 import org.grails.datastore.mapping.services.SoftServiceLoader
 import org.springframework.beans.factory.groovy.GroovyBeanDefinitionReader
 import org.springframework.beans.factory.support.BeanDefinitionRegistry
-import org.springframework.context.ApplicationEventPublisher
 import org.springframework.context.ConfigurableApplicationContext
 import org.springframework.util.ClassUtils
 
@@ -75,18 +74,23 @@ class Neo4jDataStoreSpringInitializer extends AbstractDatastoreInitializer {
             callable.delegate = delegate
             callable.call()
 
-            ApplicationEventPublisher eventPublisher
-            if (beanDefinitionRegistry instanceof ConfigurableApplicationContext) {
-                eventPublisher = new ConfigurableApplicationContextEventPublisher((ConfigurableApplicationContext) beanDefinitionRegistry)
-            } else {
-                eventPublisher = new DefaultApplicationEventPublisher()
-            }
+            // Registered rather than built here, so what the datastore holds is a reference the
+            // container can build. Holding the publisher itself puts a live object in the
+            // definition, and generating code for a definition means writing out what it holds --
+            // which a publisher bound to a running context is not.
+            //
+            // The choice is made here rather than through AbstractDatastoreInitializer, because this
+            // build resolves that class from a released grails-datamapping-core rather than from
+            // the source beside it, and a method added there is not one this can call.
+            grailsDatastoreEventPublisher(beanDefinitionRegistry instanceof ConfigurableApplicationContext
+                    ? ConfigurableApplicationContextEventPublisher
+                    : DefaultApplicationEventPublisher)
             final boolean isRecentGrailsVersion = GrailsVersion.isAtLeastMajorMinor(3, 3)
             neo4jConnectionSourceFactory(Neo4jConnectionSourceFactory) { bean ->
                 bean.autowire = true
             }
             Object configurationReference = configurationReference(beanDefinitionRegistry)
-            neo4jDatastore(Neo4jDatastore, configurationReference, ref("neo4jConnectionSourceFactory"), eventPublisher, collectMappedClasses(DATASTORE_TYPE))
+            neo4jDatastore(Neo4jDatastore, configurationReference, ref("neo4jConnectionSourceFactory"), ref('grailsDatastoreEventPublisher'), collectMappedClasses(DATASTORE_TYPE))
             neo4jMappingContext(neo4jDatastore: "getMappingContext")
             neo4jTransactionManager(neo4jDatastore: "getTransactionManager")
             neo4jAutoTimestampEventListener(neo4jDatastore: "getAutoTimestampEventListener")

@@ -22,14 +22,11 @@ import com.mongodb.client.MongoClient
 
 import org.springframework.beans.factory.support.BeanDefinitionRegistry
 import org.springframework.context.ApplicationContext
-import org.springframework.context.ConfigurableApplicationContext
 import org.springframework.context.support.GenericApplicationContext
 import org.springframework.util.ClassUtils
 
 import grails.mongodb.MongoEntity
 import org.grails.datastore.gorm.bootstrap.AbstractDatastoreInitializer
-import org.grails.datastore.gorm.events.ConfigurableApplicationContextEventPublisher
-import org.grails.datastore.gorm.events.DefaultApplicationEventPublisher
 import org.grails.datastore.gorm.plugin.support.PersistenceContextInterceptorAggregator
 import org.grails.datastore.gorm.support.AbstractDatastorePersistenceContextInterceptor
 import org.grails.datastore.gorm.support.DatastorePersistenceContextInterceptor
@@ -92,13 +89,7 @@ class MongoDbDataStoreSpringInitializer extends AbstractDatastoreInitializer {
             // datastore holds a reference the container can build, which is what lets the context
             // be processed ahead of time. Outside an application context there is nothing to
             // publish through, so the no-op publisher stands in as it did before.
-            if (beanDefinitionRegistry instanceof ConfigurableApplicationContext
-                    || resourcePatternResolver.resourceLoader instanceof ConfigurableApplicationContext) {
-                grailsDatastoreEventPublisher(ConfigurableApplicationContextEventPublisher)
-            }
-            else {
-                grailsDatastoreEventPublisher(DefaultApplicationEventPublisher)
-            }
+            grailsDatastoreEventPublisher(findEventPublisherClass(beanDefinitionRegistry))
             // The configuration is referenced rather than passed. Passing it puts the resolver
             // itself in the definition, and generating code for a definition means writing out
             // whatever it holds: an environment carries the machine's own variables, so the

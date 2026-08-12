@@ -21,15 +21,11 @@ import groovy.transform.CompileStatic
 import org.springframework.beans.factory.support.BeanDefinitionRegistry
 import grails.spring.BeanBuilder
 import org.springframework.context.ApplicationContext
-import org.springframework.context.ApplicationEventPublisher
-import org.springframework.context.ConfigurableApplicationContext
 import org.springframework.context.support.GenericApplicationContext
 import org.springframework.core.env.ConfigurableEnvironment
 import org.springframework.core.env.PropertyResolver
 import org.springframework.transaction.PlatformTransactionManager
 
-import org.grails.datastore.gorm.events.ConfigurableApplicationContextEventPublisher
-import org.grails.datastore.gorm.events.DefaultApplicationEventPublisher
 import org.grails.datastore.gorm.bootstrap.AbstractDatastoreInitializer
 import org.grails.datastore.gorm.jdbc.connections.CachedDataSourceConnectionSourceFactory
 import org.grails.datastore.gorm.support.AbstractDatastorePersistenceContextInterceptor
@@ -156,7 +152,6 @@ class HibernateDatastoreSpringInitializer extends AbstractDatastoreInitializer {
     }
 
     Closure getBeanDefinitions(BeanDefinitionRegistry beanDefinitionRegistry) {
-        ApplicationEventPublisher eventPublisher = super.findEventPublisher(beanDefinitionRegistry)
         return { ->
             def common = getCommonConfiguration(beanDefinitionRegistry, 'hibernate')
             common.delegate = delegate
@@ -175,13 +170,7 @@ class HibernateDatastoreSpringInitializer extends AbstractDatastoreInitializer {
             // container can build. Holding the publisher itself puts a live object in the
             // definition, and generating code for a definition means writing out what it holds --
             // which a publisher bound to a running context is not.
-            if (beanDefinitionRegistry instanceof ConfigurableApplicationContext
-                    || resourcePatternResolver.resourceLoader instanceof ConfigurableApplicationContext) {
-                grailsDatastoreEventPublisher(ConfigurableApplicationContextEventPublisher)
-            }
-            else {
-                grailsDatastoreEventPublisher(DefaultApplicationEventPublisher)
-            }
+            grailsDatastoreEventPublisher(findEventPublisherClass(beanDefinitionRegistry))
             dataSourceConnectionSourceFactory(CachedDataSourceConnectionSourceFactory)
             hibernateConnectionSourceFactory(HibernateConnectionSourceFactory, ref('hibernateBytecodeProvider'), persistentClasses as Class[]) { bean ->
                 bean.autowire = true

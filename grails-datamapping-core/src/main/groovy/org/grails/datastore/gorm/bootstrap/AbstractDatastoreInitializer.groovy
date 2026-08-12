@@ -176,6 +176,26 @@ abstract class AbstractDatastoreInitializer implements ResourceLoaderAware {
     }
 
     /**
+     * Finds the publisher class a datastore definition should name, in place of a publisher itself.
+     *
+     * <p>The same choice {@link #findEventPublisher} makes -- one that publishes through the
+     * surrounding context, or the one that publishes nowhere -- but left to the container to build.
+     * A definition holding an already-constructed publisher is a definition that cannot be generated
+     * ahead of time: generating one means writing out what it holds, and a publisher bound to a
+     * running context is not something there is any way to write down.</p>
+     *
+     * @param beanDefinitionRegistry the registry the definitions are being contributed to
+     * @return the class to register the publisher bean under
+     */
+    protected Class<? extends ApplicationEventPublisher> findEventPublisherClass(BeanDefinitionRegistry beanDefinitionRegistry) {
+        if (beanDefinitionRegistry instanceof ConfigurableApplicationContext ||
+                resourcePatternResolver.resourceLoader instanceof ConfigurableApplicationContext) {
+            return ConfigurableApplicationContextEventPublisher
+        }
+        return DefaultApplicationEventPublisher
+    }
+
+    /**
      * Finds the message source to use
      * @param beanDefinitionRegistry The registry
      * @return The message source
