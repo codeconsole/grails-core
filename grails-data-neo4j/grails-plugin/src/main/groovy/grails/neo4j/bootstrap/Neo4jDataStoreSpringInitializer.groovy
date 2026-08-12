@@ -89,8 +89,12 @@ class Neo4jDataStoreSpringInitializer extends AbstractDatastoreInitializer {
             neo4jConnectionSourceFactory(Neo4jConnectionSourceFactory) { bean ->
                 bean.autowire = true
             }
-            Object configurationReference = configurationReference(beanDefinitionRegistry)
-            neo4jDatastore(Neo4jDatastore, configurationReference, ref("neo4jConnectionSourceFactory"), ref('grailsDatastoreEventPublisher'), collectMappedClasses(DATASTORE_TYPE))
+            // The configuration is held rather than named. Naming the environment instead is what
+            // lets a definition be generated without writing the build machine's own settings into
+            // it, but that is asked through a method added to AbstractDatastoreInitializer, and this
+            // build resolves that class from a released grails-datamapping-core rather than from the
+            // source beside it -- so the call compiles here and goes missing at run time.
+            neo4jDatastore(Neo4jDatastore, configuration, ref("neo4jConnectionSourceFactory"), ref('grailsDatastoreEventPublisher'), collectMappedClasses(DATASTORE_TYPE))
             neo4jMappingContext(neo4jDatastore: "getMappingContext")
             neo4jTransactionManager(neo4jDatastore: "getTransactionManager")
             neo4jAutoTimestampEventListener(neo4jDatastore: "getAutoTimestampEventListener")
