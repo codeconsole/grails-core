@@ -1000,7 +1000,7 @@ When a released Grails 7 plugin fails, first check whether the maintainer has pu
 
 Use the first distinctive failure to choose the next step:
 
-* `InvalidDefinitionException` while creating `OrderedFormContentFilter`: add the BOM-managed Jackson 2 `jackson-databind` dependency described below, then retest the plugin's public behavior.
+* `NoClassDefFoundError` mentioning `com/fasterxml/jackson/databind/exc/InvalidDefinitionException` while creating `OrderedFormContentFilter`: add the BOM-managed Jackson 2 `jackson-databind` dependency described below, then retest the plugin's public behavior.
 * `Could not find org.grails:...:.`: use a plugin version built against `org.apache.grails`, or use narrowly targeted dependency substitution as a temporary migration aid.
 * `MissingPropertyException` or `MissingMethodException` from `Metadata`: the plugin must be rebuilt against the typed metadata API.
 * `MalformedParameterizedTypeException` mentioning `$Trait$FieldHelper`, `NoClassDefFoundError` mentioning `ObjectUtil`, `IncompatibleClassChangeError` involving `HttpHeaders`, or an unexpected internal property after using a plugin annotation: the plugin must be rebuilt for Grails 8.
@@ -1081,11 +1081,11 @@ Plugin authors must compile against Spring Framework 7 and use the `HttpHeaders`
 ----
 // Grails 7 / Spring 6 code that selected the MultiValueMap API
 HttpHeaders headers = new HttpHeaders()
-new HttpEntity<>(body, (MultiValueMap<String, String>) headers)
+new HttpEntity(body, (MultiValueMap<String, String>) headers)
 
 // Grails 8 / Spring 7: use the HttpHeaders API
 HttpHeaders headers = new HttpHeaders()
-new HttpEntity<>(body, headers)
+new HttpEntity(body, headers)
 ----
 
 Changing only an application's dependencies cannot repair the plugin's existing bytecode. Upgrade to a plugin release compiled for Grails 8, or ask the maintainer to publish one.
