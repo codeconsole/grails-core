@@ -129,6 +129,10 @@ public class GroovyPageMetaInfo implements GrailsApplicationAware {
         }
         contentType = (String) ReflectionUtils.getField(ReflectionUtils.findField(pageClass, GroovyPageParser.CONSTANT_NAME_CONTENT_TYPE), null);
         jspTags = (Map) ReflectionUtils.getField(ReflectionUtils.findField(pageClass, GroovyPageParser.CONSTANT_NAME_JSP_TAGS), null);
+        // Read unguarded, unlike SOURCE_CHECKSUM below: LAST_MODIFIED has been emitted by every version of the
+        // compiler, so a page class without it cannot exist. That makes the constant permanent ABI which must
+        // keep being emitted even though GroovyPageCompiler now always writes 0 -- pages precompiled by earlier
+        // versions still carry a real timestamp and are still compared by it.
         lastModified = (Long) ReflectionUtils.getField(ReflectionUtils.findField(pageClass, GroovyPageParser.CONSTANT_NAME_LAST_MODIFIED), null);
         Field sourceChecksumField = ReflectionUtils.findField(pageClass, GroovyPageParser.CONSTANT_NAME_SOURCE_CHECKSUM);
         if (sourceChecksumField != null) {
@@ -320,6 +324,12 @@ public class GroovyPageMetaInfo implements GrailsApplicationAware {
         initializePluginPath();
     }
 
+    /**
+     * @return the modification time of the source this page was compiled from, or {@code 0} if none was
+     * recorded. Pages precompiled by Grails 7.0.16 or later always report {@code 0}: the compiler records a
+     * checksum of the source instead, so that identical sources compile to identical bytes. Use
+     * {@link #getSourceChecksum()} to identify the source such a page was compiled from.
+     */
     public long getLastModified() {
         return lastModified;
     }
@@ -437,8 +447,8 @@ public class GroovyPageMetaInfo implements GrailsApplicationAware {
         if (resource == null) {
             return null;
         }
-        try (InputStream input = resource.getInputStream()) {
-            return GroovyPageParser.checksumOf(input);
+        try {
+            return GroovyPageParser.checksumOf(resource.getContentAsByteArray());
         }
         catch (IOException e) {
             if (LOG.isDebugEnabled()) {
@@ -527,11 +537,18 @@ public class GroovyPageMetaInfo implements GrailsApplicationAware {
                         return (currentChecksum != null && !sourceChecksum.equals(currentChecksum)) ? resource : null;
                     }
                     // Pages compiled before SOURCE_CHECKSUM existed, and pages compiled at runtime, still carry a
-                    // real timestamp. A lastModified of 0 means none was recorded, so there is nothing to compare.
+                    // real timestamp. Only 0 means "nothing recorded": that is the value GroovyPageCompiler
+                    // deliberately emits, so comparing against it would report every page stale forever.
+                    //
+                    // -1 is a different thing and must keep its old meaning. establishLastModified returns it
+                    // when a resource's timestamp could not be read at all, and applyLastModifiedFromResource
+                    // stores it as-is. Such a page self-heals: the first check able to read a real mtime sees a
+                    // difference, reloads once, and records a valid timestamp. Excluding -1 here would strand it
+                    // until restart, silently.
                     long currentLastmodified = establishLastModified(resource);
                     // granularity is required since lastmodified information is rounded somewhere in copying & war (zip) file information
                     // usually the lastmodified time is 1000L apart in files and in files extracted from the zip (war) file
-                    if (currentLastmodified > 0 && lastModified > 0 &&
+                    if (currentLastmodified > 0 && lastModified != 0 &&
                             Math.abs(currentLastmodified - lastModified) > LASTMODIFIED_CHECK_GRANULARITY) {
                         return resource;
                     }

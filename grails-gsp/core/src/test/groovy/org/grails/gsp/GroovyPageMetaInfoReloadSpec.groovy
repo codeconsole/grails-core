@@ -52,7 +52,7 @@ class GroovyPageMetaInfoReloadSpec extends Specification {
     }
 
     private static String checksumOf(Resource resource) {
-        resource.inputStream.withStream { InputStream input -> GroovyPageParser.checksumOf(input) }
+        GroovyPageParser.checksumOf(resource.contentAsByteArray)
     }
 
     private static PrivilegedAction<Resource> callableFor(Resource resource) {
@@ -85,7 +85,7 @@ class GroovyPageMetaInfoReloadSpec extends Specification {
         Resource resource = sourcePage()
         GroovyPageMetaInfo metaInfo = new GroovyPageMetaInfo()
         metaInfo.sourceChecksum = checksumOf(resource)
-        resource.getFile().setLastModified(resource.getFile().lastModified() + 86_400_000L)
+        assert resource.getFile().setLastModified(resource.getFile().lastModified() + 86_400_000L)
 
         expect: 'content decides, so a fresh checkout does not force every page to recompile'
         !metaInfo.shouldReload(callableFor(resource))
@@ -110,7 +110,7 @@ class GroovyPageMetaInfoReloadSpec extends Specification {
         long originalTimestamp = resource.getFile().lastModified()
         metaInfo.lastModified = originalTimestamp
         resource.getFile().text = '<html><body>edited</body></html>'
-        resource.getFile().setLastModified(originalTimestamp)
+        assert resource.getFile().setLastModified(originalTimestamp)
 
         expect: 'the content decides, so an agreeing timestamp cannot mask the edit'
         metaInfo.shouldReload(callableFor(resource))
@@ -123,7 +123,7 @@ class GroovyPageMetaInfoReloadSpec extends Specification {
         metaInfo.sourceChecksum = checksumOf(resource)
         long originalTimestamp = resource.getFile().lastModified()
         resource.getFile().text = '<html><body>edited</body></html>'
-        resource.getFile().setLastModified(originalTimestamp)
+        assert resource.getFile().setLastModified(originalTimestamp)
 
         expect: 'the timestamp comparison would have missed this; the checksum does not'
         metaInfo.shouldReload(callableFor(resource))
@@ -157,6 +157,16 @@ class GroovyPageMetaInfoReloadSpec extends Specification {
 
         expect: 'the page is left in place rather than reported as changed on every single check'
         !metaInfo.shouldReload(callableFor(resource))
+    }
+
+    void 'a page whose timestamp could not be established reloads once and recovers'() {
+        given: 'a runtime-compiled page that recorded -1, as establishLastModified yields on an unreadable resource'
+        Resource resource = sourcePage()
+        GroovyPageMetaInfo metaInfo = new GroovyPageMetaInfo()
+        metaInfo.lastModified = -1L
+
+        expect: 'it is reported stale so the first readable check reloads it, rather than stranding it until restart'
+        metaInfo.shouldReload(callableFor(resource))
     }
 
     void 'a missing source resource never triggers a reload'() {
