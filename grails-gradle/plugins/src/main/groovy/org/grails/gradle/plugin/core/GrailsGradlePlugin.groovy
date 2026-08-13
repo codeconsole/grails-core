@@ -47,6 +47,7 @@ import org.gradle.api.file.CopySpec
 import org.gradle.api.file.DuplicatesStrategy
 import org.gradle.api.file.FileCollection
 import org.gradle.api.file.RegularFile
+import org.gradle.api.file.RegularFileProperty
 import org.gradle.api.plugins.ExtraPropertiesExtension
 import org.gradle.api.plugins.GroovyPlugin
 import org.gradle.api.plugins.JavaPluginExtension
@@ -282,13 +283,17 @@ class GrailsGradlePlugin implements Plugin<Project> {
                 }
                 GroovyCompile c = project.tasks.named(compileTaskName, GroovyCompile).get()
                 File combinedFile = groovyCompilerConfigFile(project, compileTaskName).get().asFile
-                File configured = c.groovyOptions.configurationScript
+                // configurationScriptFile is the lazy property that supersedes the configurationScript
+                // File accessor (@ReplacedBy since Gradle 9.7); the eager setter delegates to it, so
+                // a script assigned either way is picked up here.
+                RegularFileProperty configurationScriptFile = c.groovyOptions.configurationScriptFile
+                File configured = configurationScriptFile.asFile.getOrNull()
                 if (configured != null && configured != combinedFile) {
                     userGroovyCompilerConfigScripts.put(compileTaskName, configured)
                 } else {
                     userGroovyCompilerConfigScripts.remove(compileTaskName)
                 }
-                c.groovyOptions.configurationScript = combinedFile
+                configurationScriptFile.set(combinedFile)
             }
         }
     }

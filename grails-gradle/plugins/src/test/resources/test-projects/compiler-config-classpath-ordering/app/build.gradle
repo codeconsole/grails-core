@@ -4,6 +4,7 @@ plugins {
 
 dependencies {
     implementation project(':producer')
+    runtimeOnly project(':runtime-only-producer')
 }
 
 tasks.register('inspectOrder') {
@@ -11,5 +12,8 @@ tasks.register('inspectOrder') {
         def gen = tasks.named('generateCompileGroovyGrailsCompilerConfig').get()
         def deps = gen.taskDependencies.getDependencies(gen)*.path
         println "GENERATOR_DEPENDS_ON_PRODUCER_JAR=${deps.any { it == ':producer:jar' }}"
+        // The generator reads the compile classpath, so it must not drag the runtime classpath in.
+        println "GENERATOR_DEPENDS_ON_RUNTIME_ONLY_JAR=${deps.any { it == ':runtime-only-producer:jar' }}"
+        println "GENERATOR_DECLARED_INPUT_FILES=${gen.inputs.files.files.size()}"
     }
 }

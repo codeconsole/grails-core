@@ -50,6 +50,11 @@ class GrailsGroovyCompilerConfigSpec extends GradleSpecification {
 
         then: 'the generator depends on the producing task, so the classpath probes see the artifact'
         result.output.contains('GENERATOR_DEPENDS_ON_PRODUCER_JAR=true')
+
+        and: 'it stays scoped to the compile classpath and declares no inputs of its own, so the'
+        'runtime classpath is neither pulled into the dependency chain nor into an up-to-date check'
+        result.output.contains('GENERATOR_DEPENDS_ON_RUNTIME_ONLY_JAR=false')
+        result.output.contains('GENERATOR_DECLARED_INPUT_FILES=0')
     }
 
     def "a configurationScript assigned from a later callback is folded in, not clobbered"() {
