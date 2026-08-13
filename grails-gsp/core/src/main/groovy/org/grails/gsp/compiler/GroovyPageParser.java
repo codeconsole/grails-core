@@ -200,6 +200,25 @@ public class GroovyPageParser implements Tokens {
     private File keepGeneratedDirectory;
     private Set<String> allowedTaglibNamespaces = new LinkedHashSet<>(DEFAULT_TAGLIB_NAMESPACES);
 
+    /**
+     * The {@code var} and {@code status} attributes of the tags this page calls, which are the names
+     * the page introduces for itself.
+     */
+    private final Set<String> pageScopeVariables = new LinkedHashSet<>();
+
+    /**
+     * Matches the {@code var} and {@code status} attributes of a namespaced tag, which is how a page
+     * names something it introduces: {@code <g:set var="total"/>}, {@code <g:each var="book"
+     * status="i">}, {@code <g:eachError var="error">}.
+     *
+     * <p>Read from the page source rather than from the parsed attributes because attributes are
+     * parsed only on the pass that writes the class, by which point the annotation carrying these
+     * names has already been written. Matching a name that turns out not to be a page scope variable
+     * costs only that the name resolves dynamically, so the pattern errs towards matching.</p>
+     */
+    private static final Pattern PAGE_SCOPE_VARIABLE_PATTERN = Pattern.compile(
+            "<\\w+:[^>]*?\\b(?:var|status)\\s*=\\s*[\"']([A-Za-z_$][\\w$]*)[\"']", Pattern.DOTALL);
+
     public String getContentType() {
         return contentType;
     }
@@ -267,11 +286,25 @@ public class GroovyPageParser implements Tokens {
             gspSource = grailsLayoutPreprocessor.addGspGrailsLayoutCapturing(gspSource);
             grailsLayoutPreprocessMode = true;
         }
+        collectPageScopeVariables(gspSource);
         scan = new GroovyPageScanner(gspSource, uri);
         pageName = uri;
         environment = Environment.getCurrent();
         makeName(name);
         makeSourceName(filename);
+    }
+
+    /**
+     * Records the names this page introduces through the {@code var} and {@code status} attributes of
+     * the tags it calls, so that a statically compiled page can read one without declaring it again.
+     *
+     * @param gspSource the page source
+     */
+    private void collectPageScopeVariables(String gspSource) {
+        Matcher matcher = PAGE_SCOPE_VARIABLE_PATTERN.matcher(gspSource);
+        while (matcher.find()) {
+            pageScopeVariables.add(matcher.group(1));
+        }
     }
 
     /**
@@ -813,7 +846,17 @@ public class GroovyPageParser implements Tokens {
             if (isCompileStaticMode()) {
                 out.println("@groovy.transform.CompileStatic(extensions = ['" + GroovyPageTypeCheckingExtension.class.getName() + "'])");
                 if (allowedTaglibNamespaces != null && !allowedTaglibNamespaces.isEmpty()) {
-                    out.println("@" + GroovyPageTypeCheckingConfig.class.getName() + "(taglibs = ['" + DefaultGroovyMethods.join((Iterable) allowedTaglibNamespaces, "','") + "'])");
+                    StringBuilder config = new StringBuilder("@")
+                            .append(GroovyPageTypeCheckingConfig.class.getName())
+                            .append("(taglibs = ['")
+                            .append(DefaultGroovyMethods.join((Iterable) allowedTaglibNamespaces, "','"))
+                            .append("']");
+                    if (!pageScopeVariables.isEmpty()) {
+                        config.append(", pageScopeVariables = ['")
+                                .append(DefaultGroovyMethods.join((Iterable) pageScopeVariables, "','"))
+                                .append("']");
+                    }
+                    out.println(config.append(')').toString());
                 }
             }
             out.print("class ");

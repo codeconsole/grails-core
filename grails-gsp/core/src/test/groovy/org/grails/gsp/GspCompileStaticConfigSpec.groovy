@@ -322,6 +322,39 @@ class GspCompileStaticConfigSpec extends Specification {
         declared.metaInfo.compilationException == null
     }
 
+    void 'a name a page introduces with a tag does not have to be declared again'() {
+        given:
+        GroovyPagesTemplateEngine engine = engineFor('grails.views.gsp.compileStatic': true)
+
+        when:
+        GroovyPageTemplate template = compile(engine, source)
+
+        then:
+        template.metaInfo.compilationException == null
+
+        where:
+        source << [
+                '<g:set var="total" value="${1}"/>${total}',
+                '<g:set var="total" value="${1}"/>${total.intValue()}',
+                '<g:set var="rows" value="${[]}"/><g:each in="${rows}" var="row">${row.name}</g:each>',
+                '<g:each in="${[]}" var="book" status="i">${i}. ${book.title}</g:each>',
+                '<g:eachError bean="${[:]}" var="error">${error.field}</g:eachError>',
+                '<g:set var="showNav" value="${true}"/><g:if test="${showNav}">x</g:if>',
+                '<g:set var="a" value="${[:]}"/><g:set var="b" value="${a.k}"/>${b.deeper}',
+        ]
+    }
+
+    void 'a name introduced by a tag in a namespace the page does not know is still rejected'() {
+        given:
+        GroovyPagesTemplateEngine engine = engineFor('grails.views.gsp.compileStatic': true)
+
+        when: 'var belongs to a tag, so a plain HTML attribute of that name introduces nothing'
+        GroovyPageTemplate template = compile(engine, '<div var="notATagVar"></div>${notATagVar}')
+
+        then:
+        template.metaInfo.compilationException.message.contains('The variable [notATagVar] is undeclared.')
+    }
+
     void 'a name the framework does not supply is still rejected'() {
         given:
         GroovyPagesTemplateEngine engine = engineFor('grails.views.gsp.compileStatic': true)

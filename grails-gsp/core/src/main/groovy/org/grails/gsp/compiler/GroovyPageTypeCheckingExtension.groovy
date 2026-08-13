@@ -46,15 +46,14 @@ class GroovyPageTypeCheckingExtension extends GroovyTypeCheckingExtensionSupport
         beforeVisitClass { ClassNode classNode ->
             newScope {
                 allowedTagLibs = [] as Set
+                pageScopeVariables = [] as Set
                 dynamicProperties = [] as Set
                 undeclaredDynamicVariables = [] as Set
             }
             AnnotationNode configAnnotation = classNode.getAnnotations(configAnnotationClassNode)?.find { it }
             if (configAnnotation) {
-                Expression taglibsExpression = configAnnotation.getMember('taglibs')
-                if (taglibsExpression instanceof ListExpression) {
-                    currentScope.allowedTagLibs = ListExpression.cast(taglibsExpression).expressions.collect([] as Set) { it.text.trim() }
-                }
+                currentScope.allowedTagLibs = namesFrom(configAnnotation, 'taglibs')
+                currentScope.pageScopeVariables = namesFrom(configAnnotation, 'pageScopeVariables')
             }
         }
 
@@ -63,10 +62,16 @@ class GroovyPageTypeCheckingExtension extends GroovyTypeCheckingExtensionSupport
                 currentScope.dynamicProperties << pe
                 return makeDynamic(pe)
             }
+            // A property read from something the page introduced is decided at render time along with
+            // the value it is read from, so it follows that value rather than being reported here.
+            if (currentScope.dynamicProperties.contains(pe.objectExpression) || isPageScopeVariable(pe.objectExpression)) {
+                currentScope.dynamicProperties << pe
+                return makeDynamic(pe)
+            }
         }
 
         unresolvedVariable { VariableExpression ve ->
-            if (currentScope.allowedTagLibs.contains(ve.name)) {
+            if (currentScope.allowedTagLibs.contains(ve.name) || currentScope.pageScopeVariables.contains(ve.name)) {
                 currentScope.dynamicProperties << ve
                 return makeDynamic(ve)
             }
@@ -119,7 +124,21 @@ class GroovyPageTypeCheckingExtension extends GroovyTypeCheckingExtensionSupport
         if (currentScope.allowedTagLibs.contains(expression.name)) {
             return false
         }
+        if (currentScope.pageScopeVariables.contains(expression.name)) {
+            return false
+        }
         expression.getNodeMetaData(StaticTypesMarker.DYNAMIC_RESOLUTION) != null
+    }
+
+    private boolean isPageScopeVariable(Expression expression) {
+        expression instanceof VariableExpression &&
+                currentScope.pageScopeVariables.contains(((VariableExpression) expression).name)
+    }
+
+    private static Set<String> namesFrom(AnnotationNode annotation, String member) {
+        Expression expression = annotation.getMember(member)
+        expression instanceof ListExpression ?
+                ListExpression.cast(expression).expressions.collect([] as Set) { it.text.trim() } : ([] as Set)
     }
 
     private void reportUndeclaredDynamicVariable(VariableExpression expression) {
@@ -140,7 +159,12 @@ class GroovyPageTypeCheckingExtension extends GroovyTypeCheckingExtensionSupport
             namespaceName = ((PropertyExpression) objectExpression).propertyAsString
         }
 
-        namespaceName != null && currentScope.allowedTagLibs.contains(namespaceName)
+        // Same reasoning as GROOVY-12041 above for a name the page introduced: Groovy has already
+        // resolved the receiver dynamically by the time the call is looked at, so the name is what
+        // there is to go on.
+        namespaceName != null &&
+                (currentScope.allowedTagLibs.contains(namespaceName) ||
+                        currentScope.pageScopeVariables.contains(namespaceName))
     }
 
     def isThisTheReceiver(expr) {

@@ -28,4 +28,15 @@ import java.lang.annotation.Target;
 @Target(ElementType.TYPE)
 public @interface GroovyPageTypeCheckingConfig {
     String[] taglibs() default {};
+
+    /**
+     * Names the page introduces for itself, through the {@code var} and {@code status} attributes of
+     * the tags it calls -- {@code <g:set var="total"/>}, {@code <g:each var="book"/>} and the like.
+     *
+     * <p>A page that writes one of these has declared it as plainly as it can; what it holds is
+     * decided by the tag at render time and cannot be known here. They are resolved dynamically
+     * rather than reported, so that using a tag to introduce a name does not require declaring it a
+     * second time in the model directive.</p>
+     */
+    String[] pageScopeVariables() default {};
 }
