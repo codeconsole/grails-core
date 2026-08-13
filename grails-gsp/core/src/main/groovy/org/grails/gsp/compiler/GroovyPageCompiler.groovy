@@ -216,8 +216,7 @@ class GroovyPageCompiler {
             // gspgroovyfile.getParentFile().mkdirs()
 
             byte[] gspSource = gspfile.bytes
-            // closing a ByteArrayInputStream is a no-op, so there is nothing to release here
-            String sourceChecksum = GroovyPageParser.checksumOf(new ByteArrayInputStream(gspSource))
+            String sourceChecksum = GroovyPageParser.checksumOf(gspSource)
 
             new ByteArrayInputStream(gspSource).withStream { InputStream gspinput ->
                 GroovyPageParser gpp = new GroovyPageParser(viewuri - '.gsp', viewuri, gspfile.absolutePath, gspinput, encoding, expressionCodec, configMap)

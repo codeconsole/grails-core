@@ -50,11 +50,11 @@ class GroovyPageCompilerReproducibilitySpec extends Specification {
 
     void 'a source compiled at two different modification times produces identical classes'() {
         when: 'the same page is compiled twice, as two checkouts of one commit would'
-        this.page.setLastModified(1_000_000_000_000L)
+        assert this.page.setLastModified(1_000_000_000_000L)
         byte[] first = compileToBytes('first')
 
         and:
-        this.page.setLastModified(1_700_000_000_000L)
+        assert this.page.setLastModified(1_700_000_000_000L)
         byte[] second = compileToBytes('second')
 
         then: 'the jar built from them is byte-identical, so downstream tasks keep their cache hits'
@@ -103,7 +103,8 @@ class GroovyPageCompilerReproducibilitySpec extends Specification {
     private GroovyPageMetaInfo compileToMetaInfo(String name) {
         File targetDir = new File(this.tempDir, name)
         Map results = compile(targetDir)
-        ClassLoader loader = new URLClassLoader([targetDir.toURI().toURL()] as URL[], getClass().classLoader)
-        new GroovyPageMetaInfo(loader.loadClass(results.values().first() as String))
+        new URLClassLoader([targetDir.toURI().toURL()] as URL[], getClass().classLoader).withCloseable { URLClassLoader loader ->
+            new GroovyPageMetaInfo(loader.loadClass(results.values().first() as String))
+        }
     }
 }

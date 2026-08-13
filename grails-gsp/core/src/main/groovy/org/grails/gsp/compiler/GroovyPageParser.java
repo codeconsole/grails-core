@@ -1398,29 +1398,25 @@ public class GroovyPageParser implements Tokens {
      * Computes the checksum recorded in the {@code SOURCE_CHECKSUM} constant of a generated page.
      * <p>
      * Both the compiler that writes the constant and the runtime that compares against it use this method, so
-     * that the two can never disagree on how a GSP source is digested. The stream is read to the end but is
-     * not closed; closing it remains the caller's responsibility.
+     * that the two can never disagree on how a GSP source is digested.
+     * <p>
+     * The argument must be the <strong>raw stored bytes</strong> of the page, exactly as they sit on disk or in
+     * the jar entry — not the decoded, re-encoded or otherwise decorated source the runtime parse path works
+     * with. That is the invariant that lets a checksum taken at compile time be compared against one taken by
+     * re-reading the resource at reload time.
      *
      * @param source the raw bytes of the GSP source
      * @return the checksum as a lower-case hex string
-     * @throws IOException if the source cannot be read
      * @since 7.0.16
      */
-    public static String checksumOf(InputStream source) throws IOException {
-        MessageDigest digest;
+    public static String checksumOf(byte[] source) {
         try {
-            digest = MessageDigest.getInstance(CHECKSUM_ALGORITHM);
+            return HexFormat.of().formatHex(MessageDigest.getInstance(CHECKSUM_ALGORITHM).digest(source));
         }
         catch (NoSuchAlgorithmException e) {
             // every JVM is required to provide SHA-256
             throw new IllegalStateException("Checksum algorithm " + CHECKSUM_ALGORITHM + " is not available", e);
         }
-        byte[] buffer = new byte[8192];
-        int read;
-        while ((read = source.read(buffer)) != -1) {
-            digest.update(buffer, 0, read);
-        }
-        return HexFormat.of().formatHex(digest.digest());
     }
 
     /**
