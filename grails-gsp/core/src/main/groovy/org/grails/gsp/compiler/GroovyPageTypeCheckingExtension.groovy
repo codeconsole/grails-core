@@ -30,6 +30,7 @@ import org.codehaus.groovy.ast.expr.ListExpression
 import org.codehaus.groovy.ast.expr.PropertyExpression
 import org.codehaus.groovy.ast.expr.VariableExpression
 import org.codehaus.groovy.transform.stc.GroovyTypeCheckingExtensionSupport
+import org.codehaus.groovy.syntax.Types
 import org.codehaus.groovy.transform.stc.StaticTypesMarker
 
 /**
@@ -49,6 +50,18 @@ class GroovyPageTypeCheckingExtension extends GroovyTypeCheckingExtensionSupport
      * on this one, so they cannot be named from the page. The scopes that can be -- the request, the
      * response, the session, the servlet context -- are typed on the page and are checked normally.
      */
+    /**
+     * The operators the class writer emits directly, rather than leaving to a call site.
+     *
+     * <p>These are the ones that cannot be handed a receiver of no known type. A comparison or a
+     * logical operator is not among them: those report a type error of their own, which is an answer
+     * a page can act on, so the receiver of one is still resolved the way anything else is.</p>
+     */
+    private static final Set<Integer> WRITTEN_INTO_THE_CLASS = [
+            Types.LEFT_SQUARE_BRACKET,
+            Types.PLUS, Types.MINUS, Types.MULTIPLY, Types.DIVIDE, Types.INTDIV, Types.MOD, Types.POWER,
+            Types.PLUS_EQUAL, Types.MINUS_EQUAL, Types.MULTIPLY_EQUAL, Types.DIVIDE_EQUAL] as Set
+
     private static final Set<String> FRAMEWORK_DYNAMIC_NAMES =
             ['grailsApplication', 'applicationContext', 'flash', 'webRequest'] as Set
 
@@ -213,7 +226,9 @@ class GroovyPageTypeCheckingExtension extends GroovyTypeCheckingExtensionSupport
         methodNode.code?.visit(new CodeVisitorSupport() {
             @Override
             void visitBinaryExpression(BinaryExpression expression) {
-                receivers.add(positionOf(expression.leftExpression))
+                if (expression.operation.type in WRITTEN_INTO_THE_CLASS) {
+                    receivers.add(positionOf(expression.leftExpression))
+                }
                 super.visitBinaryExpression(expression)
             }
         })
