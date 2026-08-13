@@ -45,10 +45,8 @@ class GroovyPageTypeCheckingExtension extends GroovyTypeCheckingExtensionSupport
      * Names the framework binds into every page whose members are answered at runtime rather than
      * declared: {@code grailsApplication.controllerClasses} is matched against a name and answered
      * from the artefact handlers, an open set no interface enumerates, and what pages read from the
-     * application context belongs to an implementation rather than to the interface. The flash scope
-     * and the web request are here for a different reason: their types live in a module that depends
-     * on this one, so they cannot be named from the page. The scopes that can be -- the request, the
-     * response, the session, the servlet context -- are typed on the page and are checked normally.
+     * application context belongs to an implementation rather than to the interface. Every other name
+     * the framework binds is declared on the page with the type it holds, and is checked normally.
      */
     /**
      * The operators the class writer emits directly, rather than leaving to a call site.
@@ -63,7 +61,7 @@ class GroovyPageTypeCheckingExtension extends GroovyTypeCheckingExtensionSupport
             Types.PLUS_EQUAL, Types.MINUS_EQUAL, Types.MULTIPLY_EQUAL, Types.DIVIDE_EQUAL] as Set
 
     private static final Set<String> FRAMEWORK_DYNAMIC_NAMES =
-            ['grailsApplication', 'applicationContext', 'flash', 'webRequest'] as Set
+            ['grailsApplication', 'applicationContext'] as Set
 
     @Override
     Object run() {
@@ -163,7 +161,44 @@ class GroovyPageTypeCheckingExtension extends GroovyTypeCheckingExtensionSupport
 
         afterVisitMethod { MethodNode methodNode ->
             reportUndeclaredDynamicVariables(methodNode)
+            reportOperatorsOnValuesOfNoKnownType(methodNode)
         }
+    }
+
+    /**
+     * Reports an operator applied to a value of no known type, whatever gave it that type.
+     *
+     * <p>The receiver of one is held back from being resolved dynamically, which reports the names
+     * that go through this extension. It does not reach a closure parameter: nothing declared it and
+     * nothing resolved it, type checking simply inferred {@code Object} for it, so the operator
+     * passes the check and fails in the class writer instead, which is the wrong place to hear about
+     * it. Asking the type of every such receiver once the method has been visited catches those too,
+     * and reports them the same way.</p>
+     */
+    private void reportOperatorsOnValuesOfNoKnownType(MethodNode methodNode) {
+        methodNode.code?.visit(new CodeVisitorSupport() {
+            @Override
+            void visitBinaryExpression(BinaryExpression expression) {
+                if (expression.operation.type in WRITTEN_INTO_THE_CLASS && isUnknownReceiver(expression.leftExpression)) {
+                    reportOperatorOnUnknownType(expression)
+                }
+                super.visitBinaryExpression(expression)
+            }
+        })
+    }
+
+    private void reportOperatorOnUnknownType(BinaryExpression expression) {
+        String described = describe(expression.leftExpression)
+        if (currentScope.undeclaredDynamicVariables.add("operator:$described")) {
+            typeCheckingVisitor.addStaticTypeError(
+                    "The type of ${described} is not known here, and [${expression.operation.text}] cannot be " +
+                            'applied to it. Declare it in the model directive, or give it a type where it is ' +
+                            'introduced.', expression.leftExpression)
+        }
+    }
+
+    private static String describe(Expression expression) {
+        expression instanceof VariableExpression ? "[${((VariableExpression) expression).name}]" : 'this value'
     }
 
     private void reportUndeclaredDynamicVariables(MethodNode methodNode) {

@@ -197,10 +197,10 @@ class GspCompileStaticConfigSpec extends Specification {
         GroovyPagesTemplateEngine engine = engineFor('grails.views.gsp.compileStatic': true)
 
         when:
-        GroovyPageTemplate template = compile(engine, '${params.id}-${flash.message}-${controllerName}')
+        GroovyPageTemplate template = compile(engine, '${params.id}-${controllerName}')
 
         then:
-        render(template, [params: [id: '7'], flash: [message: 'hi'], controllerName: 'book']) == '7-hi-book'
+        render(template, [params: [id: '7'], controllerName: 'book']) == '7-book'
     }
 
     void 'a framework supplied name is null when nothing bound it'() {
@@ -226,18 +226,16 @@ class GspCompileStaticConfigSpec extends Specification {
         render(template, [flashOfMine: [id: '9']]) == '9'
     }
 
-    void 'a page redeclaring a framework supplied name must keep a compatible type'() {
+    void 'a page declaring a framework supplied name in its model gets its own declaration'() {
         given:
         GroovyPagesTemplateEngine engine = engineFor('grails.views.gsp.compileStatic': true)
 
-        when: 'the declared type has to remain assignable to the one the page already has'
-        GroovyPageTemplate narrower = compile(engine, '<%@ page model="Map params" %>${params.id}')
-        GroovyPageTemplate compatible = compile(engine,
-                '<%@ page model="grails.util.TypeConvertingMap params" %>${params.id}')
+        when: 'the page has spoken for the name, so nothing is written over it'
+        GroovyPageTemplate template = compile(engine, '<%@ page model="Map params" %>${params.id}')
 
         then:
-        narrower.metaInfo.compilationException.message.contains('incompatible with grails.util.TypeConvertingMap')
-        compatible.metaInfo.compilationException == null
+        template.metaInfo.compilationException == null
+        render(template, [params: [id: '9']]) == '9'
     }
 
     void 'the build can state compileStatic as a system property so both compile paths agree'() {
@@ -385,6 +383,25 @@ class GspCompileStaticConfigSpec extends Specification {
 
         then:
         template.metaInfo.compilationException.message.contains('No such property: contextPathTypo')
+    }
+
+    void 'an operator on a closure parameter of no known type is reported by type checking'() {
+        given:
+        GroovyPagesTemplateEngine engine = engineFor('grails.views.gsp.compileStatic': true)
+
+        when: 'nothing declared or resolved it -- type checking simply inferred Object'
+        GroovyPageTemplate template = compile(engine, source)
+
+        then: 'reported here, rather than reaching the class writer'
+        template.metaInfo.compilationException.message.contains('is not known here')
+        !template.metaInfo.compilationException.message.contains('BUG!')
+        !template.metaInfo.compilationException.message.contains('Cannot access method')
+
+        where:
+        source << [
+                '<g:set var="rows" value="${[[a: 1]]}"/>${rows.withIndex().collect { r, i -> r + [n: i] }}',
+                '<g:set var="rows" value="${[1]}"/>${rows.collect { r -> r * 2 }}',
+        ]
     }
 
     void 'an operator on a name the page never declared is reported, not crashed on'() {

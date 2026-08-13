@@ -94,11 +94,12 @@ dependencies {
     // Named by the statically compiled page so that the scopes the framework binds into every page
     // carry their real types. compileOnly because a page renders outside a servlet container too, and
     // nothing here calls into them: the types are declared, and supplied by whoever is rendering.
-    compileOnly 'jakarta.servlet:jakarta.servlet-api'
+
 
 
     testImplementation 'org.junit.jupiter:junit-jupiter-api'
     testImplementation 'jakarta.servlet:jakarta.servlet-api'
+    testImplementation project(':grails-web-common') // FlashScope, GrailsWebRequest -- test only, so no cycle
 
     testImplementation 'org.slf4j:slf4j-nop' // Prevents warning about missing slf4j implementation during compilation and tests
     testImplementation 'org.spockframework:spock-core'

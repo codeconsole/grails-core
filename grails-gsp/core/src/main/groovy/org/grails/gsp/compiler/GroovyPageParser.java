@@ -112,6 +112,33 @@ public class GroovyPageParser implements Tokens {
     public static final String MODEL_DIRECTIVE = "model";
     public static final String COMPILE_STATIC_DIRECTIVE = "compileStatic";
     public static final String TAGLIBS_DIRECTIVE = "taglibs";
+    /**
+     * The names the framework binds into every page, and the type each holds.
+     *
+     * <p>Written into the page rather than declared on the class it extends, because the page is
+     * compiled with the application's classpath and that class is not: the flash scope and the web
+     * request are declared in a module that depends on the one holding the page's base class, so
+     * they can be named here and not there. A page declaring one of these in its model gets its own
+     * declaration and none of this, which is what lets it choose a different type.</p>
+     */
+    private static final Map<String, String> FRAMEWORK_SUPPLIED_TYPES;
+
+    static {
+        Map<String, String> types = new LinkedHashMap<>();
+        types.put("params", "grails.util.TypeConvertingMap");
+        types.put("flash", "grails.web.mvc.FlashScope");
+        types.put("request", "jakarta.servlet.http.HttpServletRequest");
+        types.put("response", "jakarta.servlet.http.HttpServletResponse");
+        types.put("session", "jakarta.servlet.http.HttpSession");
+        types.put("application", "jakarta.servlet.ServletContext");
+        types.put("servletContext", "jakarta.servlet.ServletContext");
+        types.put("webRequest", "org.grails.web.servlet.mvc.GrailsWebRequest");
+        types.put("controllerName", "java.lang.String");
+        types.put("actionName", "java.lang.String");
+        types.put("namespace", "java.lang.String");
+        FRAMEWORK_SUPPLIED_TYPES = Collections.unmodifiableMap(types);
+    }
+
     public static final List<String> DEFAULT_TAGLIB_NAMESPACES = Collections.unmodifiableList(Arrays.asList(new String[]{"g", "tmpl", "f", "asset", "plugin"}));
 
     private GroovyPageScanner scan;
@@ -884,6 +911,7 @@ public class GroovyPageParser implements Tokens {
                 out.println(modelDirectiveValue);
                 out.println("// end model fields");
             }
+            writeFrameworkSuppliedAccessors();
             out.println("public String getGroovyPageFileName() { \"" +
                     pageName.replaceAll("\\\\", "/") + "\" }");
             out.println("public Object run() {");
@@ -1015,6 +1043,48 @@ public class GroovyPageParser implements Tokens {
                 out.println(DEFAULT_IMPORTS[i]);
             }
         }
+    }
+
+    /**
+     * Writes an accessor for each name the framework binds that this page has not declared itself,
+     * so that a statically compiled page can read them without declaring anything.
+     */
+    private void writeFrameworkSuppliedAccessors() {
+        if (!isCompileStaticMode()) {
+            return;
+        }
+        Set<String> declared = declaredModelNames();
+        for (Map.Entry<String, String> supplied : FRAMEWORK_SUPPLIED_TYPES.entrySet()) {
+            String name = supplied.getKey();
+            if (declared.contains(name)) {
+                continue;
+            }
+            String type = supplied.getValue();
+            String accessor = "get" + Character.toUpperCase(name.charAt(0)) + name.substring(1);
+            out.println(type + " " + accessor + "() { (" + type + ") resolveProperty('" + name + "') }");
+        }
+    }
+
+    /**
+     * The names this page's model directive declares, which are the ones it has spoken for.
+     */
+    private Set<String> declaredModelNames() {
+        Set<String> names = new LinkedHashSet<>();
+        if (modelDirectiveValue == null) {
+            return names;
+        }
+        for (String declaration : modelDirectiveValue.split("[;\n]")) {
+            String withoutValue = declaration.split("=", 2)[0].trim();
+            if (withoutValue.isEmpty()) {
+                continue;
+            }
+            String[] tokens = WHITESPACE_PATTERN.split(withoutValue);
+            String candidate = tokens[tokens.length - 1].trim();
+            if (!candidate.isEmpty()) {
+                names.add(candidate);
+            }
+        }
+        return names;
     }
 
     private String resolveGspSuperClassName() {
