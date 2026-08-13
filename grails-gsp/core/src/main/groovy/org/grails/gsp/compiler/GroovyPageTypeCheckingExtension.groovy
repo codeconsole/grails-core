@@ -39,6 +39,18 @@ import org.codehaus.groovy.transform.stc.StaticTypesMarker
  */
 class GroovyPageTypeCheckingExtension extends GroovyTypeCheckingExtensionSupport.TypeCheckingDSL {
 
+    /**
+     * Names the framework binds into every page whose members are answered at runtime rather than
+     * declared: {@code grailsApplication.controllerClasses} is matched against a name and answered
+     * from the artefact handlers, an open set no interface enumerates, and what pages read from the
+     * application context belongs to an implementation rather than to the interface. The flash scope
+     * and the web request are here for a different reason: their types live in a module that depends
+     * on this one, so they cannot be named from the page. The scopes that can be -- the request, the
+     * response, the session, the servlet context -- are typed on the page and are checked normally.
+     */
+    private static final Set<String> FRAMEWORK_DYNAMIC_NAMES =
+            ['grailsApplication', 'applicationContext', 'flash', 'webRequest'] as Set
+
     @Override
     Object run() {
         ClassNode configAnnotationClassNode = ClassHelper.make(GroovyPageTypeCheckingConfig)
@@ -49,12 +61,18 @@ class GroovyPageTypeCheckingExtension extends GroovyTypeCheckingExtensionSupport
                 pageScopeVariables = [] as Set
                 dynamicProperties = [] as Set
                 undeclaredDynamicVariables = [] as Set
+                strict = false
             }
             AnnotationNode configAnnotation = classNode.getAnnotations(configAnnotationClassNode)?.find { it }
             if (configAnnotation) {
                 currentScope.allowedTagLibs = namesFrom(configAnnotation, 'taglibs')
                 currentScope.pageScopeVariables = namesFrom(configAnnotation, 'pageScopeVariables')
+                currentScope.strict = configAnnotation.getMember('strict')?.text == 'true'
             }
+            // What a page reads from these is answered at runtime rather than declared -- an artefact
+            // property matched against a name, an implementation member behind an interface -- so they
+            // are resolved the way a page that is not compiled statically resolves them.
+            currentScope.allowedTagLibs.addAll(FRAMEWORK_DYNAMIC_NAMES)
         }
 
         unresolvedProperty { PropertyExpression pe ->
@@ -68,10 +86,18 @@ class GroovyPageTypeCheckingExtension extends GroovyTypeCheckingExtensionSupport
                 currentScope.dynamicProperties << pe
                 return makeDynamic(pe)
             }
+            if (!currentScope.strict && isUnknownReceiver(pe.objectExpression)) {
+                currentScope.dynamicProperties << pe
+                return makeDynamic(pe)
+            }
         }
 
         unresolvedVariable { VariableExpression ve ->
             if (currentScope.allowedTagLibs.contains(ve.name) || currentScope.pageScopeVariables.contains(ve.name)) {
+                currentScope.dynamicProperties << ve
+                return makeDynamic(ve)
+            }
+            if (!currentScope.strict) {
                 currentScope.dynamicProperties << ve
                 return makeDynamic(ve)
             }
@@ -92,6 +118,12 @@ class GroovyPageTypeCheckingExtension extends GroovyTypeCheckingExtensionSupport
             // before unresolvedVariable/unresolvedProperty can record them. Use the marker Groovy places on
             // those expressions, but still require the receiver name to be an allowed taglib namespace.
             if (isAllowedDynamicTaglibNamespace(objectExpression)) {
+                return makeDynamic(call)
+            }
+            // A call on a receiver that resolved to Object is a call on something this page never knew
+            // the type of. Reporting it says nothing the page can act on, and the same call in a page
+            // that is not compiled statically runs; it is only reported where strictness was asked for.
+            if (!currentScope.strict && (isPageScopeVariable(objectExpression) || isUnknownReceiver(objectExpression))) {
                 return makeDynamic(call)
             }
             if (objectExpression instanceof VariableExpression && isUndeclaredDynamicVariable(objectExpression)) {
@@ -118,6 +150,11 @@ class GroovyPageTypeCheckingExtension extends GroovyTypeCheckingExtensionSupport
     }
 
     private boolean isUndeclaredDynamicVariable(VariableExpression expression) {
+        if (!currentScope.strict) {
+            // A page that has not declared its model reads the model it was rendered with, which is
+            // how a page that is not compiled statically reads it. Only strictness asks for it back.
+            return false
+        }
         if (expression.thisExpression || expression.superExpression) {
             return false
         }
@@ -128,6 +165,16 @@ class GroovyPageTypeCheckingExtension extends GroovyTypeCheckingExtensionSupport
             return false
         }
         expression.getNodeMetaData(StaticTypesMarker.DYNAMIC_RESOLUTION) != null
+    }
+
+    /**
+     * Whether the type of what a member is read from is not known, which is what {@code Object} means
+     * for an expression in a page: nothing said what it holds.
+     */
+    private boolean isUnknownReceiver(Expression expression) {
+        // Asked of the visitor rather than read from the expression: a closure parameter carries its
+        // type there and not in its own metadata, and those are most of what a page reads from.
+        expression != null && ClassHelper.OBJECT_TYPE == getType(expression)
     }
 
     private boolean isPageScopeVariable(Expression expression) {

@@ -87,17 +87,6 @@ class GspCompileStaticConfigSpec extends Specification {
         render(template) == 'Hello World'
     }
 
-    void 'a model variable that is not declared fails to compile under the config default'() {
-        given:
-        GroovyPagesTemplateEngine engine = engineFor('grails.views.gsp.compileStatic': true)
-
-        when:
-        GroovyPageTemplate template = compile(engine, '${undeclaredModelVariable}')
-
-        then:
-        template.metaInfo.compilationException.message.contains('The variable [undeclaredModelVariable] is undeclared.')
-    }
-
     void 'additional tag library namespaces can be allowed from config as a comma separated string'() {
         given:
         GroovyPagesTemplateEngine engine = engineFor(
@@ -124,17 +113,6 @@ class GspCompileStaticConfigSpec extends Specification {
         then:
         template.metaInfo.compilationException == null
         template.metaInfo.compileStaticMode
-    }
-
-    void 'a namespace that is not allowed by config fails to compile under the config default'() {
-        given:
-        GroovyPagesTemplateEngine engine = engineFor('grails.views.gsp.compileStatic': true)
-
-        when:
-        GroovyPageTemplate template = compile(engine, '${sometaglib.something([a: 1])}')
-
-        then:
-        template.metaInfo.compilationException.message.contains('The variable [sometaglib] is undeclared.')
     }
 
     void 'namespaces allowed by config are added to the default namespaces'() {
@@ -308,20 +286,6 @@ class GspCompileStaticConfigSpec extends Specification {
         System.clearProperty(GroovyPageParser.CONFIG_PROPERTY_GSP_COMPILESTATIC)
     }
 
-    void 'a servlet scope is not typed for a page and has to be declared'() {
-        given:
-        GroovyPagesTemplateEngine engine = engineFor('grails.views.gsp.compileStatic': true)
-
-        when:
-        GroovyPageTemplate undeclared = compile(engine, '${request.contextPath}')
-        GroovyPageTemplate declared = compile(engine,
-                '<%@ page model="jakarta.servlet.http.HttpServletRequest request" %>${request.contextPath}')
-
-        then:
-        undeclared.metaInfo.compilationException.message.contains('No such property: contextPath for class: java.lang.Object')
-        declared.metaInfo.compilationException == null
-    }
-
     void 'a name a page introduces with a tag does not have to be declared again'() {
         given:
         GroovyPagesTemplateEngine engine = engineFor('grails.views.gsp.compileStatic': true)
@@ -344,31 +308,83 @@ class GspCompileStaticConfigSpec extends Specification {
         ]
     }
 
-    void 'a name introduced by a tag in a namespace the page does not know is still rejected'() {
+    void 'a page that declares nothing reads what it is rendered with'() {
         given:
         GroovyPagesTemplateEngine engine = engineFor('grails.views.gsp.compileStatic': true)
 
-        when: 'var belongs to a tag, so a plain HTML attribute of that name introduces nothing'
-        GroovyPageTemplate template = compile(engine, '<div var="notATagVar"></div>${notATagVar}')
-
-        then:
-        template.metaInfo.compilationException.message.contains('The variable [notATagVar] is undeclared.')
-    }
-
-    void 'a name the framework does not supply is still rejected'() {
-        given:
-        GroovyPagesTemplateEngine engine = engineFor('grails.views.gsp.compileStatic': true)
-
-        when:
+        when: 'nothing said what these are, so nothing here can say they are wrong'
         GroovyPageTemplate template = compile(engine, source)
 
         then:
-        template.metaInfo.compilationException.message.contains(error)
+        template.metaInfo.compilationException == null
 
         where:
-        source                       || error
-        '${notAFrameworkName}'       || 'The variable [notAFrameworkName] is undeclared.'
-        '${notAFrameworkName.id}'    || 'No such property: id for class: java.lang.Object'
+        source << [
+                '${undeclaredModelVariable}',
+                '${undeclaredModelVariable.id}',
+                '${undeclaredModelVariable.some(1)}',
+                '${sometaglib.something([a: 1])}',
+                '${grailsApplication.controllerClasses.toList().sort { it.fullName }}',
+        ]
+    }
+
+    void 'a page that declares its model is held to it'() {
+        given:
+        GroovyPagesTemplateEngine engine = engineFor([:])
+
+        when: 'declaring a model states what the page is rendered with'
+        GroovyPageTemplate template = compile(engine, '<%@ page model="Date date" %>${undeclaredModelVariable}')
+
+        then:
+        template.metaInfo.compilationException.message.contains('The variable [undeclaredModelVariable] is undeclared.')
+    }
+
+    void 'strict holds a page to what it declares even where it declares no model'() {
+        given:
+        GroovyPagesTemplateEngine engine = engineFor(
+                'grails.views.gsp.compileStatic': true,
+                'grails.views.gsp.compileStaticConfig.strict': true)
+
+        when:
+        GroovyPageTemplate template = compile(engine, '${undeclaredModelVariable}')
+
+        then:
+        template.metaInfo.compilationException.message.contains('The variable [undeclaredModelVariable] is undeclared.')
+    }
+
+    void 'the servlet scopes carry their own types'() {
+        given:
+        GroovyPagesTemplateEngine engine = engineFor(
+                'grails.views.gsp.compileStatic': true,
+                'grails.views.gsp.compileStaticConfig.strict': true)
+
+        when: 'read under strict, so nothing is resolving these dynamically'
+        GroovyPageTemplate template = compile(engine, source)
+
+        then:
+        template.metaInfo.compilationException == null
+
+        where:
+        source << [
+                '${request.contextPath}',
+                '${request.getAttribute(\'x\')}',
+                '${response.status}',
+                '${session?.id}',
+                '${application.serverInfo}',
+        ]
+    }
+
+    void 'a mistyped member of a scope that carries its type is reported under strict'() {
+        given:
+        GroovyPagesTemplateEngine engine = engineFor(
+                'grails.views.gsp.compileStatic': true,
+                'grails.views.gsp.compileStaticConfig.strict': true)
+
+        when:
+        GroovyPageTemplate template = compile(engine, '${request.contextPathTypo}')
+
+        then:
+        template.metaInfo.compilationException.message.contains('No such property: contextPathTypo')
     }
 
     private static GroovyPagesTemplateEngine engineFor(Map<String, Object> configValues) {

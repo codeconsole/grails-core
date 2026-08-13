@@ -39,4 +39,15 @@ public @interface GroovyPageTypeCheckingConfig {
      * second time in the model directive.</p>
      */
     String[] pageScopeVariables() default {};
+
+    /**
+     * Whether a name the page never declares, and a member read from something whose type is not
+     * known, fail the compilation rather than resolving as they would in a page that is not compiled
+     * statically.
+     *
+     * <p>Off by default, so that compiling a page statically is worth doing on an application that
+     * has not declared the model of every page: what can be checked is checked, and what cannot is
+     * left to run as it always has. Turning it on asks for the guarantee instead.</p>
+     */
+    boolean strict() default false;
 }

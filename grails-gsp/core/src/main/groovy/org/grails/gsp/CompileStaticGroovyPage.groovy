@@ -19,11 +19,13 @@
 
 package org.grails.gsp
 
+import jakarta.servlet.ServletContext
+import jakarta.servlet.http.HttpServletRequest
+import jakarta.servlet.http.HttpServletResponse
+import jakarta.servlet.http.HttpSession
+
 import groovy.transform.CompileStatic
 
-import org.springframework.context.ApplicationContext
-
-import grails.core.GrailsApplication
 import grails.util.TypeConvertingMap
 import org.grails.taglib.TagLibNamespaceMethodDispatcher
 import org.grails.taglib.encoder.OutputContext
@@ -69,10 +71,31 @@ abstract class CompileStaticGroovyPage extends GroovyPage {
     }
 
     /**
-     * The flash scope, as {@code ${flash.message}} reads it. See {@link #getParams}.
+     * The current request, as {@code ${request.contextPath}} reads it. See {@link #getParams}.
      */
-    Map getFlash() {
-        (Map) resolveProperty('flash')
+    HttpServletRequest getRequest() {
+        (HttpServletRequest) resolveProperty('request')
+    }
+
+    /**
+     * The current response. See {@link #getParams}.
+     */
+    HttpServletResponse getResponse() {
+        (HttpServletResponse) resolveProperty('response')
+    }
+
+    /**
+     * The current session, or {@code null} where there is none. See {@link #getParams}.
+     */
+    HttpSession getSession() {
+        (HttpSession) resolveProperty('session')
+    }
+
+    /**
+     * The servlet context, which a page reads as {@code application}. See {@link #getParams}.
+     */
+    ServletContext getApplication() {
+        (ServletContext) resolveProperty('application')
     }
 
     /**
@@ -96,19 +119,12 @@ abstract class CompileStaticGroovyPage extends GroovyPage {
         (String) resolveProperty('namespace')
     }
 
-    /**
-     * The running application. See {@link #getParams}.
-     */
-    GrailsApplication getGrailsApplication() {
-        (GrailsApplication) resolveProperty('grailsApplication')
-    }
-
-    /**
-     * The application context. See {@link #getParams}.
-     */
-    ApplicationContext getApplicationContext() {
-        (ApplicationContext) resolveProperty('applicationContext')
-    }
+    // grailsApplication and applicationContext are deliberately not declared here. What pages read
+    // from them is not declared anywhere either: grailsApplication.controllerClasses is matched at
+    // runtime against (\w+)(Classes) and answered from the artefact handlers, an open set that no
+    // interface can enumerate, and applicationListeners belongs to an implementation rather than the
+    // ApplicationContext interface. Typing them only changes which type the failure names; they are
+    // resolved dynamically by GroovyPageTypeCheckingExtension instead, which lets them work.
 
     @Override
     Object getProperty(String property) {

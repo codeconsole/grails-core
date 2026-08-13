@@ -170,6 +170,7 @@ public class GroovyPageParser implements Tokens {
     public static final String CONFIG_PROPERTY_GSP_GRAILS_LAYOUT_PREPROCESS = "grails.views.gsp.layout.preprocess";
     public static final String CONFIG_PROPERTY_GSP_COMPILESTATIC = "grails.views.gsp.compileStatic";
     public static final String CONFIG_PROPERTY_GSP_ALLOWED_TAGLIB_NAMESPACES = "grails.views.gsp.compileStaticConfig.taglibs";
+    public static final String CONFIG_PROPERTY_GSP_COMPILESTATIC_STRICT = "grails.views.gsp.compileStaticConfig.strict";
     public static final String CONFIG_PROPERTY_GSP_CODECS = "grails.views.gsp.codecs";
 
     private static final String IMPORT_DIRECTIVE = "import";
@@ -205,6 +206,9 @@ public class GroovyPageParser implements Tokens {
      * the page introduces for itself.
      */
     private final Set<String> pageScopeVariables = new LinkedHashSet<>();
+
+    /** Whether what a page never declared fails the compilation rather than resolving at render time. */
+    private boolean compileStaticStrict;
 
     /**
      * Matches the {@code var} and {@code status} attributes of a namespaced tag, which is how a page
@@ -327,6 +331,10 @@ public class GroovyPageParser implements Tokens {
         if (!GrailsStringUtils.isBlank(value)) {
             compileStaticMode = GrailsStringUtils.toBoolean(value.trim());
         }
+        String strict = System.getProperty(CONFIG_PROPERTY_GSP_COMPILESTATIC_STRICT);
+        if (!GrailsStringUtils.isBlank(strict)) {
+            compileStaticStrict = GrailsStringUtils.toBoolean(strict.trim());
+        }
     }
 
     /**
@@ -336,6 +344,7 @@ public class GroovyPageParser implements Tokens {
      */
     private void configure(ConfigMap config) {
         compileStaticMode = config.getProperty(GroovyPageParser.CONFIG_PROPERTY_GSP_COMPILESTATIC, Boolean.class);
+        compileStaticStrict = config.getProperty(CONFIG_PROPERTY_GSP_COMPILESTATIC_STRICT, Boolean.class, Boolean.FALSE);
 
         Object allowedTagLibsConfigValue = config.getProperty(CONFIG_PROPERTY_GSP_ALLOWED_TAGLIB_NAMESPACES, Object.class);
         if (allowedTagLibsConfigValue instanceof Iterable) {
@@ -855,6 +864,12 @@ public class GroovyPageParser implements Tokens {
                         config.append(", pageScopeVariables = ['")
                                 .append(DefaultGroovyMethods.join((Iterable) pageScopeVariables, "','"))
                                 .append("']");
+                    }
+                    // A page that declares its model has said what it is rendered with, so a name it
+                    // did not declare is a mistake rather than something to defer. A page that
+                    // declares nothing has said nothing, and is read the way a dynamic page reads it.
+                    if (compileStaticStrict || modelFieldsMode) {
+                        config.append(", strict = true");
                     }
                     out.println(config.append(')').toString());
                 }
