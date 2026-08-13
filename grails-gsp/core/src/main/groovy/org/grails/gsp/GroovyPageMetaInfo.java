@@ -594,8 +594,8 @@ public class GroovyPageMetaInfo implements GrailsApplicationAware {
                     if (sourceChecksum != null) {
                         return hasSourceChecksumChanged(resource) ? resource : null;
                     }
-                    // Pages compiled before SOURCE_CHECKSUM existed, and pages compiled at runtime, still carry a
-                    // real timestamp. Only 0 means "nothing recorded": that is the value GroovyPageCompiler
+                    // Pages precompiled before SOURCE_CHECKSUM existed carry a real timestamp and no checksum,
+                    // so they still land here. Only 0 means "nothing recorded": that is the value GroovyPageCompiler
                     // deliberately emits, so comparing against it would report every page stale forever.
                     //
                     // -1 is a different thing and must keep its old meaning. establishLastModified returns it
