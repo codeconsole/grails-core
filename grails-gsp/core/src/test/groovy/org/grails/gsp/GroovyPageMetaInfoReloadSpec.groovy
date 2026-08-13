@@ -42,6 +42,9 @@ class GroovyPageMetaInfoReloadSpec extends Specification {
 
     private static final String PAGE_CONTENT = '<html><body>hi</body></html>'
 
+    /** Differs from {@link #PAGE_CONTENT} in content but not in length. */
+    private static final String EQUAL_LENGTH_EDIT = '<html><body>ho</body></html>'
+
     @TempDir
     File tempDir
 
@@ -157,6 +160,32 @@ class GroovyPageMetaInfoReloadSpec extends Specification {
 
         expect: 'the page is left in place rather than reported as changed on every single check'
         !metaInfo.shouldReload(callableFor(resource))
+    }
+
+    void 'a later check re-reads the source once its stamp moves, and skips the read while it has not'() {
+        given: 'a page whose source matches its recorded checksum'
+        Resource resource = sourcePage()
+        GroovyPageMetaInfo metaInfo = new GroovyPageMetaInfo()
+        metaInfo.sourceChecksum = checksumOf(resource)
+
+        and: 'a first check, which hashes and remembers the stamp the source had while matching'
+        assert !metaInfo.shouldReload(callableFor(resource))
+
+        when: 'the page is edited in a way that moves neither its length nor its modification time'
+        long stamp = resource.getFile().lastModified()
+        resource.getFile().text = EQUAL_LENGTH_EDIT
+        assert resource.getFile().setLastModified(stamp)
+        sleep(GroovyPageMetaInfo.LASTMODIFIED_CHECK_INTERVAL + 500L)
+
+        then: 'the stamp pre-check skips the hash, so this one edit goes unseen -- the documented trade-off'
+        !metaInfo.shouldReload(callableFor(resource))
+
+        when: 'the length moves, as all but this contrived case would'
+        resource.getFile().text = '<html><body>a longer replacement body</body></html>'
+        sleep(GroovyPageMetaInfo.LASTMODIFIED_CHECK_INTERVAL + 500L)
+
+        then: 'the stamp no longer matches, so the source is re-read and the edit is caught'
+        metaInfo.shouldReload(callableFor(resource))
     }
 
     void 'a page whose timestamp could not be established reloads once and recovers'() {

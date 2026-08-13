@@ -77,6 +77,7 @@ public class GroovyPageMetaInfo implements GrailsApplicationAware {
     private Constructor<?> pageClassConstructor;
     private long lastModified;
     private String sourceChecksum;
+    private volatile SourceStamp checksumStamp;
     private InputStream groovySource;
     private String contentType;
     private int[] lineNumbers;
@@ -436,6 +437,64 @@ public class GroovyPageMetaInfo implements GrailsApplicationAware {
     }
 
     /**
+     * The modification time and length a page's source had when it last matched the recorded checksum.
+     */
+    private record SourceStamp(long lastModified, long contentLength) {
+    }
+
+    /**
+     * Decides whether the given source still hashes to the checksum this page recorded.
+     * <p>
+     * Hashing means reading the page in full, so the modification time and length observed the last time the
+     * two matched are kept, and the read is skipped while neither has moved. That returns the steady-state
+     * cost of a reload-enabled application to one stat per page per check interval, which is what the
+     * timestamp comparison used to cost.
+     * <p>
+     * Note what role the timestamp plays here: it is a fast path for skipping work, never the thing that
+     * decides staleness. Anything that moves it without changing the page -- a fresh checkout, a copy, a
+     * touch -- costs one hash and then correctly reports no change, where the old comparison reported the
+     * page stale. The one edit this misses is an edit preserving both the modification time and the exact
+     * length, still a narrower gap than the {@code grails.gsp.reload.granularity} window it replaces.
+     *
+     * @param resource the source to compare against the recorded checksum
+     * @return true if the source no longer matches
+     */
+    private boolean hasSourceChecksumChanged(Resource resource) {
+        SourceStamp stamp = readSourceStamp(resource);
+        if (stamp != null && stamp.equals(this.checksumStamp)) {
+            return false;
+        }
+        String currentChecksum = establishChecksum(resource);
+        if (currentChecksum == null) {
+            return false;
+        }
+        if (this.sourceChecksum.equals(currentChecksum)) {
+            this.checksumStamp = stamp;
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * @param resource the Resource to stamp
+     * @return its modification time and length, or null if either could not be read -- in which case the
+     * caller must hash rather than assume the source is unchanged
+     */
+    private SourceStamp readSourceStamp(Resource resource) {
+        long modified = establishLastModified(resource);
+        if (modified <= 0) {
+            return null;
+        }
+        try {
+            long length = resource.contentLength();
+            return length >= 0 ? new SourceStamp(modified, length) : null;
+        }
+        catch (IOException e) {
+            return null;
+        }
+    }
+
+    /**
      * Attempts to checksum the given resource. If it cannot be read, {@code null} is returned, which is
      * treated the same way an unobtainable modification time is: the page is left alone rather than
      * reloaded on the strength of a failed read.
@@ -533,8 +592,7 @@ public class GroovyPageMetaInfo implements GrailsApplicationAware {
                     // content answers the question directly: a page that was merely touched is not stale, and
                     // an edit is caught however close together the writes fall.
                     if (sourceChecksum != null) {
-                        String currentChecksum = establishChecksum(resource);
-                        return (currentChecksum != null && !sourceChecksum.equals(currentChecksum)) ? resource : null;
+                        return hasSourceChecksumChanged(resource) ? resource : null;
                     }
                     // Pages compiled before SOURCE_CHECKSUM existed, and pages compiled at runtime, still carry a
                     // real timestamp. Only 0 means "nothing recorded": that is the value GroovyPageCompiler
