@@ -128,6 +128,23 @@ class GenerateScaffoldedViewsTaskSpec extends Specification {
             generated(task, 'user/index.gsp').text == 'list of user for User'
     }
 
+    void 'the qualified domain class is substituted, so a template can declare the type of its model'() {
+        given:
+            writeTemplateJar(templateJar, [
+                    index : 'model="List<${fullName}> ${propertyName}List" in ${packageName}',
+                    create: 'create ${className}',
+                    edit  : 'edit ${className}',
+                    show  : 'show ${className}'])
+            writeController('UserController', 'User')
+            def task = task()
+
+        when:
+            task.generate()
+
+        then: 'the simple name alone would not resolve from the generated page'
+            generated(task, 'user/index.gsp').text == 'model="List<com.example.User> userList" in com.example'
+    }
+
     void 'a controller without the annotation is left alone'() {
         given:
             writePlainController('PlainController')

@@ -47,10 +47,12 @@ import org.gradle.api.tasks.TaskAction
  * gives up. Expanding the templates here instead lets the ordinary GSP compiler precompile the
  * result, so at runtime the views are found rather than produced.</p>
  *
- * <p>Only naming is substituted -- the templates read {@code className} and {@code propertyName},
- * and defer everything about the domain class to the field tag libraries at render time. That is
- * why this needs no GORM, no application context and no loading of application classes: the
- * controllers are read with ASM and the domain class name is enough.</p>
+ * <p>Only naming is substituted -- the templates read {@code className}, {@code propertyName},
+ * {@code fullName} and {@code packageName}, and defer everything else about the domain class to the
+ * field tag libraries at render time. That is why this needs no GORM, no application context and no
+ * loading of application classes: the controllers are read with ASM and the domain class name is
+ * enough. The qualified name is bound too, so that a template can declare the type of its model in a
+ * form that resolves from the generated page.</p>
  *
  * <p>A view the application already declares is never overwritten, which keeps the existing
  * precedence: a hand-written {@code grails-app/views} page wins over a scaffolded one.</p>
@@ -114,8 +116,10 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
         Set<File> declared = applicationViews.files
         int written = 0
         for (Map.Entry<String, String> controller : findScaffoldedControllers()) {
-            String propertyName = controller.value
-            String className = capitalize(propertyName)
+            String fullName = controller.value
+            String className = fullName.tokenize('.').last()
+            String propertyName = decapitalize(className)
+            String packageName = fullName.contains('.') ? fullName[0..<fullName.lastIndexOf('.')] : ''
             for (String viewName : VIEW_NAMES) {
                 String template = templates.get(viewName)
                 if (template == null) {
@@ -129,19 +133,26 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
                 }
                 File target = new File(outputDir, "${controller.key}/${viewName}.gsp")
                 target.parentFile.mkdirs()
-                target.text = expand(template, className, propertyName)
+                target.text = expand(template, className, propertyName, fullName, packageName)
                 written++
             }
         }
         logger.info("Generated ${written} scaffolded view(s)")
     }
 
-    /** Expands a template the same way the runtime resolver does, with only the naming bound. */
-    private String expand(String template, String className, String propertyName) {
+    /**
+     * Expands a template the same way the runtime resolver does, binding the same names it does.
+     *
+     * <p>{@code fullName} and {@code packageName} are bound alongside the naming because a template
+     * that declares the type of its model has to name a type that resolves from the page, and the
+     * simple name does not.</p>
+     */
+    private String expand(String template, String className, String propertyName, String fullName, String packageName) {
         StringWriter out = new StringWriter()
         new GStringTemplateEngine()
                 .createTemplate(template)
-                .make([className: className, propertyName: propertyName])
+                .make([className: className, propertyName: propertyName,
+                       fullName: fullName, packageName: packageName, modelName: propertyName])
                 .writeTo(out)
         out.toString()
     }
@@ -178,7 +189,11 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
         templates
     }
 
-    /** Maps view directory name to the domain property name, for every {@code @Scaffold} controller. */
+    /**
+     * Maps view directory name to the fully qualified domain class, for every {@code @Scaffold}
+     * controller. Qualified rather than simple because a view declaring the type of its model has to
+     * name a type that resolves.
+     */
     private Map<String, String> findScaffoldedControllers() {
         Map<String, String> found = [:]
         for (File dir : classesDirs.files) {
@@ -192,7 +207,7 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
                 String domain = readScaffoldDomain(f)
                 if (domain != null) {
                     String controllerName = decapitalize(f.name - 'Controller.class')
-                    found.put(controllerName, decapitalize(domain))
+                    found.put(controllerName, domain)
                 }
             }
         }
@@ -200,9 +215,9 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
     }
 
     /**
-     * Returns the simple name of the domain class a controller scaffolds, or {@code null} when it is
-     * not scaffolded. Read with ASM so the application's classes are never loaded, which keeps the
-     * task independent of the runtime classpath.
+     * Returns the fully qualified name of the domain class a controller scaffolds, or {@code null}
+     * when it is not scaffolded. Read with ASM so the application's classes are never loaded, which
+     * keeps the task independent of the runtime classpath.
      */
     private String readScaffoldDomain(File classFile) {
         String domain = null
@@ -218,8 +233,8 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
                         void visit(String name, Object value) {
                             // both @Scaffold(User) and @Scaffold(domain = User) name the domain class
                             if (value instanceof Type && (name == 'value' || name == 'domain')) {
-                                String candidate = ((Type) value).className.tokenize('.').last()
-                                if (candidate != 'Void') {
+                                String candidate = ((Type) value).className
+                                if (candidate.tokenize('.').last() != 'Void') {
                                     domain = candidate
                                 }
                             }
