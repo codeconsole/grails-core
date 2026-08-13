@@ -849,3 +849,32 @@ Set to `false` to disable the side-effect emission and rely solely on `logFullSt
 output. The two flags interact — if both are enabled, a request exception with N causes produces N+1 `StackTrace`
 records (one resolver-driven plus one per throwable visited by the recursive filter walk). The Logging Full
 Stack Traces section of the user guide includes a matrix of behaviours for the four flag combinations.
+
+==== 3. Precompiled GSPs Record a Checksum Instead of a Modification Time
+
+A precompiled GSP used to bake the modification time of its `.gsp` source into the generated class, as a
+`LAST_MODIFIED` constant. Git stores no modification times, so every fresh clone or CI checkout gave each
+source a new one, and the generated classes differed on every checkout even when the sources were
+byte-for-byte identical. Because `LAST_MODIFIED` was a compile-time constant it was part of the class's ABI,
+so the difference survived even Gradle's compile-classpath normalization and every task downstream of a jar
+containing precompiled GSPs missed the build cache.
+
+Pages compiled by Grails 7.1.6 and later record a `SOURCE_CHECKSUM` of the page source instead, and
+`LAST_MODIFIED` is emitted as `0`. Identical sources now compile to identical bytes on every machine.
+
+Runtime reloading, described in
+<<makingChangesToADeployedApplication,Making Changes to a Deployed Application>>, is unaffected: a
+precompiled page is reloaded when its source no longer matches the recorded checksum. Detection is now more
+accurate than it was, because a page that was merely copied or checked out afresh is no longer treated as
+changed, and an edit is caught however close together two writes fall. Pages precompiled by an earlier
+version carry no checksum and continue to be compared by modification time.
+
+One public API changes behaviour: `GroovyPageMetaInfo.getLastModified()` returns `0` for pages precompiled
+by Grails 7.1.6 or later, since no modification time is recorded for them. Use `getSourceChecksum()` to
+identify the source a page was compiled from.
+
+One cross-version note: `LAST_MODIFIED = 0` only means "nothing recorded" to a runtime that understands the
+checksum. An application still running an earlier Grails that consumes a plugin precompiled by 7.1.6 or later
+evaluates the old condition instead, so with GSP reloading enabled every such page is declared stale on its
+first check and recompiled from source at runtime. The behaviour is reload-only and self-correcting, but it
+is worth knowing before mixing versions.
