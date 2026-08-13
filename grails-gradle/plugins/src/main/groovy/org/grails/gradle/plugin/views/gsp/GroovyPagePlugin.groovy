@@ -68,6 +68,13 @@ class GroovyPagePlugin implements Plugin<Project> {
         }
     }
 
+    /** Whether pages are held to the names they declare, from {@code grails { compileStatic { strictGsp } }}. */
+    private static Provider<Boolean> resolveStrictPages(Project project) {
+        project.provider {
+            project.extensions.findByType(GrailsExtension)?.compileStatic?.strictGsp?.getOrElse(false) ?: false
+        }
+    }
+
     private void configureProject(Project project) {
         TaskContainer tasks = project.tasks
 
@@ -94,6 +101,7 @@ class GroovyPagePlugin implements Plugin<Project> {
         Provider<JavaLauncher> launcher = toolchains.launcherFor(javaExtension.toolchain)
 
         Provider<Boolean> compileStaticPages = resolveCompileStaticPages(project)
+        Provider<Boolean> strictPages = resolveStrictPages(project)
 
         def compileGroovyPages = tasks.register('compileGroovyPages', GroovyPageForkCompileTask) {
             it.destinationDirectory.set(destDir)
@@ -103,6 +111,7 @@ class GroovyPagePlugin implements Plugin<Project> {
             it.classpath = allClasspath
             it.javaLauncher.convention(launcher)
             it.compileStatic.set(compileStaticPages)
+            it.compileStaticStrict.set(strictPages)
         }
 
         def compileWebappGroovyPages = tasks.register('compileWebappGroovyPages', GroovyPageForkCompileTask) {
@@ -113,6 +122,7 @@ class GroovyPagePlugin implements Plugin<Project> {
             it.classpath = allClasspath
             it.javaLauncher.convention(launcher)
             it.compileStatic.set(compileStaticPages)
+            it.compileStaticStrict.set(strictPages)
         }
 
         compileGroovyPages.configure {

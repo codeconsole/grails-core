@@ -98,6 +98,10 @@ abstract class GroovyPageForkCompileTask extends AbstractCompile {
     @Input
     final Property<Boolean> compileStatic
 
+    /** Whether the pages this task compiles are held to the names they declare. See {@link #compileStatic}. */
+    @Input
+    final Property<Boolean> compileStaticStrict
+
     private ExecOperations execOperations
 
     /**
@@ -127,6 +131,7 @@ abstract class GroovyPageForkCompileTask extends AbstractCompile {
         compileOptions = objectFactory.newInstance(ViewCompileOptions)
         serverpath = objectFactory.property(String)
         compileStatic = objectFactory.property(Boolean).convention(false)
+        compileStaticStrict = objectFactory.property(Boolean).convention(false)
         grailsConfigurationPaths = objectFactory.fileCollection()
         grailsConfigurationPaths.from(
                 project.layout.projectDirectory.file('grails-app/conf/application.yml'),
@@ -185,6 +190,9 @@ abstract class GroovyPageForkCompileTask extends AbstractCompile {
 
                         if (compileStatic.get()) {
                             javaExecSpec.systemProperty(BuildSettings.COMPILE_STATIC_GSP, 'true')
+                            if (compileStaticStrict.get()) {
+                                javaExecSpec.systemProperty(BuildSettings.COMPILE_STATIC_GSP_STRICT, 'true')
+                            }
                         }
 
                         String configFiles = grailsConfigurationPaths.files.collect { it.canonicalPath }.join(',')

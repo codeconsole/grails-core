@@ -207,6 +207,16 @@ class BuildSettings {
     public static final String COMPILE_STATIC_GSP = 'grails.views.gsp.compileStatic'
 
     /**
+     * A property name that, when set to {@code true}, holds every page to the names it declares
+     * rather than only the pages that declare a model.
+     *
+     * <p>As with {@link #COMPILE_STATIC_GSP} this is the configuration setting
+     * {@code grails.views.gsp.compileStaticConfig.strict} stated as a system property, so that it
+     * reaches both the build's page compiler and the running application.</p>
+     */
+    public static final String COMPILE_STATIC_GSP_STRICT = 'grails.views.gsp.compileStaticConfig.strict'
+
+    /**
      * The base directory of the project
      */
     public static final File BASE_DIR

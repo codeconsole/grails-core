@@ -104,6 +104,17 @@ class GrailsCompileStaticOptions implements Serializable {
      */
     final Property<Boolean> gsp
 
+    /**
+     * Whether every page is held to the names it declares, rather than only the pages that declare a
+     * model. Disabled by default.
+     *
+     * <p>A page that declares a model is held to it either way: declaring one states what the page is
+     * rendered with, so a name outside it is a mistake. This asks for the same of a page that declares
+     * nothing, which otherwise reads what it is rendered with the way a dynamically compiled page
+     * does. Meaningless unless {@link #getGsp() gsp} is enabled.</p>
+     */
+    final Property<Boolean> strictGsp
+
     @Inject
     GrailsCompileStaticOptions(ObjectFactory objects) {
         // Only `all` carries a convention. The artefact types are left unset so that setting one to
@@ -115,5 +126,6 @@ class GrailsCompileStaticOptions implements Serializable {
         this.tagLibs = objects.property(Boolean)
         // Not part of `all`, so it carries a convention of its own rather than falling back to it.
         this.gsp = objects.property(Boolean).convention(false)
+        this.strictGsp = objects.property(Boolean).convention(false)
     }
 }

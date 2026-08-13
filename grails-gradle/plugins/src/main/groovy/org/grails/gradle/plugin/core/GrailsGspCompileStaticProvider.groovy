@@ -53,8 +53,22 @@ class GrailsGspCompileStaticProvider implements CommandLineArgumentProvider {
         compileStatic.gsp.getOrElse(false)
     }
 
+    @Input
+    boolean isStrict() {
+        compileStatic.strictGsp.getOrElse(false)
+    }
+
     @Override
     Iterable<String> asArguments() {
-        isCompileStaticGsp() ? ["-D${BuildSettings.COMPILE_STATIC_GSP}=true".toString()] : []
+        if (!isCompileStaticGsp()) {
+            // Strictness says how a page is read where it is compiled statically, so on its own it
+            // has nothing to say.
+            return []
+        }
+        List<String> args = ["-D${BuildSettings.COMPILE_STATIC_GSP}=true".toString()]
+        if (isStrict()) {
+            args.add("-D${BuildSettings.COMPILE_STATIC_GSP_STRICT}=true".toString())
+        }
+        args
     }
 }

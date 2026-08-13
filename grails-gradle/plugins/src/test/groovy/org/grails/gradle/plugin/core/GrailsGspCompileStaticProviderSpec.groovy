@@ -92,6 +92,41 @@ class GrailsGspCompileStaticProviderSpec extends Specification {
         provider.asArguments().toList() == ["-D${BuildSettings.COMPILE_STATIC_GSP}=true".toString()]
     }
 
+    void 'strictness is published alongside the page opt-in'() {
+        given:
+        GrailsCompileStaticOptions compileStatic = options()
+        compileStatic.with {
+            gsp = true
+            strictGsp = true
+        }
+
+        expect:
+        new GrailsGspCompileStaticProvider(compileStatic).asArguments().toList() == [
+                "-D${BuildSettings.COMPILE_STATIC_GSP}=true".toString(),
+                "-D${BuildSettings.COMPILE_STATIC_GSP_STRICT}=true".toString()
+        ]
+    }
+
+    void 'strictness on its own says nothing, because it says how a page compiled statically is read'() {
+        given:
+        GrailsCompileStaticOptions compileStatic = options()
+        compileStatic.strictGsp.set(true)
+
+        expect:
+        new GrailsGspCompileStaticProvider(compileStatic).asArguments().toList() == []
+    }
+
+    void 'the page opt-in is not strict on its own'() {
+        given:
+        GrailsCompileStaticOptions compileStatic = options()
+        compileStatic.gsp.set(true)
+
+        expect:
+        new GrailsGspCompileStaticProvider(compileStatic).asArguments().toList() == [
+                "-D${BuildSettings.COMPILE_STATIC_GSP}=true".toString()
+        ]
+    }
+
     void 'the artefact opt-ins are published separately and do not carry pages'() {
         given:
         GrailsCompileStaticOptions compileStatic = options()

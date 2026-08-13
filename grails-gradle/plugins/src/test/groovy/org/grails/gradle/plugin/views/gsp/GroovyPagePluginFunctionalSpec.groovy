@@ -76,6 +76,10 @@ class GroovyPagePluginFunctionalSpec extends GradleSpecification {
 
         and: 'and the pages compiled again while the application runs'
         result.output.contains('RUNNING_APPLICATION=true')
+
+        and: 'strictness travels with it, to both'
+        result.output.contains('PAGE_COMPILER_STRICT=true')
+        result.output.contains('RUNNING_APPLICATION_STRICT=true')
     }
 
     def "pages compile the way configuration says where the opt-in is not set"() {

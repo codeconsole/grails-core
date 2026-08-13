@@ -28,18 +28,12 @@ Static compilation is enabled per page with the `compileStatic` page directive:
 
 ==== Declaring the Model
 
-A statically compiled page can only reference model variables it declares, because there is no dynamic property lookup to fall back on. Declare them with the `model` page directive, which names and types each variable the page expects:
+A page can state what it is rendered with, using the `model` page directive, which names and types each variable:
 
 [,xml]
 ----
 <%@ page model="Book book" %>
 <h1>${book.title}</h1>
-----
-
-Referencing a variable that has not been declared is a compilation error rather than a `null` at render time:
-
-----
-The variable [book] is undeclared.
 ----
 
 Separate multiple declarations with semicolons, or use a multi-line value:
@@ -49,42 +43,91 @@ Separate multiple declarations with semicolons, or use a multi-line value:
 <%@ page model="Book book; List<Review> reviews" %>
 ----
 
-Because a declared model is what makes a page type checkable, using the `model` directive enables static compilation on its own — `compileStatic="true"` is implied and does not need to be given as well.
+Because a declared model is what makes a page type checkable, the `model` directive enables static compilation on its own — `compileStatic="true"` is implied and does not need to be given as well.
+
+Declaring a model also states that the model is complete, so reading a name outside it is reported rather than left to the render:
+
+----
+The variable [autor] is undeclared.
+----
+
+A page that declares no model has stated nothing, and reads what it is rendered with exactly as a dynamically compiled page does. This is what makes static compilation adoptable for views that were never written with it in mind: what the page does say is checked, and what it does not say still works.
 
 ==== Names Supplied by the Framework
 
-The names a page never declares because the framework provides them do not need to appear in the `model` directive. These are typed for you and can be read directly:
+The names bound into every page do not need to be declared. Most carry their real types and are checked like anything else:
 
 [,xml]
 ----
 <%@ page compileStatic="true" %>
-<g:if test="${params.id}">${flash.message} on ${controllerName}/${actionName}</g:if>
+<g:if test="${params.id}">${request.contextPath} for ${controllerName}/${actionName}</g:if>
 ----
 
 |===
 |Name |Type
 
 |`params`
-|`Map`
+|link:{apiDocs}grails/util/TypeConvertingMap.html[TypeConvertingMap], so `params.id` and `params.int('max')` both resolve
 
-|`flash`
-|`Map`
+|`request`, `response`, `session`
+|`HttpServletRequest`, `HttpServletResponse`, `HttpSession`
+
+|`application`
+|`ServletContext`
 
 |`controllerName`, `actionName`, `namespace`
 |`String`
-
-|`grailsApplication`
-|link:{apiDocs}grails/core/GrailsApplication.html[GrailsApplication]
-
-|`applicationContext`
-|`ApplicationContext`
 |===
 
-Each reads exactly what it would in a dynamically compiled page, and is `null` where a page is rendered outside a web request and nothing bound it.
+Being typed, they are checked: `${request.contextPathTypo}` is a compilation error. The typed attribute converters described in link:theWebLayer.html#typeConverters[Simple Type Converters] resolve on them for the same reason.
 
-A page may still declare its own model variable using one of these names, and the declared type then applies for that page.
+`grailsApplication`, `applicationContext`, `flash` and `webRequest` are the exception and are resolved dynamically. What pages read from the first two is answered at runtime rather than declared — `grailsApplication.controllerClasses` is matched against the artefact types an application happens to have, which no type can enumerate — so they are read the way a dynamically compiled page reads them.
 
-NOTE: `request`, `response`, `session` and `application` are not in the table and must be declared in the `model` directive to be read from a statically compiled page.
+A page may still declare a model variable using one of these names, and the declared type then applies for that page. It has to remain compatible with the type the page already has: declaring `Map params` is rejected, `TypeConvertingMap params` is not.
+
+==== Names a Page Introduces
+
+A page introduces names of its own through the `var` and `status` attributes of the tags it calls, and those do not need declaring either:
+
+[,xml]
+----
+<%@ page compileStatic="true" %>
+<g:set var="total" value="${books.size()}"/>
+<g:each in="${books}" var="book" status="i">${i}. ${book.title}</g:each>
+Total: ${total}
+----
+
+What such a name holds is decided by the tag when the page renders, so it is read dynamically rather than reported.
+
+==== Requiring Every Page to Declare What It Reads
+
+Reporting a name a page never declared can be asked for everywhere, rather than only in the pages that declare a model:
+
+[source,yaml]
+.grails-app/conf/application.yml
+----
+grails:
+    views:
+        gsp:
+            compileStatic: true
+            compileStaticConfig:
+                strict: true
+----
+
+or from the build:
+
+[source,groovy]
+.build.gradle
+----
+grails {
+    compileStatic {
+        gsp = true
+        strictGsp = true
+    }
+}
+----
+
+With this on, every page is held to what it declares, which is the strongest guarantee available and the most work to adopt. Without it, only the pages that declare a model are.
 
 ==== Enabling Static Compilation for Every Page
 
