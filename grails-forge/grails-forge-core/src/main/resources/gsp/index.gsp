@@ -10,10 +10,10 @@
                .collect { p, i -> [plugin: p, order: ((int) i) + 1] }
                .sort { a, b -> a.plugin.name.toLowerCase() <=> b.plugin.name.toLowerCase() }}"
 />
-<g:set type="int" var="numControllers" value="${(int) grailsApplication.controllerClasses.size()}"/>
-<g:set type="int" var="numDomains" value="${(int) grailsApplication.domainClasses.size()}"/>
-<g:set type="int" var="numServices" value="${(int) grailsApplication.serviceClasses.size()}"/>
-<g:set type="int" var="numTagLibs" value="${(int) grailsApplication.tagLibClasses.size()}"/>
+<g:def type="int" var="numControllers" value="${grailsApplication.controllerClasses.size()}"/>
+<g:def type="int" var="numDomains" value="${grailsApplication.domainClasses.size()}"/>
+<g:def type="int" var="numServices" value="${grailsApplication.serviceClasses.size()}"/>
+<g:def type="int" var="numTagLibs" value="${grailsApplication.tagLibClasses.size()}"/>
 <!doctype html>
 <html>
 <head>
@@ -557,7 +557,7 @@
                      Development-only: this card enumerates filter pipelines, security
                      chains and bean internals that a production home page should not expose. --%>
                 <g:if test="${Environment.current == Environment.DEVELOPMENT}">
-                <g:set type="List" var="appListeners"
+                <g:def type="List" var="appListeners"
                        value="${applicationContext.applicationListeners.toList()
                                .collect { l -> [name: (l.getClass().simpleName ?: l.getClass().name.tokenize('.').last()),
                                                 packageName: (l.getClass().package?.name ?: ''),
@@ -568,15 +568,15 @@
                                  [code: 'welcome.binding.formatted', beans: applicationContext.getBeansOfType(grails.databinding.converters.FormattedValueConverter)],
                                  [code: 'welcome.binding.structured', beans: applicationContext.getBeansOfType(grails.databinding.TypedStructuredBindingEditor)],
                                  [code: 'welcome.binding.listeners', beans: applicationContext.getBeansOfType(grails.databinding.events.DataBindingListener)]]}"/>
-                <g:set type="int" var="numBindingBeans" value="${(int) (bindingGroups.sum { g -> g.beans.size() } ?: 0)}"/>
-                <g:set type="List" var="mimeTypeProviders"
+                <g:def type="int" var="numBindingBeans" value="${(bindingGroups.sum { g -> g.beans.size() } ?: 0)}"/>
+                <g:def type="List" var="mimeTypeProviders"
                        value="${applicationContext.getBeansOfType(grails.web.mime.MimeTypeProvider)
                                .entrySet().toList().sort { it.key.toLowerCase() }}"/>
                 <%-- The filters still on the call stack ARE this request's pipeline, in
                      execution order: walk the reversed stack, keep Filter classes, collapse
                      the extra frames a filter contributes through its abstract bases, and
                      number what remains. No registry can report this actual order. --%>
-                <g:set type="List" var="requestFilters"
+                <g:def type="List" var="requestFilters"
                        value="${Thread.currentThread().stackTrace.toList().reverse()
                                .findResults { ste ->
                                    def cls = null
@@ -591,7 +591,7 @@
                                    acc << cls
                                }
                                .unique()}"/>
-                <g:set type="List" var="filterRegistrations"
+                <g:def type="List" var="filterRegistrations"
                        value="${applicationContext.getBeansOfType(org.springframework.boot.web.servlet.FilterRegistrationBean)
                                .entrySet().toList().sort { it.value.order }}"/>
                 <g:set var="filterChainProxyType"
@@ -605,7 +605,7 @@
                                    try { matcher = chain.requestMatcher?.toString() ?: '' } catch (Throwable ignored) { }
                                    [index: ((int) i) + 1, matcher: matcher, filters: chain.filters]
                                } : []}"/>
-                <g:set type="int" var="numSecurityFilters" value="${(int) (securityFilterChains.sum { c -> c.filters.size() } ?: 0)}"/>
+                <g:def type="int" var="numSecurityFilters" value="${(securityFilterChains.sum { c -> c.filters.size() } ?: 0)}"/>
 
                 <%-- URL MAPPINGS: the active mappings in evaluation order, plus a resolver
                      that replays UrlMappingsHolder.matchAll for a pasted URL and method.
@@ -663,7 +663,7 @@
                                m.pluginName ? target + ' (' + m.pluginName + ')' : target
                            } catch (Throwable ignored) { String.valueOf(m) }
                        } }"/>
-                <g:set type="List" var="urlMappingRows"
+                <g:def type="List" var="urlMappingRows"
                        value="${urlMappingsHolder ? urlMappingsHolder.urlMappings.toList().collect { m ->
                                [mapping: m, pattern: urlMappingPattern(m), method: (m.httpMethod ?: '*'), target: urlMappingTarget(m)]
                            } : []}"/>
@@ -706,7 +706,7 @@
                            if (request.contextPath && path.startsWith(request.contextPath + '/')) { path = path.substring(request.contextPath.length()) }
                            path.startsWith('/') ? path : '/' + path
                        }() }"/>
-                <g:set type="List" var="resolveMatches"
+                <g:def type="List" var="resolveMatches"
                        value="${ { ->
                            if (!urlMappingsHolder || !resolvePath) { return [] }
                            try { (urlMappingsHolder.matchAll(resolvePath, resolveMethodParam) ?: []).toList() }
