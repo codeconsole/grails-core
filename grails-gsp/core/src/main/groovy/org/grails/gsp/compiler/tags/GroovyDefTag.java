@@ -18,6 +18,8 @@
  */
 package org.grails.gsp.compiler.tags;
 
+import java.util.Map;
+
 import grails.util.GrailsStringUtils;
 import org.grails.taglib.GrailsTagException;
 
@@ -27,6 +29,16 @@ import org.grails.taglib.GrailsTagException;
  * @author Graeme Rocher
  */
 public class GroovyDefTag extends GroovySyntaxTag {
+
+    private static final Map<String, String> PRIMITIVE_WRAPPERS = Map.of(
+            "boolean", "Boolean",
+            "byte", "Byte",
+            "char", "Character",
+            "short", "Short",
+            "int", "Integer",
+            "long", "Long",
+            "float", "Float",
+            "double", "Double");
 
     public static final String TAG_NAME = "def";
     private static final String ATTRIBUTE_VALUE = "value";
@@ -59,8 +71,16 @@ public class GroovyDefTag extends GroovySyntaxTag {
         if (typeName.equals("def") || typeName.equals("Object")) {
             out.println(expr);
         } else {
-            out.println(typeName + ".cast(" + expr + ")");
+            // Cast through the wrapper for a primitive: Class.cast on a primitive class throws
+            // whatever it is handed, so int.cast(1) fails where Integer.cast(1) is what was meant.
+            // The declared type stays primitive, and the result unboxes into it.
+            out.println(castingTypeFor(typeName) + ".cast(" + expr + ")");
         }
+    }
+
+    private static String castingTypeFor(String typeName) {
+        String wrapper = PRIMITIVE_WRAPPERS.get(typeName);
+        return wrapper != null ? wrapper : typeName;
     }
 
     public void doEndTag() {

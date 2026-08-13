@@ -422,6 +422,27 @@ class GspCompileStaticConfigSpec extends Specification {
         ]
     }
 
+    void 'a typed variable a page declares is rendered, not just compiled'() {
+        given:
+        GroovyPagesTemplateEngine engine = engineFor('grails.views.gsp.compileStatic': true)
+
+        when: 'a primitive type casts through its wrapper, since Class.cast on a primitive throws'
+        GroovyPageTemplate template = compile(engine, source)
+
+        then:
+        template.metaInfo.compilationException == null
+        render(template) == expected
+
+        where:
+        source                                                              || expected
+        '<g:def type="int" var="n" value="${2}"/>${n + 1}'                   || '3'
+        '<g:def type="long" var="n" value="${2L}"/>${n + 1}'                 || '3'
+        '<g:def type="boolean" var="b" value="${true}"/>${b}'                || 'true'
+        '<g:def type="double" var="d" value="${1.5d}"/>${d}'                 || '1.5'
+        '<g:def type="List" var="l" value="${[1, 2]}"/>${l.size()}'          || '2'
+        '<g:def type="String" var="s" value="${123.toString()}"/>${s.reverse()}' || '321'
+    }
+
     private static GroovyPagesTemplateEngine engineFor(Map<String, Object> configValues) {
         GenericApplicationContext context = new GenericApplicationContext().tap {
             beanFactory.registerSingleton(GrailsApplication.APPLICATION_ID,
