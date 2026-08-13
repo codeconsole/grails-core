@@ -32,7 +32,6 @@ class User {
     Address address //embedded domain class
 
     static constraints = {
-        manager nullable: true
         profile nullable: false
         address nullable: false
     }
@@ -45,8 +44,6 @@ class User {
     }
 
     static graphql = GraphQLMapping.build {
-        property('profile', nullable: false)
-        property('address', nullable: false)
         add('firstNumber', Integer) {
             //don't include this property in the list of properties to return from operations
             output(false)
