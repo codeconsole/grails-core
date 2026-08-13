@@ -869,6 +869,14 @@ accurate than it was, because a page that was merely copied or checked out afres
 changed, and an edit is caught however close together two writes fall. Pages precompiled by an earlier
 version carry no checksum and continue to be compared by modification time.
 
+Pages compiled at runtime record a checksum as well, so development-mode reloading changes in two ways.
+An edit is now picked up whenever the source's modification time or length moves, which any ordinary save
+does; previously a save landing within `grails.gsp.reload.granularity` milliseconds of the recorded time went
+unnoticed until a later edit moved it clear of that window. In the other direction, a page whose modification
+time moves without its content changing is no longer recompiled, so touching a file — or a build step copying
+views into place — no longer reloads pages that did not actually change. If you were using `touch` to force a
+page to recompile, edit the page instead.
+
 One public API changes behaviour: `GroovyPageMetaInfo.getLastModified()` returns `0` for pages precompiled
 by Grails 7.1.6 or later, since no modification time is recorded for them. Use `getSourceChecksum()` to
 identify the source a page was compiled from.
