@@ -443,6 +443,49 @@ class GspCompileStaticConfigSpec extends Specification {
         '<g:def type="String" var="s" value="${123.toString()}"/>${s.reverse()}' || '321'
     }
 
+    void 'a set tag given a type compiles the variable rather than looking it up'() {
+        given:
+        GroovyPagesTemplateEngine engine = engineFor('grails.views.gsp.compileStatic': true)
+
+        when: 'the variable is declared, so an operator can be applied to it'
+        GroovyPageTemplate template = compile(engine, source)
+
+        then:
+        template.metaInfo.compilationException == null
+
+        where:
+        source << [
+                '<g:set type="int" var="n" value="${2}"/>${n + 1}',
+                '<g:set type="String" var="s" value="${123.toString()}"/>${s.reverse()}',
+                '<g:set type="List" var="l" value="${[1, 2]}"/>${l[0]}',
+        ]
+    }
+
+    void 'a type is what lets an operator be applied to what a set introduced'() {
+        given:
+        GroovyPagesTemplateEngine engine = engineFor('grails.views.gsp.compileStatic': true)
+
+        when: 'untyped, the name resolves but nothing knows what it holds'
+        GroovyPageTemplate untyped = compile(engine, '<g:set var="n" value="${2}"/>${n + 1}')
+        GroovyPageTemplate typed = compile(engine, '<g:set type="int" var="n" value="${2}"/>${n + 1}')
+
+        then:
+        untyped.metaInfo.compilationException.message.contains('is not known here')
+        typed.metaInfo.compilationException == null
+    }
+
+    void 'a type is rejected where there is no value to declare the variable from'() {
+        given:
+        GroovyPagesTemplateEngine engine = engineFor('grails.views.gsp.compileStatic': true)
+
+        when:
+        compile(engine, '<g:set type="int" var="n">body</g:set>${n}')
+
+        then:
+        Exception e = thrown()
+        e.message.contains('can only be given a [type] together with a [value]')
+    }
+
     private static GroovyPagesTemplateEngine engineFor(Map<String, Object> configValues) {
         GenericApplicationContext context = new GenericApplicationContext().tap {
             beanFactory.registerSingleton(GrailsApplication.APPLICATION_ID,

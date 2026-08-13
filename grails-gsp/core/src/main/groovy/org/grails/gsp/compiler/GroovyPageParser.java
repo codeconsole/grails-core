@@ -109,6 +109,14 @@ public class GroovyPageParser implements Tokens {
 
     private static final String MULTILINE_GROOVY_STRING_DOUBLEQUOTES = "\"\"\"";
     private static final String MULTILINE_GROOVY_STRING_SINGLEQUOTES = "'''";
+    private static final String SET_TAG_NAME = "set";
+    private static final String TYPE_ATTRIBUTE = "type";
+    private static final String VAR_ATTRIBUTE = "var";
+
+    private static final Map<String, String> PRIMITIVE_WRAPPERS = Map.of(
+            "boolean", "Boolean", "byte", "Byte", "char", "Character", "short", "Short",
+            "int", "Integer", "long", "Long", "float", "Float", "double", "Double");
+
     public static final String MODEL_DIRECTIVE = "model";
     public static final String COMPILE_STATIC_DIRECTIVE = "compileStatic";
     public static final String TAGLIBS_DIRECTIVE = "taglibs";
@@ -1329,6 +1337,8 @@ public class GroovyPageParser implements Tokens {
             // "allowPrecedingWhitespace" property on tags yet
             flushBufferedWhiteSpace();
 
+            writeTypedSetDeclaration(ns, tagName, attrs);
+
             if (attrs.size() > 0) {
                 FastStringWriter buffer = new FastStringWriter();
                 buffer.print("[");
@@ -1381,6 +1391,64 @@ public class GroovyPageParser implements Tokens {
             appendHtmlPart(null);
         }
         currentlyBufferingWhitespace = false;
+    }
+
+    /**
+     * Declares the variable a {@code <g:set type="...">} names, so that the rest of the page reads it
+     * with a type rather than through the page binding.
+     *
+     * <p>The tag keeps doing what it did: the declaration is written first and the tag is then called
+     * with the declared variable as its value, so the write into the scope still happens and
+     * {@code scope} still decides where. What it adds is that the page itself no longer has to look
+     * the name up to read it.</p>
+     *
+     * <p>Only a {@code value} can be typed. Where the value is the tag's body or a {@code bean}, there
+     * is no expression to declare the variable from -- both are produced when the tag runs -- so
+     * asking for a type there is rejected rather than quietly ignored.</p>
+     */
+    private void writeTypedSetDeclaration(String ns, String tagName, Map<String, String> attrs) {
+        if (!GroovyPage.DEFAULT_NAMESPACE.equals(ns) || !SET_TAG_NAME.equals(tagName)) {
+            return;
+        }
+        String type = attributeText(attrs, TYPE_ATTRIBUTE);
+        if (type == null) {
+            return;
+        }
+        String var = attributeText(attrs, VAR_ATTRIBUTE);
+        if (GrailsStringUtils.isBlank(var)) {
+            throw new GrailsTagException("Tag [set] with a [type] needs a [var] naming what to declare",
+                    pageName, getCurrentOutputLineNumber());
+        }
+        Object value = attrs.get("\"value\"");
+        if (value == null) {
+            throw new GrailsTagException("Tag [set] can only be given a [type] together with a [value]; " +
+                    "the body and the [bean] attribute are produced when the tag runs, so there is nothing " +
+                    "to declare the variable from", pageName, getCurrentOutputLineNumber());
+        }
+        attrs.remove("\"" + TYPE_ATTRIBUTE + "\"");
+        out.println(type + " " + var + " = " + castingTypeFor(type) + ".cast(" + getExpressionText(value.toString()) + ")");
+        // and the tag is called with what was just declared, so it writes the same value into the scope
+        attrs.put("\"value\"", var);
+    }
+
+    /** The wrapper to cast through for a primitive, whose own class rejects everything it is handed. */
+    private static String castingTypeFor(String typeName) {
+        String wrapper = PRIMITIVE_WRAPPERS.get(typeName);
+        return wrapper != null ? wrapper : typeName;
+    }
+
+    /** The plain text of a quoted attribute, or {@code null} where the page did not give one. */
+    private static String attributeText(Map<String, String> attrs, String name) {
+        Object raw = attrs.get("\"" + name + "\"");
+        if (raw == null) {
+            return null;
+        }
+        String text = raw.toString().trim();
+        if (text.length() > 1 && (text.startsWith("\"") || text.startsWith("'")) &&
+                text.charAt(0) == text.charAt(text.length() - 1)) {
+            return text.substring(1, text.length() - 1).trim();
+        }
+        return text;
     }
 
     private void populateMapWithAttributes(Map<String, String> attrs, String attrTokens) {
