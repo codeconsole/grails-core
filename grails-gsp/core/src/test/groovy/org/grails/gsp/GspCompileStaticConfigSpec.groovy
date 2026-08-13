@@ -387,6 +387,24 @@ class GspCompileStaticConfigSpec extends Specification {
         template.metaInfo.compilationException.message.contains('No such property: contextPathTypo')
     }
 
+    void 'an operator on a name the page never declared is reported, not crashed on'() {
+        given:
+        GroovyPagesTemplateEngine engine = engineFor('grails.views.gsp.compileStatic': true)
+
+        when: 'a subscript is written into the class rather than left to a call site'
+        GroovyPageTemplate template = compile(engine, source)
+
+        then: 'an error a page can act on, rather than a GroovyBugError out of the class writer'
+        template.metaInfo.compilationException != null
+        !template.metaInfo.compilationException.message.contains('BUG!')
+
+        where:
+        source << [
+                '<g:set var="rows" value="${[1,2]}"/>${rows[0]}',
+                '<g:set var="i" value="${1}"/>${i + 1}',
+        ]
+    }
+
     private static GroovyPagesTemplateEngine engineFor(Map<String, Object> configValues) {
         GenericApplicationContext context = new GenericApplicationContext().tap {
             beanFactory.registerSingleton(GrailsApplication.APPLICATION_ID,
