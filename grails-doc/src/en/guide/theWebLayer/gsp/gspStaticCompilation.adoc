@@ -69,21 +69,28 @@ The names bound into every page do not need to be declared. Most carry their rea
 |`params`
 |link:{apiDocs}grails/util/TypeConvertingMap.html[TypeConvertingMap], so `params.id` and `params.int('max')` both resolve
 
+|`flash`
+|link:{apiDocs}grails/web/mvc/FlashScope.html[FlashScope]
+
 |`request`, `response`, `session`
 |`HttpServletRequest`, `HttpServletResponse`, `HttpSession`
 
-|`application`
-|`ServletContext`
+|`application`, `servletContext`
+|`ServletContext` — the same object under both names
+
+|`webRequest`
+|`GrailsWebRequest`
 
 |`controllerName`, `actionName`, `namespace`
 |`String`
 |===
 
+
 Being typed, they are checked: `${request.contextPathTypo}` is a compilation error. The typed attribute converters described in link:theWebLayer.html#typeConverters[Simple Type Converters] resolve on them for the same reason.
 
-`grailsApplication`, `applicationContext`, `flash` and `webRequest` are the exception and are resolved dynamically. What pages read from the first two is answered at runtime rather than declared — `grailsApplication.controllerClasses` is matched against the artefact types an application happens to have, which no type can enumerate — so they are read the way a dynamically compiled page reads them.
+`grailsApplication` and `applicationContext` are the exception and are resolved dynamically. What pages read from them is answered at runtime rather than declared — `grailsApplication.controllerClasses` is matched against the artefact types an application happens to have, which no type can enumerate — so they are read the way a dynamically compiled page reads them.
 
-A page may still declare a model variable using one of these names, and the declared type then applies for that page. It has to remain compatible with the type the page already has: declaring `Map params` is rejected, `TypeConvertingMap params` is not.
+A page may still declare a model variable using one of these names, and the declared type then applies for that page — declaring `Map params` gives the page a `Map`, with no other type imposed on it.
 
 ==== Names a Page Introduces
 
