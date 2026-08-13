@@ -20,7 +20,6 @@ package org.grails.gradle.plugin.core
 
 import java.util.concurrent.Callable
 import java.util.concurrent.ConcurrentHashMap
-import java.util.zip.ZipFile
 
 import grails.util.BuildSettings
 import grails.util.Environment
@@ -45,7 +44,6 @@ import org.gradle.api.attributes.AttributeMatchingStrategy
 import org.gradle.api.attributes.Category
 import org.gradle.api.file.CopySpec
 import org.gradle.api.file.DuplicatesStrategy
-import org.gradle.api.file.FileCollection
 import org.gradle.api.file.RegularFile
 import org.gradle.api.file.RegularFileProperty
 import org.gradle.api.plugins.ExtraPropertiesExtension
@@ -97,6 +95,13 @@ class GrailsGradlePlugin implements Plugin<Project> {
      * and this build, and cannot leak a stale script into a later build in the same daemon.
      */
     private final Map<String, File> userGroovyCompilerConfigScripts = new ConcurrentHashMap<>()
+
+    /**
+     * The Grails half of the compiler configuration script, keyed by compile task name. Built while
+     * the compile task is configured so subclasses can declare inputs on it, and evaluated when the
+     * generator task builds its content.
+     */
+    private final Map<String, Closure<String>> grailsCompilerConfigScripts = new ConcurrentHashMap<>()
 
     List<Class<Plugin>> basePluginClasses = [IntegrationTestGradlePlugin] as List<Class<Plugin>>
     List<String> excludedGrailsAppSourceDirs = ['migrations', 'assets']
@@ -263,6 +268,13 @@ class GrailsGradlePlugin implements Plugin<Project> {
         }
 
         project.tasks.withType(GroovyCompile).configureEach { GroovyCompile c ->
+            // Built while the compile task is being configured, which is what lets subclasses
+            // declare their own inputs on it (GrailsPluginGradlePlugin registers the project
+            // version and name that it bakes into compiled classes as AST metadata). The script
+            // no longer reads the compile classpath, so there is nothing here that must be
+            // deferred out of configuration.
+            grailsCompilerConfigScripts.put(c.name, getGroovyCompilerScript(c, project))
+
             // Resolved lazily and tolerant of a GroovyCompile that has no matching source set
             // (and therefore no generator): such a task simply keeps whatever script it already had.
             c.dependsOn({
@@ -307,43 +319,37 @@ class GrailsGradlePlugin implements Plugin<Project> {
         // GroovyCompile tasks exist in the same project (e.g. compileGroovy, compileTestGroovy).
         Provider<RegularFile> groovyCompilerConfigFile = groovyCompilerConfigFile(project, compileTaskName)
 
+        // The whole script is a single input property. Nothing here reads the compile classpath, so
+        // the task needs neither state-tracking opt-outs nor an ordering edge to the tasks that
+        // build it: content in, file out, correctly up-to-date checked and cacheable.
+        Provider<String> combinedScript = project.provider {
+            combineGroovyCompilerConfigScripts(project, compileTaskName)
+        }
+
         project.tasks.register(generatorName) { Task t ->
             t.description = "Generates the Grails Groovy compiler configuration script for ${compileTaskName}"
+            t.inputs.property('grailsCompilerConfig', combinedScript)
             t.outputs.file(groovyCompilerConfigFile)
-            // Generating the script needs the resolved compile classpath, and declaring that as
-            // an input would pull the runtimeClasspath into this task's up-to-date check. Since
-            // the inputs to this task would effectively be the runtimeClasspath, dependency
-            // problems can arise if another task changes the runtimeClasspath. Generating the
-            // script is cheap, so skip state tracking and regenerate on every build instead.
-            t.doNotTrackState('Depends on the resolved compile classpath; cheap to regenerate')
-            // doNotTrackState suppresses up-to-date checking; it does not order this task against
-            // the tasks that produce the compile classpath it reads. Depend on the classpath's own
-            // build dependencies so the probes below see the artifacts, without declaring the
-            // classpath as an input and dragging it into the up-to-date check.
-            t.dependsOn({
-                project.tasks.named(compileTaskName, GroovyCompile).get().classpath
-            } as Callable)
             t.doLast {
                 File combinedFile = groovyCompilerConfigFile.get().asFile
                 combinedFile.parentFile.mkdirs()
-
-                File userScript = userGroovyCompilerConfigScripts.get(compileTaskName)
-                String configuredScript = null
-                if (userScript?.exists()) {
-                    configuredScript = userScript.text?.trim() ?: null
-                }
-                String grailsScript = getGroovyCompilerScript(project.tasks.named(compileTaskName, GroovyCompile).get(), project)?.call()
-
-                String combinedScripts = """
-                    // Grails groovy compilation configuration to ensure ASTs are applied correctly
-
-                    ${grailsScript?.trim() ?: ''}
-
-                    ${configuredScript?.trim() ?: ''}
-                """
-                combinedFile.write(combinedScripts)
+                combinedFile.write(combinedScript.get())
             }
         }
+    }
+
+    private String combineGroovyCompilerConfigScripts(Project project, String compileTaskName) {
+        File userScript = userGroovyCompilerConfigScripts.get(compileTaskName)
+        String configuredScript = userScript?.exists() ? (userScript.text?.trim() ?: null) : null
+        String grailsScript = grailsCompilerConfigScripts.get(compileTaskName)?.call()
+
+        """
+            // Grails groovy compilation configuration to ensure ASTs are applied correctly
+
+            ${grailsScript?.trim() ?: ''}
+
+            ${configuredScript?.trim() ?: ''}
+        """
     }
 
     private static String groovyCompilerConfigGeneratorName(String compileTaskName) {
@@ -357,13 +363,8 @@ class GrailsGradlePlugin implements Plugin<Project> {
     protected Closure<String> getGroovyCompilerScript(GroovyCompile compile, Project project) {
         GrailsExtension grails = project.extensions.findByType(GrailsExtension)
 
-        // Everything below runs inside the returned closure, invoked from the task's doFirst:
-        // the isClassOnClasspath probes resolve the compile classpath, which must not happen while
-        // the task is being configured. A GroovyCompile task can be realized from inside an
-        // in-flight resolution of compileClasspath (scheduling any task whose inputs include that
-        // configuration realizes the compile task through the target-JVM attribute's provider
-        // chain), and re-entering that resolution fails on Gradle 9.5+ with
-        // 'Cannot observe dependencies before markAsObserved(String) has been called'.
+        // Evaluated lazily so it reflects the grails { } block regardless of configuration ordering,
+        // but it reads only extension state — never the compile classpath.
         return { ->
             // Start with user-configured imports
             Set<String> starImports = new LinkedHashSet<>(grails.starImports)
@@ -373,20 +374,15 @@ class GrailsGradlePlugin implements Plugin<Project> {
                 starImports.add('java.time')
             }
 
-            // Add Grails annotation packages and common validation annotations if enabled
+            // Add Grails annotation packages and common validation annotations if enabled.
+            // These are added whether or not the packages are present: a star import of a package
+            // that is not on the classpath contributes no classes and is not an error in Groovy, so
+            // probing the classpath to decide bought nothing and forced the whole script to be
+            // computed at execution time. jakarta.validation.constraints was already unconditional.
             if (grails.importGrailsCommonAnnotations) {
-                // Always add jakarta.validation.constraints
                 starImports.add('jakarta.validation.constraints')
-
-                // Check for grails.gorm.annotation.* classes on classpath
-                if (isClassOnClasspath(compile.classpath, 'grails.gorm.annotation.CreatedDate')) {
-                    starImports.add('grails.gorm.annotation')
-                }
-
-                // Check for grails.plugin.scaffolding.annotation.* classes on classpath
-                if (isClassOnClasspath(compile.classpath, 'grails.plugin.scaffolding.annotation.Scaffold')) {
-                    starImports.add('grails.plugin.scaffolding.annotation')
-                }
+                starImports.add('grails.gorm.annotation')
+                starImports.add('grails.plugin.scaffolding.annotation')
             }
 
             // Return null if no imports are needed
@@ -402,33 +398,6 @@ ${importStatements}
                     }
                 }
             """ as String
-        }
-    }
-
-    /**
-     * Check if a class exists on the given classpath.
-     * This detects classes from any source: direct dependencies, transitive dependencies, or local jars.
-     *
-     * @param classpath The FileCollection representing the classpath to search
-     * @param className The fully qualified class name to look for (e.g., 'grails.gorm.annotation.CreatedDate')
-     * @return true if the class is found on the classpath
-     */
-    private static boolean isClassOnClasspath(FileCollection classpath, String className) {
-        def classEntry = className.replace('.', '/') + '.class'
-        classpath.files.any { f ->
-            try {
-                if (f.file && f.name.endsWith('.jar')) {
-                    new ZipFile(f).withCloseable { zip ->
-                        zip.getEntry(classEntry) != null
-                    }
-                } else if (f.directory) {
-                    new File(f, classEntry).exists()
-                } else {
-                    false
-                }
-            } catch (Exception ignored) {
-                false
-            }
         }
     }
 

@@ -41,20 +41,20 @@ class GrailsGroovyCompilerConfigSpec extends GradleSpecification {
         result.output.contains('MAIN_GENERATOR_EXISTS=true')
     }
 
-    def "the generator runs after the tasks that produce the compile classpath"() {
-        given: 'an application whose compile classpath comes from a sibling project'
-        setupTestResourceProject('compiler-config-classpath-ordering')
+    def "the generator is decoupled from the compile and runtime classpaths"() {
+        given: 'an application with both an implementation and a runtimeOnly project dependency'
+        setupTestResourceProject('compiler-config-classpath-decoupling')
 
         when:
-        def result = executeTask(':app:inspectOrder')
+        def result = executeTask(':app:inspectDecoupling')
 
-        then: 'the generator depends on the producing task, so the classpath probes see the artifact'
-        result.output.contains('GENERATOR_DEPENDS_ON_PRODUCER_JAR=true')
-
-        and: 'it stays scoped to the compile classpath and declares no inputs of its own, so the'
-        'runtime classpath is neither pulled into the dependency chain nor into an up-to-date check'
-        result.output.contains('GENERATOR_DEPENDS_ON_RUNTIME_ONLY_JAR=false')
+        then: 'the script is built from configuration state, so no classpath enters the chain'
+        result.output.contains('GENERATOR_DEPENDS_ON_COMPILE_CLASSPATH=false')
+        result.output.contains('GENERATOR_DEPENDS_ON_RUNTIME_CLASSPATH=false')
         result.output.contains('GENERATOR_DECLARED_INPUT_FILES=0')
+
+        and: 'its content is a declared input, so it is up-to-date checked rather than untracked'
+        result.output.contains('GENERATOR_HAS_CONTENT_INPUT=true')
     }
 
     def "a configurationScript assigned from a later callback is folded in, not clobbered"() {
@@ -68,5 +68,17 @@ class GrailsGroovyCompilerConfigSpec extends GradleSpecification {
         result.output.contains('FINAL_CONFIG_SCRIPT=grailsGroovyCompilerConfig-compileGroovy.groovy')
         result.output.contains('COMBINED_EXISTS=true')
         result.output.contains('COMBINED_CONTAINS_USER_IMPORT=true')
+    }
+
+    def "a plugin project declares the version and name it bakes into compiled classes as inputs"() {
+        given: 'a Grails plugin project, whose script stamps projectVersion/projectName AST metadata'
+        setupTestResourceProject('compiler-config-plugin-inputs')
+
+        when:
+        def result = executeTask('inspectPluginInputs')
+
+        then: 'both are inputs of the compile task, so changing either recompiles'
+        result.output.contains('HAS_VERSION_INPUT=true')
+        result.output.contains('HAS_NAME_INPUT=true')
     }
 }
