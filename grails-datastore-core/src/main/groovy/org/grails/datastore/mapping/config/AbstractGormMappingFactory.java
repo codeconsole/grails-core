@@ -54,7 +54,7 @@ public abstract class AbstractGormMappingFactory<R extends Entity, T extends Pro
     private Object contextObject;
     protected Closure defaultConstraints;
     protected boolean versionByDefault = true;
-    protected boolean defaultNullable = false;
+    protected boolean defaultNullable = true;
 
     /**
      * @param contextObject Context object to be passed to mapping blocks

@@ -67,7 +67,7 @@ class KeyValueMappingFactoryTests {
 
         PersistentProperty prop = entity.getPropertyByName('nonFormulaProperty')
         assert !prop.mapping.mappedForm.derived
-        assert !prop.mapping.mappedForm.nullable
+        assert prop.mapping.mappedForm.nullable
 
         // Formula properties should be flagged as derived
         prop = entity.getPropertyByName('formulaProperty')
