@@ -215,44 +215,44 @@ class GroovyPageCompiler {
             File gspgroovyfile = new File(new File(generatedGroovyPagesDirectory, packageDir), className + '.groovy')
             // gspgroovyfile.getParentFile().mkdirs()
 
+            // Read the page once and keep the raw bytes: the checksum has to be taken over the source exactly
+            // as stored, since the runtime re-reads the resource raw when comparing.
             byte[] gspSource = gspfile.bytes
-            String sourceChecksum = GroovyPageParser.checksumOf(gspSource)
 
-            new ByteArrayInputStream(gspSource).withStream { InputStream gspinput ->
-                GroovyPageParser gpp = new GroovyPageParser(viewuri - '.gsp', viewuri, gspfile.absolutePath, gspinput, encoding, expressionCodec, configMap)
-                gpp.packageName = packageName
-                gpp.className = className
-                // Record what the source *is*, not when it was last touched. LAST_MODIFIED is emitted as a
-                // `static final long`, so it belongs to the class's ABI and is inlined into callers, which
-                // even Gradle's COMPILE_CLASSPATH normalization cannot see past. Git stores no modification
-                // times, so every checkout gave each .gsp a new one and identical sources compiled to
-                // different bytes, costing every downstream consumer of the jar its build cache.
-                //
-                // SOURCE_CHECKSUM answers what the timestamp was only ever a proxy for -- has the source
-                // changed? -- and answers it identically on every machine. GroovyPageMetaInfo prefers it and
-                // falls back to LAST_MODIFIED for pages compiled by earlier versions, so the zero here means
-                // "no timestamp recorded", never "never reload".
-                gpp.lastModified = 0L
-                gpp.sourceChecksum = sourceChecksum
-                StringWriter gsptarget = new StringWriter()
-                gpp.generateGsp(gsptarget)
-                gsptarget.flush()
-                // write static html parts to data file (read from classpath at runtime)
-                File htmlDataFile = new File(new File(targetDir, packageDir), className + GroovyPageMetaInfo.HTML_DATA_POSTFIX)
-                htmlDataFile.parentFile.mkdirs()
-                gpp.writeHtmlParts(htmlDataFile)
-                // write linenumber mapping info to data file
-                File lineNumbersDataFile = new File(new File(targetDir, packageDir), className + GroovyPageMetaInfo.LINENUMBERS_DATA_POSTFIX)
-                gpp.writeLineNumbers(lineNumbersDataFile)
+            GroovyPageParser gpp = new GroovyPageParser(viewuri - '.gsp', viewuri, gspfile.absolutePath,
+                    new String(gspSource, encoding ?: GroovyPageParser.DEFAULT_ENCODING), expressionCodec, configMap)
+            gpp.packageName = packageName
+            gpp.className = className
+            // Record what the source *is*, not when it was last touched. LAST_MODIFIED is emitted as a
+            // `static final long`, so it belongs to the class's ABI and is inlined into callers, which
+            // even Gradle's COMPILE_CLASSPATH normalization cannot see past. Git stores no modification
+            // times, so every checkout gave each .gsp a new one and identical sources compiled to
+            // different bytes, costing every downstream consumer of the jar its build cache.
+            //
+            // SOURCE_CHECKSUM answers what the timestamp was only ever a proxy for -- has the source
+            // changed? -- and answers it identically on every machine. GroovyPageMetaInfo prefers it and
+            // falls back to LAST_MODIFIED for pages compiled by earlier versions, so the zero here means
+            // "no timestamp recorded", never "never reload".
+            gpp.lastModified = 0L
+            gpp.sourceChecksum = GroovyPageParser.checksumOf(gspSource)
+            StringWriter gsptarget = new StringWriter()
+            gpp.generateGsp(gsptarget)
+            gsptarget.flush()
+            // write static html parts to data file (read from classpath at runtime)
+            File htmlDataFile = new File(new File(targetDir, packageDir), className + GroovyPageMetaInfo.HTML_DATA_POSTFIX)
+            htmlDataFile.parentFile.mkdirs()
+            gpp.writeHtmlParts(htmlDataFile)
+            // write linenumber mapping info to data file
+            File lineNumbersDataFile = new File(new File(targetDir, packageDir), className + GroovyPageMetaInfo.LINENUMBERS_DATA_POSTFIX)
+            gpp.writeLineNumbers(lineNumbersDataFile)
 
-                // register viewuri -> classname mapping
-                compileGSPResults[viewuri] = fullClassName
+            // register viewuri -> classname mapping
+            compileGSPResults[viewuri] = fullClassName
 
-                CompilationUnit unit = new CompilationUnit(compilerConfig, null, classLoader)
-                unit.addPhaseOperation(operation, Phases.CANONICALIZATION)
-                unit.addSource(gspgroovyfile.name, gsptarget.toString())
-                unit.compile()
-            }
+            CompilationUnit unit = new CompilationUnit(compilerConfig, null, classLoader)
+            unit.addPhaseOperation(operation, Phases.CANONICALIZATION)
+            unit.addSource(gspgroovyfile.name, gsptarget.toString())
+            unit.compile()
         } else {
             compileGSPResults[viewuri] = fullClassName
         }
