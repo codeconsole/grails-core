@@ -200,6 +200,9 @@ class GspCompileStaticConfigSpec extends Specification {
         where:
         source << [
                 '${params.id}',
+                '${params.int(\'max\')}',
+                '${params.long(\'id\')}',
+                '${params.boolean(\'active\')}',
                 '${flash.message}',
                 '${controllerName}',
                 '${actionName}',
@@ -238,11 +241,25 @@ class GspCompileStaticConfigSpec extends Specification {
         GroovyPagesTemplateEngine engine = engineFor('grails.views.gsp.compileStatic': true)
 
         when:
-        GroovyPageTemplate template = compile(engine, '<%@ page model="Map params" %>${params.id}')
+        GroovyPageTemplate template = compile(engine, '<%@ page model="Map flashOfMine" %>${flashOfMine.id}')
 
         then:
         template.metaInfo.compilationException == null
-        render(template, [params: [id: '9']]) == '9'
+        render(template, [flashOfMine: [id: '9']]) == '9'
+    }
+
+    void 'a page redeclaring a framework supplied name must keep a compatible type'() {
+        given:
+        GroovyPagesTemplateEngine engine = engineFor('grails.views.gsp.compileStatic': true)
+
+        when: 'the declared type has to remain assignable to the one the page already has'
+        GroovyPageTemplate narrower = compile(engine, '<%@ page model="Map params" %>${params.id}')
+        GroovyPageTemplate compatible = compile(engine,
+                '<%@ page model="grails.util.TypeConvertingMap params" %>${params.id}')
+
+        then:
+        narrower.metaInfo.compilationException.message.contains('incompatible with grails.util.TypeConvertingMap')
+        compatible.metaInfo.compilationException == null
     }
 
     void 'the build can state compileStatic as a system property so both compile paths agree'() {

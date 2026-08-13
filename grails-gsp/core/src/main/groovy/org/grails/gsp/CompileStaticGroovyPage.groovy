@@ -24,6 +24,7 @@ import groovy.transform.CompileStatic
 import org.springframework.context.ApplicationContext
 
 import grails.core.GrailsApplication
+import grails.util.TypeConvertingMap
 import org.grails.taglib.TagLibNamespaceMethodDispatcher
 import org.grails.taglib.encoder.OutputContext
 
@@ -59,8 +60,12 @@ abstract class CompileStaticGroovyPage extends GroovyPage {
      * further. Each returns what dynamic resolution returns, including {@code null} where a page is
      * rendered outside a web request and the name was never bound.</p>
      */
-    Map getParams() {
-        (Map) resolveProperty('params')
+    TypeConvertingMap getParams() {
+        // TypeConvertingMap rather than Map: the parameters are a GrailsParameterMap, and typing them
+        // as a plain Map would compile params.id but reject params.int('max') and its siblings, which
+        // are declared on TypeConvertingMap. It implements Map, so reading a parameter by name still
+        // compiles to a get().
+        (TypeConvertingMap) resolveProperty('params')
     }
 
     /**
