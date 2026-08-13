@@ -98,7 +98,7 @@ class UserIntegrationSpec extends Specification implements GraphQLSpec {
                 }
             }
         """)
-        Map         obj = resp.body
+        Map obj = resp.body
 
         then:
         obj.data.userCreate != null
