@@ -45,10 +45,10 @@ Separate multiple declarations with semicolons, or use a multi-line value:
 
 Because a declared model is what makes a page type checkable, the `model` directive enables static compilation on its own — `compileStatic="true"` is implied and does not need to be given as well.
 
-Declaring a model also states that the model is complete, so reading a name outside it is reported rather than left to the render:
+Declaring a model also states that the model is complete, so reading any name outside it is reported rather than left to the render:
 
 ----
-The variable [autor] is undeclared.
+The variable [publisher] is undeclared.
 ----
 
 A page that declares no model has stated nothing, and reads what it is rendered with exactly as a dynamically compiled page does. This is what makes static compilation adoptable for views that were never written with it in mind: what the page does say is checked, and what it does not say still works.
