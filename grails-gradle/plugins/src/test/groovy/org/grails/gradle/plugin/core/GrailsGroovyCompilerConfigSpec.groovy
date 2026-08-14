@@ -18,6 +18,8 @@
  */
 package org.grails.gradle.plugin.core
 
+import org.gradle.testkit.runner.TaskOutcome
+
 /**
  * Covers the lifecycle guarantees of the Grails Groovy compiler configuration script wiring.
  *
@@ -96,5 +98,41 @@ class GrailsGroovyCompilerConfigSpec extends GradleSpecification {
         producer >= 0
         generator >= 0
         producer < generator
+    }
+
+    def "one generator per source set, tracked so only a real change regenerates"() {
+        given: 'a project whose star imports come from a build property'
+        setupTestResourceProject('compiler-config-incremental')
+
+        when: 'the script is generated, generated again unchanged, then with different imports'
+        def sourceSets = executeTask('inspectSourceSets')
+        def first = executeTask('generateCompileGroovyGrailsCompilerConfig')
+        def unchanged = executeTask('generateCompileGroovyGrailsCompilerConfig')
+        def changed = executeTask('generateCompileGroovyGrailsCompilerConfig', ['-PextraImport=com.example.foo'])
+        def outcome = { result ->
+            result.tasks.find { it.path.endsWith(':generateCompileGroovyGrailsCompilerConfig') }?.outcome
+        }
+
+        then: 'every source set that compiles Groovy has its own generator'
+        sourceSets.output.contains('generateCompileGroovyGrailsCompilerConfig')
+        sourceSets.output.contains('generateCompileTestGroovyGrailsCompilerConfig')
+
+        and: 'the script is a tracked input rather than regenerated unconditionally'
+        outcome(first) == TaskOutcome.SUCCESS
+        outcome(unchanged) == TaskOutcome.UP_TO_DATE
+        outcome(changed) == TaskOutcome.SUCCESS
+    }
+
+    def "the wiring works with the configuration cache"() {
+        given:
+        setupTestResourceProject('compiler-config-incremental')
+
+        when:
+        def first = executeTask('generateCompileGroovyGrailsCompilerConfig', ['--configuration-cache'])
+        def second = executeTask('generateCompileGroovyGrailsCompilerConfig', ['--configuration-cache'])
+
+        then: 'the entry is stored and then reused, so nothing here defeats the cache'
+        first.output.contains('Configuration cache entry stored')
+        second.output.contains('Configuration cache entry reused')
     }
 }

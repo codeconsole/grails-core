@@ -319,33 +319,28 @@ class GrailsGradlePlugin implements Plugin<Project> {
         // GroovyCompile tasks exist in the same project (e.g. compileGroovy, compileTestGroovy).
         Provider<RegularFile> groovyCompilerConfigFile = groovyCompilerConfigFile(project, compileTaskName)
 
-        // The whole script is a single input property. Nothing here reads the compile classpath, so
-        // the task needs neither state-tracking opt-outs nor an ordering edge to the tasks that
-        // build it: content in, file out, correctly up-to-date checked and cacheable.
+        // The whole script is one input, built entirely from configuration state. Nothing here reads
+        // the compile classpath, so the task needs no state-tracking opt-out and no ordering edge to
+        // the tasks that build it.
         Provider<String> combinedScript = project.provider {
             combineGroovyCompilerConfigScripts(project, compileTaskName)
         }
 
-        project.tasks.register(generatorName) { Task t ->
+        project.tasks.register(generatorName, GrailsCompilerConfigScriptTask) { GrailsCompilerConfigScriptTask t ->
             t.description = "Generates the Grails Groovy compiler configuration script for ${compileTaskName}"
-            t.inputs.property('grailsCompilerConfig', combinedScript)
-            t.outputs.file(groovyCompilerConfigFile)
+            t.script.set(combinedScript)
+            t.outputFile.set(groovyCompilerConfigFile)
             // A build may point configurationScript at a file another task produces. Task graph
             // construction happens before the property is taken over below, so at this point it
             // still carries whatever the build set, and with it that producer. Wrapping it in a
             // FileCollection asks Gradle for that producer without resolving the value: depending
-            // on the property directly tries to convert the file itself into a task, and reading
-            // the value would finalize it and make the later assignment fail.
+            // on the property directly tries to convert the file itself into a task, and building a
+            // collection from a property with no value fails while dependencies are resolved.
             t.dependsOn({
                 RegularFileProperty configured = project.tasks.named(compileTaskName, GroovyCompile)
                         .get().groovyOptions.configurationScriptFile
                 configured.present ? [project.files(configured)] : []
             } as Callable)
-            t.doLast {
-                File combinedFile = groovyCompilerConfigFile.get().asFile
-                combinedFile.parentFile.mkdirs()
-                combinedFile.write(combinedScript.get())
-            }
         }
     }
 
