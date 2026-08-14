@@ -375,11 +375,6 @@ class GrailsGradlePlugin implements Plugin<Project> {
             // Start with user-configured imports
             Set<String> starImports = new LinkedHashSet<>(grails.starImports)
 
-            // Add java.time if enabled
-            if (grails.importJavaTime) {
-                starImports.add('java.time')
-            }
-
             // Add Grails annotation packages and common validation annotations if enabled.
             // These are added whether or not the packages are present: a star import of a package
             // that is not on the classpath contributes no classes and is not an error in Groovy, so

@@ -135,4 +135,19 @@ class GrailsGroovyCompilerConfigSpec extends GradleSpecification {
         first.output.contains('Configuration cache entry stored')
         second.output.contains('Configuration cache entry reused')
     }
+
+    def "opting in imports the Grails annotation packages and the build's own, and nothing else"() {
+        given: 'a project opting in to the common annotations and adding one of its own'
+        setupTestResourceProject('compiler-config-star-imports')
+
+        when:
+        def result = executeTask('inspectImports')
+
+        then: 'the packages are imported whether or not they are on the classpath'
+        result.output.contains("STAR_IMPORTS=[com.example.custom, grails.gorm.annotation, " +
+                'grails.plugin.scaffolding.annotation, jakarta.validation.constraints]')
+
+        and: 'java.time is not among them - Groovy 5 imports it by default'
+        !result.output.contains("star 'java.time'")
+    }
 }

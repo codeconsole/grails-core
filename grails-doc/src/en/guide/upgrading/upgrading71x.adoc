@@ -461,7 +461,9 @@ grails {
 }
 ----
 
-This allows you to use classes from these packages without explicit imports throughout your Groovy code. The `starImports` configuration works independently and will be combined with any imports from `importGrailsCommonAnnotations` or `importJavaTime` flags if those are also enabled.
+This allows you to use classes from these packages without explicit imports throughout your Groovy code. The `starImports` configuration works independently and will be combined with any imports from the `importGrailsCommonAnnotations` flag if that is also enabled.
+
+NOTE: An `importJavaTime` flag existed in earlier milestones to star-import `java.time`. Groovy 5 imports that package by default, so the flag did nothing on Grails 8 and has been removed. Remove it from `build.gradle` if you set it; no replacement is needed.
 
 ===== 2.5 Scaffolding Namespace View Defaults
 
