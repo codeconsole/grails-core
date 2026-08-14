@@ -52,7 +52,6 @@ import org.gradle.api.plugins.ExtraPropertiesExtension
 import org.gradle.api.plugins.GroovyPlugin
 import org.gradle.api.plugins.JavaPluginExtension
 import org.gradle.api.provider.Provider
-import org.gradle.api.tasks.Exec
 import org.gradle.api.tasks.AbstractCopyTask
 import org.gradle.api.tasks.JavaExec
 import org.gradle.api.tasks.SourceSet
@@ -71,6 +70,7 @@ import org.grails.gradle.plugin.exploded.ExplodedCompatibilityRule
 import org.grails.gradle.plugin.exploded.ExplodedDisambiguationRule
 import org.grails.gradle.plugin.exploded.GrailsExplodedPlugin
 import org.grails.gradle.plugin.aot.AotCacheExtension
+import org.grails.gradle.plugin.aot.ExtractApplicationTask
 import org.grails.gradle.plugin.aot.GenerateNativeMetadataTask
 import org.grails.gradle.plugin.aot.NativeMetadataExtension
 import org.grails.gradle.plugin.aot.TraceNativeMetadataTask
@@ -887,18 +887,15 @@ ${importStatements}
      */
     private void configureAssetsOnTheClasspath(Project project) {
         project.pluginManager.withPlugin(SPRING_BOOT_PLUGIN) {
-            // Read after the build script has run, and by the task the pipeline registers rather
-            // than by the plugin that registers it: the asset pipeline's plugin id has changed
-            // once already, and the task name has not.
-            project.afterEvaluate {
-                Task assetCompile = project.tasks.findByName(ASSET_COMPILE_TASK)
-                if (assetCompile == null) {
-                    return
-                }
-                project.tasks.named('bootJar', AbstractCopyTask).configure { AbstractCopyTask task ->
-                    task.from(assetCompile.outputs.files) { CopySpec spec ->
-                        spec.into(CLASSPATH_ASSETS_PATH)
-                    }
+            // Matched by the task the pipeline registers rather than by the plugin that registers
+            // it: the asset pipeline's plugin id has changed once already, and the task name has
+            // not. Matched rather than looked up, so nothing depends on which plugin was applied
+            // first and no task is resolved to find out.
+            FileCollection compiledAssets = project.files(
+                    project.tasks.matching { Task task -> task.name == ASSET_COMPILE_TASK })
+            project.tasks.named('bootJar', AbstractCopyTask).configure { AbstractCopyTask task ->
+                task.from(compiledAssets) { CopySpec spec ->
+                    spec.into(CLASSPATH_ASSETS_PATH)
                 }
             }
         }
@@ -1024,7 +1021,7 @@ ${importStatements}
                 task.group = BasePlugin.BUILD_GROUP
                 task.description = 'Runs the application under the tracing agent and records the reflection it does'
                 task.dependsOn(bootJar)
-                task.archiveFile.set(project.provider { project.layout.projectDirectory.file(archiveOf(bootJar).absolutePath) })
+                task.archiveFile.set(archiveFileOf(bootJar))
                 // The project's toolchain unless told otherwise, which for a project that builds an
                 // image is the GraalVM the image is built with -- and the agent is only there.
                 task.javaExecutable.set(extension.javaExecutable
@@ -1291,25 +1288,16 @@ ${importStatements}
             Provider<Directory> application = project.layout.buildDirectory.dir('aot-cache/application')
             Provider<JavaLauncher> launcher = trainingLauncher(project)
 
-            TaskProvider<Exec> extract = project.tasks.register('extractAotCacheApplication', Exec) { Exec task ->
+            TaskProvider<ExtractApplicationTask> extract = project.tasks.register(
+                    'extractAotCacheApplication', ExtractApplicationTask) { ExtractApplicationTask task ->
                 task.group = BasePlugin.BUILD_GROUP
                 task.description = 'Extracts the application, which is the form the cache is read against'
                 task.onlyIf { extension.enabled.get() }
-                task.dependsOn(bootJar)
-                // Named so the extraction is skipped when the archive it came from has not moved,
-                // rather than repeated on every run because nothing said what it produced.
-                task.inputs.file(project.provider { archiveOf(bootJar) })
-                task.outputs.dir(application)
-                task.doFirst {
-                    File destination = application.get().asFile
-                    project.delete(destination)
-                    destination.mkdirs()
-                    // Set here rather than while the build is configured, so the JDK the toolchain
-                    // resolves to is not provisioned by every build that merely reads this project.
-                    task.commandLine(launcher.get().executablePath.asFile.absolutePath,
-                            '-Djarmode=tools', '-jar', archiveOf(bootJar).absolutePath, 'extract',
-                            '--destination', destination.absolutePath)
-                }
+                task.archiveFile.set(archiveFileOf(bootJar))
+                // Mapped rather than read, so the JDK the toolchain resolves to is not provisioned
+                // by every build that merely reads this project.
+                task.javaExecutable.set(launcher.map { JavaLauncher java -> java.executablePath.asFile.absolutePath })
+                task.destination.set(application)
             }
 
             project.tasks.register('trainAotCache', TrainAotCacheTask) { TrainAotCacheTask task ->
@@ -1318,7 +1306,7 @@ ${importStatements}
                 task.onlyIf { extension.enabled.get() }
                 task.dependsOn(extract)
                 task.applicationDirectory.set(application)
-                task.archiveFileName.set(project.provider { archiveOf(bootJar).name })
+                task.archiveFileName.set(archiveFileOf(bootJar).map { RegularFile file -> file.asFile.name })
                 // Beside the extracted application rather than inside it. Inside, the cache and its
                 // metadata land in the directory this task declares as its input, so writing them
                 // changes that input and the task can never be up to date -- every build would run
@@ -1340,10 +1328,15 @@ ${importStatements}
         }
     }
 
-    /** The archive to extract, read when the task runs rather than while the build is configured. */
-    private static File archiveOf(TaskProvider<?> bootJar) {
-        Provider<RegularFile> archive = (Provider<RegularFile>) bootJar.get().property('archiveFile')
-        archive.get().asFile
+    /**
+     * The archive a task should consume, as something to be resolved when it runs.
+     *
+     * <p>A provider rather than a file: asking the task for its archive resolves the task, and a
+     * task resolved while the build is configured is one every build pays for whether or not it
+     * asked for an archive.</p>
+     */
+    private static Provider<RegularFile> archiveFileOf(TaskProvider<?> bootJar) {
+        bootJar.flatMap { Task task -> (Provider<RegularFile>) task.property('archiveFile') }
     }
 
     /**

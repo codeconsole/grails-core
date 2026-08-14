@@ -191,17 +191,20 @@ class GroovyPagesGrailsPlugin extends Plugin {
                 if (customResourceLoader) {
                     resourceLoader = groovyPageResourceLoader
                 }
-                // Where the pages compiled at build time are listed. Attached whatever the
-                // surroundings, because whether to read from it is decided where a page is looked
-                // up, at run time, and only there is the answer knowable: deciding it here settles
-                // it while the definition is being generated, in the directory the application was
-                // built in, where a development environment is available -- so an image would be
-                // built believing it has to compile its pages, which is the one thing it cannot do.
-                // Named rather than resolved, so that what is written down is a location to look in
-                // and not a path on the machine that did the building.
-                precompiledGspMap = { PropertiesFactoryBean pfb ->
-                    ignoreResourceNotFound = true
-                    locations = ['gsp/views.properties', 'classpath:gsp/views.properties']
+                // Where the pages compiled at build time are listed, attached anywhere they are
+                // the pages that will be rendered: a deployed application, and one whose code is
+                // being written out. isDevelopmentMode() answers no to the second, so an image is
+                // not built believing it has to compile its pages -- which is the one thing it
+                // cannot do -- while a project on disk still reads its pages from source and
+                // recompiles them as they are edited.
+                //
+                // The locations are named rather than resolved here, so what is written down is
+                // somewhere to look and not a path on the machine that did the building.
+                if (!developmentMode) {
+                    precompiledGspMap = { PropertiesFactoryBean pfb ->
+                        ignoreResourceNotFound = true
+                        locations = ['gsp/views.properties', 'classpath:gsp/views.properties']
+                    }
                 }
                 if (enableReload) {
                     cacheTimeout = gspCacheTimeout
