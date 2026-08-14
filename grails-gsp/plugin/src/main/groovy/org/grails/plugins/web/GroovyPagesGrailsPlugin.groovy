@@ -25,8 +25,6 @@ import org.springframework.beans.factory.BeanRegistry
 import org.springframework.beans.factory.BeanRegistrar
 import org.springframework.beans.factory.config.PropertiesFactoryBean
 import org.springframework.boot.web.servlet.ServletRegistrationBean
-import org.springframework.context.aot.AbstractAotProcessor
-import org.springframework.core.SpringProperties
 import org.springframework.util.ClassUtils
 import org.springframework.web.servlet.view.InternalResourceViewResolver
 
@@ -39,6 +37,7 @@ import grails.util.Environment
 import grails.util.GrailsUtil
 import grails.util.Metadata
 import grails.web.pages.GroovyPagesUriService
+import org.apache.grails.common.aot.AheadOfTimeProcessing
 import org.grails.core.artefact.gsp.TagLibArtefactHandler
 import org.grails.gsp.GroovyPageResourceLoader
 import org.grails.gsp.GroovyPagesTemplateEngine
@@ -292,7 +291,7 @@ class GroovyPagesGrailsPlugin extends Plugin {
      */
     @CompileStatic
     protected boolean isDevelopmentMode() {
-        if (SpringProperties.getFlag(AbstractAotProcessor.AOT_PROCESSING)) {
+        if (AheadOfTimeProcessing.generatingCode) {
             return false
         }
         Metadata.getCurrent().isDevelopmentEnvironmentAvailable()

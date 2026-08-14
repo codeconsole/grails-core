@@ -26,9 +26,9 @@ import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
 import org.springframework.beans.factory.support.BeanDefinitionRegistry;
 import org.springframework.beans.factory.support.BeanDefinitionRegistryPostProcessor;
 import org.springframework.beans.factory.support.GenericBeanDefinition;
-import org.springframework.context.aot.AbstractAotProcessor;
 import org.springframework.core.PriorityOrdered;
-import org.springframework.core.SpringProperties;
+
+import org.apache.grails.common.aot.AheadOfTimeProcessing;
 
 /**
  * Registers {@code abstractGrailsResourceLocator}, the abstract parent definition that
@@ -78,8 +78,7 @@ public class AbstractResourceLocatorPostProcessor implements BeanDefinitionRegis
      * to look.</p>
      */
     private List<String> searchLocationsToInherit() {
-        return SpringProperties.getFlag(AbstractAotProcessor.AOT_PROCESSING) ?
-                List.of() : this.searchLocations;
+        return AheadOfTimeProcessing.isGeneratingCode() ? List.of() : this.searchLocations;
     }
 
     /**

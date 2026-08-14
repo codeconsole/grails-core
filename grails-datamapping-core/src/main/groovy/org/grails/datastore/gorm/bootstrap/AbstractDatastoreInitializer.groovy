@@ -31,10 +31,8 @@ import org.springframework.context.ApplicationEventPublisher
 import org.springframework.context.ConfigurableApplicationContext
 import org.springframework.context.MessageSource
 import org.springframework.context.ResourceLoaderAware
-import org.springframework.context.aot.AbstractAotProcessor
 import org.springframework.context.support.GenericApplicationContext
 import org.springframework.context.support.StaticMessageSource
-import org.springframework.core.SpringProperties
 import org.springframework.core.env.ConfigurableEnvironment
 import org.springframework.core.env.PropertyResolver
 import org.springframework.core.env.StandardEnvironment
@@ -46,6 +44,7 @@ import org.springframework.core.type.classreading.CachingMetadataReaderFactory
 import org.springframework.util.ClassUtils
 
 import grails.gorm.annotation.Entity
+import org.apache.grails.common.aot.AheadOfTimeProcessing
 import org.grails.datastore.gorm.events.ConfigurableApplicationContextEventPublisher
 import org.grails.datastore.gorm.events.DefaultApplicationEventPublisher
 import org.grails.datastore.gorm.plugin.support.PersistenceContextInterceptorAggregator
@@ -80,33 +79,6 @@ abstract class AbstractDatastoreInitializer implements ResourceLoaderAware {
     Collection<Class> persistentClasses = []
     Collection<String> packages = []
     PropertyResolver configuration = new StandardEnvironment()
-
-    /**
-     * What a bean definition should hold in place of the configuration itself.
-     *
-     * <p>A definition holding the resolver is a definition holding everything the resolver can
-     * reach, and generating code for such a definition writes those values out: an environment
-     * carries the machine's own variables, so the generated source ends up containing the
-     * environment of whatever machine built it, along with whatever was in it -- credentials among
-     * them -- and the application then reads its settings from there rather than from where it
-     * runs.</p>
-     *
-     * <p>So while code is being generated, and only then, the context's environment is named
-     * instead, which leaves the lookup to be made where the application runs. Every other time the
-     * resolver is held as it always was, which matters for a datastore brought up on its own: its
-     * configuration is whatever the caller passed and there is no environment holding it.</p>
-     */
-    protected Object configurationReference(BeanDefinitionRegistry registry) {
-        if (!SpringProperties.getFlag(AbstractAotProcessor.AOT_PROCESSING)) {
-            return configuration
-        }
-        boolean insideContainer = registry instanceof ConfigurableApplicationContext ||
-                resourcePatternResolver.resourceLoader instanceof ConfigurableApplicationContext
-        insideContainer
-                ? new RuntimeBeanReference(ConfigurableApplicationContext.ENVIRONMENT_BEAN_NAME)
-                : configuration
-    }
-
     boolean registerApplicationIfNotPresent = true
     Object originalConfiguration
 
@@ -153,6 +125,32 @@ abstract class AbstractDatastoreInitializer implements ResourceLoaderAware {
 
     AbstractDatastoreInitializer(Map configuration, Class... persistentClasses) {
         this(configuration, persistentClasses.toList())
+    }
+
+    /**
+     * What a bean definition should hold in place of the configuration itself.
+     *
+     * <p>A definition holding the resolver is a definition holding everything the resolver can
+     * reach, and generating code for such a definition writes those values out: an environment
+     * carries the machine's own variables, so the generated source ends up containing the
+     * environment of whatever machine built it, along with whatever was in it -- credentials among
+     * them -- and the application then reads its settings from there rather than from where it
+     * runs.</p>
+     *
+     * <p>So while code is being generated, and only then, the context's environment is named
+     * instead, which leaves the lookup to be made where the application runs. Every other time the
+     * resolver is held as it always was, which matters for a datastore brought up on its own: its
+     * configuration is whatever the caller passed and there is no environment holding it.</p>
+     */
+    protected Object configurationReference(BeanDefinitionRegistry registry) {
+        if (!AheadOfTimeProcessing.generatingCode) {
+            return configuration
+        }
+        boolean insideContainer = registry instanceof ConfigurableApplicationContext ||
+                resourcePatternResolver.resourceLoader instanceof ConfigurableApplicationContext
+        insideContainer
+                ? new RuntimeBeanReference(ConfigurableApplicationContext.ENVIRONMENT_BEAN_NAME)
+                : configuration
     }
 
     /**
