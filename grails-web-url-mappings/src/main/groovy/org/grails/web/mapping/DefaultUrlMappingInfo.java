@@ -23,8 +23,8 @@ import java.util.Map;
 
 import groovy.lang.Closure;
 
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import org.springframework.context.ApplicationContext;
 import org.springframework.util.Assert;
@@ -47,7 +47,7 @@ import org.grails.web.servlet.mvc.GrailsWebRequest;
  */
 public class DefaultUrlMappingInfo extends AbstractUrlMappingInfo {
 
-    private static final Log LOG = LogFactory.getLog(DefaultUrlMappingInfo.class);
+    private static final Logger LOG = LoggerFactory.getLogger(DefaultUrlMappingInfo.class);
     private static final String CONTROLLER_PREFIX = "controller:";
     private static final String ACTION_PREFIX = "action:";
     private static final String PLUGIN_PREFIX = "plugin:";

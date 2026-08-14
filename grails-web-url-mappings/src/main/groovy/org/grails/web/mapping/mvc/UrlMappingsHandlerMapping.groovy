@@ -18,7 +18,6 @@
  */
 package org.grails.web.mapping.mvc
 
-import groovy.transform.CompileDynamic
 import groovy.transform.CompileStatic
 
 import jakarta.servlet.http.HttpServletRequest
@@ -59,8 +58,14 @@ class UrlMappingsHandlerMapping extends AbstractHandlerMapping {
 
     public static final String MATCHED_REQUEST = 'org.grails.url.match.info'
 
+    // Both are stateless, so one shared instance each rather than two allocations per request.
+    private static final HandlerInterceptor OBSERVATION_ROUTE_HANDLER = new ObservationRouteHandler()
+    private static final HandlerInterceptor ERROR_HANDLING_HANDLER = new ErrorHandlingHandler()
+
     protected UrlMappingsHolder urlMappingsHolder
-    protected UrlPathHelper urlHelper = UrlPathHelper.defaultInstance
+    // Deliberately not UrlPathHelper.defaultInstance: that instance is read-only, and this field is
+    // protected, so a subclass configuring it (alwaysUseFullPath and friends) must keep working.
+    protected UrlPathHelper urlHelper = new UrlPathHelper()
     protected MimeTypeResolver mimeTypeResolver
     protected HandlerInterceptor[] webRequestHandlerInterceptors
 
@@ -93,34 +98,21 @@ class UrlMappingsHandlerMapping extends AbstractHandlerMapping {
 
     @Override
     protected HandlerExecutionChain getHandlerExecutionChain(Object handler, HttpServletRequest request) {
-        HandlerExecutionChain chain = (handler instanceof HandlerExecutionChain ?
-                (HandlerExecutionChain) handler : new HandlerExecutionChain(handler))
+        // Let Spring assemble the chain. Re-implementing it here meant Grails-mapped requests silently
+        // missed whatever AbstractHandlerMapping added later - currently the API version deprecation
+        // interceptor behind spring.mvc.apiversion.*.
+        HandlerExecutionChain chain = super.getHandlerExecutionChain(handler, request)
 
-        // WebRequestInterceptor need to come first, as these include things like Hibernate OSIV
+        // WebRequestInterceptors have to come first, as these include things like Hibernate OSIV.
         if (webRequestHandlerInterceptors) {
-            chain.addInterceptors(webRequestHandlerInterceptors)
-        }
-
-        for (HandlerInterceptor interceptor in this.adaptedInterceptors) {
-            if (interceptor instanceof MappedInterceptor) {
-                MappedInterceptor mappedInterceptor = mappedInterceptor(interceptor)
-                if (mappedInterceptor.matches(request)) {
-                    chain.addInterceptor(mappedInterceptor.getInterceptor())
-                }
-            }
-            else {
-                chain.addInterceptor(interceptor)
+            for (int i = 0; i < webRequestHandlerInterceptors.length; i++) {
+                chain.addInterceptor(i, webRequestHandlerInterceptors[i])
             }
         }
 
-        chain.addInterceptor(new ObservationRouteHandler())
-        chain.addInterceptor(new ErrorHandlingHandler())
+        chain.addInterceptor(OBSERVATION_ROUTE_HANDLER)
+        chain.addInterceptor(ERROR_HANDLING_HANDLER)
         return chain
-    }
-
-    @CompileDynamic
-    protected MappedInterceptor mappedInterceptor(HandlerInterceptor interceptor) {
-        (MappedInterceptor) interceptor
     }
 
     @Override

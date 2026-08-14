@@ -27,8 +27,8 @@ import jakarta.servlet.ServletRequest;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
 
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import org.springframework.beans.BeansException;
 import org.springframework.context.ApplicationContext;
@@ -59,7 +59,7 @@ import org.grails.web.util.GrailsApplicationAttributes;
 public class DefaultGrailsApplicationAttributes implements GrailsApplicationAttributes {
     protected static final String DEFAULT_NAMESPACE = "g";
 
-    private static Log LOG = LogFactory.getLog(DefaultGrailsApplicationAttributes.class);
+    private static final Logger LOG = LoggerFactory.getLogger(DefaultGrailsApplicationAttributes.class);
 
     private final UrlPathHelper urlHelper = UrlPathHelper.defaultInstance;
 
@@ -109,7 +109,7 @@ public class DefaultGrailsApplicationAttributes implements GrailsApplicationAttr
             }
         }
         catch (BeansException e) {
-            LOG.warn("Bean named '" + name + "' is missing.");
+            LOG.warn("Bean named '{}' is missing.", name);
             return null;
         }
     }
@@ -218,8 +218,8 @@ public class DefaultGrailsApplicationAttributes implements GrailsApplicationAttr
         if (pagesTemplateEngine == null) {
             pagesTemplateEngine = fetchBeanFromAppCtx(ResourceAwareTemplateEngine.BEAN_ID);
         }
-        if (pagesTemplateEngine == null && LOG.isWarnEnabled()) {
-            LOG.warn("No bean named [" + ResourceAwareTemplateEngine.BEAN_ID + "] defined in Spring application context!");
+        if (pagesTemplateEngine == null) {
+            LOG.warn("No bean named [{}] defined in Spring application context!", ResourceAwareTemplateEngine.BEAN_ID);
         }
         return pagesTemplateEngine;
     }

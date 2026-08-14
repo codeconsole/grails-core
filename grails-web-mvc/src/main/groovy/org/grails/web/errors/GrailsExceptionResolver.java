@@ -34,8 +34,8 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.BeansException;
@@ -75,7 +75,7 @@ public class GrailsExceptionResolver extends SimpleMappingExceptionResolver impl
 
     public static final String EXCEPTION_ATTRIBUTE = WebUtils.EXCEPTION_ATTRIBUTE;
 
-    protected static final Log LOG = LogFactory.getLog(GrailsExceptionResolver.class);
+    protected static final Logger LOG = LoggerFactory.getLogger(GrailsExceptionResolver.class);
     protected static final String LINE_SEPARATOR = System.getProperty("line.separator");
 
     protected ServletContext servletContext;
@@ -225,7 +225,7 @@ public class GrailsExceptionResolver extends SimpleMappingExceptionResolver impl
             return mv;
         }
         catch (Exception e) {
-            LOG.error("Unable to render errors view: " + e.getMessage(), e);
+            LOG.error("Unable to render errors view: {}", e.getMessage(), e);
             throw new GrailsRuntimeException(e);
         }
     }
@@ -235,10 +235,8 @@ public class GrailsExceptionResolver extends SimpleMappingExceptionResolver impl
         info.configure(WebUtils.retrieveGrailsWebRequest());
         String forwardUrl = UrlMappingUtils.forwardRequestForUrlMappingInfo(
                 request, response, info, mv.getModel(), true);
-        if (LOG.isDebugEnabled()) {
-            LOG.debug("Matched URI [" + uri + "] to URL mapping [" + info +
-                    "], forwarding to [" + forwardUrl + "] with response [" + response.getClass() + "]");
-        }
+        LOG.debug("Matched URI [{}] to URL mapping [{}], forwarding to [{}] with response [{}]",
+                uri, info, forwardUrl, response.getClass());
     }
 
     protected String determineUri(HttpServletRequest request) {

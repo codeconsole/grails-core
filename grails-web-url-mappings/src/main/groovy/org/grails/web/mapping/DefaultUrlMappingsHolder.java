@@ -37,8 +37,8 @@ import groovy.lang.Closure;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.github.benmanes.caffeine.cache.Weigher;
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import org.springframework.core.style.ToStringCreator;
 import org.springframework.http.HttpMethod;
@@ -70,7 +70,7 @@ import grails.web.mapping.UrlMappings;
 @SuppressWarnings("rawtypes")
 public class DefaultUrlMappingsHolder implements UrlMappings {
 
-    private static final transient Log LOG = LogFactory.getLog(DefaultUrlMappingsHolder.class);
+    private static final transient Logger LOG = LoggerFactory.getLogger(DefaultUrlMappingsHolder.class);
     private static final int DEFAULT_MAX_WEIGHTED_CAPACITY = 1000;
     public static final UrlMappingInfo[] EMPTY_RESULTS = new UrlMappingInfo[0];
 
@@ -179,9 +179,7 @@ public class DefaultUrlMappingsHolder implements UrlMappings {
             UrlMappingsListKey listKey = new UrlMappingsListKey(controllerName, actionName, namespace, pluginName, httpMethod, version);
             mappingsListLookup.put(listKey, key);
 
-            if (LOG.isDebugEnabled()) {
-                LOG.debug("Reverse mapping: " + key + " -> " + mapping);
-            }
+            LOG.debug("Reverse mapping: {} -> {}", key, mapping);
             Set<String> requiredParamsAndOptionals = new HashSet<>(requiredParams);
             if (optionalIndex > -1) {
                 for (int j = optionalIndex; j < params.length; j++) {
@@ -196,9 +194,7 @@ public class DefaultUrlMappingsHolder implements UrlMappings {
                         listKey = new UrlMappingsListKey(controllerName, actionName, namespace, pluginName, httpMethod, version);
                         mappingsListLookup.put(listKey, key);
 
-                        if (LOG.isDebugEnabled()) {
-                            LOG.debug("Reverse mapping: " + key + " -> " + mapping);
-                        }
+                        LOG.debug("Reverse mapping: {} -> {}", key, mapping);
                     }
                 }
             }
@@ -514,7 +510,7 @@ public class DefaultUrlMappingsHolder implements UrlMappings {
 
         for (UrlMapping mapping : mappings) {
             if (LOG.isDebugEnabled()) {
-                LOG.debug("Attempting to match URI [" + uri + "] with pattern [" + mapping.getUrlData().getUrlPattern() + "]");
+                LOG.debug("Attempting to match URI [{}] with pattern [{}]", uri, mapping.getUrlData().getUrlPattern());
             }
 
             info = mapping.match(uri);
@@ -541,13 +537,13 @@ public class DefaultUrlMappingsHolder implements UrlMappings {
             matchingUrls = new ArrayList<>();
             for (UrlMapping mapping : mappings) {
                 if (LOG.isDebugEnabled()) {
-                    LOG.debug("Attempting to match URI [" + uri + "] with pattern [" + mapping.getUrlData().getUrlPattern() + "]");
+                    LOG.debug("Attempting to match URI [{}] with pattern [{}]", uri, mapping.getUrlData().getUrlPattern());
                 }
 
                 UrlMappingInfo current = mapping.match(uri);
                 if (current != null) {
                     if (LOG.isDebugEnabled()) {
-                        LOG.debug("Matched URI [" + uri + "] with pattern [" + mapping.getUrlData().getUrlPattern() + "], adding to possibilities");
+                        LOG.debug("Matched URI [{}] with pattern [{}], adding to possibilities", uri, mapping.getUrlData().getUrlPattern());
                     }
 
                     String mappingHttpMethod = current.getHttpMethod();
@@ -582,13 +578,13 @@ public class DefaultUrlMappingsHolder implements UrlMappings {
             boolean anyVersion = version != null && version.equals(UrlMapping.ANY_VERSION);
             for (UrlMapping mapping : mappings) {
                 if (LOG.isDebugEnabled()) {
-                    LOG.debug("Attempting to match URI [" + uri + "] with pattern [" + mapping.getUrlData().getUrlPattern() + "]");
+                    LOG.debug("Attempting to match URI [{}] with pattern [{}]", uri, mapping.getUrlData().getUrlPattern());
                 }
 
                 UrlMappingInfo current = mapping.match(uri);
                 if (current != null) {
                     if (LOG.isDebugEnabled()) {
-                        LOG.debug("Matched URI [" + uri + "] with pattern [" + mapping.getUrlData().getUrlPattern() + "], adding to possibilities");
+                        LOG.debug("Matched URI [{}] with pattern [{}], adding to possibilities", uri, mapping.getUrlData().getUrlPattern());
                     }
 
                     String mappingHttpMethod = current.getHttpMethod();
