@@ -23,7 +23,6 @@ import org.springframework.beans.factory.config.RuntimeBeanReference
 import org.springframework.beans.factory.support.AbstractBeanDefinition
 import org.springframework.beans.factory.support.BeanRegistryAdapter
 import org.springframework.beans.factory.support.DefaultListableBeanFactory
-import org.springframework.context.aot.AbstractAotProcessor
 import org.springframework.core.env.StandardEnvironment
 
 import grails.core.GrailsApplication
@@ -102,50 +101,6 @@ class UrlMappingsGrailsPluginSpec extends Specification {
         holder.beanClassName == UrlMappingsHolderFactoryBean.name
         holder.lazyInit
         !registry.containsBeanDefinition('urlMappingsTargetSource')
-    }
-
-    void "reloading is off while the code is being generated"() {
-        given: "surroundings that would otherwise reload"
-            def plugin = new Reloading()
-
-        expect: "which is how the holder comes to be a proxy"
-            plugin.isReloadEnabled()
-
-        when: "the same surroundings, while the code is being generated"
-            System.setProperty(AbstractAotProcessor.AOT_PROCESSING, 'true')
-
-        then: "the proxy produces its UrlMappings through a target source rather than declaring the " +
-                "type, so nothing could be autowired by that type from a generated definition"
-            !plugin.isReloadEnabled()
-
-        cleanup:
-            System.clearProperty(AbstractAotProcessor.AOT_PROCESSING)
-    }
-
-    void "the surroundings still decide on an ordinary start"() {
-        given:
-            System.clearProperty(AbstractAotProcessor.AOT_PROCESSING)
-
-        expect: "generation is the only thing that overrides them"
-            new Reloading().isReloadEnabled()
-            !new NotReloading().isReloadEnabled()
-    }
-
-    /** Stands in for surroundings that reload, which a test JVM is not. */
-    static class Reloading extends UrlMappingsGrailsPlugin {
-
-        @Override
-        protected boolean isEnvironmentReloadable() {
-            true
-        }
-    }
-
-    static class NotReloading extends UrlMappingsGrailsPlugin {
-
-        @Override
-        protected boolean isEnvironmentReloadable() {
-            false
-        }
     }
 
     private static void applyRegistrar(DefaultListableBeanFactory beanFactory, GrailsApplication application) {

@@ -44,19 +44,12 @@ java -Dspring.aot.enabled=true -jar build/libs/myapp.jar
 An application started this way logs `Starting AOT-processed Application` rather than `Starting Application`.
 
 
-=== Generate in production mode
+=== The environment the definitions are generated for
 
 
-`processAot` builds the bean definitions that the packaged application will use, so it must run with the same environment those definitions are meant for:
+`processAot` builds the bean definitions the packaged application will use, so it runs in the environment those definitions are meant for. The Grails Gradle plugin sets `grails.env` to `production` on the task; nothing needs to be configured for it.
 
-[source,groovy]
-----
-tasks.named('processAot') {
-    systemProperty 'grails.env', 'production'
-}
-----
-
-Without this the task runs in the development environment, where reloading is enabled and several beans take a different shape. The URL mappings holder, for example, becomes a proxy whose type cannot be determined without creating it, and generation fails with an error naming a bean that is unrelated to anything in the application:
+It matters because an application declares different beans in different environments. Under development the URL mappings holder is a proxy whose type cannot be determined without creating it, and generation fails naming a bean unrelated to anything in the application:
 
 [source]
 ----
@@ -64,7 +57,14 @@ Field urlMappings in org.grails.web.mapping.servlet.UrlMappingsErrorPageCustomiz
 required a bean of type 'grails.web.mapping.UrlMappings' that could not be found.
 ----
 
-Reload-mode beans have no meaning in a packaged artifact, so generating in production mode is correct as well as necessary.
+Reload-mode beans have no meaning in a packaged artifact, so generating in production is correct as well as necessary. To generate for a different environment, set the property on the task yourself:
+
+[source,groovy]
+----
+tasks.named('processAot') {
+    systemProperty 'grails.env', 'staging'
+}
+----
 
 
 === What AOT changes at runtime

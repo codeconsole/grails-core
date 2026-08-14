@@ -44,11 +44,36 @@ dependencies {
     testImplementation 'org.apache.grails:grails-testing-support-web'
 }
 
-// Generation reflects the environment the packaged application runs in. Under development,
-// reloading is enabled and beans such as the url mappings holder take a proxied shape that has
-// no meaning in a packaged artifact and cannot be generated.
-tasks.named('processAot') {
-    systemProperty 'grails.env', 'production'
+
+// A generated definition holding a path from the machine that generated it builds cleanly, starts
+// cleanly on that machine, and fails everywhere else -- so nothing but looking at what was written
+// catches it. This is what the AOT_PROCESSING checks in the plugins are for.
+tasks.register('aotGeneratedSourcesCarryNoBuildPath') {
+    group = 'verification'
+    description = 'Asserts the generated bean definitions hold no path from the machine that generated them'
+    dependsOn tasks.named('processAot')
+    def generated = layout.buildDirectory.dir('generated/aotSources')
+    def buildPath = projectDir.absolutePath
+    inputs.dir(generated).withPropertyName('generatedSources')
+            .withPathSensitivity(PathSensitivity.RELATIVE)
+    doLast {
+        List<File> carrying = []
+        generated.get().asFile.eachFileRecurse { file ->
+            if (file.name.endsWith('.java') && file.text.contains(buildPath)) {
+                carrying << file
+            }
+        }
+        if (carrying) {
+            throw new GradleException(
+                    "Generated bean definitions carry the directory they were generated in, so the " +
+                    "application would look for its resources there wherever it runs:\n  " +
+                    carrying.join('\n  '))
+        }
+    }
+}
+
+tasks.named('check') {
+    dependsOn tasks.named('aotGeneratedSourcesCarryNoBuildPath')
 }
 
 // The application must also start from what was generated, which is the half that catches a
