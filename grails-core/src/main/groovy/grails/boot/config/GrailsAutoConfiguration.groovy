@@ -25,9 +25,9 @@ import groovy.transform.CompileStatic
 import org.springframework.aop.config.AopConfigUtils
 import org.springframework.context.ApplicationContext
 import org.springframework.context.ApplicationContextAware
+import org.springframework.context.ConfigurableApplicationContext
 import org.springframework.context.annotation.Bean
 import org.springframework.aot.AotDetector
-import org.springframework.beans.factory.config.SingletonBeanRegistry
 import org.springframework.core.io.support.PathMatchingResourcePatternResolver
 
 import grails.boot.config.tools.ClassPathScanner
@@ -78,6 +78,15 @@ class GrailsAutoConfiguration implements GrailsApplicationClass, ApplicationCont
     }
 
     /**
+     * The classes that constitute the Grails application.
+     *
+     * <p>The context is set before this is asked, on both paths that ask it: the early registration
+     * phase sets it on the instance it creates, and the {@code @Bean} method below is invoked on
+     * this configuration class after Spring has applied {@link ApplicationContextAware}. It has to
+     * be -- the scan below resolves its resources through the context, and did so before any of
+     * this was written -- so reading a singleton from it here adds no ordering that was not
+     * already relied upon.</p>
+     *
      * @return The classes that constitute the Grails application
      */
     Collection<Class> classes() {
@@ -112,8 +121,12 @@ class GrailsAutoConfiguration implements GrailsApplicationClass, ApplicationCont
         if (applicationContext == null || !AotDetector.useGeneratedArtifacts()) {
             return null
         }
-        Object written = applicationContext.autowireCapableBeanFactory instanceof SingletonBeanRegistry
-                ? ((SingletonBeanRegistry) applicationContext.autowireCapableBeanFactory)
+        // Read from the bean factory rather than through getAutowireCapableBeanFactory(), which
+        // refuses a context that has not been refreshed. This is asked while the definitions are
+        // still being contributed, which is why the classes are left as a singleton in the first
+        // place, and asking must not depend on how far the context has got.
+        Object written = applicationContext instanceof ConfigurableApplicationContext
+                ? ((ConfigurableApplicationContext) applicationContext).beanFactory
                         .getSingleton(ArtefactClassesBeanFactoryInitializationAotProcessor.BEAN_NAME)
                 : null
         written instanceof Class[] ? Arrays.asList((Class[]) written) : null

@@ -22,6 +22,8 @@ import org.springframework.beans.factory.support.BeanDefinitionRegistry
 import org.springframework.beans.factory.support.DefaultListableBeanFactory
 import org.springframework.beans.factory.support.RootBeanDefinition
 import org.springframework.context.aot.AbstractAotProcessor
+import org.grails.core.io.DefaultResourceLocator
+import org.springframework.core.io.DefaultResourceLoader
 import spock.lang.Specification
 
 /**
@@ -92,5 +94,16 @@ class AbstractResourceLocatorPostProcessorSpec extends Specification {
 
         then: 'which is how an application overrides where its resources are looked for'
             registry.getBeanDefinition(AbstractResourceLocatorPostProcessor.BEAN_NAME).is(existing)
+    }
+
+    void 'a locator inheriting nowhere to look still finds a packaged resource'() {
+        given: 'what a child inherits from the template while the code is being written out'
+            DefaultResourceLocator locator = new DefaultResourceLocator()
+            locator.setResourceLoader(new DefaultResourceLoader())
+            locator.setSearchLocations([])
+
+        expect: 'the directories are somewhere to look on the machine that built it, and what is ' +
+                'left when there are none is the application reading its own contents'
+            locator.findResourceForURI('classpath:grails-banner.txt')?.exists()
     }
 }
