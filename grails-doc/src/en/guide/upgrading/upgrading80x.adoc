@@ -2255,3 +2255,42 @@ resolved unambiguously before can become ambiguous.
 
 Removing the packages from `grails.spring.bean.packages`, or the stray classes from those packages, restores
 the previous set of beans.
+
+==== 45. `importJavaTime` Removed
+
+The `org.apache.grails.gradle.grails-app` plugin no longer accepts `importJavaTime`.
+
+The flag added `java.time` to the star imports of every Groovy compilation. Groovy 5, which Grails 8
+requires, imports that package by default, so on Grails 8 the flag added an import the compiler already
+had:
+
+[source,groovy]
+----
+// Grails 8, no configuration and no import statement
+class Book {
+    LocalDate published
+    Duration readingTime
+}
+----
+
+A build that sets it fails with `Could not set unknown property 'importJavaTime'`. Delete the line; there
+is no replacement:
+
+[source,groovy]
+.build.gradle
+----
+grails {
+    // Grails 7
+    // importJavaTime = true
+
+    // Grails 8 - java.time is a Groovy 5 default import
+}
+----
+
+`importGrailsCommonAnnotations` and `starImports` are unchanged, and both still default to off.
+
+`importGrailsCommonAnnotations` no longer probes the compile classpath before adding
+`grails.gorm.annotation` and `grails.plugin.scaffolding.annotation`. When the flag is set both packages are
+imported whether or not they are present — a star import of an absent package contributes no classes and is
+not an error in Groovy, so the probe changed nothing it could observe. An application that relied on the
+import being *omitted* when the package was absent sees no difference in compiled output.
