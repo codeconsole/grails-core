@@ -2302,3 +2302,32 @@ def file = request.getFile('myFile')
 
 Calling one of the file methods on a request that is not a file upload throws `IllegalStateException`
 with a diagnostic message, the same way it previously failed with `MissingMethodException`.
+
+==== 46. Request Processing Behaviour Changes
+
+Three behaviour changes fall out of Grails 8 delegating more of the request path to Spring.
+
+===== 46.1 API versioning headers are now emitted for Grails-mapped requests
+
+`UrlMappingsHandlerMapping` previously assembled its own handler execution chain rather than using
+Spring's. As a result, Grails-mapped requests skipped the interceptor Spring adds for API versioning,
+so the `Deprecation`, `Sunset` and `Link` headers configured through `spring.mvc.apiversion.*` were
+never sent. The chain is now assembled by Spring, and those headers are emitted as configured.
+
+If an application relied on those headers being absent, unset the corresponding
+`spring.mvc.apiversion.*` configuration.
+
+===== 46.2 The `LocaleContext` is restored rather than cleared
+
+At the end of a request Grails previously called `LocaleContextHolder.setLocale(null)`, which discarded
+any `LocaleContext` established earlier in the filter chain by non-Grails code. Grails now saves and
+restores the previous `LocaleContext`, matching Spring's own `RequestContextFilter`.
+
+===== 46.3 The application attributes object is shared per servlet context
+
+`GrailsApplicationAttributes` was constructed once per request. It is now created once per servlet
+context and reused, so the beans it caches are resolved once rather than on every request. It is
+rebuilt automatically if the `ApplicationContext` is replaced.
+
+Applications that implemented `GrailsApplicationAttributes` themselves must ensure their
+implementation holds no request-scoped state and is safe to use from multiple request threads.
