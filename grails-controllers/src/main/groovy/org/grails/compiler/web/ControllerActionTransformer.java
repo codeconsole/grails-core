@@ -401,11 +401,9 @@ public class ControllerActionTransformer implements GrailsArtefactClassInjector,
         if (methodNode.getParameters().length > 0) {
             final BlockStatement methodCode = new BlockStatement();
 
-            final BlockStatement codeToHandleAllowedMethods = getCodeToHandleAllowedMethods(classNode, methodNode.getName());
             final Statement codeToCallOriginalMethod = addOriginalMethodCall(methodNode, initializeActionParameters(
                     classNode, methodNode, methodNode.getName(), parameters, source, context));
 
-            methodCode.addStatement(codeToHandleAllowedMethods);
             methodCode.addStatement(codeToCallOriginalMethod);
 
             method = new MethodNode(
@@ -525,48 +523,39 @@ public class ControllerActionTransformer implements GrailsArtefactClassInjector,
 
     protected BlockStatement getCodeToHandleAllowedMethods(ClassNode controllerClass, String methodName) {
         GrailsASTUtils.addEnhancedAnnotation(controllerClass, DefaultGrailsControllerClass.ALLOWED_HTTP_METHODS_PROPERTY);
+
+        final BlockStatement code = new BlockStatement();
+
+        // The ALLOWED_METHODS_HANDLED request attribute records that an action of this controller has already
+        // begun handling the request, so that an action invoked programmatically from another action does not
+        // repeat the check.  A controller which restricts no action at all never reads the attribute, so neither
+        // it nor the code which cleans it up is worth generating.
+        final MapExpression allowedMethodsMapExpression = getAllowedMethodsMapExpression(controllerClass);
+        if (allowedMethodsMapExpression == null) {
+            return code;
+        }
+
         final BlockStatement checkAllowedMethodsBlock = new BlockStatement();
 
         final PropertyExpression requestPropertyExpression = new PropertyExpression(new VariableExpression("this"), "request");
 
-        final FieldNode allowedMethodsField = controllerClass.getField(DefaultGrailsControllerClass.ALLOWED_HTTP_METHODS_PROPERTY);
+        if (isActionRestricted(allowedMethodsMapExpression, methodName)) {
+            final PropertyExpression responsePropertyExpression = new PropertyExpression(new VariableExpression("this"), "response");
 
-        if (allowedMethodsField != null) {
-            final Expression initialAllowedMethodsExpression = allowedMethodsField.getInitialExpression();
-            if (initialAllowedMethodsExpression instanceof MapExpression) {
-                boolean actionIsRestricted = false;
-                final MapExpression allowedMethodsMapExpression = (MapExpression) initialAllowedMethodsExpression;
-                final List<MapEntryExpression> allowedMethodsMapEntryExpressions = allowedMethodsMapExpression.getMapEntryExpressions();
-                for (MapEntryExpression allowedMethodsMapEntryExpression : allowedMethodsMapEntryExpressions) {
-                    final Expression allowedMethodsMapEntryKeyExpression = allowedMethodsMapEntryExpression.getKeyExpression();
-                    if (allowedMethodsMapEntryKeyExpression instanceof ConstantExpression) {
-                        final ConstantExpression allowedMethodsMapKeyConstantExpression = (ConstantExpression) allowedMethodsMapEntryKeyExpression;
-                        final Object allowedMethodsMapKeyValue = allowedMethodsMapKeyConstantExpression.getValue();
-                        if (methodName.equals(allowedMethodsMapKeyValue)) {
-                            actionIsRestricted = true;
-                            break;
-                        }
-                    }
-                }
-                if (actionIsRestricted) {
-                    final PropertyExpression responsePropertyExpression = new PropertyExpression(new VariableExpression("this"), "response");
+            final ArgumentListExpression isAllowedArgumentList = new ArgumentListExpression();
+            isAllowedArgumentList.addExpression(new ConstantExpression(methodName));
+            isAllowedArgumentList.addExpression(new PropertyExpression(new VariableExpression("this"), "request"));
+            isAllowedArgumentList.addExpression(new PropertyExpression(new VariableExpression("this"), DefaultGrailsControllerClass.ALLOWED_HTTP_METHODS_PROPERTY));
+            final Expression isAllowedMethodCall = new StaticMethodCallExpression(ClassHelper.make(AllowedMethodsHelper.class), "isAllowed", isAllowedArgumentList);
+            final BooleanExpression isValidRequestMethod = new BooleanExpression(isAllowedMethodCall);
+            final MethodCallExpression sendErrorMethodCall = new MethodCallExpression(responsePropertyExpression, "sendError", new ConstantExpression(WebUtils.SC_METHOD_NOT_ALLOWED));
+            final ReturnStatement returnStatement = new ReturnStatement(new ConstantExpression(null));
+            final BlockStatement blockToSendError = new BlockStatement();
+            blockToSendError.addStatement(new ExpressionStatement(sendErrorMethodCall));
+            blockToSendError.addStatement(returnStatement);
+            final IfStatement ifIsValidRequestMethodStatement = new IfStatement(isValidRequestMethod, new ExpressionStatement(new EmptyExpression()), blockToSendError);
 
-                    final ArgumentListExpression isAllowedArgumentList = new ArgumentListExpression();
-                    isAllowedArgumentList.addExpression(new ConstantExpression(methodName));
-                    isAllowedArgumentList.addExpression(new PropertyExpression(new VariableExpression("this"), "request"));
-                    isAllowedArgumentList.addExpression(new PropertyExpression(new VariableExpression("this"), DefaultGrailsControllerClass.ALLOWED_HTTP_METHODS_PROPERTY));
-                    final Expression isAllowedMethodCall = new StaticMethodCallExpression(ClassHelper.make(AllowedMethodsHelper.class), "isAllowed", isAllowedArgumentList);
-                    final BooleanExpression isValidRequestMethod = new BooleanExpression(isAllowedMethodCall);
-                    final MethodCallExpression sendErrorMethodCall = new MethodCallExpression(responsePropertyExpression, "sendError", new ConstantExpression(WebUtils.SC_METHOD_NOT_ALLOWED));
-                    final ReturnStatement returnStatement = new ReturnStatement(new ConstantExpression(null));
-                    final BlockStatement blockToSendError = new BlockStatement();
-                    blockToSendError.addStatement(new ExpressionStatement(sendErrorMethodCall));
-                    blockToSendError.addStatement(returnStatement);
-                    final IfStatement ifIsValidRequestMethodStatement = new IfStatement(isValidRequestMethod, new ExpressionStatement(new EmptyExpression()), blockToSendError);
-
-                    checkAllowedMethodsBlock.addStatement(ifIsValidRequestMethodStatement);
-                }
-            }
+            checkAllowedMethodsBlock.addStatement(ifIsValidRequestMethodStatement);
         }
 
         final ArgumentListExpression argumentListExpression = new ArgumentListExpression();
@@ -582,10 +571,46 @@ public class ControllerActionTransformer implements GrailsArtefactClassInjector,
         final BooleanExpression attributeIsSetBooleanExpression = new BooleanExpression(new MethodCallExpression(requestPropertyExpression, "getAttribute", new ArgumentListExpression(new ConstantExpression(ALLOWED_METHODS_HANDLED_ATTRIBUTE_NAME))));
         final Statement ifAttributeIsAlreadySetStatement = new IfStatement(attributeIsSetBooleanExpression, new EmptyStatement(), codeToExecuteIfAttributeIsNotSet);
 
-        final BlockStatement code = new BlockStatement();
         code.addStatement(ifAttributeIsAlreadySetStatement);
 
         return code;
+    }
+
+    /**
+     * Retrieves the map literal assigned to the controller's <code>allowedMethods</code> property.
+     *
+     * @param controllerClass the controller class
+     * @return the map literal, or null if the controller does not declare a non empty map literal
+     */
+    private MapExpression getAllowedMethodsMapExpression(final ClassNode controllerClass) {
+        final FieldNode allowedMethodsField = controllerClass.getField(DefaultGrailsControllerClass.ALLOWED_HTTP_METHODS_PROPERTY);
+        if (allowedMethodsField == null) {
+            return null;
+        }
+        final Expression initialAllowedMethodsExpression = allowedMethodsField.getInitialExpression();
+        if (!(initialAllowedMethodsExpression instanceof MapExpression)) {
+            return null;
+        }
+        final MapExpression allowedMethodsMapExpression = (MapExpression) initialAllowedMethodsExpression;
+        return allowedMethodsMapExpression.getMapEntryExpressions().isEmpty() ? null : allowedMethodsMapExpression;
+    }
+
+    /**
+     * @param allowedMethodsMapExpression the map literal assigned to the controller's <code>allowedMethods</code> property
+     * @param methodName the name of an action
+     * @return true if the action is a key in the allowedMethods map and is therefore restricted to specific request methods
+     */
+    private boolean isActionRestricted(final MapExpression allowedMethodsMapExpression, final String methodName) {
+        for (MapEntryExpression allowedMethodsMapEntryExpression : allowedMethodsMapExpression.getMapEntryExpressions()) {
+            final Expression allowedMethodsMapEntryKeyExpression = allowedMethodsMapEntryExpression.getKeyExpression();
+            if (allowedMethodsMapEntryKeyExpression instanceof ConstantExpression) {
+                final ConstantExpression allowedMethodsMapKeyConstantExpression = (ConstantExpression) allowedMethodsMapEntryKeyExpression;
+                if (methodName.equals(allowedMethodsMapKeyConstantExpression.getValue())) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     /**
@@ -634,13 +659,22 @@ public class ControllerActionTransformer implements GrailsArtefactClassInjector,
         final CatchStatement catchStatement = new CatchStatement(new Parameter(new ClassNode(Exception.class), caughtExceptionArgumentName), catchBlockCode);
         final Statement methodBody = methodNode.getCode();
 
+        final BlockStatement codeToHandleAllowedMethods = getCodeToHandleAllowedMethods(controllerClassNode, methodNode.getName());
+
         BlockStatement tryBlock = new BlockStatement();
-        BlockStatement codeToHandleAllowedMethods = getCodeToHandleAllowedMethods(controllerClassNode, methodNode.getName());
-        tryBlock.addStatement(codeToHandleAllowedMethods);
+        if (!codeToHandleAllowedMethods.isEmpty()) {
+            tryBlock.addStatement(codeToHandleAllowedMethods);
+        }
         tryBlock.addStatement(methodBody);
 
         final TryCatchStatement tryCatchStatement = new TryCatchStatement(tryBlock, new EmptyStatement());
         tryCatchStatement.addCatch(catchStatement);
+
+        if (codeToHandleAllowedMethods.isEmpty()) {
+            // Nothing wrote the ALLOWED_METHODS_HANDLED request attribute, so there is nothing to clean up.
+            methodNode.setCode(tryCatchStatement);
+            return;
+        }
 
         final ArgumentListExpression argumentListExpression = new ArgumentListExpression();
         argumentListExpression.addExpression(new ConstantExpression(ALLOWED_METHODS_HANDLED_ATTRIBUTE_NAME));
