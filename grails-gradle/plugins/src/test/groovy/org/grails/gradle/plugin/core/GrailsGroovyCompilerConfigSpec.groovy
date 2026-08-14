@@ -81,4 +81,20 @@ class GrailsGroovyCompilerConfigSpec extends GradleSpecification {
         result.output.contains('HAS_VERSION_INPUT=true')
         result.output.contains('HAS_NAME_INPUT=true')
     }
+
+    def "the generator waits for a task that produces the build's own config script"() {
+        given: 'a build whose configurationScript is the output of another task'
+        setupTestResourceProject('compiler-config-generated-user-script')
+
+        when: 'the compile task graph is built'
+        def result = executeTask('compileGroovy', ['--dry-run'])
+        def order = result.output.readLines().findAll { it.startsWith(':') }
+        int producer = order.findIndexOf { it.startsWith(':generateUserConfigScript') }
+        int generator = order.findIndexOf { it.startsWith(':generateCompileGroovyGrailsCompilerConfig') }
+
+        then: 'the producer is scheduled first, so its content is present when the script is combined'
+        producer >= 0
+        generator >= 0
+        producer < generator
+    }
 }

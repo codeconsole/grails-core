@@ -330,6 +330,17 @@ class GrailsGradlePlugin implements Plugin<Project> {
             t.description = "Generates the Grails Groovy compiler configuration script for ${compileTaskName}"
             t.inputs.property('grailsCompilerConfig', combinedScript)
             t.outputs.file(groovyCompilerConfigFile)
+            // A build may point configurationScript at a file another task produces. Task graph
+            // construction happens before the property is taken over below, so at this point it
+            // still carries whatever the build set, and with it that producer. Wrapping it in a
+            // FileCollection asks Gradle for that producer without resolving the value: depending
+            // on the property directly tries to convert the file itself into a task, and reading
+            // the value would finalize it and make the later assignment fail.
+            t.dependsOn({
+                RegularFileProperty configured = project.tasks.named(compileTaskName, GroovyCompile)
+                        .get().groovyOptions.configurationScriptFile
+                configured.present ? [project.files(configured)] : []
+            } as Callable)
             t.doLast {
                 File combinedFile = groovyCompilerConfigFile.get().asFile
                 combinedFile.parentFile.mkdirs()
