@@ -44,6 +44,7 @@ import org.springframework.web.util.UrlPathHelper;
 
 import grails.core.GrailsApplication;
 import grails.core.GrailsControllerClass;
+import grails.util.Holders;
 import grails.validation.DeferredBindingActions;
 import grails.web.mvc.FlashScope;
 import grails.web.servlet.mvc.GrailsHttpSession;
@@ -74,6 +75,9 @@ public class GrailsWebRequest extends DispatcherServletWebRequest {
 
     private static final String REDIRECT_CALLED = GrailsApplicationAttributes.REDIRECT_ISSUED;
 
+    /** Servlet context attribute caching the {@link GrailsApplicationAttributes} for that context. */
+    private static final String GRAILS_APPLICATION_ATTRIBUTES = GrailsWebRequest.class.getName() + ".ATTRIBUTES";
+
     private static final Class<? extends GrailsApplicationAttributes> grailsApplicationAttributesClass = GrailsFactoriesLoader.loadFactoryClasses(GrailsApplicationAttributes.class, GrailsWebRequest.class.getClassLoader()).get(0);
     private static final Constructor<? extends GrailsApplicationAttributes> grailsApplicationAttributesConstructor = ClassUtils.getConstructorIfAvailable(grailsApplicationAttributesClass, ServletContext.class);
     private GrailsApplicationAttributes attributes;
@@ -85,7 +89,7 @@ public class GrailsWebRequest extends DispatcherServletWebRequest {
     private Encoder filteringEncoder;
     public static final String ID_PARAMETER = "id";
     private final List<ParameterCreationListener> parameterCreationListeners = new ArrayList<>();
-    private final UrlPathHelper urlHelper = new UrlPathHelper();
+    private final UrlPathHelper urlHelper = UrlPathHelper.defaultInstance;
     private ApplicationContext applicationContext;
     private String baseUrl;
     private HttpServletResponse wrappedResponse;
@@ -101,14 +105,50 @@ public class GrailsWebRequest extends DispatcherServletWebRequest {
 
     public GrailsWebRequest(HttpServletRequest request, HttpServletResponse response, ServletContext servletContext) {
         super(request, response);
+        attributes = resolveAttributes(servletContext);
+        this.applicationContext = attributes.getApplicationContext();
+        inheritEncodingStateRegistry();
+    }
+
+    /**
+     * Returns the {@link GrailsApplicationAttributes} for the given servlet context, creating it on first
+     * use and caching it in the servlet context afterwards.
+     * <p>
+     * The attributes object holds no request state - it caches the beans it describes as "used very often" -
+     * so building one per request both paid for a reflective construction and discarded those caches every
+     * request. It is rebuilt if the {@code ApplicationContext} it was resolved against is no longer current,
+     * which keeps a restarted or re-created context (as happens between tests) from being served a stale one.
+     */
+    private static GrailsApplicationAttributes resolveAttributes(ServletContext servletContext) {
+        if (servletContext == null) {
+            return createAttributes(null);
+        }
+        Object cached = servletContext.getAttribute(GRAILS_APPLICATION_ATTRIBUTES);
+        if (cached instanceof GrailsApplicationAttributes grailsApplicationAttributes &&
+                grailsApplicationAttributes.getApplicationContext() == currentApplicationContext(servletContext)) {
+            return grailsApplicationAttributes;
+        }
+        GrailsApplicationAttributes attributes = createAttributes(servletContext);
+        servletContext.setAttribute(GRAILS_APPLICATION_ATTRIBUTES, attributes);
+        return attributes;
+    }
+
+    private static ApplicationContext currentApplicationContext(ServletContext servletContext) {
+        Object applicationContext = servletContext.getAttribute(GrailsApplicationAttributes.APPLICATION_CONTEXT);
+        if (applicationContext instanceof ApplicationContext context) {
+            return context;
+        }
+        return Holders.findApplicationContext();
+    }
+
+    private static GrailsApplicationAttributes createAttributes(ServletContext servletContext) {
         try {
-            attributes = grailsApplicationAttributesConstructor.newInstance(servletContext);
-            this.applicationContext = attributes.getApplicationContext();
+            return grailsApplicationAttributesConstructor.newInstance(servletContext);
         }
         catch (Exception e) {
             ReflectionUtils.rethrowRuntimeException(e);
+            return null;
         }
-        inheritEncodingStateRegistry();
     }
 
     public GrailsWebRequest(HttpServletRequest request, HttpServletResponse response, ServletContext servletContext, ApplicationContext applicationContext) {

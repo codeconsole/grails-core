@@ -146,7 +146,7 @@ public class WebUtils extends org.springframework.web.util.WebUtils {
      * @param request The request
      */
     public static String getRequestURIForGrailsDispatchURI(HttpServletRequest request) {
-        UrlPathHelper pathHelper = new UrlPathHelper();
+        UrlPathHelper pathHelper = UrlPathHelper.defaultInstance;
         if (request.getRequestURI().endsWith(GRAILS_DISPATCH_EXTENSION)) {
             String path = pathHelper.getPathWithinApplication(request);
             if (path.startsWith(GRAILS_SERVLET_PATH)) {

@@ -60,7 +60,7 @@ class UrlMappingsHandlerMapping extends AbstractHandlerMapping {
     public static final String MATCHED_REQUEST = 'org.grails.url.match.info'
 
     protected UrlMappingsHolder urlMappingsHolder
-    protected UrlPathHelper urlHelper = new UrlPathHelper()
+    protected UrlPathHelper urlHelper = UrlPathHelper.defaultInstance
     protected MimeTypeResolver mimeTypeResolver
     protected HandlerInterceptor[] webRequestHandlerInterceptors
 

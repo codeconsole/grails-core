@@ -16,26 +16,21 @@
  *  specific language governing permissions and limitations
  *  under the License.
  */
-package org.grails.web.mapping.mvc
+package org.apache.grails.benchmarks.web;
 
-import groovy.transform.CompileStatic
-
-import grails.core.GrailsControllerClass
-import grails.web.mapping.UrlMappingInfo
+import groovy.lang.Closure;
 
 /**
- * A {@link UrlMappingInfo} that holds a reference to the controller to be executed
+ * Supplies a {@code UrlMappings} DSL closure to a benchmark.
  *
- * @since 3.0
+ * <p>The DSL can only be written in Groovy, but {@code compileJmhGroovy} runs after
+ * {@code compileJmhJava}, so the Java benchmark reaches its Groovy implementation through this
+ * interface and {@code Class.forName} rather than by a compile-time reference.</p>
  */
-@CompileStatic
-class GrailsControllerUrlMappingInfo implements UrlMappingInfo {
+public interface UrlMappingsDefinition {
 
-    GrailsControllerClass controllerClass
-    @Delegate UrlMappingInfo info
-
-    GrailsControllerUrlMappingInfo(GrailsControllerClass controllerClass, UrlMappingInfo info) {
-        this.controllerClass = controllerClass
-        this.info = info
-    }
+    /**
+     * @return the mappings closure, as it would be written in an application's {@code UrlMappings.groovy}
+     */
+    Closure<?> mappings();
 }

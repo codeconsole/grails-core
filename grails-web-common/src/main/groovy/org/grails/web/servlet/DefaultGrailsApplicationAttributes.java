@@ -61,26 +61,28 @@ public class DefaultGrailsApplicationAttributes implements GrailsApplicationAttr
 
     private static Log LOG = LogFactory.getLog(DefaultGrailsApplicationAttributes.class);
 
-    private UrlPathHelper urlHelper = new UrlPathHelper();
+    private final UrlPathHelper urlHelper = UrlPathHelper.defaultInstance;
 
-    private ServletContext context;
-    private ApplicationContext appContext;
+    private final ServletContext context;
+    private final ApplicationContext appContext;
 
     // Beans used very often
-    private ResourceAwareTemplateEngine pagesTemplateEngine;
-    private GrailsApplication grailsApplication;
-    private GroovyPagesUriService groovyPagesUriService;
-    private MessageSource messageSource;
-    private GrailsPluginManager pluginManager;
+    private volatile ResourceAwareTemplateEngine pagesTemplateEngine;
+    private volatile GrailsApplication grailsApplication;
+    private volatile GroovyPagesUriService groovyPagesUriService;
+    private volatile MessageSource messageSource;
+    private volatile GrailsPluginManager pluginManager;
 
     public DefaultGrailsApplicationAttributes(ServletContext context) {
         this.context = context;
+        ApplicationContext resolved = null;
         if (context != null) {
-            appContext = (ApplicationContext) context.getAttribute(APPLICATION_CONTEXT);
-            if (appContext == null) {
-                appContext = Holders.findApplicationContext();
+            resolved = (ApplicationContext) context.getAttribute(APPLICATION_CONTEXT);
+            if (resolved == null) {
+                resolved = Holders.findApplicationContext();
             }
         }
+        this.appContext = resolved;
     }
 
     public ApplicationContext getApplicationContext() {
