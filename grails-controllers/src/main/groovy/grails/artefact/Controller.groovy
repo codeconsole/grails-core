@@ -19,6 +19,7 @@
 package grails.artefact
 
 import java.lang.reflect.Method
+import java.util.concurrent.ConcurrentHashMap
 
 import groovy.transform.CompileStatic
 import groovy.transform.Generated
@@ -45,6 +46,7 @@ import grails.artefact.controller.support.ResponseRenderer
 import grails.core.GrailsControllerClass
 import grails.databinding.DataBindingSource
 import grails.databinding.SimpleMapDataBindingSource
+import grails.util.Environment
 import grails.util.GrailsClassUtils
 import grails.util.GrailsMetaClassUtils
 import grails.web.api.ServletAttributes
@@ -76,6 +78,14 @@ import org.grails.web.util.GrailsApplicationAttributes
 trait Controller implements ResponseRenderer, ResponseRedirector, RequestForwarder, DataBinder, WebAttributes, ServletAttributes {
 
     private MimeTypesApiSupport mimeTypesSupport = new MimeTypesApiSupport()
+
+    /**
+     * Caches the value of the static <code>namespace</code> field declared by a controller class, so that only the
+     * first redirect issued for a given class pays for the reflective field lookup. Keyed by class, so that each
+     * controller class always resolves its own value. An absent value is cached as an empty {@link Optional} to
+     * distinguish "no namespace declared" from "not resolved yet".
+     */
+    private static final Map<Class<?>, Optional<Object>> NAMESPACE_CACHE = new ConcurrentHashMap<>()
 
     /**
      * <p>The withFormat method is used to allow controllers to handle different types of
@@ -249,14 +259,33 @@ trait Controller implements ResponseRenderer, ResponseRedirector, RequestForward
                 argMap.put(GrailsControllerClass.ACTION, action.toString())
             }
             if (!argMap.containsKey(GrailsControllerClass.NAMESPACE_PROPERTY)) {
-                // this could be made more efficient if we had a reference to the GrailsControllerClass object, which
-                // has the namespace property accessible without needing reflection
-                argMap.put(GrailsControllerClass.NAMESPACE_PROPERTY, GrailsClassUtils.getStaticFieldValue(controller.getClass(), GrailsControllerClass.NAMESPACE_PROPERTY))
+                argMap.put(GrailsControllerClass.NAMESPACE_PROPERTY, resolveNamespace(controller.getClass()))
             }
         }
 
         super.redirect(argMap)
     }
+
+    /**
+     * Resolves the namespace declared by the given controller class, which is a static field on the class and
+     * therefore fixed for the lifetime of that class. The reflective lookup is only performed the first time a
+     * class is seen.
+     *
+     * @param controllerClass The class of the controller issuing the redirect
+     * @return The declared namespace, or null if the class declares none
+     */
+    private Object resolveNamespace(Class<?> controllerClass) {
+        Optional<Object> namespace = NAMESPACE_CACHE.get(controllerClass)
+        if (namespace == null) {
+            namespace = Optional.ofNullable(GrailsClassUtils.getStaticFieldValue(controllerClass, GrailsControllerClass.NAMESPACE_PROPERTY))
+            if (!Environment.isReloadingAgentEnabled()) {
+                // don't cache when reloading active, a reloaded class is retained by the cache otherwise
+                NAMESPACE_CACHE.put(controllerClass, namespace)
+            }
+        }
+        namespace.orElse(null)
+    }
+
     /**
      * Used the synchronizer token pattern to avoid duplicate form submissions
      *
