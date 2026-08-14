@@ -25,6 +25,7 @@ import org.gradle.api.provider.Property
 import org.gradle.api.tasks.Input
 import org.gradle.api.tasks.OutputFile
 import org.gradle.api.tasks.TaskAction
+import org.gradle.work.DisableCachingByDefault
 
 /**
  * Writes the Groovy compiler configuration script a {@link org.gradle.api.tasks.compile.GroovyCompile}
@@ -42,6 +43,7 @@ import org.gradle.api.tasks.TaskAction
  * @since 8.0
  */
 @CompileStatic
+@DisableCachingByDefault(because = 'Writing a short script from a string is cheaper than a cache round trip')
 abstract class GrailsCompilerConfigScriptTask extends DefaultTask {
 
     /**
