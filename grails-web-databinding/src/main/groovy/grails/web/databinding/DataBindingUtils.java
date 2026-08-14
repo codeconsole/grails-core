@@ -34,6 +34,7 @@ import groovy.lang.MetaClass;
 import jakarta.servlet.ServletRequest;
 
 import org.springframework.context.ApplicationContext;
+import org.springframework.util.ReflectionUtils;
 import org.springframework.validation.BeanPropertyBindingResult;
 import org.springframework.validation.BindingResult;
 import org.springframework.validation.FieldError;
@@ -70,6 +71,21 @@ public class DataBindingUtils {
     public static final String DATA_BINDER_BEAN_NAME = "grailsWebDataBinder";
     private static final String BLANK = "";
     private static final Map<Class, List> CLASS_TO_BINDING_INCLUDE_LIST = new ConcurrentHashMap<>();
+
+    /**
+     * The beans used by data binding for the most recently seen {@link ApplicationContext}. Data binding happens on
+     * every request and each bind previously repeated the same {@code containsBean}/{@code getBean} lookups for
+     * singletons which never change for the life of a context.
+     * <p>
+     * The cache holds a single entry on purpose. An application has one main context, so a single entry is enough to
+     * remove the repeated lookups, while a map keyed by context would retain every context ever seen - which would
+     * leak whole bean factories in test runs and in development where contexts are replaced. Whenever the context
+     * differs from the cached one, the entry is replaced and the previous context becomes eligible for collection.
+     * <p>
+     * The field is volatile so that request threads see a consistent, fully constructed entry. A race merely results
+     * in two threads resolving the same singletons, which is harmless.
+     */
+    private static volatile ContextBoundBeans contextBoundBeans;
 
     /**
      * Associations both sides of any bidirectional relationships found in the object and source map to bind
@@ -119,28 +135,37 @@ public class DataBindingUtils {
     }
 
     protected static List getBindingIncludeList(final Object object) {
-        List includeList = Collections.emptyList();
-        try {
-            final Class<? extends Object> objectClass = object.getClass();
-            if (CLASS_TO_BINDING_INCLUDE_LIST.containsKey(objectClass)) {
-                includeList = CLASS_TO_BINDING_INCLUDE_LIST.get(objectClass);
-            } else {
-                final Field whiteListField = objectClass.getDeclaredField(DefaultASTDatabindingHelper.DEFAULT_DATABINDING_WHITELIST);
-                if (whiteListField != null) {
-                    if ((whiteListField.getModifiers() & Modifier.STATIC) != 0) {
-                        final Object whiteListValue = whiteListField.get(objectClass);
-                        if (whiteListValue instanceof List) {
-                            includeList = (List) whiteListValue;
-                        }
-                    }
-                }
-                if (!Environment.getCurrent().isReloadEnabled()) {
-                    CLASS_TO_BINDING_INCLUDE_LIST.put(objectClass, includeList);
-                }
+        final Class<?> objectClass = object.getClass();
+        List includeList = CLASS_TO_BINDING_INCLUDE_LIST.get(objectClass);
+        if (includeList == null) {
+            includeList = resolveBindingIncludeList(objectClass);
+            if (!Environment.getCurrent().isReloadEnabled()) {
+                // classes which are not enhanced with a whitelist resolve to an empty include list; that negative
+                // result is cached as well so the field lookup is performed at most once per class
+                CLASS_TO_BINDING_INCLUDE_LIST.put(objectClass, includeList);
             }
-        } catch (Exception e) {
         }
         return includeList;
+    }
+
+    private static List resolveBindingIncludeList(final Class<?> objectClass) {
+        // ReflectionUtils returns null instead of throwing NoSuchFieldException for the very common case of a class
+        // which was never enhanced by the data binding AST transformation
+        final Field whiteListField = ReflectionUtils.findField(objectClass, DefaultASTDatabindingHelper.DEFAULT_DATABINDING_WHITELIST);
+        // only a whitelist declared on the class itself applies, an inherited one does not
+        if (whiteListField != null && objectClass.equals(whiteListField.getDeclaringClass()) &&
+                (whiteListField.getModifiers() & Modifier.STATIC) != 0) {
+            try {
+                final Object whiteListValue = whiteListField.get(objectClass);
+                if (whiteListValue instanceof List) {
+                    return (List) whiteListValue;
+                }
+            }
+            catch (IllegalAccessException e) {
+                // the whitelist is not readable, bind without an include list
+            }
+        }
+        return Collections.emptyList();
     }
 
     /**
@@ -169,15 +194,12 @@ public class DataBindingUtils {
      * @since 2.3
      */
     public static <T> void bindToCollection(final Class<T> targetType, final Collection<T> collectionToPopulate, final CollectionDataBindingSource collectionBindingSource) throws InstantiationException, IllegalAccessException {
-        final GrailsApplication application = Holders.findApplication();
-        PersistentEntity entity = null;
-        if (application != null) {
-            try {
-                entity = application.getMappingContext().getPersistentEntity(targetType.getName());
-            } catch (GrailsConfigurationException e) {
-                //no-op
-            }
-        }
+        bindToCollection(targetType, collectionToPopulate, collectionBindingSource, Holders.findApplication());
+    }
+
+    private static <T> void bindToCollection(final Class<T> targetType, final Collection<T> collectionToPopulate,
+            final CollectionDataBindingSource collectionBindingSource, final GrailsApplication application) throws InstantiationException, IllegalAccessException {
+        final PersistentEntity entity = findPersistentEntity(application, targetType.getName());
         final List<DataBindingSource> dataBindingSources = collectionBindingSource.getDataBindingSources();
         for (final DataBindingSource dataBindingSource : dataBindingSources) {
             final T newObject;
@@ -189,7 +211,7 @@ public class DataBindingUtils {
                 );
             }
 
-            bindObjectToDomainInstance(entity, newObject, dataBindingSource, getBindingIncludeList(newObject), Collections.emptyList(), null);
+            bindObjectToDomainInstance(entity, newObject, dataBindingSource, getBindingIncludeList(newObject), Collections.emptyList(), null, application);
             collectionToPopulate.add(newObject);
         }
     }
@@ -197,7 +219,18 @@ public class DataBindingUtils {
     public static <T> void bindToCollection(final Class<T> targetType, final Collection<T> collectionToPopulate, final ServletRequest request) throws InstantiationException, IllegalAccessException {
         final GrailsApplication grailsApplication = Holders.findApplication();
         final CollectionDataBindingSource collectionDataBindingSource = createCollectionDataBindingSource(grailsApplication, targetType, request);
-        bindToCollection(targetType, collectionToPopulate, collectionDataBindingSource);
+        bindToCollection(targetType, collectionToPopulate, collectionDataBindingSource, grailsApplication);
+    }
+
+    private static PersistentEntity findPersistentEntity(final GrailsApplication application, final String className) {
+        if (application != null) {
+            try {
+                return application.getMappingContext().getPersistentEntity(className);
+            } catch (GrailsConfigurationException e) {
+                //no-op
+            }
+        }
+        return null;
     }
 
     /**
@@ -215,16 +248,9 @@ public class DataBindingUtils {
         if (include == null && exclude == null) {
             include = getBindingIncludeList(object);
         }
-        GrailsApplication application = Holders.findApplication();
-        PersistentEntity entity = null;
-        if (application != null) {
-            try {
-                entity = application.getMappingContext().getPersistentEntity(object.getClass().getName());
-            } catch (GrailsConfigurationException e) {
-                //no-op
-            }
-        }
-        return bindObjectToDomainInstance(entity, object, source, include, exclude, filter);
+        final GrailsApplication application = Holders.findApplication();
+        final PersistentEntity entity = findPersistentEntity(application, object.getClass().getName());
+        return bindObjectToDomainInstance(entity, object, source, include, exclude, filter, application);
     }
 
     /**
@@ -241,11 +267,20 @@ public class DataBindingUtils {
      *
      * @return A BindingResult if there were errors or null if it was successful
      */
-    @SuppressWarnings("unchecked")
     public static BindingResult bindObjectToDomainInstance(PersistentEntity entity, Object object,
                                                            Object source, List include, List exclude, String filter) {
+        return bindObjectToDomainInstance(entity, object, source, include, exclude, filter, Holders.findApplication());
+    }
+
+    /**
+     * Binds using an already resolved {@link GrailsApplication}. Resolving the application is not a simple field
+     * read, it walks the registered discovery strategies and ends in a bean lookup, so callers which have already
+     * resolved it pass it down instead of resolving it again for the same bind.
+     */
+    @SuppressWarnings("unchecked")
+    private static BindingResult bindObjectToDomainInstance(PersistentEntity entity, Object object,
+            Object source, List include, List exclude, String filter, GrailsApplication grailsApplication) {
         BindingResult bindingResult = null;
-        GrailsApplication grailsApplication = Holders.findApplication();
 
         try {
             final DataBindingSource bindingSource = createDataBindingSource(grailsApplication, object.getClass(), source);
@@ -307,15 +342,8 @@ public class DataBindingUtils {
     }
 
     public static DataBindingSourceRegistry getDataBindingSourceRegistry(GrailsApplication grailsApplication) {
-        DataBindingSourceRegistry registry = null;
-        if (grailsApplication != null) {
-            ApplicationContext context = grailsApplication.getMainContext();
-            if (context != null) {
-                if (context.containsBean(DataBindingSourceRegistry.BEAN_NAME)) {
-                    registry = context.getBean(DataBindingSourceRegistry.BEAN_NAME, DataBindingSourceRegistry.class);
-                }
-            }
-        }
+        final ContextBoundBeans beans = getContextBoundBeans(grailsApplication);
+        DataBindingSourceRegistry registry = beans == null ? null : beans.getDataBindingSourceRegistry();
         if (registry == null) {
             registry = new DefaultDataBindingSourceRegistry();
         }
@@ -343,16 +371,8 @@ public class DataBindingUtils {
 
     public static MimeTypeResolver getMimeTypeResolver(
             GrailsApplication grailsApplication) {
-        MimeTypeResolver mimeTypeResolver = null;
-        if (grailsApplication != null) {
-            ApplicationContext context = grailsApplication.getMainContext();
-            if (context != null) {
-                if (context.containsBean(MimeTypeResolver.BEAN_NAME)) {
-                    mimeTypeResolver = context.getBean(MimeTypeResolver.BEAN_NAME, MimeTypeResolver.class);
-                }
-            }
-        }
-        return mimeTypeResolver;
+        final ContextBoundBeans beans = getContextBoundBeans(grailsApplication);
+        return beans == null ? null : beans.getMimeTypeResolver();
     }
 
     public static MimeType resolveMimeType(Object bindingSource, MimeTypeResolver mimeTypeResolver) {
@@ -360,19 +380,34 @@ public class DataBindingUtils {
     }
 
     private static DataBinder getGrailsWebDataBinder(final GrailsApplication grailsApplication) {
-        DataBinder dataBinder = null;
-        if (grailsApplication != null) {
-            final ApplicationContext mainContext = grailsApplication.getMainContext();
-            if (mainContext != null && mainContext.containsBean(DATA_BINDER_BEAN_NAME)) {
-                dataBinder = mainContext.getBean(DATA_BINDER_BEAN_NAME, DataBinder.class);
-            }
-        }
+        final ContextBoundBeans beans = getContextBoundBeans(grailsApplication);
+        DataBinder dataBinder = beans == null ? null : beans.getDataBinder();
         if (dataBinder == null) {
             // this should really never happen in the running app as the binder
             // should always be found in the context
             dataBinder = new GrailsWebDataBinder(grailsApplication);
         }
         return dataBinder;
+    }
+
+    /**
+     * @param grailsApplication the application to resolve the main context from, may be null
+     * @return the cached beans of the application's main context or null if there is no context to look beans up in
+     */
+    private static ContextBoundBeans getContextBoundBeans(final GrailsApplication grailsApplication) {
+        if (grailsApplication == null) {
+            return null;
+        }
+        final ApplicationContext context = grailsApplication.getMainContext();
+        if (context == null) {
+            return null;
+        }
+        ContextBoundBeans beans = contextBoundBeans;
+        if (beans == null || beans.applicationContext != context) {
+            beans = new ContextBoundBeans(context);
+            contextBoundBeans = beans;
+        }
+        return beans;
     }
 
     @SuppressWarnings("unchecked")
@@ -389,5 +424,66 @@ public class DataBindingUtils {
             return value.toString();
         }
         return value;
+    }
+
+    /**
+     * The data binding beans of a single {@link ApplicationContext}, resolved on first use and kept for as long as
+     * that context is the one being bound against.
+     */
+    private static final class ContextBoundBeans {
+
+        private final ApplicationContext applicationContext;
+        private final CachedBean<DataBindingSourceRegistry> dataBindingSourceRegistry =
+                new CachedBean<>(DataBindingSourceRegistry.BEAN_NAME, DataBindingSourceRegistry.class);
+        private final CachedBean<MimeTypeResolver> mimeTypeResolver =
+                new CachedBean<>(MimeTypeResolver.BEAN_NAME, MimeTypeResolver.class);
+        private final CachedBean<DataBinder> dataBinder =
+                new CachedBean<>(DATA_BINDER_BEAN_NAME, DataBinder.class);
+
+        private ContextBoundBeans(ApplicationContext applicationContext) {
+            this.applicationContext = applicationContext;
+        }
+
+        private DataBindingSourceRegistry getDataBindingSourceRegistry() {
+            return dataBindingSourceRegistry.get(applicationContext);
+        }
+
+        private MimeTypeResolver getMimeTypeResolver() {
+            return mimeTypeResolver.get(applicationContext);
+        }
+
+        private DataBinder getDataBinder() {
+            return dataBinder.get(applicationContext);
+        }
+    }
+
+    /**
+     * A singleton bean looked up at most once per {@link ApplicationContext}. Each bean is resolved lazily so that
+     * asking for one of them never triggers the creation of another.
+     * <p>
+     * Both fields are volatile and {@code resolved} is written last, so a thread which sees {@code resolved} also
+     * sees the bean it was resolved to. Two threads racing simply look the same singleton up twice.
+     *
+     * @param <T> the type of the bean
+     */
+    private static final class CachedBean<T> {
+
+        private final String beanName;
+        private final Class<T> beanType;
+        private volatile T bean;
+        private volatile boolean resolved;
+
+        private CachedBean(String beanName, Class<T> beanType) {
+            this.beanName = beanName;
+            this.beanType = beanType;
+        }
+
+        private T get(ApplicationContext applicationContext) {
+            if (!resolved) {
+                bean = applicationContext.containsBean(beanName) ? applicationContext.getBean(beanName, beanType) : null;
+                resolved = true;
+            }
+            return bean;
+        }
     }
 }
