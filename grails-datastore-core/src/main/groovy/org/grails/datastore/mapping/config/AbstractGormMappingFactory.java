@@ -202,7 +202,8 @@ public abstract class AbstractGormMappingFactory<R extends Entity, T extends Pro
         }
         else {
             T property = BeanUtils.instantiateClass(getPropertyMappedFormType());
-            if (!GormProperties.IDENTITY.equals(mpp.getName()) && !GormProperties.VERSION.equals(mpp.getName())) {
+            if (!GormProperties.IDENTITY.equals(mpp.getName()) &&
+                    !GormProperties.VERSION.equals(mpp.getName())) {
                 property.setNullable(defaultNullable);
             }
             return property;
