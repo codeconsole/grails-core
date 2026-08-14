@@ -24,6 +24,8 @@ import java.util.Collection;
 import java.util.List;
 import java.util.function.Predicate;
 
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.jspecify.annotations.Nullable;
 
 import org.springframework.aot.generate.GenerationContext;
@@ -65,6 +67,8 @@ import org.springframework.util.ClassUtils;
  */
 public class VarargsBeanRegistrationAotProcessor implements BeanRegistrationAotProcessor {
 
+    private static final Log logger = LogFactory.getLog(VarargsBeanRegistrationAotProcessor.class);
+
     @Override
     @Nullable
     public BeanRegistrationAotContribution processAheadOfTime(RegisteredBean registeredBean) {
@@ -87,14 +91,23 @@ public class VarargsBeanRegistrationAotProcessor implements BeanRegistrationAotP
      *
      * <p>Resolution reads the bean class and its members, so a bean whose class cannot be resolved
      * fails here rather than at the point of use. It is not this processor's place to report that:
-     * generation carries on and fails where it means something.</p>
+     * generation carries on and fails where it means something, and a line is left behind so that
+     * a bean which is genuinely broken can be traced to here rather than only to what followed.</p>
+     *
+     * <p>An {@code Error} is not caught. This says only that a bean has no variable-argument
+     * constructor to gather, and a JVM that is out of memory or a class that will not link is
+     * neither that nor something to carry on generating through.</p>
      */
     @Nullable
     private Executable resolveExecutable(RegisteredBean registeredBean) {
         try {
             return registeredBean.resolveConstructorOrFactoryMethod();
         }
-        catch (Throwable ignored) {
+        catch (Exception ex) {
+            if (logger.isDebugEnabled()) {
+                logger.debug("Not gathering arguments for bean '" + registeredBean.getBeanName() +
+                        "', whose constructor could not be resolved", ex);
+            }
             return null;
         }
     }

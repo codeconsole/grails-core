@@ -72,6 +72,9 @@ class GrailsBanner implements Banner {
 
     private static final String NO_COLOR = 'none'
 
+    /** Shown where an application asked for a version by name and it could not be determined. */
+    private static final String UNKNOWN_VERSION = 'unknown'
+
     private static final String ORDER_PROPERTY = 'grails.banner.versions.order'
 
     private static final String EXCLUDE_PROPERTY = 'grails.banner.versions.exclude'
@@ -342,49 +345,60 @@ class GrailsBanner implements Banner {
                 }
             }
         }
-        // A library that is not there, or that records no version, is left out rather than shown
-        // as unknown. That is what lets a version be on by default: an application without Spring
-        // Security says nothing about it, instead of saying it does not know.
-        Map<String, String> versions = includedVersions.collectEntries { key ->
-            switch (VersionOption.fromString(key)) {
-                case VersionOption.APP:
-                    [(env.getProperty('info.app.name') ?: 'app'): env.getProperty('info.app.version') ?: 'unknown']
-                    break
-                case VersionOption.JVM:
-                    ['JVM': System.getProperty('java.vendor') + ' ' + System.getProperty('java.version')]
-                    break
-                case VersionOption.GRAILS:
-                    ['Grails': BuildSettings.grailsVersion]
-                    break
-                case VersionOption.GROOVY:
-                    ['Groovy': GroovySystem.version]
-                    break
-                case VersionOption.SPRING_BOOT:
-                    ['Spring Boot': SpringBootVersion.version]
-                    break
-                case VersionOption.SPRING:
-                    ['Spring': SpringVersion.version]
-                    break
-                case VersionOption.SPRING_SECURITY:
-                    ['Spring Security': findVersion('org.springframework.security.core.SpringSecurityCoreVersion')]
-                    break
-                case VersionOption.CONTAINER:
-                    findContainerVersion()
-                    break
-                case VersionOption.TOMCAT:
-                    ['Tomcat': findTomcatVersion()]
-                    break
-                case VersionOption.JETTY:
-                    ['Jetty': findJettyVersion()]
-                    break
-                case VersionOption.UNDERTOW:
-                    ['Undertow': findUndertowVersion()]
-                    break
-                default:
-                    null
+        // A version that cannot be determined is left out where it is shown by default, and shown
+        // as unknown where the application asked for it by name. Leaving out a default is what
+        // lets one be on at all -- an application without Spring Security says nothing about it
+        // rather than saying it does not know -- but leaving out one that was asked for reads as
+        // the option having been ignored, which is the thing an unrecognised option is warned about.
+        Map<String, String> versions = [:]
+        for (String key : includedVersions) {
+            versionsFor(key, env).each { String label, String version ->
+                if (version != null) {
+                    versions[label] = version
+                }
+                else if (key in configIncluded) {
+                    versions[label] = UNKNOWN_VERSION
+                }
             }
-        } as Map<String, String>
-        versions.findAll { String label, String version -> version != null }
+        }
+        versions
+    }
+
+    /**
+     * What one version option contributes, as the labels it is shown under and what each records.
+     *
+     * <p>A value of {@code null} is a library that is absent or records nothing; the caller decides
+     * whether that is left out or shown as unknown. An option that contributes nothing at all --
+     * the container, where none of them is there -- contributes no label to decide about.</p>
+     */
+    protected Map<String, String> versionsFor(String key, Environment env) {
+        switch (VersionOption.fromString(key)) {
+            case VersionOption.APP:
+                String appName = env.getProperty('info.app.name') ?: 'app'
+                return [(appName): env.getProperty('info.app.version') ?: UNKNOWN_VERSION]
+            case VersionOption.JVM:
+                return ['JVM': System.getProperty('java.vendor') + ' ' + System.getProperty('java.version')]
+            case VersionOption.GRAILS:
+                return ['Grails': BuildSettings.grailsVersion]
+            case VersionOption.GROOVY:
+                return ['Groovy': GroovySystem.version]
+            case VersionOption.SPRING_BOOT:
+                return ['Spring Boot': SpringBootVersion.version]
+            case VersionOption.SPRING:
+                return ['Spring': SpringVersion.version]
+            case VersionOption.SPRING_SECURITY:
+                return ['Spring Security': findVersion('org.springframework.security.core.SpringSecurityCoreVersion')]
+            case VersionOption.CONTAINER:
+                return findContainerVersion()
+            case VersionOption.TOMCAT:
+                return ['Tomcat': findTomcatVersion()]
+            case VersionOption.JETTY:
+                return ['Jetty': findJettyVersion()]
+            case VersionOption.UNDERTOW:
+                return ['Undertow': findUndertowVersion()]
+            default:
+                return [:]
+        }
     }
 
     /**

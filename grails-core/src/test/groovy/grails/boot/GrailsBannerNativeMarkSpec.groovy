@@ -195,12 +195,20 @@ class GrailsBannerNativeMarkSpec extends Specification {
             GrailsBanner.OptionalVersionOption.values()*.key == ['tomcat', 'jetty', 'undertow']
     }
 
-    void 'a library that is not there is left out rather than shown as unknown'() {
-        expect: 'jetty and undertow are not on this classpath; asking for them says nothing'
+    void 'a version asked for by name that cannot be determined is shown as unknown'() {
+        expect: 'jetty and undertow are not on this classpath, and saying nothing about a version ' +
+                'that was asked for by name reads as the option having been ignored'
             configured(['grails.banner.versions.include': 'jetty,undertow'])
             String output = plain(new StartedAs())
-            !output.contains('Jetty')
-            !output.contains('Undertow')
+            output.contains('Jetty: unknown')
+            output.contains('Undertow: unknown')
+    }
+
+    void 'a version shown by default that cannot be determined is left out'() {
+        expect: 'which is what lets one be shown by default at all -- an application without Spring ' +
+                'Security says nothing about it rather than saying it does not know'
+            configured([:])
+            !plain(new StartedAs()).contains('Spring Security')
     }
 
     void 'an application can turn spring security off'() {

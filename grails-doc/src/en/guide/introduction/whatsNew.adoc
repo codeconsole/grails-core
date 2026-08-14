@@ -332,8 +332,10 @@ started where that is worth saying — `NATIVE` for an image, `AOT CACHE` for a 
 running generated bean definitions. An ordinary start says nothing.
 
 Spring Security and the servlet container are also shown by default now. What allows that is a smaller change
-underneath: a version that cannot be determined is left out of the banner rather than shown as `unknown`, so an
-application without Spring Security says nothing about it instead of saying it does not know. See
+underneath: a version shown by default that cannot be determined is left out rather than shown as `unknown`, so
+an application without Spring Security says nothing about it instead of saying it does not know. One asked for
+by name still reads `unknown`, because saying nothing about what was asked for reads as the option having been
+ignored. See
 xref:conf/applicationClass/customizing[Customizing the Application Class] for the full set of banner options, and the
 xref:upgrading#upgrading80x[upgrade guide] for how to restore the previous output.
 
