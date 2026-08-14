@@ -508,12 +508,14 @@ public class DefaultUrlMappingsHolder implements UrlMappings {
             return info;
         }
 
+        final boolean debugEnabled = LOG.isDebugEnabled();
+        final int uriSlashCount = RegexUrlMapping.countSlashes(uri);
         for (UrlMapping mapping : mappings) {
-            if (LOG.isDebugEnabled()) {
+            if (debugEnabled) {
                 LOG.debug("Attempting to match URI [{}] with pattern [{}]", uri, mapping.getUrlData().getUrlPattern());
             }
 
-            info = mapping.match(uri);
+            info = matchMapping(mapping, uri, uriSlashCount);
             if (info != null) {
                 cachedMatches.put(uri, info);
                 break;
@@ -535,14 +537,16 @@ public class DefaultUrlMappingsHolder implements UrlMappings {
         List<UrlMappingInfo> matchingUrls = cachedListMatches.getIfPresent(cacheKey);
         if (matchingUrls == null) {
             matchingUrls = new ArrayList<>();
+            final boolean debugEnabled = LOG.isDebugEnabled();
+            final int uriSlashCount = RegexUrlMapping.countSlashes(uri);
             for (UrlMapping mapping : mappings) {
-                if (LOG.isDebugEnabled()) {
+                if (debugEnabled) {
                     LOG.debug("Attempting to match URI [{}] with pattern [{}]", uri, mapping.getUrlData().getUrlPattern());
                 }
 
-                UrlMappingInfo current = mapping.match(uri);
+                UrlMappingInfo current = matchMapping(mapping, uri, uriSlashCount);
                 if (current != null) {
-                    if (LOG.isDebugEnabled()) {
+                    if (debugEnabled) {
                         LOG.debug("Matched URI [{}] with pattern [{}], adding to possibilities", uri, mapping.getUrlData().getUrlPattern());
                     }
 
@@ -554,6 +558,18 @@ public class DefaultUrlMappingsHolder implements UrlMappings {
             cachedListMatches.put(cacheKey, matchingUrls);
         }
         return matchingUrls.toArray(new UrlMappingInfo[0]);
+    }
+
+    /**
+     * Matches one mapping, passing the pre-computed URI slash count so a RegexUrlMapping can rule out
+     * candidate patterns without allocating a Matcher. Any other UrlMapping implementation is matched
+     * exactly as before.
+     */
+    private static UrlMappingInfo matchMapping(UrlMapping mapping, String uri, int uriSlashCount) {
+        if (mapping instanceof RegexUrlMapping regexUrlMapping) {
+            return regexUrlMapping.match(uri, uriSlashCount);
+        }
+        return mapping.match(uri);
     }
 
     private boolean isExcluded(String uri) {
@@ -576,14 +592,16 @@ public class DefaultUrlMappingsHolder implements UrlMappings {
             matchingUrls = new ArrayList<>();
             boolean anyHttpMethod = httpMethod != null && httpMethod.equals(UrlMapping.ANY_HTTP_METHOD);
             boolean anyVersion = version != null && version.equals(UrlMapping.ANY_VERSION);
+            final boolean debugEnabled = LOG.isDebugEnabled();
+            final int uriSlashCount = RegexUrlMapping.countSlashes(uri);
             for (UrlMapping mapping : mappings) {
-                if (LOG.isDebugEnabled()) {
+                if (debugEnabled) {
                     LOG.debug("Attempting to match URI [{}] with pattern [{}]", uri, mapping.getUrlData().getUrlPattern());
                 }
 
-                UrlMappingInfo current = mapping.match(uri);
+                UrlMappingInfo current = matchMapping(mapping, uri, uriSlashCount);
                 if (current != null) {
-                    if (LOG.isDebugEnabled()) {
+                    if (debugEnabled) {
                         LOG.debug("Matched URI [{}] with pattern [{}], adding to possibilities", uri, mapping.getUrlData().getUrlPattern());
                     }
 
