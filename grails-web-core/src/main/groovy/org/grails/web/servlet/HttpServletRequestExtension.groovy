@@ -22,6 +22,9 @@ import groovy.transform.CompileStatic
 
 import org.apache.grails.core.internal.util.TypeConverters
 import org.springframework.util.ClassUtils
+import org.springframework.util.MultiValueMap
+import org.springframework.web.multipart.MultipartFile
+import org.springframework.web.multipart.MultipartHttpServletRequest
 
 import jakarta.servlet.http.HttpServletRequest
 
@@ -41,6 +44,66 @@ class HttpServletRequestExtension {
 
     static String getForwardURI(HttpServletRequest request) {
         WebUtils.getForwardURI(request)
+    }
+
+    /**
+     * @return The uploaded file submitted under the given name, or {@code null} if no such file was submitted
+     * @throws IllegalStateException if this request has no resolved multipart request
+     */
+    static MultipartFile getFile(HttpServletRequest request, String name) {
+        multipartRequest(request).getFile(name)
+    }
+
+    /**
+     * @return The uploaded files submitted under the given name, empty if no such files were submitted
+     * @throws IllegalStateException if this request has no resolved multipart request
+     */
+    static List<MultipartFile> getFiles(HttpServletRequest request, String name) {
+        multipartRequest(request).getFiles(name)
+    }
+
+    /**
+     * @return The names under which files were submitted
+     * @throws IllegalStateException if this request has no resolved multipart request
+     */
+    static Iterator<String> getFileNames(HttpServletRequest request) {
+        multipartRequest(request).fileNames
+    }
+
+    /**
+     * @return The uploaded files keyed by the name they were submitted under
+     * @throws IllegalStateException if this request has no resolved multipart request
+     */
+    static Map<String, MultipartFile> getFileMap(HttpServletRequest request) {
+        multipartRequest(request).fileMap
+    }
+
+    /**
+     * @return The uploaded files keyed by the name they were submitted under, retaining multiple files per name
+     * @throws IllegalStateException if this request has no resolved multipart request
+     */
+    static MultiValueMap<String, MultipartFile> getMultiFileMap(HttpServletRequest request) {
+        multipartRequest(request).multiFileMap
+    }
+
+    /**
+     * @return The content type of the part submitted under the given name, or {@code null} if there is no such part
+     * @throws IllegalStateException if this request has no resolved multipart request
+     */
+    static String getMultipartContentType(HttpServletRequest request, String name) {
+        multipartRequest(request).getMultipartContentType(name)
+    }
+
+    private static MultipartHttpServletRequest multipartRequest(HttpServletRequest request) {
+        MultipartHttpServletRequest multipartRequest = WebUtils.resolveMultipartRequest(request)
+        if (multipartRequest == null) {
+            throw new IllegalStateException(
+                    "Not a resolved multipart request. Content-Type is [${request.contentType}]. " +
+                    'If this is a file upload, check that multipart support is enabled ' +
+                    '(spring.servlet.multipart.enabled) and that any application-supplied MultipartFilter ' +
+                    'is ordered before the Grails request filter.')
+        }
+        multipartRequest
     }
 
     static getProperty(HttpServletRequest request, String name) {

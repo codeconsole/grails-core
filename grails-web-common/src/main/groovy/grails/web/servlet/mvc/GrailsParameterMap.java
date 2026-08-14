@@ -94,8 +94,11 @@ public class GrailsParameterMap extends TypeConvertingMap implements Cloneable {
         // layer by Spring's FormContentFilter) are read straight from the request parameter map.
         final Map requestMap = new LinkedHashMap(request.getParameterMap());
 
-        if (request instanceof MultipartHttpServletRequest) {
-            MultiValueMap<String, MultipartFile> fileMap = ((MultipartHttpServletRequest) request).getMultiFileMap();
+        // The request is the outermost request, so the multipart request is discovered from its wrapper
+        // chain rather than being the request itself.
+        MultipartHttpServletRequest multipartRequest = WebUtils.resolveMultipartRequest(request);
+        if (multipartRequest != null) {
+            MultiValueMap<String, MultipartFile> fileMap = multipartRequest.getMultiFileMap();
             for (Entry<String, List<MultipartFile>> entry : fileMap.entrySet()) {
                 List<MultipartFile> value = entry.getValue();
                 if (value.size() == 1) {

@@ -21,7 +21,7 @@ under the License.
 ==== Programmatic File Uploads
 
 
-Grails supports file uploads using Spring's {springapi}org/springframework/web/multipart/MultipartHttpServletRequest.html[MultipartHttpServletRequest] interface. The first step for file uploading is to create a multipart form like this:
+Grails supports file uploads on top of Spring's multipart handling, exposing the uploaded parts as {springapi}org/springframework/web/multipart/MultipartFile.html[MultipartFile] instances. The first step for file uploading is to create a multipart form like this:
 
 [source,xml]
 ----

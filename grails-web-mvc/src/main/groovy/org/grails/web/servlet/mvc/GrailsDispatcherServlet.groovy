@@ -85,10 +85,12 @@ class GrailsDispatcherServlet extends DispatcherServlet implements ServletContex
         if (shouldProcessMultiPart) {
             HttpServletRequest processedRequest = super.checkMultipart(request)
             if (!processedRequest.is(request)) {
-                def webRequest = GrailsWebRequest.lookup(request)
-                if (webRequest != null) {
-                    webRequest.multipartRequest = processedRequest
-                }
+                // The GrailsWebRequest was bound by GrailsWebRequestFilter, so the request it holds sits
+                // below this wrapper and cannot reach it by unwrapping. Publish it so params and
+                // request.getFile(..) can find it, then hand it to the dispatch like Spring MVC expects.
+                request.setAttribute(WebUtils.MULTIPART_HTTP_SERVLET_REQUEST_ATTRIBUTE, processedRequest)
+                GrailsWebRequest.lookup(request)?.multipartRequestResolved()
+                return processedRequest
             }
         }
         return request

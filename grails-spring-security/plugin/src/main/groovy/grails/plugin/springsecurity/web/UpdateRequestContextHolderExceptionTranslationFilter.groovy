@@ -74,7 +74,7 @@ class UpdateRequestContextHolderExceptionTranslationFilter extends ExceptionTran
 class DelegatingGrailsWebRequest extends GrailsWebRequest {
 
     // GROOVY-12134 - Groovy 5 workaround not ignoring final methods for the `@Delegate`
-    @Delegate(excludes = ['getRequest', 'getResponse', 'getCurrentRequest', 'getCurrentResponse', 'setMultipartRequest',
+    @Delegate(excludes = ['getRequest', 'getResponse', 'getCurrentRequest', 'getCurrentResponse', 'multipartRequestResolved',
             'getParams', 'getParameterMap', 'getOriginalParams', 'resetParams', 'addParametersFrom'])
     GrailsWebRequest current
 
@@ -88,7 +88,7 @@ class DelegatingGrailsWebRequest extends GrailsWebRequest {
 class DelegatingAsyncGrailsWebRequest extends AsyncGrailsWebRequest {
 
     // GROOVY-12134 - Groovy 5 workaround not ignoring final methods for the `@Delegate`
-    @Delegate(excludes = ['getRequest', 'getResponse', 'getCurrentRequest', 'getCurrentResponse', 'setMultipartRequest',
+    @Delegate(excludes = ['getRequest', 'getResponse', 'getCurrentRequest', 'getCurrentResponse', 'multipartRequestResolved',
             'getParams', 'getParameterMap', 'getOriginalParams', 'resetParams', 'addParametersFrom'])
     AsyncGrailsWebRequest current
 

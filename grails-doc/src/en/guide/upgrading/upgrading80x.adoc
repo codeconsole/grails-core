@@ -2255,3 +2255,50 @@ resolved unambiguously before can become ambiguous.
 
 Removing the packages from `grails.spring.bean.packages`, or the stray classes from those packages, restores
 the previous set of beans.
+
+==== 45. `request` Is No Longer a `MultipartHttpServletRequest`
+
+The `request` object Grails exposes to controllers, tag libraries and GSPs is now always the outermost
+servlet request. Previously, for a file upload, Grails replaced it with the resolved
+`MultipartHttpServletRequest`, which discarded the request wrappers contributed by other filters — the
+hidden HTTP method filter, Spring Security, and any application filter.
+
+All file upload methods work exactly as before:
+
+[source,groovy]
+----
+def upload() {
+    def file = request.getFile('myFile')
+    if (file.empty) {
+        flash.message = 'file cannot be empty'
+        render(view: 'uploadForm')
+        return
+    }
+    file.transferTo(new File('/some/local/dir/myfile.txt'))
+}
+----
+
+`request.getFiles(name)`, `request.getFileNames()`, `request.getFileMap()`, `request.getMultiFileMap()`
+and `request.getMultipartContentType(name)` are likewise unchanged, as is binding a file through
+`params`:
+
+[source,groovy]
+----
+def img = new Image(params)
+----
+
+What no longer works is treating `request` as a `MultipartHttpServletRequest` by type:
+
+[source,groovy]
+----
+// Before
+if (request instanceof MultipartHttpServletRequest) {
+    def file = ((MultipartHttpServletRequest) request).getFile('myFile')
+}
+
+// After
+def file = request.getFile('myFile')
+----
+
+Calling one of the file methods on a request that is not a file upload throws `IllegalStateException`
+with a diagnostic message, the same way it previously failed with `MissingMethodException`.

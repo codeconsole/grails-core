@@ -44,6 +44,7 @@ import org.springframework.web.context.request.RequestAttributes;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.WebRequestInterceptor;
 import org.springframework.web.context.support.WebApplicationContextUtils;
+import org.springframework.web.multipart.MultipartHttpServletRequest;
 import org.springframework.web.servlet.HandlerInterceptor;
 import org.springframework.web.servlet.View;
 import org.springframework.web.servlet.ViewResolver;
@@ -82,7 +83,17 @@ public class WebUtils extends org.springframework.web.util.WebUtils {
     public static final String ASYNC_REQUEST_URI_ATTRIBUTE = "jakarta.servlet.async.request_uri";
     public static final String SITEMESH2_PAGE_ATTRIBUTE = "__sitemesh__page";
 
+    /**
+     * Request attribute under which a resolved multipart request is published when it cannot be
+     * reached by unwrapping the request Grails bound.
+     *
+     * @see #resolveMultipartRequest(HttpServletRequest)
+     */
+    public static final String MULTIPART_HTTP_SERVLET_REQUEST_ATTRIBUTE = MultipartHttpServletRequest.class.getName();
+
     public static final int SC_METHOD_NOT_ALLOWED = HttpServletResponse.SC_METHOD_NOT_ALLOWED;
+
+    private static final String MULTIPART_CONTENT_TYPE_PREFIX = "multipart/";
 
     public static ViewResolver lookupViewResolver(ServletContext servletContext) {
         WebApplicationContext wac = WebApplicationContextUtils
@@ -543,6 +554,40 @@ public class WebUtils extends org.springframework.web.util.WebUtils {
      */
     public static boolean isForwardOrInclude(HttpServletRequest request) {
         return isForward(request) || isInclude(request);
+    }
+
+    /**
+     * Locate the resolved multipart request for the given request, if there is one.
+     * <p>
+     * The request Grails exposes to application code is always the outermost request, so that request
+     * wrappers contributed by other filters (Spring Security, the hidden HTTP method filter, and any
+     * application filter) keep working. The multipart request therefore has to be discovered rather
+     * than substituted. It is normally found by unwrapping, but when the {@code DispatcherServlet}
+     * resolves the request the multipart wrapper sits above the request Grails bound, so it is also
+     * published under {@link #MULTIPART_HTTP_SERVLET_REQUEST_ATTRIBUTE}.
+     *
+     * @param request The request
+     * @return The resolved multipart request, or {@code null} when the request is not multipart
+     */
+    public static MultipartHttpServletRequest resolveMultipartRequest(HttpServletRequest request) {
+        MultipartHttpServletRequest resolved = getNativeRequest(request, MultipartHttpServletRequest.class);
+        if (resolved != null) {
+            return resolved;
+        }
+        Object attribute = request.getAttribute(MULTIPART_HTTP_SERVLET_REQUEST_ATTRIBUTE);
+        return attribute instanceof MultipartHttpServletRequest multipartRequest ? multipartRequest : null;
+    }
+
+    /**
+     * Whether the given request declares a multipart content type, regardless of whether it has been resolved.
+     *
+     * @param request The request
+     * @return True if the content type is a multipart content type
+     */
+    public static boolean isMultipartContentType(HttpServletRequest request) {
+        String contentType = request.getContentType();
+        return contentType != null && contentType.regionMatches(true, 0, MULTIPART_CONTENT_TYPE_PREFIX, 0,
+                MULTIPART_CONTENT_TYPE_PREFIX.length());
     }
 
 }

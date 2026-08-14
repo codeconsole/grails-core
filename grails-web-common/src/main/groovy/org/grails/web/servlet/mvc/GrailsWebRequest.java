@@ -91,7 +91,6 @@ public class GrailsWebRequest extends DispatcherServletWebRequest {
     private HttpServletResponse wrappedResponse;
 
     private EncodingStateRegistry encodingStateRegistry;
-    private HttpServletRequest multipartRequest;
 
     public GrailsWebRequest(HttpServletRequest request, HttpServletResponse response, GrailsApplicationAttributes attributes) {
         super(request, response);
@@ -118,13 +117,17 @@ public class GrailsWebRequest extends DispatcherServletWebRequest {
     }
 
     /**
-     * Holds a reference to the {@link org.springframework.web.multipart.MultipartRequest}
+     * Notifies this request that the servlet container's multipart request has been resolved, so that
+     * {@link #getParams()} is rebuilt and picks up the uploaded files.
+     * <p>
+     * Multipart resolution can happen after params have already been read, so the cached maps are
+     * discarded rather than updated. See <a href="https://github.com/apache/grails-core/issues/13837">gh-13837</a>.
      *
-     * @param multipartRequest The multipart request
+     * @since 8.0
      */
-    public void setMultipartRequest(HttpServletRequest multipartRequest) {
-        this.multipartRequest = multipartRequest;
-        this.originalParams = null; // originalParams will need to be re-initialized. See https://github.com/apache/grails-core/issues/13837
+    public void multipartRequestResolved() {
+        this.originalParams = null;
+        this.params = null;
     }
 
     private void inheritEncodingStateRegistry() {
@@ -213,15 +216,12 @@ public class GrailsWebRequest extends DispatcherServletWebRequest {
     }
 
     /**
-     * @return The currently executing request
+     * @return The currently executing request, which is always the outermost request so that wrappers
+     *         contributed by other filters keep working. Multipart capabilities are discovered from its
+     *         wrapper chain — see {@link org.grails.web.util.WebUtils#resolveMultipartRequest(HttpServletRequest)}.
      */
     public HttpServletRequest getCurrentRequest() {
-        if (multipartRequest != null) {
-            return multipartRequest;
-        }
-        else {
-            return getRequest();
-        }
+        return getRequest();
     }
 
     public HttpServletResponse getCurrentResponse() {

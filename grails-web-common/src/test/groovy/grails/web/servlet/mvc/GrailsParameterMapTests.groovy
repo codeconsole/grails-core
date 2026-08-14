@@ -20,15 +20,20 @@ package grails.web.servlet.mvc
 
 import jakarta.servlet.FilterChain
 import jakarta.servlet.http.HttpServletRequest
+import jakarta.servlet.http.HttpServletRequestWrapper
 
 import org.junit.jupiter.api.Test
 import org.springframework.context.support.StaticMessageSource
 import org.springframework.mock.web.MockHttpServletRequest
 import org.springframework.mock.web.MockHttpServletResponse
+import org.springframework.mock.web.MockMultipartFile
+import org.springframework.mock.web.MockMultipartHttpServletRequest
 import org.springframework.mock.web.MockServletContext
 import org.springframework.web.context.request.RequestContextHolder
 import org.springframework.web.context.support.GenericWebApplicationContext
 import org.springframework.web.filter.FormContentFilter
+import org.grails.web.util.WebUtils
+
 import spock.lang.Issue
 
 import static org.junit.jupiter.api.Assertions.*
@@ -37,6 +42,52 @@ class GrailsParameterMapTests {
 
     GrailsParameterMap theMap
     MockHttpServletRequest mockRequest = new MockHttpServletRequest()
+
+    @Test
+    void testMultipartFilesArePopulatedFromTheRequestItself() {
+        def request = multipartRequest()
+        request.addParameter('name', 'Dierk Koenig')
+
+        theMap = new GrailsParameterMap(request)
+
+        assertEquals 'Dierk Koenig', theMap.name
+        assertEquals 'test.txt', theMap.file.originalFilename
+    }
+
+    @Test
+    void testMultipartFilesArePopulatedThroughLaterRequestWrappers() {
+        // The request Grails exposes is the outermost one, so files have to be discovered by unwrapping
+        // rather than by the request itself being a MultipartHttpServletRequest.
+        def request = new HttpServletRequestWrapper(new HttpServletRequestWrapper(multipartRequest()))
+
+        theMap = new GrailsParameterMap(request)
+
+        assertEquals 'test.txt', theMap.file.originalFilename
+    }
+
+    @Test
+    void testMultipartFilesArePopulatedFromThePublishedAttribute() {
+        // The shape produced when the DispatcherServlet resolves a request Grails had already bound,
+        // leaving the multipart wrapper above it rather than below.
+        def request = new MockHttpServletRequest()
+        request.setAttribute(WebUtils.MULTIPART_HTTP_SERVLET_REQUEST_ATTRIBUTE, multipartRequest())
+
+        theMap = new GrailsParameterMap(request)
+
+        assertEquals 'test.txt', theMap.file.originalFilename
+    }
+
+    @Test
+    void testMultipleFilesUnderOneNameArePopulatedAsAList() {
+        def request = new MockMultipartHttpServletRequest()
+        request.contentType = 'multipart/form-data; boundary=test'
+        request.addFile(new MockMultipartFile('file', 'one.txt', 'text/plain', 'one'.bytes))
+        request.addFile(new MockMultipartFile('file', 'two.txt', 'text/plain', 'two'.bytes))
+
+        theMap = new GrailsParameterMap(request)
+
+        assertEquals(['one.txt', 'two.txt'], theMap.file*.originalFilename)
+    }
 
     @Test
     void testSubmapViaArraySubscript() {
@@ -126,6 +177,13 @@ class GrailsParameterMapTests {
 
         assert 'bar' == params.foo
         assert 'two' == params.one
+    }
+
+    private static MockMultipartHttpServletRequest multipartRequest() {
+        def request = new MockMultipartHttpServletRequest()
+        request.contentType = 'multipart/form-data; boundary=test'
+        request.addFile(new MockMultipartFile('file', 'test.txt', 'text/plain', 'content'.bytes))
+        request
     }
 
     // Runs the request through Spring's FormContentFilter — the same filter Boot registers at runtime —
