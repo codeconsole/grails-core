@@ -149,4 +149,36 @@ class I18nDescriptorsSpec extends Specification {
         expect:
         I18nDescriptors.load(new URLClassLoader([] as URL[], null)).isEmpty()
     }
+
+    void 'two plugin names that differ only in spelling are still rejected'() {
+        given: 'descriptors are matched to discovered plugins by normalised name'
+        ClassLoader classLoader = classLoaderWith(
+                hyphenated: descriptor(['format.version': '1', 'artifact.type': 'plugin',
+                                        'artifact.name': 'spring-security-core',
+                                        basenames: 'spring-security-core']),
+                camelCase: descriptor(['format.version': '1', 'artifact.type': 'plugin',
+                                       'artifact.name': 'springSecurityCore',
+                                       basenames: 'springSecurityCore']))
+
+        when:
+        I18nDescriptors.load(classLoader)
+
+        then: 'comparing the raw names would pass here, then drop one silently downstream'
+        IllegalStateException e = thrown()
+        e.message.contains('spring-security-core')
+        e.message.contains('springSecurityCore')
+        e.message.contains('normalised form')
+    }
+
+    void 'plugins whose names do not normalise together are accepted'() {
+        given:
+        ClassLoader classLoader = classLoaderWith(
+                one: descriptor(['format.version': '1', 'artifact.type': 'plugin',
+                                 'artifact.name': 'alpha-plugin', basenames: 'alpha-plugin']),
+                two: descriptor(['format.version': '1', 'artifact.type': 'plugin',
+                                 'artifact.name': 'beta-plugin', basenames: 'beta-plugin']))
+
+        expect:
+        I18nDescriptors.load(classLoader).size() == 2
+    }
 }

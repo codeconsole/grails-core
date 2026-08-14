@@ -30,6 +30,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 
+import org.apache.grails.core.plugins.PluginUtils;
+
 /**
  * Reads every {@link I18nDescriptor} on the classpath.
  *
@@ -150,16 +152,24 @@ public final class I18nDescriptors {
                     "application, or a test fixture ships its own descriptor.");
         }
 
-        Map<String, Integer> pluginCounts = new LinkedHashMap<>();
+        // Counted by normalised name, because that is the form descriptors are matched to discovered
+        // plugins by. Comparing the raw names would let 'spring-security-core' and 'springSecurityCore'
+        // through here, only for one of them to be dropped without a word when they collapse to the
+        // same key downstream.
+        Map<String, List<String>> pluginsByNormalisedName = new LinkedHashMap<>();
         descriptors.stream().filter(descriptor -> !descriptor.isApplication())
-                .forEach(descriptor -> pluginCounts.merge(descriptor.name(), 1, Integer::sum));
-        List<String> duplicates = pluginCounts.entrySet().stream().filter(entry -> entry.getValue() > 1)
-                .map(Map.Entry::getKey).toList();
+                .forEach(descriptor -> pluginsByNormalisedName
+                        .computeIfAbsent(PluginUtils.normalizePluginName(descriptor.name()),
+                                normalised -> new ArrayList<>())
+                        .add(descriptor.name()));
+        List<String> duplicates = pluginsByNormalisedName.values().stream().filter(names -> names.size() > 1)
+                .map(names -> String.join(" and ", names)).toList();
         if (!duplicates.isEmpty()) {
             throw new IllegalStateException("More than one i18n descriptor for plugin(s) " +
-                    String.join(", ", duplicates) + ". Descriptors are matched to plugins by name, so duplicates " +
-                    "would make message precedence depend on classpath order. This usually means two versions of " +
-                    "the same plugin are on the classpath.");
+                    String.join("; ", duplicates) + ". Descriptors are matched to plugins by name, so duplicates " +
+                    "would make message precedence depend on classpath order. Names are compared in their " +
+                    "normalised form, so a hyphenated and a camel-case spelling are the same plugin. This usually " +
+                    "means two versions of the same plugin are on the classpath.");
         }
     }
 }
