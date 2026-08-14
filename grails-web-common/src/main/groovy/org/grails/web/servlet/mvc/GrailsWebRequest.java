@@ -117,11 +117,9 @@ public class GrailsWebRequest extends DispatcherServletWebRequest {
     }
 
     /**
-     * Notifies this request that the servlet container's multipart request has been resolved, so that
-     * {@link #getParams()} is rebuilt and picks up the uploaded files.
-     * <p>
-     * Multipart resolution can happen after params have already been read, so the cached maps are
-     * discarded rather than updated. See <a href="https://github.com/apache/grails-core/issues/13837">gh-13837</a>.
+     * Discards the cached params so they are rebuilt and pick up uploaded files, for when multipart
+     * resolution happens after params were already read.
+     * See <a href="https://github.com/apache/grails-core/issues/13837">gh-13837</a>.
      *
      * @since 8.0
      */

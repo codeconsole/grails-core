@@ -47,49 +47,30 @@ class HttpServletRequestExtension {
     }
 
     /**
-     * @return The uploaded file submitted under the given name, or {@code null} if no such file was submitted
-     * @throws IllegalStateException if this request has no resolved multipart request
+     * File upload accessors, delegating to the resolved multipart request found in this request's wrapper
+     * chain. Each throws {@link IllegalStateException} when the request is not a resolved multipart request,
+     * matching how these methods previously failed when the request was not a {@code MultipartHttpServletRequest}.
      */
     static MultipartFile getFile(HttpServletRequest request, String name) {
         multipartRequest(request).getFile(name)
     }
 
-    /**
-     * @return The uploaded files submitted under the given name, empty if no such files were submitted
-     * @throws IllegalStateException if this request has no resolved multipart request
-     */
     static List<MultipartFile> getFiles(HttpServletRequest request, String name) {
         multipartRequest(request).getFiles(name)
     }
 
-    /**
-     * @return The names under which files were submitted
-     * @throws IllegalStateException if this request has no resolved multipart request
-     */
     static Iterator<String> getFileNames(HttpServletRequest request) {
         multipartRequest(request).fileNames
     }
 
-    /**
-     * @return The uploaded files keyed by the name they were submitted under
-     * @throws IllegalStateException if this request has no resolved multipart request
-     */
     static Map<String, MultipartFile> getFileMap(HttpServletRequest request) {
         multipartRequest(request).fileMap
     }
 
-    /**
-     * @return The uploaded files keyed by the name they were submitted under, retaining multiple files per name
-     * @throws IllegalStateException if this request has no resolved multipart request
-     */
     static MultiValueMap<String, MultipartFile> getMultiFileMap(HttpServletRequest request) {
         multipartRequest(request).multiFileMap
     }
 
-    /**
-     * @return The content type of the part submitted under the given name, or {@code null} if there is no such part
-     * @throws IllegalStateException if this request has no resolved multipart request
-     */
     static String getMultipartContentType(HttpServletRequest request, String name) {
         multipartRequest(request).getMultipartContentType(name)
     }

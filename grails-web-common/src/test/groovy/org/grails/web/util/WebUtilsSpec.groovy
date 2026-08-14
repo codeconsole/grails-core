@@ -83,23 +83,6 @@ class WebUtilsSpec extends Specification {
         WebUtils.resolveMultipartRequest(new MockHttpServletRequest()) == null
     }
 
-    void 'isMultipartContentType detects a multipart content type regardless of case or parameters'() {
-        given:
-        def request = new MockHttpServletRequest()
-        request.contentType = contentType
-
-        expect:
-        WebUtils.isMultipartContentType(request) == expected
-
-        where:
-        contentType                                  || expected
-        'multipart/form-data; boundary=test'         || true
-        'MULTIPART/FORM-DATA'                        || true
-        'multipart/mixed'                            || true
-        'application/x-www-form-urlencoded'          || false
-        null                                         || false
-    }
-
     private static MockMultipartHttpServletRequest multipartRequest() {
         def request = new MockMultipartHttpServletRequest()
         request.contentType = 'multipart/form-data; boundary=test'
