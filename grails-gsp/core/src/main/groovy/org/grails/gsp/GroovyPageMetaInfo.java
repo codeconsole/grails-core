@@ -327,7 +327,7 @@ public class GroovyPageMetaInfo implements GrailsApplicationAware {
 
     /**
      * @return the modification time of the source this page was compiled from, or {@code 0} if none was
-     * recorded. Pages precompiled by Grails 7.1.6 or later always report {@code 0}: the compiler records a
+     * recorded. Pages precompiled by Grails 8.0.0 or later always report {@code 0}: the compiler records a
      * checksum of the source instead, so that identical sources compile to identical bytes. Use
      * {@link #getSourceChecksum()} to identify the source such a page was compiled from.
      */
@@ -341,7 +341,7 @@ public class GroovyPageMetaInfo implements GrailsApplicationAware {
 
     /**
      * @return the checksum of the GSP source this page was compiled from, or {@code null} if none was recorded
-     * @since 7.1.6
+     * @since 8.0.0
      */
     public String getSourceChecksum() {
         return this.sourceChecksum;
@@ -349,7 +349,7 @@ public class GroovyPageMetaInfo implements GrailsApplicationAware {
 
     /**
      * @param sourceChecksum the checksum of the GSP source this page was compiled from
-     * @since 7.1.6
+     * @since 8.0.0
      */
     public void setSourceChecksum(String sourceChecksum) {
         this.sourceChecksum = sourceChecksum;

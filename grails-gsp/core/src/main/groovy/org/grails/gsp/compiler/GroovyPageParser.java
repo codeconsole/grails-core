@@ -1407,7 +1407,7 @@ public class GroovyPageParser implements Tokens {
      *
      * @param source the raw bytes of the GSP source
      * @return the checksum as a lower-case hex string
-     * @since 7.1.6
+     * @since 8.0.0
      */
     public static String checksumOf(byte[] source) {
         try {
@@ -1421,7 +1421,7 @@ public class GroovyPageParser implements Tokens {
 
     /**
      * @return a checksum of the GSP source this page was generated from, or {@code null} if none was recorded
-     * @since 7.1.6
+     * @since 8.0.0
      */
     public String getSourceChecksum() {
         return this.sourceChecksum;
@@ -1432,7 +1432,7 @@ public class GroovyPageParser implements Tokens {
      * runtime can detect an edited source without depending on its modification time.
      *
      * @param sourceChecksum the checksum, or {@code null} to record none
-     * @since 7.1.6
+     * @since 8.0.0
      */
     public void setSourceChecksum(String sourceChecksum) {
         this.sourceChecksum = sourceChecksum;
