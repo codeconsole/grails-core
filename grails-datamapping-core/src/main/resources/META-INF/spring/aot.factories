@@ -1,2 +1,2 @@
 org.springframework.aot.hint.RuntimeHintsRegistrar=\
-org.grails.datastore.gorm.aot.GormRuntimeHints
+org.apache.grails.datamapping.aot.GormRuntimeHints

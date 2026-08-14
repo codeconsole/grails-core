@@ -149,7 +149,7 @@ class CoreGrailsPluginAotSpec extends Specification {
 
         and:
             def generationContext = new DefaultGenerationContext(
-                    new ClassNameGenerator(ClassName.get('org.grails.aot.test', 'CoreAotTest')),
+                    new ClassNameGenerator(ClassName.get('org.apache.grails.common.aot.test', 'CoreAotTest')),
                     new InMemoryGeneratedFiles())
 
         when: 'the context is processed exactly as the processAot build task processes it'
@@ -173,7 +173,7 @@ class CoreGrailsPluginAotSpec extends Specification {
 
         and:
             def generationContext = new DefaultGenerationContext(
-                    new ClassNameGenerator(ClassName.get('org.grails.aot.test', 'LiveInstanceAotTest')),
+                    new ClassNameGenerator(ClassName.get('org.apache.grails.common.aot.test', 'LiveInstanceAotTest')),
                     new InMemoryGeneratedFiles())
 
         when:

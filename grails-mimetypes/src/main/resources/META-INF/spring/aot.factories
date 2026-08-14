@@ -1,2 +1,2 @@
 org.springframework.aot.hint.RuntimeHintsRegistrar=\
-org.grails.web.mime.aot.MimeTypeRuntimeHints
+org.apache.grails.mimetypes.aot.MimeTypeRuntimeHints

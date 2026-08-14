@@ -1,2 +1,2 @@
 org.springframework.aot.hint.RuntimeHintsRegistrar=\
-org.grails.plugins.web.taglib.aot.TagLibRuntimeHints
+org.apache.grails.gsp.taglib.aot.TagLibRuntimeHints

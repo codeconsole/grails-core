@@ -1,2 +1,2 @@
 org.springframework.aot.hint.RuntimeHintsRegistrar=\
-grails.plugin.scaffolding.aot.ScaffoldingRuntimeHints
+org.apache.grails.scaffolding.aot.ScaffoldingRuntimeHints

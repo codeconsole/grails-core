@@ -1,2 +1,2 @@
 org.springframework.aot.hint.RuntimeHintsRegistrar=\
-org.grails.gsp.aot.PrecompiledPageRuntimeHints
+org.apache.grails.gsp.aot.PrecompiledPageRuntimeHints

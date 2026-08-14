@@ -36,7 +36,7 @@ import grails.core.GrailsApplication
 import grails.core.GrailsApplicationClass
 import org.apache.grails.core.plugins.PluginDiscovery
 import org.grails.spring.aop.autoproxy.GroovyAwareAspectJAwareAdvisorAutoProxyCreator
-import org.grails.spring.beans.aot.ArtefactClassesBeanFactoryInitializationAotProcessor
+import org.apache.grails.core.aot.ArtefactClassesBeanFactoryInitializationAotProcessor
 import org.grails.spring.aop.autoproxy.GroovyAwareInfrastructureAdvisorAutoProxyCreator
 
 /**

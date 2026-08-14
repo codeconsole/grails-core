@@ -1,2 +1,2 @@
 org.springframework.aot.hint.RuntimeHintsRegistrar=\
-org.grails.web.mapping.aot.UrlMappingRuntimeHints
+org.apache.grails.web.mapping.aot.UrlMappingRuntimeHints
