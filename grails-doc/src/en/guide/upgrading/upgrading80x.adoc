@@ -2410,20 +2410,56 @@ with a diagnostic message, the same way it previously failed with `MissingMethod
 An upload larger than `grails.controllers.upload.maxFileSize` or
 `grails.controllers.upload.maxRequestSize` (both 128000 bytes by default) fails when the servlet
 container parses the request parts, and every parameter read on that request fails with it from then
-on. Because Grails reads request parameters before the `DispatcherServlet` runs — to resolve the
-`_method` override, and again whenever a filter such as Spring Security builds `params` — that failure
-used to abort the request inside the filter chain, where no exception handler could see it. The
-application was left with the container's own error page.
+on. Because Grails reads request parameters on paths that run before, alongside and after the handler
+— to resolve the `_method` override, whenever a filter such as Spring Security builds `params`, in the
+locale-change interceptor, and in the exception resolver's request log — that failure used to abort
+the request inside the filter chain, where no exception handler could see it. The application was left
+with the container's own error page.
 
-Those two parameter reads now tolerate a multipart request the container refuses to parse, so the
-failure surfaces where Spring raises it, as a
+Those reads now tolerate a multipart request the container refuses to parse, so the failure surfaces
+where Spring raises it, as a
 `org.springframework.web.multipart.MultipartException`/`MaxUploadSizeExceededException` during
 dispatch. The exception is available to `HandlerExceptionResolver` beans, and the response is a `413`
 rendered through the application's error dispatch instead of the container's own error page.
 
-The parameters of such a request are empty, because the container never parsed them. The request
-cannot reach a controller either way — `DispatcherServlet` rejects it before handler resolution — so
-this is only observable in a filter that inspects `params` ahead of the dispatch.
+A `"413"` response code URL mapping handles it, the same way a `"404"` or `"500"` mapping handles those
+statuses:
+
+[source,groovy]
+----
+"413"(controller: 'errors', action: 'tooLarge')
+----
+
+The mapped action runs on the container's error dispatch, so `request.dispatcherType` is `ERROR` and
+`params` is empty — the container never parsed the request. `request.getFile(..)` is unavailable there
+for the same reason. The upload itself is gone by then; the action's job is to render the response.
+
+The parameters of such a request are empty everywhere, not just in the error handler. The request
+cannot reach the originally requested controller either way — `DispatcherServlet` rejects it before
+handler resolution — so outside the error handler this is only observable in a filter that inspects
+`params` ahead of the dispatch.
+
+====== Servlet container differences
+
+Tomcat and Jetty both surface the failure to the application as described above. Undertow applies the
+limit while it reads the request entity and refuses the request at the HTTP layer, so no application
+code runs at all: the response is a bare `413` with an empty body, and a `"413"` mapping is not
+consulted. Raising `grails.controllers.upload.maxRequestSize` raises the point at which Undertow
+refuses, but there is no way to render a body for a request the container never dispatches.
+
+===== 45.2 An error handler that fails is no longer forwarded to from inside itself
+
+A `"500"` (or exception-specific) URL mapping that names a controller is reached by forwarding to it.
+That forward re-enters the `DispatcherServlet`, and the forwarded dispatch resolves the same status
+code mapping again. An error handler that failed for a reason belonging to the request rather than to
+the moment — an unparseable multipart body, a missing collaborator — therefore failed again inside its
+own forward, and that failure forwarded to it once more, until the dispatch stack overflowed.
+
+The error handler is no longer forwarded to while a forward to it is already running. The repeat
+failure is logged and the exception is returned to the `DispatcherServlet`, which reports it through
+the container, so the response is a single container-level error rather than a dispatch that never
+terminates. Once the forward returns, a later error on the same request — from an enclosing request
+whose include failed, for instance — is forwarded to the error handler as before.
 
 ==== 46. Request Processing Behaviour Changes
 

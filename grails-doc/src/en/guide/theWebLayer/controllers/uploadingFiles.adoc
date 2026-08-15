@@ -116,7 +116,21 @@ grails:
 
 The exception is raised during dispatch, so it reaches `HandlerExceptionResolver` beans rather than
 escaping to the servlet container. The response status is `413` and the body is rendered through the
-application's error dispatch rather than by the servlet container's own error page.
+application's error dispatch rather than by the servlet container's own error page. To render it
+yourself, add a response code mapping to `UrlMappings`:
+
+[source,groovy]
+----
+"413"(controller: 'errors', action: 'tooLarge')
+----
+
+The mapped action runs on the container's error dispatch, so `params` is empty and `request.getFile(..)`
+is unavailable — the container never parsed the request. The action's job is to render the response.
+
+NOTE: On Undertow the limit is applied while the request entity is read, so the request is refused at
+the HTTP layer and no application code runs: the response is a bare `413` with an empty body, and a
+`"413"` mapping is not consulted. Tomcat and Jetty dispatch the failure to the application as described
+above.
 
 You should keep in mind https://www.owasp.org/index.php/Unrestricted_File_Upload[OWASP recommendations - Unrestricted File Upload]
 
