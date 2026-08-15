@@ -392,6 +392,8 @@ interface Settings {
 
     String DATE_LENIENT_PARSING = 'grails.databinding.dateParsingLenient'
 
+    String DATABINDING_DENY_BY_DEFAULT = 'grails.databinding.denyByDefault'
+
     /**
      * Whether message bundles contributed by plugins participate, both in message resolution and in
      * the locales offered by a language selector. Defaults to {@code true}.
