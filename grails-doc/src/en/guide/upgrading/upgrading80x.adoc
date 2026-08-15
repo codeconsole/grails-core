@@ -2381,8 +2381,11 @@ static mappings = {
 }
 ----
 
+[cols="1,1,1", options="header"]
 |===
-| Request | Grails 7 | Grails 8
+| Request
+| Grails 7
+| Grails 8
 
 | `/article/gallery`
 | `ArticleController.gallery()`
@@ -2390,7 +2393,7 @@ static mappings = {
 
 | `/article?action=gallery`
 | `ArticleController.gallery()`
-| `ArticleController`'s default action
+| the default action of `ArticleController`
 |===
 
 `params.action` still holds `gallery` in both versions — only the routing decision changed.
