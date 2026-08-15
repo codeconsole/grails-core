@@ -2358,7 +2358,7 @@ resolved unambiguously before can become ambiguous.
 Removing the packages from `grails.spring.bean.packages`, or the stray classes from those packages, restores
 the previous set of beans.
 
-==== 45. URL Mapping Names Come From the URI, Not From Request Parameters
+==== 47. URL Mapping Names Come From the URI, Not From Request Parameters
 
 A mapping that captures its controller, action or namespace from the URL — `"/$controller/$action?/$id?"`,
 the default mapping every application starts with — used to resolve those names by reading the request's
