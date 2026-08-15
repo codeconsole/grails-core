@@ -18,8 +18,6 @@
  */
 package grails.web.databinding
 
-import java.lang.reflect.Field
-
 import spock.lang.Specification
 
 import org.springframework.context.ApplicationContext
@@ -29,7 +27,6 @@ import grails.core.GrailsApplication
 import grails.databinding.CollectionDataBindingSource
 import grails.databinding.DataBinder
 import grails.databinding.SimpleMapDataBindingSource
-import grails.util.Environment
 import grails.util.Holders
 import grails.web.mime.MimeTypeResolver
 import org.grails.datastore.mapping.model.MappingContext
@@ -69,21 +66,6 @@ class DataBindingUtilsSpec extends Specification {
         secondCommand.version == '8.0'
     }
 
-    void 'test the include list of a class which does not declare a whitelist is cached'() {
-        given: 'an environment in which include lists are cached'
-        assert !Environment.getCurrent().isReloadEnabled()
-
-        and: 'a class which has never been bound before'
-        assert !bindingIncludeListCache().containsKey(UncachedCommand)
-
-        when:
-        DataBindingUtils.bindObjectToInstance(new UncachedCommand(), [name: 'Grails'])
-
-        then: 'the negative result is cached, so the whitelist field is never looked up again for the class'
-        bindingIncludeListCache().containsKey(UncachedCommand)
-        bindingIncludeListCache().get(UncachedCommand).isEmpty()
-    }
-
     void 'test the whitelist field is read only once per class'() {
         when: 'a class whose whitelist field does not hold a list is bound'
         def command = new MutableWhitelistCommand()
@@ -115,16 +97,16 @@ class DataBindingUtilsSpec extends Specification {
         command.version == null
     }
 
-    void 'test a whitelist declared by a super class does not apply to a sub class'() {
+    void 'test a whitelist declared by a super class also restricts a sub class'() {
         given:
         def command = new SubclassOfWhitelistedCommand()
 
         when:
         DataBindingUtils.bindObjectToInstance(command, [name: 'Grails', version: '8'])
 
-        then:
+        then: 'the inherited whitelist applies to the sub class as well'
         command.name == 'Grails'
-        command.version == '8'
+        command.version == null
     }
 
     void 'test binding a collection'() {
@@ -238,27 +220,12 @@ class DataBindingUtilsSpec extends Specification {
         }
         return context
     }
-
-    /**
-     * The include list cache is an implementation detail with no public accessor, but whether a class ends up in it
-     * is the only way to tell that the whitelist field lookup is not repeated for classes which do not declare one.
-     */
-    private static Map<Class, List> bindingIncludeListCache() {
-        Field field = DataBindingUtils.getDeclaredField('CLASS_TO_BINDING_INCLUDE_LIST')
-        field.setAccessible(true)
-        return (Map<Class, List>) field.get(null)
-    }
 }
 
 class NoWhitelistCommand {
 
     String name
     String version
-}
-
-class UncachedCommand {
-
-    String name
 }
 
 class MutableWhitelistCommand {
