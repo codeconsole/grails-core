@@ -41,6 +41,10 @@ class ControllersDomainBindingApiSpec extends Specification {
     GrailsApplication grailsApplication = new DefaultGrailsApplication()
 
     void setup() {
+        // Discovery strategies are static and consulted in registration order, and tests share a fork, so a
+        // strategy left behind by an earlier test - pointing at an application context since closed - would be
+        // asked first and throw before the one registered below is ever reached.
+        Holders.clear()
         mappingContext.addPersistentEntity(Widget)
         grailsApplication.mappingContext = mappingContext
         Holders.addApplicationDiscoveryStrategy(new GrailsApplicationDiscoveryStrategy() {
