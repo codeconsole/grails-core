@@ -346,6 +346,11 @@ trait Controller implements ResponseRenderer, ResponseRedirector, RequestForward
      */
     @Generated
     def initializeCommandObject(final Class type, final String commandObjectParameterName) throws Exception {
+        initializeCommandObject(type, commandObjectParameterName, null)
+    }
+
+    @Generated
+    def initializeCommandObject(Class type, String commandObjectParameterName, List bindAllowedProperties) throws Exception {
         final HttpServletRequest request = getRequest()
         def commandObjectInstance = null
         try {
@@ -417,7 +422,8 @@ trait Controller implements ResponseRenderer, ResponseRedirector, RequestForward
                 }
 
                 if (shouldDoDataBinding) {
-                    bindData(commandObjectInstance, commandObjectBindingSource, Collections.EMPTY_MAP, null)
+                    Map includeExclude = bindAllowedProperties == null ? Collections.EMPTY_MAP : [include: bindAllowedProperties]
+                    bindData(commandObjectInstance, commandObjectBindingSource, includeExclude, null)
                 }
             }
         } catch (Exception e) {
