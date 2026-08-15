@@ -206,7 +206,7 @@ class ReflectionUtils {
 
     static UrlMappingInfo[] matchAllUrlMappings(UrlMappingsHolder urlMappingsHolder, String requestUrl,
                                                 GrailsWebRequest grailsRequest, HttpServletResponseExtension extension) {
-        String method = grailsRequest.currentRequest.method
+        String method = grailsRequest.request.method
         String version = grailsRequest.getHeader(ACCEPT_VERSION) ?: extension.getMimeTypeForRequest(grailsRequest).version
         urlMappingsHolder.matchAll requestUrl, method, version == null ? UrlMapping.ANY_VERSION : version
     }

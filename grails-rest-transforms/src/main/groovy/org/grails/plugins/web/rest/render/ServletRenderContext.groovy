@@ -105,7 +105,7 @@ class ServletRenderContext extends AbstractRenderContext {
 
     @Override
     HttpMethod getHttpMethod() {
-        HttpMethod.valueOf(webRequest.currentRequest.method)
+        HttpMethod.valueOf(webRequest.request.method)
     }
 
     @Override
@@ -126,7 +126,7 @@ class ServletRenderContext extends AbstractRenderContext {
 
     @Override
     String getViewName() {
-        final request = webRequest.currentRequest
+        final request = webRequest.request
         ModelAndView modelAndView = (ModelAndView) request.getAttribute(GrailsApplicationAttributes.MODEL_AND_VIEW)
         if (modelAndView) {
             return modelAndView.viewName
@@ -135,7 +135,7 @@ class ServletRenderContext extends AbstractRenderContext {
     }
 
     protected ModelAndView getModelAndView() {
-        final request = webRequest.currentRequest
+        final request = webRequest.request
         ModelAndView modelAndView = (ModelAndView) request.getAttribute(GrailsApplicationAttributes.MODEL_AND_VIEW)
         if (modelAndView == null) {
             modelAndView = new ModelAndView()

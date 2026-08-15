@@ -2305,7 +2305,7 @@ with a diagnostic message, the same way it previously failed with `MissingMethod
 
 ==== 46. Request Processing Behaviour Changes
 
-Three behaviour changes fall out of Grails 8 delegating more of the request path to Spring.
+Four changes fall out of Grails 8 delegating more of the request path to Spring.
 
 ===== 46.1 API versioning headers are now emitted for Grails-mapped requests
 
@@ -2331,3 +2331,23 @@ rebuilt automatically if the `ApplicationContext` is replaced.
 
 Applications that implemented `GrailsApplicationAttributes` themselves must ensure their
 implementation holds no request-scoped state and is safe to use from multiple request threads.
+
+===== 46.4 `GrailsWebRequest.getCurrentRequest()` is deprecated
+
+`getCurrentRequest()` existed to hand back the resolved multipart request in place of the request Grails
+was bound to. That substitution is gone (see _45. `request` Is No Longer a `MultipartHttpServletRequest`_),
+so the method now returns exactly what `getRequest()` returns. It is deprecated; call `getRequest()`
+instead.
+
+[source,groovy]
+----
+// Before
+def uri = webRequest.currentRequest.requestURI
+
+// After
+def uri = webRequest.request.requestURI
+----
+
+Nothing about the value returned has changed, so this is a rename, not a behaviour change. Code that
+reaches for the uploaded files of a multipart request should use the `request.getFile(..)` methods
+described in section 45.

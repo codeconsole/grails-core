@@ -332,7 +332,7 @@ trait Controller implements ResponseRenderer, ResponseRedirector, RequestForward
      * @param request The servlet request
      */
     private boolean consumeToken(GrailsWebRequest webRequest) {
-        final request = webRequest.getCurrentRequest()
+        final request = webRequest.getRequest()
         SynchronizerTokensHolder tokensHolderInSession = (SynchronizerTokensHolder) request.getSession(false)?.getAttribute(SynchronizerTokensHolder.HOLDER)
         if (!tokensHolderInSession) return false
 

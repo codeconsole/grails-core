@@ -142,7 +142,7 @@ public abstract class AbstractUrlMappingInfo implements UrlMappingInfo {
         }
         else if (value instanceof Map) {
             Map httpMethods = (Map) value;
-            name = (String) httpMethods.get(webRequest.getCurrentRequest().getMethod());
+            name = (String) httpMethods.get(webRequest.getRequest().getMethod());
         }
         else {
             name = value.toString();

@@ -73,7 +73,10 @@ class UpdateRequestContextHolderExceptionTranslationFilter extends ExceptionTran
 @CompileStatic
 class DelegatingGrailsWebRequest extends GrailsWebRequest {
 
-    // GROOVY-12134 - Groovy 5 workaround not ignoring final methods for the `@Delegate`
+    // getRequest and getResponse are final in Spring's ServletRequestAttributes and have to be excluded
+    // because Groovy 5 no longer skips final methods for `@Delegate` (GROOVY-12134). The rest are excluded
+    // so they answer for the filter chain's request rather than the superseded one - including the
+    // deprecated getCurrentRequest, which must stay excluded for as long as it exists.
     @Delegate(excludes = ['getRequest', 'getResponse', 'getCurrentRequest', 'getCurrentResponse', 'multipartRequestResolved',
             'getParams', 'getParameterMap', 'getOriginalParams', 'resetParams', 'addParametersFrom'])
     GrailsWebRequest current
@@ -87,7 +90,10 @@ class DelegatingGrailsWebRequest extends GrailsWebRequest {
 @CompileStatic
 class DelegatingAsyncGrailsWebRequest extends AsyncGrailsWebRequest {
 
-    // GROOVY-12134 - Groovy 5 workaround not ignoring final methods for the `@Delegate`
+    // getRequest and getResponse are final in Spring's ServletRequestAttributes and have to be excluded
+    // because Groovy 5 no longer skips final methods for `@Delegate` (GROOVY-12134). The rest are excluded
+    // so they answer for the filter chain's request rather than the superseded one - including the
+    // deprecated getCurrentRequest, which must stay excluded for as long as it exists.
     @Delegate(excludes = ['getRequest', 'getResponse', 'getCurrentRequest', 'getCurrentResponse', 'multipartRequestResolved',
             'getParams', 'getParameterMap', 'getOriginalParams', 'resetParams', 'addParametersFrom'])
     AsyncGrailsWebRequest current

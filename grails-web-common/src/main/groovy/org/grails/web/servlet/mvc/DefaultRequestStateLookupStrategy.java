@@ -61,7 +61,7 @@ public class DefaultRequestStateLookupStrategy implements GrailsRequestStateLook
     public String getCharacterEncoding() {
         final GrailsWebRequest req = getWebRequest();
         if (req != null) {
-            return req.getCurrentRequest().getCharacterEncoding();
+            return req.getRequest().getCharacterEncoding();
         }
         return DEFAULT_REQUEST_ENCODING;
     }
@@ -70,7 +70,7 @@ public class DefaultRequestStateLookupStrategy implements GrailsRequestStateLook
     public String getHttpMethod() {
         final GrailsWebRequest req = getWebRequest();
         if (req != null) {
-            return req.getCurrentRequest().getMethod();
+            return req.getRequest().getMethod();
         }
         return null;
     }

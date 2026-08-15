@@ -68,6 +68,11 @@ import org.grails.web.util.GrailsApplicationAttributes;
  *
  * def webRequest = RequestContextHolder.currentRequestAttributes()
  *
+ * <p>The request this exposes through {@link #getRequest()} is always the outermost request, so wrappers
+ * contributed by other filters keep working. Multipart capabilities are discovered from its wrapper chain
+ * rather than by substituting the request - see
+ * {@link org.grails.web.util.WebUtils#resolveMultipartRequest(HttpServletRequest)}.
+ *
  * @author Graeme Rocher
  * @since 3.0
  */
@@ -199,7 +204,7 @@ public class GrailsWebRequest extends DispatcherServletWebRequest {
      * @return the out
      */
     public Writer getOut() {
-        Writer out = attributes.getOut(getCurrentRequest());
+        Writer out = attributes.getOut(getRequest());
         if (out == null) {
             try {
                 return getCurrentResponse().getWriter();
@@ -222,7 +227,7 @@ public class GrailsWebRequest extends DispatcherServletWebRequest {
      * @param out the out to set
      */
     public void setOut(Writer out) {
-        attributes.setOut(getCurrentRequest(), out);
+        attributes.setOut(getRequest(), out);
     }
 
     /**
@@ -238,7 +243,7 @@ public class GrailsWebRequest extends DispatcherServletWebRequest {
      */
     @Override
     public String getContextPath() {
-        final HttpServletRequest request = getCurrentRequest();
+        final HttpServletRequest request = getRequest();
         String appUri = (String) request.getAttribute(GrailsApplicationAttributes.APP_URI_ATTRIBUTE);
         if (appUri == null) {
             appUri = urlHelper.getContextPath(request);
@@ -254,10 +259,13 @@ public class GrailsWebRequest extends DispatcherServletWebRequest {
     }
 
     /**
-     * @return The currently executing request, which is always the outermost request so that wrappers
-     *         contributed by other filters keep working. Multipart capabilities are discovered from its
-     *         wrapper chain — see {@link org.grails.web.util.WebUtils#resolveMultipartRequest(HttpServletRequest)}.
+     * @return The currently executing request
+     *
+     * @deprecated as of 8.0, use {@link #getRequest()} instead. This used to return the resolved
+     *             multipart request in place of the request Grails was bound to; that substitution is
+     *             gone, so the two are now the same object.
      */
+    @Deprecated(since = "8.0")
     public HttpServletRequest getCurrentRequest() {
         return getRequest();
     }
@@ -293,7 +301,7 @@ public class GrailsWebRequest extends DispatcherServletWebRequest {
      */
     public GrailsParameterMap getOriginalParams() {
         if (originalParams == null) {
-            originalParams = new GrailsParameterMap(getCurrentRequest());
+            originalParams = new GrailsParameterMap(getRequest());
         }
         return originalParams;
     }
@@ -331,7 +339,7 @@ public class GrailsWebRequest extends DispatcherServletWebRequest {
      */
     public GrailsHttpSession getSession() {
         if (session == null) {
-            session = new GrailsHttpSession(getCurrentRequest());
+            session = new GrailsHttpSession(getRequest());
         }
 
         return session;
@@ -345,36 +353,36 @@ public class GrailsWebRequest extends DispatcherServletWebRequest {
     }
 
     public void setActionName(String actionName) {
-        getCurrentRequest().setAttribute(GrailsApplicationAttributes.ACTION_NAME_ATTRIBUTE, actionName);
+        getRequest().setAttribute(GrailsApplicationAttributes.ACTION_NAME_ATTRIBUTE, actionName);
     }
 
     public void setControllerName(String controllerName) {
-        getCurrentRequest().setAttribute(GrailsApplicationAttributes.CONTROLLER_NAME_ATTRIBUTE, controllerName);
+        getRequest().setAttribute(GrailsApplicationAttributes.CONTROLLER_NAME_ATTRIBUTE, controllerName);
     }
 
     public void setControllerNamespace(String controllerNamespace) {
-        getCurrentRequest().setAttribute(GrailsApplicationAttributes.CONTROLLER_NAMESPACE_ATTRIBUTE, controllerNamespace);
+        getRequest().setAttribute(GrailsApplicationAttributes.CONTROLLER_NAMESPACE_ATTRIBUTE, controllerNamespace);
     }
 
     /**
      * @return the actionName
      */
     public String getActionName() {
-        return (String) getCurrentRequest().getAttribute(GrailsApplicationAttributes.ACTION_NAME_ATTRIBUTE);
+        return (String) getRequest().getAttribute(GrailsApplicationAttributes.ACTION_NAME_ATTRIBUTE);
     }
 
     /**
      * @return the controllerName
      */
     public String getControllerName() {
-        return (String) getCurrentRequest().getAttribute(GrailsApplicationAttributes.CONTROLLER_NAME_ATTRIBUTE);
+        return (String) getRequest().getAttribute(GrailsApplicationAttributes.CONTROLLER_NAME_ATTRIBUTE);
     }
 
     /**
      * @return the controllerClass
      */
     public GrailsControllerClass getControllerClass() {
-        HttpServletRequest currentRequest = getCurrentRequest();
+        HttpServletRequest currentRequest = getRequest();
         GrailsControllerClass controllerClass = (GrailsControllerClass) currentRequest.getAttribute(GrailsApplicationAttributes.GRAILS_CONTROLLER_CLASS);
         if (controllerClass == null) {
             Object controllerNameObject = currentRequest.getAttribute(GrailsApplicationAttributes.CONTROLLER_NAME_ATTRIBUTE);
@@ -394,7 +402,7 @@ public class GrailsWebRequest extends DispatcherServletWebRequest {
     * @return the controllerNamespace
     */
     public String getControllerNamespace() {
-        return (String) getCurrentRequest().getAttribute(GrailsApplicationAttributes.CONTROLLER_NAMESPACE_ATTRIBUTE);
+        return (String) getRequest().getAttribute(GrailsApplicationAttributes.CONTROLLER_NAMESPACE_ATTRIBUTE);
     }
 
     public void setRenderView(boolean renderView) {
@@ -405,7 +413,7 @@ public class GrailsWebRequest extends DispatcherServletWebRequest {
      * @return true if the view for this GrailsWebRequest should be rendered
      */
     public boolean isRenderView() {
-        final HttpServletRequest currentRequest = getCurrentRequest();
+        final HttpServletRequest currentRequest = getRequest();
         HttpServletResponse currentResponse = getCurrentResponse();
         return renderView &&
                 !currentResponse.isCommitted() &&
@@ -458,7 +466,7 @@ public class GrailsWebRequest extends DispatcherServletWebRequest {
      * @return The PropertyEditorRegistry
      */
     public PropertyEditorRegistry getPropertyEditorRegistry() {
-        final HttpServletRequest servletRequest = getCurrentRequest();
+        final HttpServletRequest servletRequest = getRequest();
         PropertyEditorRegistry registry = (PropertyEditorRegistry) servletRequest.getAttribute(GrailsApplicationAttributes.PROPERTY_REGISTRY);
         if (registry == null) {
             registry = new PropertyEditorRegistrySupport();
@@ -501,7 +509,7 @@ public class GrailsWebRequest extends DispatcherServletWebRequest {
 
     public String getBaseUrl() {
         if (baseUrl == null) {
-            HttpServletRequest request = getCurrentRequest();
+            HttpServletRequest request = getRequest();
             String scheme = request.getScheme();
             String forwardedScheme = request.getHeader("X-Forwarded-Proto");
             StringBuilder sb = new StringBuilder();
