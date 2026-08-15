@@ -363,6 +363,7 @@ The legacy `org.grails.web.converters.marshaller.json.EnumMarshaller` and `org.g
 There is no Grails 8 configuration switch that restores the verbose enum-object shape.
 If an external API contract still requires that shape, register a custom object marshaller explicitly.
 
+[[jackson3-default]]
 ==== 9. Jackson 3 is the New Default
 
 Spring Boot 4 ships Jackson 3 (`tools.jackson.*`) and auto-configures a `JsonMapper` bean instead of the Jackson 2 `ObjectMapper`.
@@ -993,16 +994,111 @@ The `@Tag`-annotated method itself produces no compile-time warning, because pre
 
 ==== 23. Known Plugin Incompatibilities
 
-Some third-party plugins have not yet been updated for Spring Boot 4 / Spring Framework 7 compatibility.
-The following are known blockers at this time:
+A Grails 7 plugin is not automatically incompatible with Grails 8. A plugin resolving, appearing in the load order, and letting the application start is encouraging, but it is not enough to establish compatibility. Exercise the plugin's documented public behavior, including web requests, outbound calls, serialization, commands, and any domain traits or annotations it exposes.
 
-* **grails-spring-security** - Uses `ReflectionUtils.getApplication()` which was removed in Spring Boot 4.
-Integration tests for modules depending on Spring Security are disabled until the plugin is updated.
+When a released Grails 7 plugin fails, first check whether the maintainer has published a Grails 8 version. Some failures have a temporary application-side workaround. Others are binary incompatibilities in already-published bytecode and require the plugin author to rebuild and release the plugin against Grails 8. Do not add framework-internal compatibility classes to an application to work around those failures.
 
-* **SiteMesh 3** - The decorator/layout mechanism is not compatible with Spring Framework 7.
-Applications using `grails-sitemesh3` should remain on the `grails-layout` plugin (SiteMesh 2.6.x) until SiteMesh 3 is updated.
+Use the first distinctive failure to choose the next step:
 
-Check the https://github.com/apache/grails-core/issues[Grails issue tracker] for the latest status of plugin compatibility.
+* `NoClassDefFoundError` mentioning `com/fasterxml/jackson/databind/exc/InvalidDefinitionException` while creating `OrderedFormContentFilter`: add the BOM-managed Jackson 2 `jackson-databind` dependency described below, then retest the plugin's public behavior.
+* `Could not find org.grails:...:.`: use a plugin version built against `org.apache.grails`, or use narrowly targeted dependency substitution as a temporary migration aid.
+* `MissingPropertyException` or `MissingMethodException` from `Metadata`: the plugin must be rebuilt against the typed metadata API.
+* `MalformedParameterizedTypeException` mentioning `$Trait$FieldHelper`, `NoClassDefFoundError` mentioning `ObjectUtil`, `IncompatibleClassChangeError` involving `HttpHeaders`, or an unexpected internal property after using a plugin annotation: the plugin must be rebuilt for Grails 8.
+
+===== 23.1 Metadata dynamic and map-style access
+
+A plugin that reads metadata through `Metadata.current.'some.key'` or `Metadata.current.get('some.key')` can start normally and fail only when that code path runs. The usual symptoms are `MissingPropertyException` or `MissingMethodException`, often as an HTTP 500 on a plugin endpoint. See https://github.com/apache/grails-core/issues/16122[Issue #16122].
+
+Plugin authors must replace the removed dynamic accessors with the typed public API:
+
+[source,groovy]
+----
+// Grails 7
+def version = Metadata.current.'info.app.grailsVersion'
+def name = Metadata.current.get('info.app.name')
+
+// Grails 8
+String version = Metadata.current.getProperty('info.app.grailsVersion', String, null)
+String name = Metadata.current.getProperty('info.app.name', String, null)
+----
+
+For a nested metadata value that does not need type conversion, `Metadata.current.navigate('some', 'nested', 'key')` is also available. This is a rebuild-only change for a published binary plugin. No Metadata compatibility shim is available.
+
+===== 23.2 Groovy 4 trait and AST-transform bytecode
+
+Groovy 5 can compile application code against a Groovy 4 plugin, but the following generated-bytecode patterns are known to be incompatible. These failures commonly occur only when the plugin's public feature is used, rather than at dependency resolution or startup. Rebuild the plugin with Grails 8 and Groovy 5. Consumers cannot reliably repair an already-published jar.
+
+* **Generic traits with fields.** A Grails 7 plugin that exposes a generic trait with fields can fail when an application implements that trait. JavaBeans, Spring, or Jackson introspection then throws `MalformedParameterizedTypeException` mentioning `<Trait>$Trait$FieldHelper`. The plugin's trait must be recompiled with Groovy 5. See https://github.com/apache/grails-core/issues/16123[Issue #16123]. Non-generic traits are not affected by this specific issue.
+
+* **AST transformations that target private trait methods.** A plugin transformation can compile successfully but silently lose a private trait method from the emitted application class. Using the annotated public feature then throws `MissingPropertyException` for an unexpected internal property. Plugin authors should change the transform to target a member emitted on the implementing class, then rebuild with Groovy 5. See https://github.com/apache/grails-core/issues/16126[Issue #16126].
+
+* **`@Immutable` classes.** A Groovy 4-compiled `@Immutable` class can throw `NoClassDefFoundError: org/apache/groovy/runtime/ObjectUtil` when constructed on Groovy 5. The missing call is generated by Groovy 4's AST transformation, so updating application source does not fix a released plugin jar. Rebuild affected plugin artifacts with Groovy 5. See https://github.com/apache/grails-core/issues/16128[Issue #16128].
+
+See <<groovy5-behavior-changes,Apache Groovy 5 Behavior Changes>> for source-level Groovy 5 changes that may affect the rebuilt plugin.
+
+===== 23.3 Jackson 2 dataformats without Jackson 2 databind
+
+Grails 8 uses Jackson 3 for databind, while a released plugin may still bring Jackson 2 Smile, CBOR, or YAML dataformat artifacts. If one of those dataformats is present while Jackson 2 databind is absent, Spring Framework detects an incomplete Jackson 2 classpath and application startup fails with `NoClassDefFoundError: com/fasterxml/jackson/databind/exc/InvalidDefinitionException`, usually while creating `OrderedFormContentFilter`. Jackson 2 core, annotations, and XML dataformat alone do not trigger this specific failure.
+
+The immediate consumer workaround is to supply the matching Jackson 2 databind artifact while the plugin is being migrated:
+
+[source,groovy]
+.build.gradle
+----
+dependencies {
+    implementation 'com.example:plugin-that-needs-jackson2-dataformats:1.0.0'
+
+    // Keep the Jackson 2 runtime classpath complete.
+    runtimeOnly 'com.fasterxml.jackson.core:jackson-databind'
+}
+----
+
+Use the Jackson 2 version managed by the Grails and Spring Boot platform. Do not add a version if the active BOM already manages it. Plugin authors should release a Grails 8 version that migrates to Jackson 3 where possible, or declares a complete, compatible Jackson 2 runtime when it must retain Jackson 2 dataformats. See https://github.com/apache/grails-core/issues/16124[Issue #16124] and <<jackson3-default,Jackson 3 is the New Default>>.
+
+===== 23.4 Pre-Apache `org.grails` coordinates
+
+Some older plugins import a pre-Apache `org.grails` BOM and declare versionless `org.grails:*` dependencies. Grails 8 does not publish those coordinates. Gradle often reports an unhelpful empty-version error such as `Could not find org.grails:grails-core:.`.
+
+No complete, general coordinate substitution map exists. A narrowly targeted application-level substitution rule can resolve some plugins, but module names and binary compatibility are not always one-to-one after the Apache group rename. Treat substitution as a temporary diagnostic or migration aid, not proof that a plugin is compatible. The supported migration is for plugin authors to rebuild against `org.apache.grails` coordinates and publish a Grails 8 release. See https://github.com/apache/grails-core/issues/16125[Issue #16125].
+
+[source,groovy]
+.build.gradle - Plugin author migration
+----
+// Before: imported by an early Grails 7 plugin POM
+implementation platform('org.grails:grails-bom:7.0.0-M1')
+
+// After: compile against the Apache Grails 8 BOM
+implementation platform("org.apache.grails:grails-bom:$grailsVersion")
+----
+
+===== 23.5 Spring Framework 7 `HttpHeaders` binary incompatibility
+
+Spring Framework 7's `HttpHeaders` no longer implements `MultiValueMap`. A Grails 7 plugin compiled against Spring 6 can therefore boot and then throw `IncompatibleClassChangeError` when it passes `HttpHeaders` to an API expecting `MultiValueMap`, often during an outbound HTTP request. See https://github.com/apache/grails-core/issues/16127[Issue #16127].
+
+Plugin authors must compile against Spring Framework 7 and use the `HttpHeaders`-typed API. Remove any explicit `MultiValueMap` cast so recompilation selects Spring 7's `HttpEntity(T, HttpHeaders)` constructor instead of the deprecated `HttpEntity(T, MultiValueMap)` constructor:
+
+[source,groovy]
+----
+// Grails 7 / Spring 6 code that selected the MultiValueMap API
+HttpHeaders headers = new HttpHeaders()
+new HttpEntity(body, (MultiValueMap<String, String>) headers)
+
+// Grails 8 / Spring 7: use the HttpHeaders API
+HttpHeaders headers = new HttpHeaders()
+new HttpEntity(body, headers)
+----
+
+Changing only an application's dependencies cannot repair the plugin's existing bytecode. Upgrade to a plugin release compiled for Grails 8, or ask the maintainer to publish one.
+
+===== 23.6 Commands and plugin bean timing
+
+For a released Grails 7 plugin that implements `grails.dev.commands.ApplicationCommand`, keep the default `cliAutoProvision = true` and enable `grails { legacyCommandSupport = true }`. Run its commands with `./gradlew runCommand "-Pargs=<command> <arguments>"` or through the shell. Legacy commands do not create named Gradle tasks. Script, YAML, and profile commands do not need this bridge.
+
+The complete command migration, including the legacy bridge, script packaging, and companion artifact support delivered by https://github.com/apache/grails-core/pull/16011[PR #16011], https://github.com/apache/grails-core/pull/16082[PR #16082], and https://github.com/apache/grails-core/pull/15948[PR #15948], is covered in <<cli-companion-artifacts,CLI Commands Move to Companion `-cli` Artifacts>>. Plugin authors should still migrate commands to the current API and publish companion `-cli` artifacts.
+
+The plugin bean lifecycle change is not a compatibility bridge. Existing `doWithSpring` plugins still run, but https://github.com/apache/grails-core/pull/15934[PR #15934] moved them before Spring Boot auto-configuration. During that callback, the initializing application is available through the plugin's `grailsApplication` property, but it has not yet been published to the process-global `Holders.grailsApplication` fallback. Plugins that read the global Holder from `doWithSpring` must instead use their injected application, configuration, or environment. See <<plugin-beans-before-autoconfiguration,Plugin Beans Now Register Before Spring Boot Auto-Configuration>> for the timing change and migration to `beanRegistrar()`.
+
+Plugin compatibility continues to evolve. Check the plugin's release notes and the https://github.com/apache/grails-core/issues?q=state%3Aopen%20label%3A%22relates-to%3A%20external-plugin%22[Grails external-plugin issues] for current status.
 
 ==== 24. Custom JSON View Converters
 
@@ -1259,6 +1355,7 @@ grails.gorm.default.constraints = {
 }
 ----
 
+[[groovy5-behavior-changes]]
 ==== 28. Apache Groovy 5 Behavior Changes
 
 Grails 8 upgrades from Apache Groovy 4 to Apache Groovy 5.
@@ -1464,6 +1561,7 @@ Now the framework bean simply backs off.
 NOTE: The clean back-off applies to beans that are registered before auto-configuration conditions are evaluated: `@Bean` methods in application configuration classes, and — as of the retimed plugin lifecycle (see _Plugin Beans Now Register Before Spring Boot Auto-Configuration_ below) — beans contributed through a plugin's `doWithSpring` or `beanRegistrar()`.
 Beans contributed through the application's `resources.groovy` or `resources.xml` register later and continue to take effect through bean-definition overriding, exactly as in previous releases.
 
+[[plugin-beans-before-autoconfiguration]]
 ==== 33. Plugin Beans Now Register Before Spring Boot Auto-Configuration
 
 In Grails 7 and earlier, the beans a plugin contributed through `doWithSpring` were registered *after* Spring Boot had processed its auto-configurations.
@@ -1472,7 +1570,7 @@ A plugin that wanted to replace a Boot-provided bean therefore had to rely on be
 In Grails 8 the plugin lifecycle is unified and retimed: plugin bean definitions — both `doWithSpring` and the new `beanRegistrar()` hook — are drained into the bean definition registry *before* Spring Boot expands its auto-configurations. The practical effects are:
 
 * **Plugin beans win `@ConditionalOnMissingBean` races.** When a plugin registers a bean, a Boot auto-configuration bean of the same name or type that is guarded by `@ConditionalOnMissingBean` now backs off in favor of the plugin's bean. Plugins no longer need to override or remove Boot's defaults after the fact.
-* **A single plugin manager and `GrailsApplication`.** The plugin manager and the `grailsApplication` are built once, early in the context lifecycle, and reused for the rest of startup, so plugins are loaded by a single manager pass rather than a throwaway pass followed by the real one. `Holders.grailsApplication` is available earlier than before.
+* **A single plugin manager and `GrailsApplication`.** The plugin manager and the `grailsApplication` are built once, early in the context lifecycle, and reused for the rest of startup, so plugins are loaded by a single manager pass rather than a throwaway pass followed by the real one. The global `Holders.grailsApplication` fallback is published after plugin `doWithSpring` and `beanRegistrar()` callbacks complete; plugins must not use it during those callbacks.
 * **Artefact discovery happens earlier.** Controllers, services, domain classes and other artefacts are discovered before plugin beans are registered, because core plugins iterate the application's artefacts while defining beans. The set of discovered artefacts is unchanged — only the timing moved.
 * **Side-effectful `doWithSpring` closures still run once**, just earlier. Closures that read `grailsApplication.config` continue to work; the configuration is fully loaded (including plugin-contributed configuration) before any bean-definition code runs.
 * **The application class is instantiated a second time during early artefact discovery.** A throwaway instance is created solely to compute the application's class scan; the real lifecycle bean is still created by Spring. An application-class constructor with side effects therefore runs twice per boot, so keep application-class constructors free of side effects.
@@ -1697,6 +1795,7 @@ Add a `logback-spring.xml` file when properties are not enough — for example c
 
 TIP: When generating a project with https://start.grails.org[Grails Forge], select the *Logback Configuration* feature to have a starter `grails-app/conf/logback-spring.xml` — the configuration shown above composed with a `<springProfile name="development">` block — generated for you.
 
+[[cli-companion-artifacts]]
 ==== 37. CLI Commands Move to Companion `-cli` Artifacts
 
 Grails commands (`ApplicationCommand` implementations) no longer ship inside runtime plugin
