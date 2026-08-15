@@ -54,6 +54,23 @@ Results are also written as JSON to `grails-web-benchmarks/build/reports/jmh/res
 | `RequestPropertyAccessBenchmark.groovyGetterBackedProperty` | `request.method` from Groovy - metaclass hit on a real getter |
 | `RequestPropertyAccessBenchmark.groovyAttributeCall` | `request.getAttribute('someAttribute')` from Groovy |
 | `RequestPropertyAccessBenchmark.javaGetAttribute` | the same attribute read from Java - the floor |
+| `ControllerActionBenchmark.plainAction` | `GrailsControllerClass.invoke` on an action of a controller declaring no `allowedMethods` - the shape most actions have |
+| `ControllerActionBenchmark.restrictedAction` | the same, for a controller that does declare `allowedMethods`, so the check and its bookkeeping both run |
+| `ControllerActionBenchmark.commandObjectAction` | the same, for an action taking a command object, whose generated wrapper instantiates, binds and validates one |
+| `InterceptorChainBenchmark.oneInterceptorNoOpRegistry` | `GrailsInterceptorHandlerInterceptorAdapter.preHandle` + `postHandle` with one matched interceptor and `ObservationRegistry.NOOP` - the dominant production shape |
+| `InterceptorChainBenchmark.threeInterceptorsNoOpRegistry` | the same, with three matched interceptors of distinct classes |
+| `InterceptorChainBenchmark.oneInterceptorObservingRegistry` | the same as the one-interceptor case, against a registry with a handler registered |
+| `InterceptorChainBenchmark.threeInterceptorsObservingRegistry` | the same as the three-interceptor case, against a registry with a handler registered |
+| `ControllerMappingCollectionBenchmark.oneCandidate` | `GrailsControllerUrlMappings.matchAll` for a URI only one mapping serves - the delegate's Caffeine cache always hits, so this is the uncached `collectControllerMappings` wrapper |
+| `ControllerMappingCollectionBenchmark.twoCandidates` | the same, for `/api/books/42`, which a `resources` mapping and the catch-all default mapping both serve |
+| `ControllerMappingCollectionBenchmark.fourCandidates` | the same, against `BenchmarkOverlappingUrlMappings`, whose patterns deliberately overlap so the per-candidate work can be read off |
+
+The controllers used by `ControllerActionBenchmark` and `ControllerMappingCollectionBenchmark` are
+compiled at setup by a `GrailsAwareClassLoader` running the real `ControllerActionTransformer`, so
+the bytecode invoked is the bytecode a Grails application would run. `ControllerActionBenchmark`
+prints, once per fork, how many request-attribute operations one invocation of each action performs,
+measured outside the timed region - that count is the direct evidence of what the generated code
+does, independent of the timing.
 
 The mapping set used by `UrlMappingBenchmark` is in
 `src/jmh/groovy/org/apache/grails/benchmarks/web/BenchmarkUrlMappings.groovy`: four static URLs,
@@ -137,6 +154,51 @@ UrlMappingBenchmark.matchRestfulUriCacheMiss                    avgt   10  1501.
 * `matchRestfulUriCacheMiss` / `matchDefaultMappingUriCacheMiss` rotate over 4096 URIs against a
   1000-entry cache, so they are miss-dominated but not miss-only, and they include the cost of the
   cache insert and eviction. They measure "cold URL space", not "matching with the cache removed".
+
+### Paired before/after against 8.0.x
+
+Two full suites run back to back on an idle machine, same JDK, same JMH, same command
+(`./gradlew --no-daemon :grails-web-benchmarks:jmh`, i.e. the annotated defaults: 2 forks,
+5x1s warmup + 5x1s measurement). "before" is `8.0.x` at `a83f87480e` with this module's `src/jmh`
+tree copied in; "after" is `refactor/multipart-spring-delegation-8.0.x` at `abc0316b0e`. The
+`MultipartResolutionBenchmark` benchmarks exist only on the branch, because
+`WebUtils.resolveMultipartRequest` does.
+
+| Benchmark | before ns/op | after ns/op | delta |
+|---|---|---|---|
+| `ControllerActionBenchmark.plainAction` | 34.795 ± 1.589 | 3.592 ± 0.033 | -89.7% |
+| `ControllerActionBenchmark.restrictedAction` | 63.066 ± 6.665 | 59.239 ± 8.475 | noise |
+| `ControllerActionBenchmark.commandObjectAction` | 28932.163 ± 730.856 | 28312.746 ± 120.241 | noise |
+| `InterceptorChainBenchmark.oneInterceptorNoOpRegistry` | 295.293 ± 10.920 | 127.541 ± 1.441 | -56.8% |
+| `InterceptorChainBenchmark.threeInterceptorsNoOpRegistry` | 1116.942 ± 49.219 | 545.608 ± 15.400 | -51.2% |
+| `InterceptorChainBenchmark.oneInterceptorObservingRegistry` | 543.227 ± 11.358 | 380.574 ± 300.017 | -30% (one disturbed fork; steady state ~310) |
+| `InterceptorChainBenchmark.threeInterceptorsObservingRegistry` | 1972.929 ± 35.609 | 1134.393 ± 14.594 | -42.5% |
+| `ControllerMappingCollectionBenchmark.oneCandidate` | 364.732 ± 9.122 | 361.294 ± 4.391 | noise |
+| `ControllerMappingCollectionBenchmark.twoCandidates` | 609.936 ± 7.207 | 577.452 ± 9.838 | -5.3% |
+| `ControllerMappingCollectionBenchmark.fourCandidates` | 1234.752 ± 25.852 | 1210.762 ± 28.863 | noise |
+| `GrailsWebRequestBenchmark.construct` | 16.283 ± 0.184 | 11.710 ± 0.055 | -28.1% |
+| `GrailsWebRequestBenchmark.paramsCached` | 0.459 ± 0.023 | 0.455 ± 0.027 | noise |
+| `GrailsWebRequestBenchmark.paramsOnFreshRequest` | 561.768 ± 3.046 | 526.189 ± 58.196 | noise |
+| `GrailsWebRequestBenchmark.paramsRebuilt` | 303.642 ± 2.341 | 298.861 ± 3.283 | -1.6% |
+| `UrlMappingBenchmark.matchCachedHit` | 2.522 ± 0.030 | 2.486 ± 0.012 | -1.4% |
+| `UrlMappingBenchmark.matchRestfulUriCacheMiss` | 1549.992 ± 21.144 | 1287.754 ± 6.441 | -16.9% |
+| `UrlMappingBenchmark.matchDefaultMappingUriCacheMiss` | 1881.323 ± 40.402 | 1595.361 ± 18.018 | -15.2% |
+| `RequestPropertyAccessBenchmark.groovyUnknownProperty` | 93.464 ± 2.893 | 87.616 ± 7.533 | noise |
+| `RequestPropertyAccessBenchmark.groovyGetterBackedProperty` | 0.906 ± 0.023 | 0.908 ± 0.034 | noise |
+| `RequestPropertyAccessBenchmark.groovyAttributeCall` | 1.983 ± 0.038 | 1.985 ± 0.030 | noise |
+| `RequestPropertyAccessBenchmark.javaGetAttribute` | 1.476 ± 0.025 | 1.483 ± 0.010 | noise |
+
+Nothing regressed. The request-attribute counts printed by `ControllerActionBenchmark` are the
+independent confirmation of the controller result: an action of a controller with no
+`allowedMethods` goes from `getAttribute=2 setAttribute=1 removeAttribute=1` to nothing at all,
+while a controller that does declare `allowedMethods` is unchanged at `2/1/1`, which is what
+"controllers that use allowedMethods generate byte-identical code" means in practice.
+
+`collectControllerMappings` is byte-identical between the two commits, so the mapping-collection
+numbers are a measurement of what is still there rather than of a change: 361 ns for one candidate
+and 577 ns for the two a REST URI typically produces, on top of the 2.5 ns the URL match itself
+costs once cached. Roughly 300 ns of each candidate is `webRequest.resetParams()`, which is the same
+clone `paramsRebuilt` measures at 299 ns.
 
 ### Earlier run (not a clean before/after)
 

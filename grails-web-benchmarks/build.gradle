@@ -52,8 +52,18 @@ dependencies {
     jmhImplementation project(':grails-web-common')
     jmhImplementation project(':grails-web-core')
     jmhImplementation project(':grails-web-url-mappings')
+    // The controller AST transformer, so that benchmarked controllers are compiled by the
+    // same injector a real application's controllers go through.
+    jmhImplementation project(':grails-controllers')
+    jmhImplementation project(':grails-interceptors')
+    // The data binding collaborators an application registers as beans, so that a command object
+    // action binds the way it does in a running application rather than building a binder per call.
+    jmhImplementation project(':grails-web-databinding')
+    jmhImplementation project(':grails-mimetypes')
 
     jmhImplementation 'org.apache.groovy:groovy'
+    // ObservationRegistry, which GrailsInterceptorHandlerInterceptorAdapter branches on
+    jmhImplementation 'io.micrometer:micrometer-observation'
     jmhImplementation 'jakarta.servlet:jakarta.servlet-api'
     jmhImplementation 'org.springframework:spring-beans'
     jmhImplementation 'org.springframework:spring-context'
