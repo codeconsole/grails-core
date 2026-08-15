@@ -2405,6 +2405,26 @@ def file = request.getFile('myFile')
 Calling one of the file methods on a request that is not a file upload throws `IllegalStateException`
 with a diagnostic message, the same way it previously failed with `MissingMethodException`.
 
+===== 45.1 Oversized uploads now reach the application's error handling
+
+An upload larger than `grails.controllers.upload.maxFileSize` or
+`grails.controllers.upload.maxRequestSize` (both 128000 bytes by default) fails when the servlet
+container parses the request parts, and every parameter read on that request fails with it from then
+on. Because Grails reads request parameters before the `DispatcherServlet` runs — to resolve the
+`_method` override, and again whenever a filter such as Spring Security builds `params` — that failure
+used to abort the request inside the filter chain, where no exception handler could see it. The
+application was left with the container's own error page.
+
+Those two parameter reads now tolerate a multipart request the container refuses to parse, so the
+failure surfaces where Spring raises it, as a
+`org.springframework.web.multipart.MultipartException`/`MaxUploadSizeExceededException` during
+dispatch. The exception is available to `HandlerExceptionResolver` beans, and the response is a `413`
+rendered through the application's error dispatch instead of the container's own error page.
+
+The parameters of such a request are empty, because the container never parsed them. The request
+cannot reach a controller either way — `DispatcherServlet` rejects it before handler resolution — so
+this is only observable in a filter that inspects `params` ahead of the dispatch.
+
 ==== 46. Request Processing Behaviour Changes
 
 Four changes fall out of Grails 8 delegating more of the request path to Spring.

@@ -566,4 +566,15 @@ public class WebUtils extends org.springframework.web.util.WebUtils {
         return attribute instanceof MultipartHttpServletRequest multipartRequest ? multipartRequest : null;
     }
 
+    /**
+     * Check whether the given request declares a multipart content type.
+     *
+     * @param request The request
+     * @return True if the content type is {@code multipart/*}
+     */
+    public static boolean isMultipartContentType(HttpServletRequest request) {
+        String contentType = request.getContentType();
+        return contentType != null && contentType.toLowerCase(Locale.ROOT).startsWith("multipart/");
+    }
+
 }

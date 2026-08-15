@@ -179,6 +179,39 @@ class GrailsParameterMapTests {
         assert 'two' == params.one
     }
 
+    @Test
+    void testParametersOfAnUnparseableMultipartRequestAreEmptyRatherThanThrowing() {
+        // An upload breaching the container's limits fails part parsing, and every later parameter read
+        // fails with it. Filters ahead of the DispatcherServlet build this map, so throwing here would
+        // abort the request where no HandlerExceptionResolver can see it.
+        def request = unparseableRequest('multipart/form-data; boundary=test')
+
+        theMap = new GrailsParameterMap(request)
+
+        assertTrue theMap.isEmpty()
+    }
+
+    @Test
+    void testAnUnreadableParameterMapStillThrowsForANonMultipartRequest() {
+        def request = unparseableRequest('application/x-www-form-urlencoded')
+
+        def e = assertThrows(IllegalStateException) { new GrailsParameterMap(request) }
+
+        assertEquals 'parameters are unreadable', e.message
+    }
+
+    private static HttpServletRequest unparseableRequest(String contentType) {
+        def request = new MockHttpServletRequest() {
+            @Override
+            Map<String, String[]> getParameterMap() {
+                throw new IllegalStateException('parameters are unreadable')
+            }
+        }
+        request.contentType = contentType
+        request.method = 'POST'
+        request
+    }
+
     private static MockMultipartHttpServletRequest multipartRequest() {
         def request = new MockMultipartHttpServletRequest()
         request.contentType = 'multipart/form-data; boundary=test'

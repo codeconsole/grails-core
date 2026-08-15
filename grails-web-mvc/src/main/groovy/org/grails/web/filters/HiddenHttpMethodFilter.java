@@ -30,6 +30,8 @@ import org.springframework.util.Assert;
 import org.springframework.util.StringUtils;
 import org.springframework.web.filter.OncePerRequestFilter;
 
+import org.grails.web.util.WebUtils;
+
 /**
  * Based off the Spring implementation, but also supports the X-HTTP-Method-Override HTTP header.
  *
@@ -71,12 +73,39 @@ public class HiddenHttpMethodFilter extends OncePerRequestFilter {
     }
 
     protected String getHttpMethodOverride(HttpServletRequest request) {
-        String httpMethod = request.getParameter(methodParam);
+        String httpMethod = readMethodParam(request);
 
         if (httpMethod == null) {
             httpMethod = request.getHeader(HEADER_X_HTTP_METHOD_OVERRIDE);
         }
         return httpMethod == null ? null : httpMethod.toUpperCase();
+    }
+
+    /**
+     * Reads the method override parameter, tolerating a multipart request the container refuses to parse.
+     * <p>
+     * Reading any parameter of a {@code multipart/form-data} request makes the container parse the parts, and a
+     * request that breaches the configured upload limits fails that parse. Throwing here would abort the request
+     * inside the filter chain, where no {@link org.springframework.web.servlet.HandlerExceptionResolver} can see
+     * it and the application is left with the container's default error page. The failure is left for
+     * {@code DispatcherServlet.checkMultipart} to raise as a
+     * {@link org.springframework.web.multipart.MultipartException} during dispatch instead, so the application's
+     * error handling runs.
+     *
+     * @param request The request
+     * @return The method override parameter, or {@code null} when absent or unreadable
+     */
+    private String readMethodParam(HttpServletRequest request) {
+        try {
+            return request.getParameter(methodParam);
+        }
+        catch (RuntimeException e) {
+            if (!WebUtils.isMultipartContentType(request)) {
+                throw e;
+            }
+            logger.debug("Multipart request parameters could not be parsed; deferring to multipart resolution", e);
+            return null;
+        }
     }
 
     /**

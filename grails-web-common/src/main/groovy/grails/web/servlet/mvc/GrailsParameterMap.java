@@ -22,6 +22,7 @@ import java.io.UnsupportedEncodingException;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.Date;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
@@ -32,6 +33,9 @@ import java.util.concurrent.ConcurrentHashMap;
 import org.codehaus.groovy.runtime.DefaultGroovyMethods;
 
 import jakarta.servlet.http.HttpServletRequest;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import org.springframework.context.MessageSource;
 import org.springframework.context.i18n.LocaleContextHolder;
@@ -58,6 +62,8 @@ import org.grails.web.util.WebUtils;
  */
 @SuppressWarnings({ "rawtypes", "unchecked" })
 public class GrailsParameterMap extends TypeConvertingMap implements Cloneable {
+
+    private static final Logger LOG = LoggerFactory.getLogger(GrailsParameterMap.class);
 
     private static final Map<String, String> CACHED_DATE_FORMATS = new ConcurrentHashMap<>();
 
@@ -94,7 +100,7 @@ public class GrailsParameterMap extends TypeConvertingMap implements Cloneable {
         // layer by Spring's FormContentFilter) are read straight from the request parameter map.
         // updateNestedKeys only reads this map - everything it builds goes into wrappedMap - so the
         // servlet's own map is used directly, and copied only when uploaded files have to be merged in.
-        Map requestMap = request.getParameterMap();
+        Map requestMap = readParameterMap(request);
 
         // The request is the outermost request, so the multipart request is discovered from its wrapper
         // chain rather than being the request itself.
@@ -116,6 +122,32 @@ public class GrailsParameterMap extends TypeConvertingMap implements Cloneable {
         }
 
         updateNestedKeys(requestMap);
+    }
+
+    /**
+     * Reads the servlet parameter map, tolerating a multipart request the container refuses to parse.
+     * <p>
+     * A {@code multipart/form-data} request that breaches the configured upload limits fails the container's
+     * part parsing, and every subsequent parameter read on that request fails with it. Filters that run ahead of
+     * the {@code DispatcherServlet} - Spring Security among them - build this map, so throwing here would abort
+     * the request in the filter chain where no {@link org.springframework.web.servlet.HandlerExceptionResolver}
+     * can see it. An empty map is used instead; the request cannot reach a controller either way, because
+     * {@code DispatcherServlet.checkMultipart} raises the multipart failure during dispatch.
+     *
+     * @param request The request
+     * @return The servlet parameter map, or an empty map when the parameters are unreadable
+     */
+    private static Map readParameterMap(HttpServletRequest request) {
+        try {
+            return request.getParameterMap();
+        }
+        catch (RuntimeException e) {
+            if (!WebUtils.isMultipartContentType(request)) {
+                throw e;
+            }
+            LOG.debug("Multipart request parameters could not be parsed; using an empty parameter map", e);
+            return Collections.emptyMap();
+        }
     }
 
     @Override

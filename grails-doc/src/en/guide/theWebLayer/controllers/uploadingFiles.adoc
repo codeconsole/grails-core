@@ -114,6 +114,10 @@ grails:
 
 `maxRequestSize` =  The maximum size allowed for multipart/form-data requests.
 
+The exception is raised during dispatch, so it reaches `HandlerExceptionResolver` beans rather than
+escaping to the servlet container. The response status is `413` and the body is rendered through the
+application's error dispatch rather than by the servlet container's own error page.
+
 You should keep in mind https://www.owasp.org/index.php/Unrestricted_File_Upload[OWASP recommendations - Unrestricted File Upload]
 
 NOTE: Limit the file size to a maximum value in order to prevent denial of service attacks.
