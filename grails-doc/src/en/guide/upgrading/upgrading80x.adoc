@@ -2351,3 +2351,18 @@ def uri = webRequest.request.requestURI
 Nothing about the value returned has changed, so this is a rename, not a behaviour change. Code that
 reaches for the uploaded files of a multipart request should use the `request.getFile(..)` methods
 described in section 45.
+
+Tests that mock a `GrailsWebRequest` and stub `getCurrentRequest()` need updating. `getRequest()` is
+`final` on Spring's `ServletRequestAttributes`, so `getCurrentRequest()` was the only stubbable request
+accessor, and framework code now calls `getRequest()` directly. Drive a real `GrailsWebRequest` over a
+`MockHttpServletRequest` rather than stubbing the accessor:
+
+[source,groovy]
+----
+// Before
+def webRequest = Mock(GrailsWebRequest)
+webRequest.getCurrentRequest() >> request
+
+// After
+def webRequest = new GrailsWebRequest(request, response, servletContext)
+----
