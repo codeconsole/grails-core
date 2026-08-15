@@ -73,39 +73,16 @@ public class HiddenHttpMethodFilter extends OncePerRequestFilter {
     }
 
     protected String getHttpMethodOverride(HttpServletRequest request) {
-        String httpMethod = readMethodParam(request);
+        // g:uploadForm(method: 'PUT') posts the override as a multipart part, so this read makes the
+        // container parse the parts - and fail when they breach the upload limits. The read is tolerant
+        // so the failure surfaces during dispatch rather than aborting the filter chain, where no
+        // HandlerExceptionResolver could see it. See WebUtils.readParameter.
+        String httpMethod = WebUtils.readParameter(request, methodParam);
 
         if (httpMethod == null) {
             httpMethod = request.getHeader(HEADER_X_HTTP_METHOD_OVERRIDE);
         }
         return httpMethod == null ? null : httpMethod.toUpperCase();
-    }
-
-    /**
-     * Reads the method override parameter, tolerating a multipart request the container refuses to parse.
-     * <p>
-     * Reading any parameter of a {@code multipart/form-data} request makes the container parse the parts, and a
-     * request that breaches the configured upload limits fails that parse. Throwing here would abort the request
-     * inside the filter chain, where no {@link org.springframework.web.servlet.HandlerExceptionResolver} can see
-     * it and the application is left with the container's default error page. The failure is left for
-     * {@code DispatcherServlet.checkMultipart} to raise as a
-     * {@link org.springframework.web.multipart.MultipartException} during dispatch instead, so the application's
-     * error handling runs.
-     *
-     * @param request The request
-     * @return The method override parameter, or {@code null} when absent or unreadable
-     */
-    private String readMethodParam(HttpServletRequest request) {
-        try {
-            return request.getParameter(methodParam);
-        }
-        catch (RuntimeException e) {
-            if (!WebUtils.isMultipartContentType(request)) {
-                throw e;
-            }
-            logger.debug("Multipart request parameters could not be parsed; deferring to multipart resolution", e);
-            return null;
-        }
     }
 
     /**

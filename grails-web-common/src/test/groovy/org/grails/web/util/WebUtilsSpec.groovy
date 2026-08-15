@@ -83,6 +83,87 @@ class WebUtilsSpec extends Specification {
         WebUtils.resolveMultipartRequest(new MockHttpServletRequest()) == null
     }
 
+    void 'isMultipartContentType recognises a multipart content type regardless of case'() {
+        expect:
+        WebUtils.isMultipartContentType(requestWithContentType(contentType)) == multipart
+
+        where:
+        contentType                              || multipart
+        'multipart/form-data; boundary=test'     || true
+        'MULTIPART/FORM-DATA; boundary=test'     || true
+        'multipart/mixed'                        || true
+        'application/x-www-form-urlencoded'      || false
+        null                                     || false
+    }
+
+    void 'the parameter reads yield their fallback when a multipart body cannot be parsed'() {
+        given: 'an upload breaching the container limits, where every parameter read fails'
+        def request = unreadableRequest('multipart/form-data; boundary=test')
+
+        expect:
+        WebUtils.readParameterMap(request).isEmpty()
+        WebUtils.readParameter(request, 'lang') == null
+        !WebUtils.readParameterNames(request).hasMoreElements()
+    }
+
+    void 'the parameter reads still propagate for a request that is not multipart'() {
+        given:
+        def request = unreadableRequest('application/x-www-form-urlencoded')
+
+        when:
+        read.call(request)
+
+        then:
+        def e = thrown(IllegalStateException)
+        e.message == 'parameters are unreadable'
+
+        where:
+        read << [
+                { WebUtils.readParameterMap(it) },
+                { WebUtils.readParameter(it, 'lang') },
+                { WebUtils.readParameterNames(it) }
+        ]
+    }
+
+    void 'the parameter reads return the request values when the parameters are readable'() {
+        given:
+        def request = requestWithContentType('multipart/form-data; boundary=test')
+        request.addParameter('lang', 'de_DE')
+
+        expect:
+        WebUtils.readParameterMap(request).keySet() == ['lang'] as Set
+        WebUtils.readParameter(request, 'lang') == 'de_DE'
+        WebUtils.readParameterNames(request).toList() == ['lang']
+    }
+
+    private static MockHttpServletRequest requestWithContentType(String contentType) {
+        def request = new MockHttpServletRequest()
+        request.contentType = contentType
+        request
+    }
+
+    private static MockHttpServletRequest unreadableRequest(String contentType) {
+        def request = new MockHttpServletRequest() {
+
+            @Override
+            Map<String, String[]> getParameterMap() {
+                throw new IllegalStateException('parameters are unreadable')
+            }
+
+            @Override
+            String getParameter(String name) {
+                throw new IllegalStateException('parameters are unreadable')
+            }
+
+            @Override
+            Enumeration<String> getParameterNames() {
+                throw new IllegalStateException('parameters are unreadable')
+            }
+        }
+        request.contentType = contentType
+        request
+    }
+
     private static MockMultipartHttpServletRequest multipartRequest() {
         def request = new MockMultipartHttpServletRequest()
         request.contentType = 'multipart/form-data; boundary=test'
