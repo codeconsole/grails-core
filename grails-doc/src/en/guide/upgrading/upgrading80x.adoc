@@ -2357,3 +2357,62 @@ resolved unambiguously before can become ambiguous.
 
 Removing the packages from `grails.spring.bean.packages`, or the stray classes from those packages, restores
 the previous set of beans.
+
+==== 45. URL Mapping Names Come From the URI, Not From Request Parameters
+
+A mapping that captures its controller, action or namespace from the URL — `"/$controller/$action?/$id?"`,
+the default mapping every application starts with — used to resolve those names by reading the request's
+parameters during dispatch. The values were normally the ones the URI supplied, because the match wrote its
+captures over the request parameters first. But a token the URI did *not* supply left whatever the request
+carried under that name in place, and the request's own value decided the route.
+
+A request for `/article?action=gallery` therefore reached `ArticleController.gallery()` instead of the
+controller's default action: the optional `$action` token captured nothing, and the query string filled the
+gap. The same held for `controller` and `namespace`, and for a form body as well as a query string.
+
+Captured names now come from the match itself. A token the URI does not supply is simply absent, and a
+request parameter of the same name has no say in routing:
+
+[source,groovy]
+.grails-app/controllers/UrlMappings.groovy
+----
+static mappings = {
+    "/$controller/$action?/$id?"()
+}
+----
+
+|===
+| Request | Grails 7 | Grails 8
+
+| `/article/gallery`
+| `ArticleController.gallery()`
+| `ArticleController.gallery()`
+
+| `/article?action=gallery`
+| `ArticleController.gallery()`
+| `ArticleController`'s default action
+|===
+
+`params.action` still holds `gallery` in both versions — only the routing decision changed.
+
+Choosing an action from a request parameter is still supported, by asking for it explicitly with a closure:
+
+[source,groovy]
+.grails-app/controllers/UrlMappings.groovy
+----
+static mappings = {
+    "/$controller" {
+        action = { params.goHere }
+    }
+}
+----
+
+A closure supplied by the mapping keeps reading request state, exactly as before, and mappings that use one
+are unaffected by this change.
+
+Two consequences beyond the routing fix. Request parameters are now built once per request rather than once
+per candidate mapping, since candidates no longer have to be configured onto the request to be identified.
+And `grails.web.mapping.UrlMappingInfo` gains a
+`isNameResolutionRequestDependent()` method for callers that resolve names themselves; it is a default
+method that reports `true`, so an implementation outside the framework keeps its current behaviour without
+changes.
