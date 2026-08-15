@@ -221,6 +221,22 @@ class FileUploadTestController {
         ] as JSON)
     }
 
+    def uploadWithMethodOverride() {
+        def file = request.getFile('file')
+        if (!file || file.empty) {
+            response.status = 400
+            render([error: 'no_file', message: 'No file uploaded'] as JSON)
+            return
+        }
+
+        render([
+            success: true,
+            method: request.method,
+            filename: file.originalFilename,
+            size: file.size
+        ] as JSON)
+    }
+
     // ========== Params-based Access ==========
 
     def uploadViaParams() {
