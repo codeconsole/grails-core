@@ -92,10 +92,14 @@ public class GrailsWebRequestFilter extends RequestContextFilter implements Appl
                 }
             }
             else {
-
                 WebUtils.clearGrailsWebRequest();
-                LocaleContextHolder.setLocaleContext(previousLocaleContext);
             }
+
+            // Restored on every invocation, not just the outermost one: the locale is set
+            // unconditionally above, so an include or forward would otherwise leave the enclosing
+            // request with the locale it installed - and with a plain SimpleLocaleContext in place of
+            // any TimeZoneAwareLocaleContext that was there.
+            LocaleContextHolder.setLocaleContext(previousLocaleContext);
             if (logger.isDebugEnabled()) {
                 logger.debug("Cleared Grails thread-bound request context: " + request);
             }
