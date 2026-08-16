@@ -56,7 +56,7 @@ final class RunPort {
         }
         catch (IOException ignored) {
             throw new GradleException("${what} needs port ${port}, and something is already " +
-                    "listening on it. Whatever answers there would be taken for the application " +
+                    'listening on it. Whatever answers there would be taken for the application ' +
                     "and recorded in its place. Stop what is using the port, or set ${setting} to " +
                     'one that is free.')
         }
