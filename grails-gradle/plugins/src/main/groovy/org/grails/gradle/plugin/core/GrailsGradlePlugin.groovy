@@ -891,12 +891,24 @@ ${importStatements}
      */
     private void configureAssetsOnTheClasspath(Project project) {
         project.pluginManager.withPlugin(SPRING_BOOT_PLUGIN) {
-            // Matched by the task the pipeline registers rather than by the plugin that registers
-            // it: the asset pipeline's plugin id has changed once already, and the task name has
-            // not. Matched rather than looked up, so nothing depends on which plugin was applied
-            // first and no task is resolved to find out.
-            FileCollection compiledAssets = project.files(
-                    project.tasks.matching { Task task -> task.name == ASSET_COMPILE_TASK })
+            // Asked for by name when the archive needs it, rather than matched out of the task
+            // container in advance.
+            //
+            // A matching {} collection is live. Handed to project.files() it became part of
+            // bootJar's input files, so the container was reachable from the archive's state -- and
+            // resolving those inputs ran the predicate against every task registered, realizing all
+            // of them to find the one. Asking the names costs nothing and realizes nothing; only
+            // the task that is actually there is then looked up, and the file collection it returns
+            // carries the dependency on it.
+            //
+            // Still by name rather than by the plugin that registers it: the pipeline's plugin id
+            // has changed once already and the task name has not, and an application is free to
+            // register the task itself.
+            FileCollection compiledAssets = project.files(project.provider {
+                project.tasks.names.contains(ASSET_COMPILE_TASK)
+                        ? project.tasks.named(ASSET_COMPILE_TASK).get().outputs.files
+                        : project.files()
+            })
             project.tasks.named('bootJar', AbstractCopyTask).configure { AbstractCopyTask task ->
                 task.from(compiledAssets) { CopySpec spec ->
                     spec.into(CLASSPATH_ASSETS_PATH)
