@@ -22,6 +22,7 @@ package grails.neo4j.bootstrap
 import grails.neo4j.Neo4jEntity
 import grails.spring.BeanBuilder
 import groovy.transform.InheritConstructors
+import org.apache.grails.common.aot.AheadOfTimeProcessing
 import org.grails.datastore.gorm.bootstrap.AbstractDatastoreInitializer
 import org.grails.datastore.gorm.events.ConfigurableApplicationContextEventPublisher
 import org.grails.datastore.gorm.events.DefaultApplicationEventPublisher
@@ -67,8 +68,33 @@ class Neo4jDataStoreSpringInitializer extends AbstractDatastoreInitializer {
         return Neo4jEntity.isAssignableFrom(cls) || super.isMappedClass(datastoreType, cls)
     }
 
+    /**
+     * Refuses to generate code for a definition that would carry the build machine's settings.
+     *
+     * <p>The datastore below is given the resolved configuration rather than a reference to the
+     * environment, because the method that names the environment instead was added to
+     * {@code AbstractDatastoreInitializer} and this build resolves that class from a released
+     * artifact rather than from the source beside it -- so the call compiles here and goes missing
+     * at run time.</p>
+     *
+     * <p>Generating code for a definition means writing out what it holds, and what this one holds
+     * is a {@code PropertyResolver}: the build machine's environment, its environment variables
+     * among them, written into the application's generated source and shipped in it. Refusing is
+     * the lesser outcome. An unsupported combination that says so can be worked around; one that
+     * quietly ships whatever the machine that built it had cannot be noticed.</p>
+     */
+    private static void refuseWhereTheConfigurationWouldBeWrittenOut() {
+        if (AheadOfTimeProcessing.generatingCode) {
+            throw new IllegalStateException('Neo4j cannot yet be processed ahead of time. Its bean ' +
+                    'definitions hold the resolved configuration, and generating code for them ' +
+                    "would write this machine's environment into the application. Remove Spring " +
+                    "Boot's AOT plugin, or the Neo4j datastore, until this is supported.")
+        }
+    }
+
     @Override
     Closure getBeanDefinitions(BeanDefinitionRegistry beanDefinitionRegistry) {
+        refuseWhereTheConfigurationWouldBeWrittenOut()
         { ->
             def callable = getCommonConfiguration(beanDefinitionRegistry, DATASTORE_TYPE)
             callable.delegate = delegate
@@ -82,7 +108,15 @@ class Neo4jDataStoreSpringInitializer extends AbstractDatastoreInitializer {
             // The choice is made here rather than through AbstractDatastoreInitializer, because this
             // build resolves that class from a released grails-datamapping-core rather than from
             // the source beside it, and a method added there is not one this can call.
+            // Both halves of the condition, because this bean is registered under one name by four
+            // initializers and whichever drains last defines it for all of them. The other three
+            // resolve the class through AbstractDatastoreInitializer.findEventPublisherClass, which
+            // also accepts a resource loader that is a context -- so testing only the registry here
+            // let a Hibernate-and-Neo4j application end up publishing Hibernate's events through
+            // DefaultApplicationEventPublisher, which does nothing with them: GORM events stop
+            // firing and auto-timestamping stops working, with nothing logged.
             grailsDatastoreEventPublisher(beanDefinitionRegistry instanceof ConfigurableApplicationContext
+                    || resourcePatternResolver.resourceLoader instanceof ConfigurableApplicationContext
                     ? ConfigurableApplicationContextEventPublisher
                     : DefaultApplicationEventPublisher)
             final boolean isRecentGrailsVersion = GrailsVersion.isAtLeastMajorMinor(3, 3)
