@@ -273,12 +273,13 @@ abstract class TrainAotCacheTask extends DefaultTask {
      */
     private void awaitStarted(Process process, File output) {
         long deadline = System.currentTimeMillis() + Duration.ofSeconds(startTimeoutSeconds.get()).toMillis()
+        StartupLog log = new StartupLog(output)
         while (System.currentTimeMillis() < deadline) {
             if (!process.isAlive()) {
                 throw new GradleException('The training run ended before it started serving.' +
                         whyItEnded(output) + " What it printed is in ${output}")
             }
-            if (output.isFile() && output.text.contains('Started ')) {
+            if (log.saysItStarted()) {
                 return
             }
             if (serving()) {
