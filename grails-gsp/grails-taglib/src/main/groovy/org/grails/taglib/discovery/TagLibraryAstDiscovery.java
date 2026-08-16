@@ -18,11 +18,8 @@
  */
 package org.grails.taglib.discovery;
 
-import java.util.Collection;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.Map;
-import java.util.Set;
 
 import groovy.lang.Closure;
 import org.codehaus.groovy.ast.ClassHelper;
@@ -108,25 +105,4 @@ public final class TagLibraryAstDiscovery {
         return tags;
     }
 
-    public static Collection<String> findTagNames(ClassNode classNode, boolean parameterNamesRetained) {
-        Set<String> tagNames = new LinkedHashSet<>();
-        for (MethodNode method : classNode.getMethods()) {
-            // TagMethodInvoker scans getDeclaredMethods(), so a method inherited from a superclass is
-            // not dispatchable and must not be recorded. Trait methods are woven as declarations on the
-            // implementing class and so are still seen here.
-            if (method.getDeclaringClass() != null && !classNode.equals(method.getDeclaringClass())) {
-                continue;
-            }
-            if (TagDiscoveryRules.isTagMethod(new AstTagMethodView(method, parameterNamesRetained))) {
-                tagNames.add(method.getName());
-            }
-        }
-        // Closure-typed fields remain tags for as long as the deprecated form is supported.
-        for (FieldNode field : classNode.getFields()) {
-            if (!field.isStatic() && field.getType() != null && CLOSURE_TYPE.equals(field.getType())) {
-                tagNames.add(field.getName());
-            }
-        }
-        return tagNames;
-    }
 }

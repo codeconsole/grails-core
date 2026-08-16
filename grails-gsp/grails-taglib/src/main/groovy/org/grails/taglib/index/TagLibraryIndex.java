@@ -438,13 +438,6 @@ public final class TagLibraryIndex {
     }
 
     /**
-     * @return the namespaces known to be missing some of their tags
-     */
-    public Set<String> getIncompleteNamespaces() {
-        return this.incompleteNamespaces;
-    }
-
-    /**
      * @param namespace a tag library namespace
      * @return true when the build declared this namespace as filled in at runtime
      */
