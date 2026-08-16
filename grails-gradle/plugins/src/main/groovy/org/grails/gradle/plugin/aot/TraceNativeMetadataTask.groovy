@@ -114,8 +114,12 @@ abstract class TraceNativeMetadataTask extends DefaultTask {
      * Carries the session from one request to the next, which is what makes a form that
      * authenticates worth submitting: the pages that follow it are only reachable once it has been.
      *
-     * <p>Its own cookie store rather than the JVM's. The store belongs to the client, so nothing is
-     * left behind in a daemon that outlives the build and two traces at once cannot share one.</p>
+     * <p>Its own cookie store rather than the JVM's, so two traces at once cannot share a session
+     * and none of it is global to the daemon.</p>
+     *
+     * <p>Built for the run and closed when it ends. The client owns a selector thread and an
+     * executor, which do not stop being owned when the build does -- so it is closed rather than
+     * left for the daemon to carry until it exits.</p>
      */
     private HttpClient client
 
@@ -195,6 +199,11 @@ abstract class TraceNativeMetadataTask extends DefaultTask {
         }
         finally {
             stop(process)
+            // Closed with the run that needed it. The client owns a selector thread and an executor,
+            // and the daemon outlives the build -- so a client left open is a set of threads left
+            // running, and another set for every later build that traces again.
+            client.close()
+            client = null
         }
 
         answered.each { Answer answer -> logger.lifecycle('  {}', answer.line) }
@@ -438,12 +447,13 @@ abstract class TraceNativeMetadataTask extends DefaultTask {
 
     private void awaitStarted(Process process, File output) {
         long deadline = System.currentTimeMillis() + Duration.ofSeconds(startTimeoutSeconds.get()).toMillis()
+        StartupLog log = new StartupLog(output)
         while (System.currentTimeMillis() < deadline) {
             if (!process.isAlive()) {
                 throw new GradleException('The application ended before it started serving. ' +
                         "What it printed is in ${output}")
             }
-            if (output.isFile() && output.text.contains('Started ')) {
+            if (log.saysItStarted()) {
                 return
             }
             if (serving()) {
