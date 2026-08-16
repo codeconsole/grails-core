@@ -85,11 +85,6 @@ public final class TagLibraryAstDiscovery {
     /**
      * @param classNode the tag library
      * @param parameterNamesRetained whether this compilation writes parameter names into the class file
-     * @return every tag the library declares, whether as a tag method or a legacy closure field
-     */
-    /**
-     * @param classNode the tag library
-     * @param parameterNamesRetained whether this compilation writes parameter names into the class file
      * @return each tag mapped to how it is implemented, so that a caller can tell a tag it can bind to
      *         from one it must dispatch dynamically
      */

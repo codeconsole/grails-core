@@ -42,10 +42,6 @@ import org.grails.taglib.discovery.TagDiscoveryRules;
 public final class TagMethodInvoker {
 
     /**
-     * Method names from framework traits, Spring lifecycle interfaces, and the like
-     * that must never be treated as tag methods regardless of the declaring class.
-     */
-    /**
      * Names that live on every tag library through the framework traits and are therefore never tags.
      * <p>
      * Exposed so that the compile-time tag library index derives the same tag names from the AST that

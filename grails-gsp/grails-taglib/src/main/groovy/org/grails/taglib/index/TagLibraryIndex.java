@@ -61,7 +61,7 @@ public final class TagLibraryIndex {
      * produced by a different version of Grails and is ignored, so its tags resolve dynamically rather
      * than being read under the wrong set of rules.
      */
-    public static final int FORMAT_VERSION = 2;
+    public static final int FORMAT_VERSION = 1;
 
     /**
      * Settings the build states for the compilation the index is read in, written alongside the
