@@ -21,7 +21,6 @@ package org.grails.orm.hibernate.cfg.domainbinding.hibernate;
 import java.beans.PropertyDescriptor;
 
 import org.hibernate.mapping.Collection;
-import org.hibernate.mapping.Table;
 
 import org.grails.datastore.mapping.model.MappingContext;
 import org.grails.datastore.mapping.model.types.mapping.BasicWithMapping;
@@ -45,17 +44,5 @@ public class HibernateBasicProperty extends BasicWithMapping<PropertyConfig> imp
     @Override
     public void setHibernateCollection(Collection collection) {
         this.collection = collection;
-    }
-
-    /**
-     * For a basic (scalar or enum) collection element, the property's table is the
-     * collection's join table rather than the owning entity's table. Before the collection
-     * table has been assigned (e.g. while it is itself being computed), falls back to the
-     * owning entity's table, matching the pre-collection-binding default.
-     */
-    @Override
-    public Table getTable() {
-        Table collectionTable = collection != null ? collection.getCollectionTable() : null;
-        return collectionTable != null ? collectionTable : getPersistentClass().getTable();
     }
 }

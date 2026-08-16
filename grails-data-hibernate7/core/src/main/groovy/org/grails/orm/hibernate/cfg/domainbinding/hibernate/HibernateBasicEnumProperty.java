@@ -20,6 +20,9 @@ package org.grails.orm.hibernate.cfg.domainbinding.hibernate;
 
 import java.beans.PropertyDescriptor;
 
+import org.hibernate.mapping.Collection;
+import org.hibernate.mapping.Table;
+
 import org.grails.datastore.mapping.model.MappingContext;
 import org.grails.orm.hibernate.cfg.PersistentEntityNamingStrategy;
 import org.grails.orm.hibernate.cfg.domainbinding.util.ColumnNameForPropertyAndPathFetcher;
@@ -57,5 +60,21 @@ public class HibernateBasicEnumProperty extends HibernateBasicProperty implement
     @Override
     public boolean isCollectionElement() {
         return true;
+    }
+
+    /**
+     * For an enum collection element, the table to bind the element column against is the
+     * collection's join table rather than the owning entity's table. Before the collection
+     * table has been assigned (e.g. while it is itself being computed), falls back to the
+     * owning entity's table, matching the pre-collection-binding default. Scoped to the enum
+     * subclass because only {@link org.grails.orm.hibernate.cfg.domainbinding.binder.EnumTypeBinder}
+     * binds through {@code getTable()}; the non-enum element binding reads the collection
+     * table directly.
+     */
+    @Override
+    public Table getTable() {
+        Collection collection = getHibernateCollection();
+        Table collectionTable = collection != null ? collection.getCollectionTable() : null;
+        return collectionTable != null ? collectionTable : getPersistentClass().getTable();
     }
 }

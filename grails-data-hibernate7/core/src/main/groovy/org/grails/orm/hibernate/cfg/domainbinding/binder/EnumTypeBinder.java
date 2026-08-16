@@ -26,6 +26,8 @@ import org.hibernate.boot.spi.MetadataBuildingContext;
 import org.hibernate.mapping.BasicValue;
 import org.hibernate.mapping.Column;
 import org.hibernate.mapping.Table;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import org.grails.orm.hibernate.cfg.ColumnConfig;
 import org.grails.orm.hibernate.cfg.PersistentEntityNamingStrategy;
@@ -37,6 +39,8 @@ import org.grails.orm.hibernate.cfg.domainbinding.util.GrailsEnumType;
 import static org.grails.orm.hibernate.cfg.domainbinding.binder.GrailsDomainBinder.ENUM_CLASS_PROP;
 
 public class EnumTypeBinder {
+
+    private static final Logger LOG = LoggerFactory.getLogger(EnumTypeBinder.class);
 
     private final MetadataBuildingContext metadataBuildingContext;
     private final ColumnNameForPropertyAndPathFetcher columnNameForPropertyAndPathFetcher;
@@ -85,6 +89,10 @@ public class EnumTypeBinder {
         simpleValue.setTypeParameters(enumProperties);
 
         Column column = new Column();
+        if (property.getHibernateOwner().isTablePerHierarchySubclass() && LOG.isDebugEnabled()) {
+            LOG.debug("[GrailsDomainBinder] Sub class property [{}] for column name [{}] forced to nullable",
+                    property.getName(), columnName);
+        }
         column.setNullable(property.isEnumColumnNullable());
         column.setValue(simpleValue);
         column.setName(columnName);

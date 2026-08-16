@@ -122,6 +122,7 @@ class GrailsPropertyBinderSpec extends HibernateGormDatastoreSpec {
         manager.registerDomainClasses(
             PropertyBinderSpecSimpleBook,
             PropertyBinderSpecEnumBook,
+            PropertyBinderSpecEnumCollection,
             PropertyBinderSpecAuthor,
             PropertyBinderSpecPet,
             PropertyBinderSpecEmployee,
@@ -170,6 +171,29 @@ class GrailsPropertyBinderSpec extends HibernateGormDatastoreSpec {
         then:
         value instanceof BasicValue
         ((BasicValue)value).enumerationStyle == jakarta.persistence.EnumType.STRING
+    }
+
+    void "Test bind hasMany of enum falls through to the collection binder"() {
+        given:
+        def binder = getGrailsDomainBinder()
+        def propertyBinder = getBinders(binder).propertyBinder
+        def persistentEntity = getPersistentEntity(PropertyBinderSpecEnumCollection) as GrailsHibernatePersistentEntity
+        def rootClass = new RootClass(binder.getMetadataBuildingContext())
+        rootClass.setTable(new Table("ENUM_COLLECTION"))
+        persistentEntity.setPersistentClass(rootClass)
+
+        when:
+        def statusesProp = persistentEntity.getPropertyByName("statuses") as HibernatePersistentProperty
+
+        then: "the property is a HibernateEnumProperty, but flagged as a collection element"
+        statusesProp instanceof HibernateBasicEnumProperty
+        ((HibernateEnumProperty) statusesProp).isCollectionElement()
+
+        when:
+        Value value = propertyBinder.bindProperty(statusesProp, null, EMPTY_PATH)
+
+        then: "it is bound as a collection with a join table, not as a scalar enum BasicValue"
+        value instanceof org.hibernate.mapping.Set
     }
 
     void "Test bind many-to-one"() {
@@ -388,6 +412,13 @@ class PropertyBinderSpecSimpleBook {
 class PropertyBinderSpecEnumBook {
     Long id
     java.util.concurrent.TimeUnit status
+}
+
+@Entity
+class PropertyBinderSpecEnumCollection {
+    Long id
+    Set<java.util.concurrent.TimeUnit> statuses
+    static hasMany = [statuses: java.util.concurrent.TimeUnit]
 }
 
 @Entity

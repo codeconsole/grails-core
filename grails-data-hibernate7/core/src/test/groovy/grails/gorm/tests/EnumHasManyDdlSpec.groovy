@@ -73,30 +73,55 @@ class EnumHasManyDdlSpec extends Specification {
     }
 
     @Issue("https://github.com/apache/grails-core/issues/16051")
-    void "a hasMany of enum with enumType ordinal stores the ordinal, not the name"() {
-        expect: "the element column is a numeric ordinal column, not a string one"
+    void "join table for a hasMany of enum with enumType ordinal has the element column"() {
+        expect:
         columnNamesFor('ORDINAL_SURVEY_RESPONSE_ANSWERS') == ['ordinal_survey_response_id', 'survey_answer'] as Set
+    }
+
+    @Issue("https://github.com/apache/grails-core/issues/16051")
+    void "a hasMany of enum with enumType ordinal stores the ordinal, not the name"() {
+        given:
+        def response = new OrdinalSurveyResponse(respondent: "Bob")
+        response.addToAnswers(SurveyAnswer.MAYBE)
+        response.save(flush: true)
+
+        expect: "the raw stored element value is the enum's ordinal, not its name"
+        rawElementValuesFor('ORDINAL_SURVEY_RESPONSE_ANSWERS', 'survey_answer') ==
+                [String.valueOf(SurveyAnswer.MAYBE.ordinal())] as Set
 
         when:
-        def response = new OrdinalSurveyResponse(respondent: "Bob")
-        response.addToAnswers(SurveyAnswer.FOR_SURE)
-        response.save(flush: true)
         response.discard()
         def reloaded = OrdinalSurveyResponse.get(response.id)
 
         then:
-        reloaded.answers == [SurveyAnswer.FOR_SURE] as Set
+        reloaded.answers == [SurveyAnswer.MAYBE] as Set
     }
 
     @Issue("https://github.com/apache/grails-core/issues/16051")
-    void "a hasMany of enum with an explicit joinTable column name uses it verbatim"() {
+    void "a hasMany of enum with the default enumType stores the name, not the ordinal"() {
+        given:
+        def response = new SurveyResponse(respondent: "Dave")
+        response.addToAnswers(SurveyAnswer.MAYBE)
+        response.save(flush: true)
+
+        expect: "the raw stored element value is the enum's name"
+        rawElementValuesFor('SURVEY_RESPONSE_ANSWERS', 'survey_answer') == [SurveyAnswer.MAYBE.name()] as Set
+    }
+
+    @Issue("https://github.com/apache/grails-core/issues/16051")
+    void "join table for a hasMany of enum with an explicit joinTable column name uses it verbatim"() {
         expect: "the element column uses the explicitly configured name instead of the derived one"
         columnNamesFor('NAMED_COLUMN_SURVEY_RESPONSE_ANSWERS') ==
                 ['named_column_survey_response_id', 'chosen_answer'] as Set
+    }
 
-        when:
+    @Issue("https://github.com/apache/grails-core/issues/16051")
+    void "a hasMany of enum with an explicit joinTable column name can be saved and reloaded"() {
+        given:
         def response = new NamedColumnSurveyResponse(respondent: "Carol")
         response.addToAnswers(SurveyAnswer.MAYBE_NOT)
+
+        when:
         response.save(flush: true)
         response.discard()
         def reloaded = NamedColumnSurveyResponse.get(response.id)
@@ -125,6 +150,22 @@ class EnumHasManyDdlSpec extends Specification {
                 }
             }
             columnNames
+        }
+    }
+
+    private Set<String> rawElementValuesFor(String tableName, String columnName) {
+        SessionImplementor sessionImplementor = (SessionImplementor) datastore.sessionFactory.currentSession
+        sessionImplementor.doReturningWork { connection ->
+            Set<String> values = []
+            try (def statement = connection.createStatement()) {
+                try (ResultSet resultSet = statement.executeQuery(
+                        "select ${columnName} from ${tableName}".toString())) {
+                    while (resultSet.next()) {
+                        values << resultSet.getString(1)
+                    }
+                }
+            }
+            values
         }
     }
 
