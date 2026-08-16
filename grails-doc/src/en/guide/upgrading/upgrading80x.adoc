@@ -2470,3 +2470,35 @@ The methods that performed the installation are deprecated or removed:
 
 `TagLibraryMetaUtils.methodMissingForTagLib` is not deprecated — it is the dynamic dispatch path a call
 into an undescribed namespace still takes.
+
+==== A Tag the Runtime Cannot Resolve Reports a Different Exception
+
+A call compiled into a direct invocation reports a tag the runtime has not registered as a
+`GrailsTagException` rather than a `MissingMethodException`. This arises where the compiled index knows
+a tag but the running application does not have it: the plugin declaring it was excluded, the tag
+library is listed in `nonEnhancedTagLibClasses`, or a unit test mocked only some tag libraries.
+
+Code that catches `MissingMethodException` around a tag call, or probes with `respondsTo` before
+calling, behaves differently as a result:
+
+[source,groovy]
+----
+// Before
+try {
+    out << g.someTag(code: 'x')
+}
+catch (MissingMethodException ignored) {
+    out << fallback()
+}
+
+// After - the invocation reports the unresolved tag as a tag error
+try {
+    out << g.someTag(code: 'x')
+}
+catch (GrailsTagException ignored) {
+    out << fallback()
+}
+----
+
+A call into a namespace no compiled tag library describes is dispatched dynamically and still reports
+`MissingMethodException`, so only calls the build resolved are affected.

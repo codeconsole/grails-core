@@ -93,6 +93,25 @@ a particular tag library class, so a tag declared by more than one of them is co
 A call into a namespace no compiled tag library declares is left alone, which is what allows a tag
 library registered while an application is running to keep working.
 
+A controller declared by convention, under `grails-app/controllers`, has its tag calls compiled. One
+declared by annotation outside that directory does not:
+
+[source,groovy]
+----
+// src/main/groovy/demo/ReportController.groovy
+@Artefact('Controller')
+class ReportController {
+    def index() {
+        g.createLink(controller: 'book')   // dispatched dynamically
+    }
+}
+----
+
+The ability to call tags reaches such a class from the `@Artefact` annotation, which is applied later
+in the compilation than the rewriting runs, so the rewriting cannot see that the class calls tags. The
+call behaves exactly as it did before this release; it simply does not take the faster path. Moving
+the class under `grails-app/controllers` gets it compiled.
+
 A name that something else in scope already answers to is not a namespace. A local variable, a
 parameter or a property called `g` is that thing, and a call on it is left alone:
 

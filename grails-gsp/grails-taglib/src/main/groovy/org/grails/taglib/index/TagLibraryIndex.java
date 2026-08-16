@@ -279,9 +279,13 @@ public final class TagLibraryIndex {
                     continue;
                 }
                 for (String className : names.stringPropertyNames()) {
-                    Enumeration<URL> descriptors = loader.getResources(INDEX_LOCATION + className + ".properties");
-                    while (descriptors.hasMoreElements()) {
-                        urls.add(descriptors.nextElement());
+                    // Resolved against the manifest that names it rather than searched for on the
+                    // classpath. A descriptor always sits beside its own manifest, and asking the
+                    // loader instead would walk every classpath entry once per tag library - a few
+                    // hundred full walks for an application with a few hundred of them.
+                    URL descriptor = resolveSibling(manifest, className + ".properties");
+                    if (descriptor != null) {
+                        urls.add(descriptor);
                     }
                 }
             }
@@ -291,6 +295,20 @@ public final class TagLibraryIndex {
             return urls;
         }
         return urls;
+    }
+
+    /**
+     * @param manifest the manifest naming the descriptor
+     * @param fileName the descriptor's file name
+     * @return the descriptor beside that manifest, or {@code null} when it cannot be addressed
+     */
+    private static URL resolveSibling(URL manifest, String fileName) {
+        try {
+            return new URL(manifest, fileName);
+        }
+        catch (java.net.MalformedURLException e) {
+            return null;
+        }
     }
 
     private static Properties read(URL url) {
@@ -339,15 +357,6 @@ public final class TagLibraryIndex {
         return ambiguousTags != null && ambiguousTags.contains(tagName);
     }
 
-    /**
-     * @param namespace a tag library namespace
-     * @return the tags in that namespace declared by more than one tag library
-     */
-    public Set<String> getAmbiguousTagNames(String namespace) {
-        Set<String> ambiguousTags = ambiguousByNamespace.get(namespace);
-        return ambiguousTags != null ? Collections.unmodifiableSet(new TreeSet<>(ambiguousTags)) :
-                Collections.emptySet();
-    }
 
     /**
      * @return every namespace contributed by a compiled tag library

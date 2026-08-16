@@ -80,6 +80,15 @@ class TagDiscoveryRulesSpec extends Specification {
         'Tag includes an unconventional shape'          | 'annotated'   | true  | '@Tag def annotated(Map attrs, String code) { code }'
         'a framework trait name is not a tag'           | 'withCodec'   | false | 'def withCodec(Map attrs) { }'
         'a defaulted trailing parameter is a tag'       | 'defaulted'   | true  | 'def defaulted(Map attrs, String extra = null) { }'
+        // These three pin the differences between these rules and the discovery they replaced, which
+        // excluded Object and GroovyObject members by signature rather than by name, checked that an
+        // is* accessor returned boolean, and said nothing about $ in a name. None of them is reachable
+        // by a tag that would otherwise have been discovered, and the shape check rejects them anyway -
+        // but discovery is what a running application registers tag libraries from, so the answers are
+        // stated here rather than left to be derived.
+        'an Object member name is not a tag'            | 'equals'      | false | 'def equals(Map attrs) { }'
+        'a non boolean is accessor is not a tag'        | 'isThing'     | false | 'String isThing() { null }'
+        'a synthetic name is not a tag'                 | 'a$b'         | false | "def 'a\$b'(Map attrs) { }"
     }
 
     /**

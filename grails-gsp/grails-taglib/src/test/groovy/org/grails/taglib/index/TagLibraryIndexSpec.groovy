@@ -128,7 +128,6 @@ class TagLibraryIndexSpec extends Specification {
         then: 'which one wins depends on registration order at runtime, so it is left unresolved'
         index.isAmbiguous('g', 'shared')
         index.lookup('g', 'shared') == null
-        index.getAmbiguousTagNames('g') == ['shared'] as Set
 
         and: 'tags declared by only one of them still resolve'
         index.lookup('g', 'onlyA').tagLibraryClassName() == 'com.a.OneTagLib'

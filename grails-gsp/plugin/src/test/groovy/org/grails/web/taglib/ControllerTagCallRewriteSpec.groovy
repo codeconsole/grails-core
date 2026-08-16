@@ -66,8 +66,64 @@ class ControllerTagCallRewriteSpec extends Specification {
         !references(compiled, 'org/grails/taglib/CompiledTagInvocation')
     }
 
+    void 'a controller declared by convention has its tag calls compiled into invocations'() {
+        when: 'under grails-app/controllers, which is how a controller is normally declared'
+        byte[] compiled = compileAt('grails-app/controllers/demo', '''
+            package demo
+
+            class ConventionController {
+                def index() {
+                    g.createLink(controller: 'book')
+                }
+            }
+        ''', 'ConventionController', 'demo')
+
+        then:
+        references(compiled, 'org/grails/taglib/CompiledTagInvocation')
+    }
+
+    void 'a controller declared by annotation outside that directory is not rewritten'() {
+        when: 'the trait arrives from a local transform, which runs after every global one'
+        byte[] compiled = compileAt('src/main/groovy/demo', '''
+            package demo
+
+            import grails.artefact.Artefact
+
+            @Artefact('Controller')
+            class AnnotatedController {
+                def index() {
+                    g.createLink(controller: 'book')
+                }
+            }
+        ''', 'AnnotatedController', 'demo')
+
+        then: 'a known limitation rather than an intent: the call is dispatched as it was before, so ' +
+                'it behaves correctly, it just does not get the faster path'
+        !references(compiled, 'org/grails/taglib/CompiledTagInvocation')
+
+        and: 'and it really is a controller, so the difference is the source layout alone'
+        references(compiled, 'grails/artefact/gsp/TagLibraryInvoker')
+    }
+
     private static boolean references(byte[] classBytes, String internalName) {
         new String(classBytes, 'ISO-8859-1').contains(internalName)
+    }
+
+    private byte[] compileAt(String relativeDir, String source, String className, String packageName) {
+        Path sourceDir = Files.createDirectories(tempDir.resolve(relativeDir))
+        Path sourceFile = sourceDir.resolve(className + '.groovy')
+        sourceFile.toFile().text = source
+        Path outputDir = Files.createDirectories(tempDir.resolve('out-' + className))
+
+        CompilerConfiguration configuration = new CompilerConfiguration()
+        configuration.targetDirectory = outputDir.toFile()
+        configuration.parameters = true
+        CompilationUnit unit = new CompilationUnit(configuration, null,
+                new GroovyClassLoader(getClass().classLoader, configuration))
+        unit.addSource(sourceFile.toFile())
+        unit.compile()
+
+        Files.readAllBytes(outputDir.resolve(packageName.replace('.', '/')).resolve(className + '.class'))
     }
 
     private byte[] compile(String source, String className) {
