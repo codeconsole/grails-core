@@ -25,7 +25,6 @@ import java.util.Set;
 
 import groovy.lang.GroovySystem;
 import groovy.lang.MetaMethod;
-
 import org.codehaus.groovy.ast.AnnotationNode;
 import org.codehaus.groovy.ast.ClassCodeExpressionTransformer;
 import org.codehaus.groovy.ast.ClassHelper;

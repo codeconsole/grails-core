@@ -357,7 +357,6 @@ public final class TagLibraryIndex {
         return ambiguousTags != null && ambiguousTags.contains(tagName);
     }
 
-
     /**
      * @return every namespace contributed by a compiled tag library
      */

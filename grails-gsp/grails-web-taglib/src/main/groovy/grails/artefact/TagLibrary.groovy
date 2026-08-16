@@ -19,9 +19,9 @@
 package grails.artefact
 
 import groovy.transform.CompileStatic
-import jakarta.annotation.PostConstruct
 import org.codehaus.groovy.runtime.InvokerHelper
 
+import jakarta.annotation.PostConstruct
 
 import org.springframework.web.context.request.RequestAttributes
 
