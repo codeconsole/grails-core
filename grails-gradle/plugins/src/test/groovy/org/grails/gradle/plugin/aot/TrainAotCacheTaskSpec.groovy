@@ -162,6 +162,52 @@ exit 1
             seen.readLines().any { String line -> line.startsWith('PATH=') }
     }
 
+    void 'the run is given the archive by its full path, and still runs in its directory'() {
+        given: 'a run that writes down where it was put and what it was given, and ends'
+            File application = new File(temporaryFolder, 'named')
+            application.mkdirs()
+            new File(application, 'named.jar').text = 'stands in for the archive'
+            File arguments = new File(temporaryFolder, 'seen-arguments.txt')
+            File directory = new File(temporaryFolder, 'seen-directory.txt')
+            File script = new File(temporaryFolder, 'recording-jvm.sh')
+            script.text = """#!/bin/sh
+pwd -P > '${directory.absolutePath}'
+for argument in "\$@"; do echo "\$argument" >> '${arguments.absolutePath}'; done
+exit 1
+"""
+            script.setExecutable(true)
+            TrainAotCacheTask task = project.tasks.create('trainNamed', TrainAotCacheTask)
+            task.applicationDirectory.set(application)
+            task.archiveFileName.set('named.jar')
+            task.cacheFile.set(new File(application, 'demo.aot'))
+            task.metadataFile.set(new File(application, 'aot-cache.properties'))
+            task.javaExecutable.set(script.absolutePath)
+            task.javaVersion.set('25.0.1+9')
+            task.javaVendor.set('A Vendor')
+            task.jvmArguments.set([])
+            task.paths.set([])
+            task.port.set(18095)
+            task.startTimeoutSeconds.set(5)
+
+        when:
+            task.train()
+
+        then:
+            thrown(GradleException)
+
+        and: 'the cache records the classpath it was trained against, and an entry that is a bare ' +
+                'name is resolved against the working directory of whatever starts the application ' +
+                'later -- so a cache trained by name is refused for java -jar /opt/app/app.jar'
+            List<String> given = arguments.readLines()
+            int jar = given.indexOf('-jar')
+            jar >= 0
+            given[jar + 1] == new File(application, 'named.jar').absolutePath
+
+        and: 'while the run itself is still made in the application directory, which is where the ' +
+                'archive expects to find what sits beside it'
+            directory.text.trim() == application.canonicalPath
+    }
+
     void 'a run that never starts serving fails the build'() {
         given: 'an archive that is not one, so the run ends immediately'
             TrainAotCacheTask task = task('not-an-archive.jar', [])

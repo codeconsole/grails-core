@@ -74,13 +74,21 @@ build/aot-cache/
 
 [source,bash]
 ----
-cd build/aot-cache/application
-java -XX:AOTCache=../myapp.aot -Dspring.aot.enabled=true -Dgrails.env=production -jar myapp.jar
+java -XX:AOTCache=build/aot-cache/myapp.aot -Dspring.aot.enabled=true -Dgrails.env=production \
+    -jar build/aot-cache/application/myapp.jar
 ----
 
-Run it from the extracted directory, as the training run was run: a cache records the classpath it saw, and reaching the same jar by a different path is a different classpath.
+It does not matter which directory it is started from. Moving the whole of `aot-cache` elsewhere is fine too — a container image that unpacks it under `/opt` is the usual case — as long as the cache and `application/` move together and keep their timestamps, which the cache checks the archive against. Copying only the jar out of `application/` does not work, and not because of the cache: the extracted layout reaches its dependencies through `lib/` beside it.
 
 A JVM given a cache it cannot use does not fail. It reports why, ignores the cache, and starts as it would have anyway — so an invalid cache costs the startup time it was meant to save, silently, and without any other symptom.
+
+Adding `-XX:AOTMode=on` turns that into a failure to start, which is worth doing wherever the cache is the reason the deployment meets its startup time. A cache that has been invalidated then stops the process rather than quietly making it slower:
+
+[source]
+----
+[0.003s][warning][aot] Unable to use AOT cache.
+[0.003s][error  ][aot] Loading static archive failed.
+----
 
 
 === What the training run should do

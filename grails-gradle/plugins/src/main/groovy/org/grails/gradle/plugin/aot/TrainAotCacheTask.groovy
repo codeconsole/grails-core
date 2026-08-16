@@ -116,7 +116,14 @@ abstract class TrainAotCacheTask extends DefaultTask {
         command << javaExecutable.get()
         command << "-XX:AOTCacheOutput=${cache.absolutePath}".toString()
         command.addAll(jvmArguments.get())
-        command << '-jar' << archiveFileName.get()
+        // Named in full rather than left to the working directory to resolve. The cache records the
+        // classpath it was trained against, and a relative entry is resolved against the working
+        // directory of whatever starts the application later -- so a cache trained by name is
+        // refused for `java -jar /opt/app/app.jar`, which is what a service unit and a container
+        // both do. The application still gets that directory to run in; it is only what the cache
+        // wrote down that changes. An absolute entry is matched by prefix substitution instead,
+        // which survives the directory being moved as well as being started from somewhere else.
+        command << '-jar' << new File(directory, archiveFileName.get()).absolutePath
         command << "--server.port=${port.get()}".toString()
 
         File output = new File(temporaryDir, 'training.log')
