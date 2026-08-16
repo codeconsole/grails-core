@@ -40,10 +40,11 @@ import org.grails.taglib.encoder.OutputContextLookupHelper
  * remains here is the dynamic dispatch that a tag library registered at runtime still relies on,
  * reachable through {@code methodMissingForTagLib} with metaclass installation switched off.
  *
- * @deprecated Installing tags onto metaclasses is no longer part of dispatching a tag. Resolve
- *             through {@link TagLibraryLookup} and invoke through {@link CompiledTagInvocation}.
+ * <p>The methods that install onto a metaclass are deprecated individually. This class is not,
+ * because {@link #methodMissingForTagLib} is how a call into a namespace no compiled tag library
+ * describes is still dispatched, and is used by the tag library invoker trait, the namespace
+ * dispatcher and a compiled page alike.
  */
-@Deprecated
 class TagLibraryMetaUtils {
 
     private static final Log LOG = LogFactory.getLog(TagLibraryMetaUtils)
@@ -52,6 +53,7 @@ class TagLibraryMetaUtils {
     private final static Object[] EMPTY_OBJECT_ARRAY = new Object[0]
 
     @CompileStatic
+    @Deprecated(since = '8.0.0')
     static void enhanceTagLibMetaClass(final GrailsTagLibClass taglib, TagLibraryLookup gspTagLibraryLookup) {
         final MetaClass mc = taglib.getMetaClass()
         final String namespace = taglib.namespace ?: TagOutput.DEFAULT_NAMESPACE
@@ -59,6 +61,7 @@ class TagLibraryMetaUtils {
     }
 
     @CompileStatic
+    @Deprecated(since = '8.0.0')
     static void enhanceTagLibMetaClass(MetaClass mc, TagLibraryLookup gspTagLibraryLookup, String namespace) {
         registerTagMethodContextMetaProperties(mc)
         registerTagMetaMethods(mc, gspTagLibraryLookup, namespace)
@@ -99,6 +102,7 @@ class TagLibraryMetaUtils {
     }
 
     @CompileStatic
+    @Deprecated(since = '8.0.0')
     static void registerNamespaceMetaProperties(MetaClass mc, TagLibraryLookup gspTagLibraryLookup) {
         for (String ns : gspTagLibraryLookup.getAvailableNamespaces()) {
             registerNamespaceMetaProperty(mc, gspTagLibraryLookup, ns)
@@ -106,6 +110,7 @@ class TagLibraryMetaUtils {
     }
 
     @CompileStatic
+    @Deprecated(since = '8.0.0')
     static void registerNamespaceMetaProperty(MetaClass metaClass, TagLibraryLookup gspTagLibraryLookup, String namespace) {
         if (!doesMethodExist(metaClass, GrailsClassUtils.getGetterName(namespace), [] as Class[], false, true)) {
             registerPropertyMissingForTag(metaClass, namespace, gspTagLibraryLookup.lookupNamespaceDispatcher(namespace))
@@ -113,6 +118,7 @@ class TagLibraryMetaUtils {
     }
 
     @CompileStatic
+    @Deprecated(since = '8.0.0')
     static registerMethodMissingForTags(MetaClass metaClass, TagLibraryLookup gspTagLibraryLookup, String namespace, String name, boolean addAll = true, boolean overrideMethods = true) {
         GroovyObject mc = (GroovyObject) metaClass
 
@@ -166,6 +172,7 @@ class TagLibraryMetaUtils {
         return output
     }
 
+    @Deprecated(since = '8.0.0')
     static registerMethodMissingForTags(MetaClass mc, ApplicationContext ctx,
                                         GrailsTagLibClass tagLibraryClass, String name) {
         TagLibraryLookup gspTagLibraryLookup = ctx.getBean('gspTagLibraryLookup')
@@ -174,12 +181,14 @@ class TagLibraryMetaUtils {
     }
 
     @CompileStatic
+    @Deprecated(since = '8.0.0')
     static void registerPropertyMissingForTag(MetaClass metaClass, String name, Object result) {
         GroovyObject mc = (GroovyObject) metaClass
         mc.setProperty(GrailsClassUtils.getGetterName(name)) { -> result }
     }
 
     @CompileStatic
+    @Deprecated(since = '8.0.0')
     static void registerTagMetaMethods(MetaClass emc, TagLibraryLookup lookup, String namespace, boolean overrideMethods = true) {
         for (String tagName : lookup.getAvailableTags(namespace)) {
             boolean addAll = !(namespace == TagOutput.DEFAULT_NAMESPACE && tagName == 'hasErrors')
@@ -263,6 +272,7 @@ class TagLibraryMetaUtils {
         throw new MissingMethodException(name, type, args)
     }
 
+    @Deprecated(since = '8.0.0')
     static addTagLibMethodToMetaClass(final GroovyObject tagBean, final MetaMethod method, final MetaClass mc) {
         Class[] paramTypes = method.nativeParameterTypes
         Closure methodMissingClosure = null

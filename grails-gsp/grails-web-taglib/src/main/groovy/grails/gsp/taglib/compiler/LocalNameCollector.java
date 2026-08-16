@@ -29,12 +29,13 @@ import org.codehaus.groovy.ast.expr.DeclarationExpression;
 import org.codehaus.groovy.ast.expr.Expression;
 import org.codehaus.groovy.ast.expr.TupleExpression;
 import org.codehaus.groovy.ast.expr.VariableExpression;
+import org.codehaus.groovy.ast.stmt.CatchStatement;
 import org.codehaus.groovy.ast.stmt.ForStatement;
 import org.codehaus.groovy.ast.stmt.Statement;
 
 /**
  * Collects every name declared within a body: its parameters, its local variables, the parameters of
- * the closures inside it and the variables its loops introduce.
+ * the closures inside it, the variables its loops introduce and the names its catch blocks bind.
  *
  * <p>Used to decide whether an unqualified call such as {@code message(code: 'x')} could be reaching
  * something local rather than a tag. Scope is not tracked, so a name declared anywhere in the body
@@ -44,6 +45,11 @@ import org.codehaus.groovy.ast.stmt.Statement;
  * @since 8.0.0
  */
 final class LocalNameCollector extends CodeVisitorSupport {
+
+    /**
+     * The parameter a closure that names none still has.
+     */
+    private static final String IMPLICIT_CLOSURE_PARAMETER = "it";
 
     private final Set<String> names = new HashSet<>();
 
@@ -94,14 +100,32 @@ final class LocalNameCollector extends CodeVisitorSupport {
         if (expression.isParameterSpecified()) {
             addParameters(expression.getParameters());
         }
+        else {
+            // A closure that names no parameter still has one, and a call to it is that parameter's
+            // method rather than a tag.
+            names.add(IMPLICIT_CLOSURE_PARAMETER);
+        }
         super.visitClosureExpression(expression);
     }
 
     @Override
     public void visitForLoop(ForStatement forLoop) {
-        if (forLoop.getVariable() != null) {
-            names.add(forLoop.getVariable().getName());
-        }
+        // A classic for carries both, an enhanced for only the value, so both are asked for.
+        addVariable(forLoop.getIndexVariable());
+        addVariable(forLoop.getValueVariable());
         super.visitForLoop(forLoop);
+    }
+
+    @Override
+    public void visitCatchStatement(CatchStatement statement) {
+        // CodeVisitorSupport visits the body but not the parameter the exception is caught into.
+        addVariable(statement.getVariable());
+        super.visitCatchStatement(statement);
+    }
+
+    private void addVariable(Parameter parameter) {
+        if (parameter != null) {
+            names.add(parameter.getName());
+        }
     }
 }

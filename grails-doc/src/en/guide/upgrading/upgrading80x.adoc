@@ -2388,19 +2388,85 @@ Naming a namespace in `dynamicTagNamespaces` turns rewriting off for it entirely
 reporting: calls into it are dispatched exactly as they were before this release. That is the escape
 hatch for a namespace whose tags are decided while the application runs.
 
-Tags defined as `Closure` fields now warn at compile time. They still work and are called the same
-way, but a closure carries no signature, so nothing about a call to such a tag can be checked. Convert
-them to methods:
+Tags defined as closures now warn at compile time. They still work and are called the same way, but a
+closure carries no signature, so nothing about a call to such a tag can be checked. This covers the
+`def` form as well as the explicitly typed one, and the `def` form is the one most tag libraries are
+written in:
 
 [source,groovy]
 ----
-// Before
-Closure hello = { Map attrs ->
+// Before - both forms warn
+def hello = { attrs ->
     out << "Hello ${attrs.name}"
+}
+
+Closure goodbye = { Map attrs ->
+    out << "Goodbye ${attrs.name}"
 }
 
 // After
 def hello(Map attrs) {
     out << "Hello ${attrs.name}"
 }
+
+def goodbye(Map attrs) {
+    out << "Goodbye ${attrs.name}"
+}
 ----
+
+A tag taking a body becomes a method with a second `Closure body` parameter:
+
+[source,groovy]
+----
+// Before
+def wrapped = { attrs, body ->
+    out << '<div>' << body() << '</div>'
+}
+
+// After
+def wrapped(Map attrs, Closure body) {
+    out << '<div>' << body() << '</div>'
+}
+----
+
+==== Tags Are No Longer Installed Onto Metaclasses
+
+Dispatching a tag no longer works by installing a method for every tag, and a property for every
+namespace, onto the metaclass of every tag library, controller and page. Tags are resolved through the
+tag library lookup instead. Calling a tag — from a page, a tag library or a controller, with or
+without its namespace — is unaffected.
+
+What changes is code that inspected the metaclass to find tags. A check such as
+
+[source,groovy]
+----
+tagLib.metaClass.respondsTo(tagLib, 'someTag')
+----
+
+answered `true` before because the tag had been installed there, and now answers `false`. Call the tag,
+or consult the tag library lookup, instead of asking the metaclass what it holds.
+
+The methods that performed the installation are deprecated or removed:
+
+[cols="2,3"]
+|===
+|Member |Replacement
+
+|`NamespacedTagDispatcher.initializeMetaClass()`
+|Removed. Nothing needs to be initialised.
+
+|`NamespacedTagDispatcher.registerTagMetaMethods(ExpandoMetaClass)`
+|Removed.
+
+|`TemplateNamespacedTagDispatcher.registerTagMetaMethods(ExpandoMetaClass)`
+|Removed.
+
+|`GroovyPagesMetaUtils.registerMethodMissingForGSP(...)`
+|Retained but does nothing. A page now declares `methodMissing` itself.
+
+|`TagLibraryMetaUtils.enhanceTagLibMetaClass`, `registerTagMetaMethods`, `registerMethodMissingForTags`, `registerNamespaceMetaProperties`, `registerPropertyMissingForTag`, `addTagLibMethodToMetaClass`
+|Deprecated. Unit test support still uses them so that a tag method can be called directly on a tag library under test.
+|===
+
+`TagLibraryMetaUtils.methodMissingForTagLib` is not deprecated — it is the dynamic dispatch path a call
+into an undescribed namespace still takes.

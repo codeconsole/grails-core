@@ -233,5 +233,18 @@ project-declared type are all read rather than guessed. A tag library naming a t
 exist is left out, as it would be by the compiler.
 
 Where no build writes the index — a plain Groovy compilation, or one that does not apply the Grails
-Gradle plugin — each tag library describes itself as it is compiled instead, which makes it resolvable
-to anything compiled after it.
+Gradle plugin — a tag library annotated `@TagLib` describes itself as it is compiled instead, which
+makes it resolvable to anything compiled after it.
+
+That fallback reaches annotated tag libraries only. A tag library declared by convention, as an
+unannotated class under `grails-app/taglib`, is recognised as an artefact too late in the compilation
+for it to describe itself, so without the Gradle plugin it contributes no description. Nothing breaks:
+a tag with no description is dispatched dynamically, exactly as it was before any of this existed. But
+a plugin that declares its tag libraries by convention and does not apply the Grails GSP Gradle plugin
+publishes no descriptors, and its tags are resolved at runtime in applications that depend on it.
+Annotate those tag libraries with `@TagLib`, or apply the plugin, to have them described.
+
+A descriptor written this way is also never removed. Renaming or deleting a tag library leaves its
+description behind until the build directory is cleaned, and a description naming a class that no
+longer exists puts tags into the index that nothing will answer to. Builds using the Gradle plugin do
+not have this problem: the task rewrites the index from the sources each time it runs.
