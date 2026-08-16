@@ -166,6 +166,7 @@ abstract class TraceNativeMetadataTask extends DefaultTask {
         File metadata = outputDirectory.get().asFile
         metadata.mkdirs()
         refuseWithoutAgent(java)
+        RunPort.refuseWhereTaken(port.get(), 'Tracing what an image needs', 'grails.nativeMetadata.port')
 
         List<String> command = []
         command << java.absolutePath

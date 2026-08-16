@@ -108,6 +108,7 @@ abstract class TrainAotCacheTask extends DefaultTask {
     void train() {
         refuseWhereTheRunCannotBeAskedToStop()
         refuseWhereTheJdkCannotWriteACache()
+        RunPort.refuseWhereTaken(port.get(), 'Training an AOT cache', 'grails.aotCache.port')
         File directory = applicationDirectory.get().asFile
         File cache = cacheFile.get().asFile
         cache.delete()
