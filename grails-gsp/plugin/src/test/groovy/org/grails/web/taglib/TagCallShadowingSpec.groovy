@@ -104,6 +104,42 @@ class TagCallShadowingSpec extends Specification {
         then:
         !references(compiled, 'org/grails/taglib/CompiledTagInvocation')
     }
+    void 'an unqualified call inside a closure is left for the delegate'() {
+        when: 'the shape a controller writes for request.withFormat { form multipartForm { } }'
+        boolean compiled = compileAndScanAll('''
+            import grails.artefact.gsp.TagLibraryInvoker
+            class DelegatingCaller implements TagLibraryInvoker {
+                def index() {
+                    withSomething {
+                        link(controller: 'book')
+                    }
+                }
+                def withSomething(Closure body) { body() }
+            }
+        ''', 'DelegatingCaller')
+
+        then: 'a closure is given a delegate when it runs, and the delegate may answer to the name'
+        !compiled
+    }
+
+    void 'a namespaced call inside a closure is still rewritten'() {
+        when: 'the source named the tag library, so no delegate can claim it'
+        boolean compiled = compileAndScanAll('''
+            import grails.artefact.gsp.TagLibraryInvoker
+            class QualifiedInClosureCaller implements TagLibraryInvoker {
+                def index() {
+                    withSomething {
+                        g.link(controller: 'book')
+                    }
+                }
+                def withSomething(Closure body) { body() }
+            }
+        ''', 'QualifiedInClosureCaller')
+
+        then: 'so a tag body and a withFormat block keep the faster path for the calls that are tags'
+        compiled
+    }
+
     void 'a call on the namespace itself is still rewritten'() {
         when: 'nothing in scope claims the name'
         byte[] compiled = compile('''
@@ -135,6 +171,32 @@ class TagCallShadowingSpec extends Specification {
 
         then: 'the superclass class file is untouched'
         !references(compiled, 'org/grails/taglib/CompiledTagInvocation')
+    }
+
+    /**
+     * A closure body compiles into a class of its own, so a call written inside one is not in the
+     * enclosing class file. Everything the compilation emitted is scanned.
+     *
+     * @param source the source to compile
+     * @param className the class it declares
+     * @return whether any emitted class references the invocation entry point
+     */
+    private boolean compileAndScanAll(String source, String className) {
+        Path sourceFile = tempDir.resolve(className + '.groovy')
+        sourceFile.toFile().text = source
+        Path outputDir = Files.createDirectories(tempDir.resolve('all-' + className))
+
+        CompilerConfiguration configuration = new CompilerConfiguration()
+        configuration.targetDirectory = outputDir.toFile()
+        configuration.parameters = true
+        CompilationUnit unit = new CompilationUnit(configuration, null,
+                new GroovyClassLoader(getClass().classLoader, configuration))
+        unit.addSource(sourceFile.toFile())
+        unit.compile()
+
+        List<Path> emitted = Files.walk(outputDir).filter { it.toString().endsWith('.class') }.toList()
+        assert emitted.size() > 1, "expected a closure class alongside ${className}, got ${emitted*.fileName}"
+        emitted.any { references(Files.readAllBytes(it), 'org/grails/taglib/CompiledTagInvocation') }
     }
 
     private static boolean references(byte[] classBytes, String internalName) {

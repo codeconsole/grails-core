@@ -19,6 +19,7 @@
 package grails.artefact
 
 import groovy.transform.CompileStatic
+import jakarta.annotation.PostConstruct
 import org.codehaus.groovy.runtime.InvokerHelper
 
 
@@ -54,6 +55,23 @@ import org.grails.web.util.GrailsApplicationAttributes
 trait TagLibrary implements WebAttributes, ServletAttributes, TagLibraryInvoker {
 
     private Encoder rawEncoder
+
+    /**
+     * Retained deliberately, and deliberately empty.
+     *
+     * <p>Every tag in every namespace used to be installed onto this tag library's metaclass here, so
+     * that a tag library calling another tag found a method rather than falling through to
+     * methodMissing. Tags are resolved through the tag library lookup instead, so there is nothing to
+     * install and nothing to initialise.
+     *
+     * <p>It cannot simply be deleted. A trait method is part of the binary contract: Groovy weaves a
+     * call to the generated helper into every implementing class, so a tag library from a plugin
+     * compiled against an earlier release calls this method by name at construction. Removing it
+     * raises NoSuchMethodError for every such tag library - which is what happened when it was.
+     */
+    @PostConstruct
+    void initializeTagLibrary() {
+    }
 
     Object raw(Object value) {
         Encoder encoder = WithCodecHelper.lookupEncoder(getGrailsApplication(), 'Raw')

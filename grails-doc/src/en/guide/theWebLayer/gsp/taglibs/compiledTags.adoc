@@ -137,8 +137,25 @@ class BookController {
 }
 ----
 
-Tags called from within a closure — a tag body, a `withFormat` block, anything taking a block — are
-compiled the same way as tags called directly.
+A tag named with its namespace is compiled the same way inside a closure — a tag body, a `withFormat`
+block, anything taking a block — as it is outside one.
+
+A call written *without* a namespace inside a closure is not. A closure is given a delegate when it
+runs, and a name the delegate answers to belongs to the delegate rather than to a tag library, which
+is not knowable when the closure is compiled:
+
+[source,groovy]
+----
+request.withFormat {
+    form multipartForm {          // <1>
+        redirect book
+    }
+}
+----
+<1> `form` here is a format in the `withFormat` DSL, not the `g:form` tag
+
+Naming the namespace is what distinguishes the two, so write `g.form(...)` where a tag is meant inside
+a block.
 
 ==== Tags in pages
 

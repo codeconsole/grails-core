@@ -109,6 +109,11 @@ public class CompiledTagCallRewriter extends ClassCodeExpressionTransformer {
     private final boolean page;
     private final boolean rewritingPermitted;
     private Set<String> localNames = Collections.emptySet();
+    /**
+     * How many closures enclose the expression being transformed. An unqualified call inside
+     * one may belong to the closure's delegate, which is only known when it runs.
+     */
+    private int closureDepth;
     private Set<String> pageBindings = Collections.emptySet();
     private int rewritten;
 
@@ -200,7 +205,20 @@ public class CompiledTagCallRewriter extends ClassCodeExpressionTransformer {
             // this override as the way to reach them. Without it a tag call written in a tag body, in a
             // withFormat block, or in anything else taking a closure is never resolved - which is most
             // of the tag calls in a real tag library.
-            closure.visit(this);
+            //
+            // A call written with its namespace still says which tag library it means, so it is
+            // resolved here as anywhere else. One written without a namespace is not: a closure is
+            // given a delegate when it runs, and a name the delegate answers to is that delegate's,
+            // not a tag. request.withFormat { form multipartForm { } } is the case that proves it -
+            // form there is a format in a DSL, and rewriting it into g:form sends the call somewhere
+            // the author never wrote.
+            closureDepth++;
+            try {
+                closure.visit(this);
+            }
+            finally {
+                closureDepth--;
+            }
             return closure;
         }
         if (expression instanceof MethodCallExpression call) {
@@ -280,6 +298,10 @@ public class CompiledTagCallRewriter extends ClassCodeExpressionTransformer {
             return null;
         }
         if (!call.isImplicitThis() || RESERVED_NAMES.contains(tagName)) {
+            return null;
+        }
+        if (closureDepth > 0) {
+            // Inside a closure the name may be answered by whatever delegate the closure is given.
             return null;
         }
         if (declaresMember(tagName) || localNames.contains(tagName)) {
