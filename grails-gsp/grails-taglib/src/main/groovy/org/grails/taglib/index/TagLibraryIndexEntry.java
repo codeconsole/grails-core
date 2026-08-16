@@ -24,7 +24,7 @@ package org.grails.taglib.index;
  * @param namespace the tag library namespace the tag is reachable through
  * @param tagName the tag name within that namespace
  * @param tagLibraryClassName the binary name of the tag library declaring the tag
- * @param kind how the tag is implemented, which decides whether a call to it can be resolved
+ * @param kind how the tag is implemented
  * @param acceptsBody whether the tag can be called with a body
  * @since 8.0.0
  */
@@ -33,23 +33,32 @@ public record TagLibraryIndexEntry(String namespace, String tagName, String tagL
 
     /**
      * How a tag is implemented.
+     *
+     * <p>No call-site decision turns on this. A resolved call is compiled into an invocation that
+     * selects the tag by name when it runs, and a closure answers to a name as readily as a method
+     * does, so both forms are compiled the same way.
+     *
+     * <p>It is recorded because it is the difference between a tag a caller could one day bind to a
+     * signature and one that could never carry a signature to bind to. Binding to a specific method
+     * is not part of this release; recording the distinction now means the descriptor format does not
+     * have to change when it is.
      */
     public enum Kind {
 
         /**
-         * A method, which carries a signature and so can be bound when a caller is compiled.
+         * A method, which carries a signature.
          */
         METHOD,
 
         /**
-         * A {@code Closure} field, the deprecated form. It carries no signature, so a call to it
-         * cannot be bound when the caller is compiled and is dispatched dynamically.
+         * A {@code Closure} field, the deprecated form, which carries none.
          */
         LEGACY_CLOSURE
     }
 
     /**
-     * @return true when a call to this tag can be compiled into a direct invocation
+     * @return true when the tag carries a signature a caller could be bound to. Not consulted when
+     *         deciding whether to compile a call: see {@link Kind}.
      */
     public boolean isBindable() {
         return kind == Kind.METHOD;

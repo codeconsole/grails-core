@@ -2471,6 +2471,38 @@ The methods that performed the installation are deprecated or removed:
 `TagLibraryMetaUtils.methodMissingForTagLib` is not deprecated — it is the dynamic dispatch path a call
 into an undescribed namespace still takes.
 
+==== A Method-Declared Tag Called Without a Namespace Returns Its Output
+
+A class that can call tags but is not a tag library — a controller — reaches a tag written without a
+namespace through `methodMissing` on the `TagLibraryInvoker` trait. That used to end in a direct call
+on the tag library bean. For a tag declared as a closure this made no difference, because the call
+landed on a generated wrapper that captured output anyway; for one declared as a method there was no
+wrapper, so the method ran with nothing captured and its own return value came back.
+
+Both forms now capture, so a method-declared tag returns what it wrote:
+
+[source,groovy]
+----
+class ReportTagLib {
+    static namespace = 'g'
+
+    def summary(Map attrs) {
+        out << 'the output'
+        'the return value'      // <1>
+    }
+}
+
+class ReportController {
+    def index() {
+        String result = summary(id: 1)   // 'the output', previously 'the return value'
+    }
+}
+----
+<1> a tag's return value is not what a caller receives; what it writes is
+
+A tag called *with* its namespace, and any tag called from a GSP, already captured, so only an
+unqualified call from a controller to a method-declared tag changes.
+
 ==== A Tag the Runtime Cannot Resolve Reports a Different Exception
 
 A call compiled into a direct invocation reports a tag the runtime has not registered as a

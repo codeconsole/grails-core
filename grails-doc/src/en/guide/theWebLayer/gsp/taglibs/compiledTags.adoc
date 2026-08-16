@@ -209,6 +209,28 @@ metaprogramming.
 Both settings are read from the build, not from a system property, so changing either recompiles what
 depends on it.
 
+===== When strict checking can be used
+
+Strict checking asks whether a tag is in the index, and the index holds what the tag libraries on the
+classpath described. It cannot tell a namespace that is fully described from one that several jars
+contribute to and only some of them described.
+
+That matters most for `g`. Grails describes its own tag libraries, so `g` is always partly described;
+a plugin built against an earlier version of Grails, or one that declares its tag libraries by
+convention without applying the GSP Gradle plugin, contributes tags to `g` with no description. Under
+`strictTags` every call to one of those tags is reported, and the code is correct.
+
+So enable `strictTags` when every tag library the application uses is described — its own, and its
+plugins'. Where one is not, the only remedy is to name its namespace in `dynamicTagNamespaces`, which
+switches compile-time resolution off for that namespace entirely. For `g` that means giving up the
+feature where it is worth the most, so an application depending on an undescribed third-party tag
+library in `g` is better off leaving `strictTags` alone and keeping the default, which reports nothing
+and resolves what it can.
+
+An index generated from source before compilation records what it could not describe, and no tag in a
+namespace it failed to read completely is ever reported. That covers what one build could not read
+about itself; it cannot cover what another project never wrote down.
+
 ==== Where the description lives
 
 Each tag library contributes one file under `META-INF/grails/taglibs` in the artifact it is packaged

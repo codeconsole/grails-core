@@ -18,6 +18,7 @@
  */
 package org.grails.taglib.index;
 
+import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
@@ -25,8 +26,12 @@ import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.io.Writer;
+import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel;
+import java.nio.channels.FileLock;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.StandardOpenOption;
 import java.util.Collection;
 import java.util.Map;
 import java.util.Properties;
@@ -44,6 +49,11 @@ import java.util.TreeSet;
  * @since 8.0.0
  */
 public final class TagLibraryIndexWriter {
+
+    /**
+     * Serialises the read-modify-write of the shared manifest across threads of this JVM.
+     */
+    private static final Object MANIFEST_MONITOR = new Object();
 
     private TagLibraryIndexWriter() {
     }
@@ -128,15 +138,53 @@ public final class TagLibraryIndexWriter {
         descriptor.setProperty(TagLibraryIndex.TAGS_KEY, encoded.toString());
         store(new File(indexDirectory, className + ".properties"), descriptor);
 
-        File manifest = new File(indexDirectory, "index.properties");
-        Properties names = new Properties();
-        if (manifest.isFile()) {
-            try (InputStream in = Files.newInputStream(manifest.toPath())) {
-                names.load(new InputStreamReader(in, StandardCharsets.UTF_8));
+        addToManifest(new File(indexDirectory, "index.properties"), className);
+    }
+
+    /**
+     * Adds one class to the manifest naming every described tag library.
+     *
+     * <p>The manifest is shared by every tag library compiled into the same directory, and adding to
+     * it is a read, a change and a write back. Two compilations writing to one directory at the same
+     * time - joint compilation, or parallel tasks sharing an output - would otherwise interleave and
+     * one would write back a copy that never saw the other's entry. The lost entry is silent: the
+     * descriptor is there, nothing names it, so its tags simply resolve dynamically for evermore.
+     *
+     * <p>Guarded twice, because the two cases are different. The monitor covers threads in this JVM,
+     * which is what joint compilation and a parallel Gradle task within one daemon are. The file lock
+     * covers a second process, which a forked compiler or a second daemon is; it is advisory and only
+     * held for the read-modify-write.
+     *
+     * @param manifest the manifest to add to
+     * @param className the tag library to name in it
+     * @throws IOException if the manifest cannot be read or written
+     */
+    private static void addToManifest(File manifest, String className) throws IOException {
+        synchronized (MANIFEST_MONITOR) {
+            try (FileChannel channel = FileChannel.open(manifest.toPath(),
+                    StandardOpenOption.CREATE, StandardOpenOption.READ, StandardOpenOption.WRITE)) {
+                try (FileLock ignored = channel.lock()) {
+                    Properties names = new Properties();
+                    channel.position(0);
+                    // Reads the channel rather than reopening the file, so the content read is the
+                    // content the lock is held over.
+                    byte[] existing = new byte[(int) channel.size()];
+                    ByteBuffer buffer = ByteBuffer.wrap(existing);
+                    while (buffer.hasRemaining() && channel.read(buffer) >= 0) {
+                        // read until the buffer is filled or the channel is exhausted
+                    }
+                    if (existing.length > 0) {
+                        names.load(new InputStreamReader(new ByteArrayInputStream(existing),
+                                StandardCharsets.UTF_8));
+                    }
+                    names.setProperty(className, "");
+                    byte[] updated = render(names).getBytes(StandardCharsets.UTF_8);
+                    channel.truncate(0);
+                    channel.position(0);
+                    channel.write(ByteBuffer.wrap(updated));
+                }
             }
         }
-        names.setProperty(className, "");
-        store(manifest, names);
     }
 
     /**
@@ -169,16 +217,23 @@ public final class TagLibraryIndexWriter {
     }
 
     private static void store(File file, Properties properties) throws IOException {
-        // Properties.store stamps a comment with the current time, which would make output differ
-        // between builds; the entries are written directly instead to keep the descriptor stable.
+        try (OutputStream out = Files.newOutputStream(file.toPath());
+             Writer writer = new OutputStreamWriter(out, StandardCharsets.UTF_8)) {
+            writer.write(render(properties));
+        }
+    }
+
+    /**
+     * @param properties the entries to write
+     * @return the properties as text, sorted and without the timestamp comment {@code Properties.store}
+     *         stamps in, which would make otherwise identical builds differ
+     */
+    private static String render(Properties properties) {
         StringBuilder text = new StringBuilder();
         for (String key : new TreeSet<>(properties.stringPropertyNames())) {
             text.append(escape(key)).append('=').append(escape(properties.getProperty(key))).append('\n');
         }
-        try (OutputStream out = Files.newOutputStream(file.toPath());
-             Writer writer = new OutputStreamWriter(out, StandardCharsets.UTF_8)) {
-            writer.write(text.toString());
-        }
+        return text.toString();
     }
 
     private static String escape(String value) {
