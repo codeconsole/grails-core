@@ -69,4 +69,33 @@ class GrailsNativeImageDefaultsSpec extends GradleSpecification {
         then: 'a classic call site defines a class as it runs, which an image has no way to do'
             result.output.contains('INDY=true')
     }
+
+    void 'the pages are recorded after they are compiled, not before'() {
+        given: 'an application with pages, which are half of what an image has to be told about'
+            setupTestResourceProject('native-metadata-ordering')
+
+        when: 'the archive is built'
+            BuildResult result = executeTask('bootJar', ['--dry-run'])
+
+        then: 'the task that reads the compiled pages runs after the task that compiles them'
+            int compiled = result.output.indexOf(':compileGroovyPages')
+            int recorded = result.output.indexOf(':generateNativeMetadata')
+            compiled >= 0
+            recorded >= 0
+            compiled < recorded
+    }
+
+    void 'the recorded metadata is not reached through processResources'() {
+        given: 'which would put it ahead of the pages, since compiling those runs the classes task'
+            setupTestResourceProject('native-metadata-ordering')
+
+        when:
+            BuildResult result = executeTask('inspectMetadataWiring')
+
+        then: 'so the resource task no longer consumes it'
+            result.output.contains('PROCESS_RESOURCES_DEPENDS_ON_METADATA=false')
+
+        and: 'and the archive does, which is built once the pages exist'
+            result.output.contains('BOOTJAR_DEPENDS_ON_METADATA=true')
+    }
 }

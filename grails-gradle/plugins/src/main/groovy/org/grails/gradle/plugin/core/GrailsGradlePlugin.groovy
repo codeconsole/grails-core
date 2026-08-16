@@ -55,6 +55,7 @@ import org.gradle.api.provider.Provider
 import org.gradle.api.tasks.AbstractCopyTask
 import org.gradle.api.tasks.JavaExec
 import org.gradle.api.tasks.SourceSet
+import org.gradle.api.tasks.bundling.Jar
 import org.gradle.api.tasks.TaskContainer
 import org.gradle.api.tasks.TaskProvider
 import org.gradle.api.tasks.compile.GroovyCompile
@@ -94,6 +95,9 @@ import javax.inject.Inject
 class GrailsGradlePlugin implements Plugin<Project> {
 
     private static final String NATIVE_IMAGE_PLUGIN = 'org.graalvm.buildtools.native'
+
+    /** The plugin that compiles the pages, which are half of what a native image has to be told about. */
+    private static final String GSP_PLUGIN = 'org.apache.grails.gradle.grails-gsp'
 
     private static final String SPRING_BOOT_PLUGIN = 'org.springframework.boot'
 
@@ -1385,8 +1389,9 @@ ${importStatements}
             task.group = BasePlugin.BUILD_GROUP
             task.description = 'Records the application classes and pages a native image must keep'
             // The classes directory is written by more than one task, so the dependency has to be
-            // stated. It is stated against the compilation rather than the classes task, because
-            // the classes task also runs processResources, which consumes this task's output.
+            // stated. Against the compilations rather than the classes task, because what reads
+            // this task's output has to run after the pages are compiled, and compiling the pages
+            // runs the classes task -- see where the output is consumed, below.
             task.dependsOn(project.tasks.named(sourceSet.compileJavaTaskName))
             // Asked of the names rather than of the tasks: findByName creates the task in order to
             // answer whether it exists, so a build pays for one it may not have depended on.
@@ -1407,8 +1412,47 @@ ${importStatements}
             task.outputDirectory.set(project.layout.buildDirectory.dir('generated-resources/grails-native'))
         }
 
-        project.tasks.named(sourceSet.processResourcesTaskName, ProcessResources).configure { ProcessResources task ->
-            task.from(metadataTask)
+        // The pages are half of what this records, and they are compiled by compileGroovyPages.
+        project.pluginManager.withPlugin(GSP_PLUGIN) {
+            metadataTask.configure { GenerateNativeMetadataTask task ->
+                task.dependsOn(project.tasks.named('compileGroovyPages'))
+            }
+        }
+
+        // Consumed after the classes exist rather than through processResources.
+        //
+        // processResources looks like the natural home for a generated resource, and it was the
+        // home until it turned out to invert the order this task needs: compileGroovyPages depends
+        // on classes, classes runs processResources, and processResources consuming this task put
+        // it ahead of all three. The pages were therefore compiled after the task that reads them
+        // had already run -- so the page half of the metadata was empty on a clean build and stale
+        // on any other, and an image built from it was missing every page. Nothing failed; the
+        // pages were simply not found at runtime.
+        //
+        // No ordering satisfies both directions, so the output goes to what runs after the pages
+        // are compiled: the archive, and the image being built from it. Adding it to the source
+        // set output instead would put the cycle back, because the classes task builds those.
+        project.tasks.withType(Jar).configureEach { Jar jar ->
+            if (jar.name == 'bootJar') {
+                jar.from(metadataTask) { CopySpec spec -> spec.into('BOOT-INF/classes') }
+            }
+        }
+        addToNativeImageClasspath(project, metadataTask)
+    }
+
+    /**
+     * Puts the recorded metadata on the classpath the image is built from.
+     *
+     * <p>Dynamically, because the plugin that defines the extension is not on this plugin's compile
+     * classpath -- and it is only asked for inside {@code withPlugin}, so an application that never
+     * builds an image never reaches it.</p>
+     */
+    @CompileDynamic
+    private static void addToNativeImageClasspath(Project project,
+                                                  TaskProvider<GenerateNativeMetadataTask> metadataTask) {
+        def graalvm = project.extensions.findByName('graalvmNative')
+        graalvm?.binaries?.configureEach { binary ->
+            binary.classpath(metadataTask)
         }
     }
 
