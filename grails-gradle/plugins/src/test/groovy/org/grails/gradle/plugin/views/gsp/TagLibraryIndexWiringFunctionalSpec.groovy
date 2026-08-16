@@ -59,6 +59,37 @@ class TagLibraryIndexWiringFunctionalSpec extends GradleSpecification {
         result.output.contains('PACKAGED_WAITS_FOR_CLASSES=true')
     }
 
+    def "a test resolves tags against the same index as the application"() {
+        given: 'a test source set builds its runtime classpath from the main output, not from the ' +
+                'main runtime classpath, so it does not inherit the index by itself'
+        setupTestResourceProject('taglib-index-wiring')
+
+        when:
+        def result = executeTask('inspectTagLibraryIndexWiring')
+
+        then: 'otherwise a page rendered by a test would resolve against an index missing the ' +
+                'application own tag libraries, which is where a problem would most likely be seen'
+        result.output.contains('TEST_RUNTIME_SEES_PACKAGED=true')
+    }
+
+    def "the build stores and reuses a configuration cache entry"() {
+        given: 'the index tasks read the grails extension through providers, which is only sound if ' +
+                'those values are resolved when the entry is stored rather than at execution'
+        setupTestResourceProject('taglib-index-wiring')
+
+        when: 'stored'
+        def stored = executeTask('classes', ['--configuration-cache'])
+
+        then:
+        assertTaskSuccess('generateTagLibraryIndex', stored)
+
+        when: 'and reused, which is what fails if a Project was captured and serialised'
+        def reused = executeTask('classes', ['--configuration-cache'])
+
+        then:
+        reused.output.contains('Reusing configuration cache')
+    }
+
     def "a project with no tag libraries does not fork the generator"() {
         given: 'the generator is only on the compile classpath of a project that has tag libraries'
         setupTestResourceProject('taglib-index-wiring')

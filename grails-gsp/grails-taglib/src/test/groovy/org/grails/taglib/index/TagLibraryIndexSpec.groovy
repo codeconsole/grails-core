@@ -36,6 +36,15 @@ class TagLibraryIndexSpec extends Specification {
     @TempDir
     Path tempDir
 
+    void 'the format the Gradle plugin writes is the format read here'() {
+        expect: 'the plugin cannot reference these constants, so it restates them and pins them in ' +
+                'TagLibraryIndexFilesSpec; renaming either side without the other fails one of the two'
+        TagLibraryIndex.INDEX_LOCATION == 'META-INF/grails/taglibs/'
+        TagLibraryIndex.SETTINGS_LOCATION == 'META-INF/grails/taglibs/compile-settings.properties'
+        TagLibraryIndex.STRICT_KEY == 'strictTags'
+        TagLibraryIndex.DYNAMIC_NAMESPACES_KEY == 'dynamicTagNamespaces'
+    }
+
     void 'tag libraries in separate jars merge into one namespace'() {
         given:
         URLClassLoader loader = loaderOver(

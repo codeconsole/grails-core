@@ -21,7 +21,6 @@ package grails.artefact
 import groovy.transform.CompileStatic
 import org.codehaus.groovy.runtime.InvokerHelper
 
-import jakarta.annotation.PostConstruct
 
 import org.springframework.web.context.request.RequestAttributes
 
@@ -55,16 +54,6 @@ import org.grails.web.util.GrailsApplicationAttributes
 trait TagLibrary implements WebAttributes, ServletAttributes, TagLibraryInvoker {
 
     private Encoder rawEncoder
-
-    /**
-     * Every tag in every namespace used to be installed onto this tag library's metaclass here, so
-     * that a tag library calling another tag found a method rather than falling through to
-     * methodMissing. Tags are resolved through the tag library lookup instead, so nothing is
-     * installed and no metaclass is initialised on the way to a tag.
-     */
-    @PostConstruct
-    void initializeTagLibrary() {
-    }
 
     Object raw(Object value) {
         Encoder encoder = WithCodecHelper.lookupEncoder(getGrailsApplication(), 'Raw')

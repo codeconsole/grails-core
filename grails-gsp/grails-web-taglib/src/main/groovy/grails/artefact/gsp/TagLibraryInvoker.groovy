@@ -22,7 +22,6 @@ import groovy.transform.CompileStatic
 
 import org.springframework.beans.factory.annotation.Autowired
 
-import grails.util.Environment
 import grails.util.GrailsMetaClassUtils
 import grails.web.api.WebAttributes
 import org.grails.taglib.NamespacedTagDispatcher
@@ -43,7 +42,6 @@ import org.codehaus.groovy.runtime.InvokerHelper
 trait TagLibraryInvoker extends WebAttributes {
 
     private TagLibraryLookup tagLibraryLookup
-    private boolean developmentMode = Environment.isDevelopmentMode()
 
     @Autowired(required = false)
     void setTagLibraryLookup(TagLibraryLookup tagLibraryLookup) {

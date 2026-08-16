@@ -31,6 +31,7 @@ import org.gradle.api.file.FileCollection
 import org.gradle.api.plugins.JavaPluginExtension
 import org.gradle.api.provider.Provider
 import org.gradle.api.tasks.SourceSet
+import org.gradle.api.tasks.SourceSetContainer
 import org.gradle.api.tasks.SourceSetOutput
 import org.gradle.api.tasks.TaskContainer
 import org.gradle.api.tasks.bundling.Jar
@@ -48,6 +49,11 @@ import org.grails.gradle.plugin.util.SourceSets
  */
 @CompileStatic
 class GroovyPagePlugin implements Plugin<Project> {
+
+    /**
+     * The test source sets a Grails project may define, each of which renders pages.
+     */
+    private static final List<String> TEST_SOURCE_SET_NAMES = ['test', 'integrationTest']
 
     @Override
     void apply(Project project) {
@@ -101,12 +107,42 @@ class GroovyPagePlugin implements Plugin<Project> {
     }
 
     /**
+     * The encoding the project's Groovy sources are compiled with, which the generator has to read
+     * them with. Falls back to the generator's own default when the project has not set one.
+     */
+    @CompileDynamic
+    private static Provider<String> resolveCompileEncoding(Project project) {
+        project.provider {
+            Object compile = project.tasks.findByName('compileGroovy')
+            (compile instanceof GroovyCompile) ? ((GroovyCompile) compile).options.encoding : null
+        }
+    }
+
+    /**
      * The Groovy source roots of a source set, which is where a type this project declares is found.
      */
     @CompileDynamic
     private static Set<File> resolveGroovySourceRoots(SourceSet sourceSet) {
         Object groovy = sourceSet?.extensions?.findByName('groovy')
         groovy ? (groovy.srcDirs as Set<File>) : ([] as Set<File>)
+    }
+
+    /**
+     * Puts the packaged index onto the runtime classpath of every test source set, so that a page
+     * rendered by a test resolves its tags against the same index as the same page in production.
+     */
+    @CompileDynamic
+    private static void addPackagedIndexToTestRuntime(Project project, FileCollection packagedTagLibIndex) {
+        SourceSetContainer sourceSets = project.extensions.findByType(SourceSetContainer)
+        if (sourceSets == null) {
+            return
+        }
+        for (String name : TEST_SOURCE_SET_NAMES) {
+            SourceSet sourceSet = sourceSets.findByName(name)
+            if (sourceSet != null) {
+                sourceSet.runtimeClasspath = sourceSet.runtimeClasspath.plus(packagedTagLibIndex)
+            }
+        }
     }
 
     private void configureProject(Project project) {
@@ -144,6 +180,11 @@ class GroovyPagePlugin implements Plugin<Project> {
             index.strictTags.set(resolveStrictTags(project))
             index.dynamicTagNamespaces.set(resolveDynamicTagNamespaces(project))
             index.javaLauncher.convention(launcher)
+            // The generator reads the same sources the compiler will, so it has to decode them the
+            // same way. Left to its own default it would read UTF-8 whatever the project compiles
+            // with, and a tag or namespace containing a non-ASCII character would be misread - which
+            // degrades to dynamic dispatch rather than to an error, so it would not be noticed.
+            index.sourceEncoding.convention(resolveCompileEncoding(project))
         }
 
         // The settings live apart from the descriptors. The descriptors are published; the settings
@@ -209,6 +250,13 @@ class GroovyPagePlugin implements Plugin<Project> {
         if (mainSourceSet != null) {
             mainSourceSet.runtimeClasspath = mainSourceSet.runtimeClasspath.plus(packagedTagLibIndex)
         }
+
+        // A test renders pages too, and a test source set's runtime classpath is built from the main
+        // source set's output rather than from its runtime classpath, so it does not inherit the line
+        // above. Without this a page rendered from a test resolves its tags against an index missing
+        // the application's own tag libraries - which is where a tag resolution problem would most
+        // likely be noticed.
+        addPackagedIndexToTestRuntime(project, packagedTagLibIndex)
 
         // Compiling this project's own controllers and tag libraries has to see the index too, or a
         // call to a tag the same project declares cannot be resolved. The directory joins the compile

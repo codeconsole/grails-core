@@ -310,7 +310,7 @@ public class CompiledTagCallRewriter extends ClassCodeExpressionTransformer {
             return null;
         }
         ArgumentListExpression invocationArgs = new ArgumentListExpression();
-        invocationArgs.addExpression(new MethodCallExpression(VariableExpression.THIS_EXPRESSION,
+        invocationArgs.addExpression(new MethodCallExpression(new VariableExpression("this"),
                 LOOKUP_ACCESSOR, MethodCallExpression.NO_ARGUMENTS));
         invocationArgs.addExpression(new ConstantExpression(namespace));
         invocationArgs.addExpression(new ConstantExpression(tagName));
@@ -339,7 +339,7 @@ public class CompiledTagCallRewriter extends ClassCodeExpressionTransformer {
     }
 
     private Expression outputContext() {
-        return new MethodCallExpression(VariableExpression.THIS_EXPRESSION, OUTPUT_CONTEXT_ACCESSOR,
+        return new MethodCallExpression(new VariableExpression("this"), OUTPUT_CONTEXT_ACCESSOR,
                 MethodCallExpression.NO_ARGUMENTS);
     }
 
@@ -350,7 +350,7 @@ public class CompiledTagCallRewriter extends ClassCodeExpressionTransformer {
     private Expression[] attributesAndBody(TupleExpression tuple) {
         List<Expression> args = tuple.getExpressions();
         Expression noAttributes = new MapExpression();
-        Expression noBody = ConstantExpression.NULL;
+        Expression noBody = new ConstantExpression(null);
         switch (args.size()) {
             case 0:
                 return new Expression[] { noAttributes, noBody };

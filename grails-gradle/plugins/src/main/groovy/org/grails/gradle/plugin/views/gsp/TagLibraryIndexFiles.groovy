@@ -35,16 +35,31 @@ import groovy.transform.CompileStatic
 final class TagLibraryIndexFiles {
 
     /**
-     * Directory holding one descriptor per compiled tag library, matching
-     * {@code TagLibraryIndex.INDEX_LOCATION}.
+     * Directory holding one descriptor per compiled tag library.
+     *
+     * <p>These restate the format {@code org.grails.taglib.index.TagLibraryIndex} owns. They cannot
+     * be shared with it: the generator is forked against the project's compile classpath precisely
+     * because this plugin does not have the framework on its own, so the constants there are not
+     * reachable from here. {@code TagLibraryIndexFilesSpec} asserts the two agree, so a rename on
+     * either side fails a test rather than quietly producing an index nothing reads.
+     *
+     * <p>Held without a trailing separator; {@code TagLibraryIndex.INDEX_LOCATION} carries one
+     * because it resolves classpath resources by concatenation, where this resolves files.
      */
     static final String INDEX_LOCATION = 'META-INF/grails/taglibs'
 
     /**
-     * Where the settings for this compilation are written, matching
+     * Where the settings for this compilation are written, the file part of
      * {@code TagLibraryIndex.SETTINGS_LOCATION}.
      */
     static final String SETTINGS_FILE = 'compile-settings.properties'
+
+    /**
+     * The keys the settings file is written with, matching {@code TagLibraryIndex}.
+     */
+    static final String STRICT_KEY = 'strictTags'
+
+    static final String DYNAMIC_NAMESPACES_KEY = 'dynamicTagNamespaces'
 
     private TagLibraryIndexFiles() {
     }
@@ -77,8 +92,8 @@ final class TagLibraryIndexFiles {
         indexDirectory.mkdirs()
         // Written by hand rather than through Properties.store, which stamps the current time into a
         // comment and would make the output differ between otherwise identical builds.
-        String text = "dynamicTagNamespaces=${new TreeSet<String>(dynamicNamespaces).join(',')}\n" +
-                "strictTags=${strictTags}\n"
+        String text = "${DYNAMIC_NAMESPACES_KEY}=${new TreeSet<String>(dynamicNamespaces).join(',')}\n" +
+                "${STRICT_KEY}=${strictTags}\n"
         new File(indexDirectory, SETTINGS_FILE).setText(text, StandardCharsets.UTF_8.name())
     }
 }

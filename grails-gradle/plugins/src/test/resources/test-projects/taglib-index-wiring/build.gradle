@@ -12,6 +12,7 @@ tasks.register('inspectTagLibraryIndexWiring') {
     def pagesClasspath = tasks.named('compileGroovyPages').get().classpath.files.collect { path(it) }
     def resourceDirs = sourceSets.main.resources.srcDirs.collect { path(it) }
     def runtimePaths = sourceSets.main.runtimeClasspath.files.collect { path(it) }
+    def testRuntimePaths = sourceSets.test.runtimeClasspath.files.collect { path(it) }
     def packaged = tasks.named('packageTagLibraryIndex').get()
     def packagedDeps = packaged.taskDependencies.getDependencies(packaged)*.name
 
@@ -22,6 +23,7 @@ tasks.register('inspectTagLibraryIndexWiring') {
         println "PRE_INDEX_IS_A_RESOURCE=${resourceDirs.any { it.endsWith('/generated/grails-taglibs') }}"
         println "RUNTIME_SEES_PACKAGED=${runtimePaths.any { it.endsWith('/generated/grails-taglibs-packaged') }}"
         println "PACKAGED_WAITS_FOR_CLASSES=${packagedDeps.contains('classes')}"
+        println "TEST_RUNTIME_SEES_PACKAGED=${testRuntimePaths.any { it.endsWith('/generated/grails-taglibs-packaged') }}"
     }
 }
 
