@@ -16,7 +16,7 @@
  *  specific language governing permissions and limitations
  *  under the License.
  */
-package org.grails.plugins.web
+package org.apache.grails.gsp.taglib
 
 import groovy.transform.CompileStatic
 import groovy.util.logging.Slf4j

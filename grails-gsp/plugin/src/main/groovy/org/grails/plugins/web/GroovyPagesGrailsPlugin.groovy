@@ -38,6 +38,7 @@ import grails.util.GrailsUtil
 import grails.util.Metadata
 import grails.web.pages.GroovyPagesUriService
 import org.apache.grails.common.aot.AheadOfTimeProcessing
+import org.apache.grails.gsp.taglib.TagLibBeanDefinitionsPostProcessor
 import org.grails.core.artefact.gsp.TagLibArtefactHandler
 import org.grails.gsp.GroovyPageResourceLoader
 import org.grails.gsp.GroovyPagesTemplateEngine
