@@ -44,8 +44,24 @@ ext {
     doNotCacheTests = System.getenv('DO_NOT_CACHE_TESTS')?.toBoolean()
 }
 
+/** Caps each test fork's view of the machine. See the root build.gradle for the rationale. */
+final class ActiveProcessorCountArgumentProvider implements CommandLineArgumentProvider {
+
+    @Input
+    final int processorCount
+
+    ActiveProcessorCountArgumentProvider(int availableProcessorCount, int maxWorkerCount) {
+        this.processorCount = Math.max(2, (availableProcessorCount / Math.max(1, maxWorkerCount)) as int)
+    }
+
+    @Override
+    Iterable<String> asArguments() {
+        ["-XX:ActiveProcessorCount=$processorCount".toString()]
+    }
+}
+
 allprojects {
-    tasks.withType(Test).configureEach { Task testTask ->
+    tasks.withType(Test).configureEach { testTask ->
         testTask.dependsOn(
                 gradle.includedBuild('grails-core').task(':publishAllPublicationsToTestCaseMavenRepoRepository'),
                 gradle.includedBuild('grails-gradle').task(':publishAllPublicationsToTestCaseMavenRepoRepository')
@@ -55,6 +71,8 @@ allprojects {
         // without --rerun-tasks (and without recompiling everything else).
         testTask.outputs.cacheIf { !doNotCacheTests }
         testTask.outputs.upToDateWhen { !doNotCacheTests }
+        testTask.jvmArgumentProviders.add(new ActiveProcessorCountArgumentProvider(
+                Runtime.runtime.availableProcessors(), gradle.startParameter.maxWorkerCount))
     }
 }
 
