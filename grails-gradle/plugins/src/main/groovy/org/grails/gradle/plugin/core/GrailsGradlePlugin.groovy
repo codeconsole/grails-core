@@ -1310,9 +1310,11 @@ ${importStatements}
                 task.description = 'Extracts the application, which is the form the cache is read against'
                 task.onlyIf { extension.enabled.get() }
                 task.archiveFile.set(archiveFileOf(bootJar))
-                // Mapped rather than read, so the JDK the toolchain resolves to is not provisioned
-                // by every build that merely reads this project.
-                task.javaExecutable.set(launcher.map { JavaLauncher java -> java.executablePath.asFile.absolutePath })
+                // The launcher rather than its path: this task is cacheable, and a path is where a
+                // JDK happens to live on the machine that ran the build. Set as the provider it is,
+                // so the toolchain is not resolved -- and a JDK not provisioned -- by every build
+                // that merely reads this project.
+                task.javaLauncher.set(launcher)
                 task.destination.set(application)
             }
 

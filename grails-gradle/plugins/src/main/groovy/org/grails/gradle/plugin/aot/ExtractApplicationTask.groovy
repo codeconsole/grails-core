@@ -27,12 +27,13 @@ import org.gradle.api.file.FileSystemOperations
 import org.gradle.api.file.RegularFileProperty
 import org.gradle.api.provider.Property
 import org.gradle.api.tasks.CacheableTask
-import org.gradle.api.tasks.Input
 import org.gradle.api.tasks.InputFile
+import org.gradle.api.tasks.Nested
 import org.gradle.api.tasks.OutputDirectory
 import org.gradle.api.tasks.PathSensitive
 import org.gradle.api.tasks.PathSensitivity
 import org.gradle.api.tasks.TaskAction
+import org.gradle.jvm.toolchain.JavaLauncher
 import org.gradle.process.ExecOperations
 
 /**
@@ -57,11 +58,17 @@ abstract class ExtractApplicationTask extends DefaultTask {
     abstract RegularFileProperty getArchiveFile()
 
     /**
-     * The java to unpack with. Its {@code jarmode} does the extracting, so it is the JDK the
+     * The Java runtime to unpack with. Its {@code jarmode} does the extracting, so it is the JDK the
      * application was built for rather than whichever one is running Gradle.
+     *
+     * <p>Nested rather than the path as an input. A path is where a JDK happens to live on the
+     * machine that ran the build, so declaring it as an input puts that machine into this task's
+     * cache key -- and a cacheable task that can only ever be hit on the machine that filled it is
+     * not one. Nested fingerprints what the launcher says about itself, which is the part that
+     * changes the result.</p>
      */
-    @Input
-    abstract Property<String> getJavaExecutable()
+    @Nested
+    abstract Property<JavaLauncher> getJavaLauncher()
 
     @OutputDirectory
     abstract DirectoryProperty getDestination()
@@ -80,7 +87,8 @@ abstract class ExtractApplicationTask extends DefaultTask {
         fileSystemOperations.delete { spec -> spec.delete(target) }
         target.mkdirs()
         execOperations.exec { spec ->
-            spec.commandLine(javaExecutable.get(), '-Djarmode=tools', '-jar',
+            spec.commandLine(javaLauncher.get().executablePath.asFile.absolutePath,
+                    '-Djarmode=tools', '-jar',
                     archiveFile.get().asFile.absolutePath, 'extract',
                     '--destination', target.absolutePath)
         }
