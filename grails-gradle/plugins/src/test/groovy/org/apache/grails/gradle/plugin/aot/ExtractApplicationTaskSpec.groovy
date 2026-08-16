@@ -16,7 +16,7 @@
  *  specific language governing permissions and limitations
  *  under the License.
  */
-package org.grails.gradle.plugin.aot
+package org.apache.grails.gradle.plugin.aot
 
 import org.gradle.api.tasks.CacheableTask
 import org.gradle.api.tasks.Input

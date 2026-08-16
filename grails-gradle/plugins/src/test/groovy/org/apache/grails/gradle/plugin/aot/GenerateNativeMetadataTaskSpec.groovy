@@ -14,7 +14,7 @@
  *  See the License for the specific language governing permissions and
  *  limitations under the License.
  */
-package org.grails.gradle.plugin.aot
+package org.apache.grails.gradle.plugin.aot
 
 import java.util.jar.JarEntry
 import java.util.jar.JarOutputStream

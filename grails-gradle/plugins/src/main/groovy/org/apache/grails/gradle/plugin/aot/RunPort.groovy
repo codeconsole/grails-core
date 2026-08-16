@@ -16,7 +16,7 @@
  *  specific language governing permissions and limitations
  *  under the License.
  */
-package org.grails.gradle.plugin.aot
+package org.apache.grails.gradle.plugin.aot
 
 import groovy.transform.CompileStatic
 import org.gradle.api.GradleException
