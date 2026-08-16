@@ -19,8 +19,12 @@
 package grails.gsp.taglib.compiler;
 
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+
+import groovy.lang.GroovySystem;
+import groovy.lang.MetaMethod;
 
 import org.codehaus.groovy.ast.AnnotationNode;
 import org.codehaus.groovy.ast.ClassCodeExpressionTransformer;
@@ -84,10 +88,17 @@ public class CompiledTagCallRewriter extends ClassCodeExpressionTransformer {
     private static final String DEFAULT_NAMESPACE = "g";
 
     /**
-     * Names the dispatch treats as its own before it ever considers a tag, so an unqualified call to
-     * one of them is not a tag call however the index reads.
+     * Names an unqualified call never reaches a tag through, however the index reads.
+     *
+     * <p>Two kinds. {@code body} and {@code render} the dispatch treats as its own before it ever
+     * considers a tag. The rest is every name the metaclass answers to for an arbitrary receiver —
+     * {@code DefaultGroovyMethods} and any extension module on the compiler's classpath. Those are
+     * real methods on every object: an unqualified {@code each { }} or {@code with { }} reached one
+     * directly and never went near {@code methodMissing}, so a tag library declaring a tag of the same
+     * name must not capture the call. Nothing here restricts a call that names its namespace, where
+     * the source has said which tag library it means.
      */
-    private static final Set<String> RESERVED_NAMES = Set.of("body", "render");
+    private static final Set<String> RESERVED_NAMES = reservedNames();
 
     private static final String REWRITTEN_MARKER = CompiledTagCallRewriter.class.getName();
 
@@ -487,6 +498,25 @@ public class CompiledTagCallRewriter extends ClassCodeExpressionTransformer {
             }
         }
         return false;
+    }
+
+    /**
+     * Collects the names an unqualified call must never be rewritten into a tag invocation for.
+     *
+     * <p>The metaclass of {@code Object} answers for every {@code DefaultGroovyMethods} method that
+     * applies to any receiver, and for every extension module registered on the classpath compiling
+     * this source, so asking it is the same question the runtime would have asked. Erring towards
+     * reserving a name costs an optimisation; failing to reserve one silently sends a call somewhere
+     * the author did not write.
+     */
+    private static Set<String> reservedNames() {
+        Set<String> names = new HashSet<>();
+        names.add("body");
+        names.add("render");
+        for (MetaMethod method : GroovySystem.getMetaClassRegistry().getMetaClass(Object.class).getMetaMethods()) {
+            names.add(method.getName());
+        }
+        return Set.copyOf(names);
     }
 
     /**
