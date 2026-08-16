@@ -18,6 +18,7 @@
  */
 package org.grails.datastore.gorm.events
 
+import org.springframework.context.ApplicationContext
 import org.springframework.context.ApplicationListener
 import org.springframework.context.event.ContextRefreshedEvent
 import org.springframework.context.support.GenericApplicationContext
@@ -76,5 +77,39 @@ class ConfigurableApplicationContextEventPublisherSpec extends Specification {
 
         then:
             publisher.applicationContext.is(context)
+    }
+
+    void 'a context that cannot be configured is declined rather than thrown out of the callback'() {
+        given: 'setApplicationContext is the container calling in, so what it throws comes out of ' +
+                'the container rather than out of anything this was asked to do'
+            def publisher = new ConfigurableApplicationContextEventPublisher()
+
+        when:
+            publisher.setApplicationContext(Mock(ApplicationContext))
+
+        then:
+            noExceptionThrown()
+
+        and: 'and nothing was taken from it'
+            publisher.applicationContext == null
+    }
+
+    void 'a publisher that was never given a context says so rather than failing as a null'() {
+        given: 'which is what happens where the bean was registered in a plain bean factory: the ' +
+                'callback that completes it is applied by a context, so it never runs'
+            def publisher = new ConfigurableApplicationContextEventPublisher()
+
+        when:
+            publisher.publishEvent(new ContextRefreshedEvent(context))
+
+        then: 'rather than a NullPointerException from inside GORM saying nothing about why'
+            IllegalStateException e = thrown()
+            e.message.contains('ConfigurableApplicationContext')
+
+        when:
+            publisher.addApplicationListener({ event -> } as ApplicationListener)
+
+        then:
+            thrown(IllegalStateException)
     }
 }
