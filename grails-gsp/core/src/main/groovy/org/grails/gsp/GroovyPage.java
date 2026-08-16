@@ -30,6 +30,7 @@ import java.util.Set;
 import groovy.lang.Binding;
 import groovy.lang.Closure;
 import groovy.lang.GroovyObject;
+import groovy.lang.MissingMethodException;
 import groovy.lang.Script;
 import org.codehaus.groovy.runtime.InvokerHelper;
 
@@ -321,10 +322,25 @@ public abstract class GroovyPage extends Script {
      * @param name the tag name
      * @param args the arguments the tag was called with
      * @return whatever the tag produces
+     * @throws MissingMethodException when there is no tag library lookup to resolve the name against
      */
     public Object methodMissing(String name, Object args) {
+        if (gspTagLibraryLookup == null) {
+            // Without a lookup there is nothing to resolve the name against, which is a missing
+            // method. Dispatching anyway arrives at the same answer, but only because a dynamic call
+            // on a null receiver happens to yield no tag library rather than because anything says
+            // so; this states the contract for a field documented as null before initialisation.
+            throw new MissingMethodException(name, getClass(), makeArgumentArray(args));
+        }
         return TagLibraryMetaUtils.methodMissingForTagLib(getMetaClass(), getClass(), gspTagLibraryLookup,
                 DEFAULT_NAMESPACE, name, args, false);
+    }
+
+    private static Object[] makeArgumentArray(Object args) {
+        if (args == null) {
+            return new Object[0];
+        }
+        return args instanceof Object[] ? (Object[]) args : new Object[] { args };
     }
 
     protected Object resolveProperty(String property) {
