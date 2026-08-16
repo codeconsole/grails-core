@@ -27,9 +27,11 @@ import org.codehaus.groovy.control.CompilePhase
 import org.codehaus.groovy.control.SourceUnit
 import org.codehaus.groovy.transform.ASTTransformation
 import org.codehaus.groovy.transform.GroovyASTTransformation
+import org.codehaus.groovy.transform.TransformWithPriority
 
 import grails.artefact.gsp.TagLibraryInvoker
 import grails.gsp.taglib.compiler.CompiledTagCallRewriter
+import org.apache.grails.common.compiler.GroovyTransformOrder
 import org.grails.taglib.index.TagLibraryIndex
 
 /**
@@ -42,13 +44,14 @@ import org.grails.taglib.index.TagLibraryIndex
  * reaches them through {@code GroovyPage} rather than through the trait, so it is matched separately.
  *
  * <p>Runs after trait injection, since whether a class can call tags is only settled once its traits
- * have been applied.
+ * have been applied. That ordering is declared rather than left to the default a transform without a
+ * priority gets, so a transform added later cannot quietly displace it.
  *
  * @since 8.0.0
  */
 @CompileStatic
 @GroovyASTTransformation(phase = CompilePhase.CANONICALIZATION)
-class CompiledTagCallTransformation implements ASTTransformation {
+class CompiledTagCallTransformation implements ASTTransformation, TransformWithPriority {
 
     private static final ClassNode TAG_LIBRARY_INVOKER = ClassHelper.make(TagLibraryInvoker)
 
@@ -94,5 +97,10 @@ class CompiledTagCallTransformation implements ASTTransformation {
             }
         }
         false
+    }
+
+    @Override
+    int priority() {
+        GroovyTransformOrder.COMPILED_TAG_CALL_ORDER
     }
 }
