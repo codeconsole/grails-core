@@ -1312,7 +1312,12 @@ ${importStatements}
                 // changes that input and the task can never be up to date -- every build would run
                 // the application again to record what the last one already recorded.
                 Provider<Directory> beside = project.layout.buildDirectory.dir('aot-cache')
-                task.cacheFile.set(beside.map { Directory dir -> dir.file("${project.name}.aot") })
+                // Read here rather than inside the closure below. A provider is queried when the
+                // property is finalized or the task runs, so a closure that reaches through
+                // project carries the project into the task's state -- which the configuration
+                // cache refuses. The name is a string by then, which it does not mind.
+                String cacheName = project.name
+                task.cacheFile.set(beside.map { Directory dir -> dir.file("${cacheName}.aot") })
                 task.metadataFile.set(beside.map { Directory dir -> dir.file('aot-cache.properties') })
                 task.javaExecutable.set(launcher.map { JavaLauncher java -> java.executablePath.asFile.absolutePath })
                 // Recorded from the JDK that will run the training, not the one running the build.
@@ -1383,8 +1388,10 @@ ${importStatements}
             // stated. It is stated against the compilation rather than the classes task, because
             // the classes task also runs processResources, which consumes this task's output.
             task.dependsOn(project.tasks.named(sourceSet.compileJavaTaskName))
+            // Asked of the names rather than of the tasks: findByName creates the task in order to
+            // answer whether it exists, so a build pays for one it may not have depended on.
             ['compileGroovy', 'copyAstClasses'].each { String name ->
-                if (project.tasks.findByName(name)) {
+                if (project.tasks.names.contains(name)) {
                     task.dependsOn(project.tasks.named(name))
                 }
             }
