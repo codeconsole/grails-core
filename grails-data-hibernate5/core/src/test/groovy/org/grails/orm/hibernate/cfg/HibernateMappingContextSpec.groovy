@@ -18,17 +18,15 @@
  */
 package org.grails.orm.hibernate.cfg
 
+import spock.lang.Specification
+
 import grails.gorm.annotation.Entity
 import org.grails.datastore.mapping.engine.types.AbstractMappingAwareCustomTypeMarshaller
 import org.grails.datastore.mapping.model.PersistentEntity
 import org.grails.datastore.mapping.model.PersistentProperty
 import org.grails.datastore.mapping.model.ValueGenerator
 import org.grails.orm.hibernate.connections.HibernateConnectionSourceSettings
-import spock.lang.Specification
 
-/**
- * Created by graemerocher on 07/10/2016.
- */
 class HibernateMappingContextSpec extends Specification {
 
     void "test entity with custom id generator"() {
@@ -80,6 +78,15 @@ class HibernateMappingContextSpec extends Specification {
         entity.getPropertyByName("name").mapping.mappedForm.nullable
     }
 
+    void "composite id components are nullable by default"() {
+        when:
+        def entity = new HibernateMappingContext().addPersistentEntity(MappingContextCompositeIdEntity)
+
+        then:
+        entity.getPropertyByName("tenantId").mapping.mappedForm.nullable
+        entity.getPropertyByName("code").mapping.mappedForm.nullable
+    }
+
     void "default nullable can be disabled"() {
         given:
         def settings = new HibernateConnectionSourceSettings()
@@ -121,6 +128,16 @@ class MappingContextWildcardMappedEntity {
 
     static mapping = {
         '*' cache: true
+    }
+}
+
+@Entity
+class MappingContextCompositeIdEntity {
+    String tenantId
+    String code
+
+    static mapping = {
+        id composite: ['tenantId', 'code']
     }
 }
 

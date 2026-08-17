@@ -18,21 +18,22 @@
  */
 package org.grails.orm.hibernate.cfg
 
+import org.springframework.validation.Errors
+
 import grails.gorm.annotation.Entity
 import grails.gorm.hibernate.HibernateEntity
 import grails.gorm.tests.HibernateGormDatastoreSpec
 import grails.gorm.transactions.Rollback
+import org.grails.datastore.mapping.core.connections.ConnectionSource
 import org.grails.datastore.mapping.engine.types.AbstractMappingAwareCustomTypeMarshaller
 import org.grails.datastore.mapping.model.PersistentEntity
 import org.grails.datastore.mapping.model.PersistentProperty
 import org.grails.datastore.mapping.model.ValueGenerator
 import org.grails.datastore.mapping.model.config.JpaMappingConfigurationStrategy
 import org.grails.orm.hibernate.cfg.domainbinding.hibernate.GrailsHibernatePersistentEntity
-import org.grails.orm.hibernate.cfg.domainbinding.hibernate.HibernatePersistentProperty
 import org.grails.orm.hibernate.cfg.domainbinding.hibernate.GrailsJpaMappingConfigurationStrategy
+import org.grails.orm.hibernate.cfg.domainbinding.hibernate.HibernatePersistentProperty
 import org.grails.orm.hibernate.connections.HibernateConnectionSourceSettings
-import org.springframework.validation.Errors
-import org.grails.datastore.mapping.core.connections.ConnectionSource
 
 class HibernateMappingContextSpec extends HibernateGormDatastoreSpec {
 
@@ -43,7 +44,8 @@ class HibernateMappingContextSpec extends HibernateGormDatastoreSpec {
                 MappingContextAddress,
                 MappingContextNullableByDefaultEntity,
                 MappingContextConstrainedEntity,
-                MappingContextWildcardMappedEntity
+                MappingContextWildcardMappedEntity,
+                MappingContextCompositeIdEntity
         )
     }
 
@@ -120,6 +122,15 @@ class HibernateMappingContextSpec extends HibernateGormDatastoreSpec {
     void "mappingContext is a HibernateMappingContext"() {
         expect:
         mappingContext instanceof HibernateMappingContext
+    }
+
+    void "composite id components are nullable by default"() {
+        given:
+        PersistentEntity entity = mappingContext.getPersistentEntity(MappingContextCompositeIdEntity.name)
+
+        expect:
+        entity.getPropertyByName('tenantId').nullable
+        entity.getPropertyByName('code').nullable
     }
 
     @Rollback
@@ -299,6 +310,16 @@ class MappingContextWildcardMappedEntity implements HibernateEntity<MappingConte
 
     static mapping = {
         '*' cache: true
+    }
+}
+
+@Entity
+class MappingContextCompositeIdEntity implements HibernateEntity<MappingContextCompositeIdEntity> {
+    String tenantId
+    String code
+
+    static mapping = {
+        id composite: ['tenantId', 'code']
     }
 }
 

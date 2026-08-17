@@ -20,20 +20,23 @@ package grails.web.databinding
 
 import groovy.transform.Sortable
 
+import spock.lang.Issue
+import spock.lang.Specification
+import spock.lang.Unroll
+
+import org.springframework.context.support.StaticMessageSource
+
 import grails.databinding.BindUsing
 import grails.databinding.BindingFormat
 import grails.databinding.DataBindingSource
 import grails.databinding.SimpleMapDataBindingSource
+import grails.databinding.converters.ValueConverter
 import grails.databinding.errors.BindingError
 import grails.databinding.events.DataBindingListenerAdapter
 import grails.persistence.Entity
 import grails.testing.gorm.DataTest
 import grails.validation.DeferredBindingActions
 import grails.validation.Validateable
-import org.springframework.context.support.StaticMessageSource
-import spock.lang.Issue
-import spock.lang.Specification
-import spock.lang.Unroll
 
 class GrailsWebDataBinderSpec extends Specification implements DataTest {
 
@@ -44,7 +47,8 @@ class GrailsWebDataBinderSpec extends Specification implements DataTest {
     void setupSpec() {
         mockDomains(
             AssociationBindingAuthor, AssociationBindingBook, AssociationBindingPage, Author, Child,
-            CollectionContainer, DataBindingBook, Fidget, Foo, Parent, Publication, Publisher, Team, Widget
+            BinderNullabilityEntity, CollectionContainer, DataBindingBook, Fidget, Foo, Parent, Publication,
+            Publisher, Team, Widget
         )
     }
 
@@ -54,6 +58,7 @@ class GrailsWebDataBinderSpec extends Specification implements DataTest {
     
     void cleanup() {
         Locale.setDefault(defaultLocale)
+        binder.convertEmptyStringsToNull = true
     }
 
     void 'Test binding an invalid String to an object reference does not result in an empty instance being bound'() {
@@ -1129,6 +1134,38 @@ class GrailsWebDataBinderSpec extends Specification implements DataTest {
         afterBindingArgs[0]['propertyName'] == 'someNumber'
     }
     
+    void 'blank binding errors respect domain property nullability'() {
+
+        given:
+        binder.convertEmptyStringsToNull = false
+        binder.registerConverter(new ValueConverter() {
+            boolean canConvert(Object value) {
+                value instanceof String
+            }
+
+            Object convert(Object value) {
+                throw new IllegalArgumentException('Blank status')
+            }
+
+            Class<?> getTargetType() {
+                BinderNullabilityStatus
+            }
+        })
+        def entity = new BinderNullabilityEntity()
+
+        when:
+        binder.bind(entity, new SimpleMapDataBindingSource(
+            optionalStatus: '',
+            requiredStatus: ''
+        ))
+
+        then:
+        entity.hasErrors()
+        entity.errors.errorCount == 1
+        entity.errors.getFieldError('requiredStatus').code == 'typeMismatch'
+        entity.errors.getFieldError('optionalStatus') == null
+    }
+
     void 'Test binding a List<String>'() {
 
         given:
@@ -1754,6 +1791,10 @@ class Publication {
     String title
     Author author
 
+    static constraints = {
+        publisher nullable: true
+    }
+
     @SuppressWarnings('unused')
     static belongsTo = [publisher: Publisher]
 }
@@ -1915,6 +1956,20 @@ class PrimitiveContainer implements Validateable {
 @SuppressWarnings('unused')
 class SomeValidateableClass implements Validateable {
     Integer someNumber
+}
+
+@Entity
+class BinderNullabilityEntity {
+    BinderNullabilityStatus optionalStatus
+    BinderNullabilityStatus requiredStatus
+
+    static constraints = {
+        requiredStatus nullable: false
+    }
+}
+
+enum BinderNullabilityStatus {
+    ACTIVE
 }
 
 @Entity
