@@ -33,13 +33,15 @@ import spock.lang.Specification
  */
 class WhereQueryEmbeddedBlockTransformSpec extends Specification {
 
-    // Historical note: these domain class names were made unique across the test JVM
-    // because AstPropertyResolveUtils used to cache resolved properties in a single
-    // static map keyed by class name, so a same-named fixture in another spec could
-    // collide with this one. AstPropertyResolveUtils now caches per-ClassNode instance
-    // (see its javadoc), so that collision can no longer happen regardless of naming -
-    // the distinctive names are kept only because they make the fixture's purpose
-    // clearer, not because uniqueness is required for correctness.
+    // These domain class names must stay unique across the test JVM. AstPropertyResolveUtils
+    // caches resolved properties per-ClassNode instance (see its javadoc), which is enough to
+    // stop two same-named-but-distinct ClassNodes from corrupting each other's property maps. It
+    // does not cover AstUtils#isDomainClass(ClassNode): that check is @Memoized by Groovy's
+    // default, equality-keyed memoize, and ClassNode#equals()/hashCode() reduce to the class name
+    // - so a same-named, differently-shaped fixture compiled in another spec sharing this JVM
+    // fork (forkEvery = 50) can still hand this class a stale domain-class verdict from that memo
+    // cache, regardless of the property-map fix. Reusing a generic name would risk exactly that
+    // order-dependent flake again.
     private static final String SERVICE_SOURCE = '''
 import grails.gorm.DetachedCriteria
 import grails.gorm.annotation.Entity

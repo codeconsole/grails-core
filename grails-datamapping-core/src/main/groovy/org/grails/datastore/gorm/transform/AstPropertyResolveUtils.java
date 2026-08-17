@@ -49,7 +49,8 @@ import org.grails.datastore.mapping.reflect.NameUtils;
 public class AstPropertyResolveUtils {
 
     /**
-     * Key under which the resolved property map is stashed via {@link ClassNode#getNodeMetaData(Object, java.util.function.Function)}.
+     * Key under which the resolved property map is stashed as {@code ClassNode} metadata via
+     * {@link #getPropertiesFromCache}.
      * <p>
      * Earlier versions of this class cached resolved properties in a single static, process-wide
      * {@code Map} keyed by class name (later by {@code ClassNode} identity). Both designs share a
@@ -65,12 +66,21 @@ public class AstPropertyResolveUtils {
      *     <li>No collision is possible between distinct {@code ClassNode} instances that happen to
      *     share a name (e.g. classes compiled without a package, or the same source compiled twice
      *     in separate {@code GroovyClassLoader}s) - each instance owns its own metadata storage, so
-     *     there is no shared key space to collide on in the first place.</li>
+     *     there is no shared key space to collide on in the first place. This holds for the resolved
+     *     <em>property map</em> built here.</li>
      *     <li>No leak is possible - the cached data is only reachable through the {@code ClassNode}
      *     it describes, so it becomes eligible for garbage collection at the same time as the node
      *     (and the compilation/classloader it belongs to) rather than being pinned forever by a
      *     static field.</li>
      * </ul>
+     * This does <strong>not</strong> extend to whether a given {@code ClassNode} is treated as a
+     * domain class in the first place: {@link AstUtils#isDomainClass(ClassNode)} is
+     * {@code @Memoized}, and Groovy's default memoize is keyed by argument <em>equality</em>
+     * ({@code ClassNode#equals}/{@code hashCode} both reduce to the class name), not identity. Two
+     * distinct, same-named {@code ClassNode}s can therefore still receive the same domain-class
+     * verdict from each other via that memo cache, independent of the property cache here. That is
+     * a narrower, pre-existing exposure in {@code isDomainClass} itself - this class neither causes
+     * nor fixes it, and it is tracked separately rather than folded into this cache's guarantees.
      * Per {@link ClassNode#getModule()}'s own convention, the cache is stored on
      * {@link ClassNode#redirect()} - the node a placeholder/generics-parameterized reference
      * ultimately stands in for - so that looking a class up through different reference nodes still
@@ -116,6 +126,24 @@ public class AstPropertyResolveUtils {
      * metadata key to the same shared node concurrently without also synchronizing on that node -
      * this class has no way to compel that. That residual risk belongs to {@code ClassNode}'s
      * metadata storage in general, not to anything specific to the cache here.
+     * <p>
+     * Those interned singleton nodes ({@link ClassNode#isPrimaryClassNode()} returns {@code false}
+     * for them, since {@link ClassHelper#make(Class)} builds them via the {@code ClassNode(Class)}
+     * constructor) are never written to by this class at all: {@link #getPropertiesFromCache}
+     * recomputes for them on every call instead of caching. Caching there would mean writing this
+     * class's own metadata key into a node no single compilation owns, growing the residual risk
+     * above from "someone else's key might race with a read" to "this class's own writes pollute a
+     * JVM-wide-shared node forever" - not a real cost, since the properties of a JDK type are cheap
+     * to recompute and there are only a handful of these nodes in practice.
+     * <p>
+     * {@link #computeProperties} can run arbitrary user code for a resolved domain class - it
+     * forces the class's static initializer and invokes user-written static getters via
+     * {@link ClassPropertyFetcher}. Running that while holding the per-node monitor would risk
+     * deadlocking against unrelated code the caller has no visibility into, so
+     * {@link #getPropertiesFromCache} computes outside the lock and only takes the monitor to check
+     * for and, if needed, publish the result. Two threads can therefore both compute for the same
+     * as-yet-uncached node; the second to acquire the monitor discards its own (equivalent) result
+     * and returns whatever the first published, so only one map is ever visible to callers.
      */
     private static final String PROPERTIES_CACHE_KEY = AstPropertyResolveUtils.class.getName() + ".properties";
 
@@ -165,8 +193,23 @@ public class AstPropertyResolveUtils {
 
     private static Map<String, ClassNode> getPropertiesFromCache(ClassNode classNode) {
         ClassNode cacheHolder = classNode.redirect();
+        if (!cacheHolder.isPrimaryClassNode()) {
+            return computeProperties(cacheHolder);
+        }
         synchronized (cacheHolder) {
-            return cacheHolder.getNodeMetaData(PROPERTIES_CACHE_KEY, key -> computeProperties(cacheHolder));
+            Map<String, ClassNode> cached = cacheHolder.getNodeMetaData(PROPERTIES_CACHE_KEY);
+            if (cached != null) {
+                return cached;
+            }
+        }
+        Map<String, ClassNode> computed = computeProperties(cacheHolder);
+        synchronized (cacheHolder) {
+            Map<String, ClassNode> cached = cacheHolder.getNodeMetaData(PROPERTIES_CACHE_KEY);
+            if (cached != null) {
+                return cached;
+            }
+            cacheHolder.putNodeMetaData(PROPERTIES_CACHE_KEY, computed);
+            return computed;
         }
     }
 
@@ -174,8 +217,8 @@ public class AstPropertyResolveUtils {
         Map<String, ClassNode> newProperties = new HashMap<>();
         boolean isDomainClass = AstUtils.isDomainClass(classNode);
         if (isDomainClass) {
-            newProperties.put(GormProperties.IDENTITY, new ClassNode(Long.class));
-            newProperties.put(GormProperties.VERSION, new ClassNode(Long.class));
+            newProperties.put(GormProperties.IDENTITY, ClassHelper.make(Long.class).getPlainNodeReference());
+            newProperties.put(GormProperties.VERSION, ClassHelper.make(Long.class).getPlainNodeReference());
         }
         ClassNode currentNode = classNode;
         while (currentNode != null && !currentNode.equals(ClassHelper.OBJECT_TYPE)) {

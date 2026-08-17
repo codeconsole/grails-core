@@ -95,8 +95,10 @@ class AstPropertyResolveUtilsSpec extends Specification {
         // these are two unrelated ClassNode instances with different declared properties. A cache
         // keyed by name or by equals()/hashCode() would treat them as the same entry; only
         // reference identity (!first.is(second)) tells them apart, which is exactly what the
-        // cache must key on.
-        !first.is(second)
+        // cache must key on. This is an "and:" continuing "given:", so Spock does not apply an
+        // implicit condition here - the explicit assert is required for this to actually fail
+        // the test if it were ever untrue.
+        assert !first.is(second)
 
         when: 'both class nodes are resolved'
         List<String> firstProperties = AstPropertyResolveUtils.getPropertyNames(first)
@@ -202,6 +204,9 @@ class AstPropertyResolveUtilsSpec extends Specification {
 
         then: 'the reflected association properties are present alongside the injected identity/version properties'
         propertyNames.containsAll([GormProperties.IDENTITY, GormProperties.VERSION, 'books', 'author', 'publisher'])
+
+        cleanup:
+        gcl.close()
     }
 
     void "concurrent resolution of distinct, identically-named ClassNode instances never corrupts each other's cached properties"() {
@@ -213,7 +218,7 @@ class AstPropertyResolveUtilsSpec extends Specification {
         when: 'all threads race to populate the cache for their own instance at the same time'
         List<Future<Boolean>> futures = (0..<threadCount).collect { int i ->
             executor.submit({ ->
-                barrier.await()
+                barrier.await(30, TimeUnit.SECONDS)
                 ClassNode node = new ClassNode('ConcurrentWidget', Modifier.PUBLIC, ClassHelper.OBJECT_TYPE)
                 String propertyName = "prop${i}".toString()
                 node.addProperty(propertyName, Modifier.PUBLIC, ClassHelper.STRING_TYPE, null, null, null)
@@ -223,10 +228,12 @@ class AstPropertyResolveUtilsSpec extends Specification {
             } as Callable<Boolean>)
         }
         List<Boolean> outcomes = futures.collect { Future<Boolean> future -> future.get(30, TimeUnit.SECONDS) }
-        executor.shutdown()
 
         then: 'every thread resolved its own property set, uncontaminated by any of the other concurrently-resolved same-named instances'
         outcomes.every { it }
+
+        cleanup:
+        executor.shutdownNow()
     }
 
     void "concurrent resolution of the exact same shared ClassNode instance from many threads is safe"() {
@@ -261,15 +268,17 @@ class AstPropertyResolveUtilsSpec extends Specification {
         when: 'all threads race to resolve properties for the same instance at once'
         List<Future<List<String>>> futures = (0..<threadCount).collect {
             executor.submit({ ->
-                barrier.await()
+                barrier.await(30, TimeUnit.SECONDS)
                 AstPropertyResolveUtils.getPropertyNames(sharedNode)
             } as Callable<List<String>>)
         }
         List<List<String>> results = futures.collect { Future<List<String>> future -> future.get(30, TimeUnit.SECONDS) }
-        executor.shutdown()
 
         then: 'every thread observes the same, fully and correctly populated result - none sees a partial or corrupted map'
         results.every { it == ['label'] }
+
+        cleanup:
+        executor.shutdownNow()
     }
 
     private static Expression mapExpressionOf(String key, ClassNode valueType) {
