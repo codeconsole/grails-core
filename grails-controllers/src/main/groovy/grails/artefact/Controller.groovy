@@ -19,7 +19,6 @@
 package grails.artefact
 
 import java.lang.reflect.Method
-import java.util.concurrent.ConcurrentHashMap
 
 import groovy.transform.CompileStatic
 import groovy.transform.Generated
@@ -43,10 +42,11 @@ import org.springframework.web.servlet.ModelAndView
 import grails.artefact.controller.support.RequestForwarder
 import grails.artefact.controller.support.ResponseRedirector
 import grails.artefact.controller.support.ResponseRenderer
+import grails.core.GrailsApplication
+import grails.core.GrailsClass
 import grails.core.GrailsControllerClass
 import grails.databinding.DataBindingSource
 import grails.databinding.SimpleMapDataBindingSource
-import grails.util.Environment
 import grails.util.GrailsClassUtils
 import grails.util.GrailsMetaClassUtils
 import grails.web.api.ServletAttributes
@@ -54,6 +54,7 @@ import grails.web.api.WebAttributes
 import grails.web.databinding.DataBinder
 import grails.web.databinding.DataBindingUtils
 import org.grails.compiler.web.ControllerActionTransformer
+import org.grails.core.artefact.ControllerArtefactHandler
 import org.grails.core.artefact.DomainClassArtefactHandler
 import org.grails.datastore.mapping.model.config.GormProperties
 import org.grails.plugins.web.api.MimeTypesApiSupport
@@ -78,14 +79,6 @@ import org.grails.web.util.GrailsApplicationAttributes
 trait Controller implements ResponseRenderer, ResponseRedirector, RequestForwarder, DataBinder, WebAttributes, ServletAttributes {
 
     private MimeTypesApiSupport mimeTypesSupport = new MimeTypesApiSupport()
-
-    /**
-     * Caches the value of the static <code>namespace</code> field declared by a controller class, so that only the
-     * first redirect issued for a given class pays for the reflective field lookup. Keyed by class, so that each
-     * controller class always resolves its own value. An absent value is cached as an empty {@link Optional} to
-     * distinguish "no namespace declared" from "not resolved yet".
-     */
-    private static final Map<Class<?>, Optional<Object>> NAMESPACE_CACHE = new ConcurrentHashMap<>()
 
     /**
      * <p>The withFormat method is used to allow controllers to handle different types of
@@ -267,23 +260,28 @@ trait Controller implements ResponseRenderer, ResponseRedirector, RequestForward
     }
 
     /**
-     * Resolves the namespace declared by the given controller class, which is a static field on the class and
-     * therefore fixed for the lifetime of that class. The reflective lookup is only performed the first time a
-     * class is seen.
+     * Resolves the namespace declared by the given controller class. {@link GrailsControllerClass} already reads the
+     * static <code>namespace</code> property from the class when the artefact is created, so the value is taken from
+     * the artefact registry rather than read from the class again.
+     *
+     * <p>The class passed in is the class of the controller <em>issuing</em> the redirect, which is not necessarily
+     * the controller currently executing - one controller may redirect on behalf of another - so the registry is
+     * looked up by that class and never by the executing controller.</p>
      *
      * @param controllerClass The class of the controller issuing the redirect
      * @return The declared namespace, or null if the class declares none
      */
     private Object resolveNamespace(Class<?> controllerClass) {
-        Optional<Object> namespace = NAMESPACE_CACHE.get(controllerClass)
-        if (namespace == null) {
-            namespace = Optional.ofNullable(GrailsClassUtils.getStaticFieldValue(controllerClass, GrailsControllerClass.NAMESPACE_PROPERTY))
-            if (!Environment.isReloadingAgentEnabled()) {
-                // don't cache when reloading active, a reloaded class is retained by the cache otherwise
-                NAMESPACE_CACHE.put(controllerClass, namespace)
+        GrailsApplication application = getGrailsApplication()
+        if (application != null) {
+            GrailsClass controllerArtefact = application.getArtefact(ControllerArtefactHandler.TYPE, controllerClass.getName())
+            if (controllerArtefact instanceof GrailsControllerClass) {
+                return ((GrailsControllerClass) controllerArtefact).getNamespace()
             }
         }
-        namespace.orElse(null)
+        // A controller that was never registered as an artefact - one constructed directly, as a unit test may do -
+        // has no GrailsControllerClass to read, so fall back to the class itself.
+        GrailsClassUtils.getStaticFieldValue(controllerClass, GrailsControllerClass.NAMESPACE_PROPERTY)
     }
 
     /**

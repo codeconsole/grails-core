@@ -98,7 +98,6 @@ trait ResponseRenderer extends WebAttributes {
     private GrailsRenderViewMutator grailsRenderViewMutator
     private GrailsLayoutSelector grailsLayoutSelector
     private GrailsPluginManager pluginManager
-    private CompositeViewResolver compositeViewResolver
 
     @Generated
     @Autowired(required = false)
@@ -320,7 +319,7 @@ trait ResponseRenderer extends WebAttributes {
             String templateUri = applicationAttributes.getTemplateURI((GroovyObject) this, templateName, false)
 
             // retrieve view resolver
-            CompositeViewResolver viewResolver = getCompositeViewResolver(applicationAttributes)
+            CompositeViewResolver viewResolver = applicationAttributes.getCompositeViewResolver()
             try {
 
                 View view = viewResolver.resolveView(templateUri, webRequest.locale)
@@ -583,13 +582,6 @@ trait ResponseRenderer extends WebAttributes {
             pluginManager = webRequest.getApplicationContext().getBean(GrailsPluginManager)
         }
         pluginManager
-    }
-
-    private CompositeViewResolver getCompositeViewResolver(GrailsApplicationAttributes applicationAttributes) {
-        if (compositeViewResolver == null) {
-            compositeViewResolver = applicationAttributes.getApplicationContext().getBean(CompositeViewResolver.BEAN_NAME, CompositeViewResolver)
-        }
-        compositeViewResolver
     }
 
     private void setTemplateModel(GrailsWebRequest webRequest, Map binding, Map modelObject) {

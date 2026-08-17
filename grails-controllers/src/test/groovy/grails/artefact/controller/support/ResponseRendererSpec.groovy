@@ -70,9 +70,36 @@ class ResponseRendererSpec extends Specification {
         1 * viewResolver.resolveView('/templateRendering/_second', _) >> view
         2 * view.render(_, _, _)
     }
+
+    void 'different controllers in the same servlet context share one view resolver lookup'() {
+        given:
+        def view = Mock(View)
+        def viewResolver = Mock(CompositeViewResolver)
+
+        when: 'two different controller classes each render a template'
+        bindRequest()
+        new TemplateRenderingController().renderTemplate('first')
+        bindRequest()
+        new OtherTemplateRenderingController().renderTemplate('second')
+
+        then: 'the bean is still resolved only once, because the lookup is not per controller'
+        1 * applicationContext.getBean(CompositeViewResolver.BEAN_NAME, CompositeViewResolver) >> viewResolver
+
+        and: 'each controller resolves its own template uri'
+        1 * viewResolver.resolveView('/templateRendering/_first', _) >> view
+        1 * viewResolver.resolveView('/otherTemplateRendering/_second', _) >> view
+        2 * view.render(_, _, _)
+    }
 }
 
 class TemplateRenderingController implements ResponseRenderer {
+
+    void renderTemplate(String templateName) {
+        render(template: templateName)
+    }
+}
+
+class OtherTemplateRenderingController implements ResponseRenderer {
 
     void renderTemplate(String templateName) {
         render(template: templateName)

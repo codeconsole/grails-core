@@ -18,8 +18,6 @@
  */
 package grails.artefact.controller.support
 
-import java.util.concurrent.atomic.AtomicReference
-
 import groovy.transform.CompileStatic
 import groovy.transform.Generated
 
@@ -59,34 +57,22 @@ trait ResponseRedirector implements WebAttributes {
     private RequestDataValueProcessor requestDataValueProcessor
     private Collection<RedirectEventListener> redirectListeners
 
-    /**
-     * Holds the redirector built from the configuration below. {@link grails.web.mapping.ResponseRedirector} keeps
-     * no per request state - the request, the response and the arguments are all passed to it per redirect - so a
-     * single instance can serve every redirect issued by this controller. Held in an {@link AtomicReference} so that
-     * the instance is safely published to the other request threads sharing a singleton scoped controller, and
-     * cleared by every setter below so that a configuration change is never served from a stale redirector.
-     */
-    private final AtomicReference<grails.web.mapping.ResponseRedirector> responseRedirector = new AtomicReference<>()
-
     @Generated
     @Autowired(required=false)
     void setRedirectListeners(Collection<RedirectEventListener> redirectListeners) {
         this.redirectListeners = redirectListeners
-        this.responseRedirector.set(null)
     }
 
     @Generated
     @Autowired(required = false)
     void setRequestDataValueProcessor(RequestDataValueProcessor requestDataValueProcessor) {
         this.requestDataValueProcessor = requestDataValueProcessor
-        this.responseRedirector.set(null)
     }
 
     @Generated
     @Autowired
     void setGrailsLinkGenerator(LinkGenerator linkGenerator) {
         this.linkGenerator = linkGenerator
-        this.responseRedirector.set(null)
     }
 
     @Generated
@@ -136,20 +122,13 @@ trait ResponseRedirector implements WebAttributes {
             throw new IllegalArgumentException("Invalid arguments for method 'redirect': $argMap")
         }
 
-        def webRequest = webRequest
-        getResponseRedirector().redirect(webRequest.getRequest(), webRequest.getResponse(), argMap)
-    }
+        grails.web.mapping.ResponseRedirector redirector = new grails.web.mapping.ResponseRedirector(getGrailsLinkGenerator())
+        redirector.setRedirectListeners(redirectListeners)
+        redirector.setRequestDataValueProcessor(requestDataValueProcessor)
+        redirector.setUseJessionId(useJsessionId)
 
-    private grails.web.mapping.ResponseRedirector getResponseRedirector() {
-        grails.web.mapping.ResponseRedirector redirector = this.responseRedirector.get()
-        if (redirector == null) {
-            redirector = new grails.web.mapping.ResponseRedirector(getGrailsLinkGenerator())
-            redirector.setRedirectListeners(redirectListeners)
-            redirector.setRequestDataValueProcessor(requestDataValueProcessor)
-            redirector.setUseJessionId(useJsessionId)
-            this.responseRedirector.set(redirector)
-        }
-        redirector
+        def webRequest = webRequest
+        redirector.redirect(webRequest.getRequest(), webRequest.getResponse(), argMap)
     }
 
     /**
@@ -221,6 +200,5 @@ trait ResponseRedirector implements WebAttributes {
     @Generated
     void setUseJsessionId(boolean useJsessionId) {
         this.useJsessionId = useJsessionId
-        this.responseRedirector.set(null)
     }
 }

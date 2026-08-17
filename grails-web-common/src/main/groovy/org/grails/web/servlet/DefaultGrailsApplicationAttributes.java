@@ -45,6 +45,7 @@ import grails.web.mvc.FlashScope;
 import grails.web.pages.GroovyPagesUriService;
 import org.grails.gsp.ResourceAwareTemplateEngine;
 import org.grails.web.pages.DefaultGroovyPagesUriService;
+import org.grails.web.servlet.view.CompositeViewResolver;
 import org.grails.web.util.GrailsApplicationAttributes;
 
 /**
@@ -72,6 +73,7 @@ public class DefaultGrailsApplicationAttributes implements GrailsApplicationAttr
     private volatile GroovyPagesUriService groovyPagesUriService;
     private volatile MessageSource messageSource;
     private volatile GrailsPluginManager pluginManager;
+    private volatile CompositeViewResolver compositeViewResolver;
 
     public DefaultGrailsApplicationAttributes(ServletContext context) {
         this.context = context;
@@ -270,5 +272,22 @@ public class DefaultGrailsApplicationAttributes implements GrailsApplicationAttr
             messageSource = fetchBeanFromAppCtx("messageSource");
         }
         return messageSource;
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>Resolved from the application context on first use and held afterwards. Unlike the beans above this one is
+     * required rather than optional - a template cannot be rendered without it - so a missing bean is left to raise
+     * the same {@code NoSuchBeanDefinitionException} it always has rather than being turned into a null.</p>
+     */
+    @Override
+    public CompositeViewResolver getCompositeViewResolver() {
+        CompositeViewResolver resolver = compositeViewResolver;
+        if (resolver == null) {
+            resolver = getApplicationContext().getBean(CompositeViewResolver.BEAN_NAME, CompositeViewResolver.class);
+            compositeViewResolver = resolver;
+        }
+        return resolver;
     }
 }
