@@ -22,6 +22,7 @@ import org.grails.datastore.mapping.keyvalue.mapping.config.Family
 import org.grails.datastore.mapping.keyvalue.mapping.config.KeyValue
 import org.grails.datastore.mapping.keyvalue.mapping.config.KeyValueMappingContext
 import org.grails.datastore.mapping.keyvalue.mapping.config.KeyValuePersistentEntity
+import org.grails.datastore.mapping.core.connections.ConnectionSourceSettings
 import org.grails.datastore.mapping.model.PersistentProperty
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -75,6 +76,33 @@ class KeyValueMappingFactoryTests {
     }
 
     @Test
+    void testExplicitConstraintsPreserveDefaultNullable() {
+        def entity = new KeyValueMappingContext('myspace')
+                .addPersistentEntity(ConstrainedTestEntity)
+
+        assert entity.getPropertyByName('name').mapping.mappedForm.nullable
+    }
+
+    @Test
+    void testWildcardMappingPreservesDefaultNullable() {
+        def entity = new KeyValueMappingContext('myspace')
+                .addPersistentEntity(WildcardTestEntity)
+
+        assert entity.getPropertyByName('name').mapping.mappedForm.nullable
+    }
+
+    @Test
+    void testDefaultNullableCanBeDisabled() {
+        def settings = new ConnectionSourceSettings()
+        settings.default.nullable = false
+
+        def entity = new KeyValueMappingContext('myspace', settings)
+                .addPersistentEntity(NullableTestEntity)
+
+        assert !entity.getPropertyByName('name').mapping.mappedForm.nullable
+    }
+
+    @Test
     void testParentEntity() {
         KeyValuePersistentEntity entity = context.getPersistentEntity(TestEntity.name)
         assert entity != null
@@ -97,6 +125,29 @@ class KeyValueMappingFactoryTests {
 
         static mapping = {
             formulaProperty(formula: 'foo(bar)')
+        }
+    }
+
+    class ConstrainedTestEntity {
+        Long id
+        String name
+
+        static constraints = {
+            name maxSize: 100
+        }
+    }
+
+    class NullableTestEntity {
+        Long id
+        String name
+    }
+
+    class WildcardTestEntity {
+        Long id
+        String name
+
+        static mapping = {
+            '*' cache: true
         }
     }
 }

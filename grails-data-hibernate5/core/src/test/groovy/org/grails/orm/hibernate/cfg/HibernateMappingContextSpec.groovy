@@ -55,6 +55,42 @@ class HibernateMappingContextSpec extends Specification {
         and:"The type is registered as a custom type with the mapping factory"
         mappingContext.mappingFactory.isCustomType(MyUUIDGenerator)
     }
+
+    void "unconstrained properties are nullable in the Hibernate mapping"() {
+        when:
+        def entity = new HibernateMappingContext().addPersistentEntity(MappingContextNullableByDefaultEntity)
+
+        then:
+        entity.getPropertyByName("name").mapping.mappedForm.nullable
+    }
+
+    void "explicit constraints do not prevent the default nullable mapping"() {
+        when:
+        def entity = new HibernateMappingContext().addPersistentEntity(MappingContextConstrainedEntity)
+
+        then:
+        entity.getPropertyByName("name").mapping.mappedForm.nullable
+    }
+
+    void "wildcard mappings do not prevent the default nullable mapping"() {
+        when:
+        def entity = new HibernateMappingContext().addPersistentEntity(MappingContextWildcardMappedEntity)
+
+        then:
+        entity.getPropertyByName("name").mapping.mappedForm.nullable
+    }
+
+    void "default nullable can be disabled"() {
+        given:
+        def settings = new HibernateConnectionSourceSettings()
+        settings.default.nullable = false
+
+        when:
+        def entity = new HibernateMappingContext(settings).addPersistentEntity(MappingContextNullableByDefaultEntity)
+
+        then:
+        !entity.getPropertyByName("name").mapping.mappedForm.nullable
+    }
 }
 
 @Entity
@@ -62,6 +98,29 @@ class CustomIdGeneratorEntity {
     String name
     static mapping = {
         id(generator: "org.grails.orm.hibernate.cfg.MyUUIDGenerator", type: "uuid-binary")
+    }
+}
+
+@Entity
+class MappingContextNullableByDefaultEntity {
+    String name
+}
+
+@Entity
+class MappingContextConstrainedEntity {
+    String name
+
+    static constraints = {
+        name maxSize: 100
+    }
+}
+
+@Entity
+class MappingContextWildcardMappedEntity {
+    String name
+
+    static mapping = {
+        '*' cache: true
     }
 }
 
