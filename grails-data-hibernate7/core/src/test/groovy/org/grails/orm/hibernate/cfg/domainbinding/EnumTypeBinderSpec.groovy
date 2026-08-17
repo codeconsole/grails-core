@@ -18,35 +18,33 @@
  */
 package org.grails.orm.hibernate.cfg.domainbinding
 
-import org.hibernate.type.descriptor.WrapperOptions
-
-import grails.gorm.tests.HibernateGormDatastoreSpec
-import grails.persistence.Entity
-import org.grails.datastore.mapping.model.PersistentProperty
-import org.grails.orm.hibernate.cfg.domainbinding.hibernate.HibernateBasicProperty
-import org.grails.orm.hibernate.cfg.domainbinding.hibernate.HibernateEnumProperty
-import org.grails.orm.hibernate.cfg.IdentityEnumType
-import jakarta.persistence.EnumType
-import org.grails.orm.hibernate.cfg.domainbinding.binder.GrailsDomainBinder
-import org.grails.orm.hibernate.cfg.domainbinding.hibernate.HibernateToManyProperty
-import org.grails.orm.hibernate.cfg.domainbinding.util.BackticksRemover
-import org.grails.orm.hibernate.cfg.domainbinding.util.ColumnNameForPropertyAndPathFetcher
-import org.grails.orm.hibernate.cfg.domainbinding.util.DefaultColumnNameFetcher
-import org.hibernate.engine.spi.SharedSessionContractImplementor
-import org.hibernate.mapping.Table
-import org.hibernate.mapping.RootClass
-import org.hibernate.usertype.UserType
-import spock.lang.Subject
-import spock.lang.Unroll
-
 import java.sql.PreparedStatement
 import java.sql.ResultSet
 import java.sql.SQLException
 
+import jakarta.persistence.EnumType
+
+import org.hibernate.mapping.RootClass
+import org.hibernate.mapping.Table
+import org.hibernate.type.descriptor.WrapperOptions
+import org.hibernate.usertype.UserType
+import spock.lang.Subject
+import spock.lang.Unroll
+
+import grails.gorm.tests.HibernateGormDatastoreSpec
+import grails.persistence.Entity
+import org.grails.datastore.mapping.model.PersistentProperty
+import org.grails.orm.hibernate.cfg.IdentityEnumType
 import org.grails.orm.hibernate.cfg.domainbinding.binder.ColumnConfigToColumnBinder
 import org.grails.orm.hibernate.cfg.domainbinding.binder.EnumTypeBinder
+import org.grails.orm.hibernate.cfg.domainbinding.binder.GrailsDomainBinder
 import org.grails.orm.hibernate.cfg.domainbinding.binder.IndexBinder
 import org.grails.orm.hibernate.cfg.domainbinding.hibernate.GrailsHibernatePersistentEntity
+import org.grails.orm.hibernate.cfg.domainbinding.hibernate.HibernateBasicProperty
+import org.grails.orm.hibernate.cfg.domainbinding.hibernate.HibernateEnumProperty
+import org.grails.orm.hibernate.cfg.domainbinding.util.BackticksRemover
+import org.grails.orm.hibernate.cfg.domainbinding.util.ColumnNameForPropertyAndPathFetcher
+import org.grails.orm.hibernate.cfg.domainbinding.util.DefaultColumnNameFetcher
 
 class EnumTypeBinderSpec extends HibernateGormDatastoreSpec {
 
@@ -167,27 +165,24 @@ class EnumTypeBinderSpec extends HibernateGormDatastoreSpec {
 enum Status01 { AVAILABLE, OUT_OF_STOCK }
 
 @Entity class Person01 {
-    Long id
-    Status01 status
-    static constraints = {
-        status nullable: false
-    }
+    Long id; Status01 status
+    static constraints = { status nullable: false }
 }
 @Entity class Person02 {
     Long id; Status01 status
-    static mapping = { status enumType: "string", nullable: true }
+    static mapping = { status enumType: "string" }
 }
 @Entity class Person03 {
     Long id; Status01 status
-    static mapping = { status enumType: "ordinal", nullable: true }
+    static mapping = { status enumType: "ordinal" }
 }
 @Entity class Person04 {
     Long id; Status01 status
-    static mapping = { status enumType: "identity" }
+    static mapping = { status enumType: "identity", nullable: false }
 }
 @Entity class Person05 {
     Long id; Status01 status
-    static mapping = { status type: UserTypeEnumType }
+    static mapping = { status type: UserTypeEnumType, nullable: false }
 }
 @Entity class PersonWithCollection {
     Long id
