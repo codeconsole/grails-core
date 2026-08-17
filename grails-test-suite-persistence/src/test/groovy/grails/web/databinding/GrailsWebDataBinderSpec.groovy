@@ -32,6 +32,7 @@ import grails.databinding.BindUsing
 import grails.databinding.BindingFormat
 import grails.databinding.DataBindingSource
 import grails.databinding.SimpleMapDataBindingSource
+import grails.databinding.converters.ValueConverter
 import grails.databinding.errors.BindingError
 import grails.databinding.events.DataBindingListenerAdapter
 import grails.persistence.Entity
