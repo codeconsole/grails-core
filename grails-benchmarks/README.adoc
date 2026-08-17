@@ -109,7 +109,7 @@ Benchmarks are grouped by package, and the CI report aggregates per group:
 | Package | Covers
 
 | `urlmappings` | Request URI matching (warm cache, cold cache, catch-all fall-through) and reverse URL creation
-| `controllers` | Controller action invocation, and the per-request collection of controller URL mappings
+| `controllers` | Controller action invocation, the `redirect` and `render(template:)` response paths, and the per-request collection of controller URL mappings
 | `web` | Binding a `GrailsWebRequest`, building `params`, multipart discovery, Groovy request property access
 | `databinding` | Binding a map onto an object, with and without type conversion
 | `gsp` | GSP parsing (template text to generated Groovy source)
