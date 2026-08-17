@@ -88,12 +88,17 @@ Benchmarks are Java, under `src/jmh/java`. Setup fixtures are Groovy, under `src
 The comparison tool is Groovy in the `report` source set, under `src/report/groovy`.
 
 That split is intentional. A benchmark written in Groovy measures Groovy's dynamic call-site
-machinery as much as the Grails API under test, so the measured method stays in Java. Fixtures
-are Groovy only where the Grails API genuinely requires it - the URL mappings DSL and view
-templates are closure-based, and `grails.artefact.Interceptor` is a Groovy trait. Fixtures live in `main` rather
-than `src/jmh/groovy` because the `me.champeau.jmh` plugin puts the main source set's output on
-the jmh compile classpath, which keeps the benchmark source set pure Java and preserves normal
-JMH annotation processing.
+machinery as much as the Grails API under test, so the measured method stays in Java. Fixtures live
+in `main` rather than `src/jmh/groovy` because the `me.champeau.jmh` plugin puts the main source
+set's output on the jmh compile classpath, which keeps the benchmark source set pure Java and
+preserves normal JMH annotation processing.
+
+Setup code goes in a Groovy fixture whether or not the Grails API forces it to - the URL mappings
+DSL and view templates are closure-based and `grails.artefact.Interceptor` is a Groovy trait, but
+building a mock servlet context or compiling a controller does not need Groovy and lives there
+anyway. Nothing a fixture does is inside the timed region, so the only fixture that is Groovy *for
+the measurement* is `web/RequestPropertyFixture`, whose reader is deliberately not statically
+compiled because the dynamic call site is the thing being measured.
 
 The `report` source set depends on Groovy alone and on no Grails project. The CI reporting job
 runs it after a bare checkout, so it must render Markdown without compiling the framework.
@@ -103,10 +108,12 @@ Benchmarks are grouped by package, and the CI report aggregates per group:
 |===
 | Package | Covers
 
-| `urlmappings` | Request URI matching (warm and cold cache) and reverse URL creation
+| `urlmappings` | Request URI matching (warm cache, cold cache, catch-all fall-through) and reverse URL creation
+| `controllers` | Controller action invocation, and the per-request collection of controller URL mappings
+| `web` | Binding a `GrailsWebRequest`, building `params`, multipart discovery, Groovy request property access
 | `databinding` | Binding a map onto an object, with and without type conversion
 | `gsp` | GSP parsing (template text to generated Groovy source)
-| `interceptors` | Interceptor URI match decisions
+| `interceptors` | Interceptor URI match decisions, and the interceptor handler chain per request
 | `views` | JSON and markup view rendering
 | `ruler` | Pure-JDK probes used to detect an unstable CI runner
 |===

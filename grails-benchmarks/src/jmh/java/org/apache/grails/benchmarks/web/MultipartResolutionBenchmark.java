@@ -28,13 +28,13 @@ import jakarta.servlet.http.HttpServletRequestWrapper;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Fork;
-import org.openjdk.jmh.annotations.Level;
 import org.openjdk.jmh.annotations.Measurement;
 import org.openjdk.jmh.annotations.Mode;
 import org.openjdk.jmh.annotations.OutputTimeUnit;
 import org.openjdk.jmh.annotations.Scope;
 import org.openjdk.jmh.annotations.Setup;
 import org.openjdk.jmh.annotations.State;
+import org.openjdk.jmh.annotations.Threads;
 import org.openjdk.jmh.annotations.Warmup;
 
 import org.springframework.mock.web.MockHttpServletRequest;
@@ -53,12 +53,13 @@ import org.grails.web.util.WebUtils;
  * application the Grails request filter sits under several servlet filters, so the request handed
  * to Grails is normally a couple of {@code HttpServletRequestWrapper}s deep.</p>
  */
+@State(Scope.Benchmark)
+@Threads(1)
 @BenchmarkMode(Mode.AverageTime)
 @OutputTimeUnit(TimeUnit.NANOSECONDS)
-@State(Scope.Thread)
-@Warmup(iterations = 5, time = 1, timeUnit = TimeUnit.SECONDS)
+@Warmup(iterations = 3, time = 1, timeUnit = TimeUnit.SECONDS)
 @Measurement(iterations = 5, time = 1, timeUnit = TimeUnit.SECONDS)
-@Fork(2)
+@Fork(value = 2, jvmArgsAppend = {"-Xms1g", "-Xmx1g", "-XX:+UseG1GC"})
 public class MultipartResolutionBenchmark {
 
     private HttpServletRequest plain;
@@ -69,9 +70,9 @@ public class MultipartResolutionBenchmark {
 
     private HttpServletRequest multipartByAttribute;
 
-    @Setup(Level.Trial)
-    public void setUp() {
-        ServletContext servletContext = BenchmarkWebContext.newServletContext();
+    @Setup
+    public void setup() {
+        ServletContext servletContext = WebContextFixture.createServletContext();
 
         MockHttpServletRequest plainRequest = new MockHttpServletRequest(servletContext, "POST", "/book/save");
         plainRequest.setContentType("application/x-www-form-urlencoded");
@@ -90,6 +91,22 @@ public class MultipartResolutionBenchmark {
         MockHttpServletRequest attributeCarrier = new MockHttpServletRequest(servletContext, "POST", "/book/save");
         attributeCarrier.setAttribute(MultipartHttpServletRequest.class.getName(), multipartRequest);
         multipartByAttribute = attributeCarrier;
+
+        assertFixtureResolves();
+    }
+
+    // A resolution that silently found nothing would leave the multipart benchmarks timing the
+    // miss path under a name that claims a hit.
+    private void assertFixtureResolves() {
+        if (WebUtils.resolveMultipartRequest(plain) != null) {
+            throw new IllegalStateException("A plain request must not resolve to a multipart request");
+        }
+        if (WebUtils.resolveMultipartRequest(multipartBehindTwoWrappers) == null) {
+            throw new IllegalStateException("A wrapped multipart request must resolve through the wrappers");
+        }
+        if (WebUtils.resolveMultipartRequest(multipartByAttribute) == null) {
+            throw new IllegalStateException("A multipart request published as an attribute must resolve");
+        }
     }
 
     private static HttpServletRequest wrapTwice(HttpServletRequest request) {

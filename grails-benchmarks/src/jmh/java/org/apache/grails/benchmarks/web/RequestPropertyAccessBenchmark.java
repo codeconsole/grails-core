@@ -26,19 +26,20 @@ import jakarta.servlet.http.HttpServletRequest;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Fork;
-import org.openjdk.jmh.annotations.Level;
 import org.openjdk.jmh.annotations.Measurement;
 import org.openjdk.jmh.annotations.Mode;
 import org.openjdk.jmh.annotations.OutputTimeUnit;
 import org.openjdk.jmh.annotations.Scope;
 import org.openjdk.jmh.annotations.Setup;
 import org.openjdk.jmh.annotations.State;
+import org.openjdk.jmh.annotations.Threads;
 import org.openjdk.jmh.annotations.Warmup;
 
 import org.springframework.mock.web.MockHttpServletRequest;
 
 /**
- * Measures Groovy property access on an {@code HttpServletRequest}.
+ * Measures Groovy property access on an {@code HttpServletRequest}, which application code performs
+ * on every request that reads a request attribute.
  *
  * <p>{@code request.someAttribute} in application code is not a field read: the property is unknown
  * to the request class, so it goes through the metaclass, falls through to the {@code getProperty}
@@ -49,33 +50,35 @@ import org.springframework.mock.web.MockHttpServletRequest;
  * <p>{@link #groovyAttributeCall()} and {@link #javaGetAttribute()} bracket that cost with the
  * explicit {@code getAttribute} call from Groovy and from Java respectively.</p>
  */
+@State(Scope.Benchmark)
+@Threads(1)
 @BenchmarkMode(Mode.AverageTime)
 @OutputTimeUnit(TimeUnit.NANOSECONDS)
-@State(Scope.Thread)
-@Warmup(iterations = 5, time = 1, timeUnit = TimeUnit.SECONDS)
+@Warmup(iterations = 3, time = 1, timeUnit = TimeUnit.SECONDS)
 @Measurement(iterations = 5, time = 1, timeUnit = TimeUnit.SECONDS)
-@Fork(2)
+@Fork(value = 2, jvmArgsAppend = {"-Xms1g", "-Xmx1g", "-XX:+UseG1GC"})
 public class RequestPropertyAccessBenchmark {
 
     private HttpServletRequest request;
 
-    private RequestPropertyReader reader;
+    private DynamicRequestPropertyReader reader;
 
-    @Setup(Level.Trial)
-    public void setUp() throws ReflectiveOperationException {
-        ServletContext servletContext = BenchmarkWebContext.newServletContext();
+    @Setup
+    public void setup() {
+        ServletContext servletContext = WebContextFixture.createServletContext();
         MockHttpServletRequest mockRequest = new MockHttpServletRequest(servletContext, "GET", "/book/show/42");
         mockRequest.setAttribute("someAttribute", "someValue");
         request = mockRequest;
+        reader = RequestPropertyFixture.createReader();
+        assertFixtureResolves();
+    }
 
-        reader = (RequestPropertyReader) Class
-                .forName("org.apache.grails.benchmarks.web.DynamicRequestPropertyReader")
-                .getDeclaredConstructor()
-                .newInstance();
-
+    // Without the extension module on the classpath the unknown property raises rather than
+    // resolving, so check it here instead of publishing a number for the wrong path.
+    private void assertFixtureResolves() {
         if (!"someValue".equals(reader.readUnknownProperty(request))) {
             throw new IllegalStateException(
-                    "Benchmark fixture is wrong: request.someAttribute did not resolve through HttpServletRequestExtension");
+                    "request.someAttribute did not resolve through HttpServletRequestExtension");
         }
     }
 
@@ -91,7 +94,7 @@ public class RequestPropertyAccessBenchmark {
         return reader.readGetterBackedProperty(request);
     }
 
-    /** {@code request.getAttribute('someAttribute')} from Groovy - a dynamic method call, not a property. */
+    /** {@code request.getAttribute('someAttribute')} from Groovy - a dynamic call, not a property. */
     @Benchmark
     public Object groovyAttributeCall() {
         return reader.readAttributeDirectly(request);

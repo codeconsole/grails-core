@@ -16,37 +16,39 @@
  *  specific language governing permissions and limitations
  *  under the License.
  */
-package org.apache.grails.benchmarks.web;
+package org.apache.grails.benchmarks.interceptors;
 
+import java.util.List;
 import java.util.concurrent.TimeUnit;
+
+import jakarta.servlet.ServletContext;
 
 import io.micrometer.observation.Observation;
 import io.micrometer.observation.ObservationHandler;
 import io.micrometer.observation.ObservationRegistry;
-
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Fork;
-import org.openjdk.jmh.annotations.Level;
 import org.openjdk.jmh.annotations.Measurement;
 import org.openjdk.jmh.annotations.Mode;
 import org.openjdk.jmh.annotations.OutputTimeUnit;
 import org.openjdk.jmh.annotations.Scope;
 import org.openjdk.jmh.annotations.Setup;
 import org.openjdk.jmh.annotations.State;
+import org.openjdk.jmh.annotations.Threads;
 import org.openjdk.jmh.annotations.Warmup;
 
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
-import org.springframework.mock.web.MockServletContext;
 import org.springframework.web.servlet.ModelAndView;
 
 import grails.artefact.Interceptor;
+import org.apache.grails.benchmarks.web.WebContextFixture;
 import org.grails.plugins.web.interceptors.GrailsInterceptorHandlerInterceptorAdapter;
 
 /**
  * Measures the {@code preHandle} + {@code postHandle} pair of
- * {@link GrailsInterceptorHandlerInterceptorAdapter}, which every request with at least one
+ * {@code GrailsInterceptorHandlerInterceptorAdapter}, which every request with at least one
  * interceptor bean runs through twice - once before the handler and once after.
  *
  * <p>The dominant production configuration is a no-op {@code ObservationRegistry}: an application
@@ -54,18 +56,21 @@ import org.grails.plugins.web.interceptors.GrailsInterceptorHandlerInterceptorAd
  * has, gets a registry that is no-op until a handler is registered. The observing variants are
  * measured too, but the no-op numbers are the ones that describe most applications.</p>
  *
- * <p>The interceptors themselves leave {@code before()} and {@code after()} at their trait defaults,
- * so the score is the adapter's own per-interceptor per-phase cost - matcher evaluation, list
- * bookkeeping, and whatever the adapter allocates to dispatch the callback - and not the cost of
- * anybody's interceptor body.</p>
+ * <p>The interceptors leave {@code before()} and {@code after()} at their trait defaults, so the
+ * score is the adapter's own per-interceptor per-phase cost - matcher evaluation, list bookkeeping,
+ * and whatever the adapter allocates to dispatch the callback - and not the cost of anybody's
+ * interceptor body.</p>
  */
+@State(Scope.Benchmark)
+@Threads(1)
 @BenchmarkMode(Mode.AverageTime)
 @OutputTimeUnit(TimeUnit.NANOSECONDS)
-@State(Scope.Thread)
-@Warmup(iterations = 5, time = 1, timeUnit = TimeUnit.SECONDS)
+@Warmup(iterations = 3, time = 1, timeUnit = TimeUnit.SECONDS)
 @Measurement(iterations = 5, time = 1, timeUnit = TimeUnit.SECONDS)
-@Fork(2)
+@Fork(value = 2, jvmArgsAppend = {"-Xms1g", "-Xmx1g", "-XX:+UseG1GC"})
 public class InterceptorChainBenchmark {
+
+    private static final String MATCHED_INTERCEPTORS = "org.grails.web.MATCHED_INTERCEPTORS";
 
     private MockHttpServletRequest request;
 
@@ -83,34 +88,28 @@ public class InterceptorChainBenchmark {
 
     private GrailsInterceptorHandlerInterceptorAdapter threeObserving;
 
-    @Setup(Level.Trial)
-    public void setUp() throws ReflectiveOperationException {
-        MockServletContext servletContext = BenchmarkWebContext.newServletContext();
-        this.request = new MockHttpServletRequest(servletContext, "GET", "/book/show/42");
-        this.response = new MockHttpServletResponse();
-        this.modelAndView = new ModelAndView("/book/show");
-        this.handler = new Object();
+    @Setup
+    public void setup() {
+        ServletContext servletContext = WebContextFixture.createServletContext();
+        request = new MockHttpServletRequest(servletContext, "GET", "/book/show/42");
+        response = new MockHttpServletResponse();
+        modelAndView = new ModelAndView("/book/show");
+        handler = new Object();
 
-        InterceptorFactory factory = (InterceptorFactory) Class
-                .forName("org.apache.grails.benchmarks.web.BenchmarkInterceptors")
-                .getDeclaredConstructor()
-                .newInstance();
+        oneNoOp = createAdapter(1, ObservationRegistry.NOOP);
+        threeNoOp = createAdapter(3, ObservationRegistry.NOOP);
+        oneObserving = createAdapter(1, createObservingRegistry());
+        threeObserving = createAdapter(3, createObservingRegistry());
 
-        this.oneNoOp = newAdapter(factory, 1, ObservationRegistry.NOOP);
-        this.threeNoOp = newAdapter(factory, 3, ObservationRegistry.NOOP);
-        this.oneObserving = newAdapter(factory, 1, newObservingRegistry());
-        this.threeObserving = newAdapter(factory, 3, newObservingRegistry());
-
-        // Fail loudly rather than silently measuring a chain that matches nothing.
-        requireMatched(this.oneNoOp, 1);
-        requireMatched(this.threeNoOp, 3);
-        requireMatched(this.oneObserving, 1);
-        requireMatched(this.threeObserving, 3);
+        assertFixtureMatches(oneNoOp, 1);
+        assertFixtureMatches(threeNoOp, 3);
+        assertFixtureMatches(oneObserving, 1);
+        assertFixtureMatches(threeObserving, 3);
     }
 
-    private GrailsInterceptorHandlerInterceptorAdapter newAdapter(InterceptorFactory factory, int count, ObservationRegistry registry) {
+    private static GrailsInterceptorHandlerInterceptorAdapter createAdapter(int count, ObservationRegistry registry) {
         GrailsInterceptorHandlerInterceptorAdapter adapter = new GrailsInterceptorHandlerInterceptorAdapter();
-        Interceptor[] interceptors = factory.matchingInterceptors(count);
+        Interceptor[] interceptors = InterceptorChainFixture.createMatchingInterceptors(count);
         adapter.setInterceptors(interceptors);
         adapter.setObservationRegistry(registry);
         return adapter;
@@ -120,7 +119,7 @@ public class InterceptorChainBenchmark {
      * @return a registry that is not no-op, because a handler is registered on it - the shape an
      * application running Micrometer tracing or metrics has
      */
-    private static ObservationRegistry newObservingRegistry() {
+    private static ObservationRegistry createObservingRegistry() {
         ObservationRegistry registry = ObservationRegistry.create();
         registry.observationConfig().observationHandler(new ObservationHandler<Observation.Context>() {
             @Override
@@ -129,54 +128,56 @@ public class InterceptorChainBenchmark {
             }
         });
         if (registry.isNoop()) {
-            throw new IllegalStateException("Benchmark fixture is wrong: the observing registry reports itself as no-op");
+            throw new IllegalStateException("The observing registry reports itself as no-op");
         }
         return registry;
     }
 
-    private void requireMatched(GrailsInterceptorHandlerInterceptorAdapter adapter, int expected) {
+    // An interceptor whose matcher rejects the request is skipped silently, which would leave the
+    // benchmark timing an empty chain under a name that claims one, three interceptors.
+    private void assertFixtureMatches(GrailsInterceptorHandlerInterceptorAdapter adapter, int expected) {
         try {
-            adapter.preHandle(this.request, this.response, this.handler);
+            adapter.preHandle(request, response, handler);
         }
         catch (Exception e) {
-            throw new IllegalStateException("Benchmark fixture is wrong: preHandle threw", e);
+            throw new IllegalStateException("preHandle threw during setup", e);
         }
-        Object matched = this.request.getAttribute("org.grails.web.MATCHED_INTERCEPTORS");
-        int size = matched instanceof java.util.List ? ((java.util.List<?>) matched).size() : -1;
+        Object matched = request.getAttribute(MATCHED_INTERCEPTORS);
+        int size = matched instanceof List ? ((List<?>) matched).size() : -1;
         if (size != expected) {
-            throw new IllegalStateException("Benchmark fixture is wrong: expected " + expected + " matched interceptors but got " + size);
+            throw new IllegalStateException("Expected " + expected + " matched interceptors but got " + size);
         }
     }
 
     /** One matched interceptor, no-op observation registry - the dominant production shape. */
     @Benchmark
     public boolean oneInterceptorNoOpRegistry() throws Exception {
-        boolean proceed = this.oneNoOp.preHandle(this.request, this.response, this.handler);
-        this.oneNoOp.postHandle(this.request, this.response, this.handler, this.modelAndView);
+        boolean proceed = oneNoOp.preHandle(request, response, handler);
+        oneNoOp.postHandle(request, response, handler, modelAndView);
         return proceed;
     }
 
     /** Three matched interceptors, no-op observation registry. */
     @Benchmark
     public boolean threeInterceptorsNoOpRegistry() throws Exception {
-        boolean proceed = this.threeNoOp.preHandle(this.request, this.response, this.handler);
-        this.threeNoOp.postHandle(this.request, this.response, this.handler, this.modelAndView);
+        boolean proceed = threeNoOp.preHandle(request, response, handler);
+        threeNoOp.postHandle(request, response, handler, modelAndView);
         return proceed;
     }
 
     /** One matched interceptor, with a registry that actually records observations. */
     @Benchmark
     public boolean oneInterceptorObservingRegistry() throws Exception {
-        boolean proceed = this.oneObserving.preHandle(this.request, this.response, this.handler);
-        this.oneObserving.postHandle(this.request, this.response, this.handler, this.modelAndView);
+        boolean proceed = oneObserving.preHandle(request, response, handler);
+        oneObserving.postHandle(request, response, handler, modelAndView);
         return proceed;
     }
 
     /** Three matched interceptors, with a registry that actually records observations. */
     @Benchmark
     public boolean threeInterceptorsObservingRegistry() throws Exception {
-        boolean proceed = this.threeObserving.preHandle(this.request, this.response, this.handler);
-        this.threeObserving.postHandle(this.request, this.response, this.handler, this.modelAndView);
+        boolean proceed = threeObserving.preHandle(request, response, handler);
+        threeObserving.postHandle(request, response, handler, modelAndView);
         return proceed;
     }
 }

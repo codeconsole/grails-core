@@ -53,19 +53,24 @@ public class UrlMappingsBenchmark {
 
     private static final String WARM_URI = "/catalog/books/42";
     private static final String EXPECTED_REVERSE_URL = "/catalog/books/42";
+    private static final String FALL_THROUGH_URI = "/widget/show/42";
     private static final int COLD_URI_COUNT = 16_384;
 
     private DefaultUrlMappingsHolder holder;
     private String[] coldUris;
+    private String[] coldFallThroughUris;
     private Map<String, Object> reverseParameters;
     private int coldUriIndex;
+    private int coldFallThroughUriIndex;
 
     @Setup
     public void setup() {
         holder = UrlMappingsFixture.createHolder();
         coldUris = new String[COLD_URI_COUNT];
+        coldFallThroughUris = new String[COLD_URI_COUNT];
         for (int index = 0; index < COLD_URI_COUNT; index++) {
             coldUris[index] = "/catalog/books/" + index;
+            coldFallThroughUris[index] = "/widget/show/" + index;
         }
         reverseParameters = new HashMap<>();
         reverseParameters.put("category", "books");
@@ -84,6 +89,14 @@ public class UrlMappingsBenchmark {
         if (!"catalog".equals(info.getControllerName()) || !"show".equals(info.getActionName())) {
             throw new IllegalStateException("Unexpected mapping for " + WARM_URI + ": " + info);
         }
+        // Only the catch-all mapping can serve this URI - the other three all begin with a literal
+        // token - so a match here is proof the fall-through benchmark reaches the end of the list.
+        // The matched controller name is captured from the URI rather than declared, and reading it
+        // needs a bound request, so the check stops at the match itself.
+        if (holder.match(FALL_THROUGH_URI) == null) {
+            throw new IllegalStateException(
+                    "URL mappings fixture does not fall through to the catch-all for " + FALL_THROUGH_URI);
+        }
         String reverse = holder.getReverseMapping("catalog", "show", reverseParameters)
                 .createRelativeURL("catalog", "show", reverseParameters, "UTF-8");
         if (!EXPECTED_REVERSE_URL.equals(reverse)) {
@@ -99,6 +112,18 @@ public class UrlMappingsBenchmark {
     @Benchmark
     public UrlMappingInfo matchColdVariedKeys() {
         String uri = coldUris[coldUriIndex++ & (COLD_URI_COUNT - 1)];
+        return holder.match(uri);
+    }
+
+    /**
+     * The same cold-cache shape as {@link #matchColdVariedKeys()}, but for URIs that only the
+     * catch-all {@code "/$controller/$action?/$id?"} mapping can serve, so every earlier mapping is
+     * considered and rejected before the match succeeds. That fall-through, not the first-mapping
+     * hit, is what an application pays for any URI its explicit mappings do not cover.
+     */
+    @Benchmark
+    public UrlMappingInfo matchColdCatchAllFallThrough() {
+        String uri = coldFallThroughUris[coldFallThroughUriIndex++ & (COLD_URI_COUNT - 1)];
         return holder.match(uri);
     }
 

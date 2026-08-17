@@ -20,23 +20,35 @@ package org.apache.grails.benchmarks.web
 
 import jakarta.servlet.http.HttpServletRequest
 
-/**
- * Deliberately <em>not</em> statically compiled: the point of the benchmark is the dynamic
- * call site and the metaclass lookup behind {@code HttpServletRequestExtension}.
- */
-class DynamicRequestPropertyReader implements RequestPropertyReader {
+class RequestPropertyFixture {
 
-    @Override
+    static DynamicRequestPropertyReader createReader() {
+        new DynamicRequestPropertyReader()
+    }
+}
+
+/**
+ * Reads properties off an {@code HttpServletRequest} the way application Groovy code does.
+ *
+ * Deliberately <em>not</em> statically compiled: the point of the benchmark is the dynamic call
+ * site and the metaclass lookup behind {@code HttpServletRequestExtension}.
+ */
+class DynamicRequestPropertyReader {
+
+    /**
+     * {@code request.someAttribute} - an unknown property, which falls through the metaclass to
+     * {@code HttpServletRequestExtension} and ends up as an attribute read.
+     */
     Object readUnknownProperty(HttpServletRequest request) {
         request.someAttribute
     }
 
-    @Override
+    /** {@code request.method} - a property backed by a real getter on the request. */
     Object readGetterBackedProperty(HttpServletRequest request) {
         request.method
     }
 
-    @Override
+    /** The explicit, non-dynamic equivalent of {@link #readUnknownProperty}, called from Groovy. */
     Object readAttributeDirectly(HttpServletRequest request) {
         request.getAttribute('someAttribute')
     }

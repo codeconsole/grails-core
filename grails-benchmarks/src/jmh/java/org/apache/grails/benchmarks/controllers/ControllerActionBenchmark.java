@@ -16,7 +16,7 @@
  *  specific language governing permissions and limitations
  *  under the License.
  */
-package org.apache.grails.benchmarks.web;
+package org.apache.grails.benchmarks.controllers;
 
 import java.util.concurrent.TimeUnit;
 
@@ -25,13 +25,13 @@ import groovy.lang.GroovyClassLoader;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Fork;
-import org.openjdk.jmh.annotations.Level;
 import org.openjdk.jmh.annotations.Measurement;
 import org.openjdk.jmh.annotations.Mode;
 import org.openjdk.jmh.annotations.OutputTimeUnit;
 import org.openjdk.jmh.annotations.Scope;
 import org.openjdk.jmh.annotations.Setup;
 import org.openjdk.jmh.annotations.State;
+import org.openjdk.jmh.annotations.Threads;
 import org.openjdk.jmh.annotations.Warmup;
 
 import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
@@ -48,6 +48,7 @@ import grails.util.GrailsWebMockUtil;
 import grails.web.databinding.DataBindingUtils;
 import grails.web.databinding.GrailsWebDataBinder;
 import grails.web.mime.MimeTypeResolver;
+import org.apache.grails.benchmarks.web.WebContextFixture;
 import org.grails.core.DefaultGrailsControllerClass;
 import org.grails.web.databinding.bindingsource.DataBindingSourceRegistry;
 import org.grails.web.databinding.bindingsource.DefaultDataBindingSourceRegistry;
@@ -60,24 +61,26 @@ import org.grails.web.mime.DefaultMimeTypeResolver;
  * <p>Three shapes are measured, because the generated wrapper differs between them:</p>
  * <ul>
  *   <li>{@link #plainAction()} - a controller that declares no {@code allowedMethods} at all. This
- *   is the overwhelmingly common shape, and the one the allowed-methods bookkeeping was pure
- *   overhead for.</li>
+ *   is the overwhelmingly common shape.</li>
  *   <li>{@link #restrictedAction()} - a controller that declares {@code allowedMethods}, where the
  *   bookkeeping and the {@code AllowedMethodsHelper.isAllowed} check both have to run.</li>
  *   <li>{@link #commandObjectAction()} - an action taking a command object, whose generated no-arg
  *   wrapper instantiates and data-binds the command object.</li>
  * </ul>
  *
- * <p>Setup prints, once per fork, how many request-attribute operations one invocation of each
- * action performs, measured against a counting request outside the timed region. That count - not
- * the timing - is the direct evidence of what the generated code does.</p>
+ * <p>The controllers are compiled at setup by a {@code GrailsAwareClassLoader} running the real
+ * {@code ControllerActionTransformer}, so the bytecode invoked is the bytecode a Grails application
+ * would run. Setup also prints, once per fork, how many request-attribute operations one invocation
+ * of each action performs, measured against a counting request outside the timed region. That count
+ * - not the timing - is the direct evidence of what the generated code does.</p>
  */
+@State(Scope.Benchmark)
+@Threads(1)
 @BenchmarkMode(Mode.AverageTime)
 @OutputTimeUnit(TimeUnit.NANOSECONDS)
-@State(Scope.Thread)
-@Warmup(iterations = 5, time = 1, timeUnit = TimeUnit.SECONDS)
+@Warmup(iterations = 3, time = 1, timeUnit = TimeUnit.SECONDS)
 @Measurement(iterations = 5, time = 1, timeUnit = TimeUnit.SECONDS)
-@Fork(2)
+@Fork(value = 2, jvmArgsAppend = {"-Xms1g", "-Xmx1g", "-XX:+UseG1GC"})
 public class ControllerActionBenchmark {
 
     private static final String PLAIN_CONTROLLER_SOURCE = """
@@ -125,28 +128,28 @@ public class ControllerActionBenchmark {
 
     private Object commandController;
 
-    @Setup(Level.Trial)
-    public void setUp() throws Throwable {
-        MockServletContext servletContext = BenchmarkWebContext.newServletContext();
-        WebApplicationContext applicationContext = BenchmarkWebContext.applicationContext(servletContext);
+    @Setup
+    public void setup() throws Throwable {
+        MockServletContext servletContext = WebContextFixture.createServletContext();
+        WebApplicationContext applicationContext = WebContextFixture.applicationContext(servletContext);
         registerDataBindingBeans(applicationContext);
 
-        GroovyClassLoader classLoader = BenchmarkControllerCompiler.newTransformingClassLoader();
+        GroovyClassLoader classLoader = ControllerFixture.createTransformingClassLoader();
 
         classLoader.parseClass(PLAIN_CONTROLLER_SOURCE, "BenchmarkPlainController.groovy");
         Class<?> plainClass = classLoader.loadClass("BenchmarkPlainController");
-        this.plainControllerClass = new DefaultGrailsControllerClass(plainClass);
-        this.plainController = plainClass.getDeclaredConstructor().newInstance();
+        plainControllerClass = new DefaultGrailsControllerClass(plainClass);
+        plainController = plainClass.getDeclaredConstructor().newInstance();
 
         classLoader.parseClass(RESTRICTED_CONTROLLER_SOURCE, "BenchmarkRestrictedController.groovy");
         Class<?> restrictedClass = classLoader.loadClass("BenchmarkRestrictedController");
-        this.restrictedControllerClass = new DefaultGrailsControllerClass(restrictedClass);
-        this.restrictedController = restrictedClass.getDeclaredConstructor().newInstance();
+        restrictedControllerClass = new DefaultGrailsControllerClass(restrictedClass);
+        restrictedController = restrictedClass.getDeclaredConstructor().newInstance();
 
         classLoader.parseClass(COMMAND_CONTROLLER_SOURCE, "BenchmarkCommandController.groovy");
         Class<?> commandClass = classLoader.loadClass("BenchmarkCommandController");
-        this.commandControllerClass = new DefaultGrailsControllerClass(commandClass);
-        this.commandController = commandClass.getDeclaredConstructor().newInstance();
+        commandControllerClass = new DefaultGrailsControllerClass(commandClass);
+        commandController = commandClass.getDeclaredConstructor().newInstance();
 
         reportAttributeCounts(servletContext, applicationContext);
 
@@ -159,13 +162,10 @@ public class ControllerActionBenchmark {
         request.setParameter("pages", "912");
         GrailsWebMockUtil.bindMockWebRequest(applicationContext, request, new MockHttpServletResponse());
 
-        // Fail loudly rather than silently measuring an error path.
-        require(this.plainControllerClass.invoke(this.plainController, "index"), "plain");
-        require(this.restrictedControllerClass.invoke(this.restrictedController, "index"), "restricted");
-        require(this.commandControllerClass.invoke(this.commandController, "save"), "saved");
+        assertFixtureInvokes();
 
-        System.out.println("[fixture] Environment.isDevelopmentMode()=" + Environment.isDevelopmentMode()
-                + " (false means GrailsControllerClass.invoke dispatches through a MethodHandle, as in production)");
+        System.out.println("[fixture] Environment.isDevelopmentMode()=" + Environment.isDevelopmentMode() +
+                " (false means GrailsControllerClass.invoke dispatches through a MethodHandle, as in production)");
     }
 
     /**
@@ -195,50 +195,58 @@ public class ControllerActionBenchmark {
      * counts. Runs before the measured request is bound, and never inside the timed region.
      */
     private void reportAttributeCounts(MockServletContext servletContext, WebApplicationContext applicationContext) throws Throwable {
-        AttributeCountingRequest countingRequest = new AttributeCountingRequest(servletContext, "GET", "/benchmark/index");
+        AttributeCountingRequest countingRequest = ControllerFixture.createCountingRequest(servletContext, "GET", "/benchmark/index");
         countingRequest.setParameter("title", "Groovy in Action");
         countingRequest.setParameter("pages", "912");
         GrailsWebMockUtil.bindMockWebRequest(applicationContext, countingRequest, new MockHttpServletResponse());
 
         // The first invocation of an action initialises metaclasses and caches, which does its own
         // attribute traffic; the reported counts are from the second, steady state, invocation.
-        this.plainControllerClass.invoke(this.plainController, "index");
+        plainControllerClass.invoke(plainController, "index");
         countingRequest.resetCounts();
-        this.plainControllerClass.invoke(this.plainController, "index");
+        plainControllerClass.invoke(plainController, "index");
         System.out.println("[fixture] plainAction request attribute ops: " + countingRequest.describeCounts());
 
-        this.restrictedControllerClass.invoke(this.restrictedController, "index");
+        restrictedControllerClass.invoke(restrictedController, "index");
         countingRequest.resetCounts();
-        this.restrictedControllerClass.invoke(this.restrictedController, "index");
+        restrictedControllerClass.invoke(restrictedController, "index");
         System.out.println("[fixture] restrictedAction request attribute ops: " + countingRequest.describeCounts());
 
-        this.commandControllerClass.invoke(this.commandController, "save");
+        commandControllerClass.invoke(commandController, "save");
         countingRequest.resetCounts();
-        this.commandControllerClass.invoke(this.commandController, "save");
+        commandControllerClass.invoke(commandController, "save");
         System.out.println("[fixture] commandObjectAction request attribute ops: " + countingRequest.describeCounts());
+    }
+
+    // An action that fails - a rejected HTTP method, say - still returns, so check the return value
+    // rather than publishing a number measured on an error path.
+    private void assertFixtureInvokes() throws Throwable {
+        require(plainControllerClass.invoke(plainController, "index"), "plain");
+        require(restrictedControllerClass.invoke(restrictedController, "index"), "restricted");
+        require(commandControllerClass.invoke(commandController, "save"), "saved");
     }
 
     private static void require(Object actual, String expected) {
         if (!expected.equals(actual)) {
-            throw new IllegalStateException("Benchmark fixture is wrong: expected '" + expected + "' but the action returned '" + actual + "'");
+            throw new IllegalStateException("Expected the action to return '" + expected + "' but it returned '" + actual + "'");
         }
     }
 
     /** An action on a controller declaring no {@code allowedMethods} - the common case. */
     @Benchmark
     public Object plainAction() throws Throwable {
-        return this.plainControllerClass.invoke(this.plainController, "index");
+        return plainControllerClass.invoke(plainController, "index");
     }
 
     /** An action on a controller declaring {@code allowedMethods}, where the check has to run. */
     @Benchmark
     public Object restrictedAction() throws Throwable {
-        return this.restrictedControllerClass.invoke(this.restrictedController, "index");
+        return restrictedControllerClass.invoke(restrictedController, "index");
     }
 
     /** An action taking a command object, so the generated wrapper binds one per invocation. */
     @Benchmark
     public Object commandObjectAction() throws Throwable {
-        return this.commandControllerClass.invoke(this.commandController, "save");
+        return commandControllerClass.invoke(commandController, "save");
     }
 }

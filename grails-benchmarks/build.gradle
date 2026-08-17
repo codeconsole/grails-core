@@ -71,7 +71,17 @@ dependencies {
     implementation project(':grails-views-gson')
     implementation project(':grails-views-markup')
     implementation project(':grails-core')
+    // The controller AST transformer, so that benchmarked controllers are compiled by the same
+    // injector a real application's controllers go through.
+    implementation project(':grails-controllers')
+    // The data binding collaborators an application registers as beans, so that a command object
+    // action binds the way it does in a running application rather than building a binder per call.
+    implementation project(':grails-web-databinding')
+    implementation project(':grails-mimetypes')
     implementation 'org.apache.groovy:groovy'
+
+    // ObservationRegistry, which GrailsInterceptorHandlerInterceptorAdapter branches on
+    implementation 'io.micrometer:micrometer-observation'
 
     // The framework modules declare these as compileOnly, so they are absent from the runtime
     // classpath a benchmark actually executes on. The modules' own test suites add them back
@@ -79,6 +89,8 @@ dependencies {
     // with NoClassDefFoundError: jakarta/servlet/ServletContext.
     implementation 'jakarta.servlet:jakarta.servlet-api'
     implementation 'org.springframework:spring-test'
+    // ModelAndView, which the interceptor adapter's postHandle takes
+    implementation 'org.springframework:spring-webmvc'
 
     reportImplementation platform(project(':grails-bom'))
     reportImplementation 'org.apache.groovy:groovy'

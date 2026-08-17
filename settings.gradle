@@ -142,7 +142,6 @@ include(
         'grails-views-core',
         'grails-views-gson',
         'grails-views-markup',
-        'grails-web-benchmarks', // opt-in JMH benchmarks; not wired into build/check
         'grails-web-core',
         'grails-web-common',
         'grails-web-boot',
