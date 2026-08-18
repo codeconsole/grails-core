@@ -1,0 +1,61 @@
+////
+Licensed to the Apache Software Foundation (ASF) under one
+or more contributor license agreements.  See the NOTICE file
+distributed with this work for additional information
+regarding copyright ownership.  The ASF licenses this file
+to you under the Apache License, Version 2.0 (the
+"License"); you may not use this file except in compliance
+with the License.  You may obtain a copy of the License at
+
+https://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing,
+software distributed under the License is distributed on an
+"AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+KIND, either express or implied.  See the License for the
+specific language governing permissions and limitations
+under the License.
+////
+
+Groovy compiles a dynamic method call in one of two ways. It can emit an `invokedynamic` instruction and let
+the JVM link the call site, or it can emit the older call-site caching bytecode. Both dispatch through the
+same metaclass machinery and behave identically; they differ in performance, and in whether the result can be
+compiled ahead of time.
+
+=== Published artifacts always use invokedynamic
+
+Call-site caching links call sites at runtime, which ahead-of-time native compilation cannot do. A native
+image therefore requires every class on the application's classpath to be the `invokedynamic` flavour — the
+application's own classes and every framework module and plugin it depends on.
+
+Because one artifact compiled the other way is enough to rule out a native image for everyone who depends on
+it, a Grails plugin always compiles its published classes with `invokedynamic`. Plugin authors have nothing
+to configure, and a plugin's build cannot make its consumers' applications un-compilable.
+
+=== Applications may choose
+
+An application sits at the end of the classpath, so it is free to choose for its own sources:
+
+[source,groovy]
+.build.gradle
+----
+grails {
+    indy = false
+}
+----
+
+The default follows Groovy's own default, which enables `invokedynamic`.
+
+WARNING: Setting `indy = false` opts the application out of native compilation. Its own classes then use
+call-site caching, which cannot be compiled into a native image, even though every dependency on its
+classpath still can be.
+
+The setting changes nothing about behaviour — classes compiled the two ways interoperate freely on the same
+classpath, and an application compiled with `indy = false` runs correctly against the `invokedynamic`
+artifacts of the framework and its plugins.
+
+=== Measuring the difference
+
+Whether `invokedynamic` helps or hurts a particular application depends on its workload, so treat the setting
+as something to measure rather than assume — and weigh any gain against giving up native compilation. A
+benchmark of dynamic dispatch on its own rarely predicts what an application does.

@@ -79,6 +79,15 @@ class GrailsPluginGradlePlugin extends GrailsGradlePlugin {
         configureSourcesJarTask(project)
     }
 
+    /**
+     * A plugin is consumed by applications that may be compiled to a native image, so its published
+     * classes always use invokedynamic and {@code grails.indy} does not apply to them.
+     */
+    @Override
+    protected boolean honoursIndySetting() {
+        false
+    }
+
     @Override
     protected Closure<String> getGroovyCompilerScript(GroovyCompile compile, Project project) {
         def versionProvider = project.provider { project.version.toString() }

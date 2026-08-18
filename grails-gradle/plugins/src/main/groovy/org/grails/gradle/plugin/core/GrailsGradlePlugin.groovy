@@ -237,11 +237,13 @@ class GrailsGradlePlugin implements Plugin<Project> {
         // Configure indy and log status after evaluation so user's grails { } block has been applied
         GrailsExtension grailsExtension = project.extensions.findByType(GrailsExtension)
         project.afterEvaluate {
-            boolean indyEnabled = grailsExtension.indy.getOrElse(false)
+            boolean indyEnabled = grailsExtension.indy.getOrElse(true)
             Boolean preserveParameterNames = grailsExtension.preserveParameterNames.getOrNull()
 
             project.tasks.withType(GroovyCompile).configureEach { GroovyCompile c ->
-                c.groovyOptions.optimizationOptions.indy = indyEnabled
+                if (honoursIndySetting()) {
+                    c.groovyOptions.optimizationOptions.indy = indyEnabled
+                }
 
                 if (preserveParameterNames != null) {
                     project.logger.info('Grails: Configuring Groovy compilation to preserve parameter names: {}', preserveParameterNames)
@@ -249,11 +251,23 @@ class GrailsGradlePlugin implements Plugin<Project> {
                 }
             }
 
-            if (!indyEnabled) {
-                project.logger.info('Grails: Groovy invokedynamic (indy) is disabled to improve performance (see issue #15293).')
-                project.logger.info('        To enable invokedynamic: grails { indy = true } in build.gradle')
+            if (!indyEnabled && honoursIndySetting()) {
+                project.logger.info('Grails: Groovy invokedynamic (indy) is disabled; callsite caching will be used instead.')
+                project.logger.info('        This application cannot be compiled to a native image.')
             }
         }
+    }
+
+    /**
+     * Whether {@code grails.indy} governs how this project's own sources are compiled.
+     *
+     * <p>True for applications, which are the end of the classpath and may choose. Overridden to
+     * false for projects that publish artifacts other builds consume: callsite caching cannot be
+     * compiled ahead of time into a native image, so a published artifact always uses
+     * invokedynamic rather than letting its own build opt out on its consumers' behalf.
+     */
+    protected boolean honoursIndySetting() {
+        true
     }
 
     protected Closure<String> getGroovyCompilerScript(GroovyCompile compile, Project project) {

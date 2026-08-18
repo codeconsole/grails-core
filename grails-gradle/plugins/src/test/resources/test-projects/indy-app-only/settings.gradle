@@ -1,0 +1,3 @@
+rootProject.name = 'indy-app-only'
+
+include 'plugin', 'app', 'defaultapp'

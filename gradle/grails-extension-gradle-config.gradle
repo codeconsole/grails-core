@@ -35,6 +35,10 @@ grails {
     // Allow CI to toggle Groovy invokedynamic (indy) via -PgrailsIndy=true
     // This enables testing functional tests with both indy enabled and disabled.
     // See: https://github.com/apache/grails-core/issues/15321
+    //
+    // Since 8.0 this governs compilation only for the application-type projects here. A module
+    // applying the grails-plugin plugin always compiles with invokedynamic so that its published
+    // artifacts stay usable for native compilation, and ignores the property.
     if (project.hasProperty('grailsIndy')) {
         indy = Boolean.parseBoolean(project.property('grailsIndy') as String)
     }

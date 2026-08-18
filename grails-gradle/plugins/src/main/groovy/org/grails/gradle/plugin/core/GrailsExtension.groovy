@@ -47,7 +47,7 @@ class GrailsExtension {
     GrailsExtension(Project project) {
         this.project = project
         this.pluginDefiner = new PluginDefiner(project)
-        this.indy = project.objects.property(Boolean).convention(false)
+        this.indy = project.objects.property(Boolean).convention(true)
         this.preserveParameterNames = project.objects.property(Boolean).convention(true)
         this.compileStatic = project.objects.newInstance(GrailsCompileStaticOptions)
         this.cliAutoProvision = project.objects.property(Boolean).convention(project.provider {
@@ -201,10 +201,15 @@ class GrailsExtension {
     boolean micronautAutoSetup = true
 
     /**
-     * Whether to enable Groovy's invokedynamic (indy) bytecode instruction for dynamic Groovy method dispatch.
-     * Disabled by default to improve performance (see GitHub issue #15293).
-     * When enabled, Groovy uses JVM invokedynamic instead of traditional callsite caching.
-     * To enable invokedynamic in build.gradle: grails { indy = true }
+     * Whether Groovy compiles dynamic method dispatch to the JVM's invokedynamic instruction rather
+     * than to callsite caching. Follows Groovy's own default, which enables it.
+     *
+     * <p>Applies to applications only. A published artifact always uses invokedynamic, because
+     * callsite caching links call sites at runtime and cannot be compiled ahead of time into a
+     * native image; a plugin that honoured this setting could make an application's classpath
+     * unusable for native compilation. Setting {@code grails { indy = false }} in an application
+     * therefore changes how that application's own sources are compiled, and opts it out of native
+     * compilation.
      */
     final Property<Boolean> indy
 

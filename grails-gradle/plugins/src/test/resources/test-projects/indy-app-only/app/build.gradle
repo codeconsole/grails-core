@@ -1,0 +1,24 @@
+// An application may still choose callsite caching for its own sources.
+plugins {
+    id 'org.apache.grails.gradle.grails-app'
+}
+
+grails {
+    bom = null
+    cliAutoProvision = false
+    indy = false
+}
+
+dependencies {
+    implementation localGroovy()
+    implementation project(':plugin')
+}
+
+tasks.register('inspectIndy') {
+    def compile = tasks.named('compileGroovy', GroovyCompile)
+    def runtime = configurations.runtimeClasspath
+    doLast {
+        println "APP_INDY=${compile.get().groovyOptions.optimizationOptions.indy}"
+        println "APP_RESOLVED=${runtime.files*.name.findAll { it.startsWith('plugin') }.sort().join(',')}"
+    }
+}

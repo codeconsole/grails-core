@@ -1,0 +1,41 @@
+// A plugin's published classes must stay compilable to a native image, so it ignores indy even when
+// the build asks for it.
+plugins {
+    id 'org.apache.grails.gradle.grails-plugin'
+}
+
+group = 'org.example.test'
+
+grails {
+    bom = null
+    cliAutoProvision = false
+    indy = false
+}
+
+dependencies {
+    implementation localGroovy()
+}
+
+tasks.register('inspectIndy') {
+    dependsOn 'jar'
+    def compile = tasks.named('compileGroovy', GroovyCompile)
+    def jarTask = tasks.named('jar', Jar)
+    def taskNames = tasks.names.findAll { it.toLowerCase().contains('noindy') }
+    doLast {
+        println "PLUGIN_INDY=${compile.get().groovyOptions.optimizationOptions.indy}"
+        println "PLUGIN_NOINDY_TASKS=${taskNames.join(',')}"
+        println "PLUGIN_BYTECODE=${describe(jarTask.get().archiveFile.get().asFile, 'demo/PluginGreeter.class')}"
+    }
+}
+
+// `invokedynamic` appears in a class only when it was compiled that way; reading the raw bytes keeps
+// the check free of any dependency on a bytecode library.
+static String describe(File jarFile, String entryName) {
+    def bytes = null
+    new java.util.zip.ZipFile(jarFile).withCloseable { zip ->
+        def entry = zip.getEntry(entryName)
+        bytes = zip.getInputStream(entry).bytes
+    }
+    def text = new String(bytes, 'ISO-8859-1')
+    "indy=${text.contains('org/codehaus/groovy/vmplugin/v8/IndyInterface')},callsite=${text.contains('org/codehaus/groovy/runtime/callsite/CallSite')}"
+}

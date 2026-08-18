@@ -2361,3 +2361,33 @@ resolved unambiguously before can become ambiguous.
 
 Removing the packages from `grails.spring.bean.packages`, or the stray classes from those packages, restores
 the previous set of beans.
+
+==== 14. invokedynamic is Enabled by Default and Applies to Applications Only
+
+Two related changes, both driven by native compilation.
+
+First, `grails.indy` now defaults to `true`, following Groovy's own default. Grails 7.x defaulted it to
+`false`, so an application that never set it compiled with call-site caching; it now compiles with
+`invokedynamic`. To keep the 7.x behaviour:
+
+[source,groovy]
+.build.gradle
+----
+grails {
+    indy = false
+}
+----
+
+Second, the setting no longer affects Grails plugins. Call-site caching links call sites at runtime and
+cannot be compiled ahead of time into a native image, so one dependency compiled that way is enough to rule
+out a native image for every application using it. A project applying the
+`org.apache.grails.gradle.grails-plugin` plugin therefore always compiles its published classes with
+`invokedynamic` and ignores `grails.indy`. Plugin authors need to change nothing.
+
+Applications are unaffected in behaviour: classes compiled the two ways interoperate on the same classpath,
+so an application built with `indy = false` runs correctly against the framework's `invokedynamic` artifacts.
+It does, however, opt that application out of native compilation.
+
+Plugin builds that set `grails { indy = ... }` can drop the setting; it no longer does anything there.
+
+See <<invokedynamic,Choosing Groovy Call Site Bytecode>> for details.
