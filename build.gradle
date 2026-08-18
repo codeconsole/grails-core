@@ -93,6 +93,11 @@ final class ActiveProcessorCountArgumentProvider implements CommandLineArgumentP
         // Floor of 2: at ActiveProcessorCount=1 HotSpot's ergonomics select Serial GC, which
         // costs more on a 1G test heap than the contention it saves. Two keeps G1 with a
         // bounded worker count.
+        //
+        // That floor also means -PmaxTestParallel=1 still advertises 2 processors to the
+        // single fork whenever maxWorkerCount is larger than availableProcessors/2 (the
+        // usual local case: org.gradle.parallel=true with no org.gradle.workers.max).
+        // It is not a "give the one fork the whole machine" switch.
         this.processorCount = Math.max(2, (availableProcessorCount / Math.max(1, maxWorkerCount)) as int)
     }
 

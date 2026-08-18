@@ -49,9 +49,7 @@ tasks.withType(Test).configureEach {
     jvmArgs('-Duser.country=US', '-Duser.language=en',
             '--add-opens', 'java.base/java.lang=ALL-UNNAMED')
     forkEvery = 100
-    // Honour -PmaxTestParallel here too, so the override behaves the same in all three builds.
-    maxParallelForks = findProperty('maxTestParallel') as Integer ?:
-            (Runtime.runtime.availableProcessors().intdiv(2) ?: 1)
+    maxParallelForks = configuredTestParallel
     maxHeapSize = '2G'
 
     useJUnitPlatform()
