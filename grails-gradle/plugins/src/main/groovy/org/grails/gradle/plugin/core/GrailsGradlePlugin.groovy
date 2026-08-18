@@ -284,7 +284,7 @@ class GrailsGradlePlugin implements Plugin<Project> {
         }
 
         project.afterEvaluate {
-            boolean indyEnabled = grailsExtension.indy.getOrElse(false)
+            boolean indyEnabled = grailsExtension.indy.getOrElse(true)
             Boolean preserveParameterNames = grailsExtension.preserveParameterNames.getOrNull()
 
             project.tasks.withType(GroovyCompile).configureEach { GroovyCompile c ->
@@ -299,8 +299,8 @@ class GrailsGradlePlugin implements Plugin<Project> {
             }
 
             if (!indyEnabled && !publishesIndyVariants()) {
-                project.logger.info('Grails: Groovy invokedynamic (indy) is disabled to improve performance (see issue #15293).')
-                project.logger.info('        To enable invokedynamic: grails { indy = true } in build.gradle')
+                project.logger.info('Grails: Groovy invokedynamic (indy) is disabled; callsite caching will be used instead.')
+                project.logger.info('        Framework and plugin artifacts resolve to their noindy variants to match.')
             }
         }
     }

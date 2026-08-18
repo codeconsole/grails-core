@@ -28,11 +28,12 @@ The `grails` extension chooses for your application:
 .build.gradle
 ----
 grails {
-    indy = true
+    indy = false
 }
 ----
 
-The default is `false`, which compiles your application with call-site caching.
+The default follows Groovy's own default, which enables `invokedynamic`. Set it to `false` to compile against
+call-site caching instead.
 
 === Framework and plugin artifacts
 

@@ -63,8 +63,36 @@ class GrailsIndyVariantsSpec extends GradleSpecification {
 
         where:
         indy    || resolved
-        'false' || 'plugin-1.0.0-noindy.jar'
-        'true'  || 'plugin-1.0.0.jar'
+        'false' || 'legacy-1.0.0.jar,plugin-1.0.0-noindy.jar'
+        'true'  || 'legacy-1.0.0.jar,plugin-1.0.0.jar'
+    }
+
+    def "a dependency that publishes only the default artifact stays resolvable either way"() {
+        given: 'the application also depends on a library with no noindy variant'
+        setupTestResourceProject('indy-variants')
+
+        when:
+        def result = executeTask(':app:inspectResolved', ["-PappIndy=${indy}".toString()])
+
+        then: 'that library resolves to its single artifact rather than failing to match'
+        result.output.contains('legacy-1.0.0.jar')
+
+        where:
+        indy << ['false', 'true']
+    }
+
+    def "an application that configures nothing follows Groovy's own default"() {
+        given:
+        setupTestResourceProject('indy-variants')
+
+        when:
+        def result = executeTask(':defaultapp:inspectDefault')
+
+        then: 'the compiler option is left unset, so Groovy decides'
+        result.output.contains('DEFAULT_INDY=true')
+
+        and: 'and the default artifacts are the ones resolved'
+        result.output.contains('DEFAULT_RESOLVED=plugin-1.0.0.jar')
     }
 
     def "a plain Gradle consumer still resolves the default artifact"() {

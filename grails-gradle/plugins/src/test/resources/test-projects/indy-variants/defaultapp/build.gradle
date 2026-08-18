@@ -1,0 +1,24 @@
+// An application that says nothing about indy follows Groovy's default and resolves the default
+// artifacts to match.
+plugins {
+    id 'org.apache.grails.gradle.grails-app'
+}
+
+grails {
+    bom = null
+    cliAutoProvision = false
+}
+
+dependencies {
+    implementation localGroovy()
+    implementation project(':plugin')
+}
+
+tasks.register('inspectDefault') {
+    def compile = tasks.named('compileGroovy', GroovyCompile)
+    def runtime = configurations.runtimeClasspath
+    doLast {
+        println "DEFAULT_INDY=${compile.get().groovyOptions.optimizationOptions.indy}"
+        println "DEFAULT_RESOLVED=${runtime.files*.name.findAll { it.startsWith('plugin') }.sort().join(',')}"
+    }
+}

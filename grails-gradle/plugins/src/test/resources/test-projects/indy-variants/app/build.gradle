@@ -12,11 +12,12 @@ grails {
 dependencies {
     implementation localGroovy()
     implementation project(':plugin')
+    implementation project(':legacy')
 }
 
 tasks.register('inspectResolved') {
     def runtime = configurations.runtimeClasspath
     doLast {
-        println "RESOLVED=${runtime.files*.name.findAll { it.startsWith('plugin') }.sort().join(',')}"
+        println "RESOLVED=${runtime.files*.name.findAll { it.startsWith('plugin') || it.startsWith('legacy') }.sort().join(',')}"
     }
 }

@@ -1,0 +1,10 @@
+// A dependency that publishes a single artifact: a plugin built before both flavours existed, or
+// one that opted out. It must stay resolvable whichever flavour the application asks for.
+plugins {
+    id 'groovy'
+    id 'java-library'
+}
+
+dependencies {
+    implementation localGroovy()
+}

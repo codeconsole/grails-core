@@ -2633,31 +2633,37 @@ used to apply to its own message source.
 Adding or removing a base name now needs a restart, because Spring Boot reads the configured base names
 once when it builds the message source.
 
-==== 48. invokedynamic is Selected Per Application
+==== 48. invokedynamic is Enabled by Default and Selected Per Application
 
-Grails modules and plugins are now published in two flavours: a default artifact compiled with Groovy's
-`invokedynamic`, and a second artifact carrying the `noindy` classifier compiled with call-site caching
-instead. An application picks one with the existing setting, and the choice now applies to the framework and
-plugin artifacts on its classpath as well as to its own sources:
+Two related changes.
+
+First, `grails.indy` now defaults to `true`, following Groovy's own default. Grails 7.x defaulted it to
+`false`, so an application that never set it compiled with call-site caching; it now compiles with
+`invokedynamic`. To keep the 7.x behaviour, set it explicitly:
 
 [source,groovy]
 .build.gradle
 ----
 grails {
-    indy = true
+    indy = false
 }
 ----
 
-The default is unchanged — `false` — so an application that does not touch this setting compiles the same way
-it did in 7.x. What changes is that it now also resolves the `noindy` artifacts of the framework and of the
-plugins it depends on, rather than the `invokedynamic` ones it received before.
+Second, the setting now reaches precompiled dependencies as well as your own sources. Grails modules and
+plugins are published in two flavours -- a default artifact compiled with `invokedynamic` and a second
+artifact carrying the `noindy` classifier compiled without it -- and the application's setting selects
+between them across the whole dependency graph.
+
+Neither change alters behaviour: the two flavours dispatch through the same metaclass machinery and
+interoperate on the same classpath. They differ in performance, and which is faster depends on the
+application and the JVM it runs on, so measure before choosing.
 
 Two consequences are worth knowing about:
 
-* A plugin built with the `org.apache.grails.gradle.grails-plugin` plugin now compiles its own sources with
-Groovy's default and publishes both flavours, so `indy` no longer governs how the plugin itself is compiled.
-Plugin authors do not need to change anything; the second artifact is produced by the new `noindyJar` task.
+* A plugin built with the `org.apache.grails.gradle.grails-plugin` plugin now publishes both flavours, so
+`indy` no longer governs how the plugin itself is compiled. Plugin authors need to change nothing; the second
+artifact comes from the new `noindyJar` task.
 * A plugin published before 8.0, or one that opts out, publishes a single artifact. It stays resolvable under
-either setting, since classes compiled the two ways interoperate on the same classpath.
+either setting, since classes compiled the two ways interoperate.
 
 See <<invokedynamic,Choosing Groovy Call Site Bytecode>> for details.
