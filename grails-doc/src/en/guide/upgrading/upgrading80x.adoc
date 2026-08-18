@@ -2654,7 +2654,11 @@ plugins are published in two flavours -- a default artifact compiled with `invok
 artifact carrying the `noindy` classifier compiled without it -- and the application's setting selects
 between them across the whole dependency graph.
 
-Neither change alters behaviour: the two flavours dispatch through the same metaclass machinery and
+Native compilation is the reason the default moved. Call-site caching bytecode cannot be compiled ahead of
+time into a native image, so every artifact on a native application's classpath has to be the `invokedynamic`
+flavour. Applications that set `indy = false` opt out of native compilation.
+
+Otherwise neither change alters behaviour: the two flavours dispatch through the same metaclass machinery and
 interoperate on the same classpath. They differ in performance, and which is faster depends on the
 application and the JVM it runs on, so measure before choosing.
 

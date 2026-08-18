@@ -58,6 +58,16 @@ resolve it through normal dependency resolution rather than by naming the classi
 Consumers that are not Grails applications are unaffected. A plain Gradle project depending on a Grails
 artifact resolves the default artifact exactly as it did before.
 
+=== Native compilation requires invokedynamic
+
+Ahead-of-time native compilation does not support call-site caching bytecode, which generates and links
+call-site classes at runtime. An application intended for a native image must therefore leave `indy` at its
+default, and every artifact on its classpath must be the `invokedynamic` flavour -- which is what the default
+artifacts are.
+
+WARNING: Setting `indy = false` forfeits native compilation for that application. It is a choice between
+call-site caching and a native image, not something that can be decided per artifact afterwards.
+
 === Measuring the difference
 
 Whether `invokedynamic` helps or hurts depends on the workload, so treat the setting as something to measure
