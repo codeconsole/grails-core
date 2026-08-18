@@ -1333,9 +1333,13 @@ class Book {
 }
 ----
 
-This is a *validation-layer* change only.
-Column/DDL nullability is governed separately by the mapping layer and is unaffected.
-Command objects are also unaffected: `Validateable` command-object fields remain required by default.
+This change also affects persistence mapping. Columns for unconstrained properties are
+nullable by default, so schema creation and schema migration can produce nullable columns
+where Grails 7 produced `NOT NULL` columns. Review existing schemas and declare
+`nullable: false` explicitly for properties that must remain required before running
+schema migration or diff tools.
+
+Command objects are unaffected: Validateable command-object properties remain non-nullable by default, except for collections and maps, which remain nullable by default.
 
 To restore the legacy required-by-default behaviour for an entire application, set the new `grails.gorm.default.nullable` property to `false`:
 

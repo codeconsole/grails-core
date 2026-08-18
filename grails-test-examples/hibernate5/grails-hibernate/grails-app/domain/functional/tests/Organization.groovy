@@ -17,21 +17,8 @@
  *  under the License.
  */
 
-package grails.test.app.pogo
+package functional.tests
 
-/**
- * Created by jameskleeh on 7/17/17.
- */
-class Profile {
-
-    String email
-    String firstName
-    String lastName
-
-    static constraints = {
-        email nullable: false
-        firstName nullable: false
-        lastName nullable: false
-    }
-
+class Organization {
+    String name
 }
