@@ -182,7 +182,7 @@ public abstract class AbstractGormMappingFactory<R extends Entity, T extends Pro
         Map<String, T> properties = entityToPropertyMap.get(mpp.getOwner());
         if (properties != null && properties.containsKey(mpp.getName())) {
             T property = properties.get(mpp.getName());
-            if (!isIdentityOrVersion(mpp) && !property.isNullableConfigured()) {
+            if (notIdentityOrVersion(mpp) && !property.isNullableConfigured()) {
                 property.setNullable(defaultNullable);
             }
             return property;
@@ -198,13 +198,13 @@ public abstract class AbstractGormMappingFactory<R extends Entity, T extends Pro
         if (defaultMapping != null) {
             try {
                 T property = (T) defaultMapping.clone();
-                if (!isIdentityOrVersion(mpp) && !property.isNullableConfigured()) {
+                if (notIdentityOrVersion(mpp) && !property.isNullableConfigured()) {
                     property.setNullable(defaultNullable);
                 }
                 return property;
             } catch (CloneNotSupportedException e) {
                 T property = BeanUtils.instantiateClass(getPropertyMappedFormType());
-                if (!isIdentityOrVersion(mpp)) {
+                if (notIdentityOrVersion(mpp)) {
                     property.setNullable(defaultNullable);
                 }
                 return property;
@@ -212,16 +212,15 @@ public abstract class AbstractGormMappingFactory<R extends Entity, T extends Pro
         }
         else {
             T property = BeanUtils.instantiateClass(getPropertyMappedFormType());
-            if (!GormProperties.IDENTITY.equals(mpp.getName()) &&
-                    !GormProperties.VERSION.equals(mpp.getName())) {
+            if (notIdentityOrVersion(mpp)) {
                 property.setNullable(defaultNullable);
             }
             return property;
         }
     }
 
-    private boolean isIdentityOrVersion(PersistentProperty property) {
-        return GormProperties.IDENTITY.equals(property.getName()) ||
-                GormProperties.VERSION.equals(property.getName());
+    private static boolean notIdentityOrVersion(PersistentProperty property) {
+        return !GormProperties.IDENTITY.equals(property.getName()) &&
+            !GormProperties.VERSION.equals(property.getName());
     }
 }
