@@ -275,12 +275,22 @@ class GrailsGradlePlugin implements Plugin<Project> {
 
         // Configure indy and log status after evaluation so user's grails { } block has been applied
         GrailsExtension grailsExtension = project.extensions.findByType(GrailsExtension)
+
+        // A project that publishes both flavours compiles both regardless of grails.indy, and picks
+        // its own dependencies by the default rules; a project that publishes neither compiles the
+        // one flavour it was asked for and resolves artifacts to match.
+        if (!publishesIndyVariants()) {
+            GrailsIndyVariants.configureConsumer(project, grailsExtension.indy)
+        }
+
         project.afterEvaluate {
             boolean indyEnabled = grailsExtension.indy.getOrElse(false)
             Boolean preserveParameterNames = grailsExtension.preserveParameterNames.getOrNull()
 
             project.tasks.withType(GroovyCompile).configureEach { GroovyCompile c ->
-                c.groovyOptions.optimizationOptions.indy = indyEnabled
+                if (!publishesIndyVariants()) {
+                    c.groovyOptions.optimizationOptions.indy = indyEnabled
+                }
 
                 if (preserveParameterNames != null) {
                     project.logger.info('Grails: Configuring Groovy compilation to preserve parameter names: {}', preserveParameterNames)
@@ -288,11 +298,25 @@ class GrailsGradlePlugin implements Plugin<Project> {
                 }
             }
 
-            if (!indyEnabled) {
+            if (!indyEnabled && !publishesIndyVariants()) {
                 project.logger.info('Grails: Groovy invokedynamic (indy) is disabled to improve performance (see issue #15293).')
                 project.logger.info('        To enable invokedynamic: grails { indy = true } in build.gradle')
             }
         }
+    }
+
+    /**
+     * Whether this project publishes its classes both with and without {@code invokedynamic}.
+     *
+     * <p>A library consumed by applications publishes both flavours and lets the consuming
+     * application choose, so {@code grails.indy} does not govern how it compiles its own sources.
+     * An application publishes nothing and is the one that chooses.
+     *
+     * @return {@code false} for applications; overridden to {@code true} for plugins
+     * @see GrailsIndyVariants
+     */
+    protected boolean publishesIndyVariants() {
+        false
     }
 
     protected Closure<String> getGroovyCompilerScript(GroovyCompile compile, Project project) {

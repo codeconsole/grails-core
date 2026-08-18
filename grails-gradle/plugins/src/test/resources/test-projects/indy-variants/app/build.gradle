@@ -1,0 +1,22 @@
+// An application selects the flavour it wants; the plugin's artifacts follow that choice.
+plugins {
+    id 'org.apache.grails.gradle.grails-app'
+}
+
+grails {
+    bom = null
+    cliAutoProvision = false
+    indy = project.hasProperty('appIndy') ? Boolean.parseBoolean(appIndy) : false
+}
+
+dependencies {
+    implementation localGroovy()
+    implementation project(':plugin')
+}
+
+tasks.register('inspectResolved') {
+    def runtime = configurations.runtimeClasspath
+    doLast {
+        println "RESOLVED=${runtime.files*.name.findAll { it.startsWith('plugin') }.sort().join(',')}"
+    }
+}

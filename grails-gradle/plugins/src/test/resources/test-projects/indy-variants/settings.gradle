@@ -1,0 +1,3 @@
+rootProject.name = 'indy-variants'
+
+include 'plugin', 'app', 'plain'

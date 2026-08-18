@@ -1,0 +1,16 @@
+// A plain Gradle consumer that knows nothing about Grails must keep resolving the default
+// artifact: adding a second variant must not make it ambiguous.
+plugins {
+    id 'java-library'
+}
+
+dependencies {
+    implementation project(':plugin')
+}
+
+tasks.register('inspectResolved') {
+    def runtime = configurations.runtimeClasspath
+    doLast {
+        println "RESOLVED=${runtime.files*.name.findAll { it.startsWith('plugin') }.sort().join(',')}"
+    }
+}

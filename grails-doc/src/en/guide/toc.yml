@@ -85,6 +85,7 @@ commandLine:
     gradleDependencies: Defining Dependencies with Gradle
     gradleTasks: Working with Gradle Tasks
     gradlePlugins: Grails plugins for Gradle
+    invokedynamic: Choosing Groovy Call Site Bytecode
 profiles:
   title: Application Profiles
   standardProfiles:

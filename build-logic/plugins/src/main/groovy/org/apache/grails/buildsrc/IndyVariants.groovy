@@ -1,0 +1,160 @@
+/*
+ *  Licensed to the Apache Software Foundation (ASF) under one
+ *  or more contributor license agreements.  See the NOTICE file
+ *  distributed with this work for additional information
+ *  regarding copyright ownership.  The ASF licenses this file
+ *  to you under the Apache License, Version 2.0 (the
+ *  "License"); you may not use this file except in compliance
+ *  with the License.  You may obtain a copy of the License at
+ *
+ *    https://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing,
+ *  software distributed under the License is distributed on an
+ *  "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ *  KIND, either express or implied.  See the License for the
+ *  specific language governing permissions and limitations
+ *  under the License.
+ */
+
+package org.apache.grails.buildsrc
+
+import groovy.transform.CompileStatic
+
+import org.gradle.api.Project
+import org.gradle.api.artifacts.Configuration
+import org.gradle.api.artifacts.ConfigurationVariant
+import org.gradle.api.attributes.Attribute
+import org.gradle.api.file.Directory
+import org.gradle.api.plugins.BasePlugin
+import org.gradle.api.plugins.JavaPluginExtension
+import org.gradle.api.provider.Provider
+import org.gradle.api.tasks.GroovyRuntime
+import org.gradle.api.tasks.GroovySourceDirectorySet
+import org.gradle.api.tasks.SourceSet
+import org.gradle.api.tasks.SourceSetContainer
+import org.gradle.api.tasks.TaskProvider
+import org.gradle.api.tasks.bundling.Jar
+import org.gradle.api.tasks.compile.GroovyCompile
+import org.gradle.jvm.toolchain.JavaToolchainService
+
+/**
+ * Publishes every Groovy module of the framework twice: the default artifact compiled with Groovy's
+ * own {@code invokedynamic} default, and a {@code noindy} classifier artifact compiled without it.
+ * An application picks between them by setting {@code grails.indy}, and the choice propagates
+ * across the dependency graph through Gradle Module Metadata.
+ *
+ * <p>Mirrors {@code GrailsIndyVariants} from the Grails Gradle plugins, which does the same for
+ * plugins built outside this repository. That class is not on build-logic's classpath — the two
+ * builds are independent — so the attribute name, classifier and task names are duplicated here and
+ * must be kept in step. The same duplication already exists for {@code BaseDirArgumentProvider}.
+ *
+ * <p>Both implementations are idempotent and agree on their task names, so the modules of this
+ * repository that apply the {@code grails-plugin} Gradle plugin are configured exactly once no
+ * matter which of the two reaches them first.
+ */
+@CompileStatic
+class IndyVariants {
+
+    /** Must match {@code GrailsIndyVariants.INDY_ATTRIBUTE}. */
+    static final Attribute<Boolean> INDY_ATTRIBUTE = Attribute.of('org.apache.grails.indy', Boolean)
+
+    /** Must match {@code GrailsIndyVariants.NOINDY_CLASSIFIER}. */
+    static final String NOINDY_CLASSIFIER = 'noindy'
+
+    /** Must match {@code GrailsIndyVariants.NOINDY_VARIANT_NAME}. */
+    static final String NOINDY_VARIANT_NAME = 'noindy'
+
+    /** Must match {@code GrailsIndyVariants.NOINDY_COMPILE_TASK_NAME}. */
+    static final String NOINDY_COMPILE_TASK_NAME = 'compileNoindyGroovy'
+
+    /** Must match {@code GrailsIndyVariants.NOINDY_JAR_TASK_NAME}. */
+    static final String NOINDY_JAR_TASK_NAME = 'noindyJar'
+
+    private IndyVariants() {
+    }
+
+    /**
+     * Adds the second compilation and its published variants to a module.
+     *
+     * <p>Only modules that are actually published are configured: an unpublished module has no
+     * consumer that could ask for the other flavour, so compiling it twice would be wasted work.
+     *
+     * @param project the module to configure
+     */
+    static void configure(Project project) {
+        project.plugins.withId('groovy') {
+            project.plugins.withId('maven-publish') {
+                if (project.tasks.names.contains(NOINDY_JAR_TASK_NAME)) {
+                    return
+                }
+                if (GradleUtils.lookupPropertyByType(project, 'skipJavaComponent', Boolean)) {
+                    return
+                }
+
+                SourceSet main = project.extensions.getByType(SourceSetContainer)
+                        .findByName(SourceSet.MAIN_SOURCE_SET_NAME)
+                if (main == null) {
+                    return
+                }
+
+                TaskProvider<GroovyCompile> noindyCompile = registerNoindyCompileTask(project, main)
+                TaskProvider<Jar> noindyJar = registerNoindyJarTask(project, main, noindyCompile)
+
+                addNoindyVariant(project, 'apiElements', noindyJar)
+                addNoindyVariant(project, 'runtimeElements', noindyJar)
+            }
+        }
+    }
+
+    private static TaskProvider<GroovyCompile> registerNoindyCompileTask(Project project, SourceSet main) {
+        GroovyRuntime groovyRuntime = project.extensions.getByType(GroovyRuntime)
+        JavaPluginExtension javaExtension = project.extensions.getByType(JavaPluginExtension)
+        Provider<Directory> destination = project.layout.buildDirectory.dir("classes/groovy/${NOINDY_CLASSIFIER}")
+
+        return project.tasks.register(NOINDY_COMPILE_TASK_NAME, GroovyCompile) { GroovyCompile compile ->
+            compile.description = 'Compiles the main Groovy source set with invokedynamic disabled.'
+            compile.group = BasePlugin.BUILD_GROUP
+
+            compile.source = main.extensions.getByType(GroovySourceDirectorySet)
+            compile.classpath = main.compileClasspath
+            compile.groovyClasspath = groovyRuntime.inferGroovyClasspath(main.compileClasspath)
+            compile.destinationDirectory.set(destination)
+
+            // The one intentional difference from the default compilation. Everything else is left to
+            // the conventions CompilePlugin applies to all GroovyCompile tasks, so this task shares
+            // the encoding, fork settings and compiler configuration script of the default one.
+            compile.groovyOptions.optimizationOptions.put('indy', false)
+
+            compile.sourceCompatibility = javaExtension.sourceCompatibility.toString()
+            compile.targetCompatibility = javaExtension.targetCompatibility.toString()
+            if (javaExtension.toolchain.languageVersion.present) {
+                JavaToolchainService toolchains = project.extensions.getByType(JavaToolchainService)
+                compile.javaLauncher.set(toolchains.launcherFor(javaExtension.toolchain))
+            }
+        }
+    }
+
+    private static TaskProvider<Jar> registerNoindyJarTask(Project project, SourceSet main,
+                                                           TaskProvider<GroovyCompile> noindyCompile) {
+        return project.tasks.register(NOINDY_JAR_TASK_NAME, Jar) { Jar jar ->
+            jar.description = 'Assembles a jar whose Groovy classes are compiled without invokedynamic.'
+            jar.group = BasePlugin.BUILD_GROUP
+            jar.archiveClassifier.set(NOINDY_CLASSIFIER)
+
+            // Java bytecode holds no Groovy call sites, so it is reused rather than recompiled.
+            jar.from(noindyCompile.flatMap { GroovyCompile compile -> compile.destinationDirectory })
+            jar.from(main.java.classesDirectory)
+            jar.from(project.tasks.named(main.processResourcesTaskName))
+        }
+    }
+
+    private static void addNoindyVariant(Project project, String configurationName, TaskProvider<Jar> noindyJar) {
+        project.configurations.named(configurationName).configure { Configuration elements ->
+            elements.outgoing.variants.create(NOINDY_VARIANT_NAME) { ConfigurationVariant variant ->
+                variant.attributes.attribute(INDY_ATTRIBUTE, false)
+                variant.artifact(noindyJar)
+            }
+        }
+    }
+}

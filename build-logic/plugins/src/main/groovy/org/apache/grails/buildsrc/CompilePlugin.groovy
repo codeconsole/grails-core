@@ -55,6 +55,7 @@ class CompilePlugin implements Plugin<Project> {
         configureJars(project)
         configureCompiler(project)
         configureReproducible(project)
+        IndyVariants.configure(project)
     }
 
     private static void configureJavaVersion(Project project) {

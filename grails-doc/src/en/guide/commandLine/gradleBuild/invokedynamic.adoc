@@ -1,0 +1,64 @@
+////
+Licensed to the Apache Software Foundation (ASF) under one
+or more contributor license agreements.  See the NOTICE file
+distributed with this work for additional information
+regarding copyright ownership.  The ASF licenses this file
+to you under the Apache License, Version 2.0 (the
+"License"); you may not use this file except in compliance
+with the License.  You may obtain a copy of the License at
+
+https://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing,
+software distributed under the License is distributed on an
+"AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+KIND, either express or implied.  See the License for the
+specific language governing permissions and limitations
+under the License.
+////
+
+Groovy compiles a dynamic method call in one of two ways. It can emit an `invokedynamic` instruction and let
+the JVM link the call site, or it can emit the older call-site caching bytecode. Both dispatch through the
+same metaclass machinery and behave identically; they differ only in performance, and which one is faster
+depends on the application and the JVM it runs on.
+
+The `grails` extension chooses for your application:
+
+[source,groovy]
+.build.gradle
+----
+grails {
+    indy = true
+}
+----
+
+The default is `false`, which compiles your application with call-site caching.
+
+=== Framework and plugin artifacts
+
+Your own code is only part of what runs. The framework and the plugins you depend on are compiled ahead of
+time, so the setting above cannot reach them by recompiling. Instead, Grails modules and plugins built with
+the `org.apache.grails.gradle.grails-plugin` plugin publish their classes twice: a default artifact compiled
+with `invokedynamic`, and a second artifact carrying the `noindy` classifier compiled without it. Setting
+`indy` selects between them for the whole dependency graph, so the artifacts on your classpath match the way
+your own code is compiled. No per-dependency configuration is needed.
+
+A dependency that publishes only one artifact — a plugin built before this existed, or one that chose not to
+publish both — stays usable either way. Its single artifact is used whichever setting you choose, because
+classes compiled the two ways interoperate freely on the same classpath.
+
+=== Publishing both flavours from a plugin
+
+A plugin applying the `org.apache.grails.gradle.grails-plugin` plugin publishes both flavours automatically,
+and `indy` has no effect on how it compiles its own sources — it always builds both. The extra artifact is
+produced by the `noindyJar` task and published as a variant of the plugin's API and runtime, so applications
+resolve it through normal dependency resolution rather than by naming the classifier.
+
+Consumers that are not Grails applications are unaffected. A plain Gradle project depending on a Grails
+artifact resolves the default artifact exactly as it did before.
+
+=== Measuring the difference
+
+Whether `invokedynamic` helps or hurts depends on the workload, so treat the setting as something to measure
+rather than assume. Build the application both ways and compare it under a representative load; a benchmark
+of dynamic dispatch on its own rarely predicts what an application does.

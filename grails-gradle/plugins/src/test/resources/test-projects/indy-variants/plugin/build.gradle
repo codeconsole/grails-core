@@ -1,0 +1,65 @@
+// A Grails plugin publishes its classes twice: the default artifact uses Groovy's own
+// invokedynamic default, and a `noindy` classifier artifact is compiled without it.
+plugins {
+    id 'org.apache.grails.gradle.grails-plugin'
+}
+
+group = 'org.example.test'
+
+grails {
+    bom = null
+    cliAutoProvision = false
+}
+
+dependencies {
+    implementation localGroovy()
+}
+
+tasks.register('inspectIndyVariants') {
+    dependsOn 'jar', 'noindyJar'
+    def mainCompile = tasks.named('compileGroovy', GroovyCompile)
+    def noindyCompile = tasks.named('compileNoindyGroovy', GroovyCompile)
+    def noindyJarTask = tasks.named('noindyJar', Jar)
+    def apiHasNoindy = configurations.apiElements.outgoing.variants.names.contains('noindy')
+    def runtimeHasNoindy = configurations.runtimeElements.outgoing.variants.names.contains('noindy')
+    doLast {
+        println "MAIN_INDY=${mainCompile.get().groovyOptions.optimizationOptions.indy}"
+        println "NOINDY_INDY=${noindyCompile.get().groovyOptions.optimizationOptions.indy}"
+        println "NOINDY_JAR=${noindyJarTask.get().archiveFile.get().asFile.name}"
+        println "API_HAS_NOINDY=${apiHasNoindy}"
+        println "RUNTIME_HAS_NOINDY=${runtimeHasNoindy}"
+
+        def counts = [:]
+        [main: tasks.named('jar', Jar).get(), noindy: noindyJarTask.get()].each { label, jarTask ->
+            def classFile = new File(jarTask.destinationDirectory.get().asFile, 'unpacked')
+            classFile.deleteDir()
+            copyClass(jarTask.archiveFile.get().asFile, classFile)
+            counts[label] = describe(new File(classFile, 'demo/PluginGreeter.class'))
+        }
+        println "MAIN_BYTECODE=${counts.main}"
+        println "NOINDY_BYTECODE=${counts.noindy}"
+    }
+}
+
+static void copyClass(File jarFile, File targetDir) {
+    targetDir.mkdirs()
+    new java.util.zip.ZipFile(jarFile).withCloseable { zip ->
+        zip.entries().each { entry ->
+            if (entry.name.endsWith('.class')) {
+                def out = new File(targetDir, entry.name)
+                out.parentFile.mkdirs()
+                out.bytes = zip.getInputStream(entry).bytes
+            }
+        }
+    }
+}
+
+// `invokedynamic` appears in the constant pool of indy-compiled classes only; classes compiled
+// without it reference the CallSite runtime instead. Reading the raw bytes keeps the check free of
+// any dependency on a bytecode library.
+static String describe(File classFile) {
+    def text = new String(classFile.bytes, 'ISO-8859-1')
+    def hasCallSite = text.contains('org/codehaus/groovy/runtime/callsite/CallSite')
+    def hasIndy = text.contains('org/codehaus/groovy/vmplugin/v8/IndyInterface')
+    "indy=${hasIndy},callsite=${hasCallSite}"
+}

@@ -109,6 +109,16 @@ class GrailsPluginGradlePlugin extends GrailsGradlePlugin {
         configurePluginResources(project)
         configureJarTask(project)
         configureSourcesJarTask(project)
+        GrailsIndyVariants.configureProducer(project)
+    }
+
+    /**
+     * A plugin is consumed by applications that may compile either way, so it publishes both
+     * flavours and leaves the choice to the application resolving it.
+     */
+    @Override
+    protected boolean publishesIndyVariants() {
+        true
     }
 
     @Override
