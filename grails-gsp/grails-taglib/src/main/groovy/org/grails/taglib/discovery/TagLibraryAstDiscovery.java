@@ -18,14 +18,12 @@
  */
 package org.grails.taglib.discovery;
 
-import java.util.LinkedHashMap;
 import java.util.Map;
 
 import groovy.lang.Closure;
 import org.codehaus.groovy.ast.ClassHelper;
 import org.codehaus.groovy.ast.ClassNode;
 import org.codehaus.groovy.ast.FieldNode;
-import org.codehaus.groovy.ast.MethodNode;
 import org.codehaus.groovy.ast.expr.ConstantExpression;
 import org.codehaus.groovy.ast.expr.Expression;
 
@@ -87,22 +85,7 @@ public final class TagLibraryAstDiscovery {
      */
     public static Map<String, TagLibraryIndexEntry.Kind> findTags(ClassNode classNode,
             boolean parameterNamesRetained) {
-        Map<String, TagLibraryIndexEntry.Kind> tags = new LinkedHashMap<>();
-        for (MethodNode method : classNode.getMethods()) {
-            if (method.getDeclaringClass() != null && !classNode.equals(method.getDeclaringClass())) {
-                continue;
-            }
-            if (TagDiscoveryRules.isTagMethod(new AstTagMethodView(method, parameterNamesRetained))) {
-                tags.put(method.getName(), TagLibraryIndexEntry.Kind.METHOD);
-            }
-        }
-        for (FieldNode field : classNode.getFields()) {
-            if (!field.isStatic() && field.getType() != null && CLOSURE_TYPE.equals(field.getType())) {
-                // A closure carries no signature, so a call to it cannot be bound when compiled.
-                tags.put(field.getName(), TagLibraryIndexEntry.Kind.LEGACY_CLOSURE);
-            }
-        }
-        return tags;
+        return TagDiscoveryRules.findTags(new AstTagLibraryView(classNode, parameterNamesRetained));
     }
 
 }

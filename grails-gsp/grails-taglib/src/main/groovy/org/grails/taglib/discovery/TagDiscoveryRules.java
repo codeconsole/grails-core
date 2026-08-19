@@ -18,7 +18,12 @@
  */
 package org.grails.taglib.discovery;
 
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Set;
+
+import org.grails.taglib.index.TagLibraryIndexEntry;
 
 /**
  * Decides whether a method is a tag.
@@ -87,6 +92,38 @@ public final class TagDiscoveryRules {
      * @param method the method to classify
      * @return true if the method can be invoked as a tag
      */
+    /**
+     * Finds every tag a tag library declares, from either view of it.
+     *
+     * <p>The two kinds are enumerated differently, because the runtime dispatches them differently. A
+     * method tag is read from the declaring class alone, since dispatch scans declared methods and an
+     * inherited one is not callable as a tag. A closure tag is read up the whole hierarchy, since
+     * dispatch finds it as a property and a property is inherited.
+     *
+     * <p>Where a name is declared both ways the closure wins, and where it is declared as a closure
+     * more than once the nearest declaration wins, which is the order dispatch resolves them in.
+     *
+     * @param view the tag library, from a syntax tree or from a compiled class
+     * @return each tag mapped to how it is implemented
+     */
+    public static Map<String, TagLibraryIndexEntry.Kind> findTags(TagLibraryView view) {
+        Map<String, TagLibraryIndexEntry.Kind> tags = new LinkedHashMap<>();
+        for (TagMethodView method : view.declaredMethods()) {
+            if (isTagMethod(method)) {
+                tags.put(method.getName(), TagLibraryIndexEntry.Kind.METHOD);
+            }
+        }
+        Set<String> claimed = new HashSet<>();
+        for (TagLibraryView current = view; current != null; current = current.superclassView()) {
+            for (String name : current.declaredClosureFieldNames()) {
+                if (claimed.add(name)) {
+                    tags.put(name, TagLibraryIndexEntry.Kind.LEGACY_CLOSURE);
+                }
+            }
+        }
+        return tags;
+    }
+
     public static boolean isTagMethod(TagMethodView method) {
         if (!method.isPublic() || method.isStatic() || method.isGenerated()) {
             return false;
