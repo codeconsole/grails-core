@@ -394,5 +394,7 @@ deployment:
   deploymentStandalone: Standalone
   deploymentContainer: Container Deployment (e.g. Tomcat)
   deploymentTasks: Deployment Configuration Tasks
+  deploymentAot: Ahead-of-Time Processing
+  deploymentAotCache: Ahead-of-Time Caching
 contributing:
   title: Contributing to Grails

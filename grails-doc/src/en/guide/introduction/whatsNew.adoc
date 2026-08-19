@@ -277,3 +277,65 @@ be enabled (`grails.mongodb.transactional = true`). Spring Data repositories are
 session are shared, and the two object-mapping models stay separate. See the
 link:{mongodb5Guide}index.html#springDataInterop[Spring Data MongoDB Interoperability] section of the GORM for MongoDB
 guide for details.
+
+==== Ahead-of-Time Processing
+
+A Grails application can now be processed by Spring's ahead-of-time engine. Applying Spring Boot's AOT plugin adds a
+`processAot` task, which generates the bean definitions as Java source at build time instead of deriving them from
+classpath scanning and annotations on every start:
+
+[source,groovy]
+.build.gradle
+----
+apply plugin: 'org.springframework.boot.aot'
+
+tasks.named('processAot') {
+    systemProperty 'grails.env', 'production'
+}
+----
+
+[source,bash]
+----
+java -Dspring.aot.enabled=true -jar build/libs/myapp.jar
+----
+
+AOT processing is also what a GraalVM native image requires: Spring Boot refuses to start an image without a
+build-time generated initializer. Reachability metadata for the application's own artefacts and compiled pages is
+written from the build output, and `traceNativeMetadata` records what the framework reflects on along a request path.
+
+See the xref:deployment/deploymentAot[Ahead-of-Time Processing] section for what it changes at runtime and what it
+does not yet cover.
+
+==== Ahead-of-Time Caching
+
+On JDK 25 or later, `grails.aotCache` trains a JDK AOT cache by running the packaged application once and recording
+the classes it loaded and linked and the methods it ran, so the next start reads that work rather than repeating it:
+
+[source,groovy]
+.build.gradle
+----
+grails {
+    aotCache {
+        enabled = true
+        paths = ['/', '/login', '/book/index']
+    }
+}
+----
+
+See the xref:deployment/deploymentAotCache[Ahead-of-Time Caching] section, which includes measured figures and the
+conditions under which a JVM will decline a cache.
+
+==== Banner Colour, Container Version and Start Mark
+
+The startup banner is coloured, reports the servlet container it is running on, and says how the application was
+started where that is worth saying — `NATIVE` for an image, `AOT CACHE` for a JVM given a cache to read, `AOT` for one
+running generated bean definitions. An ordinary start says nothing.
+
+Spring Security and the servlet container are also shown by default now. What allows that is a smaller change
+underneath: a version shown by default that cannot be determined is left out rather than shown as `unknown`, so
+an application without Spring Security says nothing about it instead of saying it does not know. One asked for
+by name still reads `unknown`, because saying nothing about what was asked for reads as the option having been
+ignored. See
+xref:conf/applicationClass/customizing[Customizing the Application Class] for the full set of banner options, and the
+xref:upgrading#upgrading80x[upgrade guide] for how to restore the previous output.
+

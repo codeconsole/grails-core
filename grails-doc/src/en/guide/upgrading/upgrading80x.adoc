@@ -2476,3 +2476,41 @@ or pass an actual domain class if that is what you meant:
 ----
 Tenants.withId(SomeDomainClass, tenantId) { ... }
 ----
+
+
+==== 46. Startup Banner Shows the Servlet Container and Spring Security
+
+The banner now reports the servlet container it is running on, and the version of Spring Security where the
+application has it, without being asked for either. Both were previously opt-in through
+`grails.banner.versions.include`.
+
+What made them opt-in was that a version which could not be determined was shown as `unknown`, so turning one
+on by default would have printed `Spring Security: unknown` for every application without it. A version shown
+by default that cannot be determined is now left out instead, which is what allows the two to be shown at all.
+A version the application asked for by name still reads `unknown` where it cannot be determined, since saying
+nothing about something that was asked for reads as the option having been ignored.
+
+The container is named as itself: an application on Tomcat shows `Tomcat`, one on Jetty shows `Jetty`. It is
+configured under the single key `container`, whichever container that turns out to be.
+
+To restore the previous banner, exclude them:
+
+[source, yaml]
+.grails-app/conf/application.yml
+----
+grails:
+    banner:
+        versions:
+            exclude:
+                - container
+                - spring-security
+----
+
+An application that already asked for `spring-security` under `grails.banner.versions.include` keeps working
+and needs no change — the option is still recognised, and the version is shown either way. The same is true
+of `tomcat`, `jetty` and `undertow`, which remain available for an application that wants to be told about a
+particular container whether or not it is the one serving; naming one as well as taking the default shows it
+once, not twice.
+
+A version option that names none of the known keys is now reported as a warning after the banner is printed,
+rather than being dropped in silence.
