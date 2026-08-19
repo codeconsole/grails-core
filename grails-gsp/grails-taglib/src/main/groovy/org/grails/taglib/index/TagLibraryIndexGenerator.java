@@ -163,7 +163,8 @@ public final class TagLibraryIndexGenerator {
             describable.add(source.getAbsolutePath());
         }
         for (ClassNode classNode : parse(sources, roots, parameterNamesRetained, encoding, skipped)) {
-            if (!isTagLibrary(classNode) || !wasAskedFor(classNode, describable)) {
+            if (!isTagLibrary(classNode) || !isRegistrable(classNode) ||
+                    !wasAskedFor(classNode, describable)) {
                 continue;
             }
             String namespace = TagLibraryAstDiscovery.resolveNamespace(classNode);
@@ -387,6 +388,22 @@ public final class TagLibraryIndexGenerator {
             }
         }
         return classNode.getName().endsWith(TAG_LIB_ARTEFACT);
+    }
+
+    /**
+     * Whether a class can be registered as a tag library at all.
+     *
+     * <p>An abstract class cannot: artefact handling rejects one, and {@code TagLibArtefactHandler}
+     * does not allow abstract artefacts. A base class shared by several tag libraries is a normal
+     * thing to keep beside them, so describing it would file its methods under a namespace nothing
+     * answers to - and its subclasses do not inherit them as tags either, since a tag method is read
+     * from the declaring class. Traits and interfaces are covered by the same check.
+     *
+     * @param classNode the class to consider
+     * @return true when an application could register it
+     */
+    private static boolean isRegistrable(ClassNode classNode) {
+        return !classNode.isAbstract() && !classNode.isInterface();
     }
 
     /**

@@ -267,4 +267,34 @@ class TagLibraryIndexGeneratorSpec extends Specification {
         !new File(out, 'META-INF/grails/taglibs/demo.SharedTagLib.properties').isFile()
     }
 
+    void 'an abstract base class is not described'() {
+        given: 'a base kept beside the tag libraries that share it, which is where it belongs'
+        Path taglibs = Files.createDirectories(tempDir.resolve('grails-app/taglib/demo'))
+        taglibs.resolve('BaseTagLib.groovy').toFile().text = """
+            package demo
+            abstract class BaseTagLib {
+                def common(Map attrs) { 'shared' }
+            }
+        """
+        taglibs.resolve('MyTagLib.groovy').toFile().text = """
+            package demo
+            import grails.gsp.TagLib
+            @TagLib
+            class MyTagLib extends BaseTagLib {
+                static namespace = 'my'
+                def own(Map attrs) { 'mine' }
+            }
+        """
+        File out = Files.createDirectories(tempDir.resolve('out-abstract')).toFile()
+
+        when:
+        TagLibraryIndexGenerator.generate(tempDir.resolve('grails-app/taglib').toFile(), out, true, 'UTF-8')
+
+        then: 'artefact handling never registers an abstract class, so its methods are tags of nothing'
+        !new File(out, 'META-INF/grails/taglibs/demo.BaseTagLib.properties').isFile()
+
+        and: 'the tag library that extends it is described as usual'
+        new File(out, 'META-INF/grails/taglibs/demo.MyTagLib.properties').text.contains('own')
+    }
+
 }

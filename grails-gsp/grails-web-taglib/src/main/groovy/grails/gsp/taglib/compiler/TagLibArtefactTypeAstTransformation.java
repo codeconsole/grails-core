@@ -65,6 +65,11 @@ public class TagLibArtefactTypeAstTransformation extends ArtefactTypeAstTransfor
      * degrades to the runtime resolution that applies when a tag library is registered dynamically.
      */
     protected void writeIndexEntry(SourceUnit sourceUnit, ClassNode classNode) {
+        if (classNode.isAbstract() || classNode.isInterface()) {
+            // Artefact handling never registers an abstract class, so describing one would record
+            // tags that nothing answers to at runtime.
+            return;
+        }
         File targetDirectory = sourceUnit.getConfiguration() != null ?
                 sourceUnit.getConfiguration().getTargetDirectory() :
                 null;
