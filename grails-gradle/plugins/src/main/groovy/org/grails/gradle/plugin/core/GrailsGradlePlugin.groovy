@@ -70,6 +70,7 @@ import org.grails.gradle.plugin.commands.GrailsCliGradlePlugin
 import org.grails.gradle.plugin.exploded.ExplodedCompatibilityRule
 import org.grails.gradle.plugin.exploded.ExplodedDisambiguationRule
 import org.grails.gradle.plugin.exploded.GrailsExplodedPlugin
+import org.grails.gradle.plugin.i18n.GenerateI18nDescriptorTask
 import org.apache.grails.gradle.plugin.aot.AotCacheExtension
 import org.apache.grails.gradle.plugin.aot.ExtractApplicationTask
 import org.apache.grails.gradle.plugin.aot.GenerateNativeMetadataTask
@@ -162,6 +163,7 @@ class GrailsGradlePlugin implements Plugin<Project> {
 
         enableNative2Ascii(project, grailsVersion)
 
+        configureI18nDescriptor(project)
         configureNativeMetadata(project)
         configureAotCache(project)
 
@@ -1282,6 +1284,39 @@ ${importStatements}
     }
 
     /**
+     * Records the message bundles this artifact ships into {@code META-INF/grails/i18n.properties}.
+     *
+     * <p>Spring Boot's message source is configured with an explicit base-name list, which nothing at
+     * runtime can discover without scanning the classpath. Writing the answer here lets the runtime
+     * read it back through an exact-name resource lookup instead — no {@code classpath*:*.properties}
+     * scan, and therefore no wildcard resource metadata needed for a native image.</p>
+     *
+     * <p>The task reads the bundle <em>sources</em>, not the processed resources: {@code native2ascii}
+     * and {@code EscapeUnicode} rewrite bundle contents but never file names, so there is no need to
+     * order this after them and no risk of a {@code processResources} dependency cycle.</p>
+     */
+    protected void configureI18nDescriptor(Project project) {
+        SourceSet sourceSet = SourceSets.findMainSourceSet(project)
+        GrailsExtension grailsExt = project.extensions.getByType(GrailsExtension)
+
+        TaskProvider<GenerateI18nDescriptorTask> descriptorTask = project.tasks.register(
+                'generateI18nDescriptor', GenerateI18nDescriptorTask) { GenerateI18nDescriptorTask task ->
+            task.group = BasePlugin.BUILD_GROUP
+            task.description = 'Records the message bundle base names and locales this artifact contributes'
+            task.bundleDirectory.set(project.layout.projectDirectory.dir('grails-app/i18n'))
+            task.artifactType.set(grailsArtifactType())
+            task.artifactName.set(grailsArtifactName(project))
+            task.artifactVersion.set(project.provider { project.version?.toString() })
+            task.declaredBasenames.set(grailsExt.i18n.basenames)
+            task.outputDirectory.set(project.layout.buildDirectory.dir('generated-resources/grails-i18n'))
+        }
+
+        project.tasks.named(sourceSet.processResourcesTaskName, ProcessResources).configure { ProcessResources task ->
+            task.from(descriptorTask)
+        }
+    }
+
+    /**
      * Wires up the cache the JDK can write for an application, so the next start reads what a
      * training run worked out rather than working it out again.
      *
@@ -1468,6 +1503,25 @@ ${importStatements}
         graalvm?.binaries?.configureEach { binary ->
             binary.classpath(metadataTask)
         }
+    }
+
+    /**
+     * The {@code artifact.type} recorded in the i18n descriptor. Applications and plugins are
+     * distinguished so that message precedence can put the application's own bundles ahead of every
+     * plugin's, which classloader enumeration order can never express.
+     */
+    protected String grailsArtifactType() {
+        GenerateI18nDescriptorTask.TYPE_APPLICATION
+    }
+
+    /**
+     * The {@code artifact.name} recorded in the i18n descriptor. For an application this is only
+     * diagnostic; {@link GrailsPluginGradlePlugin} overrides it with the Grails plugin name, which
+     * both namespaces the plugin's base names and links the descriptor to the plugin the runtime
+     * discovers.
+     */
+    protected Provider<String> grailsArtifactName(Project project) {
+        project.provider { project.name }
     }
 
     /**
