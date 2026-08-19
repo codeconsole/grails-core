@@ -2377,12 +2377,19 @@ Strict checking applies only where the source says a call is a tag: one naming i
 written as markup. A call written without a namespace is never checked, and a namespaced expression in
 a page is checked only when that page declares `compileStatic`.
 
-A call written without a namespace reaches a tag only when nothing nearer answers to the name — not a
-method of the class, not one it inherits, not a field, property or local. A method added to a
-controller or tag library *while the application runs*, through a plugin's `doWithDynamicMethods`, is
-not visible when the calling code is compiled, so a call that used to reach such a method and shares
-its name with a tag now reaches the tag instead. Declare the method on the class, name the namespace
-in `dynamicTagNamespaces`, or call the tag with its namespace, if both exist.
+A call written without a namespace is not compiled at all unless the build asks for it with
+`grails { compileStatic { unqualifiedTagCalls = true } }`. Whether a bare name is a tag depends on what
+else answers to it, and not all of that is visible when compiling — a method Groovy gives every object,
+a delegate an enclosing closure is handed, an overload the tag library also declares — so by default
+such a call is dispatched exactly as it was before this release.
+
+Where it is turned on, a call written without a namespace reaches a tag only when nothing nearer
+answers to the name: not a method of the class, not one it inherits, not a field, property or local,
+not a method Groovy provides, and not a name inside a closure, whose delegate is only known when it
+runs. A method added to a controller or tag library *while the application runs*, through a plugin's
+`doWithDynamicMethods`, is not visible when the calling code is compiled, so a call that used to reach
+such a method and shares its name with a tag would reach the tag instead. Declare the method on the
+class, name the namespace in `dynamicTagNamespaces`, or call the tag with its namespace.
 
 Naming a namespace in `dynamicTagNamespaces` turns rewriting off for it entirely, not just the
 reporting: calls into it are dispatched exactly as they were before this release. That is the escape

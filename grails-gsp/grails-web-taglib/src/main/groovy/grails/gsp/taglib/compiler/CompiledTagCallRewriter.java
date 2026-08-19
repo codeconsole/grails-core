@@ -296,6 +296,14 @@ public class CompiledTagCallRewriter extends ClassCodeExpressionTransformer {
             // is left to resolve as it did.
             return null;
         }
+        if (!index.rewritesUnqualifiedCalls()) {
+            // A bare name is only a tag when nothing nearer answers to it, and what answers to it is
+            // not fully knowable here: a method Groovy gives every object, a delegate the enclosing
+            // closure is handed at runtime, an overload the tag library also declares. Each of those
+            // is excluded below as far as the source shows it, but the compiler cannot see all of
+            // them, so this is off unless the build asks for it.
+            return null;
+        }
         if (!call.isImplicitThis() || RESERVED_NAMES.contains(tagName)) {
             return null;
         }

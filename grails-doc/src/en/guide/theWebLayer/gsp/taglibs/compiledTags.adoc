@@ -123,39 +123,35 @@ def index() {
 }
 ----
 
-A call written without a namespace follows the same rule. It reaches a tag only when nothing nearer
-answers to the name — not a method of the class, not one it inherits, not a field, property or local —
-and is then offered to the calling tag library's own namespace before the default one, which is the
-order dispatch uses at runtime:
+A call written without a namespace is not compiled unless the build asks for it. Whether a bare name
+is a tag depends on what else answers to it, and not all of that is visible when compiling: a method
+Groovy gives every object, a delegate an enclosing closure is handed when it runs, an overload the tag
+library also declares. Such a call is dispatched as it always was:
 
 [source,groovy]
 ----
 class BookController {
     def index() {
-        String markup = createLink(controller: 'book')   // compiled into an invocation
+        String markup = createLink(controller: 'book')   // dispatched dynamically
+        String other  = g.createLink(controller: 'book') // compiled into an invocation
     }
 }
 ----
 
-A tag named with its namespace is compiled the same way inside a closure — a tag body, a `withFormat`
-block, anything taking a block — as it is outside one.
-
-A call written *without* a namespace inside a closure is not. A closure is given a delegate when it
-runs, and a name the delegate answers to belongs to the delegate rather than to a tag library, which
-is not knowable when the closure is compiled:
+A project whose tag names are known not to collide can compile those calls too:
 
 [source,groovy]
+.build.gradle
 ----
-request.withFormat {
-    form multipartForm {          // <1>
-        redirect book
+grails {
+    compileStatic {
+        unqualifiedTagCalls = true
     }
 }
 ----
-<1> `form` here is a format in the `withFormat` DSL, not the `g:form` tag
 
-Naming the namespace is what distinguishes the two, so write `g.form(...)` where a tag is meant inside
-a block.
+Turning it on widens which calls are considered, not which names may be captured: a name that Groovy,
+a local, a field, a parameter or the calling class answers to is still left alone.
 
 ==== Tags in pages
 

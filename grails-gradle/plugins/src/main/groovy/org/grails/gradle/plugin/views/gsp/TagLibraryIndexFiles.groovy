@@ -61,6 +61,8 @@ final class TagLibraryIndexFiles {
 
     static final String DYNAMIC_NAMESPACES_KEY = 'dynamicTagNamespaces'
 
+    static final String UNQUALIFIED_KEY = 'unqualifiedTagCalls'
+
     private TagLibraryIndexFiles() {
     }
 
@@ -86,14 +88,17 @@ final class TagLibraryIndexFiles {
      * @param destination the directory the index is written beneath
      * @param strictTags whether an unknown tag fails compilation
      * @param dynamicNamespaces namespaces filled in while the application runs
+     * @param unqualifiedTagCalls whether a call written without a namespace may be compiled
      */
-    static void writeSettings(File destination, boolean strictTags, Set<String> dynamicNamespaces) {
+    static void writeSettings(File destination, boolean strictTags, Set<String> dynamicNamespaces,
+            boolean unqualifiedTagCalls = false) {
         File indexDirectory = new File(destination, INDEX_LOCATION)
         indexDirectory.mkdirs()
         // Written by hand rather than through Properties.store, which stamps the current time into a
         // comment and would make the output differ between otherwise identical builds.
         String text = "${DYNAMIC_NAMESPACES_KEY}=${new TreeSet<String>(dynamicNamespaces).join(',')}\n" +
-                "${STRICT_KEY}=${strictTags}\n"
+                "${STRICT_KEY}=${strictTags}\n" +
+                "${UNQUALIFIED_KEY}=${unqualifiedTagCalls}\n"
         new File(indexDirectory, SETTINGS_FILE).setText(text, StandardCharsets.UTF_8.name())
     }
 }

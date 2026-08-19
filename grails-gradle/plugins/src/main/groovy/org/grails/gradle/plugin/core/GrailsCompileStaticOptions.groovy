@@ -108,6 +108,17 @@ class GrailsCompileStaticOptions implements Serializable {
      *
      * @since 8.0
      */
+    /**
+     * Whether a tag call written without its namespace may be compiled into a direct invocation.
+     *
+     * <p>Off by default. A namespaced call names the tag library it means; a bare name is a tag only
+     * when nothing nearer answers to it, and what answers to it is not fully visible when compiling -
+     * a method Groovy gives every object, a delegate an enclosing closure is handed, an overload the
+     * tag library also declares. Turn this on to compile those calls too, in a project whose tag
+     * names are known not to collide.
+     */
+    final Property<Boolean> unqualifiedTagCalls
+
     final Property<Boolean> strictTags
 
     /**
@@ -126,6 +137,7 @@ class GrailsCompileStaticOptions implements Serializable {
         this.services = objects.property(Boolean).convention(false)
         this.tagLibs = objects.property(Boolean).convention(false)
         this.strictTags = objects.property(Boolean).convention(false)
+        this.unqualifiedTagCalls = objects.property(Boolean).convention(false)
         this.dynamicTagNamespaces = objects.setProperty(String).convention(Collections.<String> emptySet())
     }
 }

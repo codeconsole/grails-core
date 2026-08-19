@@ -145,6 +145,13 @@ abstract class GenerateTagLibraryIndexTask extends DefaultTask {
     abstract Property<Boolean> getStrictTags()
 
     /**
+     * Whether a tag call written without its namespace may be compiled into a direct invocation.
+     * Recorded alongside the index, where the compiler reads it.
+     */
+    @Input
+    abstract Property<Boolean> getUnqualifiedTagCalls()
+
+    /**
      * Namespaces the build declares as filled in while the application runs. Tags in them are never
      * reported as unknown.
      */
@@ -193,6 +200,6 @@ abstract class GenerateTagLibraryIndexTask extends DefaultTask {
         File settingsDestination = settingsDirectory.present ? settingsDirectory.get().asFile : destination
         settingsDestination.mkdirs()
         TagLibraryIndexFiles.writeSettings(settingsDestination, strictTags.getOrElse(false),
-                dynamicTagNamespaces.getOrElse([] as Set))
+                dynamicTagNamespaces.getOrElse([] as Set), unqualifiedTagCalls.getOrElse(false))
     }
 }

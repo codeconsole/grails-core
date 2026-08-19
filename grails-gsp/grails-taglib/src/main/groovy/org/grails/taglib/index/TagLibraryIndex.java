@@ -89,6 +89,7 @@ public final class TagLibraryIndex {
     static final String INCOMPLETE_NAMESPACES_KEY = "namespaces";
     static final String INCOMPLETE_ALL_KEY = "all";
     static final String DYNAMIC_NAMESPACES_KEY = "dynamicTagNamespaces";
+    static final String UNQUALIFIED_KEY = "unqualifiedTagCalls";
 
     /**
      * One index per class loader. A compilation gets a class loader of its own, so this is read once
@@ -106,11 +107,12 @@ public final class TagLibraryIndex {
     private final Set<String> dynamicNamespaces;
     private final Set<String> incompleteNamespaces;
     private final boolean everythingIncomplete;
+    private final boolean unqualifiedCalls;
 
     private TagLibraryIndex(Map<String, Map<String, TagLibraryIndexEntry>> byNamespace,
             Map<String, Set<String>> ambiguousByNamespace, Map<String, Set<String>> tagNamesByClass,
             boolean strict, Set<String> dynamicNamespaces, Set<String> incompleteNamespaces,
-            boolean everythingIncomplete) {
+            boolean everythingIncomplete, boolean unqualifiedCalls) {
         this.byNamespace = byNamespace;
         this.ambiguousByNamespace = ambiguousByNamespace;
         this.tagNamesByClass = tagNamesByClass;
@@ -118,6 +120,7 @@ public final class TagLibraryIndex {
         this.dynamicNamespaces = dynamicNamespaces;
         this.incompleteNamespaces = incompleteNamespaces;
         this.everythingIncomplete = everythingIncomplete;
+        this.unqualifiedCalls = unqualifiedCalls;
     }
 
     /**
@@ -151,7 +154,7 @@ public final class TagLibraryIndex {
         Map<String, Set<String>> byClass = new TreeMap<>();
         if (loader == null) {
             return new TagLibraryIndex(merged, ambiguous, byClass, false, Collections.emptySet(),
-                    Collections.emptySet(), false);
+                    Collections.emptySet(), false, false);
         }
         // A directory resource enumerates its children on some classpath layouts but not inside jars,
         // so the descriptors are discovered through the manifest of names each descriptor records
@@ -214,6 +217,7 @@ public final class TagLibraryIndex {
         }
         Properties settings = readSettings(loader);
         boolean strict = Boolean.parseBoolean(settings.getProperty(STRICT_KEY, "false"));
+        boolean unqualified = Boolean.parseBoolean(settings.getProperty(UNQUALIFIED_KEY, "false"));
         Set<String> dynamic = new TreeSet<>();
         for (String namespace : settings.getProperty(DYNAMIC_NAMESPACES_KEY, "").split(",")) {
             String trimmed = namespace.trim();
@@ -238,7 +242,7 @@ public final class TagLibraryIndex {
         }
         return new TagLibraryIndex(merged, ambiguous, byClass, strict,
                 Collections.unmodifiableSet(dynamic), Collections.unmodifiableSet(incomplete),
-                allIncomplete);
+                allIncomplete, unqualified);
     }
 
     private static Set<URL> urls(ClassLoader loader, String location) {
@@ -416,6 +420,21 @@ public final class TagLibraryIndex {
      *
      * @return true when the build set {@code grails.compileStatic.strictTags}
      */
+    /**
+     * Whether a call written without a namespace may be compiled into an invocation.
+     *
+     * <p>Off unless the build asks for it. A namespaced call says which tag library it means; an
+     * unqualified one is a bare name, and whether that name is a tag depends on what else answers to
+     * it - a method Groovy gives every object, a delegate the enclosing closure is handed, an
+     * overload the tag library also declares. The compiler can rule those out only as far as it can
+     * see, so the default is to leave such a call to be dispatched as it always was.
+     *
+     * @return true when the build set {@code grails.compileStatic.unqualifiedTagCalls}
+     */
+    public boolean rewritesUnqualifiedCalls() {
+        return unqualifiedCalls;
+    }
+
     public boolean isStrict() {
         return strict;
     }

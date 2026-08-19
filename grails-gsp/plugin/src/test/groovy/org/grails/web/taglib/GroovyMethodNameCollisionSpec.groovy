@@ -121,8 +121,8 @@ class GroovyMethodNameCollisionSpec extends Specification {
         references(compiled)
     }
 
-    void 'an unqualified call to a tag with no Groovy method of that name is still rewritten'() {
-        when: 'nothing else answers to the name'
+    void 'an unqualified call is not compiled unless the build asks for it'() {
+        when: 'nothing else answers to the name, but the build has not enabled unqualified calls'
         byte[] compiled = compileWithIndexOnClasspath('''
             package demo
 
@@ -136,8 +136,58 @@ class GroovyMethodNameCollisionSpec extends Specification {
             }
         ''', 'GreetingCaller', 'demo')
 
-        then: 'so reserving Groovy\'s own names has not switched unqualified rewriting off'
+        then: 'a bare name is a tag only when nothing nearer answers to it, which is not fully visible here'
+        !references(compiled)
+    }
+
+    void 'an unqualified call is compiled when the build asks for it'() {
+        given:
+        enableUnqualifiedCalls()
+
+        when:
+        byte[] compiled = compileWithIndexOnClasspath("""
+            package demo
+
+            import grails.artefact.gsp.TagLibraryInvoker
+
+            class OptedInCaller implements TagLibraryInvoker {
+                static namespace = 'collide'
+                def run() {
+                    greeting(name: 'world')
+                }
+            }
+        """, 'OptedInCaller', 'demo')
+
+        then:
         references(compiled)
+    }
+
+    void 'a name Groovy answers to stays dynamic even when the build asks for unqualified calls'() {
+        given: 'the opt-in widens which calls are considered, not which names may be captured'
+        enableUnqualifiedCalls()
+
+        when:
+        byte[] compiled = compileWithIndexOnClasspath("""
+            package demo
+
+            import grails.artefact.gsp.TagLibraryInvoker
+
+            class OptedInCollider implements TagLibraryInvoker {
+                static namespace = 'collide'
+                def run() {
+                    with { 1 }
+                }
+            }
+        """, 'OptedInCollider', 'demo')
+
+        then:
+        !references(compiled)
+    }
+
+    private void enableUnqualifiedCalls() {
+        File settings = new File(indexDir.toFile(), 'META-INF/grails/taglibs/compile-settings.properties')
+        settings.parentFile.mkdirs()
+        settings.text = 'dynamicTagNamespaces=\nstrictTags=false\nunqualifiedTagCalls=true\n'
     }
 
     private static boolean references(byte[] classBytes) {

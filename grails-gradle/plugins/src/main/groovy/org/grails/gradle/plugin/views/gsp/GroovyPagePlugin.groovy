@@ -93,6 +93,20 @@ class GroovyPagePlugin implements Plugin<Project> {
     }
 
     /**
+     * Whether a tag call written without its namespace may be compiled into a direct invocation.
+     */
+    @CompileDynamic
+    private static Provider<Boolean> resolveUnqualifiedTagCalls(Project project) {
+        project.provider {
+            Object compileStatic = project.extensions.findByName('grails')?.compileStatic
+            Object unqualified = compileStatic?.hasProperty('unqualifiedTagCalls') ?
+                    compileStatic.unqualifiedTagCalls : null
+            unqualified instanceof Provider ?
+                    ((Provider) unqualified).getOrElse(false) as Boolean : Boolean.FALSE
+        }
+    }
+
+    /**
      * The namespaces the build declared as filled in while the application runs.
      */
     @CompileDynamic
@@ -180,6 +194,7 @@ class GroovyPagePlugin implements Plugin<Project> {
             index.sourceDirectories.from(project.layout.projectDirectory.dir('grails-app/taglib'))
             index.parameterNamesRetained.set(resolvePreserveParameterNames(project))
             index.strictTags.set(resolveStrictTags(project))
+            index.unqualifiedTagCalls.set(resolveUnqualifiedTagCalls(project))
             index.dynamicTagNamespaces.set(resolveDynamicTagNamespaces(project))
             index.javaLauncher.convention(launcher)
             // The generator reads the same sources the compiler will, so it has to decode them the

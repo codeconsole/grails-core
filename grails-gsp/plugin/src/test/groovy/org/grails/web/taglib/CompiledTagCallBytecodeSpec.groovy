@@ -131,8 +131,8 @@ class CompiledTagCallBytecodeSpec extends Specification {
         references(compiled, 'ComputedAttrsTagLib')
     }
 
-    void 'an unqualified call to a known tag is compiled as an invocation'() {
-        when: 'nothing in the tag library answers to the name, so it reaches a tag'
+    void 'an unqualified call to a known tag is left dynamic unless the build asks otherwise'() {
+        when: 'nothing in the tag library answers to the name, but the source named no namespace'
         Path compiled = compile('''
             import grails.gsp.TagLib
             @TagLib
@@ -144,8 +144,8 @@ class CompiledTagCallBytecodeSpec extends Specification {
             }
         ''', 'UnqualifiedCallerTagLib')
 
-        then:
-        references(compiled, 'UnqualifiedCallerTagLib')
+        then: 'compiling it would need this build to have enabled unqualifiedTagCalls'
+        !references(compiled, 'UnqualifiedCallerTagLib')
     }
 
     void 'an unqualified call a local variable answers to is left alone'() {
