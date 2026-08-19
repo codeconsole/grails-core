@@ -22,11 +22,13 @@ grails {
 		springsecurity {
 			authority.className = 'com.test.Role'
          cas {
-            loginUri         = '/login'
-            serverUrlPrefix  = 'http://localhost:9090/cas'
-            proxyReceptorUrl = '/secure/receptor'
-            serviceUrl       = 'http://localhost:${server.port}/login/cas'
-            proxyCallbackUrl = 'http://localhost:${server.port}/secure/receptor'
+            // serverUrlPrefix, serviceUrl and (for TESTCONFIG=casProxy) proxyCallbackUrl /
+            // proxyReceptorUrl are supplied by CasTestEnvironmentPostProcessor, which starts the
+            // CAS server in a container and derives them from the ports actually in use.
+            loginUri = '/login'
+            // Opt in everywhere except the config that asserts the shipped default is off.
+            // Enabling it disables session fixation prevention; the plugin warns at startup.
+            useSingleSignout = System.getProperty('TESTCONFIG') != 'casNoSingleSignout'
          }
 			controllerAnnotations.staticRules = [
 				[pattern: '/',               access: 'permitAll'],

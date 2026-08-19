@@ -568,6 +568,46 @@ jobs:
           --stacktrace
           -DTESTCONFIG=${{ matrix.test-config }}
           -PskipCodeStyle
+  casSecurityConfig:
+    name: "Spring Security CAS Functional Tests"
+    if: ${{ !contains(github.event.head_commit.message, '[skip tests]') }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # The CAS test app authenticates against a real Apereo CAS server started via Testcontainers.
+        # 'cas' leaves the proxy settings unset and is the default, so it is also covered by the main
+        # security job; 'casProxy' exercises the proxy-granting-ticket callback; 'casNoSingleSignout'
+        # asserts the shipped default, where single signout is not enabled.
+        # TESTCONFIG is applied at app startup, so every config must be its own run.
+        # Carried over from the standalone grails-spring-security CI convention - add, don't remove.
+        test-config: [ 'cas', 'casProxy', 'casNoSingleSignout' ]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: "Output Agent IP" # in the event RAO blocks this agent, this can be used to debug it
+        run: curl -s https://api.ipify.org
+      - name: "📥 Checkout repository"
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: "☕️ Setup JDK"
+        uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5.2.0
+        with:
+          distribution: liberica
+          java-version: 21
+      - name: "🐘 Setup Gradle"
+        uses: gradle/actions/setup-gradle@50e97c2cd7a37755bbfafc9c5b7cafaece252f6e # v6.1.0
+        with:
+          cache-provider: basic # 'basic' uses the MIT-licensed, open-source cache provider; the default 'enhanced' provider (v6+) is proprietary (Gradle commercial Terms of Use)
+          develocity-access-key: ${{ secrets.DEVELOCITY_ACCESS_KEY  }}
+      - name: "🔍 Setup TestLens"
+        uses: testlens-app/setup-testlens@3f82d2dc6cd5c03f02ce5f7885a21195d85f8d14 # v1.9.3
+      - name: "🏃 Run Spring Security CAS Functional Tests (TESTCONFIG=${{ matrix.test-config }})"
+        run: >
+          ./gradlew
+          :grails-test-examples-spring-security-cas-test1:check
+          --continue
+          --rerun-tasks
+          --stacktrace
+          -DTESTCONFIG=${{ matrix.test-config }}
+          -PskipCodeStyle
   redis:
     name: "Redis Tests"
     if: ${{ !contains(github.event.head_commit.message, '[skip tests]') }}
