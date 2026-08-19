@@ -73,7 +73,7 @@ class SourceResolvedIndexGeneratorSpec extends Specification {
 
         then:
         descriptor('InjectingTagLib').namespace == 'injecting'
-        descriptor('InjectingTagLib').tags == 'listBooks:METHOD'
+        descriptor('InjectingTagLib').tags == 'listBooks'
     }
 
     void 'a namespace inherited from a base class this project declares is read, not guessed'() {
@@ -123,7 +123,7 @@ class SourceResolvedIndexGeneratorSpec extends Specification {
 
         then:
         descriptor('CarryingTagLib').tags.split(',').toList().sort() ==
-                ['goodbye:METHOD', 'hello:METHOD']
+                ['goodbye', 'hello']
     }
 
     void 'a parameter type this project declares is recognised as attributes when it is a Map'() {
@@ -147,7 +147,7 @@ class SourceResolvedIndexGeneratorSpec extends Specification {
         generate()
 
         then:
-        descriptor('SubtypedTagLib').tags == 'show:METHOD'
+        descriptor('SubtypedTagLib').tags == 'show'
     }
 
     void 'a star import resolves to the type that exists rather than the first one tried'() {
@@ -174,7 +174,7 @@ class SourceResolvedIndexGeneratorSpec extends Specification {
 
         then:
         descriptor('StarredTagLib').namespace == 'starred'
-        descriptor('StarredTagLib').tags == 'show:METHOD'
+        descriptor('StarredTagLib').tags == 'show'
     }
 
     void 'a misspelled type is not invented, and the tag library referring to it is left out'() {

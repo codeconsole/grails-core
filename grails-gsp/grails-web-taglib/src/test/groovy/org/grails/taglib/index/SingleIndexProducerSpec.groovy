@@ -100,7 +100,7 @@ class SingleIndexProducerSpec extends Specification {
         indexDir.resolve('index.properties').toFile().text = "${className}=\n"
         indexDir.resolve(className + '.properties').toFile().text =
                 "version=${TagLibraryIndex.FORMAT_VERSION}\nclass=${className}\n" +
-                        "namespace=${namespace}\ntags=${tag}:METHOD\n"
+                        "namespace=${namespace}\ntags=${tag}\n"
         compileAgainst(generated, className)
     }
 

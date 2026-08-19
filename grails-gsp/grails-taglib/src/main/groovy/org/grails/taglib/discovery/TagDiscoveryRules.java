@@ -18,12 +18,8 @@
  */
 package org.grails.taglib.discovery;
 
-import java.util.HashSet;
-import java.util.LinkedHashMap;
-import java.util.Map;
+import java.util.LinkedHashSet;
 import java.util.Set;
-
-import org.grails.taglib.index.TagLibraryIndexEntry;
 
 /**
  * Decides whether a method is a tag.
@@ -100,26 +96,21 @@ public final class TagDiscoveryRules {
      * inherited one is not callable as a tag. A closure tag is read up the whole hierarchy, since
      * dispatch finds it as a property and a property is inherited.
      *
-     * <p>Where a name is declared both ways the closure wins, and where it is declared as a closure
-     * more than once the nearest declaration wins, which is the order dispatch resolves them in.
-     *
      * @param view the tag library, from a syntax tree or from a compiled class
-     * @return each tag mapped to how it is implemented
+     * @return every tag name the library declares
      */
-    public static Map<String, TagLibraryIndexEntry.Kind> findTags(TagLibraryView view) {
-        Map<String, TagLibraryIndexEntry.Kind> tags = new LinkedHashMap<>();
+    public static Set<String> findTags(TagLibraryView view) {
+        Set<String> tags = new LinkedHashSet<>();
         for (TagMethodView method : view.declaredMethods()) {
             if (isTagMethod(method)) {
-                tags.put(method.getName(), TagLibraryIndexEntry.Kind.METHOD);
+                tags.add(method.getName());
             }
         }
-        Set<String> claimed = new HashSet<>();
+        // A closure tag is read up the whole hierarchy, since dispatch finds it as a property and a
+        // property is inherited, where a method tag is read from the declaring class alone because
+        // dispatch scans declared methods.
         for (TagLibraryView current = view; current != null; current = current.superclassView()) {
-            for (String name : current.declaredClosureFieldNames()) {
-                if (claimed.add(name)) {
-                    tags.put(name, TagLibraryIndexEntry.Kind.LEGACY_CLOSURE);
-                }
-            }
+            tags.addAll(current.declaredClosureFieldNames());
         }
         return tags;
     }

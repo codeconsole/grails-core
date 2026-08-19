@@ -23,7 +23,6 @@ import org.codehaus.groovy.control.CompilationUnit
 import org.codehaus.groovy.control.CompilerConfiguration
 import org.codehaus.groovy.control.Phases
 import org.codehaus.groovy.control.SourceUnit
-import org.grails.taglib.index.TagLibraryIndexEntry
 import spock.lang.Specification
 import spock.lang.Unroll
 
@@ -41,16 +40,16 @@ class TagSetAgreementSpec extends Specification {
     @Unroll
     void 'both views find the same tags when #description'() {
         when:
-        Map<String, TagLibraryIndexEntry.Kind> fromTree = fromTree(source, subject)
+        Set<String> fromTree = fromTree(source, subject)
 
         and:
-        Map<String, TagLibraryIndexEntry.Kind> fromClass = fromClass(source, subject)
+        Set<String> fromClass = fromClass(source, subject)
 
         then: 'neither side may know a tag the other does not'
         fromTree == fromClass
 
         and:
-        fromTree.keySet() == expected as Set
+        fromTree == expected as Set
 
         where:
         description                          | subject      | expected                    | source
@@ -65,24 +64,18 @@ class TagSetAgreementSpec extends Specification {
         'a static closure is not a tag'      | 'Subject'    | []                          | 'class Subject { static Closure notATag = { Map attrs -> } }'
     }
 
-    void 'an inherited closure tag is recorded as a legacy closure, not lost'() {
+    void 'an inherited closure tag is kept alongside the class own tags, not lost'() {
         when:
-        Map<String, TagLibraryIndexEntry.Kind> tags = fromTree('''
+        Set<String> tags = fromTree('''
             class BaseFive { Closure common = { Map attrs -> } }
             class Subject extends BaseFive { def own(Map attrs) { } }
         ''', 'Subject')
 
         then: 'which is what the runtime registers, so the index may not omit it'
-        tags == [own: TagLibraryIndexEntry.Kind.METHOD, common: TagLibraryIndexEntry.Kind.LEGACY_CLOSURE]
+        tags == ['own', 'common'] as Set
     }
 
-    void 'a name declared both ways is the closure, as dispatch resolves it'() {
-        expect: 'methodMissingForTagLib reads the closure property before the tag method'
-        fromTree('class Subject { def both(Map attrs) { }\n Closure both = { Map attrs -> } }', 'Subject')
-                .get('both') == TagLibraryIndexEntry.Kind.LEGACY_CLOSURE
-    }
-
-    private Map<String, TagLibraryIndexEntry.Kind> fromTree(String source, String subject) {
+    private Set<String> fromTree(String source, String subject) {
         CompilerConfiguration configuration = new CompilerConfiguration()
         configuration.parameters = true
         CompilationUnit unit = new CompilationUnit(configuration)
@@ -93,7 +86,7 @@ class TagSetAgreementSpec extends Specification {
         TagDiscoveryRules.findTags(new AstTagLibraryView(classNode, configuration.parameters))
     }
 
-    private Map<String, TagLibraryIndexEntry.Kind> fromClass(String source, String subject) {
+    private Set<String> fromClass(String source, String subject) {
         CompilerConfiguration configuration = new CompilerConfiguration()
         configuration.parameters = true
         GroovyClassLoader loader = new GroovyClassLoader(getClass().classLoader, configuration)

@@ -184,19 +184,6 @@ public final class TagLibraryIndex {
                 if (trimmed.isEmpty()) {
                     continue;
                 }
-                // Recorded as "name:KIND"; an unrecognised kind is treated as the dynamic one so that a
-                // descriptor from a later version cannot cause a call to be bound wrongly.
-                int separator = trimmed.lastIndexOf(':');
-                String tagName = separator > 0 ? trimmed.substring(0, separator) : trimmed;
-                TagLibraryIndexEntry.Kind kind = TagLibraryIndexEntry.Kind.LEGACY_CLOSURE;
-                if (separator > 0) {
-                    try {
-                        kind = TagLibraryIndexEntry.Kind.valueOf(trimmed.substring(separator + 1));
-                    } catch (IllegalArgumentException unknownKind) {
-                        kind = TagLibraryIndexEntry.Kind.LEGACY_CLOSURE;
-                    }
-                }
-                trimmed = tagName;
                 // Recorded against the declaring class before ambiguity is considered, so that asking
                 // what one tag library declares is answered from its own descriptor and is unaffected
                 // by whether some other tag library happens to declare the same name.
@@ -212,7 +199,7 @@ public final class TagLibraryIndex {
                     continue;
                 }
                 tagsForNamespace.put(trimmed,
-                        new TagLibraryIndexEntry(namespace, trimmed, className, kind, true));
+                        new TagLibraryIndexEntry(namespace, trimmed, className, true));
             }
         }
         Properties settings = readSettings(loader);

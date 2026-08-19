@@ -18,7 +18,7 @@
  */
 package org.grails.taglib.discovery;
 
-import java.util.Map;
+import java.util.Set;
 
 import groovy.lang.Closure;
 import org.codehaus.groovy.ast.ClassHelper;
@@ -26,8 +26,6 @@ import org.codehaus.groovy.ast.ClassNode;
 import org.codehaus.groovy.ast.FieldNode;
 import org.codehaus.groovy.ast.expr.ConstantExpression;
 import org.codehaus.groovy.ast.expr.Expression;
-
-import org.grails.taglib.index.TagLibraryIndexEntry;
 
 /**
  * Reads a tag library's namespace and tag names from its syntax tree.
@@ -80,10 +78,9 @@ public final class TagLibraryAstDiscovery {
     /**
      * @param classNode the tag library
      * @param parameterNamesRetained whether this compilation writes parameter names into the class file
-     * @return each tag mapped to how it is implemented, so that a caller can tell a tag it can bind to
-     *         from one it must dispatch dynamically
+     * @return every tag name the library declares
      */
-    public static Map<String, TagLibraryIndexEntry.Kind> findTags(ClassNode classNode,
+    public static Set<String> findTags(ClassNode classNode,
             boolean parameterNamesRetained) {
         return TagDiscoveryRules.findTags(new AstTagLibraryView(classNode, parameterNamesRetained));
     }

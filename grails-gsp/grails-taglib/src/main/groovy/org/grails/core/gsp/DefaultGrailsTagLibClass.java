@@ -79,7 +79,7 @@ public class DefaultGrailsTagLibClass extends AbstractInjectableGrailsClass impl
         // property may not be compiled as one). Read through the shared rules rather than walking
         // the hierarchy here, so that the set a build records and the set registered here are
         // produced by the same code and cannot describe different tags.
-        tags.addAll(TagDiscoveryRules.findTags(new ReflectedTagLibraryView(clazz)).keySet());
+        tags.addAll(TagDiscoveryRules.findTags(new ReflectedTagLibraryView(clazz)));
 
         String ns = getStaticPropertyValue(NAMESPACE_FIELD_NAME, String.class);
         if (ns != null && !"".equals(ns.trim())) {

@@ -57,7 +57,7 @@ class TagLibraryIndexGeneratorSpec extends Specification {
         TagLibraryIndexGenerator.generate(sources.toFile(), output.toFile(), true, 'UTF-8')
 
         then: 'the closure form is marked so that callers keep dispatching it dynamically'
-        descriptor('LegacyTagLib').tags == 'asClosure:LEGACY_CLOSURE,asMethod:METHOD'
+        descriptor('LegacyTagLib').tags == 'asClosure,asMethod'
     }
 
     void 'a tag library is described without being loaded or executed'() {
@@ -78,7 +78,7 @@ class TagLibraryIndexGeneratorSpec extends Specification {
 
         then: 'its tags are described from the source alone'
         descriptor('ExplosiveTagLib').namespace == 'boom'
-        descriptor('ExplosiveTagLib').tags == 'alpha:METHOD,beta:METHOD'
+        descriptor('ExplosiveTagLib').tags == 'alpha,beta'
     }
 
     void 'a renamed tag library leaves nothing behind'() {
@@ -149,7 +149,7 @@ class TagLibraryIndexGeneratorSpec extends Specification {
 
         then: 'the one that reads is described'
         descriptorFile('FineTagLib').exists()
-        descriptor('FineTagLib').tags == 'present:METHOD'
+        descriptor('FineTagLib').tags == 'present'
 
         and: 'the one that does not is left out here, and describes itself when it is compiled'
         !descriptorFile('UnresolvableTagLib').exists()

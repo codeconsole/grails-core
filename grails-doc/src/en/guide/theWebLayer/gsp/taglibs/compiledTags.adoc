@@ -57,8 +57,9 @@ Closure hello = { Map attrs ->
 
 A tag declared this way is described and called like any other — the tag is selected by name when the
 call runs, and a closure answers to a name as readily as a method does. The form remains deprecated
-because a closure carries no signature, so nothing about the call can be checked. Compiling a tag
-library that declares one produces a warning naming the tag.
+because a closure carries no signature, so nothing about the call can be checked, and because a
+closure field is inherited where a tag method is not, which makes what a tag library declares harder
+to read. Compiling a tag library that declares one produces a warning naming the tag.
 
 ==== Calling tags
 

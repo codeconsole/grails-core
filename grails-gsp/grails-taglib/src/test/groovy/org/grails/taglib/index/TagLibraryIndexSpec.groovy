@@ -151,7 +151,7 @@ class TagLibraryIndexSpec extends Specification {
         loader.close()
     }
 
-    void 'a closure based tag is recorded but is not bindable'() {
+    void 'a closure based tag is recorded like any other'() {
         given:
         Path jarPath = tempDir.resolve('legacy.jar')
         new JarOutputStream(Files.newOutputStream(jarPath)).withCloseable { jar ->
@@ -160,7 +160,7 @@ class TagLibraryIndexSpec extends Specification {
             jar.closeEntry()
             jar.putNextEntry(new JarEntry(TagLibraryIndex.INDEX_LOCATION + 'com.legacy.OldTagLib.properties'))
             jar.write(("version=${TagLibraryIndex.FORMAT_VERSION}\nclass=com.legacy.OldTagLib\n" +
-                    'namespace=legacy\ntags=asMethod:METHOD,asClosure:LEGACY_CLOSURE\n').bytes)
+                    'namespace=legacy\ntags=asMethod,asClosure\n').bytes)
             jar.closeEntry()
         }
         URLClassLoader loader = loaderOver(jarPath)
@@ -171,9 +171,9 @@ class TagLibraryIndexSpec extends Specification {
         then: 'both are known, so neither is reported as a misspelling'
         index.getTagNames('legacy') == ['asClosure', 'asMethod'] as Set
 
-        and: 'only the method form can be compiled into a direct invocation'
-        index.lookup('legacy', 'asMethod').isBindable()
-        !index.lookup('legacy', 'asClosure').isBindable()
+        and: 'and both resolve, since a call selects the tag by name either way'
+        index.lookup('legacy', 'asMethod') != null
+        index.lookup('legacy', 'asClosure') != null
 
         cleanup:
         loader.close()
@@ -328,7 +328,7 @@ class TagLibraryIndexSpec extends Specification {
             tagLibs.each { String className, List<String> namespaceAndTags ->
                 jar.putNextEntry(new JarEntry(TagLibraryIndex.INDEX_LOCATION + className + '.properties'))
                 String encodedTags = namespaceAndTags[1].split(',')
-                        .collect { "${it}:METHOD" }.join(',')
+                        .join(',')
                 jar.write(("version=${TagLibraryIndex.FORMAT_VERSION}\nclass=${className}\n" +
                         "namespace=${namespaceAndTags[0]}\ntags=${encodedTags}\n").bytes)
                 jar.closeEntry()
