@@ -104,6 +104,11 @@ rootProject.name = 'grails-end-to-end'
 include(
         'legacy-commands',
         'legacy-commands-plugin',
+        // Verifies message resolution inside a compiled GraalVM binary. The native half is opt-in
+        // (-PnativeTests) because it needs a GraalVM toolchain and minutes of CPU; without the flag
+        // the module still builds and checks the same assertions on a JVM.
+        'native-i18n',
+        'native-i18n-plugin',
         // Belongs here rather than in grails-test-examples: it imports grails-bom as a Maven BOM
         // through io.spring.dependency-management, which resolves imports in its own detached
         // configuration. That bypasses any project substitution, so the import can only ever be
