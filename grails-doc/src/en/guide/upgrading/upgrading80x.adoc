@@ -2362,7 +2362,123 @@ resolved unambiguously before can become ambiguous.
 Removing the packages from `grails.spring.bean.packages`, or the stray classes from those packages, restores
 the previous set of beans.
 
-==== 45. Startup Banner Shows the Servlet Container and Spring Security
+==== 45. GORM API Resolution Moves to a Registry
+
+GORM no longer allocates an API object for every (entity, connection) pair up front. Per-entity, per-qualifier
+state now lives in a registry (`org.grails.datastore.gorm.GormRegistry`), and APIs are built on first use by a
+pluggable factory. For applications this is invisible — `Book.list()`, dynamic finders, and
+`Book.withNewSession { }` behave as before. It does change some extension points that out-of-tree GORM
+implementations subclass.
+
+===== GormEnhancer
+
+`org.grails.datastore.gorm.GormEnhancer`'s public constructors, `enhance()`/`enhance(PersistentEntity)`,
+`dynamicEnhance`, and the `transactionManager` field are all unchanged in behaviour and signature (the
+`transactionManager` field is now `@Deprecated` and immutable after construction — read it, don't assign it).
+
+The following members were removed:
+
+[cols="1,2", options="header"]
+|===
+| Removed
+| Migration note
+
+| `finders` field / `getFinders()`
+| Use `createDynamicFinders(Datastore)`, or read the finders from the API object you are working with.
+
+| `removeConstraints()`
+| Moved to `GormRegistry.removeConstraints()`, called automatically from `GormRegistry.removeDatastore(Datastore)`
+as part of tearing a datastore down. There is nothing to call directly - it runs when the enhancer's `close()`
+removes the datastore from the registry, same as before.
+
+| `addStaticMethods(PersistentEntity, boolean)` / `addInstanceMethods(PersistentEntity, boolean)`
+| The `onlyExtendedMethods` parameter is gone; both methods now take only the entity. Installation mechanism
+also changed from per-method reflective registration to a single `methodMissing`/`propertyMissing` handler pair.
+
+| `findTenantId`, `apiQualifiers`, `findDatastoreByType`, `findSingleDatastore`,
+`findSingleTransactionManager`, `findTransactionManager(Class, String)`, `appliesToDatastore`,
+`getInstanceMethodApiProviders`, `registerStaticMethod`, `registerInstanceMethod`, `doesRealMethodExist`,
+`isRealMethod`
+| Internal helpers of the old per-method reflective registration mechanism, replaced wholesale by the registry
+and its `methodMissing`/`propertyMissing` handlers. If you overrode one of these to customise dispatch, override
+`registerApiFactories()` (below) or a `GormApiFactory` instead.
+|===
+
+A new `registerApiFactories()` hook is called once, before any entity is registered. Adapters that build
+specialised API objects should override it:
+
+[source,groovy]
+----
+class MyGormEnhancer extends GormEnhancer {
+
+    @Override
+    protected void registerApiFactories() {
+        GormRegistry.instance.registerApiFactory(MyDatastore, new MyGormApiFactory())
+    }
+}
+----
+
+WARNING: Earlier snapshots of this work registered API factories from `registerConstraints(Datastore)`.
+Move that code to `registerApiFactories()`; factory registration must not depend on the constraints lifecycle step.
+
+===== CurrentTenantHolder.get()
+
+`grails.gorm.multitenancy.CurrentTenantHolder.get()` — the no-argument form — now throws `TenantException` when
+different datastores hold different tenants on the calling thread, rather than returning an arbitrary one of
+them. Pass the datastore you are operating on:
+
+[source,groovy]
+----
+CurrentTenantHolder.get(datastore)
+----
+
+See <<multiTenancy,Multi-Tenancy>> for the full multi-tenancy API.
+
+===== Tenants.withId(Class, Serializable, Closure)
+
+`grails.gorm.multitenancy.Tenants` had two distinct 3-argument `withId` overloads that both erased to
+`withId(Class, Serializable, Closure)` at the bytecode level:
+
+[source,groovy]
+----
+// removed - resolved a datastore by its own type
+static <T> T withId(Class<? extends Datastore> datastoreClass, Serializable tenantId, Closure<T> callable)
+
+// kept - resolves the datastore that maps a domain class
+static <T> T withId(Class domainClass, Serializable tenantId, Closure<T> callable)
+----
+
+The datastore-class overload relied on `GormEnhancer.findDatastoreByType(Class)`, which was one of the internal
+per-method-dispatch helpers removed as part of the registry migration (see <<_gormenhancer,GormEnhancer>>
+above), so it could not be carried forward under its own name. Only the domain-class overload remains.
+
+Because both overloads share one erased signature, a call site that used to pass a datastore class -
+`Tenants.withId(SomeDatastore, tenantId) { ... }` - still compiles unchanged against the domain-class overload.
+It no longer resolves the datastore you named: `getDatastoreForDomain(SomeDatastore)` looks `SomeDatastore` up as
+if it were a *domain class*, finds no entity registered under that name, and falls through to the application's
+`DEFAULT` datastore. On a single-datastore application this is indistinguishable from the old behaviour. On a
+multi-datastore application it silently binds the tenant against the wrong datastore - no exception, no log -
+which can surface much later as a cross-database read or write.
+
+If you have a call site that passes a `Datastore` subclass to this method, migrate it to look the datastore up
+explicitly and call the datastore-instance overload instead. `Tenants.datastoreLocator` still resolves a
+datastore by its type - only the `withId(Class, ..)` shortcut for it is gone:
+
+[source,groovy]
+----
+MultiTenantCapableDatastore datastore = Tenants.datastoreLocator.getDatastore(SomeDatastore) as MultiTenantCapableDatastore
+Tenants.withId(datastore, tenantId) { ... }
+----
+
+or pass an actual domain class if that is what you meant:
+
+[source,groovy]
+----
+Tenants.withId(SomeDomainClass, tenantId) { ... }
+----
+
+
+==== 46. Startup Banner Shows the Servlet Container and Spring Security
 
 The banner now reports the servlet container it is running on, and the version of Spring Security where the
 application has it, without being asked for either. Both were previously opt-in through
