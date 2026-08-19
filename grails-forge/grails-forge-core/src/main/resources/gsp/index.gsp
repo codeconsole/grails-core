@@ -77,7 +77,7 @@
                             <g:set var="springSecurityCoreVersionClass"
                                    value="${ClassUtils.isPresent('org.springframework.security.core.SpringSecurityCoreVersion', null) ? ClassUtils.forName('org.springframework.security.core.SpringSecurityCoreVersion', null) : null}"/>
                             <g:set var="springSecurityVersion"
-                                   value="${ClassUtils.isPresent('org.springframework.security.core.SpringSecurityCoreVersion', null) ? ClassUtils.forName('org.springframework.security.core.SpringSecurityCoreVersion', null)?.package?.implementationVersion : null}"/>
+                                   value="${springSecurityCoreVersionClass?.package?.implementationVersion}"/>
                             <g:if test="${springSecurityVersion}">
                                 <li class="list-group-item d-flex justify-content-between align-items-center px-0">
                                     <span class="d-inline-flex align-items-center text-body-secondary">
