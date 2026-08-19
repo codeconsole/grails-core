@@ -76,6 +76,17 @@ class TagLibraryInvokerDispatchSpec extends Specification {
         result.toString() == 'hello world'
     }
 
+    void 'a name that is both a tag and an overload reaches the overload'() {
+        given: 'format is declared as a tag and as an ordinary two argument method'
+        Caller caller = new Caller(tagLibraryLookup: newLookup())
+
+        when: 'called with the arguments only the overload can take'
+        Object result = caller.callOverload()
+
+        then: 'the tag shape does not match, so the real method runs rather than the tag with nothing'
+        result == '2026-08-19/yyyy'
+    }
+
     void 'a name no tag library declares is still a missing method'() {
         given:
         Caller caller = new Caller(tagLibraryLookup: newLookup())
@@ -116,6 +127,10 @@ class Caller implements TagLibraryInvoker {
     Object callUnknown() {
         noSuchTagAnywhere()
     }
+
+    Object callOverload() {
+        format('2026-08-19', 'yyyy')
+    }
 }
 
 @TagLib
@@ -130,5 +145,13 @@ class DispatchTagLib {
 
     def greet(Map attrs) {
         out << "hello ${attrs.name}"
+    }
+
+    def format(Map attrs) {
+        out << 'as a tag'
+    }
+
+    def format(String value, String pattern) {
+        "${value}/${pattern}"
     }
 }

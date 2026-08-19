@@ -137,12 +137,14 @@ class GroovyPagePlugin implements Plugin<Project> {
         if (sourceSets == null) {
             return
         }
-        for (String name : TEST_SOURCE_SET_NAMES) {
-            SourceSet sourceSet = sourceSets.findByName(name)
-            if (sourceSet != null) {
-                sourceSet.runtimeClasspath = sourceSet.runtimeClasspath.plus(packagedTagLibIndex)
-            }
-        }
+        // Matched as they are created rather than looked up now. This runs on the groovy plugin being
+        // applied, and integrationTest is registered by the Grails integration test support later, so
+        // asking for it here would find nothing and skip it without saying so - which is the gap this
+        // method exists to close.
+        sourceSets.matching { SourceSet it -> it.name in TEST_SOURCE_SET_NAMES }
+                .configureEach { SourceSet it ->
+                    it.runtimeClasspath = it.runtimeClasspath.plus(packagedTagLibIndex)
+                }
     }
 
     private void configureProject(Project project) {

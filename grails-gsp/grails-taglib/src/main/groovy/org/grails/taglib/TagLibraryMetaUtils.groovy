@@ -220,6 +220,30 @@ class TagLibraryMetaUtils {
         existingMethod instanceof CachedMethod
     }
 
+    /**
+     * Whether an argument list is one a tag can be called with.
+     *
+     * <p>A tag takes attributes, a body, or both, which is none, one, or two arguments whose first is
+     * a Map. Anything else the switch below reduces to a call with no attributes and no body, silently
+     * dropping what was written - so a name that is both a tag and an ordinary overload, a tag
+     * {@code foo(Map)} beside a helper {@code foo(String, String)}, would run the tag with nothing.
+     * Such a call is left to the method lookup further down, which finds the overload.
+     *
+     * @param args the arguments the call was made with
+     * @return true when the call can be treated as a tag invocation
+     */
+    private static boolean matchesTagShape(Object[] args) {
+        switch (args.length) {
+            case 0:
+            case 1:
+                return true
+            case 2:
+                return args[0] instanceof Map
+            default:
+                return false
+        }
+    }
+
     private static Object[] makeObjectArray(Object args) {
         args instanceof Object[] ? (Object[]) args : [args] as Object[]
     }
@@ -230,7 +254,8 @@ class TagLibraryMetaUtils {
         final GroovyObject tagBean = gspTagLibraryLookup.lookupTagLibrary(namespace, name)
         if (tagBean != null) {
             Object tagLibProp = TagMethodInvoker.getClosureTagProperty(tagBean, name)
-            if (tagLibProp instanceof Closure || TagMethodInvoker.hasInvokableTagMethod(tagBean, name)) {
+            if ((tagLibProp instanceof Closure || TagMethodInvoker.hasInvokableTagMethod(tagBean, name)) &&
+                    matchesTagShape(args)) {
                 Map attrs = [:]
                 Object body = null
                 switch (args.length) {

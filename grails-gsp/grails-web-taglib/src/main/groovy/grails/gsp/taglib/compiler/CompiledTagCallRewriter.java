@@ -349,6 +349,16 @@ public class CompiledTagCallRewriter extends ClassCodeExpressionTransformer {
         // The shape is only known once the arguments have been evaluated - a map held in a variable, a
         // single value the tag reads under its own name, and so on - so they are forwarded as written
         // and sorted out by the same rules the dynamic path applies.
+        //
+        // Only where those rules can actually sort them out. The invocation understands no arguments,
+        // one argument, and two whose first is a Map; anything else it reduces to a call with no
+        // attributes and no body, silently dropping what was written. A name can be both a tag and an
+        // ordinary overload - a tag foo(Map) beside a helper foo(String, String) - and such a call
+        // used to reach the overload. Forwarding it here would run the tag with nothing instead, so a
+        // shape this cannot account for is left to be dispatched as it was.
+        if (!forwardableShape(tuple)) {
+            return null;
+        }
         if (page) {
             invocationArgs.addExpression(outputContext());
         }
@@ -357,6 +367,27 @@ public class CompiledTagCallRewriter extends ClassCodeExpressionTransformer {
         }
         return new StaticMethodCallExpression(INVOCATION_TYPE,
                 page ? INVOKE_ARGUMENTS_IN_CONTEXT : INVOKE_ARGUMENTS, invocationArgs);
+    }
+
+    /**
+     * @param tuple the arguments as written
+     * @return whether forwarding them reaches the same tag the dynamic path would have reached
+     */
+    private static boolean forwardableShape(TupleExpression tuple) {
+        List<Expression> args = tuple.getExpressions();
+        switch (args.size()) {
+            case 0:
+            case 1:
+                // Every one-argument shape is accounted for: a Map is the attributes, a Closure or a
+                // CharSequence is the body, anything else is a value read under the tag's own name.
+                return true;
+            case 2:
+                // Two arguments are attributes and a body only when the first really is a Map. Where
+                // that is not evident here it is not evident to the invocation either.
+                return args.get(0) instanceof MapExpression;
+            default:
+                return false;
+        }
     }
 
     private Expression outputContext() {

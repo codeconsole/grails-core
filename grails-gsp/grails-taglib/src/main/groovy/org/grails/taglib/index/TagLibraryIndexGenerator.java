@@ -25,6 +25,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.TreeSet;
@@ -151,8 +152,18 @@ public final class TagLibraryIndexGenerator {
 
         List<File> roots = resolutionRoots != null ? resolutionRoots : Collections.emptyList();
         List<File> skipped = new ArrayList<>();
+        // The resolver adds a collaborator's source to the compilation unit so its type can be read,
+        // which puts that class in the parse output too. Only the sources this generator was pointed
+        // at may be described: a helper named *TagLib under src/main/groovy would otherwise be filed
+        // as a tag library of the default namespace, making its methods g tags that either collide
+        // with real ones - silently disabling rewriting for that name - or resolve to a tag that does
+        // not exist at runtime.
+        Set<String> describable = new HashSet<>();
+        for (File source : sources) {
+            describable.add(source.getAbsolutePath());
+        }
         for (ClassNode classNode : parse(sources, roots, parameterNamesRetained, encoding, skipped)) {
-            if (!isTagLibrary(classNode)) {
+            if (!isTagLibrary(classNode) || !wasAskedFor(classNode, describable)) {
                 continue;
             }
             String namespace = TagLibraryAstDiscovery.resolveNamespace(classNode);
@@ -376,6 +387,19 @@ public final class TagLibraryIndexGenerator {
             }
         }
         return classNode.getName().endsWith(TAG_LIB_ARTEFACT);
+    }
+
+    /**
+     * @param classNode a class the compilation produced
+     * @param describable the absolute paths of the sources this generator was given
+     * @return whether the class came from one of those sources rather than from a resolved collaborator
+     */
+    private static boolean wasAskedFor(ClassNode classNode, Set<String> describable) {
+        if (classNode.getModule() == null || classNode.getModule().getContext() == null) {
+            return false;
+        }
+        String name = classNode.getModule().getContext().getName();
+        return name != null && describable.contains(new File(name).getAbsolutePath());
     }
 
     private static List<File> findGroovySources(File sourceDir) throws IOException {

@@ -235,4 +235,36 @@ class TagLibraryIndexGeneratorSpec extends Specification {
         file.withReader('UTF-8') { properties.load(it) }
         properties.stringPropertyNames().sort()
     }
+    void 'a class pulled in only to resolve a type is not described'() {
+        given: 'a helper named like a tag library, referenced as a superclass but never asked for'
+        Path taglibs = Files.createDirectories(tempDir.resolve('grails-app/taglib/demo'))
+        Path helpers = Files.createDirectories(tempDir.resolve('src/main/groovy/demo'))
+        helpers.resolve('SharedTagLib.groovy').toFile().text = """
+            package demo
+            class SharedTagLib {
+                def helper(Map attrs) { 'not a tag' }
+            }
+        """
+        taglibs.resolve('RealTagLib.groovy').toFile().text = """
+            package demo
+            import grails.gsp.TagLib
+            @TagLib
+            class RealTagLib extends SharedTagLib {
+                static namespace = 'real'
+                def actual(Map attrs) { 'tag' }
+            }
+        """
+        File out = Files.createDirectories(tempDir.resolve('out')).toFile()
+
+        when: 'the helper root is a resolution root, not a source directory'
+        TagLibraryIndexGenerator.generate([tempDir.resolve('grails-app/taglib').toFile()],
+                [tempDir.resolve('src/main/groovy').toFile()], out, true, 'UTF-8')
+
+        then: 'the tag library it was pointed at is described'
+        new File(out, 'META-INF/grails/taglibs/demo.RealTagLib.properties').isFile()
+
+        and: 'and the helper is not, so its methods never become tags of the default namespace'
+        !new File(out, 'META-INF/grails/taglibs/demo.SharedTagLib.properties').isFile()
+    }
+
 }

@@ -140,6 +140,21 @@ class TagCallShadowingSpec extends Specification {
         compiled
     }
 
+    void 'a call whose arguments are not a tag shape is not rewritten'() {
+        when: 'two arguments whose first is not a map, which a tag cannot be called with'
+        byte[] compiled = compile('''
+            import grails.artefact.gsp.TagLibraryInvoker
+            class OverloadedCaller implements TagLibraryInvoker {
+                def index() {
+                    g.createLink('2026-08-19', 'yyyy')
+                }
+            }
+        ''', 'OverloadedCaller')
+
+        then: 'the invocation would drop both arguments, so the call is left to dispatch as it did'
+        !references(compiled, 'org/grails/taglib/CompiledTagInvocation')
+    }
+
     void 'a call on the namespace itself is still rewritten'() {
         when: 'nothing in scope claims the name'
         byte[] compiled = compile('''
