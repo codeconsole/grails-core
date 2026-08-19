@@ -58,17 +58,18 @@ jobs:
       - name: "📝 Derive matching Apache Groovy branch from dependencies.gradle"
         id: groovy-branch
         run: |
-          # Extract the major version of `groovy.version` declared in this branch's
-          # dependencies.gradle (e.g. '5.0.5' -> '5', '4.0.31' -> '4') and use it to
-          # pick the matching Apache Groovy development branch (GROOVY_<major>_0_X).
+          # Extract the major and minor version of `groovy.version` declared in this
+          # branch's dependencies.gradle (e.g. '5.0.5' -> '5_0', '4.0.31' -> '4_0')
+          # and use it to pick the matching Apache Groovy development branch
+          # (GROOVY_<major>_<minor>_X).
           # This keeps `7.0.x` PRs validating against Groovy 4 and `8.0.x` PRs
           # validating against Groovy 5 without hard-coding the branch here.
-          GROOVY_MAJOR=$(grep -m 1 "'groovy\.version'" dependencies.gradle | sed -E "s/.*'([0-9]+)\.[0-9]+\.[0-9]+.*/\1/" | tr -d '[:space:]')
-          if [ -z "$GROOVY_MAJOR" ]; then
-            echo "::error::Could not determine Apache Groovy major version from dependencies.gradle"
+          GROOVY_MAJOR_MINOR=$(sed -nE "s/.*'groovy\.version'.*'([0-9]+)\.([0-9]+)\.[0-9]+'.*/\1_\2/p" dependencies.gradle | head -n 1)
+          if [ -z "$GROOVY_MAJOR_MINOR" ]; then
+            echo "::error::Could not determine Apache Groovy major/minor version from dependencies.gradle"
             exit 1
           fi
-          GROOVY_BRANCH="GROOVY_${GROOVY_MAJOR}_0_X"
+          GROOVY_BRANCH="GROOVY_${GROOVY_MAJOR_MINOR}_X"
           echo "Validating against Apache Groovy branch: $GROOVY_BRANCH"
           echo "value=$GROOVY_BRANCH" >> $GITHUB_OUTPUT
           rm dependencies.gradle
