@@ -35,7 +35,7 @@ ext {
             'javaparser-core.version'       : '3.28.2',
             // Tracks the JLine version Groovy ships (groovy-groovysh), so the framework and groovysh
             // share one terminal stack - keep in step with groovy.version.
-            'jline.version'                 : '3.30.9',
+            'jline.version'                 : '3.30.16',
             'jna.version'                   : '5.19.1',
             'jquery.version'                : '4.0.0',
             // Security: overrides spring-boot-dependencies (2.24.3). 2.25.5 fixes CVE-2026-49844 flagged against log4j-api.
