@@ -16,24 +16,15 @@
  *  specific language governing permissions and limitations
  *  under the License.
  */
-
-package org.grails.datastore.mapping.core.connections
-
-import org.grails.datastore.mapping.core.Datastore
+package aot
 
 /**
- * A {@link Datastore} capable of configuring multiple {@link Datastore} with individually named {@link ConnectionSource} instances
- *
- * @author Graeme Rocher
- * @since 6.1
+ * A collaborator the tag library takes by name, which is how Grails wires most of what it
+ * contributes: no annotation says to inject this, only that the bean and the property share a name.
  */
-interface MultipleConnectionSourceCapableDatastore extends Datastore {
+class GreetingService {
 
-    /**
-     * Lookup a {@link Datastore} by {@link ConnectionSource} name
-     *
-     * @param connectionName The connection name
-     * @return The {@link Datastore}
-     */
-    Datastore getDatastoreForConnection(String connectionName)
+    String greeting() {
+        'hello from a service'
+    }
 }
