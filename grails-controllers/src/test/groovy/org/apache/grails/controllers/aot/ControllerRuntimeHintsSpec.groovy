@@ -39,7 +39,11 @@ class ControllerRuntimeHintsSpec extends Specification {
     }
 
     private boolean registered(Class<?> type) {
-        def hint = hints.reflection().getTypeHint(TypeReference.of(type))
+        registered(TypeReference.of(type))
+    }
+
+    private boolean registered(TypeReference type) {
+        def hint = hints.reflection().getTypeHint(type)
         hint != null && hint.memberCategories.contains(MemberCategory.INVOKE_DECLARED_METHODS)
     }
 
@@ -60,14 +64,21 @@ class ControllerRuntimeHintsSpec extends Specification {
             registered(grails.artefact.controller.support.RequestForwarder)
     }
 
-    void 'a type absent from the classpath is skipped rather than failing the build'() {
+    void 'a type from a module that is absent is skipped rather than failing the build'() {
         given:
             RuntimeHints empty = new RuntimeHints()
 
-        when: 'no class loader can resolve the named types'
+        when: 'a class loader that resolves nothing, as an application without that plugin has'
             new ControllerRuntimeHints().registerHints(empty, new URLClassLoader(new URL[0], null))
 
         then:
             noExceptionThrown()
+
+        and: 'the type it could not resolve contributes no hint'
+            empty.reflection().getTypeHint(
+                    TypeReference.of('grails.artefact.controller.RestResponder')) == null
+
+        and: 'while the types this module declares are registered whatever a class loader can find'
+            empty.reflection().getTypeHint(TypeReference.of(AllowedMethodsHelper)) != null
     }
 }
