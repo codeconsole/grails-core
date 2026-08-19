@@ -52,6 +52,19 @@ class TagLibraryIndexFilesSpec extends Specification {
         expect:
         TagLibraryIndexFiles.STRICT_KEY == 'strictTags'
         TagLibraryIndexFiles.DYNAMIC_NAMESPACES_KEY == 'dynamicTagNamespaces'
+        TagLibraryIndexFiles.UNQUALIFIED_KEY == 'unqualifiedTagCalls'
+    }
+
+    void 'unqualified tag calls default to off when the build says nothing'() {
+        given:
+        File destination = Files.createDirectory(tempDir.resolve('default')).toFile()
+
+        when:
+        TagLibraryIndexFiles.writeSettings(destination, false, [] as Set)
+
+        then: 'a bare name is left to dispatch as it always did unless a build opts in'
+        new File(destination, 'META-INF/grails/taglibs/compile-settings.properties').text
+                .contains('unqualifiedTagCalls=false')
     }
 
     void 'settings are written under those keys, sorted, without a timestamp'() {
@@ -59,11 +72,11 @@ class TagLibraryIndexFilesSpec extends Specification {
         File destination = Files.createDirectory(tempDir.resolve('out')).toFile()
 
         when:
-        TagLibraryIndexFiles.writeSettings(destination, true, ['zeta', 'alpha'] as Set)
+        TagLibraryIndexFiles.writeSettings(destination, true, ['zeta', 'alpha'] as Set, true)
 
         then: 'sorted so that two otherwise identical builds produce identical output'
         new File(destination, 'META-INF/grails/taglibs/compile-settings.properties').text ==
-                'dynamicTagNamespaces=alpha,zeta\nstrictTags=true\n'
+                'dynamicTagNamespaces=alpha,zeta\nstrictTags=true\nunqualifiedTagCalls=true\n'
     }
 
     void 'clearing removes descriptors but keeps the settings beside them'() {

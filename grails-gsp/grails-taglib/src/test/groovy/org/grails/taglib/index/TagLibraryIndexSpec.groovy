@@ -43,6 +43,7 @@ class TagLibraryIndexSpec extends Specification {
         TagLibraryIndex.SETTINGS_LOCATION == 'META-INF/grails/taglibs/compile-settings.properties'
         TagLibraryIndex.STRICT_KEY == 'strictTags'
         TagLibraryIndex.DYNAMIC_NAMESPACES_KEY == 'dynamicTagNamespaces'
+        TagLibraryIndex.UNQUALIFIED_KEY == 'unqualifiedTagCalls'
     }
 
     void 'tag libraries in separate jars merge into one namespace'() {
