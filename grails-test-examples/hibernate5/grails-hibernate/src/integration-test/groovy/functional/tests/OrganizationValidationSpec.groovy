@@ -16,22 +16,30 @@
  *  specific language governing permissions and limitations
  *  under the License.
  */
+package functional.tests
 
-package grails.test.app.pogo
+import spock.lang.Specification
 
-/**
- * Created by jameskleeh on 7/17/17.
- */
-class Profile {
+import grails.gorm.transactions.Rollback
+import grails.testing.mixin.integration.Integration
 
-    String email
-    String firstName
-    String lastName
+@Integration
+class OrganizationValidationSpec extends Specification {
 
-    static constraints = {
-        email nullable: false
-        firstName nullable: false
-        lastName nullable: false
+    @Rollback
+    void "saving an organization without its name succeeds as nullable is true by default"() {
+        given:
+        def organization = new Organization()
+
+        expect:
+        organization.validate()
+        !organization.hasErrors()
+
+        when:
+        def savedOrganization = organization.save(flush: true)
+
+        then:
+        savedOrganization == organization
+        Organization.count() == 1
     }
-
 }
