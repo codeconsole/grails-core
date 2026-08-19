@@ -24,6 +24,7 @@ import org.apache.tools.ant.taskdefs.condition.Os
 import org.gradle.api.Project
 import org.gradle.api.artifacts.dsl.DependencyHandler
 import org.gradle.api.provider.Property
+import org.gradle.api.provider.SetProperty
 
 import grails.util.Environment
 
@@ -48,6 +49,7 @@ class GrailsExtension {
         this.project = project
         this.pluginDefiner = new PluginDefiner(project)
         this.indy = project.objects.property(Boolean).convention(true)
+        this.noindyModules = project.objects.setProperty(String).convention([] as List<String>)
         this.preserveParameterNames = project.objects.property(Boolean).convention(true)
         this.compileStatic = project.objects.newInstance(GrailsCompileStaticOptions)
         this.i18n = project.objects.newInstance(GrailsI18nOptions)
@@ -229,6 +231,17 @@ class GrailsExtension {
      * @see GrailsIndyVariants
      */
     final Property<Boolean> indy
+
+    /**
+     * Coordinates, as {@code group:name}, of the dependencies that publish a {@code noindy}
+     * classifier alongside their main artifact. Consulted only when {@link #indy} is {@code false},
+     * to decide which dependencies can supply the other flavour.
+     *
+     * <p>Listing a module that publishes no such classifier — or a platform, which publishes no jar
+     * at all — makes resolution fail when the missing file is fetched. A module advertises its
+     * classifier through the {@code Grails-Noindy-Artifact} attribute of its main jar's manifest.
+     */
+    final SetProperty<String> noindyModules
 
     void setIndy(boolean enabled) {
         this.indy.set(enabled)

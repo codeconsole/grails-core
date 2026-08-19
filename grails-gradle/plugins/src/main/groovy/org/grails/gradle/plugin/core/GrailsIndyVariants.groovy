@@ -23,11 +23,12 @@ import groovy.transform.CompileStatic
 
 import org.gradle.api.Project
 import org.gradle.api.artifacts.Configuration
-import org.gradle.api.artifacts.ConfigurationVariant
 import org.gradle.api.attributes.Attribute
 import org.gradle.api.file.Directory
 import org.gradle.api.plugins.BasePlugin
 import org.gradle.api.plugins.JavaPluginExtension
+import org.gradle.api.publish.PublishingExtension
+import org.gradle.api.publish.maven.MavenPublication
 import org.gradle.api.provider.Provider
 import org.gradle.api.tasks.GroovyRuntime
 import org.gradle.api.tasks.GroovySourceDirectorySet
@@ -49,17 +50,18 @@ import org.grails.gradle.plugin.util.SourceSets
  * Both artifacts contain the same classes compiled from the same sources with the same AST
  * transformations; only the bytecode used to dispatch dynamic Groovy calls differs.
  *
- * <p>Selection happens through Gradle Module Metadata rather than through the classifier alone.
- * A Maven classifier shares the POM of the main artifact, so asking for one by classifier would
- * pull the default flavour of everything it depends on. The {@code noindy} artifact is instead
- * published as a secondary variant of {@code apiElements} and {@code runtimeElements}, which
- * inherits their dependencies, so a single request propagates across the whole graph.
+ * <p>The {@code noindy} jar is published as a plain Maven classifier artifact and nothing else:
+ * the module's published metadata keeps exactly the variants it always had. Publishing a second
+ * variant instead would make the module ambiguous to any configuration that requests no attributes
+ * at all — the shape used by tck and probe configurations, here and in other people's builds — and
+ * no attribute rule can repair that, because the variant lacking the attribute never appears among
+ * the candidate values a disambiguation rule is given.
  *
- * <p>Only the {@code noindy} variant carries the {@link #INDY_ATTRIBUTE} attribute; the default
- * variants deliberately leave it absent. A consumer that never asks for the attribute — any plain
- * Gradle project that does not apply a Grails plugin — therefore sees exactly one candidate and
- * resolves the default artifact as it always has. Declaring the attribute on both variants would
- * make every such build fail with a variant ambiguity error.
+ * <p>Selection is therefore assembled on the consuming side. An application that asks for
+ * {@code noindy} registers a {@link org.gradle.api.artifacts.ComponentMetadataRule} that derives a
+ * variant from the classifier artifact for the modules that publish one. Because that variant only
+ * ever exists inside a build that opted in, the schema there also carries the rules needed to
+ * choose, and nobody else's resolution changes in any way.
  *
  * @since 8.0
  */
@@ -83,6 +85,9 @@ class GrailsIndyVariants {
 
     /** Name of the {@link Jar} task that packages the {@code noindy} classes. */
     public static final String NOINDY_JAR_TASK_NAME = 'noindyJar'
+
+    /** Manifest attribute through which a module advertises that it publishes a noindy classifier. */
+    public static final String NOINDY_MANIFEST_ATTRIBUTE = 'Grails-Noindy-Artifact'
 
     private GrailsIndyVariants() {
     }
@@ -110,8 +115,8 @@ class GrailsIndyVariants {
             TaskProvider<GroovyCompile> noindyCompile = registerNoindyCompileTask(project, main)
             TaskProvider<Jar> noindyJar = registerNoindyJarTask(project, main, noindyCompile)
 
-            addNoindyVariant(project, 'apiElements', noindyJar)
-            addNoindyVariant(project, 'runtimeElements', noindyJar)
+            publishNoindyClassifier(project, noindyJar)
+            advertiseNoindyArtifact(project)
         }
     }
 
@@ -127,10 +132,36 @@ class GrailsIndyVariants {
      * @param project the application project
      * @param indy provider for the value of {@code grails.indy}
      */
-    static void configureConsumer(Project project, Provider<Boolean> indy) {
-        project.configurations.configureEach { Configuration configuration ->
-            if (configuration.canBeResolved) {
-                configuration.attributes.attributeProvider(INDY_ATTRIBUTE, indy)
+    static void configureConsumer(Project project, Provider<Boolean> indy, Provider<Set<String>> noindyModules) {
+        project.dependencies.attributesSchema { schema ->
+            schema.attribute(INDY_ATTRIBUTE) { strategy ->
+                strategy.disambiguationRules.add(GrailsIndyDisambiguationRule)
+            }
+        }
+
+        project.afterEvaluate {
+            if (indy.getOrElse(true)) {
+                // Nothing to select: the default artifacts are already what everyone resolves.
+                return
+            }
+
+            Set<String> coordinates = noindyModules.getOrElse([] as Set)
+            if (!coordinates) {
+                project.logger.warn('Grails: indy is disabled but no modules are listed as publishing a noindy artifact, so the dependencies on the classpath remain the invokedynamic ones.')
+                project.logger.warn('        List them with grails { noindyModules = [\'group:name\'] } in build.gradle.')
+                return
+            }
+
+            project.dependencies.components { components ->
+                components.all(GrailsNoindyClassifierRule) { rule ->
+                    rule.params(coordinates)
+                }
+            }
+
+            project.configurations.configureEach { Configuration configuration ->
+                if (configuration.canBeResolved) {
+                    configuration.attributes.attribute(INDY_ATTRIBUTE, false)
+                }
             }
         }
     }
@@ -182,12 +213,29 @@ class GrailsIndyVariants {
         }
     }
 
-    private static void addNoindyVariant(Project project, String configurationName, TaskProvider<Jar> noindyJar) {
-        project.configurations.named(configurationName).configure { Configuration elements ->
-            elements.outgoing.variants.create(NOINDY_VARIANT_NAME) { ConfigurationVariant variant ->
-                variant.attributes.attribute(INDY_ATTRIBUTE, false)
-                variant.artifact(noindyJar)
+    /**
+     * Attaches the {@code noindy} jar to the module's publication as an ordinary classifier
+     * artifact, leaving the published variants untouched.
+     */
+    private static void publishNoindyClassifier(Project project, TaskProvider<Jar> noindyJar) {
+        project.pluginManager.withPlugin('maven-publish') {
+            PublishingExtension publishing = project.extensions.getByType(PublishingExtension)
+            publishing.publications.withType(MavenPublication).configureEach { MavenPublication publication ->
+                publication.artifact(noindyJar)
             }
+        }
+    }
+
+    /**
+     * Records in the main jar's manifest that a {@code noindy} classifier accompanies it, so an
+     * application can discover which of its dependencies publish one instead of being told.
+     * Mirrors how a plugin advertises its CLI companion through {@code Grails-Cli-Artifact}.
+     */
+    private static void advertiseNoindyArtifact(Project project) {
+        project.tasks.named('jar', Jar).configure { Jar jar ->
+            jar.manifest.attributes((NOINDY_MANIFEST_ATTRIBUTE): project.provider {
+                "${project.group}:${project.name}".toString()
+            })
         }
     }
 }

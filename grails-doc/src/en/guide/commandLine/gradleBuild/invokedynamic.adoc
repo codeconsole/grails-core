@@ -39,14 +39,30 @@ call-site caching instead.
 
 Your own code is only part of what runs. The framework and the plugins you depend on are compiled ahead of
 time, so the setting above cannot reach them by recompiling. Instead, Grails modules and plugins built with
-the `org.apache.grails.gradle.grails-plugin` plugin publish their classes twice: a default artifact compiled
-with `invokedynamic`, and a second artifact carrying the `noindy` classifier compiled without it. Setting
-`indy` selects between them for the whole dependency graph, so the artifacts on your classpath match the way
-your own code is compiled. No per-dependency configuration is needed.
+the `org.apache.grails.gradle.grails-plugin` plugin publish their classes twice: the main artifact compiled
+with `invokedynamic`, and a second artifact carrying the `noindy` classifier compiled without it.
 
-A dependency that publishes only one artifact — a plugin built before this existed, or one that chose not to
-publish both — stays usable either way. Its single artifact is used whichever setting you choose, because
-classes compiled the two ways interoperate freely on the same classpath.
+Setting `indy = false` makes the application resolve the `noindy` artifact of every dependency you list as
+publishing one:
+
+[source,groovy]
+.build.gradle
+----
+grails {
+    indy = false
+    noindyModules = ['org.apache.grails:grails-core', 'com.example:my-plugin']
+}
+----
+
+The list is required, and listing a module that publishes no such artifact makes resolution fail when the
+missing file is fetched. A module advertises that it publishes one through the `Grails-Noindy-Artifact`
+attribute of its main jar's manifest.
+
+Dependencies you leave off the list keep their main artifact, which is always safe: classes compiled the two
+ways interoperate freely on the same classpath.
+
+NOTE: This applies to dependencies resolved as published modules. A project dependency inside a composite or
+multi-project build always uses its main artifact.
 
 === Publishing both flavours from a plugin
 

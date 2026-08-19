@@ -2,6 +2,12 @@
 // invokedynamic default, and a `noindy` classifier artifact is compiled without it.
 plugins {
     id 'org.apache.grails.gradle.grails-plugin'
+    id 'maven-publish'
+}
+
+publishing {
+    publications { maven(MavenPublication) { from components.java } }
+    repositories { maven { name = 'test'; url = rootProject.layout.buildDirectory.dir('repo') } }
 }
 
 group = 'org.example.test'
@@ -22,12 +28,14 @@ tasks.register('inspectIndyVariants') {
     def noindyJarTask = tasks.named('noindyJar', Jar)
     def apiHasNoindy = configurations.apiElements.outgoing.variants.names.contains('noindy')
     def runtimeHasNoindy = configurations.runtimeElements.outgoing.variants.names.contains('noindy')
+    def jarFileProvider = tasks.named('jar', Jar).flatMap { it.archiveFile }
     doLast {
         println "MAIN_INDY=${mainCompile.get().groovyOptions.optimizationOptions.indy}"
         println "NOINDY_INDY=${noindyCompile.get().groovyOptions.optimizationOptions.indy}"
         println "NOINDY_JAR=${noindyJarTask.get().archiveFile.get().asFile.name}"
         println "API_HAS_NOINDY=${apiHasNoindy}"
         println "RUNTIME_HAS_NOINDY=${runtimeHasNoindy}"
+        println "ADVERTISED=${manifestValue(jarFileProvider.get().asFile, 'Grails-Noindy-Artifact')}"
 
         def counts = [:]
         [main: tasks.named('jar', Jar).get(), noindy: noindyJarTask.get()].each { label, jarTask ->
@@ -38,6 +46,12 @@ tasks.register('inspectIndyVariants') {
         }
         println "MAIN_BYTECODE=${counts.main}"
         println "NOINDY_BYTECODE=${counts.noindy}"
+    }
+}
+
+static String manifestValue(File jarFile, String name) {
+    new java.util.jar.JarFile(jarFile).withCloseable { jar ->
+        jar.manifest?.mainAttributes?.getValue(name)
     }
 }
 

@@ -22,12 +22,11 @@ package org.apache.grails.buildsrc
 import groovy.transform.CompileStatic
 
 import org.gradle.api.Project
-import org.gradle.api.artifacts.Configuration
-import org.gradle.api.artifacts.ConfigurationVariant
-import org.gradle.api.attributes.Attribute
 import org.gradle.api.file.Directory
 import org.gradle.api.plugins.BasePlugin
 import org.gradle.api.plugins.JavaPluginExtension
+import org.gradle.api.publish.PublishingExtension
+import org.gradle.api.publish.maven.MavenPublication
 import org.gradle.api.provider.Provider
 import org.gradle.api.tasks.GroovyRuntime
 import org.gradle.api.tasks.GroovySourceDirectorySet
@@ -41,8 +40,11 @@ import org.gradle.jvm.toolchain.JavaToolchainService
 /**
  * Publishes every Groovy module of the framework twice: the default artifact compiled with Groovy's
  * own {@code invokedynamic} default, and a {@code noindy} classifier artifact compiled without it.
- * An application picks between them by setting {@code grails.indy}, and the choice propagates
- * across the dependency graph through Gradle Module Metadata.
+ * An application picks between them by setting {@code grails.indy}.
+ *
+ * <p>The second artifact is a plain Maven classifier and adds no variant to the published metadata,
+ * so nothing about how anyone else resolves these modules changes. The application side turns the
+ * classifier into something selectable.
  *
  * <p>Mirrors {@code GrailsIndyVariants} from the Grails Gradle plugins, which does the same for
  * plugins built outside this repository. That class is not on build-logic's classpath — the two
@@ -56,14 +58,11 @@ import org.gradle.jvm.toolchain.JavaToolchainService
 @CompileStatic
 class IndyVariants {
 
-    /** Must match {@code GrailsIndyVariants.INDY_ATTRIBUTE}. */
-    static final Attribute<Boolean> INDY_ATTRIBUTE = Attribute.of('org.apache.grails.indy', Boolean)
-
     /** Must match {@code GrailsIndyVariants.NOINDY_CLASSIFIER}. */
     static final String NOINDY_CLASSIFIER = 'noindy'
 
-    /** Must match {@code GrailsIndyVariants.NOINDY_VARIANT_NAME}. */
-    static final String NOINDY_VARIANT_NAME = 'noindy'
+    /** Must match {@code GrailsIndyVariants.NOINDY_MANIFEST_ATTRIBUTE}. */
+    static final String NOINDY_MANIFEST_ATTRIBUTE = 'Grails-Noindy-Artifact'
 
     /** Must match {@code GrailsIndyVariants.NOINDY_COMPILE_TASK_NAME}. */
     static final String NOINDY_COMPILE_TASK_NAME = 'compileNoindyGroovy'
@@ -101,8 +100,16 @@ class IndyVariants {
                 TaskProvider<GroovyCompile> noindyCompile = registerNoindyCompileTask(project, main)
                 TaskProvider<Jar> noindyJar = registerNoindyJarTask(project, main, noindyCompile)
 
-                addNoindyVariant(project, 'apiElements', noindyJar)
-                addNoindyVariant(project, 'runtimeElements', noindyJar)
+                PublishingExtension publishing = project.extensions.getByType(PublishingExtension)
+                publishing.publications.withType(MavenPublication).configureEach { MavenPublication publication ->
+                    publication.artifact(noindyJar)
+                }
+
+                project.tasks.named('jar', Jar).configure { Jar jar ->
+                    jar.manifest.attributes((NOINDY_MANIFEST_ATTRIBUTE): project.provider {
+                        "${project.group}:${project.name}".toString()
+                    })
+                }
             }
         }
     }
@@ -149,12 +156,4 @@ class IndyVariants {
         }
     }
 
-    private static void addNoindyVariant(Project project, String configurationName, TaskProvider<Jar> noindyJar) {
-        project.configurations.named(configurationName).configure { Configuration elements ->
-            elements.outgoing.variants.create(NOINDY_VARIANT_NAME) { ConfigurationVariant variant ->
-                variant.attributes.attribute(INDY_ATTRIBUTE, false)
-                variant.artifact(noindyJar)
-            }
-        }
-    }
 }

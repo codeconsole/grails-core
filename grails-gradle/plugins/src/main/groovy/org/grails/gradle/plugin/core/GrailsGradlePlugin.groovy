@@ -280,7 +280,7 @@ class GrailsGradlePlugin implements Plugin<Project> {
         // its own dependencies by the default rules; a project that publishes neither compiles the
         // one flavour it was asked for and resolves artifacts to match.
         if (!publishesIndyVariants()) {
-            GrailsIndyVariants.configureConsumer(project, grailsExtension.indy)
+            GrailsIndyVariants.configureConsumer(project, grailsExtension.indy, grailsExtension.noindyModules)
         }
 
         project.afterEvaluate {

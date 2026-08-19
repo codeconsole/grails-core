@@ -39,16 +39,19 @@ class GrailsIndyVariantsSpec extends GradleSpecification {
         result.output.contains('NOINDY_BYTECODE=indy=false,callsite=true')
     }
 
-    def "the noindy artifact is published as a secondary variant of both element configurations"() {
+    def "the noindy artifact is a plain classifier and adds no variant"() {
         given:
         setupTestResourceProject('indy-variants')
 
         when:
         def result = executeTask(':plugin:inspectIndyVariants')
 
-        then:
-        result.output.contains('API_HAS_NOINDY=true')
-        result.output.contains('RUNTIME_HAS_NOINDY=true')
+        then: 'the published variants are exactly the ones the module always had'
+        result.output.contains('API_HAS_NOINDY=false')
+        result.output.contains('RUNTIME_HAS_NOINDY=false')
+
+        and: 'the module advertises the classifier so applications can discover it'
+        result.output.contains('ADVERTISED=org.example.test:plugin')
     }
 
     def "an application resolves the artifacts matching how it compiles its own code"() {
@@ -93,6 +96,28 @@ class GrailsIndyVariantsSpec extends GradleSpecification {
 
         and: 'and the default artifacts are the ones resolved'
         result.output.contains('DEFAULT_RESOLVED=plugin-1.0.0.jar')
+    }
+
+    def "an artifact view that constrains nothing resolves a single artifact"() {
+        given: 'a consumer resolving the way the CLI companion probe does'
+        setupTestResourceProject('indy-variants')
+
+        when:
+        def result = executeTask(':plain:inspectArtifactView')
+
+        then:
+        result.output.contains('VIEW=plugin-1.0.0.jar')
+    }
+
+    def "a configuration that declares no attributes resolves a single artifact"() {
+        given: 'the shape used by ad-hoc configurations such as tck and the CLI probe'
+        setupTestResourceProject('indy-variants')
+
+        when:
+        def result = executeTask(':plain:inspectProbe')
+
+        then: 'publishing no second variant leaves nothing to be ambiguous about'
+        result.output.contains('PROBE=plugin-1.0.0.jar')
     }
 
     def "a plain Gradle consumer still resolves the default artifact"() {

@@ -2649,10 +2649,22 @@ grails {
 }
 ----
 
-Second, the setting now reaches precompiled dependencies as well as your own sources. Grails modules and
-plugins are published in two flavours -- a default artifact compiled with `invokedynamic` and a second
-artifact carrying the `noindy` classifier compiled without it -- and the application's setting selects
-between them across the whole dependency graph.
+Second, the setting can now reach precompiled dependencies as well as your own sources. Grails modules and
+plugins publish a second artifact carrying the `noindy` classifier, compiled without `invokedynamic`. An
+application that sets `indy = false` and lists the modules publishing one resolves those artifacts instead of
+the main ones:
+
+[source,groovy]
+.build.gradle
+----
+grails {
+    indy = false
+    noindyModules = ['org.apache.grails:grails-core']
+}
+----
+
+The extra artifact is a plain Maven classifier and adds no variant to the published metadata, so builds that
+do not opt in resolve these modules exactly as before.
 
 Native compilation is the reason the default moved. Call-site caching bytecode cannot be compiled ahead of
 time into a native image, so every artifact on a native application's classpath has to be the `invokedynamic`

@@ -14,3 +14,23 @@ tasks.register('inspectResolved') {
         println "RESOLVED=${runtime.files*.name.findAll { it.startsWith('plugin') }.sort().join(',')}"
     }
 }
+
+// The two shapes that a published second variant breaks: an artifact view constraining nothing,
+// and an ad-hoc configuration with no attributes at all (as tck and CLI probe configurations have).
+tasks.register('inspectArtifactView') {
+    def view = configurations.runtimeClasspath.incoming.artifactView { it.lenient = false }.files
+    doLast {
+        println "VIEW=${view*.name.findAll { it.startsWith('plugin') }.sort().join(',')}"
+    }
+}
+
+configurations { probe }
+
+dependencies { probe project(':plugin') }
+
+tasks.register('inspectProbe') {
+    def files = configurations.probe
+    doLast {
+        println "PROBE=${files.files*.name.findAll { it.startsWith('plugin') }.sort().join(',')}"
+    }
+}

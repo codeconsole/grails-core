@@ -7,15 +7,23 @@ grails {
     bom = null
     cliAutoProvision = false
     indy = project.hasProperty('appIndy') ? Boolean.parseBoolean(appIndy) : false
+    noindyModules = ['org.example.test:plugin']
+}
+
+repositories {
+    maven { url = rootProject.layout.buildDirectory.dir('repo') }
 }
 
 dependencies {
     implementation localGroovy()
-    implementation project(':plugin')
+    // A real application consumes a plugin as a published module. Component metadata rules, which
+    // is how the noindy classifier becomes selectable, do not apply to project dependencies.
+    implementation 'org.example.test:plugin:1.0.0'
     implementation project(':legacy')
 }
 
 tasks.register('inspectResolved') {
+    dependsOn ':plugin:publishAllPublicationsToTestRepository'
     def runtime = configurations.runtimeClasspath
     doLast {
         println "RESOLVED=${runtime.files*.name.findAll { it.startsWith('plugin') || it.startsWith('legacy') }.sort().join(',')}"
