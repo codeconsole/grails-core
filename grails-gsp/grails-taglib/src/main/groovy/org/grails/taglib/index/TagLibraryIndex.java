@@ -90,6 +90,7 @@ public final class TagLibraryIndex {
     static final String INCOMPLETE_ALL_KEY = "all";
     static final String DYNAMIC_NAMESPACES_KEY = "dynamicTagNamespaces";
     static final String UNQUALIFIED_KEY = "unqualifiedTagCalls";
+    static final String LOCAL_NAMESPACES_KEY = "localNamespaces";
 
     /**
      * One index per class loader. A compilation gets a class loader of its own, so this is read once
@@ -108,11 +109,12 @@ public final class TagLibraryIndex {
     private final Set<String> incompleteNamespaces;
     private final boolean everythingIncomplete;
     private final boolean unqualifiedCalls;
+    private final Set<String> localNamespaces;
 
     private TagLibraryIndex(Map<String, Map<String, TagLibraryIndexEntry>> byNamespace,
             Map<String, Set<String>> ambiguousByNamespace, Map<String, Set<String>> tagNamesByClass,
             boolean strict, Set<String> dynamicNamespaces, Set<String> incompleteNamespaces,
-            boolean everythingIncomplete, boolean unqualifiedCalls) {
+            boolean everythingIncomplete, boolean unqualifiedCalls, Set<String> localNamespaces) {
         this.byNamespace = byNamespace;
         this.ambiguousByNamespace = ambiguousByNamespace;
         this.tagNamesByClass = tagNamesByClass;
@@ -121,6 +123,7 @@ public final class TagLibraryIndex {
         this.incompleteNamespaces = incompleteNamespaces;
         this.everythingIncomplete = everythingIncomplete;
         this.unqualifiedCalls = unqualifiedCalls;
+        this.localNamespaces = localNamespaces;
     }
 
     /**
@@ -154,7 +157,7 @@ public final class TagLibraryIndex {
         Map<String, Set<String>> byClass = new TreeMap<>();
         if (loader == null) {
             return new TagLibraryIndex(merged, ambiguous, byClass, false, Collections.emptySet(),
-                    Collections.emptySet(), false, false);
+                    Collections.emptySet(), false, false, Collections.emptySet());
         }
         // A directory resource enumerates its children on some classpath layouts but not inside jars,
         // so the descriptors are discovered through the manifest of names each descriptor records
@@ -205,6 +208,13 @@ public final class TagLibraryIndex {
         Properties settings = readSettings(loader);
         boolean strict = Boolean.parseBoolean(settings.getProperty(STRICT_KEY, "false"));
         boolean unqualified = Boolean.parseBoolean(settings.getProperty(UNQUALIFIED_KEY, "false"));
+        Set<String> local = new TreeSet<>();
+        for (String namespace : settings.getProperty(LOCAL_NAMESPACES_KEY, "").split(",")) {
+            String trimmed = namespace.trim();
+            if (!trimmed.isEmpty()) {
+                local.add(trimmed);
+            }
+        }
         Set<String> dynamic = new TreeSet<>();
         for (String namespace : settings.getProperty(DYNAMIC_NAMESPACES_KEY, "").split(",")) {
             String trimmed = namespace.trim();
@@ -229,7 +239,7 @@ public final class TagLibraryIndex {
         }
         return new TagLibraryIndex(merged, ambiguous, byClass, strict,
                 Collections.unmodifiableSet(dynamic), Collections.unmodifiableSet(incomplete),
-                allIncomplete, unqualified);
+                allIncomplete, unqualified, Collections.unmodifiableSet(local));
     }
 
     private static Set<URL> urls(ClassLoader loader, String location) {
@@ -420,6 +430,21 @@ public final class TagLibraryIndex {
      */
     public boolean rewritesUnqualifiedCalls() {
         return unqualifiedCalls;
+    }
+
+    /**
+     * Whether this project's own tag libraries declare a namespace.
+     *
+     * <p>What a namespace holds is only fully knowable for the namespaces this project describes.
+     * Every other namespace is contributed to by tag libraries from elsewhere - a plugin built before
+     * descriptors existed, one registered while the application runs - and a tag missing from such a
+     * namespace is as likely to be one of those as a misspelling.
+     *
+     * @param namespace a tag library namespace
+     * @return true when a tag library of this project declares it
+     */
+    public boolean declaresNamespace(String namespace) {
+        return localNamespaces.contains(namespace);
     }
 
     public boolean isStrict() {

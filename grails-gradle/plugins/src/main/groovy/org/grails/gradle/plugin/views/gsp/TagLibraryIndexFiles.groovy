@@ -63,7 +63,34 @@ final class TagLibraryIndexFiles {
 
     static final String UNQUALIFIED_KEY = 'unqualifiedTagCalls'
 
+    static final String LOCAL_NAMESPACES_KEY = 'localNamespaces'
+
     private TagLibraryIndexFiles() {
+    }
+
+    /**
+     * Reads the namespaces of the descriptors beneath a directory.
+     *
+     * <p>Taken from what was generated rather than from the sources, so that a tag library the
+     * generator could not read does not have its namespace counted as one this project describes.
+     *
+     * @param destination the directory the index was written beneath
+     * @return the namespaces described there
+     */
+    static Set<String> readNamespaces(File destination) {
+        Set<String> namespaces = new TreeSet<>()
+        new File(destination, INDEX_LOCATION).listFiles()?.each { File file ->
+            if (!file.isFile() || !file.name.endsWith('.properties') || file.name == SETTINGS_FILE) {
+                return
+            }
+            Properties descriptor = new Properties()
+            file.withInputStream { descriptor.load(it) }
+            String namespace = descriptor.getProperty('namespace')
+            if (namespace) {
+                namespaces.add(namespace)
+            }
+        }
+        namespaces
     }
 
     /**
@@ -89,16 +116,18 @@ final class TagLibraryIndexFiles {
      * @param strictTags whether an unknown tag fails compilation
      * @param dynamicNamespaces namespaces filled in while the application runs
      * @param unqualifiedTagCalls whether a call written without a namespace may be compiled
+     * @param localNamespaces the namespaces this project's own tag libraries declare
      */
     static void writeSettings(File destination, boolean strictTags, Set<String> dynamicNamespaces,
-            boolean unqualifiedTagCalls = false) {
+            boolean unqualifiedTagCalls = false, Set<String> localNamespaces = [] as Set) {
         File indexDirectory = new File(destination, INDEX_LOCATION)
         indexDirectory.mkdirs()
         // Written by hand rather than through Properties.store, which stamps the current time into a
         // comment and would make the output differ between otherwise identical builds.
         String text = "${DYNAMIC_NAMESPACES_KEY}=${new TreeSet<String>(dynamicNamespaces).join(',')}\n" +
                 "${STRICT_KEY}=${strictTags}\n" +
-                "${UNQUALIFIED_KEY}=${unqualifiedTagCalls}\n"
+                "${UNQUALIFIED_KEY}=${unqualifiedTagCalls}\n" +
+                "${LOCAL_NAMESPACES_KEY}=${new TreeSet<String>(localNamespaces).join(',')}\n"
         new File(indexDirectory, SETTINGS_FILE).setText(text, StandardCharsets.UTF_8.name())
     }
 }

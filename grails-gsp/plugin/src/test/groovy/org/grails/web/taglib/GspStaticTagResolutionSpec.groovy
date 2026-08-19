@@ -106,8 +106,8 @@ class GspStaticTagResolutionSpec extends Specification {
     }
 
     void 'an unrecognised tag fails compilation when the build declares its tags complete'() {
-        given:
-        GroovyPagesTemplateEngine strict = engineFor('strictTags=true\n')
+        given: 'g is a namespace this project describes, so what it holds is knowable'
+        GroovyPagesTemplateEngine strict = engineFor('strictTags=true\nlocalNamespaces=g\n')
         String template = '''<%@ page compileStatic="true" %>${g.mesage(code: 'typo')}'''
 
         when:
@@ -117,6 +117,18 @@ class GspStaticTagResolutionSpec extends Specification {
         t.metaInfo.compilationException != null
         t.metaInfo.compilationException.message.contains('No such tag [mesage]')
         t.metaInfo.compilationException.message.contains('namespace [g]')
+    }
+
+    void 'an unrecognised tag in a namespace this project does not declare is never reported'() {
+        given: 'strict checking on, but g is filled in by tag libraries from elsewhere'
+        GroovyPagesTemplateEngine strict = engineFor('strictTags=true\n')
+        String template = '''<%@ page compileStatic="true" %>${g.mesage(code: 'typo')}'''
+
+        when:
+        def t = strict.createTemplate(template, 'unknown-tag-foreign-namespace')
+
+        then: 'how many of them carry descriptors is not knowable, so a missing tag proves nothing'
+        t.metaInfo.compilationException == null
     }
 
     void 'an unrecognised tag in a declared dynamic namespace is never reported'() {
@@ -133,7 +145,7 @@ class GspStaticTagResolutionSpec extends Specification {
 
     void 'a tag written as markup is checked against the same descriptions'() {
         given:
-        GroovyPagesTemplateEngine strict = engineFor('strictTags=true\n')
+        GroovyPagesTemplateEngine strict = engineFor('strictTags=true\nlocalNamespaces=g\n')
         String template = '''<%@ page compileStatic="true" %><g:mesage code="typo"/>'''
 
         when:

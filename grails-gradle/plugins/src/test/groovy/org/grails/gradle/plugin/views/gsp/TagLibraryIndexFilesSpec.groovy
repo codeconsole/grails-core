@@ -53,6 +53,7 @@ class TagLibraryIndexFilesSpec extends Specification {
         TagLibraryIndexFiles.STRICT_KEY == 'strictTags'
         TagLibraryIndexFiles.DYNAMIC_NAMESPACES_KEY == 'dynamicTagNamespaces'
         TagLibraryIndexFiles.UNQUALIFIED_KEY == 'unqualifiedTagCalls'
+        TagLibraryIndexFiles.LOCAL_NAMESPACES_KEY == 'localNamespaces'
     }
 
     void 'unqualified tag calls default to off when the build says nothing'() {
@@ -72,11 +73,26 @@ class TagLibraryIndexFilesSpec extends Specification {
         File destination = Files.createDirectory(tempDir.resolve('out')).toFile()
 
         when:
-        TagLibraryIndexFiles.writeSettings(destination, true, ['zeta', 'alpha'] as Set, true)
+        TagLibraryIndexFiles.writeSettings(destination, true, ['zeta', 'alpha'] as Set, true,
+                ['mine', 'also'] as Set)
 
         then: 'sorted so that two otherwise identical builds produce identical output'
         new File(destination, 'META-INF/grails/taglibs/compile-settings.properties').text ==
-                'dynamicTagNamespaces=alpha,zeta\nstrictTags=true\nunqualifiedTagCalls=true\n'
+                'dynamicTagNamespaces=alpha,zeta\nstrictTags=true\nunqualifiedTagCalls=true\n' +
+                'localNamespaces=also,mine\n'
+    }
+
+    void 'the namespaces read back are the ones the descriptors declare'() {
+        given:
+        File destination = Files.createDirectory(tempDir.resolve('ns')).toFile()
+        File indexDir = new File(destination, 'META-INF/grails/taglibs')
+        indexDir.mkdirs()
+        new File(indexDir, 'demo.OneTagLib.properties').text = 'class=demo.OneTagLib\nnamespace=mine\n'
+        new File(indexDir, 'demo.TwoTagLib.properties').text = 'class=demo.TwoTagLib\nnamespace=other\n'
+        TagLibraryIndexFiles.writeSettings(destination, false, [] as Set)
+
+        expect: 'taken from what was generated, so a tag library that could not be read is not counted'
+        TagLibraryIndexFiles.readNamespaces(destination) == ['mine', 'other'] as Set
     }
 
     void 'clearing removes descriptors but keeps the settings beside them'() {

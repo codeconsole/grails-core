@@ -200,6 +200,7 @@ abstract class GenerateTagLibraryIndexTask extends DefaultTask {
         File settingsDestination = settingsDirectory.present ? settingsDirectory.get().asFile : destination
         settingsDestination.mkdirs()
         TagLibraryIndexFiles.writeSettings(settingsDestination, strictTags.getOrElse(false),
-                dynamicTagNamespaces.getOrElse([] as Set), unqualifiedTagCalls.getOrElse(false))
+                dynamicTagNamespaces.getOrElse([] as Set), unqualifiedTagCalls.getOrElse(false),
+                TagLibraryIndexFiles.readNamespaces(destination))
     }
 }

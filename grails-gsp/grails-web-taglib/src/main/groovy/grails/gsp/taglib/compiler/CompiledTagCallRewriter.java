@@ -472,6 +472,13 @@ public class CompiledTagCallRewriter extends ClassCodeExpressionTransformer {
         if (!index.isStrict() || index.isDynamicNamespace(namespace)) {
             return;
         }
+        if (!index.declaresNamespace(namespace)) {
+            // A namespace this project does not declare is filled in by tag libraries from elsewhere,
+            // and how many of them carry descriptors is not knowable here. Reporting a tag missing
+            // from such a namespace would fail a build over a plugin's perfectly good tag - which is
+            // what made strict checking unusable for g, the namespace it would matter most for.
+            return;
+        }
         if (!index.isNamespaceComplete(namespace)) {
             // Something contributing to this namespace could not be described. A tag missing from it
             // is as likely to be one of those as a misspelling, and reporting it would fail a build

@@ -44,6 +44,7 @@ class TagLibraryIndexSpec extends Specification {
         TagLibraryIndex.STRICT_KEY == 'strictTags'
         TagLibraryIndex.DYNAMIC_NAMESPACES_KEY == 'dynamicTagNamespaces'
         TagLibraryIndex.UNQUALIFIED_KEY == 'unqualifiedTagCalls'
+        TagLibraryIndex.LOCAL_NAMESPACES_KEY == 'localNamespaces'
     }
 
     void 'tag libraries in separate jars merge into one namespace'() {
