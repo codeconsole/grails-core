@@ -2659,9 +2659,9 @@ that did not actually change. If you were using `touch` to force a page to recom
 `setLastModified(long)`. Use `GroovyPageMetaInfo.getSourceChecksum()` to identify the source a page was
 compiled from. Generated page classes no longer declare a `LAST_MODIFIED` constant.
 
-**Removed setting.** `grails.gsp.reload.granularity` no longer has any effect and has been removed from the
-documentation. It existed to absorb rounding differences between modification times, which content
-comparison does not need. `grails.gsp.reload.interval` is unchanged.
+**Removed setting.** `grails.gsp.reload.granularity` is gone. It existed to absorb rounding differences
+between modification times, which comparing content does not need; setting it now has no effect.
+`grails.gsp.reload.interval` is unchanged.
 
 A GSP precompiled by Grails 7 and shipped inside a binary plugin carries no checksum. Such a page is served
 normally; it is simply never reload-checked, which was already the case for views resolved out of a plugin
