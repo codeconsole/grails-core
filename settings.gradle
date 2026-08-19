@@ -106,6 +106,7 @@ def buildJdkSupportsMicronaut = Runtime.version().feature() >= 25
 def skipMicronautProjects = explicitlySkipMicronaut || (!buildJdkSupportsMicronaut && !explicitlyIncludeMicronaut)
 
 include(
+        'grails-benchmarks',
         'grails-bootstrap',
         'grails-beans-dsl',
         'grails-cache',
@@ -529,6 +530,7 @@ project(':grails-test-examples-redis').projectDir = new File(settingsDir, 'grail
 
 // Functional Tests
 include(
+        'grails-test-examples-aot',
         'grails-test-examples-app1',
         'grails-test-examples-app2',
         'grails-test-examples-app3',
@@ -576,6 +578,7 @@ include(
 project(':grails-test-examples-async-events-pubsub-demo').projectDir = file('grails-test-examples/async-events-pubsub-demo')
 project(':grails-test-examples-beans-dsl').projectDir = file('grails-test-examples/beans-dsl')
 project(':grails-test-examples-beans-dsl-plugin').projectDir = file('grails-test-examples/beans-dsl-plugin')
+project(':grails-test-examples-aot').projectDir = file('grails-test-examples/aot')
 project(':grails-test-examples-app1').projectDir = file('grails-test-examples/app1')
 project(':grails-test-examples-app2').projectDir = file('grails-test-examples/app2')
 project(':grails-test-examples-app3').projectDir = file('grails-test-examples/app3')

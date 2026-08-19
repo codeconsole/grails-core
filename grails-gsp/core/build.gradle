@@ -103,6 +103,7 @@ dependencies {
 
     testImplementation 'org.slf4j:slf4j-nop' // Prevents warning about missing slf4j implementation during compilation and tests
     testImplementation 'org.spockframework:spock-core'
+    testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine'
 }
 
 apply {

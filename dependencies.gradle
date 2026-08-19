@@ -26,7 +26,7 @@ ext {
             'asciidoctor-gradle-jvm.version': '4.0.5',
             'asciidoctorj.version'          : '3.0.0',
             'asm.version'                   : '9.10.1',
-            'asset-pipeline-gradle.version' : '5.2.0-M1',
+            'asset-pipeline-gradle.version' : '5.2.0-M3',
             'commons-text.version'          : '1.15.0',
             'directory-watcher.version'     : '0.19.1',
             'gradle-groovy.version'         : '4.0.33',
@@ -80,7 +80,7 @@ ext {
     ]
 
     bomDependencyVersions = [
-            'asset-pipeline-bom.version'    : '5.2.0-M1',
+            'asset-pipeline-bom.version'    : '5.2.0-M3',
             'cas-client-core.version'       : '4.1.1',
             'bootstrap-icons.version'       : '1.13.1',
             'bootstrap.version'             : '5.3.8',
@@ -126,8 +126,8 @@ ext {
             'sitemesh.version'              : '2.6.0',
             'scribejava.version'            : '8.3.3',
             'spock.version'                 : '2.4-groovy-5.0',
-            'starter-sitemesh.version'      : '3.3.0-M3',
-            'spring-webmvc-sitemesh.version': '3.3.0-M3',
+            'starter-sitemesh.version'      : '3.3.0-RC1',
+            'spring-webmvc-sitemesh.version': '3.3.0-RC1',
             // Spring Boot 4 no longer manages spring-retry; pin it here so the
             // grails-shell-cli SpringRetryCompilerAutoConfiguration's unversioned
             // reference resolves and consumer apps using @Retryable get a known version.
