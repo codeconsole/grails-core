@@ -101,7 +101,6 @@ public class GroovyPageParser implements Tokens {
 
     public static final String CONSTANT_NAME_JSP_TAGS = "JSP_TAGS";
     public static final String CONSTANT_NAME_CONTENT_TYPE = "CONTENT_TYPE";
-    public static final String CONSTANT_NAME_LAST_MODIFIED = "LAST_MODIFIED";
     public static final String CONSTANT_NAME_SOURCE_CHECKSUM = "SOURCE_CHECKSUM";
     public static final String CONSTANT_NAME_EXPRESSION_CODEC = "EXPRESSION_CODEC";
     public static final String CONSTANT_NAME_STATIC_CODEC = "STATIC_CODEC";
@@ -191,7 +190,6 @@ public class GroovyPageParser implements Tokens {
     private String pluginAnnotation;
     public static final String GROOVY_SOURCE_CHAR_ENCODING = "UTF-8";
     private Map<String, String> jspTags = new HashMap<>();
-    private long lastModified;
     private String sourceChecksum;
     private boolean precompileMode;
     private Boolean compileStaticMode;
@@ -912,9 +910,6 @@ public class GroovyPageParser implements Tokens {
                     CONSTANT_NAME_CONTENT_TYPE + " = '" +
                     escapeGroovy(contentType) + "'");
 
-            out.println("public static final long " +
-                    CONSTANT_NAME_LAST_MODIFIED + " = " + lastModified + "L");
-
             out.println("public static final String " +
                     CONSTANT_NAME_SOURCE_CHECKSUM + " = " +
                     (this.sourceChecksum == null ? "null" : "'" + escapeGroovy(this.sourceChecksum) + "'"));
@@ -1384,14 +1379,6 @@ public class GroovyPageParser implements Tokens {
                 out.print(c);
             }
         }
-    }
-
-    public long getLastModified() {
-        return lastModified;
-    }
-
-    public void setLastModified(long lastModified) {
-        this.lastModified = lastModified;
     }
 
     /**

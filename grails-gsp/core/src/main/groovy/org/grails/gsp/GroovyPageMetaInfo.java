@@ -75,7 +75,6 @@ public class GroovyPageMetaInfo implements GrailsApplicationAware {
     private boolean precompiledMode = false;
     private Class<?> pageClass;
     private Constructor<?> pageClassConstructor;
-    private long lastModified;
     private String sourceChecksum;
     private volatile SourceStamp checksumStamp;
     private InputStream groovySource;
@@ -102,7 +101,6 @@ public class GroovyPageMetaInfo implements GrailsApplicationAware {
     public static final String LINENUMBERS_DATA_POSTFIX = "_linenumbers.data";
 
     public static final long LASTMODIFIED_CHECK_INTERVAL = Long.getLong("grails.gsp.reload.interval", 5000).longValue();
-    private static final long LASTMODIFIED_CHECK_GRANULARITY = Long.getLong("grails.gsp.reload.granularity", 2000).longValue();
     private GrailsApplication grailsApplication;
 
     private String pluginPath;
@@ -130,11 +128,6 @@ public class GroovyPageMetaInfo implements GrailsApplicationAware {
         }
         contentType = (String) ReflectionUtils.getField(ReflectionUtils.findField(pageClass, GroovyPageParser.CONSTANT_NAME_CONTENT_TYPE), null);
         jspTags = (Map) ReflectionUtils.getField(ReflectionUtils.findField(pageClass, GroovyPageParser.CONSTANT_NAME_JSP_TAGS), null);
-        // Read unguarded, unlike SOURCE_CHECKSUM below: LAST_MODIFIED has been emitted by every version of the
-        // compiler, so a page class without it cannot exist. That makes the constant permanent ABI which must
-        // keep being emitted even though GroovyPageCompiler now always writes 0 -- pages precompiled by earlier
-        // versions still carry a real timestamp and are still compared by it.
-        lastModified = (Long) ReflectionUtils.getField(ReflectionUtils.findField(pageClass, GroovyPageParser.CONSTANT_NAME_LAST_MODIFIED), null);
         Field sourceChecksumField = ReflectionUtils.findField(pageClass, GroovyPageParser.CONSTANT_NAME_SOURCE_CHECKSUM);
         if (sourceChecksumField != null) {
             sourceChecksum = (String) ReflectionUtils.getField(sourceChecksumField, null);
@@ -326,20 +319,6 @@ public class GroovyPageMetaInfo implements GrailsApplicationAware {
     }
 
     /**
-     * @return the modification time of the source this page was compiled from, or {@code 0} if none was
-     * recorded. Pages precompiled by Grails 8.0.0 or later always report {@code 0}: the compiler records a
-     * checksum of the source instead, so that identical sources compile to identical bytes. Use
-     * {@link #getSourceChecksum()} to identify the source such a page was compiled from.
-     */
-    public long getLastModified() {
-        return lastModified;
-    }
-
-    public void setLastModified(long lastModified) {
-        this.lastModified = lastModified;
-    }
-
-    /**
      * @return the checksum of the GSP source this page was compiled from, or {@code null} if none was recorded
      * @since 8.0.0
      */
@@ -432,10 +411,6 @@ public class GroovyPageMetaInfo implements GrailsApplicationAware {
         return this.htmlPartsSet;
     }
 
-    public void applyLastModifiedFromResource(Resource resource) {
-        this.lastModified = establishLastModified(resource);
-    }
-
     /**
      * The modification time and length a page's source had when it last matched the recorded checksum.
      */
@@ -454,7 +429,7 @@ public class GroovyPageMetaInfo implements GrailsApplicationAware {
      * decides staleness. Anything that moves it without changing the page -- a fresh checkout, a copy, a
      * touch -- costs one hash and then correctly reports no change, where the old comparison reported the
      * page stale. The one edit this misses is an edit preserving both the modification time and the exact
-     * length, still a narrower gap than the {@code grails.gsp.reload.granularity} window it replaces.
+     * length, which no ordinary save produces.
      *
      * @param resource the source to compare against the recorded checksum
      * @return true if the source no longer matches
@@ -586,30 +561,10 @@ public class GroovyPageMetaInfo implements GrailsApplicationAware {
         Callable<Resource> checkerCallable = new Callable<>() {
             public Resource call() {
                 Resource resource = resourceCallable.run();
-                if (resource != null && resource.exists()) {
-                    // A page compiled by GroovyPageCompiler records a checksum of its source rather than the
-                    // source's modification time, which git does not preserve across a checkout. Comparing
-                    // content answers the question directly: a page that was merely touched is not stale, and
-                    // an edit is caught however close together the writes fall.
-                    if (sourceChecksum != null) {
-                        return hasSourceChecksumChanged(resource) ? resource : null;
-                    }
-                    // Pages precompiled before SOURCE_CHECKSUM existed carry a real timestamp and no checksum,
-                    // so they still land here. Only 0 means "nothing recorded": that is the value GroovyPageCompiler
-                    // deliberately emits, so comparing against it would report every page stale forever.
-                    //
-                    // -1 is a different thing and must keep its old meaning. establishLastModified returns it
-                    // when a resource's timestamp could not be read at all, and applyLastModifiedFromResource
-                    // stores it as-is. Such a page self-heals: the first check able to read a real mtime sees a
-                    // difference, reloads once, and records a valid timestamp. Excluding -1 here would strand it
-                    // until restart, silently.
-                    long currentLastmodified = establishLastModified(resource);
-                    // granularity is required since lastmodified information is rounded somewhere in copying & war (zip) file information
-                    // usually the lastmodified time is 1000L apart in files and in files extracted from the zip (war) file
-                    if (currentLastmodified > 0 && lastModified != 0 &&
-                            Math.abs(currentLastmodified - lastModified) > LASTMODIFIED_CHECK_GRANULARITY) {
-                        return resource;
-                    }
+                if (resource != null && resource.exists() && sourceChecksum != null) {
+                    // Staleness is decided by comparing content. A page that was merely touched is not stale,
+                    // and an edit is caught however close together the writes fall.
+                    return hasSourceChecksumChanged(resource) ? resource : null;
                 }
                 return null;
             }

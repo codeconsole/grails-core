@@ -49,15 +49,4 @@ class GroovyPagesTemplateEngineChecksumSpec extends Specification {
         then: 'the checksum is over the raw bytes, so it matches one taken by re-reading the resource'
         template.metaInfo.sourceChecksum == GroovyPageParser.checksumOf(PAGE_SOURCE)
     }
-
-    void 'a runtime-compiled page still records its source modification time'() {
-        given:
-        GroovyPagesTemplateEngine engine = engineForRuntimeCompilation()
-
-        when:
-        GroovyPageTemplate template = engine.createTemplate(new ByteArrayResource(PAGE_SOURCE)) as GroovyPageTemplate
-
-        then: 'the timestamp path is unchanged, so pages compiled by earlier versions keep comparing by it'
-        template.metaInfo.lastModified != 0L
-    }
 }

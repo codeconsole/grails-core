@@ -102,7 +102,6 @@ class DefaultGroovyPageLocatorPrecompiledSpec extends Specification {
 
         public static final Map JSP_TAGS = [:]
 
-        public static final Long LAST_MODIFIED = 0L
 
         public static final String EXPRESSION_CODEC = 'html'
 

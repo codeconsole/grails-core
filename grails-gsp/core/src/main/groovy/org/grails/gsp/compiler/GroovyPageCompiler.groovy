@@ -223,17 +223,13 @@ class GroovyPageCompiler {
                     new String(gspSource, encoding ?: GroovyPageParser.DEFAULT_ENCODING), expressionCodec, configMap)
             gpp.packageName = packageName
             gpp.className = className
-            // Record what the source *is*, not when it was last touched. LAST_MODIFIED is emitted as a
-            // `static final long`, so it belongs to the class's ABI and is inlined into callers, which
-            // even Gradle's COMPILE_CLASSPATH normalization cannot see past. Git stores no modification
-            // times, so every checkout gave each .gsp a new one and identical sources compiled to
-            // different bytes, costing every downstream consumer of the jar its build cache.
-            //
-            // SOURCE_CHECKSUM answers what the timestamp was only ever a proxy for -- has the source
-            // changed? -- and answers it identically on every machine. GroovyPageMetaInfo prefers it and
-            // falls back to LAST_MODIFIED for pages compiled by earlier versions, so the zero here means
-            // "no timestamp recorded", never "never reload".
-            gpp.lastModified = 0L
+            // Record what the source *is*, not when it was last touched. The page used to carry its
+            // source's modification time as a `static final long`, which belongs to the class's ABI and is
+            // inlined into callers -- something even Gradle's COMPILE_CLASSPATH normalization cannot see
+            // past. Git stores no modification times, so every checkout gave each .gsp a new one and
+            // identical sources compiled to different bytes, costing every downstream consumer of the jar
+            // its build cache. A checksum answers what the timestamp was only ever a proxy for -- has the
+            // source changed? -- and answers it identically on every machine.
             gpp.sourceChecksum = GroovyPageParser.checksumOf(gspSource)
             StringWriter gsptarget = new StringWriter()
             gpp.generateGsp(gsptarget)

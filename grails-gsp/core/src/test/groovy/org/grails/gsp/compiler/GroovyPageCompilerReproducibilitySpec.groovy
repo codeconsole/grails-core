@@ -61,15 +61,12 @@ class GroovyPageCompilerReproducibilitySpec extends Specification {
         first == second
     }
 
-    void 'a compiled page records a checksum of its source instead of a modification time'() {
+    void 'a compiled page records a checksum of its source'() {
         when:
         GroovyPageMetaInfo metaInfo = compileToMetaInfo('recorded')
 
-        then: 'the checksum identifies the content'
+        then: 'the checksum identifies the content, and no modification time is baked in'
         metaInfo.sourceChecksum ==~ /[0-9a-f]{64}/
-
-        and: 'no modification time is baked in for a fresh checkout to invalidate'
-        metaInfo.lastModified == 0L
     }
 
     void 'an edited source produces a different checksum'() {

@@ -2633,39 +2633,36 @@ used to apply to its own message source.
 Adding or removing a base name now needs a restart, because Spring Boot reads the configured base names
 once when it builds the message source.
 
-==== 48. Precompiled GSPs Record a Checksum Instead of a Modification Time
+==== 48. GSPs Record a Source Checksum Instead of a Modification Time
 
-A precompiled GSP used to bake the modification time of its `.gsp` source into the generated class, as a
-`LAST_MODIFIED` constant. Git stores no modification times, so every fresh clone or CI checkout gave each
-source a new one, and the generated classes differed on every checkout even when the sources were
-byte-for-byte identical. Because `LAST_MODIFIED` was a compile-time constant it was part of the class's ABI,
-so the difference survived even Gradle's compile-classpath normalization and every task downstream of a jar
-containing precompiled GSPs missed the build cache.
+A GSP used to carry the modification time of its `.gsp` source, precompiled pages baking it into the
+generated class as a `LAST_MODIFIED` constant. Git stores no modification times, so every fresh clone or CI
+checkout gave each source a new one, and the generated classes differed on every checkout even when the
+sources were byte-for-byte identical. Because `LAST_MODIFIED` was a compile-time constant it was part of the
+class's ABI, so the difference survived even Gradle's compile-classpath normalization and every task
+downstream of a jar containing precompiled GSPs missed the build cache.
 
-Pages compiled by Grails 8.0.0 and later record a `SOURCE_CHECKSUM` of the page source instead, and
-`LAST_MODIFIED` is emitted as `0`. Identical sources now compile to identical bytes on every machine.
+Grails 8 records a `SOURCE_CHECKSUM` of the page source instead, for pages compiled at build time and at
+runtime alike. Identical sources now compile to identical bytes on every machine.
 
 Runtime reloading, described in
-<<makingChangesToADeployedApplication,Making Changes to a Deployed Application>>, is unaffected: a
-precompiled page is reloaded when its source no longer matches the recorded checksum. Detection is now more
-accurate than it was, because a page that was merely copied or checked out afresh is no longer treated as
-changed, and an edit is caught however close together two writes fall. Pages precompiled by an earlier
-version carry no checksum and continue to be compared by modification time.
+<<makingChangesToADeployedApplication,Making Changes to a Deployed Application>>, is unaffected: a page is
+reloaded when its source no longer matches the recorded checksum. Detection is more accurate than it was.
+An edit is caught whenever the source's modification time or length moves, which any ordinary save does;
+previously a save landing within the old granularity window went unnoticed until a later edit moved it
+clear. In the other direction, a page whose modification time moves without its content changing is no
+longer recompiled, so touching a file — or a build step copying views into place — no longer reloads pages
+that did not actually change. If you were using `touch` to force a page to recompile, edit the page instead.
 
-Pages compiled at runtime record a checksum as well, so development-mode reloading changes in two ways.
-An edit is now picked up whenever the source's modification time or length moves, which any ordinary save
-does; previously a save landing within `grails.gsp.reload.granularity` milliseconds of the recorded time went
-unnoticed until a later edit moved it clear of that window. In the other direction, a page whose modification
-time moves without its content changing is no longer recompiled, so touching a file — or a build step copying
-views into place — no longer reloads pages that did not actually change. If you were using `touch` to force a
-page to recompile, edit the page instead.
+**Removed API.** `GroovyPageMetaInfo.getLastModified()`, `setLastModified(long)` and
+`applyLastModifiedFromResource(Resource)` are gone, as are `GroovyPageParser.getLastModified()` and
+`setLastModified(long)`. Use `GroovyPageMetaInfo.getSourceChecksum()` to identify the source a page was
+compiled from. Generated page classes no longer declare a `LAST_MODIFIED` constant.
 
-One public API changes behaviour: `GroovyPageMetaInfo.getLastModified()` returns `0` for pages precompiled
-by Grails 8.0.0 or later, since no modification time is recorded for them. Use `getSourceChecksum()` to
-identify the source a page was compiled from.
+**Removed setting.** `grails.gsp.reload.granularity` no longer has any effect and has been removed from the
+documentation. It existed to absorb rounding differences between modification times, which content
+comparison does not need. `grails.gsp.reload.interval` is unchanged.
 
-One cross-version note: `LAST_MODIFIED = 0` only means "nothing recorded" to a runtime that understands the
-checksum. An application still running an earlier Grails that consumes a plugin precompiled by 8.0.0 or later
-evaluates the old condition instead, so with GSP reloading enabled every such page is declared stale on its
-first check and recompiled from source at runtime. The behaviour is reload-only and self-correcting, but it
-is worth knowing before mixing versions.
+A GSP precompiled by Grails 7 and shipped inside a binary plugin carries no checksum. Such a page is served
+normally; it is simply never reload-checked, which was already the case for views resolved out of a plugin
+jar.

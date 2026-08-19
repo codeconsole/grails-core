@@ -31,9 +31,8 @@ import org.grails.gsp.compiler.GroovyPageParser
 /**
  * Reload-staleness behaviour of {@link GroovyPageMetaInfo}.
  *
- * A page compiled by {@code GroovyPageCompiler} records a checksum of its source rather than the source's
- * modification time, which git does not preserve across a checkout. Staleness is therefore decided by
- * comparing content, falling back to the timestamp for pages compiled before the checksum existed.
+ * A page records a checksum of its source rather than the source's modification time, which git does not
+ * preserve across a checkout. Staleness is therefore decided by comparing content.
  *
  * Each feature uses a fresh {@code GroovyPageMetaInfo}, because the result of a check is cached for
  * {@code grails.gsp.reload.interval} milliseconds.
@@ -94,32 +93,7 @@ class GroovyPageMetaInfoReloadSpec extends Specification {
         !metaInfo.shouldReload(callableFor(resource))
     }
 
-    void 'a recorded checksum decides staleness even when a timestamp is also recorded'() {
-        given: 'a page carrying both a matching checksum and a timestamp long predating its source'
-        Resource resource = sourcePage()
-        GroovyPageMetaInfo metaInfo = new GroovyPageMetaInfo()
-        metaInfo.sourceChecksum = checksumOf(resource)
-        metaInfo.lastModified = resource.getFile().lastModified() - 86_400_000L
-
-        expect: 'the content decides, so the timestamp alone cannot force a reload'
-        !metaInfo.shouldReload(callableFor(resource))
-    }
-
-    void 'a recorded checksum reports an edit even when the timestamp agrees'() {
-        given: 'a page whose source was edited without its timestamp moving'
-        Resource resource = sourcePage()
-        GroovyPageMetaInfo metaInfo = new GroovyPageMetaInfo()
-        metaInfo.sourceChecksum = checksumOf(resource)
-        long originalTimestamp = resource.getFile().lastModified()
-        metaInfo.lastModified = originalTimestamp
-        resource.getFile().text = '<html><body>edited</body></html>'
-        assert resource.getFile().setLastModified(originalTimestamp)
-
-        expect: 'the content decides, so an agreeing timestamp cannot mask the edit'
-        metaInfo.shouldReload(callableFor(resource))
-    }
-
-    void 'an edit within the timestamp granularity window is still reported as stale'() {
+    void 'an edit that leaves the modification time untouched is still reported as stale'() {
         given: 'an edited source whose modification time is unchanged, as a rapid rewrite can leave it'
         Resource resource = sourcePage()
         GroovyPageMetaInfo metaInfo = new GroovyPageMetaInfo()
@@ -128,38 +102,8 @@ class GroovyPageMetaInfoReloadSpec extends Specification {
         resource.getFile().text = '<html><body>edited</body></html>'
         assert resource.getFile().setLastModified(originalTimestamp)
 
-        expect: 'the timestamp comparison would have missed this; the checksum does not'
+        expect: 'content decides, so an unmoved modification time cannot mask the edit'
         metaInfo.shouldReload(callableFor(resource))
-    }
-
-    void 'a page recorded with a timestamp older than its source is reported as stale'() {
-        given: 'a page compiled before SOURCE_CHECKSUM existed, so only a timestamp is recorded'
-        Resource resource = sourcePage()
-        GroovyPageMetaInfo metaInfo = new GroovyPageMetaInfo()
-        metaInfo.lastModified = resource.getFile().lastModified() - 60_000L
-
-        expect: 'the pre-existing staleness detection still applies to it'
-        metaInfo.shouldReload(callableFor(resource))
-    }
-
-    void 'a page recorded with the same timestamp as its source is not reported as stale'() {
-        given:
-        Resource resource = sourcePage()
-        GroovyPageMetaInfo metaInfo = new GroovyPageMetaInfo()
-        metaInfo.lastModified = resource.getFile().lastModified()
-
-        expect:
-        !metaInfo.shouldReload(callableFor(resource))
-    }
-
-    void 'a page with neither a checksum nor a timestamp is not reported as stale'() {
-        given: 'nothing was recorded to compare the source against'
-        Resource resource = sourcePage()
-        GroovyPageMetaInfo metaInfo = new GroovyPageMetaInfo()
-        metaInfo.lastModified = 0L
-
-        expect: 'the page is left in place rather than reported as changed on every single check'
-        !metaInfo.shouldReload(callableFor(resource))
     }
 
     void 'a later check re-reads the source once its stamp moves, and skips the read while it has not'() {
@@ -188,14 +132,13 @@ class GroovyPageMetaInfoReloadSpec extends Specification {
         metaInfo.shouldReload(callableFor(resource))
     }
 
-    void 'a page whose timestamp could not be established reloads once and recovers'() {
-        given: 'a runtime-compiled page that recorded -1, as establishLastModified yields on an unreadable resource'
+    void 'a page with no recorded checksum is not reported as stale'() {
+        given: 'nothing was recorded to compare the source against'
         Resource resource = sourcePage()
         GroovyPageMetaInfo metaInfo = new GroovyPageMetaInfo()
-        metaInfo.lastModified = -1L
 
-        expect: 'it is reported stale so the first readable check reloads it, rather than stranding it until restart'
-        metaInfo.shouldReload(callableFor(resource))
+        expect: 'the page is left in place rather than reported as changed on every single check'
+        !metaInfo.shouldReload(callableFor(resource))
     }
 
     void 'a missing source resource never triggers a reload'() {

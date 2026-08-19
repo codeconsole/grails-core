@@ -600,11 +600,8 @@ public class GroovyPagesTemplateEngine extends ResourceAwareTemplateEngine imple
 
         // Make a new metaInfo
         GroovyPageMetaInfo metaInfo = createPageMetaInfo(parser, in);
-        metaInfo.applyLastModifiedFromResource(res);
-        // Record a checksum here as well as a timestamp, so a page compiled at runtime is checked for staleness
-        // the same way a precompiled one is. It costs nothing extra -- the bytes are already in hand -- and it
-        // catches the edits the timestamp comparison misses, which in development is the case that matters:
-        // two saves inside the grails.gsp.reload.granularity window.
+        // A page compiled at runtime is checked for staleness the same way a precompiled one is. It costs
+        // nothing extra -- the bytes are already in hand.
         metaInfo.setSourceChecksum(GroovyPageParser.checksumOf(gspBytes));
         try {
             metaInfo.setPageClass(compileGroovyPage(in, name, path, metaInfo));
