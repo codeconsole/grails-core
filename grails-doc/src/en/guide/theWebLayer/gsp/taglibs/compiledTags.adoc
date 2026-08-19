@@ -154,6 +154,12 @@ grails {
 Turning it on widens which calls are considered, not which names may be captured: a name that Groovy,
 a local, a field, a parameter or the calling class answers to is still left alone.
 
+A call that names its namespace is compiled wherever it appears, including inside a closure. The
+namespace itself is a name a closure's delegate could in principle answer to, and that is not checked
+— the guard above applies to the tag name, not to the namespace in front of it. No delegate in
+ordinary use answers to a namespace name, so a call written as `g.createLink(...)` reaches the tag as
+written; a DSL whose delegate did answer to `g` would be the exception.
+
 ==== Tags in pages
 
 A page resolves a name against the model it was rendered with before it reaches a tag library, and
