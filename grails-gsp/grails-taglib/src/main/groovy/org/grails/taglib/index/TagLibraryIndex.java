@@ -299,10 +299,19 @@ public final class TagLibraryIndex {
     }
 
     /**
+     * Resolves a descriptor against the manifest naming it.
+     *
+     * <p>Built with the {@link URL} constructor, deprecated since JDK 20, deliberately: a manifest
+     * inside a jar is addressed by an opaque {@code jar:} URI, which {@link java.net.URI#resolve}
+     * cannot resolve a relative name against, and round-tripping the URL through {@code URI} breaks
+     * on characters {@code ClassLoader.getResources} does not encode. The constructor is the tool
+     * that works here, so the warning is suppressed rather than the call rewritten.</p>
+     *
      * @param manifest the manifest naming the descriptor
      * @param fileName the descriptor's file name
      * @return the descriptor beside that manifest, or {@code null} when it cannot be addressed
      */
+    @SuppressWarnings("deprecation")
     private static URL resolveSibling(URL manifest, String fileName) {
         try {
             return new URL(manifest, fileName);
