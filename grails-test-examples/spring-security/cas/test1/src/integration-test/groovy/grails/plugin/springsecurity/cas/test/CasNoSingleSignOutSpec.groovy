@@ -30,7 +30,7 @@ import java.net.http.HttpResponse
  * something an application should get without asking. With it off, a CAS logout request must not
  * reach into the application's sessions.</p>
  */
-@IgnoreIf({ CasTestConfig.singleSignoutEnabled })
+@IgnoreIf({ !CasTestConfig.configured || CasTestConfig.singleSignoutEnabled })
 class CasNoSingleSignOutSpec extends AbstractCasSpec {
 
     void 'a CAS logout request is ignored when single signout is not enabled'() {

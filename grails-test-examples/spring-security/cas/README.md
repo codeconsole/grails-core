@@ -14,8 +14,6 @@ See the License for the specific language governing permissions and
 limitations under the License.
 -->
 
-This is a CAS-enabled test application.  To run it successfully, a CAS
-server is required.  The URL for the CAS server is configured in the
 This is a CAS-enabled test application. It no longer needs a hand-run CAS server: an
 [Apereo CAS](https://github.com/apereo/cas) server is started in a container by
 [CasContainerHolder](test1/src/main/groovy/grails/plugin/springsecurity/cas/test/CasContainerHolder.groovy),
@@ -25,8 +23,12 @@ container runtime) is therefore required to run or test this application.
 
 ## Running the tests
 
-The application is exercised under two configurations, selected with the `TESTCONFIG` system
+The application is exercised under three configurations, selected with the `TESTCONFIG` system
 property. Each has to be its own run, because the configuration is applied at application startup.
+
+The specs only run when one of these is selected, so a build that covers every Spring Security
+example does not repeat a configuration that the dedicated per-configuration CI job already runs.
+Running `check` without `-DTESTCONFIG` therefore reports no CAS tests.
 
 | `TESTCONFIG` | Configuration | Covered by |
 |---|---|---|

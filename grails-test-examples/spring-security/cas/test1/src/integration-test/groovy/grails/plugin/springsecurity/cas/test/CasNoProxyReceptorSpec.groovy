@@ -35,7 +35,7 @@ import java.net.http.HttpResponse
  * produced a matcher for the literal path {@code /**null}, which quietly made an unconfigured app
  * serve a live proxy receptor.</p>
  */
-@IgnoreIf({ CasTestConfig.proxyEnabled })
+@IgnoreIf({ !CasTestConfig.configured || CasTestConfig.proxyEnabled })
 class CasNoProxyReceptorSpec extends AbstractCasSpec {
 
     @Autowired

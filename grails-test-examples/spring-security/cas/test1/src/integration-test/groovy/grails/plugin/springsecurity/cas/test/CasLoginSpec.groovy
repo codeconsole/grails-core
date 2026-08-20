@@ -20,6 +20,8 @@
 package grails.plugin.springsecurity.cas.test
 
 
+import spock.lang.IgnoreIf
+
 import java.net.http.HttpResponse
 
 /**
@@ -27,6 +29,7 @@ import java.net.http.HttpResponse
  * ticket validated against the CAS server, and the resulting authentication carrying the roles
  * looked up in GORM.
  */
+@IgnoreIf({ !CasTestConfig.configured })
 class CasLoginSpec extends AbstractCasSpec {
 
     void 'an unauthenticated request is redirected to the CAS login page for this service'() {

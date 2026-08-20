@@ -50,8 +50,20 @@ class CasTestConfig {
     /** Runs the app without opting in to single signout, to assert the shipped default. */
     static final String NO_SINGLE_SIGNOUT_TEST_CONFIG = 'casNoSingleSignout'
 
+    static final List<String> TEST_CONFIGS =
+            [DEFAULT_TEST_CONFIG, PROXY_TEST_CONFIG, NO_SINGLE_SIGNOUT_TEST_CONFIG].asImmutable()
+
     static String getTestConfig() {
-        System.getProperty('TESTCONFIG') ?: DEFAULT_TEST_CONFIG
+        System.getProperty('TESTCONFIG')
+    }
+
+    /**
+     * Whether a CAS configuration was selected. The specs run only when one was, so that a build
+     * covering every Spring Security example does not repeat a configuration that the dedicated
+     * per-configuration job already runs. {@code bootRun} does not need one.
+     */
+    static boolean isConfigured() {
+        testConfig in TEST_CONFIGS
     }
 
     static boolean isProxyEnabled() {

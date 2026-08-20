@@ -33,7 +33,7 @@ import java.net.http.HttpResponse
  * invalidating it - and posting the same message CAS would send exercises exactly that, without
  * depending on how the CAS server is configured to emit it.</p>
  */
-@IgnoreIf({ !CasTestConfig.singleSignoutEnabled })
+@IgnoreIf({ !CasTestConfig.configured || !CasTestConfig.singleSignoutEnabled })
 class CasSingleSignOutSpec extends AbstractCasSpec {
 
     void 'a CAS logout request invalidates the session that the service ticket authenticated'() {

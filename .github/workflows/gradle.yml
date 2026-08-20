@@ -575,10 +575,11 @@ jobs:
       fail-fast: false
       matrix:
         # The CAS test app authenticates against a real Apereo CAS server started via Testcontainers.
-        # 'cas' leaves the proxy settings unset and is the default, so it is also covered by the main
-        # security job; 'casProxy' exercises the proxy-granting-ticket callback; 'casNoSingleSignout'
-        # asserts the shipped default, where single signout is not enabled.
-        # TESTCONFIG is applied at app startup, so every config must be its own run.
+        # 'cas' leaves the proxy settings unset; 'casProxy' exercises the proxy-granting-ticket
+        # callback; 'casNoSingleSignout' asserts the shipped default, where single signout is off.
+        # TESTCONFIG is applied at app startup, so every config must be its own run. The specs are
+        # gated on a config being selected, so the broad 'security' job skips them and no config is
+        # run twice.
         # Carried over from the standalone grails-spring-security CI convention - add, don't remove.
         test-config: [ 'cas', 'casProxy', 'casNoSingleSignout' ]
     runs-on: ubuntu-24.04

@@ -47,17 +47,17 @@ import grails.plugins.Plugin
 @CompileStatic
 class SpringSecurityCasGrailsPlugin extends Plugin {
 
-    String grailsVersion = '7.0.0 > *'
+    String grailsVersion = '8.0.0-SNAPSHOT > *'
     String author = 'Burt Beckwith'
     String authorEmail = ''
-    String title = 'Jasig CAS support for the Spring Security plugin.'
-    String description = 'Jasig CAS support for the Spring Security plugin.'
+    String title = 'Apereo CAS support for the Spring Security plugin.'
+    String description = 'Apereo CAS support for the Spring Security plugin.'
     String documentation = 'https://apache.github.io/grails-spring-security'
     String license = 'APACHE'
     List loadAfter = ['springSecurityCore']
-    def organization = [name: 'Grails', url: 'https://www.grails.org']
-    def issueManagement = [url: 'https://github.com/apache/grails-spring-security/issues']
-    def scm = [url: 'https://github.com/apache/grails-spring-security']
+    def organization = [name: 'Grails', url: 'https://grails.apache.org/']
+    def issueManagement = [system: 'Github', url: 'https://github.com/apache/grails-core/issues']
+    def scm = [url: 'https://github.com/apache/grails-core']
     def profiles = ['web']
 
     @CompileDynamic
