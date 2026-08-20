@@ -2633,7 +2633,7 @@ used to apply to its own message source.
 Adding or removing a base name now needs a restart, because Spring Boot reads the configured base names
 once when it builds the message source.
 
-==== 46. CAS Single Sign-Out Is Opt-In
+==== 48. CAS Single Sign-Out Is Opt-In
 
 `grails.plugin.springsecurity.cas.useSingleSignout` now defaults to `false`. It previously defaulted
 to `true`, so every CAS application registered the CAS client's `SingleSignOutFilter` whether or not

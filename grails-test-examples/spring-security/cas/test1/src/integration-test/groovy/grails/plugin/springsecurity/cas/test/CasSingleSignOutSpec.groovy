@@ -24,9 +24,9 @@ import spock.lang.IgnoreIf
 import java.net.http.HttpResponse
 
 /**
- * Covers single sign-out, which the plugin enables by default via {@code cas.useSingleSignout} by
- * registering an {@code org.apereo.cas.client.session.SingleSignOutFilter} ahead of every other
- * filter.
+ * Covers single sign-out, which the app opts into via {@code cas.useSingleSignout}. The plugin then
+ * registers an {@code org.apereo.cas.client.session.SingleSignOutFilter} ahead of every other
+ * filter. {@code CasNoSingleSignOutSpec} covers the default, where it is off.
  *
  * <p>The logout request is posted here rather than triggered from the CAS server. What belongs to
  * the plugin is <em>handling</em> the request - mapping the service ticket to the HTTP session and

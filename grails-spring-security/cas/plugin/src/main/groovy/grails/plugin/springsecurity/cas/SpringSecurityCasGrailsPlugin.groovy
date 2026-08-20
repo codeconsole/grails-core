@@ -48,8 +48,6 @@ import grails.plugins.Plugin
 class SpringSecurityCasGrailsPlugin extends Plugin {
 
     String grailsVersion = '8.0.0-SNAPSHOT > *'
-    String author = 'Burt Beckwith'
-    String authorEmail = ''
     String title = 'Apereo CAS support for the Spring Security plugin.'
     String description = 'Apereo CAS support for the Spring Security plugin.'
     String documentation = 'https://apache.github.io/grails-spring-security'
@@ -101,7 +99,8 @@ class SpringSecurityCasGrailsPlugin extends Plugin {
     session fixation prevention and handle logout in the application instead.
     '''
                 println message
-    
+                log.warn message
+
                 // Setting the config value is not enough on its own: this plugin loads after
                 // springSecurityCore, which has already defined sessionAuthenticationStrategy from
                 // the original value. The bean is therefore redefined here as well, the same way

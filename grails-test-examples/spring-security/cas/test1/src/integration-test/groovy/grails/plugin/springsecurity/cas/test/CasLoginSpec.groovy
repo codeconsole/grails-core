@@ -81,7 +81,8 @@ class CasLoginSpec extends AbstractCasSpec {
         HttpResponse<String> challenge = get(appClient, "${appBaseUrl}/secure/users")
         String loginUrl = location(challenge)
         HttpResponse<String> form = get(casClient, loginUrl)
-        String execution = form.body().find(/name="execution"\s+value="([^"]+)"/) { full, token -> token }
+        String execution = extractExecution(form.body())
+        assert execution, 'CAS login form did not contain an execution token'
         HttpResponse<String> submitted = postForm(casClient, loginUrl,
                 [username: 'user', password: 'wrong-password', execution: execution, _eventId: 'submit'])
 

@@ -27,32 +27,32 @@ import org.springframework.security.core.context.SecurityContextHolder
 
 class SecureController {
 
-	@Secured('ROLE_ADMIN')
-	def admins() {
-		render 'Logged in with ROLE_ADMIN'
-	}
+    @Secured('ROLE_ADMIN')
+    def admins() {
+        render 'Logged in with ROLE_ADMIN'
+    }
 
-	@Secured('ROLE_USER')
-	def users() {
-		render 'Logged in with ROLE_USER'
-	}
+    @Secured('ROLE_USER')
+    def users() {
+        render 'Logged in with ROLE_USER'
+    }
 
-	/**
-	 * Asks CAS for a proxy ticket on behalf of the logged-in user. This only succeeds when the
-	 * proxy receptor is configured, because CAS delivers the proxy-granting ticket by calling back
-	 * to the receptor URL while the service ticket is being validated.
-	 */
-	@Secured('ROLE_USER')
-	def proxyStatus() {
-		Authentication authentication = SecurityContextHolder.context.authentication
-		if (!(authentication instanceof CasAuthenticationToken)) {
-			render 'NOT_A_CAS_AUTHENTICATION'
-			return
-		}
+    /**
+     * Asks CAS for a proxy ticket on behalf of the logged-in user. This only succeeds when the
+     * proxy receptor is configured, because CAS delivers the proxy-granting ticket by calling back
+     * to the receptor URL while the service ticket is being validated.
+     */
+    @Secured('ROLE_USER')
+    def proxyStatus() {
+        Authentication authentication = SecurityContextHolder.context.authentication
+        if (!(authentication instanceof CasAuthenticationToken)) {
+            render 'NOT_A_CAS_AUTHENTICATION'
+            return
+        }
 
-		AttributePrincipal principal = ((CasAuthenticationToken) authentication).assertion.principal
-		String targetService = params.targetService ?: 'http://localhost/proxied-service'
-		String proxyTicket = principal.getProxyTicketFor(targetService)
-		render proxyTicket ? "PROXY_TICKET:${proxyTicket}" : 'NO_PROXY_TICKET'
-	}
+        AttributePrincipal principal = ((CasAuthenticationToken) authentication).assertion.principal
+        String targetService = params.targetService ?: 'http://localhost/proxied-service'
+        String proxyTicket = principal.getProxyTicketFor(targetService)
+        render proxyTicket ? "PROXY_TICKET:${proxyTicket}" : 'NO_PROXY_TICKET'
+    }
 }

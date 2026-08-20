@@ -65,6 +65,15 @@ The test application URLs are:
 * [http://localhost:8081/secure/users](http://localhost:8081/secure/users)
 * [http://localhost:8081/secure/proxyStatus](http://localhost:8081/secure/proxyStatus) — asks CAS for a proxy ticket
 
+`/secure/proxyStatus` needs the proxy configuration, which is only applied when a configuration that
+enables it is selected. Without one it reports `NO_PROXY_TICKET`, because no proxy callback URL was
+configured and CAS was never asked for a proxy-granting ticket. To exercise it, pass the
+configuration to `bootRun` as well:
+
+```
+./gradlew :grails-test-examples-spring-security-cas-test1:bootRun -DTESTCONFIG=casProxy
+```
+
 The test app creates the `admin` and `user` users in
 [BootStrap.groovy](test1/grails-app/init/grails/plugin/springsecurity/cas/test/BootStrap.groovy).
 The password is the same as the username, and the containerised CAS server is configured to accept

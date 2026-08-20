@@ -86,13 +86,14 @@ abstract class AbstractCasSpec extends Specification {
     }
 
     HttpResponse<String> get(HttpClient client, String url) {
-        client.send(HttpRequest.newBuilder(URI.create(url)).GET().build(),
+        client.send(HttpRequest.newBuilder(URI.create(url)).timeout(REQUEST_TIMEOUT).GET().build(),
                 HttpResponse.BodyHandlers.ofString())
     }
 
     HttpResponse<String> postForm(HttpClient client, String url, Map<String, String> form) {
         String body = form.collect { k, v -> "${encode(k)}=${encode(v)}" }.join('&')
         HttpRequest request = HttpRequest.newBuilder(URI.create(url))
+                .timeout(REQUEST_TIMEOUT)
                 .header('Content-Type', 'application/x-www-form-urlencoded')
                 .POST(HttpRequest.BodyPublishers.ofString(body))
                 .build()
@@ -144,6 +145,12 @@ abstract class AbstractCasSpec extends Specification {
         local.startsWith('http') ? local : appBaseUrl + local
     }
 
+    /**
+     * A container that accepts the connection but never answers would otherwise block
+     * {@code send()} forever and hang the build until the CI runner kills the job.
+     */
+    static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(60)
+
     /** The message CAS sends to a service on back-channel logout. */
     static String logoutRequest(String serviceTicket) {
         """<samlp:LogoutRequest xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol" \
@@ -158,7 +165,7 @@ ID="LR-1-${System.nanoTime()}" Version="2.0" IssueInstant="2026-01-01T00:00:00Z"
         matcher.find() ? matcher.group(1) : null
     }
 
-    private static String extractExecution(String html) {
+    static String extractExecution(String html) {
         def matcher = html =~ /name="execution"\s+value="([^"]+)"/
         matcher.find() ? matcher.group(1) : null
     }

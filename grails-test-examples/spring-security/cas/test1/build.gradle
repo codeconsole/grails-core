@@ -67,6 +67,18 @@ tasks.withType(Test).configureEach {
     }
 }
 
+tasks.named('bootRun') {
+    // bootRun forks its own JVM, so the properties that select a CAS configuration have to be
+    // forwarded explicitly. Without TESTCONFIG the proxy settings are never configured and
+    // /secure/proxyStatus can only report that no proxy ticket is available.
+    ['TESTCONFIG', 'casContainerVersion'].each { String name ->
+        String value = System.getProperty(name) ?: project.findProperty(name)
+        if (value) {
+            systemProperty(name, value)
+        }
+    }
+}
+
 apply {
     from rootProject.layout.projectDirectory.file('gradle/functional-test-config.gradle')
     from rootProject.layout.projectDirectory.file('gradle/grails-extension-gradle-config.gradle')
