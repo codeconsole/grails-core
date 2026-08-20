@@ -70,6 +70,23 @@ class CompiledTagInvocationSpec extends Specification implements TagLibUnitTest<
         e.message.contains('link')
     }
 
+    void 'a tag the running application has not registered is reported as a missing method'() {
+        when: 'the index described the namespace, so the call was resolved, but nothing registers this tag'
+        CompiledTagInvocation.invoke(lookup, 'g', 'noSuchTagAnywhere', [:], null)
+
+        then: 'which is what dispatching the call dynamically reported, and what callers catch'
+        MissingMethodException e = thrown()
+        e.method == 'noSuchTagAnywhere'
+    }
+
+    void 'a tag missing from a namespace nothing registers is reported the same way'() {
+        when:
+        CompiledTagInvocation.invokeArguments(lookup, 'noSuchNamespace', 'anyTag', [a: 1])
+
+        then:
+        thrown(MissingMethodException)
+    }
+
     void 'arguments forwarded as written are read the same way dynamic dispatch reads them'() {
         given: 'the shapes TagLibraryMetaUtils.methodMissingForTagLib distinguishes'
         Map attrs = [controller: 'book', action: 'show']

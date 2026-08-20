@@ -23,6 +23,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 import groovy.lang.Closure;
+import groovy.lang.MissingMethodException;
 
 import org.grails.taglib.encoder.OutputContext;
 import org.grails.taglib.encoder.OutputContextLookupHelper;
@@ -86,7 +87,41 @@ public final class CompiledTagInvocation {
         // through overloads that wrapped the text. Narrowing this to Closure would turn a string body
         // into a cast failure.
         Object tagBody = body instanceof CharSequence ? new TagOutput.ConstantClosure((CharSequence) body) : body;
+        if (lookup.lookupTagLibrary(namespace, tagName) == null) {
+            return dispatchUnregistered(lookup, namespace, tagName, attributes, tagBody);
+        }
         return TagOutput.captureTagOutput(lookup, namespace, tagName, attributes, tagBody, outputContext);
+    }
+
+    /**
+     * Hands a tag the index knows but the running application has not registered back to the dispatch
+     * that would have run had the call never been resolved.
+     *
+     * <p>The index describes what a tag library declares when it is compiled, which is not the same
+     * question as what a running application registers: a plugin can be excluded, a tag library can be
+     * named in {@code nonEnhancedTagLibClasses}, and a unit test can mock some tag libraries and not
+     * others. The dynamic path reported that as a {@link MissingMethodException}, and code written
+     * around a tag call catches it or probes with {@code respondsTo}, so resolving the call must not
+     * turn it into something else. Dispatching through the namespace rather than raising the exception
+     * here also keeps the type it names the one that path named.
+     */
+    private static Object dispatchUnregistered(TagLibraryLookup lookup, String namespace, String tagName,
+            Map<?, ?> attrs, Object body) {
+        Object[] arguments;
+        if (body != null) {
+            arguments = new Object[] {attrs, body};
+        }
+        else if (!attrs.isEmpty()) {
+            arguments = new Object[] {attrs};
+        }
+        else {
+            arguments = EMPTY_ARGUMENTS;
+        }
+        NamespacedTagDispatcher dispatcher = lookup.lookupNamespaceDispatcher(namespace);
+        if (dispatcher == null) {
+            throw new MissingMethodException(tagName, CompiledTagInvocation.class, arguments);
+        }
+        return dispatcher.invokeMethod(tagName, arguments);
     }
 
     /**
