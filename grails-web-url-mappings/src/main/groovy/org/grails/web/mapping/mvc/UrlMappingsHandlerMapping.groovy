@@ -46,6 +46,7 @@ import grails.web.mime.MimeTypeResolver
 import org.grails.exceptions.ExceptionUtils
 import org.grails.web.servlet.mvc.GrailsWebRequest
 import org.grails.web.util.GrailsApplicationAttributes
+import org.grails.web.util.HiddenHttpMethod
 import org.grails.web.util.WebUtils
 
 /**
@@ -59,10 +60,33 @@ class UrlMappingsHandlerMapping extends AbstractHandlerMapping {
 
     public static final String MATCHED_REQUEST = 'org.grails.url.match.info'
 
+    /**
+     * Whether to resolve a "_method" parameter on a POST into the overridden request method while matching
+     * URL mappings. Set when the hidden HTTP method filter is disabled, so browser forms keep reaching the
+     * PUT, PATCH and DELETE routes without the request method being rewritten ahead of the dispatcher.
+     *
+     * GrailsDispatcherServlet wraps the request with the same override before this runs, so ordinarily the
+     * request already reports the overridden method; this is the fallback for a dispatcher that does not,
+     * and keeps mapping resolution correct on its own terms.
+     */
+    boolean resolveHiddenHttpMethod = false
+
     protected UrlMappingsHolder urlMappingsHolder
     protected UrlPathHelper urlHelper = new UrlPathHelper()
     protected MimeTypeResolver mimeTypeResolver
     protected HandlerInterceptor[] webRequestHandlerInterceptors
+
+    /**
+     * The HTTP method to match URL mappings against: the request's own method, unless a POST carries a
+     * "_method" parameter naming one of the methods a browser form cannot submit and this mapping has been
+     * asked to resolve it.
+     */
+    protected String resolveHttpMethod(HttpServletRequest request) {
+        if (!resolveHiddenHttpMethod) {
+            return request.getMethod()
+        }
+        HiddenHttpMethod.resolveOverride(request) ?: request.getMethod()
+    }
 
     UrlMappingsHandlerMapping(UrlMappingsHolder urlMappingsHolder) {
         Assert.notNull(urlMappingsHolder, 'Argument [urlMappingsHolder] cannot be null')
@@ -159,7 +183,7 @@ class UrlMappingsHandlerMapping extends AbstractHandlerMapping {
         }
         else {
 
-            def infos = urlMappingsHolder.matchAll(uri, request.getMethod(), version != null ? version : UrlMapping.ANY_VERSION)
+            def infos = urlMappingsHolder.matchAll(uri, resolveHttpMethod(request), version != null ? version : UrlMapping.ANY_VERSION)
 
             for (UrlMappingInfo info in infos) {
                 if (info) {

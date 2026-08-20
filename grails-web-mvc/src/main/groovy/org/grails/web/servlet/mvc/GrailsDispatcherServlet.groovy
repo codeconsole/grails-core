@@ -37,6 +37,7 @@ import org.springframework.web.servlet.DispatcherServlet
 
 import grails.util.Holders
 import org.grails.web.context.ServletEnvironmentGrailsApplicationDiscoveryStrategy
+import org.grails.web.util.HiddenHttpMethod
 import org.grails.web.util.WebUtils
 
 /**
@@ -79,16 +80,46 @@ class GrailsDispatcherServlet extends DispatcherServlet implements ServletContex
         return webRequest
     }
 
+    /**
+     * Whether a POST carrying a "_method" parameter should be treated as the method it names. Set when the
+     * hidden HTTP method filter is disabled, so browser forms keep working while the override moves inside
+     * the dispatcher.
+     */
+    boolean resolveHiddenHttpMethod = false
+
     @Override
     protected HttpServletRequest checkMultipart(HttpServletRequest request) throws MultipartException {
+        HttpServletRequest currentRequest = request
         boolean shouldProcessMultiPart = !WebUtils.isError(request) && !WebUtils.isForwardOrInclude(request)
         if (shouldProcessMultiPart) {
             HttpServletRequest processedRequest = super.checkMultipart(request)
             if (!processedRequest.is(request)) {
+                currentRequest = processedRequest
                 def webRequest = GrailsWebRequest.lookup(request)
                 if (webRequest != null) {
                     webRequest.multipartRequest = processedRequest
                 }
+            }
+        }
+
+        // Resolve the hidden method override here rather than in a servlet filter. Running after multipart
+        // resolution means a multipart body is parsed once, by the dispatcher, instead of being forced open
+        // by a getParameter() call ahead of it; running after the filter chain means Spring Security and any
+        // other filter still see the request's real POST method.
+        //
+        // The wrapper is published through GrailsWebRequest so that everything reading the request through
+        // the Grails API -- controller "request", allowedMethods, interceptors -- agrees with the method the
+        // URL mappings matched on. Requests without an override are returned untouched, leaving multipart
+        // handling exactly as it was.
+        if (resolveHiddenHttpMethod && shouldProcessMultiPart) {
+            String override = HiddenHttpMethod.resolveOverride(currentRequest)
+            if (override != null) {
+                HttpServletRequest wrapped = HiddenHttpMethod.wrap(override, currentRequest)
+                def webRequest = GrailsWebRequest.lookup(request)
+                if (webRequest != null) {
+                    webRequest.multipartRequest = wrapped
+                }
+                return wrapped
             }
         }
         return request
