@@ -101,8 +101,7 @@ class SpringSecurityCasGrailsPlugin extends Plugin {
     session fixation prevention and handle logout in the application instead.
     '''
                 println message
-                log.warn message
-
+    
                 // Setting the config value is not enough on its own: this plugin loads after
                 // springSecurityCore, which has already defined sessionAuthenticationStrategy from
                 // the original value. The bean is therefore redefined here as well, the same way

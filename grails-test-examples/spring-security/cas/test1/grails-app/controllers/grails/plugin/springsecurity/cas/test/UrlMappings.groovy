@@ -17,8 +17,19 @@
  *  under the License.
  */
 
-import grails.plugin.springsecurity.cas.test.CasServiceUrlConfigurer
+package grails.plugin.springsecurity.cas.test
 
-beans = {
-    casServiceUrlConfigurer(CasServiceUrlConfigurer)
+class UrlMappings {
+
+    static mappings = {
+        "/$controller/$action?/$id?(.$format)?"{
+            constraints {
+                // apply constraints here
+            }
+        }
+
+        "/"(view:"/index")
+        "500"(view:'/error')
+        "404"(view:'/notFound')
+    }
 }

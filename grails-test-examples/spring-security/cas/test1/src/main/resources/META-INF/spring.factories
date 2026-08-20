@@ -16,4 +16,4 @@
 #  specific language governing permissions and limitations
 #  under the License.
 #
-org.springframework.boot.EnvironmentPostProcessor=spring.security.cas.test.CasTestEnvironmentPostProcessor
+org.springframework.boot.EnvironmentPostProcessor=grails.plugin.springsecurity.cas.test.CasTestEnvironmentPostProcessor

@@ -17,8 +17,31 @@
  *  under the License.
  */
 
-import grails.plugin.springsecurity.cas.test.CasServiceUrlConfigurer
+package grails.plugin.springsecurity.cas.test
 
-beans = {
-    casServiceUrlConfigurer(CasServiceUrlConfigurer)
+
+import groovy.transform.CompileStatic
+
+@CompileStatic
+class BootStrap {
+
+    def init = {
+        Role roleAdmin
+        Role roleUser
+        User user
+        User admin
+        Role.withTransaction {
+            roleAdmin = new Role('ROLE_ADMIN').save()
+            roleUser = new Role('ROLE_USER').save()
+        }
+        User.withTransaction {
+            user = new User('user', 'user').save()
+            admin = new User('admin', 'admin').save()
+        }
+        UserRole.withTransaction {
+            UserRole.create user, roleUser
+            UserRole.create admin, roleUser
+            UserRole.create admin, roleAdmin, true
+        }
+    }
 }

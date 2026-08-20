@@ -18,8 +18,8 @@ This is a CAS-enabled test application.  To run it successfully, a CAS
 server is required.  The URL for the CAS server is configured in the
 This is a CAS-enabled test application. It no longer needs a hand-run CAS server: an
 [Apereo CAS](https://github.com/apereo/cas) server is started in a container by
-[CasContainerHolder](test1/src/main/groovy/spring/security/cas/test/CasContainerHolder.groovy),
-and [CasTestEnvironmentPostProcessor](test1/src/main/groovy/spring/security/cas/test/CasTestEnvironmentPostProcessor.groovy)
+[CasContainerHolder](test1/src/main/groovy/grails/plugin/springsecurity/cas/test/CasContainerHolder.groovy),
+and [CasTestEnvironmentPostProcessor](test1/src/main/groovy/grails/plugin/springsecurity/cas/test/CasTestEnvironmentPostProcessor.groovy)
 points the CAS plugin at it before the application context is built. Docker (or a compatible
 container runtime) is therefore required to run or test this application.
 
@@ -64,7 +64,7 @@ The test application URLs are:
 * [http://localhost:8081/secure/proxyStatus](http://localhost:8081/secure/proxyStatus) — asks CAS for a proxy ticket
 
 The test app creates the `admin` and `user` users in
-[BootStrap.groovy](test1/grails-app/init/spring/security/cas/test/BootStrap.groovy).
+[BootStrap.groovy](test1/grails-app/init/grails/plugin/springsecurity/cas/test/BootStrap.groovy).
 The password is the same as the username, and the containerised CAS server is configured to accept
 the same two accounts.
 
@@ -80,7 +80,7 @@ at different addresses:
 
 The service URL and the proxy callback URL depend on the port the embedded server binds, which is
 random under integration tests. They are set by
-[CasServiceUrlConfigurer](test1/src/main/groovy/spring/security/cas/test/CasServiceUrlConfigurer.groovy)
+[CasServiceUrlConfigurer](test1/src/main/groovy/grails/plugin/springsecurity/cas/test/CasServiceUrlConfigurer.groovy)
 once the server has started but before it serves a request.
 
 CAS only authorises `https` services out of the box, so a service definition permitting `http` — and

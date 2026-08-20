@@ -17,8 +17,15 @@
  *  under the License.
  */
 
-import grails.plugin.springsecurity.cas.test.CasServiceUrlConfigurer
+package grails.plugin.springsecurity.cas.test
 
-beans = {
-    casServiceUrlConfigurer(CasServiceUrlConfigurer)
+import grails.boot.GrailsApp
+import grails.boot.config.GrailsAutoConfiguration
+import groovy.transform.CompileStatic
+
+@CompileStatic
+class Application extends GrailsAutoConfiguration {
+    static void main(String[] args) {
+        GrailsApp.run Application, args
+    }
 }
