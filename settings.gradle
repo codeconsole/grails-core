@@ -88,7 +88,7 @@ rootProject.name = 'grails.core.ROOT'
 //
 // Two presence-based overrides (matching project convention: skipFunctionalTests, skipCodeStyle):
 //   -PskipMicronautProjects    force-exclude the island on ANY JDK. Used by
-//                              groovy-joint-workflow.yml, where the island's Groovy 5 /
+//                              groovy-snapshot-canary.yml, where the island's Groovy 5 /
 //                              Spock 2.4-groovy-5.0 pin clashes with the Groovy 4.x snapshot
 //                              that build swaps in - a reason independent of the JDK (#15613).
 //   -PincludeMicronautProjects force-include the island on a sub-25 JDK. Escape hatch for
