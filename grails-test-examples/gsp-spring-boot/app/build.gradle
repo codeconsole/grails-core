@@ -36,9 +36,10 @@ plugins {
 // the responsibility of the Grails BOM below.
 apply plugin: 'org.apache.grails.gradle.grails-gsp'
 
-jar {
-    processResources.exclude('**/*.gsp')
-}
+// The GSP templates ship as sources so the packaged application can render them. Precompiled GSP
+// classes are not reachable here: the view registry compileGroovyPages writes is keyed by the Grails
+// view convention (/WEB-INF/grails-app/views/...), which a standalone Spring Boot application never
+// looks up, and only the Grails GSP plugin loads that registry into the page locator.
 
 compileGroovyPages {
     source = project.file("${project.projectDir}/src/main/resources/templates")
