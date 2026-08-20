@@ -43,14 +43,17 @@ import org.grails.taglib.index.TagLibraryIndex
  * them and without a second copy of the rewriting rules. A compiled GSP calls tags as well, and
  * reaches them through {@code GroovyPage} rather than through the trait, so it is matched separately.
  *
- * <p>Runs after trait injection, since whether a class can call tags is only settled once its traits
- * have been applied. That ordering is declared rather than left to the default a transform without a
- * priority gets, so a transform added later cannot quietly displace it.
+ * <p>Runs in a later phase than trait injection, since whether a class can call tags is only settled
+ * once its traits have been applied. Ordering by priority within a phase was not enough: it holds for
+ * transforms that declare one, but a trait arriving from a local transform is applied after every
+ * global transform has run, so a class compiled from outside the conventional directory was read
+ * before it carried the trait, and the same source read as a convention class was read after. Waiting
+ * for the phase reads every class once it is whole, which is what the rewrite needs to decide.
  *
  * @since 8.0.0
  */
 @CompileStatic
-@GroovyASTTransformation(phase = CompilePhase.CANONICALIZATION)
+@GroovyASTTransformation(phase = CompilePhase.INSTRUCTION_SELECTION)
 class CompiledTagCallTransformation implements ASTTransformation, TransformWithPriority {
 
     private static final ClassNode TAG_LIBRARY_INVOKER = ClassHelper.make(TagLibraryInvoker)

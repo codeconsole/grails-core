@@ -75,7 +75,7 @@ class ControllerTagCallRewriteSpec extends Specification {
         !references(compiled, 'org/grails/taglib/CompiledTagInvocation')
     }
 
-    void 'a controller declared by annotation outside that directory is not rewritten'() {
+    void 'a controller declared by annotation outside that directory is rewritten too'() {
         when: 'the trait arrives from a local transform, which runs after every global one'
         byte[] compiled = compileAt('src/main/groovy/demo', '''
             package demo
@@ -90,11 +90,11 @@ class ControllerTagCallRewriteSpec extends Specification {
             }
         ''', 'AnnotatedController', 'demo')
 
-        then: 'a known limitation rather than an intent: the call is dispatched as it was before, so ' +
-                'it behaves correctly, it just does not get the faster path'
-        !references(compiled, 'org/grails/taglib/CompiledTagInvocation')
+        then: 'the rewrite reads a class the traits have already been applied to, so where the source ' +
+                'sat makes no difference to it'
+        references(compiled, 'org/grails/taglib/CompiledTagInvocation')
 
-        and: 'and it really is a controller, so the difference is the source layout alone'
+        and: 'and it really is a controller'
         references(compiled, 'grails/artefact/gsp/TagLibraryInvoker')
     }
 

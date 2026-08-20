@@ -20,6 +20,8 @@ package org.grails.web.taglib
 
 import grails.compiler.traits.CompiledTagCallTransformation
 import org.apache.grails.common.compiler.GroovyTransformOrder
+import org.codehaus.groovy.control.CompilePhase
+import org.codehaus.groovy.transform.GroovyASTTransformation
 import org.codehaus.groovy.transform.TransformWithPriority
 import spock.lang.Specification
 
@@ -54,5 +56,13 @@ class CompiledTagCallTransformationOrderSpec extends Specification {
         expect: 'nothing else can introduce a tag-calling class after the rewriting has run'
         rewriting == GroovyTransformOrder.COMPILED_TAG_CALL_ORDER
         rewriting < GroovyTransformOrder.COMMAND_FACTORIES_ORDER
+    }
+
+    void 'it runs in a later phase than the transforms that inject artefact traits'() {
+        given: 'a trait can arrive from a local transform, which no priority within a phase orders'
+        GroovyASTTransformation declared = CompiledTagCallTransformation.getAnnotation(GroovyASTTransformation)
+
+        expect: 'so the class is read in a phase by which every trait has been applied'
+        declared.phase() == CompilePhase.INSTRUCTION_SELECTION
     }
 }
