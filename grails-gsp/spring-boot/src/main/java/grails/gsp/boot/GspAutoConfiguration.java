@@ -64,6 +64,7 @@ import org.grails.gsp.io.GroovyPageScriptSource;
 import org.grails.gsp.jsp.TagLibraryResolver;
 import org.grails.gsp.jsp.TagLibraryResolverImpl;
 import org.grails.plugins.sitemesh3.Sitemesh3EnvironmentPostProcessor;
+import org.grails.plugins.sitemesh3.Sitemesh3LayoutTagLib;
 import org.grails.plugins.web.taglib.RenderSitemeshTagLib;
 import org.grails.plugins.web.taglib.RenderTagLib;
 import org.grails.taglib.TagLibraryLookup;
@@ -207,7 +208,13 @@ public class GspAutoConfiguration {
 
     @Configuration
     protected static class GspViewResolverConfiguration extends AbstractGspConfig {
-        @Bean
+        /**
+         * Also answers to {@code jspViewResolver}, the name Grails gives an application's own view
+         * resolver: {@code RenderSitemeshTagLib} resolves the layout view of {@code <g:applyLayout>}
+         * through a resolver qualified by that name, and a standalone Spring Boot application has no
+         * bean of its own under it.
+         */
+        @Bean(name = { "gspViewResolver", "jspViewResolver" })
         @ConditionalOnMissingBean(name = "gspViewResolver")
         public ViewResolver gspViewResolver(GroovyPagesTemplateEngine groovyPagesTemplateEngine, GrailsConventionGroovyPageLocator groovyPageLocator) {
             GroovyPageViewResolver groovyPageViewResolver = new GroovyPageViewResolver(groovyPagesTemplateEngine, groovyPageLocator);
@@ -238,7 +245,11 @@ public class GspAutoConfiguration {
 
     protected static class TagLibraryLookupRegistrar implements ImportBeanDefinitionRegistrar {
 
-        public static final Class<?>[] DEFAULT_TAGLIB_CLASSES = new Class<?>[] { RenderTagLib.class, RenderSitemeshTagLib.class };
+        // Sitemesh3LayoutTagLib carries the grailsLayout namespace the GSP compiler's layout
+        // preprocessor emits for the <head>, <title> and <body> of every decorated page; without it
+        // those capture tags reach the browser as literal markup and nothing is decorated.
+        public static final Class<?>[] DEFAULT_TAGLIB_CLASSES = new Class<?>[] {
+            RenderTagLib.class, RenderSitemeshTagLib.class, Sitemesh3LayoutTagLib.class };
 
         @Override
         public void registerBeanDefinitions(AnnotationMetadata importingClassMetadata, BeanDefinitionRegistry registry) {
@@ -257,7 +268,7 @@ public class GspAutoConfiguration {
 
         protected void registerTagLibs(ManagedList<BeanDefinition> list) {
             for (Class<?> taglibClazz : DEFAULT_TAGLIB_CLASSES) {
-                list.add(createBeanDefinition(taglibClazz));
+                list.add(createTagLibBeanDefinition(taglibClazz));
             }
         }
 
@@ -265,6 +276,20 @@ public class GspAutoConfiguration {
             GenericBeanDefinition beanDefinition = new GenericBeanDefinition();
             beanDefinition.setBeanClass(beanClass);
             beanDefinition.setAutowireMode(GenericBeanDefinition.AUTOWIRE_BY_NAME);
+            return beanDefinition;
+        }
+
+        /**
+         * Tag libraries are wired from their own {@code @Autowired} declarations rather than by name.
+         * The tag libraries reachable from the lookup depend on the view resolver, which depends on
+         * the template engine, which depends on the lookup again; they break that cycle by declaring
+         * the dependency {@code @Lazy}. Autowiring them by name would inject the view resolver eagerly
+         * - {@code viewResolver} is an alias of {@code gspViewResolver} - and the context would fail
+         * to start with an unresolvable cycle.
+         */
+        protected GenericBeanDefinition createTagLibBeanDefinition(Class<?> beanClass) {
+            GenericBeanDefinition beanDefinition = new GenericBeanDefinition();
+            beanDefinition.setBeanClass(beanClass);
             return beanDefinition;
         }
     }

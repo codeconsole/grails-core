@@ -23,7 +23,6 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -31,24 +30,14 @@ import org.springframework.boot.test.context.SpringBootTest;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Intended regression coverage that this Spring Boot application - which manages dependency
- * versions with the legacy {@code io.spring.dependency-management} plugin (importing grails-bom)
- * rather than any Grails Gradle plugin - boots and renders a Grails GSP view.
+ * Regression coverage that this Spring Boot application - which manages dependency versions with
+ * the legacy {@code io.spring.dependency-management} plugin (importing grails-bom) rather than any
+ * Grails Gradle plugin - boots and renders a Grails GSP view, layout decoration included.
  *
  * <p>The build-level half of that guarantee (the Spring Dependency Management plugin resolving
- * grails-bom and the Grails libraries, and the GSP templates compiling) is already exercised by
- * building this module. This runtime test is {@link Disabled} because rendering GSP in a
- * <em>non-Grails</em> Spring Boot application does not currently start on Spring Boot 4: the
- * Grails GSP Spring Boot auto-configuration forms a {@code requestMappingHandlerAdapter} ->
- * {@code gspViewResolver} bean dependency cycle in a servlet web context, while
- * {@code CoreAutoConfiguration} requires a {@code GrailsApplication} that is only contributed by
- * that same auto-configuration. This GSP-integration limitation is unrelated to dependency
- * management. Re-enable this test once GSP rendering works in a standalone Spring Boot
- * application.</p>
+ * grails-bom and the Grails libraries, and the GSP templates compiling) is exercised by building
+ * this module; this test covers the runtime half in a <em>non-Grails</em> Spring Boot application.</p>
  */
-@Disabled("GSP rendering in a non-Grails Spring Boot application does not yet start on Spring Boot 4 "
-        + "(GSP auto-configuration bean cycle); unrelated to the Spring Dependency Management coverage "
-        + "this example provides at build time.")
 @SpringBootTest(classes = Application.class, webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class WebControllerTest {
 
@@ -57,11 +46,29 @@ class WebControllerTest {
 
     @Test
     void gspViewRendersInSpringBootWithSpringDependencyManagement() throws Exception {
+        String body = get("/");
+
+        assertThat(body).contains("Name:");
+    }
+
+    @Test
+    void gspViewIsDecoratedByItsSiteMeshLayout() throws Exception {
+        String body = get("/");
+
+        // layouts/main.gsp wraps the view; layouts/sample.gsp is applied inline by <g:applyLayout>
+        assertThat(body).contains("<title>Decorated");
+        assertThat(body).contains("Sample Inline Layout");
+        // the grailsLayout namespace the GSP compiler emits must be a registered tag library,
+        // otherwise the capture tags reach the browser as literal markup
+        assertThat(body).doesNotContain("grailsLayout:");
+    }
+
+    private String get(String path) throws Exception {
         HttpClient client = HttpClient.newHttpClient();
-        HttpRequest request = HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/")).GET().build();
+        HttpRequest request = HttpRequest.newBuilder(URI.create("http://localhost:" + port + path)).GET().build();
         HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
 
         assertThat(response.statusCode()).isEqualTo(200);
-        assertThat(response.body()).contains("Name:");
+        return response.body();
     }
 }
