@@ -31,6 +31,7 @@ permissions:
 jobs:
   build_groovy:
     if: ${{ !contains(github.event.head_commit.message, '[skip tests]') }}
+    name: "Build Groovy Snapshot"
     runs-on: ubuntu-latest
     outputs:
       groovyVersion: ${{ steps.groovy-version.outputs.value }}
@@ -103,7 +104,7 @@ jobs:
           retention-days: 1
   build_grails:
     needs: [build_groovy]
-    name: "Build Grails with Groovy snapshot (shard ${{ matrix.shard_index }})"
+    name: "Build Grails (shard ${{ matrix.shard_index }})"
     strategy:
       fail-fast: false
       matrix:
