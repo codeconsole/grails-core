@@ -6,8 +6,8 @@ plugins {
 grails {
     bom = null
     cliAutoProvision = false
-    indy = project.hasProperty('appIndy') ? Boolean.parseBoolean(appIndy) : false
-    noindyModules = ['org.example.test:plugin']
+    indy = project.hasProperty('appIndy') ? Boolean.parseBoolean(appIndy) : true
+    indyModules = ['org.example.test:plugin']
 }
 
 repositories {

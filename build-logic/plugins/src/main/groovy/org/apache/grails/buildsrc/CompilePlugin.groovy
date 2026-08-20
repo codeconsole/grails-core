@@ -84,8 +84,12 @@ class CompilePlugin implements Plugin<Project> {
                     'Implementation-Version': lookupPropertyByType(project, 'grailsVersion', String),
                     'Implementation-Vendor': 'grails.apache.org'
             )
-            // Explicitly fail since duplicates indicate a double configuration that needs fixed
-            jar.duplicatesStrategy = DuplicatesStrategy.FAIL
+            if (jar.name != IndyVariants.INDY_JAR_TASK_NAME) {
+                // Explicitly fail since duplicates indicate a double configuration that needs fixed.
+                // The indy jar is the exception: it deliberately layers its own Groovy classes over
+                // a copy of the main jar and drops the duplicates that produces.
+                jar.duplicatesStrategy = DuplicatesStrategy.FAIL
+            }
         }
     }
 
@@ -104,6 +108,11 @@ class CompilePlugin implements Plugin<Project> {
 
         project.plugins.withId('groovy') {
             project.tasks.withType(GroovyCompile).configureEach {
+                if (it.name != IndyVariants.INDY_COMPILE_TASK_NAME) {
+                    // The main artifact of every published module is the callsite-caching flavour;
+                    // IndyVariants supplies the invokedynamic one under a classifier.
+                    it.groovyOptions.optimizationOptions.put('indy', false)
+                }
                 // encoding needs to be the same since it's different across platforms
                 it.groovyOptions.encoding = StandardCharsets.UTF_8.name()
                 // Preserve method parameter names in Groovy/Java classes for IDE parameter hints & bean reflection metadata.

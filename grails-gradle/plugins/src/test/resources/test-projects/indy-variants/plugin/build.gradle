@@ -1,5 +1,5 @@
-// A Grails plugin publishes its classes twice: the default artifact uses Groovy's own
-// invokedynamic default, and a `noindy` classifier artifact is compiled without it.
+// A Grails plugin publishes its classes twice: the main artifact is compiled without
+// invokedynamic, and an `indy` classifier artifact is compiled with it.
 plugins {
     id 'org.apache.grails.gradle.grails-plugin'
     id 'maven-publish'
@@ -22,30 +22,30 @@ dependencies {
 }
 
 tasks.register('inspectIndyVariants') {
-    dependsOn 'jar', 'noindyJar'
+    dependsOn 'jar', 'indyJar'
     def mainCompile = tasks.named('compileGroovy', GroovyCompile)
-    def noindyCompile = tasks.named('compileNoindyGroovy', GroovyCompile)
-    def noindyJarTask = tasks.named('noindyJar', Jar)
-    def apiHasNoindy = configurations.apiElements.outgoing.variants.names.contains('noindy')
-    def runtimeHasNoindy = configurations.runtimeElements.outgoing.variants.names.contains('noindy')
+    def indyCompile = tasks.named('compileIndyGroovy', GroovyCompile)
+    def indyJarTask = tasks.named('indyJar', Jar)
+    def apiHasNoindy = configurations.apiElements.outgoing.variants.names.contains('indy')
+    def runtimeHasNoindy = configurations.runtimeElements.outgoing.variants.names.contains('indy')
     def jarFileProvider = tasks.named('jar', Jar).flatMap { it.archiveFile }
     doLast {
         println "MAIN_INDY=${mainCompile.get().groovyOptions.optimizationOptions.indy}"
-        println "NOINDY_INDY=${noindyCompile.get().groovyOptions.optimizationOptions.indy}"
-        println "NOINDY_JAR=${noindyJarTask.get().archiveFile.get().asFile.name}"
-        println "API_HAS_NOINDY=${apiHasNoindy}"
-        println "RUNTIME_HAS_NOINDY=${runtimeHasNoindy}"
-        println "ADVERTISED=${manifestValue(jarFileProvider.get().asFile, 'Grails-Noindy-Artifact')}"
+        println "INDY_INDY=${indyCompile.get().groovyOptions.optimizationOptions.indy}"
+        println "INDY_JAR=${indyJarTask.get().archiveFile.get().asFile.name}"
+        println "API_HAS_INDY=${apiHasNoindy}"
+        println "RUNTIME_HAS_INDY=${runtimeHasNoindy}"
+        println "ADVERTISED=${manifestValue(jarFileProvider.get().asFile, 'Grails-Indy-Artifact')}"
 
         def counts = [:]
-        [main: tasks.named('jar', Jar).get(), noindy: noindyJarTask.get()].each { label, jarTask ->
+        [main: tasks.named('jar', Jar).get(), indy: indyJarTask.get()].each { label, jarTask ->
             def classFile = new File(jarTask.destinationDirectory.get().asFile, 'unpacked')
             classFile.deleteDir()
             copyClass(jarTask.archiveFile.get().asFile, classFile)
             counts[label] = describe(new File(classFile, 'demo/PluginGreeter.class'))
         }
         println "MAIN_BYTECODE=${counts.main}"
-        println "NOINDY_BYTECODE=${counts.noindy}"
+        println "INDY_BYTECODE=${counts.indy}"
     }
 }
 

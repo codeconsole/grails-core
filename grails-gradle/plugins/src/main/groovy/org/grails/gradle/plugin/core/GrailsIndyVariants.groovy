@@ -25,6 +25,9 @@ import org.gradle.api.Project
 import org.gradle.api.artifacts.Configuration
 import org.gradle.api.attributes.Attribute
 import org.gradle.api.file.Directory
+import org.gradle.api.file.CopySpec
+import org.gradle.api.file.DuplicatesStrategy
+import org.gradle.api.file.RegularFile
 import org.gradle.api.plugins.BasePlugin
 import org.gradle.api.plugins.JavaPluginExtension
 import org.gradle.api.publish.PublishingExtension
@@ -44,11 +47,11 @@ import org.grails.gradle.plugin.util.SourceSets
  * Publishes a Grails library in two flavours so that a consuming application can pick the Groovy
  * call-site implementation it wants without every producer having to agree on one.
  *
- * <p>The <em>default</em> artifact is compiled with Groovy's own default, which enables
- * {@code invokedynamic}. A second artifact carrying the {@code noindy} Maven classifier is compiled
- * with {@code invokedynamic} disabled, so its call sites use the older call-site-caching bytecode.
- * Both artifacts contain the same classes compiled from the same sources with the same AST
- * transformations; only the bytecode used to dispatch dynamic Groovy calls differs.
+ * <p>The <em>main</em> artifact is compiled with {@code invokedynamic} disabled, so its call sites
+ * use call-site-caching bytecode. A second artifact carrying the {@code indy} Maven classifier is
+ * compiled with Groovy's own default, which enables {@code invokedynamic}. Both artifacts contain
+ * the same classes compiled from the same sources with the same AST transformations; only the
+ * bytecode used to dispatch dynamic Groovy calls differs.
  *
  * <p>The {@code noindy} jar is published as a plain Maven classifier artifact and nothing else:
  * the module's published metadata keeps exactly the variants it always had. Publishing a second
@@ -75,19 +78,19 @@ class GrailsIndyVariants {
     public static final Attribute<Boolean> INDY_ATTRIBUTE = Attribute.of('org.apache.grails.indy', Boolean)
 
     /** Maven classifier of the artifact compiled without {@code invokedynamic}. */
-    public static final String NOINDY_CLASSIFIER = 'noindy'
+    public static final String INDY_CLASSIFIER = 'indy'
 
     /** Name of the secondary variant added to {@code apiElements} and {@code runtimeElements}. */
     public static final String NOINDY_VARIANT_NAME = 'noindy'
 
     /** Name of the {@link GroovyCompile} task that compiles the {@code noindy} classes. */
-    public static final String NOINDY_COMPILE_TASK_NAME = 'compileNoindyGroovy'
+    public static final String INDY_COMPILE_TASK_NAME = 'compileIndyGroovy'
 
     /** Name of the {@link Jar} task that packages the {@code noindy} classes. */
-    public static final String NOINDY_JAR_TASK_NAME = 'noindyJar'
+    public static final String INDY_JAR_TASK_NAME = 'indyJar'
 
     /** Manifest attribute through which a module advertises that it publishes a noindy classifier. */
-    public static final String NOINDY_MANIFEST_ATTRIBUTE = 'Grails-Noindy-Artifact'
+    public static final String INDY_MANIFEST_ATTRIBUTE = 'Grails-Indy-Artifact'
 
     private GrailsIndyVariants() {
     }
@@ -103,7 +106,7 @@ class GrailsIndyVariants {
      */
     static void configureProducer(Project project) {
         project.pluginManager.withPlugin('groovy') {
-            if (project.tasks.names.contains(NOINDY_JAR_TASK_NAME)) {
+            if (project.tasks.names.contains(INDY_JAR_TASK_NAME)) {
                 return
             }
 
@@ -112,11 +115,11 @@ class GrailsIndyVariants {
                 return
             }
 
-            TaskProvider<GroovyCompile> noindyCompile = registerNoindyCompileTask(project, main)
-            TaskProvider<Jar> noindyJar = registerNoindyJarTask(project, main, noindyCompile)
+            TaskProvider<GroovyCompile> indyCompile = registerIndyCompileTask(project, main)
+            TaskProvider<Jar> indyJar = registerIndyJarTask(project, indyCompile)
 
-            publishNoindyClassifier(project, noindyJar)
-            advertiseNoindyArtifact(project)
+            publishIndyClassifier(project, indyJar)
+            advertiseIndyArtifact(project)
         }
     }
 
@@ -132,7 +135,7 @@ class GrailsIndyVariants {
      * @param project the application project
      * @param indy provider for the value of {@code grails.indy}
      */
-    static void configureConsumer(Project project, Provider<Boolean> indy, Provider<Set<String>> noindyModules) {
+    static void configureConsumer(Project project, Provider<Boolean> indy, Provider<Set<String>> indyModules) {
         project.dependencies.attributesSchema { schema ->
             schema.attribute(INDY_ATTRIBUTE) { strategy ->
                 strategy.disambiguationRules.add(GrailsIndyDisambiguationRule)
@@ -140,39 +143,39 @@ class GrailsIndyVariants {
         }
 
         project.afterEvaluate {
-            if (indy.getOrElse(true)) {
-                // Nothing to select: the default artifacts are already what everyone resolves.
+            if (!indy.getOrElse(false)) {
+                // Nothing to select: the main artifacts are already what everyone resolves.
                 return
             }
 
-            Set<String> coordinates = noindyModules.getOrElse([] as Set)
+            Set<String> coordinates = indyModules.getOrElse([] as Set)
             if (!coordinates) {
-                project.logger.warn('Grails: indy is disabled but no modules are listed as publishing a noindy artifact, so the dependencies on the classpath remain the invokedynamic ones.')
-                project.logger.warn('        List them with grails { noindyModules = [\'group:name\'] } in build.gradle.')
+                project.logger.warn('Grails: indy is enabled but no modules are listed as publishing an indy artifact, so the dependencies on the classpath remain the callsite-caching ones.')
+                project.logger.warn('        List them with grails { indyModules = [\'group:name\'] } in build.gradle.')
                 return
             }
 
             project.dependencies.components { components ->
-                components.all(GrailsNoindyClassifierRule) { rule ->
+                components.all(GrailsIndyClassifierRule) { rule ->
                     rule.params(coordinates)
                 }
             }
 
             project.configurations.configureEach { Configuration configuration ->
                 if (configuration.canBeResolved) {
-                    configuration.attributes.attribute(INDY_ATTRIBUTE, false)
+                    configuration.attributes.attribute(INDY_ATTRIBUTE, true)
                 }
             }
         }
     }
 
-    private static TaskProvider<GroovyCompile> registerNoindyCompileTask(Project project, SourceSet main) {
+    private static TaskProvider<GroovyCompile> registerIndyCompileTask(Project project, SourceSet main) {
         GroovyRuntime groovyRuntime = project.extensions.getByType(GroovyRuntime)
         JavaPluginExtension javaExtension = project.extensions.getByType(JavaPluginExtension)
-        Provider<Directory> destination = project.layout.buildDirectory.dir("classes/groovy/${NOINDY_CLASSIFIER}")
+        Provider<Directory> destination = project.layout.buildDirectory.dir("classes/groovy/${INDY_CLASSIFIER}")
 
-        return project.tasks.register(NOINDY_COMPILE_TASK_NAME, GroovyCompile) { GroovyCompile compile ->
-            compile.description = 'Compiles the main Groovy source set with invokedynamic disabled.'
+        return project.tasks.register(INDY_COMPILE_TASK_NAME, GroovyCompile) { GroovyCompile compile ->
+            compile.description = 'Compiles the main Groovy source set with invokedynamic enabled.'
             compile.group = BasePlugin.BUILD_GROUP
 
             compile.source = main.extensions.getByType(GroovySourceDirectorySet)
@@ -183,8 +186,8 @@ class GrailsIndyVariants {
             // The whole point of the second compilation. Every other GroovyCompile option is left to
             // the conventions that GrailsGradlePlugin applies to all GroovyCompile tasks, so this
             // task picks up the same AST transforms, compiler configuration script and fork settings
-            // as the default compilation and differs only in call-site bytecode.
-            compile.groovyOptions.optimizationOptions.put('indy', false)
+            // as the main compilation and differs only in call-site bytecode.
+            compile.groovyOptions.optimizationOptions.put('indy', true)
 
             // Registered tasks do not inherit the java extension's release/toolchain wiring that the
             // java plugin applies to the source set's own compile tasks.
@@ -197,19 +200,26 @@ class GrailsIndyVariants {
         }
     }
 
-    private static TaskProvider<Jar> registerNoindyJarTask(Project project, SourceSet main,
-                                                           TaskProvider<GroovyCompile> noindyCompile) {
-        return project.tasks.register(NOINDY_JAR_TASK_NAME, Jar) { Jar jar ->
-            jar.description = 'Assembles a jar whose Groovy classes are compiled without invokedynamic.'
+    private static TaskProvider<Jar> registerIndyJarTask(Project project, TaskProvider<GroovyCompile> indyCompile) {
+        return project.tasks.register(INDY_JAR_TASK_NAME, Jar) { Jar jar ->
+            jar.description = 'Assembles a jar whose Groovy classes are compiled with invokedynamic.'
             jar.group = BasePlugin.BUILD_GROUP
-            jar.archiveClassifier.set(NOINDY_CLASSIFIER)
+            jar.archiveClassifier.set(INDY_CLASSIFIER)
 
-            // Groovy classes come from the noindy compilation; everything else in the source set
-            // output is unaffected by the call-site flavour and is reused as-is. Java bytecode does
-            // not contain Groovy call sites, so recompiling it would produce identical classes.
-            jar.from(noindyCompile.flatMap { GroovyCompile compile -> compile.destinationDirectory })
-            jar.from(main.java.classesDirectory)
-            jar.from(project.tasks.named(main.processResourcesTaskName))
+            // Mirror the main jar rather than reassembling it: a plugin's jar also carries AST
+            // classes copied in from another source set, plus staged command and template resources
+            // laid out at paths this task does not know. Listing the pieces would silently omit them,
+            // and reusing the main jar's own copy spec would import its duplicatesStrategy with it.
+            // Unpacking the finished jar keeps the two artifacts identical by construction: the indy
+            // classes are added first and duplicates dropped, so they win at the paths they share
+            // with the main jar's Groovy classes and everything else arrives untouched.
+            jar.duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+            jar.from(indyCompile.flatMap { GroovyCompile compile -> compile.destinationDirectory })
+            jar.from(project.tasks.named('jar', Jar).flatMap { Jar mainJar -> mainJar.archiveFile }
+                    .map { RegularFile mainArchive -> project.zipTree(mainArchive) }) { CopySpec spec ->
+                // The Jar task writes its own manifest.
+                spec.exclude('META-INF/MANIFEST.MF')
+            }
         }
     }
 
@@ -217,11 +227,11 @@ class GrailsIndyVariants {
      * Attaches the {@code noindy} jar to the module's publication as an ordinary classifier
      * artifact, leaving the published variants untouched.
      */
-    private static void publishNoindyClassifier(Project project, TaskProvider<Jar> noindyJar) {
+    private static void publishIndyClassifier(Project project, TaskProvider<Jar> indyJar) {
         project.pluginManager.withPlugin('maven-publish') {
             PublishingExtension publishing = project.extensions.getByType(PublishingExtension)
             publishing.publications.withType(MavenPublication).configureEach { MavenPublication publication ->
-                publication.artifact(noindyJar)
+                publication.artifact(indyJar)
             }
         }
     }
@@ -231,9 +241,9 @@ class GrailsIndyVariants {
      * application can discover which of its dependencies publish one instead of being told.
      * Mirrors how a plugin advertises its CLI companion through {@code Grails-Cli-Artifact}.
      */
-    private static void advertiseNoindyArtifact(Project project) {
+    private static void advertiseIndyArtifact(Project project) {
         project.tasks.named('jar', Jar).configure { Jar jar ->
-            jar.manifest.attributes((NOINDY_MANIFEST_ATTRIBUTE): project.provider {
+            jar.manifest.attributes((INDY_MANIFEST_ATTRIBUTE): project.provider {
                 "${project.group}:${project.name}".toString()
             })
         }

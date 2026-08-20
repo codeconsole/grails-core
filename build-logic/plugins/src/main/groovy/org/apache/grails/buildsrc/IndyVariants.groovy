@@ -23,6 +23,9 @@ import groovy.transform.CompileStatic
 
 import org.gradle.api.Project
 import org.gradle.api.file.Directory
+import org.gradle.api.file.CopySpec
+import org.gradle.api.file.DuplicatesStrategy
+import org.gradle.api.file.RegularFile
 import org.gradle.api.plugins.BasePlugin
 import org.gradle.api.plugins.JavaPluginExtension
 import org.gradle.api.publish.PublishingExtension
@@ -38,8 +41,8 @@ import org.gradle.api.tasks.compile.GroovyCompile
 import org.gradle.jvm.toolchain.JavaToolchainService
 
 /**
- * Publishes every Groovy module of the framework twice: the default artifact compiled with Groovy's
- * own {@code invokedynamic} default, and a {@code noindy} classifier artifact compiled without it.
+ * Publishes every Groovy module of the framework twice: the main artifact compiled with
+ * {@code invokedynamic} disabled, and an {@code indy} classifier artifact compiled with it enabled.
  * An application picks between them by setting {@code grails.indy}.
  *
  * <p>The second artifact is a plain Maven classifier and adds no variant to the published metadata,
@@ -58,17 +61,17 @@ import org.gradle.jvm.toolchain.JavaToolchainService
 @CompileStatic
 class IndyVariants {
 
-    /** Must match {@code GrailsIndyVariants.NOINDY_CLASSIFIER}. */
-    static final String NOINDY_CLASSIFIER = 'noindy'
+    /** Must match {@code GrailsIndyVariants.INDY_CLASSIFIER}. */
+    static final String INDY_CLASSIFIER = 'indy'
 
-    /** Must match {@code GrailsIndyVariants.NOINDY_MANIFEST_ATTRIBUTE}. */
-    static final String NOINDY_MANIFEST_ATTRIBUTE = 'Grails-Noindy-Artifact'
+    /** Must match {@code GrailsIndyVariants.INDY_MANIFEST_ATTRIBUTE}. */
+    static final String INDY_MANIFEST_ATTRIBUTE = 'Grails-Indy-Artifact'
 
-    /** Must match {@code GrailsIndyVariants.NOINDY_COMPILE_TASK_NAME}. */
-    static final String NOINDY_COMPILE_TASK_NAME = 'compileNoindyGroovy'
+    /** Must match {@code GrailsIndyVariants.INDY_COMPILE_TASK_NAME}. */
+    static final String INDY_COMPILE_TASK_NAME = 'compileIndyGroovy'
 
-    /** Must match {@code GrailsIndyVariants.NOINDY_JAR_TASK_NAME}. */
-    static final String NOINDY_JAR_TASK_NAME = 'noindyJar'
+    /** Must match {@code GrailsIndyVariants.INDY_JAR_TASK_NAME}. */
+    static final String INDY_JAR_TASK_NAME = 'indyJar'
 
     private IndyVariants() {
     }
@@ -84,7 +87,7 @@ class IndyVariants {
     static void configure(Project project) {
         project.plugins.withId('groovy') {
             project.plugins.withId('maven-publish') {
-                if (project.tasks.names.contains(NOINDY_JAR_TASK_NAME)) {
+                if (project.tasks.names.contains(INDY_JAR_TASK_NAME)) {
                     return
                 }
                 if (GradleUtils.lookupPropertyByType(project, 'skipJavaComponent', Boolean)) {
@@ -97,16 +100,16 @@ class IndyVariants {
                     return
                 }
 
-                TaskProvider<GroovyCompile> noindyCompile = registerNoindyCompileTask(project, main)
-                TaskProvider<Jar> noindyJar = registerNoindyJarTask(project, main, noindyCompile)
+                TaskProvider<GroovyCompile> indyCompile = registerIndyCompileTask(project, main)
+                TaskProvider<Jar> indyJar = registerIndyJarTask(project, indyCompile)
 
                 PublishingExtension publishing = project.extensions.getByType(PublishingExtension)
                 publishing.publications.withType(MavenPublication).configureEach { MavenPublication publication ->
-                    publication.artifact(noindyJar)
+                    publication.artifact(indyJar)
                 }
 
                 project.tasks.named('jar', Jar).configure { Jar jar ->
-                    jar.manifest.attributes((NOINDY_MANIFEST_ATTRIBUTE): project.provider {
+                    jar.manifest.attributes((INDY_MANIFEST_ATTRIBUTE): project.provider {
                         "${project.group}:${project.name}".toString()
                     })
                 }
@@ -114,13 +117,13 @@ class IndyVariants {
         }
     }
 
-    private static TaskProvider<GroovyCompile> registerNoindyCompileTask(Project project, SourceSet main) {
+    private static TaskProvider<GroovyCompile> registerIndyCompileTask(Project project, SourceSet main) {
         GroovyRuntime groovyRuntime = project.extensions.getByType(GroovyRuntime)
         JavaPluginExtension javaExtension = project.extensions.getByType(JavaPluginExtension)
-        Provider<Directory> destination = project.layout.buildDirectory.dir("classes/groovy/${NOINDY_CLASSIFIER}")
+        Provider<Directory> destination = project.layout.buildDirectory.dir("classes/groovy/${INDY_CLASSIFIER}")
 
-        return project.tasks.register(NOINDY_COMPILE_TASK_NAME, GroovyCompile) { GroovyCompile compile ->
-            compile.description = 'Compiles the main Groovy source set with invokedynamic disabled.'
+        return project.tasks.register(INDY_COMPILE_TASK_NAME, GroovyCompile) { GroovyCompile compile ->
+            compile.description = 'Compiles the main Groovy source set with invokedynamic enabled.'
             compile.group = BasePlugin.BUILD_GROUP
 
             compile.source = main.extensions.getByType(GroovySourceDirectorySet)
@@ -131,7 +134,7 @@ class IndyVariants {
             // The one intentional difference from the default compilation. Everything else is left to
             // the conventions CompilePlugin applies to all GroovyCompile tasks, so this task shares
             // the encoding, fork settings and compiler configuration script of the default one.
-            compile.groovyOptions.optimizationOptions.put('indy', false)
+            compile.groovyOptions.optimizationOptions.put('indy', true)
 
             compile.sourceCompatibility = javaExtension.sourceCompatibility.toString()
             compile.targetCompatibility = javaExtension.targetCompatibility.toString()
@@ -142,17 +145,26 @@ class IndyVariants {
         }
     }
 
-    private static TaskProvider<Jar> registerNoindyJarTask(Project project, SourceSet main,
-                                                           TaskProvider<GroovyCompile> noindyCompile) {
-        return project.tasks.register(NOINDY_JAR_TASK_NAME, Jar) { Jar jar ->
-            jar.description = 'Assembles a jar whose Groovy classes are compiled without invokedynamic.'
+    private static TaskProvider<Jar> registerIndyJarTask(Project project, TaskProvider<GroovyCompile> indyCompile) {
+        return project.tasks.register(INDY_JAR_TASK_NAME, Jar) { Jar jar ->
+            jar.description = 'Assembles a jar whose Groovy classes are compiled with invokedynamic.'
             jar.group = BasePlugin.BUILD_GROUP
-            jar.archiveClassifier.set(NOINDY_CLASSIFIER)
+            jar.archiveClassifier.set(INDY_CLASSIFIER)
 
-            // Java bytecode holds no Groovy call sites, so it is reused rather than recompiled.
-            jar.from(noindyCompile.flatMap { GroovyCompile compile -> compile.destinationDirectory })
-            jar.from(main.java.classesDirectory)
-            jar.from(project.tasks.named(main.processResourcesTaskName))
+            // Mirror the main jar rather than reassembling it: a plugin's jar also carries AST
+            // classes copied in from another source set, plus staged command and template resources
+            // laid out at paths this task does not know. Listing the pieces would silently omit them,
+            // and reusing the main jar's own copy spec would import its duplicatesStrategy with it.
+            // Unpacking the finished jar keeps the two artifacts identical by construction: the indy
+            // classes are added first and duplicates dropped, so they win at the paths they share
+            // with the main jar's Groovy classes and everything else arrives untouched.
+            jar.duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+            jar.from(indyCompile.flatMap { GroovyCompile compile -> compile.destinationDirectory })
+            jar.from(project.tasks.named('jar', Jar).flatMap { Jar mainJar -> mainJar.archiveFile }
+                    .map { RegularFile mainArchive -> project.zipTree(mainArchive) }) { CopySpec spec ->
+                // The Jar task writes its own manifest.
+                spec.exclude('META-INF/MANIFEST.MF')
+            }
         }
     }
 

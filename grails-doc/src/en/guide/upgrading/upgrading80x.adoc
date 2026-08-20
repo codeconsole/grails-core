@@ -2633,53 +2633,38 @@ used to apply to its own message source.
 Adding or removing a base name now needs a restart, because Spring Boot reads the configured base names
 once when it builds the message source.
 
-==== 48. invokedynamic is Enabled by Default and Selected Per Application
+==== 48. invokedynamic Available Under a Classifier
 
-Two related changes.
+Grails still compiles applications with `invokedynamic` disabled, as 7.x did, and every Grails module and
+plugin still publishes its main artifact that way. Nothing changes for an application that leaves the setting
+alone.
 
-First, `grails.indy` now defaults to `true`, following Groovy's own default. Grails 7.x defaulted it to
-`false`, so an application that never set it compiled with call-site caching; it now compiles with
-`invokedynamic`. To keep the 7.x behaviour, set it explicitly:
-
-[source,groovy]
-.build.gradle
-----
-grails {
-    indy = false
-}
-----
-
-Second, the setting can now reach precompiled dependencies as well as your own sources. Grails modules and
-plugins publish a second artifact carrying the `noindy` classifier, compiled without `invokedynamic`. An
-application that sets `indy = false` and lists the modules publishing one resolves those artifacts instead of
-the main ones:
+What is new is that each module and plugin also publishes a second artifact carrying the `indy` classifier,
+compiled with `invokedynamic` enabled, so an application that wants it can have it throughout rather than
+only in its own classes:
 
 [source,groovy]
 .build.gradle
 ----
 grails {
-    indy = false
-    noindyModules = ['org.apache.grails:grails-core']
+    indy = true
+    indyModules = ['org.apache.grails:grails-core', 'com.example:my-plugin']
 }
 ----
+
+Dependencies left off the list keep their main artifact. That is safe — classes compiled the two ways
+interoperate on the same classpath — but a native image needs the `indy` flavour of everything, so an
+application targeting one has to list every Grails module and plugin it uses.
+
+Listing a module that publishes no `indy` classifier, or a platform such as `grails-bom`, makes resolution
+fail when the missing file is fetched. A module advertises its classifier through the `Grails-Indy-Artifact`
+manifest attribute of its main jar.
+
+For plugin authors, `grails.indy` no longer affects how a plugin compiles its own sources: a plugin builds
+both flavours regardless, through the new `indyJar` task, and the resolving application chooses. A plugin
+build that sets `grails { indy = ... }` can drop it.
 
 The extra artifact is a plain Maven classifier and adds no variant to the published metadata, so builds that
 do not opt in resolve these modules exactly as before.
-
-Native compilation is the reason the default moved. Call-site caching bytecode cannot be compiled ahead of
-time into a native image, so every artifact on a native application's classpath has to be the `invokedynamic`
-flavour. Applications that set `indy = false` opt out of native compilation.
-
-Otherwise neither change alters behaviour: the two flavours dispatch through the same metaclass machinery and
-interoperate on the same classpath. They differ in performance, and which is faster depends on the
-application and the JVM it runs on, so measure before choosing.
-
-Two consequences are worth knowing about:
-
-* A plugin built with the `org.apache.grails.gradle.grails-plugin` plugin now publishes both flavours, so
-`indy` no longer governs how the plugin itself is compiled. Plugin authors need to change nothing; the second
-artifact comes from the new `noindyJar` task.
-* A plugin published before 8.0, or one that opts out, publishes a single artifact. It stays resolvable under
-either setting, since classes compiled the two ways interoperate.
 
 See <<invokedynamic,Choosing Groovy Call Site Bytecode>> for details.

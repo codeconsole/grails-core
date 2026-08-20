@@ -28,28 +28,28 @@ import org.gradle.api.artifacts.ComponentMetadataRule
 import org.gradle.api.artifacts.ModuleVersionIdentifier
 
 /**
- * Derives a {@code noindy} variant from a module's classifier artifact, inside the build that asked
+ * Derives an {@code indy} variant from a module's classifier artifact, inside the build that asked
  * for one.
  *
  * <p>The rule runs against every module on the graph but changes only those named in
- * {@code coordinates}. A module that publishes no {@code noindy} classifier must not be touched:
+ * {@code coordinates}. A module that publishes no {@code indy} classifier must not be touched:
  * the derived variant would point at a file that does not exist, and resolution fails when the
  * artifact is fetched rather than when the rule runs. Platforms are the same story — they publish
  * no jar at all.
  *
- * <p>The existing variants are stamped with {@code indy = true} as well as the derived one with
- * {@code false}, so that both candidates carry a value. A disambiguation rule can then pick between
- * them; without a value on both, the default variant would be invisible to that rule.
+ * <p>The existing variants are stamped with {@code indy = false} as well as the derived one with
+ * {@code true}, so that both candidates carry a value. A disambiguation rule can then pick between
+ * them; without a value on both, the main variant would be invisible to that rule.
  *
  * @since 8.0
  */
 @CompileStatic
-abstract class GrailsNoindyClassifierRule implements ComponentMetadataRule {
+abstract class GrailsIndyClassifierRule implements ComponentMetadataRule {
 
     private final Set<String> coordinates
 
     @Inject
-    GrailsNoindyClassifierRule(Set<String> coordinates) {
+    GrailsIndyClassifierRule(Set<String> coordinates) {
         this.coordinates = coordinates
     }
 
@@ -62,13 +62,13 @@ abstract class GrailsNoindyClassifierRule implements ComponentMetadataRule {
 
         ['apiElements', 'runtimeElements'].each { String base ->
             context.details.withVariant(base) { variant ->
-                variant.attributes { it.attribute(GrailsIndyVariants.INDY_ATTRIBUTE, true) }
-            }
-            context.details.addVariant("noindy${base.capitalize()}", base) { variant ->
                 variant.attributes { it.attribute(GrailsIndyVariants.INDY_ATTRIBUTE, false) }
+            }
+            context.details.addVariant("indy${base.capitalize()}", base) { variant ->
+                variant.attributes { it.attribute(GrailsIndyVariants.INDY_ATTRIBUTE, true) }
                 variant.withFiles {
                     it.removeAllFiles()
-                    it.addFile("${id.name}-${id.version}-${GrailsIndyVariants.NOINDY_CLASSIFIER}.jar".toString())
+                    it.addFile("${id.name}-${id.version}-${GrailsIndyVariants.INDY_CLASSIFIER}.jar".toString())
                 }
             }
         }

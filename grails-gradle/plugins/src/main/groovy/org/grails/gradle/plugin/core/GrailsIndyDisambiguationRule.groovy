@@ -23,8 +23,8 @@ import org.gradle.api.attributes.AttributeDisambiguationRule
 import org.gradle.api.attributes.MultipleCandidatesDetails
 
 /**
- * Chooses a Groovy call-site flavour once {@link GrailsNoindyClassifierRule} has given a module
- * both. The requested flavour wins where it exists; otherwise the default one does.
+ * Chooses a Groovy call-site flavour once {@link GrailsIndyClassifierRule} has given a module both.
+ * The requested flavour wins where it exists; otherwise the main artifact does.
  */
 class GrailsIndyDisambiguationRule implements AttributeDisambiguationRule<Boolean> {
 
@@ -33,8 +33,8 @@ class GrailsIndyDisambiguationRule implements AttributeDisambiguationRule<Boolea
         Boolean requested = details.consumerValue
         if (requested != null && details.candidateValues.contains(requested)) {
             details.closestMatch(requested)
-        } else if (details.candidateValues.contains(Boolean.TRUE)) {
-            details.closestMatch(Boolean.TRUE)
+        } else if (details.candidateValues.contains(Boolean.FALSE)) {
+            details.closestMatch(Boolean.FALSE)
         }
     }
 }

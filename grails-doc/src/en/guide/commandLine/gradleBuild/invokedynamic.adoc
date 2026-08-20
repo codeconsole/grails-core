@@ -19,73 +19,66 @@ under the License.
 
 Groovy compiles a dynamic method call in one of two ways. It can emit an `invokedynamic` instruction and let
 the JVM link the call site, or it can emit the older call-site caching bytecode. Both dispatch through the
-same metaclass machinery and behave identically; they differ only in performance, and which one is faster
-depends on the application and the JVM it runs on.
+same metaclass machinery and behave identically; they differ in performance, and which is faster depends on
+the application and the JVM it runs on.
 
-The `grails` extension chooses for your application:
+Grails compiles applications with `invokedynamic` disabled, and every Grails module and plugin publishes its
+main artifact the same way.
 
-[source,groovy]
-.build.gradle
-----
-grails {
-    indy = false
-}
-----
+=== Enabling invokedynamic
 
-The default follows Groovy's own default, which enables `invokedynamic`. Set it to `false` to compile against
-call-site caching instead.
-
-=== Framework and plugin artifacts
-
-Your own code is only part of what runs. The framework and the plugins you depend on are compiled ahead of
-time, so the setting above cannot reach them by recompiling. Instead, Grails modules and plugins built with
-the `org.apache.grails.gradle.grails-plugin` plugin publish their classes twice: the main artifact compiled
-with `invokedynamic`, and a second artifact carrying the `noindy` classifier compiled without it.
-
-Setting `indy = false` makes the application resolve the `noindy` artifact of every dependency you list as
-publishing one:
+An application turns it on for its own sources with:
 
 [source,groovy]
 .build.gradle
 ----
 grails {
-    indy = false
-    noindyModules = ['org.apache.grails:grails-core', 'com.example:my-plugin']
+    indy = true
 }
 ----
 
-The list is required, and listing a module that publishes no such artifact makes resolution fail when the
-missing file is fetched. A module advertises that it publishes one through the `Grails-Noindy-Artifact`
-attribute of its main jar's manifest.
+That covers the application's own classes. The framework and the plugins it depends on are already compiled,
+so the setting cannot reach them by recompiling. They each publish a second artifact carrying the `indy`
+classifier, compiled with `invokedynamic` enabled, and an application selects those by naming the modules
+that provide one:
 
-Dependencies you leave off the list keep their main artifact, which is always safe: classes compiled the two
-ways interoperate freely on the same classpath.
+[source,groovy]
+.build.gradle
+----
+grails {
+    indy = true
+    indyModules = ['org.apache.grails:grails-core', 'com.example:my-plugin']
+}
+----
+
+Dependencies left off the list keep their main artifact, which is always safe: classes compiled the two ways
+interoperate freely on the same classpath, so a partially converted classpath still runs correctly.
+
+WARNING: Listing a module that publishes no `indy` classifier — or a platform such as `grails-bom`, which
+publishes no jar at all — makes resolution fail when the missing file is fetched. A module advertises that it
+publishes one through the `Grails-Indy-Artifact` attribute of its main jar's manifest.
 
 NOTE: This applies to dependencies resolved as published modules. A project dependency inside a composite or
-multi-project build always uses its main artifact.
+multi-project build always uses the main artifact.
 
 === Publishing both flavours from a plugin
 
-A plugin applying the `org.apache.grails.gradle.grails-plugin` plugin publishes both flavours automatically,
-and `indy` has no effect on how it compiles its own sources — it always builds both. The extra artifact is
-produced by the `noindyJar` task and published as a variant of the plugin's API and runtime, so applications
-resolve it through normal dependency resolution rather than by naming the classifier.
+A plugin applying the `org.apache.grails.gradle.grails-plugin` plugin publishes both automatically: its main
+jar is compiled without `invokedynamic`, and the `indyJar` task produces the `indy` classifier artifact
+alongside it. `grails.indy` has no effect on how a plugin compiles its own sources, because it builds both
+regardless and the resolving application chooses.
 
-Consumers that are not Grails applications are unaffected. A plain Gradle project depending on a Grails
-artifact resolves the default artifact exactly as it did before.
+The classifier adds nothing to the module's published metadata, so builds that do not opt in — including
+projects that are not Grails applications at all — resolve these modules exactly as they would otherwise.
 
-=== Native compilation requires invokedynamic
+=== Native compilation
 
-Ahead-of-time native compilation does not support call-site caching bytecode, which generates and links
-call-site classes at runtime. An application intended for a native image must therefore leave `indy` at its
-default, and every artifact on its classpath must be the `invokedynamic` flavour -- which is what the default
-artifacts are.
-
-WARNING: Setting `indy = false` forfeits native compilation for that application. It is a choice between
-call-site caching and a native image, not something that can be decided per artifact afterwards.
+Ahead-of-time native compilation cannot use call-site caching bytecode, which links call sites at runtime. A
+native image therefore requires the `indy` flavour of the application and of everything on its classpath, so
+an application targeting one sets `indy = true` and lists every Grails module and plugin it depends on. An
+omission surfaces as a native image build failure rather than as anything visible on the JVM.
 
 === Measuring the difference
 
 Whether `invokedynamic` helps or hurts depends on the workload, so treat the setting as something to measure
-rather than assume. Build the application both ways and compare it under a representative load; a benchmark
-of dynamic dispatch on its own rarely predicts what an application does.
+rather than assume. A benchmark of dynamic dispatch on its own rarely predicts what an application does.

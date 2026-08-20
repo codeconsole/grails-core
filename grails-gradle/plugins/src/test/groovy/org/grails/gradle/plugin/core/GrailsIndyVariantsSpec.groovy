@@ -27,19 +27,19 @@ class GrailsIndyVariantsSpec extends GradleSpecification {
         when:
         def result = executeTask(':plugin:inspectIndyVariants')
 
-        then: 'the default compilation is left on Groovy\'s own default and the second one disables indy'
-        result.output.contains('MAIN_INDY=null')
-        result.output.contains('NOINDY_INDY=false')
+        then: 'the main compilation disables indy and the second one enables it'
+        result.output.contains('MAIN_INDY=false')
+        result.output.contains('INDY_INDY=true')
 
-        and: 'the second compilation is packaged under the noindy classifier'
-        result.output.contains('NOINDY_JAR=plugin-1.0.0-noindy.jar')
+        and: 'the second compilation is packaged under the indy classifier'
+        result.output.contains('INDY_JAR=plugin-1.0.0-indy.jar')
 
         and: 'only the call-site bytecode differs between the two jars'
-        result.output.contains('MAIN_BYTECODE=indy=true,callsite=false')
-        result.output.contains('NOINDY_BYTECODE=indy=false,callsite=true')
+        result.output.contains('MAIN_BYTECODE=indy=false,callsite=true')
+        result.output.contains('INDY_BYTECODE=indy=true,callsite=false')
     }
 
-    def "the noindy artifact is a plain classifier and adds no variant"() {
+    def "the indy artifact is a plain classifier and adds no variant"() {
         given:
         setupTestResourceProject('indy-variants')
 
@@ -47,8 +47,8 @@ class GrailsIndyVariantsSpec extends GradleSpecification {
         def result = executeTask(':plugin:inspectIndyVariants')
 
         then: 'the published variants are exactly the ones the module always had'
-        result.output.contains('API_HAS_NOINDY=false')
-        result.output.contains('RUNTIME_HAS_NOINDY=false')
+        result.output.contains('API_HAS_INDY=false')
+        result.output.contains('RUNTIME_HAS_INDY=false')
 
         and: 'the module advertises the classifier so applications can discover it'
         result.output.contains('ADVERTISED=org.example.test:plugin')
@@ -66,11 +66,11 @@ class GrailsIndyVariantsSpec extends GradleSpecification {
 
         where:
         indy    || resolved
-        'false' || 'legacy-1.0.0.jar,plugin-1.0.0-noindy.jar'
-        'true'  || 'legacy-1.0.0.jar,plugin-1.0.0.jar'
+        'true'  || 'legacy-1.0.0.jar,plugin-1.0.0-indy.jar'
+        'false' || 'legacy-1.0.0.jar,plugin-1.0.0.jar'
     }
 
-    def "a dependency that publishes only the default artifact stays resolvable either way"() {
+    def "a dependency that publishes only a main artifact stays resolvable either way"() {
         given: 'the application also depends on a library with no noindy variant'
         setupTestResourceProject('indy-variants')
 
@@ -84,17 +84,17 @@ class GrailsIndyVariantsSpec extends GradleSpecification {
         indy << ['false', 'true']
     }
 
-    def "an application that configures nothing follows Groovy's own default"() {
+    def "an application that configures nothing gets invokedynamic disabled"() {
         given:
         setupTestResourceProject('indy-variants')
 
         when:
         def result = executeTask(':defaultapp:inspectDefault')
 
-        then: 'the compiler option is left unset, so Groovy decides'
-        result.output.contains('DEFAULT_INDY=true')
+        then: 'invokedynamic is off'
+        result.output.contains('DEFAULT_INDY=false')
 
-        and: 'and the default artifacts are the ones resolved'
+        and: 'and the main artifacts are the ones resolved'
         result.output.contains('DEFAULT_RESOLVED=plugin-1.0.0.jar')
     }
 
@@ -120,7 +120,7 @@ class GrailsIndyVariantsSpec extends GradleSpecification {
         result.output.contains('PROBE=plugin-1.0.0.jar')
     }
 
-    def "a plain Gradle consumer still resolves the default artifact"() {
+    def "a plain Gradle consumer still resolves the main artifact"() {
         given:
         setupTestResourceProject('indy-variants')
 

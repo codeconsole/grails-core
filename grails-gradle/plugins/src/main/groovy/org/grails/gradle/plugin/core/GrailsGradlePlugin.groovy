@@ -280,16 +280,18 @@ class GrailsGradlePlugin implements Plugin<Project> {
         // its own dependencies by the default rules; a project that publishes neither compiles the
         // one flavour it was asked for and resolves artifacts to match.
         if (!publishesIndyVariants()) {
-            GrailsIndyVariants.configureConsumer(project, grailsExtension.indy, grailsExtension.noindyModules)
+            GrailsIndyVariants.configureConsumer(project, grailsExtension.indy, grailsExtension.indyModules)
         }
 
         project.afterEvaluate {
-            boolean indyEnabled = grailsExtension.indy.getOrElse(true)
+            boolean indyEnabled = grailsExtension.indy.getOrElse(false)
             Boolean preserveParameterNames = grailsExtension.preserveParameterNames.getOrNull()
 
             project.tasks.withType(GroovyCompile).configureEach { GroovyCompile c ->
-                if (!publishesIndyVariants()) {
-                    c.groovyOptions.optimizationOptions.indy = indyEnabled
+                if (c.name != GrailsIndyVariants.INDY_COMPILE_TASK_NAME) {
+                    // A project that publishes both flavours compiles its main artifact the way
+                    // every consumer gets it by default; the second task supplies the other one.
+                    c.groovyOptions.optimizationOptions.indy = publishesIndyVariants() ? false : indyEnabled
                 }
 
                 if (preserveParameterNames != null) {

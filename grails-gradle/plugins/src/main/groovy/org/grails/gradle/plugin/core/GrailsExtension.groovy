@@ -48,8 +48,8 @@ class GrailsExtension {
     GrailsExtension(Project project) {
         this.project = project
         this.pluginDefiner = new PluginDefiner(project)
-        this.indy = project.objects.property(Boolean).convention(true)
-        this.noindyModules = project.objects.setProperty(String).convention([] as List<String>)
+        this.indy = project.objects.property(Boolean).convention(false)
+        this.indyModules = project.objects.setProperty(String).convention([] as List<String>)
         this.preserveParameterNames = project.objects.property(Boolean).convention(true)
         this.compileStatic = project.objects.newInstance(GrailsCompileStaticOptions)
         this.i18n = project.objects.newInstance(GrailsI18nOptions)
@@ -222,7 +222,7 @@ class GrailsExtension {
 
     /**
      * Whether Groovy compiles dynamic method dispatch to the JVM's invokedynamic instruction rather
-     * than to callsite caching. Follows Groovy's own default, which enables it.
+     * than to callsite caching. Disabled by default.
      *
      * <p>The setting also chooses which flavour of the framework and plugin artifacts the
      * application resolves, so precompiled dependencies match how the application itself is
@@ -233,15 +233,15 @@ class GrailsExtension {
     final Property<Boolean> indy
 
     /**
-     * Coordinates, as {@code group:name}, of the dependencies that publish a {@code noindy}
-     * classifier alongside their main artifact. Consulted only when {@link #indy} is {@code false},
+     * Coordinates, as {@code group:name}, of the dependencies that publish an {@code indy}
+     * classifier alongside their main artifact. Consulted only when {@link #indy} is {@code true},
      * to decide which dependencies can supply the other flavour.
      *
      * <p>Listing a module that publishes no such classifier — or a platform, which publishes no jar
      * at all — makes resolution fail when the missing file is fetched. A module advertises its
-     * classifier through the {@code Grails-Noindy-Artifact} attribute of its main jar's manifest.
+     * classifier through the {@code Grails-Indy-Artifact} attribute of its main jar's manifest.
      */
-    final SetProperty<String> noindyModules
+    final SetProperty<String> indyModules
 
     void setIndy(boolean enabled) {
         this.indy.set(enabled)
