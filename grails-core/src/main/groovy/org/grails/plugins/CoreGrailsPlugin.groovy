@@ -58,6 +58,7 @@ import org.grails.spring.DefaultRuntimeSpringConfiguration
 import org.grails.spring.RuntimeSpringConfigUtilities
 import org.grails.spring.RuntimeSpringConfiguration
 import org.grails.spring.aop.autoproxy.GroovyAwareAspectJAwareAdvisorAutoProxyCreator
+import org.grails.spring.aop.autoproxy.GroovyAwareAutoProxyCreators
 import org.grails.spring.aop.autoproxy.GroovyAwareInfrastructureAdvisorAutoProxyCreator
 import org.grails.spring.beans.AbstractResourceLocatorPostProcessor
 import org.grails.spring.beans.GrailsApplicationAwareBeanPostProcessor
@@ -141,7 +142,9 @@ class CoreGrailsPlugin extends Plugin {
             }
 
             // replace the AutoProxy advisor with a Groovy aware one; the two variants share
-            // Spring's own internalAutoProxyCreator name, so at most one is registered
+            // Spring's own internalAutoProxyCreator name, so at most one is registered. Spring has to
+            // be taught about them first, or AopAutoConfiguration rejects the registered creator.
+            GroovyAwareAutoProxyCreators.registerWithAopConfigUtils()
             Boolean isProxyTargetClass = config.getProperty(SPRING_PROXY_TARGET_CLASS_CONFIG, Boolean)
             if (ClassUtils.isPresent('org.aspectj.lang.annotation.Around', application.classLoader) &&
                     !config.getProperty(Settings.SPRING_DISABLE_ASPECTJ, Boolean)) {
