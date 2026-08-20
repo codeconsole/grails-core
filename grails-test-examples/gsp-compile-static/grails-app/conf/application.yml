@@ -1,0 +1,8 @@
+grails:
+    profile: web
+    views:
+        gsp:
+            encoding: UTF-8
+info:
+    app:
+        name: gsp-compile-static
