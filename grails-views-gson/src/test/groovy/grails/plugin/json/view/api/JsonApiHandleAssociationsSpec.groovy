@@ -19,6 +19,7 @@
 package grails.plugin.json.view.api
 
 import grails.persistence.Entity
+import grails.plugin.json.view.api.handleassociations.Author
 import grails.plugin.json.view.test.JsonRenderResult
 import grails.plugin.json.view.test.JsonViewTest
 import groovy.json.JsonException
@@ -27,14 +28,14 @@ import spock.lang.Specification
 
 class JsonApiHandleAssociationsSpec extends Specification implements JsonViewTest, GrailsUnitTest {
     void setup() {
-        mappingContext.addPersistentEntities(HandleAssociationsAuthor, PublishedBook, Publisher)
+        mappingContext.addPersistentEntities(Author, PublishedBook, Publisher)
     }
 
     void 'more than one associated objects should produce valid JSON'() {
         given:
             PublishedBook returnOfTheKing = new PublishedBook(
                     title: 'The Return of the King',
-                    author: new HandleAssociationsAuthor(name: "J.R.R. Tolkien"),
+                    author: new Author(name: "J.R.R. Tolkien"),
                     publisher: new Publisher(name: 'George Allen & Unwin')
             )
             returnOfTheKing.id = 3
@@ -62,7 +63,7 @@ json jsonapi.render(book)
 @Entity
 class PublishedBook {
     String title
-    HandleAssociationsAuthor author
+    Author author
     Publisher publisher
 }
 
@@ -71,9 +72,3 @@ class PublishedBook {
 class Publisher {
     String name
 }
-
-@Entity
-class HandleAssociationsAuthor {
-    String name
-}
-

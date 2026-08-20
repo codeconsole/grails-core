@@ -20,6 +20,9 @@ package grails.plugin.json.view
 
 import tools.jackson.databind.json.JsonMapper
 import grails.gorm.annotation.Entity
+import grails.plugin.json.view.halembedded.Person
+import grails.plugin.json.view.halembedded.Player
+import grails.plugin.json.view.halembedded.Team
 import grails.plugin.json.view.test.JsonViewTest
 import spock.lang.Shared
 import spock.lang.Specification
@@ -33,22 +36,22 @@ class HalEmbeddedSpec extends Specification implements JsonViewTest {
     JsonMapper objectMapper = JsonMapper.builder().build()
 
     void setup() {
-        mappingContext.addPersistentEntities(HalTeam, HalPlayer)
+        mappingContext.addPersistentEntities(Team, Player)
     }
 
     void 'test hal links method that takes an explicit model'() {
         given: 'A model'
-        def player = new HalPlayer(id: 1L, name: 'Cantona')
+        def player = new Player(id: 1L, name: 'Cantona')
         player.id = 1L
 
-        def captain = new HalPlayer(name: 'Keane')
+        def captain = new Player(name: 'Keane')
         captain.id = 2L
-        def team = new HalTeam(captain: captain, name: 'Manchester United', players: [player])
+        def team = new Team(captain: captain, name: 'Manchester United', players: [player])
         team.id = 1L
 
         when: 'hal.embedded(..) is used with a map'
         def result = render('''
-            import grails.plugin.json.view.HalTeam as Team
+            import grails.plugin.json.view.halembedded.Team
 
             @Field Team team
 
@@ -63,12 +66,12 @@ class HalEmbeddedSpec extends Specification implements JsonViewTest {
             {
                 "_links": {
                     "self": {
-                        "href": "http://localhost:8080/halTeam/1",
+                        "href": "http://localhost:8080/team/1",
                         "hreflang": "en",
                         "type": "application/hal+json"
                     },
                     "captain": {
-                        "href": "http://localhost:8080/halPlayer/2",
+                        "href": "http://localhost:8080/player/2",
                         "hreflang": "en",
                         "type": "application/hal+json"
                     }
@@ -81,17 +84,17 @@ class HalEmbeddedSpec extends Specification implements JsonViewTest {
 
     void 'test hal links only'() {
         given: 'A model'
-        def player = new HalPlayer(id: 1L, name: 'Cantona')
+        def player = new Player(id: 1L, name: 'Cantona')
         player.id = 1L
 
-        def captain = new HalPlayer(name: 'Keane')
+        def captain = new Player(name: 'Keane')
         captain.id = 2L
-        def team = new HalTeam(captain: captain, name: 'Manchester United', players: [player])
+        def team = new Team(captain: captain, name: 'Manchester United', players: [player])
         team.id = 1L
 
         when: 'hal.embedded(..) is used with a map'
         def result = render('''
-            import grails.plugin.json.view.HalTeam as Team
+            import grails.plugin.json.view.halembedded.Team
 
             @Field Team team
 
@@ -105,12 +108,12 @@ class HalEmbeddedSpec extends Specification implements JsonViewTest {
             {
                 "_links": {
                     "self": {
-                        "href": "http://localhost:8080/halTeam/1",
+                        "href": "http://localhost:8080/team/1",
                         "hreflang": "en",
                         "type": "application/hal+json"
                     },
                     "captain": {
-                        "href": "http://localhost:8080/halPlayer/2",
+                        "href": "http://localhost:8080/player/2",
                         "hreflang": "en",
                         "type": "application/hal+json"
                     }
@@ -121,17 +124,17 @@ class HalEmbeddedSpec extends Specification implements JsonViewTest {
 
     void 'test hal embedded with explicit model and inline rendering'() {
         given: 'A model'
-        def player = new HalPlayer(id: 1L, name: 'Cantona')
+        def player = new Player(id: 1L, name: 'Cantona')
         player.id = 1L
 
-        def captain = new HalPlayer(name: 'Keane')
+        def captain = new Player(name: 'Keane')
         captain.id = 2L
-        def team = new HalTeam(captain: captain, name: 'Manchester United', players: [player])
+        def team = new Team(captain: captain, name: 'Manchester United', players: [player])
         team.id = 1L
 
         when: 'hal.embedded(..) is used with a map'
         def result = render('''
-            import grails.plugin.json.view.HalTeam as Team
+            import grails.plugin.json.view.halembedded.Team
 
             @Field Team team
 
@@ -149,14 +152,14 @@ class HalEmbeddedSpec extends Specification implements JsonViewTest {
                         {
                             "_links": {
                                 "self": {
-                                    "href": "http://localhost:8080/halPlayer/1",
+                                    "href": "http://localhost:8080/player/1",
                                     "hreflang": "en",
                                     "type": "application/hal+json"
                                 }
                             },
                             "_links": {
                                 "self": {
-                                    "href": "http://localhost:8080/halPlayer/1",
+                                    "href": "http://localhost:8080/player/1",
                                     "hreflang": "en",
                                     "type": "application/hal+json"
                                 }
@@ -173,17 +176,17 @@ class HalEmbeddedSpec extends Specification implements JsonViewTest {
 
     void 'test hal embedded only'() {
         given: 'A model'
-        def player = new HalPlayer(id: 1L, name: 'Cantona')
+        def player = new Player(id: 1L, name: 'Cantona')
         player.id = 1L
 
-        def captain = new HalPlayer(name: 'Keane')
+        def captain = new Player(name: 'Keane')
         captain.id = 2L
-        def team = new HalTeam(captain: captain, name: 'Manchester United', players: [player])
+        def team = new Team(captain: captain, name: 'Manchester United', players: [player])
         team.id = 1L
 
         when: 'hal.embedded(..) is used with a map'
         def result = render('''
-            import grails.plugin.json.view.HalTeam as Team
+            import grails.plugin.json.view.halembedded.Team
 
             @Field Team team
 
@@ -200,14 +203,14 @@ class HalEmbeddedSpec extends Specification implements JsonViewTest {
                         {
                             "_links": {
                                 "self": {
-                                    "href": "http://localhost:8080/halPlayer/1",
+                                    "href": "http://localhost:8080/player/1",
                                     "hreflang": "en",
                                     "type": "application/hal+json"
                                 }
                             },
                             "_links": {
                                 "self": {
-                                    "href": "http://localhost:8080/halPlayer/1",
+                                    "href": "http://localhost:8080/player/1",
                                     "hreflang": "en",
                                     "type": "application/hal+json"
                                 }
@@ -222,17 +225,17 @@ class HalEmbeddedSpec extends Specification implements JsonViewTest {
 
     void 'test hal embedded with explicit model'() {
         given: 'A model'
-        def player = new HalPlayer(id: 1L, name: 'Cantona')
+        def player = new Player(id: 1L, name: 'Cantona')
         player.id = 1L
 
-        def captain = new HalPlayer(name: 'Keane')
+        def captain = new Player(name: 'Keane')
         captain.id = 2L
-        def team = new HalTeam(captain: captain, name: 'Manchester United', players: [player])
+        def team = new Team(captain: captain, name: 'Manchester United', players: [player])
         team.id = 1L
 
         when: 'hal.embedded(..) is used with a map'
         def result = render('''
-            import grails.plugin.json.view.HalPlayer as Player
+            import grails.plugin.json.view.halembedded.Player
 
             @Field List<Player> players
 
@@ -250,14 +253,14 @@ class HalEmbeddedSpec extends Specification implements JsonViewTest {
                         {
                             "_links": {
                                 "self": {
-                                    "href": "http://localhost:8080/halPlayer/1",
+                                    "href": "http://localhost:8080/player/1",
                                     "hreflang": "en",
                                     "type": "application/hal+json"
                                 }
                             },
                             "_links": {
                                 "self": {
-                                    "href": "http://localhost:8080/halPlayer/1",
+                                    "href": "http://localhost:8080/player/1",
                                     "hreflang": "en",
                                     "type": "application/hal+json"
                                 }
@@ -273,14 +276,14 @@ class HalEmbeddedSpec extends Specification implements JsonViewTest {
 
     void 'test hal render method for one-to-many associations'() {
         when: 'A GSON view that renders hal.render(..) is rendered'
-        def player = new HalPlayer(id: 1L, name: 'Cantona')
+        def player = new Player(id: 1L, name: 'Cantona')
         player.id = 1L
-        def captain = new HalPlayer(name: 'Keane')
+        def captain = new Player(name: 'Keane')
         captain.id = 2L
-        def team = new HalTeam(captain: captain, name: 'Manchester United', players: [player])
+        def team = new Team(captain: captain, name: 'Manchester United', players: [player])
         team.id = 1L
         def result = render('''
-            import grails.plugin.json.view.HalTeam as Team
+            import grails.plugin.json.view.halembedded.Team
             model {
                 Team team
             }
@@ -295,7 +298,7 @@ class HalEmbeddedSpec extends Specification implements JsonViewTest {
                         {
                             "_links": {
                                 "self": {
-                                    "href": "http://localhost:8080/halPlayer/1",
+                                    "href": "http://localhost:8080/player/1",
                                     "hreflang": "en",
                                     "type": "application/hal+json"
                                 }
@@ -306,7 +309,7 @@ class HalEmbeddedSpec extends Specification implements JsonViewTest {
                     "captain": {
                         "_links": {
                             "self": {
-                                "href": "http://localhost:8080/halPlayer/2",
+                                "href": "http://localhost:8080/player/2",
                                 "hreflang": "en",
                                 "type": "application/hal+json"
                             }
@@ -316,7 +319,7 @@ class HalEmbeddedSpec extends Specification implements JsonViewTest {
                 },
                 "_links": {
                     "self": {
-                        "href": "http://localhost:8080/halTeam/1",
+                        "href": "http://localhost:8080/team/1",
                         "hreflang": "en",
                         "type": "application/hal+json"
                     }
@@ -330,14 +333,13 @@ class HalEmbeddedSpec extends Specification implements JsonViewTest {
 
     void 'test hal embedded method for one-to-many associations'() {
         when: 'A GSON view that renders hal.embedded(..) is rendered'
-        def player = new HalPlayer(id: 1L, name: 'Cantona')
+        def player = new Player(id: 1L, name: 'Cantona')
         player.id = 1L
-        def captain = new HalPlayer(name: 'Keane')
-        captain.id == 1L
-        def team = new HalTeam(captain: captain, name: 'Manchester United', players: [player])
+        def captain = new Player(name: 'Keane')
+        def team = new Team(captain: captain, name: 'Manchester United', players: [player])
         team.id = 1L
         def result = render('''
-            import grails.plugin.json.view.HalTeam as Team
+            import grails.plugin.json.view.halembedded.Team
             model {
                 Team team
             }
@@ -355,7 +357,7 @@ class HalEmbeddedSpec extends Specification implements JsonViewTest {
                         {
                             "_links": {
                                 "self": {
-                                    "href": "http://localhost:8080/halPlayer/1",
+                                    "href": "http://localhost:8080/player/1",
                                     "hreflang": "en",
                                     "type": "application/hal+json"
                                 }
@@ -366,7 +368,7 @@ class HalEmbeddedSpec extends Specification implements JsonViewTest {
                     "captain": {
                         "_links": {
                             "self": {
-                                "href": "http://localhost:8080/halPlayer",
+                                "href": "http://localhost:8080/player",
                                 "hreflang": "en",
                                 "type": "application/hal+json"
                             }
@@ -382,13 +384,13 @@ class HalEmbeddedSpec extends Specification implements JsonViewTest {
 
     void 'test hal embedded method for many-to-one associations'() {
         when: 'A GSON view that renders hal.embedded(..) is rendered'
-        def team = new HalTeam(name: 'Manchester United')
-        def player = new HalPlayer(id: 1L, name: 'Cantona', team: team)
+        def team = new Team(name: 'Manchester United')
+        def player = new Player(id: 1L, name: 'Cantona', team: team)
         team.players = [player]
         player.id = 1L
         team.id = 1L
         def result = render('''
-            import grails.plugin.json.view.HalPlayer as Player
+            import grails.plugin.json.view.halembedded.Player
             model {
                 Player player
             }
@@ -405,7 +407,7 @@ class HalEmbeddedSpec extends Specification implements JsonViewTest {
                     "team": {
                         "_links": {
                             "self": {
-                                "href": "http://localhost:8080/halTeam/1",
+                                "href": "http://localhost:8080/team/1",
                                 "hreflang": "en",
                                 "type": "application/hal+json"
                             }
@@ -421,10 +423,13 @@ class HalEmbeddedSpec extends Specification implements JsonViewTest {
 
     void 'test hal embedded with associations that have GORM embedded properties'() {
         given: 'A domain class with embedded associations'
-        mappingContext.addPersistentEntities(HalPerson, Parent)
-        def p = new HalPerson(name: 'Robert')
-        p.homeAddress = new Address(postCode: '12345')
-        p.otherAddresses = [new Address(postCode: '6789'), new Address(postCode: '54321')]
+        mappingContext.addPersistentEntities(Person, Parent)
+        def p = new Person(name: 'Robert')
+        p.homeAddress = new grails.plugin.json.view.halembedded.Address(postCode: '12345')
+        p.otherAddresses = [
+                new grails.plugin.json.view.halembedded.Address(postCode: '6789'),
+                new grails.plugin.json.view.halembedded.Address(postCode: '54321')
+        ]
         p.nickNames = ['Rob', 'Bob']
         def parent = new Parent(name: 'Joe', person: p)
 
@@ -445,7 +450,7 @@ class HalEmbeddedSpec extends Specification implements JsonViewTest {
                     "person": {
                         "_links": {
                             "self": {
-                                "href": "http://localhost:8080/halPerson",
+                                "href": "http://localhost:8080/person",
                                 "hreflang": "en",
                                 "type": "application/hal+json"
                             }
@@ -475,40 +480,7 @@ class HalEmbeddedSpec extends Specification implements JsonViewTest {
 }
 
 @Entity
-class HalTeam {
-    String name
-    HalPlayer captain
-    List players
-    List<String> titles
-    @SuppressWarnings('unused')
-    static hasMany = [players: HalPlayer]
-}
-
-@Entity
-class HalPlayer {
-    Long version
-    String name
-    @SuppressWarnings('unused')
-    static belongsTo = [team: HalTeam]
-
-    static constraints = {
-        name nullable: false
-    }
-}
-
-@Entity
 class Parent {
     String name
-    HalPerson person
-}
-
-@Entity
-class HalPerson {
-    String name
-    Address homeAddress
-    List<Address> otherAddresses = []
-    List<String> nickNames = []
-
-    @SuppressWarnings('unused')
-    static embedded = ['homeAddress', 'otherAddresses']
+    Person person
 }

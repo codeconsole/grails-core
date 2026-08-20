@@ -19,7 +19,9 @@
 package grails.plugin.json.view
 
 import tools.jackson.databind.json.JsonMapper
-import grails.persistence.Entity
+import grails.plugin.json.view.maprender.Player
+import grails.plugin.json.view.maprender.PlayerWithAge
+import grails.plugin.json.view.maprender.Team
 import grails.plugin.json.view.test.JsonViewTest
 import grails.testing.gorm.DataTest
 import grails.validation.Validateable
@@ -36,7 +38,7 @@ class MapRenderSpec extends Specification implements JsonViewTest, DataTest {
 
     @Override
     Class[] getDomainClassesToMock() {
-        return [MapRenderTeam, MapRenderPlayer]
+        return [Team, Player]
     }
 
     void 'Test property version is not excluded'() {
@@ -103,16 +105,16 @@ class MapRenderSpec extends Specification implements JsonViewTest, DataTest {
         '''
 
         when: 'An entity is used in a map'
-        mappingContext.addPersistentEntity(MapRenderPlayer)
-        def player1 = new MapRenderPlayer(name: 'Cantona')
-        def player2 = new MapRenderPlayer()
+        mappingContext.addPersistentEntity(Player)
+        def player1 = new Player(name: 'Cantona')
+        def player2 = new Player()
         player2.validate()
 
         then:
         player2.hasErrors()
 
         when:
-        def team = new MapRenderTeam(name: 'Test', captain: player1)
+        def team = new Team(name: 'Test', captain: player1)
         team.addToPlayers(player1)
         team.addToPlayers(player2)
         team.save(validate: false)
@@ -176,10 +178,10 @@ class MapRenderSpec extends Specification implements JsonViewTest, DataTest {
         '''
 
         when: 'An entity is used in a map'
-        mappingContext.addPersistentEntity(MapRenderPlayer)
-        def player1 = new MapRenderPlayer(name: 'Cantona')
-        def player2 = new MapRenderPlayer(name: 'Giggs')
-        def team = new MapRenderTeam(name: 'Test', captain: player1)
+        mappingContext.addPersistentEntity(Player)
+        def player1 = new Player(name: 'Cantona')
+        def player2 = new Player(name: 'Giggs')
+        def team = new Team(name: 'Test', captain: player1)
         team.addToPlayers(player1)
         team.addToPlayers(player2)
         team.save()
@@ -220,8 +222,8 @@ class MapRenderSpec extends Specification implements JsonViewTest, DataTest {
         renderResult.json.foo == 'bar'
 
         when: 'An entity is used in a map'
-        mappingContext.addPersistentEntity(MapRenderPlayer)
-        renderResult = render(templateText, [map: [player1: new MapRenderPlayer(name: 'Cantona'), player2: new MapRenderPlayer(name: 'Giggs')]])
+        mappingContext.addPersistentEntity(Player)
+        renderResult = render(templateText, [map: [player1: new Player(name: 'Cantona'), player2: new Player(name: 'Giggs')]])
 
         then: 'The result is correct'
         objectMapper.readTree(renderResult.jsonText) == objectMapper.readTree('''
@@ -247,13 +249,13 @@ class MapRenderSpec extends Specification implements JsonViewTest, DataTest {
         '''
 
         when: 'An entity is used in a map'
-        mappingContext.addPersistentEntity(MapRenderPlayerWithAge)
+        mappingContext.addPersistentEntity(PlayerWithAge)
         def renderResult = render(
                 templateText,
                 [
                         map: [
-                                player1: new MapRenderPlayerWithAge(name: 'Cantona', age: 22),
-                                player2: new MapRenderPlayerWithAge(name: 'Giggs', age: 33)
+                                player1: new PlayerWithAge(name: 'Cantona', age: 22),
+                                player2: new PlayerWithAge(name: 'Giggs', age: 33)
                         ]
                 ]
         )
@@ -279,14 +281,14 @@ class MapRenderSpec extends Specification implements JsonViewTest, DataTest {
         '''
 
         when: 'An entity is used in a map'
-        mappingContext.addPersistentEntity(MapRenderPlayerWithAge)
+        mappingContext.addPersistentEntity(PlayerWithAge)
         def renderResult = render(
                 templateText,
                 [
                         map: [
                                 players: [
-                                        new MapRenderPlayerWithAge(name: 'Cantona', age: 22),
-                                        new MapRenderPlayerWithAge(name: 'Giggs', age: 33)
+                                        new PlayerWithAge(name: 'Cantona', age: 22),
+                                        new PlayerWithAge(name: 'Giggs', age: 33)
                                 ]
                         ]
                 ]
@@ -397,32 +399,4 @@ class MapRenderSpec extends Specification implements JsonViewTest, DataTest {
         String name
         List<String> errors
     }
-}
-
-@Entity
-class MapRenderTeam {
-    String name
-    MapRenderPlayer captain
-    List players
-    List<String> titles
-    @SuppressWarnings('unused')
-    static hasMany = [players: MapRenderPlayer]
-}
-
-@Entity
-class MapRenderPlayer {
-    Long version
-    String name
-    @SuppressWarnings('unused')
-    static belongsTo = [team: MapRenderTeam]
-
-    static constraints = {
-        name nullable: false
-    }
-}
-
-@Entity
-class MapRenderPlayerWithAge {
-    String name
-    int age
 }

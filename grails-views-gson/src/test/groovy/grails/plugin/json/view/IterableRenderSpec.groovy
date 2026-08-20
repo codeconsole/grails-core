@@ -19,7 +19,8 @@
 package grails.plugin.json.view
 
 import tools.jackson.databind.json.JsonMapper
-import grails.persistence.Entity
+import grails.plugin.json.view.iterable.Player
+import grails.plugin.json.view.iterable.Team
 import grails.views.ViewException
 import grails.views.json.test.JsonViewUnitTest
 import spock.lang.Shared
@@ -36,12 +37,12 @@ class IterableRenderSpec extends Specification implements JsonViewUnitTest {
 
     void 'Test render a collection type'() {
         given: 'A collection'
-        def players = [new IterableRenderPlayer(name: 'Cantona')]
+        def players = [new Player(name: 'Cantona')]
 
         when: 'A collection type is rendered'
         def renderResult = render('''
             import groovy.transform.*
-            import grails.plugin.json.view.IterableRenderPlayer as Player
+            import grails.plugin.json.view.iterable.Player
 
             @Field Collection<Player> players
 
@@ -54,12 +55,12 @@ class IterableRenderSpec extends Specification implements JsonViewUnitTest {
 
     void 'Test render a collection type with HAL'() {
         given: 'A collection'
-        def players = [new IterableRenderPlayer(name: 'Cantona')]
+        def players = [new Player(name: 'Cantona')]
 
         when: 'A collection type is rendered'
         def renderResult = render('''
             import groovy.transform.*
-            import grails.plugin.json.view.IterableRenderPlayer as Player
+            import grails.plugin.json.view.iterable.Player
 
             @Field Collection<Player> players
 
@@ -71,7 +72,7 @@ class IterableRenderSpec extends Specification implements JsonViewUnitTest {
             {
                 "_links": {
                     "self": {
-                        "href": "http://localhost:8080/iterableRenderPlayer/index",
+                        "href": "http://localhost:8080/player/index",
                         "hreflang": "en",
                         "type": "application/hal+json"
                     }
@@ -80,7 +81,7 @@ class IterableRenderSpec extends Specification implements JsonViewUnitTest {
                     {
                         "_links": {
                             "self": {
-                                "href": "http://localhost:8080/iterableRenderPlayer/index",
+                                "href": "http://localhost:8080/player/index",
                                 "hreflang": "en",
                                 "type": "application/hal+json"
                             }
@@ -95,15 +96,15 @@ class IterableRenderSpec extends Specification implements JsonViewUnitTest {
 
     void 'Test render a single element collection type with JSON API'() {
         given: 'A collection'
-        mappingContext.addPersistentEntities(IterableRenderPlayer, IterableRenderTeam)
-        IterableRenderPlayer player = new IterableRenderPlayer(name: 'Cantona')
+        mappingContext.addPersistentEntities(Player, Team)
+        Player player = new Player(name: 'Cantona')
         player.id = 1
         def players = [player]
 
         when: 'A collection type is rendered'
         def renderResult = render('''
             import groovy.transform.*
-            import grails.plugin.json.view.IterableRenderPlayer as Player
+            import grails.plugin.json.view.iterable.Player
 
             @Field Collection<Player> players
 
@@ -117,7 +118,7 @@ class IterableRenderSpec extends Specification implements JsonViewUnitTest {
             {
                 "data": [
                     {
-                        "type": "iterableRenderPlayer",
+                        "type": "player",
                         "id": "1",
                         "attributes": {
                             "name": "Cantona"
@@ -138,17 +139,17 @@ class IterableRenderSpec extends Specification implements JsonViewUnitTest {
 
     void 'Test render a collection type with JSON API'() {
         given: 'A collection'
-        mappingContext.addPersistentEntities(IterableRenderPlayer, IterableRenderTeam)
-        IterableRenderPlayer player = new IterableRenderPlayer(name: 'Cantona')
+        mappingContext.addPersistentEntities(Player, Team)
+        Player player = new Player(name: 'Cantona')
         player.id = 1
-        IterableRenderPlayer player2 = new IterableRenderPlayer(name: 'Louis')
+        Player player2 = new Player(name: 'Louis')
         player2.id = 2
         def players = [player, player2]
 
         when: 'A collection type is rendered'
         def renderResult = render('''
             import groovy.transform.*
-            import grails.plugin.json.view.IterableRenderPlayer as Player
+            import grails.plugin.json.view.iterable.Player
 
             @Field Collection<Player> players
 
@@ -162,7 +163,7 @@ class IterableRenderSpec extends Specification implements JsonViewUnitTest {
             {
                 "data": [
                     {
-                        "type": "iterableRenderPlayer",
+                        "type": "player",
                         "id": "1",
                         "attributes": {
                             "name": "Cantona"
@@ -174,7 +175,7 @@ class IterableRenderSpec extends Specification implements JsonViewUnitTest {
                         }
                     },
                     {
-                        "type": "iterableRenderPlayer",
+                        "type": "player",
                         "id": "2",
                         "attributes": {
                             "name": "Louis"
@@ -195,17 +196,17 @@ class IterableRenderSpec extends Specification implements JsonViewUnitTest {
 
     void 'Test render a collection type with JSON API and pagination'() {
         given: 'A collection'
-        mappingContext.addPersistentEntities(IterableRenderPlayer, IterableRenderTeam)
-        IterableRenderPlayer player = new IterableRenderPlayer(name: 'Cantona')
+        mappingContext.addPersistentEntities(Player, Team)
+        Player player = new Player(name: 'Cantona')
         player.id = 1
-        IterableRenderPlayer player2 = new IterableRenderPlayer(name: 'Louis')
+        Player player2 = new Player(name: 'Louis')
         player2.id = 2
         def players = [player, player2]
 
         when: 'A collection type is rendered total must be greater than max (10)'
         def renderResult = render('''
             import groovy.transform.*
-            import grails.plugin.json.view.IterableRenderPlayer as Player
+            import grails.plugin.json.view.iterable.Player
 
             @Field Collection<Player> players
 
@@ -219,7 +220,7 @@ class IterableRenderSpec extends Specification implements JsonViewUnitTest {
             {
                 "data": [
                     {
-                        "type": "iterableRenderPlayer",
+                        "type": "player",
                         "id": "1",
                         "attributes": {
                             "name": "Cantona"
@@ -231,7 +232,7 @@ class IterableRenderSpec extends Specification implements JsonViewUnitTest {
                         }
                     },
                     {
-                        "type": "iterableRenderPlayer",
+                        "type": "player",
                         "id": "2",
                         "attributes": {
                             "name": "Louis"
@@ -245,9 +246,9 @@ class IterableRenderSpec extends Specification implements JsonViewUnitTest {
                 ],
                 "links": {
                     "self": "/foo",
-                    "first": "http://localhost:8080/iterableRenderPlayer/index?offset=0&max=10",
-                    "next": "http://localhost:8080/iterableRenderPlayer/index?offset=10&max=10",
-                    "last": "http://localhost:8080/iterableRenderPlayer/index?offset=10&max=10"
+                    "first": "http://localhost:8080/player/index?offset=0&max=10",
+                    "next": "http://localhost:8080/player/index?offset=10&max=10",
+                    "last": "http://localhost:8080/player/index?offset=10&max=10"
                 }
             }
         ''')
@@ -255,17 +256,17 @@ class IterableRenderSpec extends Specification implements JsonViewUnitTest {
 
     void 'Test render a collection type with JSON API and pagination override max'() {
         given: 'A collection'
-        mappingContext.addPersistentEntities(IterableRenderPlayer, IterableRenderTeam)
-        IterableRenderPlayer player = new IterableRenderPlayer(name: 'Cantona')
+        mappingContext.addPersistentEntities(Player, Team)
+        Player player = new Player(name: 'Cantona')
         player.id = 1
-        IterableRenderPlayer player2 = new IterableRenderPlayer(name: 'Louis')
+        Player player2 = new Player(name: 'Louis')
         player2.id = 2
         def players = [player, player2]
 
         when: 'A collection type is rendered total must be greater than max (10)'
         def renderResult = render('''
             import groovy.transform.*
-            import grails.plugin.json.view.IterableRenderPlayer as Player
+            import grails.plugin.json.view.iterable.Player
 
             @Field Collection<Player> players
 
@@ -279,7 +280,7 @@ class IterableRenderSpec extends Specification implements JsonViewUnitTest {
             {
                 "data": [
                     {
-                        "type": "iterableRenderPlayer",
+                        "type": "player",
                         "id": "1",
                         "attributes": {
                             "name": "Cantona"
@@ -291,7 +292,7 @@ class IterableRenderSpec extends Specification implements JsonViewUnitTest {
                         }
                     },
                     {
-                        "type": "iterableRenderPlayer",
+                        "type": "player",
                         "id": "2",
                         "attributes": {
                             "name": "Louis"
@@ -305,9 +306,9 @@ class IterableRenderSpec extends Specification implements JsonViewUnitTest {
                 ],
                 "links": {
                     "self": "/foo",
-                    "first": "http://localhost:8080/iterableRenderPlayer/index?offset=0&max=5",
-                    "next": "http://localhost:8080/iterableRenderPlayer/index?offset=5&max=5",
-                    "last": "http://localhost:8080/iterableRenderPlayer/index?offset=10&max=5"
+                    "first": "http://localhost:8080/player/index?offset=0&max=5",
+                    "next": "http://localhost:8080/player/index?offset=5&max=5",
+                    "last": "http://localhost:8080/player/index?offset=10&max=5"
                 }
             }
         ''')
@@ -315,17 +316,17 @@ class IterableRenderSpec extends Specification implements JsonViewUnitTest {
 
     void 'Test render a collection type with JSON API and pagination (incorrect arguments)'() {
         given: 'A collection'
-        mappingContext.addPersistentEntities(IterableRenderPlayer, IterableRenderTeam)
-        IterableRenderPlayer player = new IterableRenderPlayer(name: 'Cantona')
+        mappingContext.addPersistentEntities(Player, Team)
+        Player player = new Player(name: 'Cantona')
         player.id = 1
-        IterableRenderPlayer player2 = new IterableRenderPlayer(name: 'Louis')
+        Player player2 = new Player(name: 'Louis')
         player2.id = 2
         def players = [player, player2]
 
         when: 'A collection type is rendered total must be greater than max (10)'
         render('''
             import groovy.transform.*
-            import grails.plugin.json.view.IterableRenderPlayer as Player
+            import grails.plugin.json.view.iterable.Player
 
             @Field Collection<Player> players
 
@@ -338,27 +339,5 @@ class IterableRenderSpec extends Specification implements JsonViewUnitTest {
         def ex = thrown(ViewException)
         ex.cause instanceof IllegalArgumentException
         ex.message == 'Error rendering view: JSON API pagination arguments must contain resource and total'
-    }
-}
-
-@Entity
-class IterableRenderTeam {
-    String name
-    IterableRenderPlayer captain
-    List players
-    List<String> titles
-    @SuppressWarnings('unused')
-    static hasMany = [players: IterableRenderPlayer]
-}
-
-@Entity
-class IterableRenderPlayer {
-    Long version
-    String name
-    @SuppressWarnings('unused')
-    static belongsTo = [team: IterableRenderTeam]
-
-    static constraints = {
-        name nullable: false
     }
 }
