@@ -42,13 +42,6 @@ import org.codehaus.groovy.transform.stc.StaticTypesMarker
 class GroovyPageTypeCheckingExtension extends GroovyTypeCheckingExtensionSupport.TypeCheckingDSL {
 
     /**
-     * Names the framework binds into every page whose members are answered at runtime rather than
-     * declared: {@code grailsApplication.controllerClasses} is matched against a name and answered
-     * from the artefact handlers, an open set no interface enumerates, and what pages read from the
-     * application context belongs to an implementation rather than to the interface. Every other name
-     * the framework binds is declared on the page with the type it holds, and is checked normally.
-     */
-    /**
      * The operators the class writer emits directly, rather than leaving to a call site.
      *
      * <p>These are the ones that cannot be handed a receiver of no known type. A comparison or a
@@ -60,6 +53,13 @@ class GroovyPageTypeCheckingExtension extends GroovyTypeCheckingExtensionSupport
             Types.PLUS, Types.MINUS, Types.MULTIPLY, Types.DIVIDE, Types.INTDIV, Types.MOD, Types.POWER,
             Types.PLUS_EQUAL, Types.MINUS_EQUAL, Types.MULTIPLY_EQUAL, Types.DIVIDE_EQUAL] as Set
 
+    /**
+     * Names the framework binds into every page whose members are answered at runtime rather than
+     * declared: {@code grailsApplication.controllerClasses} is matched against a name and answered
+     * from the artefact handlers, an open set no interface enumerates, and what pages read from the
+     * application context belongs to an implementation rather than to the interface. Every other name
+     * the framework binds is declared on the page with the type it holds, and is checked normally.
+     */
     private static final Set<String> FRAMEWORK_DYNAMIC_NAMES =
             ['grailsApplication', 'applicationContext'] as Set
 
@@ -188,8 +188,13 @@ class GroovyPageTypeCheckingExtension extends GroovyTypeCheckingExtensionSupport
     }
 
     private void reportOperatorOnUnknownType(BinaryExpression expression) {
-        String described = describe(expression.leftExpression)
-        if (currentScope.undeclaredDynamicVariables.add("operator:$described")) {
+        Expression receiver = expression.leftExpression
+        String described = describe(receiver)
+        // Keyed by where it is written rather than by the description: everything that is not a plain
+        // name describes itself the same way, so keying on that reported the first such operator in a
+        // page and swallowed the rest.
+        String key = receiver instanceof VariableExpression ? "operator:$described" : "operator@${positionOf(receiver)}"
+        if (currentScope.undeclaredDynamicVariables.add(key)) {
             typeCheckingVisitor.addStaticTypeError(
                     "The type of ${described} is not known here, and [${expression.operation.text}] cannot be " +
                             'applied to it. Declare it in the model directive, or give it a type where it is ' +

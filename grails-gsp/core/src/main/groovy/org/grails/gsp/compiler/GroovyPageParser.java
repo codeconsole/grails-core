@@ -242,6 +242,9 @@ public class GroovyPageParser implements Tokens {
      */
     private final Set<String> pageScopeVariables = new LinkedHashSet<>();
 
+    /** The names a typed {@code g:set} has already declared, which a later one assigns to. */
+    private final Set<String> typedSetVariables = new LinkedHashSet<>();
+
     /** Whether what a page never declared fails the compilation rather than resolving at render time. */
     private boolean compileStaticStrict;
 
@@ -256,7 +259,8 @@ public class GroovyPageParser implements Tokens {
      * costs only that the name resolves dynamically, so the pattern errs towards matching.</p>
      */
     private static final Pattern PAGE_SCOPE_VARIABLE_PATTERN = Pattern.compile(
-            "<\\w+:[^>]*?\\b(?:var|status)\\s*=\\s*[\"']([A-Za-z_$][\\w$]*)[\"']", Pattern.DOTALL);
+            "<\\w+:(?:[^>\"']|\"[^\"]*\"|'[^']*')*?\\b(?:var|status)\\s*=\\s*[\"']([A-Za-z_$][\\w$]*)[\"']",
+            Pattern.DOTALL);
 
     public String getContentType() {
         return contentType;
@@ -1429,7 +1433,10 @@ public class GroovyPageParser implements Tokens {
                     "to declare the variable from", pageName, getCurrentOutputLineNumber());
         }
         attrs.remove("\"" + TYPE_ATTRIBUTE + "\"");
-        out.println(type + " " + var + " = " + castingTypeFor(type) + ".cast(" + getExpressionText(value.toString()) + ")");
+        // A name typed once is declared; typing it again assigns to what was declared. Declaring it
+        // twice would not compile, where the untyped tag simply writes the scope again.
+        String declaration = typedSetVariables.add(var) ? type + " " + var : var;
+        out.println(declaration + " = " + castingTypeFor(type) + ".cast(" + getExpressionText(value.toString()) + ")");
         // and the tag is called with what was just declared, so it writes the same value into the scope
         attrs.put("\"value\"", var);
     }

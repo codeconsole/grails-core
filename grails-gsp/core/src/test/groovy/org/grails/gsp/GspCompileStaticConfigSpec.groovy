@@ -486,6 +486,43 @@ class GspCompileStaticConfigSpec extends Specification {
         e.message.contains('can only be given a [type] together with a [value]')
     }
 
+    void 'a tag attribute holding a comparison does not hide the name the tag introduces'() {
+        given:
+        GroovyPagesTemplateEngine engine = engineFor(
+                'grails.views.gsp.compileStatic': true,
+                'grails.views.gsp.compileStaticConfig.strict': true)
+
+        when: 'the > inside the value is part of the value, not the end of the tag'
+        GroovyPageTemplate template = compile(engine, '<g:set value="${1 > 0}" var="flag"/>${flag}')
+
+        then:
+        template.metaInfo.compilationException == null
+    }
+
+    void 'every operator on a value of no known type is reported, not only the first'() {
+        given:
+        GroovyPagesTemplateEngine engine = engineFor('grails.views.gsp.compileStatic': true)
+
+        when: 'neither receiver is a plain name, so neither describes itself distinctly'
+        GroovyPageTemplate template = compile(engine,
+                '<g:set type="Map" var="m" value="${[a: 1, b: 2]}"/>${m.a + 1}${m.b + 1}')
+
+        then:
+        template.metaInfo.compilationException.message.count('cannot be applied to it') == 2
+    }
+
+    void 'a name given a type twice is declared once and assigned again'() {
+        given:
+        GroovyPagesTemplateEngine engine = engineFor('grails.views.gsp.compileStatic': true)
+
+        when: 'which is what the untyped tag does, and what a page writing it twice means'
+        GroovyPageTemplate template = compile(engine,
+                '<g:set type="int" var="n" value="${1}"/><g:set type="int" var="n" value="${2}"/>${n}')
+
+        then:
+        template.metaInfo.compilationException == null
+    }
+
     private static GroovyPagesTemplateEngine engineFor(Map<String, Object> configValues) {
         GenericApplicationContext context = new GenericApplicationContext().tap {
             beanFactory.registerSingleton(GrailsApplication.APPLICATION_ID,
