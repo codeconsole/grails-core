@@ -28,7 +28,9 @@ import jakarta.servlet.MultipartConfigElement;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBooleanProperty;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.boot.servlet.autoconfigure.HttpEncodingAutoConfiguration;
 import org.springframework.boot.servlet.filter.OrderedCharacterEncodingFilter;
@@ -59,6 +61,13 @@ import org.grails.web.servlet.mvc.GrailsWebRequestFilter;
 )
 @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
 public class ControllersAutoConfiguration {
+
+    // Spring Boot's own hidden-method property, registering its OrderedHiddenHttpMethodFilter under the
+    // same "hiddenHttpMethodFilter" bean name this auto-configuration uses.
+    private static final String SPRING_HIDDEN_METHOD_FILTER_ENABLED = "spring.mvc.hiddenmethod.filter.enabled";
+
+    @Value("${" + Settings.WEB_HIDDEN_METHOD_FILTER_ENABLED + ":true}")
+    private boolean hiddenHttpMethodFilterEnabled;
 
     @Value("${" + Settings.FILTER_ENCODING + ":utf-8}")
     private String filtersEncoding;
@@ -101,8 +110,18 @@ public class ControllersAutoConfiguration {
         return characterEncodingFilter;
     }
 
+    // Rewrites a POST carrying "_method" or "X-HTTP-Method-Override" before the request reaches the
+    // dispatcher, so the whole chain -- including Spring Security -- sees the overridden method. Disabling
+    // it does not disable method override: UrlMappingsHandlerMapping resolves "_method" itself when the
+    // filter is absent, which keeps the parameter read inside the dispatcher rather than ahead of it.
+    //
+    // Backs off when Boot's property is explicitly enabled: Boot registers its filter under this same bean
+    // name, and since bean-definition overriding is disabled by default the two definitions would otherwise
+    // collide and fail application startup.
     @Bean
-    @ConditionalOnMissingBean(HiddenHttpMethodFilter.class)
+    @ConditionalOnMissingBean(value = HiddenHttpMethodFilter.class, name = "hiddenHttpMethodFilter")
+    @ConditionalOnBooleanProperty(name = Settings.WEB_HIDDEN_METHOD_FILTER_ENABLED, matchIfMissing = true)
+    @ConditionalOnProperty(name = SPRING_HIDDEN_METHOD_FILTER_ENABLED, havingValue = "false", matchIfMissing = true)
     public FilterRegistrationBean<Filter> hiddenHttpMethodFilter() {
         FilterRegistrationBean<Filter> registrationBean = new FilterRegistrationBean<>();
         registrationBean.setFilter(new HiddenHttpMethodFilter());
@@ -160,7 +179,11 @@ public class ControllersAutoConfiguration {
 
     @Bean
     public DispatcherServlet dispatcherServlet() {
-        return new GrailsDispatcherServlet();
+        GrailsDispatcherServlet dispatcherServlet = new GrailsDispatcherServlet();
+        // With the filter switched off the override moves into the dispatcher, which resolves it after
+        // multipart handling and after the filter chain rather than ahead of both.
+        dispatcherServlet.setResolveHiddenHttpMethod(!hiddenHttpMethodFilterEnabled);
+        return dispatcherServlet;
     }
 
     @Bean

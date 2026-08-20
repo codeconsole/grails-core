@@ -58,10 +58,16 @@ class UrlMappingsBeanDefinitionsPostProcessor implements BeanDefinitionRegistryP
 
     private final boolean reloadEnabled
     private final boolean corsFilterEnabled
+    private final boolean resolveHiddenHttpMethod
 
     UrlMappingsBeanDefinitionsPostProcessor(boolean reloadEnabled, boolean corsFilterEnabled) {
+        this(reloadEnabled, corsFilterEnabled, false)
+    }
+
+    UrlMappingsBeanDefinitionsPostProcessor(boolean reloadEnabled, boolean corsFilterEnabled, boolean resolveHiddenHttpMethod) {
         this.reloadEnabled = reloadEnabled
         this.corsFilterEnabled = corsFilterEnabled
+        this.resolveHiddenHttpMethod = resolveHiddenHttpMethod
     }
 
     @Override
@@ -72,6 +78,9 @@ class UrlMappingsBeanDefinitionsPostProcessor implements BeanDefinitionRegistryP
             handlerMapping.constructorArgumentValues.addIndexedArgumentValue(0, new RuntimeBeanReference('grailsUrlMappingsHolder'))
             if (!corsFilterEnabled) {
                 handlerMapping.propertyValues.addPropertyValue('grailsCorsConfiguration', new RuntimeBeanReference('grailsCorsConfiguration'))
+            }
+            if (resolveHiddenHttpMethod) {
+                handlerMapping.propertyValues.addPropertyValue('resolveHiddenHttpMethod', true)
             }
             registry.registerBeanDefinition('urlMappingsHandlerMapping', handlerMapping)
         }

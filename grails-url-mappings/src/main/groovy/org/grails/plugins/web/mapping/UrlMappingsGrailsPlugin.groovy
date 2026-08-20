@@ -120,6 +120,10 @@ class UrlMappingsGrailsPlugin extends Plugin {
             boolean reloadEnabled = GrailsEnvironment.developmentMode ||
                     GrailsEnvironment.current.reloadEnabled
             boolean corsFilterEnabled = environment.getProperty(Settings.SETTING_CORS_FILTER, Boolean, true)
+            // With the hidden HTTP method filter switched off, the handler mapping resolves "_method" itself
+            // so browser forms still reach the PUT, PATCH and DELETE routes of a 'resources' mapping.
+            boolean resolveHiddenHttpMethod =
+                    !environment.getProperty(Settings.WEB_HIDDEN_METHOD_FILTER_ENABLED, Boolean, true)
 
             // The url-mapping holder is a ProxyFactoryBean (reload mode) whose produced UrlMappings
             // type must stay visible to Spring's factory-bean type prediction for by-type autowiring
@@ -127,7 +131,7 @@ class UrlMappingsGrailsPlugin extends Plugin {
             // contributed by a dedicated post-processor instead.
             registry.registerBean('urlMappingsBeanDefinitionsPostProcessor', UrlMappingsBeanDefinitionsPostProcessor) {
                 it.infrastructure().supplier {
-                    new UrlMappingsBeanDefinitionsPostProcessor(reloadEnabled, corsFilterEnabled)
+                    new UrlMappingsBeanDefinitionsPostProcessor(reloadEnabled, corsFilterEnabled, resolveHiddenHttpMethod)
                 }
             }
         }
