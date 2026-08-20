@@ -276,6 +276,30 @@ ext {
                 'hibernate-envers'      : "org.hibernate:hibernate-envers:${combinedVersions['hibernate.version']}",
         ]
         combinedDependencies += customBomDependencies
+    } else if (project.name in ['grails-neo4j-bom'] || project.name.startsWith('grails-data-neo4j')) {
+        customBomVersions = [
+                // Spring Boot's BOM manages a newer, binary-incompatible major version of the
+                // driver; grails-data-neo4j-core needs this older one for its embedded
+                // Neo4j 3.5.x test harness. Declared here (with 'strictly' below, like liquibase/
+                // hibernate above) since a plain constraint can't out-rank a version Spring Boot's
+                // platform already offers. Scoped to grails-neo4j-bom only (not the default
+                // grails-bom) so consumers who don't use grails-data-neo4j keep Spring Boot's
+                // managed driver version.
+                'neo4j-driver.version': '4.4.13',
+                // The embedded test harness matching the driver/server version above. Consumed
+                // by grails-data-neo4j-core's published main sources (EmbeddedNeo4jServer,
+                // Neo4jEmbeddedConnectionSource, Neo4jConnectionSourceFactory), so it needs a
+                // BOM-managed version too, not just a build-internal gradle.properties entry -
+                // otherwise Forge-generated applications using grails.neo4j.type=embedded fail to
+                // resolve it.
+                'neo4j-harness.version': '3.5.35',
+        ]
+        combinedVersions += customBomVersions
+        customBomDependencies = [
+                'neo4j-driver' : "org.neo4j.driver:neo4j-java-driver:${combinedVersions['neo4j-driver.version']}",
+                'neo4j-harness': "org.neo4j.test:neo4j-harness:${combinedVersions['neo4j-harness.version']}",
+        ]
+        combinedDependencies += customBomDependencies
     } else if (project.name in ['grails-hibernate7-bom'] || project.name.startsWith('grails-data-hibernate7')) {
         customBomVersions = [
                 'cache-ri-impl.version'         : '1.1.1',
