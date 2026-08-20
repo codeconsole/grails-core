@@ -177,6 +177,8 @@ An individual page always wins over either, and can opt back out:
 [NOTE]
 ====
 Enabling this for an existing application is not a transparent change: every page that references an undeclared model variable will fail to compile until it declares its model. Introduce the setting once the views it covers declare their models, and use `compileStatic="false"` for the pages that are not ready yet.
+
+A model variable sharing a name with one the framework supplies -- `params`, `request`, `response`, `session`, `application`, `servletContext`, `flash`, `webRequest`, `controllerName`, `actionName` or `namespace` -- is no longer read as the model supplied it: the page reads it with the type the framework value has. Reading a member that type does not have is a compilation error the build reports. Passing a value of another type is not: it fails at render with a `GroovyCastException`, so precompiling the views will not catch it. Rename the model key, or declare it in the `model` directive to keep your own type.
 ====
 
 ==== Tag Libraries

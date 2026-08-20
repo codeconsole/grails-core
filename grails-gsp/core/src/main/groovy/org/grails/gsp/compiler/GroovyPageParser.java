@@ -27,9 +27,11 @@ import java.io.InputStream;
 import java.io.OutputStreamWriter;
 import java.io.UnsupportedEncodingException;
 import java.io.Writer;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -242,8 +244,15 @@ public class GroovyPageParser implements Tokens {
      */
     private final Set<String> pageScopeVariables = new LinkedHashSet<>();
 
-    /** The names a typed {@code g:set} has already declared, which a later one assigns to. */
-    private final Set<String> typedSetVariables = new LinkedHashSet<>();
+    /**
+     * The names a typed {@code g:set} has declared, one frame per block the page emits.
+     *
+     * <p>A later set assigns to a name an enclosing frame declared and declares one nothing did.
+     * Frames rather than a flat set because two sibling blocks are two scopes: a name declared in one
+     * is not in scope in the other, so assigning there would write to a variable that does not exist.
+     */
+    private final Deque<Set<String>> typedSetScopes = new ArrayDeque<>(
+            Collections.singletonList(new LinkedHashSet<>()));
 
     /** Whether what a page never declared fails the compilation rather than resolving at render time. */
     private boolean compileStaticStrict;
@@ -1170,6 +1179,20 @@ public class GroovyPageParser implements Tokens {
         return newLineNumbers;
     }
 
+    /**
+     * @return true when the name has to be declared here, false when an enclosing block already
+     *         declared it and this occurrence assigns to that declaration
+     */
+    private boolean declareTypedSetVariable(String var) {
+        for (Set<String> scope : typedSetScopes) {
+            if (scope.contains(var)) {
+                return false;
+            }
+        }
+        typedSetScopes.peek().add(var);
+        return true;
+    }
+
     private void endTag() {
         if (!finalPass) return;
 
@@ -1182,6 +1205,9 @@ public class GroovyPageParser implements Tokens {
                     getCurrentOutputLineNumber());
 
         TagMeta tm = tagMetaStack.pop();
+        if (!tm.emptyTag && typedSetScopes.size() > 1) {
+            typedSetScopes.pop();
+        }
         String lastInStack = tm.name;
         String lastNamespaceInStack = tm.namespace;
 
@@ -1314,6 +1340,10 @@ public class GroovyPageParser implements Tokens {
         tm.emptyTag = emptyTag;
         tm.tagIndex = tagIndex;
         tagMetaStack.push(tm);
+        if (!emptyTag) {
+            // The body is emitted inside a block, so a name declared in it belongs to that block.
+            typedSetScopes.push(new LinkedHashSet<>());
+        }
 
         if (GroovyPage.DEFAULT_NAMESPACE.equals(ns) && tagRegistry.isSyntaxTag(tagName)) {
             if (tagContext == null) {
@@ -1435,7 +1465,7 @@ public class GroovyPageParser implements Tokens {
         attrs.remove("\"" + TYPE_ATTRIBUTE + "\"");
         // A name typed once is declared; typing it again assigns to what was declared. Declaring it
         // twice would not compile, where the untyped tag simply writes the scope again.
-        String declaration = typedSetVariables.add(var) ? type + " " + var : var;
+        String declaration = declareTypedSetVariable(var) ? type + " " + var : var;
         out.println(declaration + " = " + castingTypeFor(type) + ".cast(" + getExpressionText(value.toString()) + ")");
         // and the tag is called with what was just declared, so it writes the same value into the scope
         attrs.put("\"value\"", var);

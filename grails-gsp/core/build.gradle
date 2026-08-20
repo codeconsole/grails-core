@@ -91,12 +91,6 @@ dependencies {
 //    }
 //    implementation 'org.springframework:spring-context' // ApplicationContext
 //
-    // Named by the statically compiled page so that the scopes the framework binds into every page
-    // carry their real types. compileOnly because a page renders outside a servlet container too, and
-    // nothing here calls into them: the types are declared, and supplied by whoever is rendering.
-
-
-
     testImplementation 'org.junit.jupiter:junit-jupiter-api'
     testImplementation 'jakarta.servlet:jakarta.servlet-api'
     testImplementation project(':grails-web-common') // FlashScope, GrailsWebRequest -- test only, so no cycle

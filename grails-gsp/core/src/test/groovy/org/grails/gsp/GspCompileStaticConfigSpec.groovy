@@ -523,6 +523,40 @@ class GspCompileStaticConfigSpec extends Specification {
         template.metaInfo.compilationException == null
     }
 
+    void 'a name given a type in two sibling blocks is declared in each'() {
+        given:
+        GroovyPagesTemplateEngine engine = engineFor('grails.views.gsp.compileStatic': true)
+
+        when: 'neither block encloses the other, so the first declaration is not in scope in the second'
+        GroovyPageTemplate template = compile(engine, source)
+
+        then:
+        template.metaInfo.compilationException == null
+
+        where:
+        source << [
+                '<g:if test="${true}"><g:set type="int" var="n" value="${1}"/>${n + 1}</g:if>' +
+                        '<g:else><g:set type="int" var="n" value="${2}"/>${n + 1}</g:else>',
+                '<g:if test="${true}"><g:set type="int" var="n" value="${1}"/>${n + 1}</g:if>' +
+                        '<g:set type="int" var="n" value="${2}"/>${n + 1}',
+                '<g:each in="${[1, 2]}" var="i"><g:set type="int" var="n" value="${1}"/>${n}</g:each>' +
+                        '<g:set type="int" var="n" value="${2}"/>${n + 1}',
+        ]
+    }
+
+    void 'a name given a type inside a block an earlier one encloses assigns to it'() {
+        given:
+        GroovyPagesTemplateEngine engine = engineFor('grails.views.gsp.compileStatic': true)
+
+        when: 'the enclosing declaration is in scope, so declaring again would not compile'
+        GroovyPageTemplate template = compile(engine,
+                '<g:set type="int" var="n" value="${1}"/><g:if test="${true}">' +
+                        '<g:set type="int" var="n" value="${2}"/>${n + 1}</g:if>')
+
+        then:
+        template.metaInfo.compilationException == null
+    }
+
     private static GroovyPagesTemplateEngine engineFor(Map<String, Object> configValues) {
         GenericApplicationContext context = new GenericApplicationContext().tap {
             beanFactory.registerSingleton(GrailsApplication.APPLICATION_ID,

@@ -116,6 +116,21 @@ class GrailsGspCompileStaticProviderSpec extends Specification {
         new GrailsGspCompileStaticProvider(compileStatic).asArguments().toList() == []
     }
 
+    void 'the strictness input is false while pages are not compiled statically'() {
+        given: 'strictness set, but nothing for it to apply to'
+        GrailsCompileStaticOptions compileStatic = options()
+        compileStatic.strictGsp.set(true)
+
+        expect: 'the input reports what reaches the compiler, so toggling it here does not rerun the task'
+        !new GrailsGspCompileStaticProvider(compileStatic).strict
+
+        when: 'pages are compiled statically'
+        compileStatic.gsp.set(true)
+
+        then: 'it reports the strictness that now reaches them'
+        new GrailsGspCompileStaticProvider(compileStatic).strict
+    }
+
     void 'the page opt-in is not strict on its own'() {
         given:
         GrailsCompileStaticOptions compileStatic = options()

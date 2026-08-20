@@ -53,9 +53,14 @@ class GrailsGspCompileStaticProvider implements CommandLineArgumentProvider {
         compileStatic.gsp.getOrElse(false)
     }
 
+    /**
+     * Strictness only reaches the compiler where pages are compiled statically, so it is reported as
+     * false while that is off. Reporting the raw flag would make toggling it invalidate the task
+     * without changing anything it produces.
+     */
     @Input
     boolean isStrict() {
-        compileStatic.strictGsp.getOrElse(false)
+        isCompileStaticGsp() && compileStatic.strictGsp.getOrElse(false)
     }
 
     @Override
