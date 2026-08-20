@@ -98,6 +98,25 @@ class ControllerTagCallRewriteSpec extends Specification {
         references(compiled, 'grails/artefact/gsp/TagLibraryInvoker')
     }
 
+    void 'a controller recognised by its directory is rewritten'() {
+        when: 'no annotation, so the trait comes from the artefact injector recognising the location'
+        byte[] compiled = compileAt('grails-app/controllers/demo', '''
+            package demo
+
+            class ConventionController {
+                def index() {
+                    g.createLink(controller: 'book')
+                }
+            }
+        ''', 'ConventionController', 'demo')
+
+        then: 'which is the shape the rewrite has to handle, and the one it used to get wrong'
+        references(compiled, 'org/grails/taglib/CompiledTagInvocation')
+
+        and: 'the trait it decides on really did arrive'
+        references(compiled, 'grails/artefact/gsp/TagLibraryInvoker')
+    }
+
     private static boolean references(byte[] classBytes, String internalName) {
         new String(classBytes, 'ISO-8859-1').contains(internalName)
     }
