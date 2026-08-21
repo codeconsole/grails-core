@@ -17,7 +17,7 @@
  *  under the License.
  */
 
-package com.test
+package grails.plugin.springsecurity.cas.test
 
 import grails.gorm.DetachedCriteria
 import groovy.transform.ToString

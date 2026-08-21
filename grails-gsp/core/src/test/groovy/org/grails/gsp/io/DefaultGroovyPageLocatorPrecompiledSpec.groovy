@@ -18,9 +18,6 @@
  */
 package org.grails.gsp.io
 
-import grails.util.Environment
-
-import org.springframework.aot.AotDetector
 import spock.lang.Specification
 
 /**
@@ -101,8 +98,6 @@ class DefaultGroovyPageLocatorPrecompiledSpec extends Specification {
         public static final String CONTENT_TYPE = 'text/html;charset=UTF-8'
 
         public static final Map JSP_TAGS = [:]
-
-        public static final Long LAST_MODIFIED = 0L
 
         public static final String EXPRESSION_CODEC = 'html'
 
