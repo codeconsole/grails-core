@@ -65,6 +65,7 @@ dependencies {
 
     integrationTestImplementation testFixtures('org.apache.grails:grails-geb')
 
+    testImplementation testFixtures('org.apache.grails:grails-core')
     testImplementation 'org.junit.jupiter:junit-jupiter-api'
     testImplementation 'org.springframework:spring-test'
     testImplementation 'org.spockframework:spock-core'

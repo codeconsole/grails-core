@@ -43,6 +43,7 @@ dependencies {
         exclude group: "org.spockframework", module: "spock-core"
     }
     testImplementation project(':grails-testing-support-datamapping')
+    testImplementation testFixtures('org.apache.grails:grails-core')
     testImplementation ("org.apache.grails:grails-testing-support-web:$testingSupportVersion") {
         exclude group: "org.spockframework", module: "spock-core"
     }

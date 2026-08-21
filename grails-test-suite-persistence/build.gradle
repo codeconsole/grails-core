@@ -62,6 +62,7 @@ dependencies {
         exclude module:'grails-testing-support-core'
     }
     testImplementation project(':grails-testing-support-core')
+    testImplementation testFixtures(project(':grails-core'))
 
     compileOnly 'jakarta.servlet:jakarta.servlet-api'
     compileOnly 'org.springframework:spring-test', {

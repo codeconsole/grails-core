@@ -117,6 +117,7 @@ dependencies {
 //    compileOnly 'org.apache.ant:ant' // BuildException, DirectoryScanner, MatchingTask, Path, Reference
 //    compileOnly 'org.apache.groovy:groovy'
 //
+    testImplementation testFixtures(project(':grails-core'))
     testImplementation 'jakarta.servlet:jakarta.servlet-api'
     testImplementation 'net.bytebuddy:byte-buddy'
     testImplementation project(':grails-web-common'), { // GrailsWebMockUtil
