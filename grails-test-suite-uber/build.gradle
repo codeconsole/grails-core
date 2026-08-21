@@ -118,6 +118,11 @@ def testSkippingProperties = [
 isolatedTestPatterns.keySet().each { taskName ->
     tasks.register(taskName, Test) {
         group = 'verification'
+        // A manually registered Test task inherits neither of these from the test source set. Without them
+        // the task resolves no candidate classes and silently reports NO-SOURCE, so every test isolated into
+        // one of these tasks never ran.
+        testClassesDirs = sourceSets.test.output.classesDirs
+        classpath = sourceSets.test.runtimeClasspath
         filter.includePatterns = isolatedTestPatterns[taskName]
     }
 }
