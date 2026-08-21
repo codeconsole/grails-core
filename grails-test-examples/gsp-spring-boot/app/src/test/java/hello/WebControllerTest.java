@@ -52,6 +52,17 @@ class WebControllerTest {
     }
 
     @Test
+    void aTagLibraryWrittenForGrailsIsRegisteredAndRuns() throws Exception {
+        // <asset:stylesheet> belongs to the asset pipeline, a tag library this application declares
+        // as beans rather than installs as a plugin. An unregistered namespace is not a failure in
+        // GSP - the tag is written out as it stands - so what proves it registered is that no tag of
+        // that namespace reaches the browser.
+        String body = get("/");
+
+        assertThat(body).doesNotContain("<asset:");
+    }
+
+    @Test
     void gspViewIsDecoratedByItsSiteMeshLayout() throws Exception {
         String body = get("/");
 

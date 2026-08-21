@@ -20,11 +20,12 @@
 <html>
     <head>
         <title>Decorated <g:layoutTitle /></title>
+        <asset:stylesheet src="application.css"/>
         <g:layoutHead />
     </head>
-    <body>
-        <h1>${viewType}</h1>
-        <h3>Spring: ${SpringVersion.getVersion()} Boot: ${SpringBootVersion.getVersion()}</h3>
+    <body class="container">
+        <h1 class="display-6">${viewType}</h1>
+        <h3 class="text-body-secondary fs-6">Spring: ${SpringVersion.getVersion()} Boot: ${SpringBootVersion.getVersion()}</h3>
         <g:layoutBody />
         <g:if test="${jspAvailable}">
             <footer><a href="/${viewType=='JSP'?'gsp':'jsp'}">Try ${viewType=='JSP'?'gsp':'jsp'}</a></footer>

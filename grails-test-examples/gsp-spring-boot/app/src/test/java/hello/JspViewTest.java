@@ -58,7 +58,8 @@ class JspViewTest {
         get("/jsp");
 
         String body = get("/");
-        assertThat(body).contains("<h1>JSP</h1>");
+        // the heading is the layout's, carrying the view type of what it decorated
+        assertThat(body).containsPattern("<h1[^>]*>JSP</h1>");
         assertThat(body).contains("<title>Decorated");
         assertThat(body).contains("Try gsp");
     }

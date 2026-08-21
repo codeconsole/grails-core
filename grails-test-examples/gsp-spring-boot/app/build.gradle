@@ -35,6 +35,20 @@ plugins {
 // helper and does not provide dependency management - version management here is entirely
 // the responsibility of the Grails BOM below.
 apply plugin: 'org.apache.grails.gradle.grails-gsp'
+// The asset pipeline compiles the stylesheets and scripts this application serves, Bootstrap among
+// them, into build/assets at build time. Bootstrap is therefore an input to the build rather than a
+// library the application ships: it is declared on the assets configuration below, and what reaches
+// the artifact is the one compiled, minified, digest-named file the manifest asks for.
+apply plugin: 'cloud.wondrify.asset-pipeline'
+
+assets {
+    assetsPath = file("${project.projectDir}/src/main/assets")
+    // A webjar carries far more than an application uses - Bootstrap ships its scss sources, its
+    // source maps and every build variant - so nothing of it is compiled but the file the manifest
+    // requires.
+    excludes = ['webjars/bootstrap/**']
+    includes = ['webjars/bootstrap/*/dist/css/bootstrap.css']
+}
 
 // Jasper compiles a JSP at run time with the Eclipse compiler, and an executable jar packages no JSP
 // to compile - src/main/webapp goes into a war. Jasper itself stays: the GSP form uses Spring's form
@@ -65,8 +79,6 @@ dependencies {
     // view, and each exclusion below names a part it does not: it routes and binds with Spring MVC,
     // it has no domain classes, and it answers in HTML.
     implementation(project(':grails-gsp-spring-boot')) {
-        exclude group: 'org.apache.grails.web', module: 'grails-web-url-mappings' // g:link, g:createLink
-        exclude group: 'org.apache.grails.data', module: 'grails-datamapping-validation' // g:validate
         exclude group: 'org.apache.grails.web', module: 'grails-web-databinding'
         exclude group: 'org.apache.grails.databinding', module: 'grails-databinding-core'
         exclude group: 'org.apache.grails.web', module: 'grails-web-mvc'
@@ -75,9 +87,15 @@ dependencies {
 
     implementation 'org.hibernate.validator:hibernate-validator' // validation
 
+    assets platform(project(':grails-bom')) // the assets configuration takes its versions from the BOM too
+    assets 'org.webjars.npm:bootstrap' // compiled into application.css, not shipped
+
+    // The <asset:...> tag library, the service behind it and the filter that serves what the
+    // pipeline compiled. The application declares them as beans, so it compiles against them.
+    implementation 'cloud.wondrify:asset-pipeline-grails'
+    implementation 'cloud.wondrify:asset-pipeline-core' // AssetPipelineConfigHolder
+
     implementation(project(':grails-web-jsp')) {
-        exclude group: 'org.apache.grails.web', module: 'grails-web-url-mappings'
-        exclude group: 'org.apache.grails.data', module: 'grails-datamapping-validation'
         exclude group: 'org.apache.grails.web', module: 'grails-web-databinding'
         exclude group: 'org.apache.grails.databinding', module: 'grails-databinding-core'
         exclude group: 'org.apache.grails.web', module: 'grails-web-mvc'
