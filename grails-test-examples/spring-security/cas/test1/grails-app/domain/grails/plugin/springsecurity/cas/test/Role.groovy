@@ -17,19 +17,28 @@
  *  under the License.
  */
 
-package spring.security.cas
+package grails.plugin.springsecurity.cas.test
 
-import grails.plugin.springsecurity.annotation.Secured
+import groovy.transform.EqualsAndHashCode
+import groovy.transform.ToString
 
-class SecureController {
+@EqualsAndHashCode(includes='authority')
+@ToString(includes='authority', includeNames=true, includePackage=false)
+class Role implements Serializable {
 
-	@Secured('ROLE_ADMIN')
-	def admins() {
-		render 'Logged in with ROLE_ADMIN'
+	private static final long serialVersionUID = 1
+
+	String authority
+
+	Role(String authority) {
+		this.authority = authority
 	}
 
-	@Secured('ROLE_USER')
-	def users() {
-		render 'Logged in with ROLE_USER'
+	static constraints = {
+		authority blank: false, unique: true, nullable: false
+	}
+
+	static mapping = {
+		cache true
 	}
 }
