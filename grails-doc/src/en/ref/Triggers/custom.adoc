@@ -55,4 +55,4 @@ Accepted attributes:
 
 Any further attributes are set as properties on the trigger instance, so the trigger can be configured with whatever its class exposes.
 
-Refer to the user guide topic on link:{guidePath}quartz.html#quartzTriggers[Triggers] for more information.
+Refer to the user guide topic on link:{guidePath}backgroundJobs.html#quartzTriggers[Triggers] for more information.

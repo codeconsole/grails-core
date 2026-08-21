@@ -127,4 +127,4 @@ Persistent storage interacts with the `durability` and `requestsRecovery` job pr
 
 Quartz can coordinate a schedule across several instances of your application, so a given trigger fires exactly once no matter how many instances are deployed. This requires `jdbcStore`, a shared set of Quartz tables, and a handful of additional properties.
 
-Clustering is covered in full — including the requirements and the pitfalls — in the xref:backgroundJobs.adoc#backgroundJobsClustering[Clustered Jobs] section.
+Clustering is covered in full — including the requirements and the pitfalls — in the <<quartzClustering,Clustering>> section.

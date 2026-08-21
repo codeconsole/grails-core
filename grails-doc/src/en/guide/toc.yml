@@ -340,19 +340,18 @@ mail:
   mailTesting: Testing
 backgroundJobs:
   title: Background Jobs
-  backgroundJobsScheduled: Scheduling with Spring
-  backgroundJobsQuartz: Scheduling with Quartz
-  backgroundJobsClustering: Clustered Jobs
-quartz:
-  title: Quartz
-  quartzInstallation: Installation
-  quartzScheduling: Scheduling Basics
-  quartzTriggers: Triggers
-  quartzJobProperties: Job Properties
-  quartzDynamicScheduling: Dynamic Job Scheduling
-  quartzJobManagerService: Managing Jobs at Runtime
-  quartzConfiguration: Configuration
-  quartzUsefulLinks: Useful Links
+  backgroundJobsBasic: Basic Scheduling
+  backgroundJobsClustered:
+    title: Clustered Scheduling
+    quartzInstallation: Installation
+    quartzScheduling: Writing Jobs
+    quartzTriggers: Triggers
+    quartzJobProperties: Job Properties
+    quartzDynamicScheduling: Dynamic Job Scheduling
+    quartzJobManagerService: Managing Jobs at Runtime
+    quartzConfiguration: Configuration
+    quartzClustering: Clustering
+    quartzUsefulLinks: Useful Links
 redis:
   title: Redis
   redisInstallation: Installation and Configuration

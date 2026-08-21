@@ -38,4 +38,4 @@ class MyJob {
 
 Three trigger types are available: `simple`, `cron`, and `custom`. Every trigger accepts a `name` — which must be unique across the whole application — a `group`, and a `startDelay` in milliseconds.
 
-Refer to the user guide topic on link:{guidePath}quartz.html#quartzTriggers[Triggers] for more information.
+Refer to the user guide topic on link:{guidePath}backgroundJobs.html#quartzTriggers[Triggers] for more information.

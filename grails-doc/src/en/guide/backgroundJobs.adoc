@@ -19,15 +19,38 @@ under the License.
 
 Most applications eventually need work to happen on a schedule rather than in response to a request: sending a nightly digest, expiring stale records, polling an upstream feed, rebuilding a cache.
 
-Grails offers two approaches, and the right one depends almost entirely on how many instances of your application will be running:
+Grails offers two approaches, and the choice between them comes down to a single question: *will more than one instance of your application be running?*
+
+* <<backgroundJobsBasic,Basic Scheduling>> uses Spring's `@Scheduled` annotation. It is built into the framework, needs no dependencies, and is the right default for the large majority of applications.
+* <<backgroundJobsClustered,Clustered Scheduling>> uses the Quartz plugin. It coordinates through a shared database so that a given schedule fires exactly once across a whole deployment.
+
+*Start with Basic Scheduling.* Spring's scheduler is simpler, has nothing to configure, and covers everything a single-instance application needs. Reach for Quartz when — and generally only when — you have a scheduling problem Spring's scheduler cannot solve.
+
+==== When you need Quartz
+
+Quartz earns its extra moving parts in these situations:
+
+* *Multiple instances.* This is the big one. `@Scheduled` fires on every instance independently, so a nightly job on a three-instance deployment runs three times. Quartz clustering ensures exactly one instance fires each trigger.
+* *Schedules that change at runtime*, driven by user input or data rather than fixed in an annotation.
+* *Schedules that must survive a restart*, rather than being rebuilt from source at every startup.
+* *Operational control* — pausing, resuming, inspecting, or interrupting jobs while the application runs.
+* *Recovery of work lost to a crash*, re-running jobs that were executing when an instance died.
+
+If none of those apply, `@Scheduled` is the better choice and adding Quartz only adds a database schema and a set of configuration properties to get wrong.
+
+==== Comparison
 
 [cols="1,3,3"]
 |===
-| | Spring `@Scheduled` | <<backgroundJobsQuartz,Quartz>>
+| | <<backgroundJobsBasic,Basic Scheduling>> | <<backgroundJobsClustered,Clustered Scheduling>>
+
+| Mechanism
+| Spring `@Scheduled`
+| Quartz plugin
 
 | Setup
 | Built in — nothing to add
-| Add the `grails-quartz` plugin
+| Add `grails-quartz`, and a database schema for clustering
 
 | Where the schedule lives
 | An annotation on a bean method
@@ -50,6 +73,4 @@ Grails offers two approaches, and the right one depends almost entirely on how m
 | Supported
 |===
 
-The short version: if your application runs as a single instance, `@Scheduled` is the simpler choice and needs no dependencies. As soon as you run more than one instance — a scaled deployment, a rolling restart, a blue/green cutover — you need <<backgroundJobsClustering,coordination between the instances>>, and that is what Quartz provides.
-
-WARNING: The most common production surprise with background jobs is a schedule written when the application ran on one machine, later deployed to three. Nothing fails loudly; the job simply runs three times. See <<backgroundJobsClustering,Clustered Jobs>>.
+WARNING: The most common production surprise with background jobs is a schedule written when the application ran on one machine, later deployed to three. Nothing fails loudly; the job simply runs several times over. Rolling restarts and blue/green deployments trigger this too, because two instances are briefly live at once even in a nominally single-instance deployment. See <<quartzClustering,Clustering>>.

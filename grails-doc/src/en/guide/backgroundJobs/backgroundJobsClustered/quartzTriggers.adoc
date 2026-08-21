@@ -83,7 +83,7 @@ Executes repeatedly on a fixed interval.
 
 ===== cron
 
-Executes according to a cron expression. See <<quartzScheduling,Scheduling Basics>> for the expression format.
+Executes according to a cron expression. See <<quartzScheduling,Writing Jobs>> for the expression format.
 
 [cols="1,1,3"]
 |===

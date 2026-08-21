@@ -56,4 +56,4 @@ Accepted attributes:
 
 The fields of a cron expression are, in order: seconds, minutes, hours, day-of-month, month, day-of-week, and an optional year. Either day-of-month or day-of-week must be `?`.
 
-Refer to the user guide topic on link:{guidePath}quartz.html#quartzTriggers[Triggers] for more information.
+Refer to the user guide topic on link:{guidePath}backgroundJobs.html#quartzTriggers[Triggers] for more information.

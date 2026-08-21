@@ -17,13 +17,11 @@ specific language governing permissions and limitations
 under the License.
 ////
 
-A scheduler that lives inside the application process fires on every instance of that process. Deploy two instances and a nightly job runs twice; deploy ten and it runs ten times. Neither Spring's `@Scheduled` nor Quartz's default in-memory store does anything to prevent this, because neither knows the other instances exist.
+By default the Quartz plugin uses Quartz's in-memory `RAMJobStore`: the schedule is rebuilt from your source at every startup and lives entirely inside one process. That is fine for a single instance, but it means a deployment of three instances fires every trigger three times, exactly as xref:backgroundJobs.adoc#backgroundJobsBasic[Basic Scheduling] does.
 
-WARNING: This failure is quiet. Nothing throws, nothing is logged, and it usually does not surface in a single-instance test environment. It shows up in production as duplicated emails, double-counted totals, or deadlocks between instances competing for the same rows. It is also triggered by rolling restarts and blue/green deployments, where two instances are briefly live at once even in a "single instance" deployment.
+Clustering fixes that. It is not on by default and requires deliberate configuration.
 
-===== Why `@Scheduled` cannot be clustered
-
-Spring builds its scheduler from the annotations it finds at startup, in memory, with no shared state. There is no coordination point, so there is nowhere for one instance to discover that another has already claimed a firing. Common workarounds — designating one instance "the scheduler" with a Spring profile, or taking an advisory lock inside the method — either forfeit high availability or reimplement, badly, what a clustered scheduler already does.
+WARNING: Duplicate firing is a quiet failure. Nothing throws, nothing is logged, and it usually does not surface in a single-instance test environment. It shows up in production as duplicated emails, double-counted totals, or deadlocks between instances competing for the same rows.
 
 ===== How Quartz clustering works
 
@@ -70,7 +68,7 @@ Every instance must use the same `instanceName` and the same tables. Only `insta
 * *Clocks must be synchronized.* Cluster nodes coordinate on time; their clocks must be within about a second of each other. Run NTP or an equivalent time-sync service on every node.
 * *Never point a non-clustered scheduler at clustered tables.* Starting an instance with `isClustered` disabled against the same tables another instance is using causes data corruption and erratic firing. If one instance is clustered, all of them must be.
 * *`instanceId` must be unique per node.* `AUTO` generates one; a hard-coded value copied across nodes breaks failover detection.
-* *Set `requestsRecovery` on jobs that must not be lost.* Without it, work that was executing when a node died is not re-run after failover. See the xref:quartz.adoc#quartzJobProperties[Job Properties] section.
+* *Set `requestsRecovery` on jobs that must not be lost.* Without it, work that was executing when a node died is not re-run after failover. See <<quartzJobProperties,Job Properties>>.
 * *Jobs must be idempotent anyway.* Clustering guarantees one node fires a trigger, not that the work is never repeated — a node can die mid-execution and, with `requestsRecovery`, the job runs again from the start.
 * *Clustering does not spread a single execution across nodes.* One firing runs entirely on one node. Load balancing happens across separate firings, not within one.
 ====

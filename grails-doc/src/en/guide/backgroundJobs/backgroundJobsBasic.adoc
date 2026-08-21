@@ -163,6 +163,8 @@ See also xref:async.adoc#async[Asynchronous Programming] for the Grails-specific
 
 ===== The limitation
 
-Nothing in `@Scheduled` is aware of other instances of your application. Each instance builds its own scheduler from the annotations it finds and fires on its own timer. With three instances deployed, a `@Scheduled(cron = '0 0 6 * * ?')` method runs three times at 6:00am — concurrently, on three machines, against the same database.
+Nothing in `@Scheduled` is aware of other instances of your application. Each instance builds its own scheduler from the annotations it finds at startup, in memory, with no shared state — so there is no coordination point, and nowhere for one instance to discover that another has already claimed a firing. With three instances deployed, a `@Scheduled(cron = '0 0 6 * * ?')` method runs three times at 6:00am — concurrently, on three machines, against the same database.
 
-For anything that must run exactly once per schedule across a deployment, see <<backgroundJobsClustering,Clustered Jobs>>.
+Common workarounds — designating one instance "the scheduler" with a Spring profile, or taking an advisory lock inside the method — either forfeit high availability or reimplement, badly, what a clustered scheduler already does.
+
+For anything that must run exactly once per schedule across a deployment, see xref:backgroundJobs.adoc#backgroundJobsClustered[Clustered Scheduling].

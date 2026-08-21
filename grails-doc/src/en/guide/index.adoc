@@ -1105,65 +1105,60 @@ include::mail/mailTesting.adoc[]
 
 include::backgroundJobs.adoc[]
 
-[[backgroundJobsScheduled]]
-=== Scheduling with Spring
+[[backgroundJobsBasic]]
+=== Basic Scheduling
 
-include::backgroundJobs/backgroundJobsScheduled.adoc[]
+include::backgroundJobs/backgroundJobsBasic.adoc[]
 
-[[backgroundJobsQuartz]]
-=== Scheduling with Quartz
+[[backgroundJobsClustered]]
+=== Clustered Scheduling
 
-include::backgroundJobs/backgroundJobsQuartz.adoc[]
-
-[[backgroundJobsClustering]]
-=== Clustered Jobs
-
-include::backgroundJobs/backgroundJobsClustering.adoc[]
-
-[[quartz]]
-== Quartz
-
-include::quartz.adoc[]
+include::backgroundJobs/backgroundJobsClustered.adoc[]
 
 [[quartzInstallation]]
-=== Installation
+==== Installation
 
-include::quartz/quartzInstallation.adoc[]
+include::backgroundJobs/backgroundJobsClustered/quartzInstallation.adoc[]
 
 [[quartzScheduling]]
-=== Scheduling Basics
+==== Writing Jobs
 
-include::quartz/quartzScheduling.adoc[]
+include::backgroundJobs/backgroundJobsClustered/quartzScheduling.adoc[]
 
 [[quartzTriggers]]
-=== Triggers
+==== Triggers
 
-include::quartz/quartzTriggers.adoc[]
+include::backgroundJobs/backgroundJobsClustered/quartzTriggers.adoc[]
 
 [[quartzJobProperties]]
-=== Job Properties
+==== Job Properties
 
-include::quartz/quartzJobProperties.adoc[]
+include::backgroundJobs/backgroundJobsClustered/quartzJobProperties.adoc[]
 
 [[quartzDynamicScheduling]]
-=== Dynamic Job Scheduling
+==== Dynamic Job Scheduling
 
-include::quartz/quartzDynamicScheduling.adoc[]
+include::backgroundJobs/backgroundJobsClustered/quartzDynamicScheduling.adoc[]
 
 [[quartzJobManagerService]]
-=== Managing Jobs at Runtime
+==== Managing Jobs at Runtime
 
-include::quartz/quartzJobManagerService.adoc[]
+include::backgroundJobs/backgroundJobsClustered/quartzJobManagerService.adoc[]
 
 [[quartzConfiguration]]
-=== Configuration
+==== Configuration
 
-include::quartz/quartzConfiguration.adoc[]
+include::backgroundJobs/backgroundJobsClustered/quartzConfiguration.adoc[]
+
+[[quartzClustering]]
+==== Clustering
+
+include::backgroundJobs/backgroundJobsClustered/quartzClustering.adoc[]
 
 [[quartzUsefulLinks]]
-=== Useful Links
+==== Useful Links
 
-include::quartz/quartzUsefulLinks.adoc[]
+include::backgroundJobs/backgroundJobsClustered/quartzUsefulLinks.adoc[]
 
 [[redis]]
 == Redis

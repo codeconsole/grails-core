@@ -1,0 +1,41 @@
+////
+Licensed to the Apache Software Foundation (ASF) under one
+or more contributor license agreements.  See the NOTICE file
+distributed with this work for additional information
+regarding copyright ownership.  The ASF licenses this file
+to you under the Apache License, Version 2.0 (the
+"License"); you may not use this file except in compliance
+with the License.  You may obtain a copy of the License at
+
+https://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing,
+software distributed under the License is distributed on an
+"AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+KIND, either express or implied.  See the License for the
+specific language governing permissions and limitations
+under the License.
+////
+
+Clustered scheduling in Grails is provided by the Quartz plugin, which adds a `Job` artefact type backed by the https://www.quartz-scheduler.org/[Quartz Enterprise Job Scheduler].
+
+Quartz coordinates through a shared database. Every instance of your application points at the same set of Quartz tables, and when a trigger's firing time arrives the instances race to claim it — the one that wins fires it, and the others move on. That is what makes a schedule safe to deploy on more than one machine, and it is the reason to choose Quartz over xref:backgroundJobs.adoc#backgroundJobsBasic[Basic Scheduling].
+
+IMPORTANT: If your application runs as a single instance and its schedules are fixed, you do not need this chapter. Spring's `@Scheduled` covers that case with no dependencies and no database schema — see xref:backgroundJobs.adoc#backgroundJobsBasic[Basic Scheduling].
+
+==== What the plugin provides
+
+A job is an artefact: a class in `grails-app/jobs` whose name ends in `Job` and which declares an `execute` method. The plugin discovers those classes, builds the Quartz `JobDetail` and `Trigger` objects described by their `triggers` block, and registers them with a `Scheduler` bean named `quartzScheduler`.
+
+Beyond clustering, that buys you:
+
+* A `triggers` DSL supporting <<quartzTriggers,simple, cron, and custom triggers>>, with multiple triggers per job.
+* <<quartzDynamicScheduling,Dynamic scheduling>> — schedule, reschedule, unschedule, and fire jobs at runtime from anywhere in your application.
+* A <<quartzJobManagerService,`jobManagerService`>> for inspecting, pausing, and resuming jobs and triggers.
+* Optional JDBC persistence, so a schedule survives a restart.
+* Recovery of jobs that were executing when an instance died.
+* Binding of a Hibernate `Session` to each job's execution thread, so jobs can use GORM the same way a controller or service does.
+
+Nothing prevents using Quartz and `@Scheduled` in the same application — they are independent schedulers — but a given piece of work should belong to exactly one of them.
+
+Start with <<quartzInstallation,Installation>>, then see <<quartzClustering,Clustering>> for the configuration that makes a schedule cluster-safe.

@@ -54,4 +54,4 @@ Accepted attributes:
 * `repeatInterval` — interval in milliseconds between consecutive executions. Defaults to `60000`.
 * `repeatCount` — the trigger fires `1 + repeatCount` times and then stops. Use `0` for a one-shot job or `-1` to repeat indefinitely. Defaults to `-1`.
 
-Refer to the user guide topic on link:{guidePath}quartz.html#quartzTriggers[Triggers] for more information.
+Refer to the user guide topic on link:{guidePath}backgroundJobs.html#quartzTriggers[Triggers] for more information.
