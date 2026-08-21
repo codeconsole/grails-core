@@ -117,11 +117,31 @@ public final class CompiledTagInvocation {
         else {
             arguments = EMPTY_ARGUMENTS;
         }
+        return dispatchDynamically(lookup, namespace, tagName, arguments);
+    }
+
+    /**
+     * Resolves a call the way it would have resolved had it never been rewritten.
+     */
+    private static Object dispatchDynamically(TagLibraryLookup lookup, String namespace, String tagName,
+            Object[] arguments) {
         NamespacedTagDispatcher dispatcher = lookup.lookupNamespaceDispatcher(namespace);
         if (dispatcher == null) {
             throw new MissingMethodException(tagName, CompiledTagInvocation.class, arguments);
         }
         return dispatcher.invokeMethod(tagName, arguments);
+    }
+
+    /**
+     * @return true when the arguments are a shape a tag call takes, which is the same question
+     *         {@code TagLibraryMetaUtils.matchesTagShape} asks of a call it is about to dispatch
+     */
+    private static boolean matchesTagShape(Object[] arguments) {
+        return switch (arguments.length) {
+            case 0, 1 -> true;
+            case 2 -> arguments[0] instanceof Map<?, ?>;
+            default -> false;
+        };
     }
 
     /**
@@ -157,11 +177,16 @@ public final class CompiledTagInvocation {
     public static Object invokeArgumentsInContext(TagLibraryLookup lookup, String namespace,
             String tagName, OutputContext outputContext, Object... args) {
         Object[] arguments = args != null ? args : EMPTY_ARGUMENTS;
+        if (!matchesTagShape(arguments)) {
+            // Not a shape a tag call takes. The dynamic path declines these and resolves the name as
+            // an ordinary method -- an overload of the same name, or a missing method -- so reaching
+            // the tag with no attributes and no body would run it where that would not have.
+            return dispatchDynamically(lookup, namespace, tagName, arguments);
+        }
         Map<?, ?> attrs = Collections.emptyMap();
         Object body = null;
-        // Deliberately the same shapes, in the same order, as the dynamic dispatch in
-        // TagLibraryMetaUtils.methodMissingForTagLib, including its treatment of argument lists that
-        // match none of them: a call that produced an empty invocation there must produce one here.
+        // The same shapes, in the same order, as the dynamic dispatch in
+        // TagLibraryMetaUtils.methodMissingForTagLib reads them.
         switch (arguments.length) {
             case 0:
                 break;
@@ -179,10 +204,8 @@ public final class CompiledTagInvocation {
                 }
                 break;
             case 2:
-                if (arguments[0] instanceof Map<?, ?> map) {
-                    attrs = map;
-                    body = arguments[1];
-                }
+                attrs = (Map<?, ?>) arguments[0];
+                body = arguments[1];
                 break;
             default:
                 break;

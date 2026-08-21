@@ -108,6 +108,22 @@ class CompiledTagInvocationSpec extends Specification implements TagLibUnitTest<
                 CompiledTagInvocation.invoke(lookup, 'g', 'link', [:], null).toString()
     }
 
+    void 'an argument list no tag call takes is resolved as an ordinary method'() {
+        when: 'two arguments whose first is not a map, which is not a shape a tag is called with'
+        CompiledTagInvocation.invokeArguments(lookup, 'g', 'link', 'a', 'b')
+
+        then: 'the dynamic path declines these rather than running the tag with nothing'
+        thrown(MissingMethodException)
+    }
+
+    void 'more arguments than a tag call takes is resolved as an ordinary method'() {
+        when:
+        CompiledTagInvocation.invokeArguments(lookup, 'g', 'link', [controller: 'book'], 'body', 'extra')
+
+        then:
+        thrown(MissingMethodException)
+    }
+
     void 'a single value that is neither a map nor a body is read under the tag name'() {
         when: 'a number cannot be a body, so it becomes an attribute named after the tag'
         String asAttribute = CompiledTagInvocation.invokeArguments(lookup, 'g', 'link', 5).toString()
