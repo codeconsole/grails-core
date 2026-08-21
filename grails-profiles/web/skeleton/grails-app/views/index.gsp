@@ -71,9 +71,13 @@
                                 </span>
                                 ${SpringVersion.getVersion()}
                             </li>
-                            <%-- Spring Security: only when the dependency is present --%>
+                            <%-- Spring Security: only when the dependency is present. The version comes
+                                 off the package the class was loaded from, the way the banner reads it,
+                                 so there is no reflection here for a native image to reject. --%>
+                            <g:set var="springSecurityCoreVersionClass"
+                                   value="${ClassUtils.isPresent('org.springframework.security.core.SpringSecurityCoreVersion', null) ? ClassUtils.forName('org.springframework.security.core.SpringSecurityCoreVersion', null) : null}"/>
                             <g:set var="springSecurityVersion"
-                                   value="${ClassUtils.isPresent('org.springframework.security.core.SpringSecurityCoreVersion', null) ? ClassUtils.forName('org.springframework.security.core.SpringSecurityCoreVersion', null).getMethod('getVersion').invoke(null) : null}"/>
+                                   value="${springSecurityCoreVersionClass?.package?.implementationVersion}"/>
                             <g:if test="${springSecurityVersion}">
                                 <li class="list-group-item d-flex justify-content-between align-items-center px-0">
                                     <span class="d-inline-flex align-items-center text-body-secondary">
