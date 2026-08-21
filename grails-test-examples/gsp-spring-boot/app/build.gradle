@@ -61,11 +61,27 @@ compileGroovyPages {
 dependencies {
     implementation platform(project(':grails-bom'))
 
-    implementation project(':grails-gsp-spring-boot')
+    // GSP brings the Grails web tier with it. This application uses the part of it that renders a
+    // view, and each exclusion below names a part it does not: it routes and binds with Spring MVC,
+    // it has no domain classes, and it answers in HTML.
+    implementation(project(':grails-gsp-spring-boot')) {
+        exclude group: 'org.apache.grails.web', module: 'grails-web-url-mappings' // g:link, g:createLink
+        exclude group: 'org.apache.grails.data', module: 'grails-datamapping-validation' // g:validate
+        exclude group: 'org.apache.grails.web', module: 'grails-web-databinding'
+        exclude group: 'org.apache.grails.databinding', module: 'grails-databinding-core'
+        exclude group: 'org.apache.grails.web', module: 'grails-web-mvc'
+        exclude group: 'org.springframework.boot', module: 'spring-boot-starter-jackson'
+    }
 
     implementation 'org.hibernate.validator:hibernate-validator' // validation
 
-    implementation project(':grails-web-jsp')
+    implementation(project(':grails-web-jsp')) {
+        exclude group: 'org.apache.grails.web', module: 'grails-web-url-mappings'
+        exclude group: 'org.apache.grails.data', module: 'grails-datamapping-validation'
+        exclude group: 'org.apache.grails.web', module: 'grails-web-databinding'
+        exclude group: 'org.apache.grails.databinding', module: 'grails-databinding-core'
+        exclude group: 'org.apache.grails.web', module: 'grails-web-mvc'
+    }
 
     implementation 'org.apache.tomcat.embed:tomcat-embed-jasper' // jsp
     implementation 'org.apache.tomcat.embed:tomcat-embed-el'
