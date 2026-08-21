@@ -17,7 +17,7 @@
  *  under the License.
  */
 
-package spring.security.cas.test
+package grails.plugin.springsecurity.cas.test
 
 import grails.boot.GrailsApp
 import grails.boot.config.GrailsAutoConfiguration
