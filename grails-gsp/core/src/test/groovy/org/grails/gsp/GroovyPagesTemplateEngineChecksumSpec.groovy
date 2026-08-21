@@ -25,8 +25,8 @@ import org.springframework.core.io.ByteArrayResource
 import org.grails.gsp.compiler.GroovyPageParser
 
 /**
- * A page compiled at runtime records a checksum of its source as well as a modification time, so that it is
- * checked for staleness the same way a precompiled page is.
+ * A page compiled at runtime records a checksum of its source, so that it is checked for staleness the same
+ * way a precompiled page is.
  *
  * The checksum must be taken over the bytes as stored, not over the decoded or decorated source the parse
  * path works with, because the runtime re-reads the resource raw when comparing.
