@@ -66,7 +66,7 @@ public class ControllersAutoConfiguration {
     // same "hiddenHttpMethodFilter" bean name this auto-configuration uses.
     private static final String SPRING_HIDDEN_METHOD_FILTER_ENABLED = "spring.mvc.hiddenmethod.filter.enabled";
 
-    @Value("${" + Settings.WEB_HIDDEN_METHOD_FILTER_ENABLED + ":true}")
+    @Value("${" + Settings.WEB_HIDDEN_METHOD_FILTER_ENABLED + ":false}")
     private boolean hiddenHttpMethodFilterEnabled;
 
     @Value("${" + Settings.FILTER_ENCODING + ":utf-8}")
@@ -111,16 +111,18 @@ public class ControllersAutoConfiguration {
     }
 
     // Rewrites a POST carrying "_method" or "X-HTTP-Method-Override" before the request reaches the
-    // dispatcher, so the whole chain -- including Spring Security -- sees the overridden method. Disabling
-    // it does not disable method override: UrlMappingsHandlerMapping resolves "_method" itself when the
-    // filter is absent, which keeps the parameter read inside the dispatcher rather than ahead of it.
+    // dispatcher, so the whole chain -- including Spring Security -- sees the overridden method. Off by
+    // default as of Grails 8, because reading a request parameter ahead of the dispatcher forces the servlet
+    // container to parse a multipart body before the request has been routed or authenticated. Turning it
+    // off does not disable method override: GrailsDispatcherServlet resolves "_method" once the request is
+    // inside the dispatcher, after multipart handling and after the filter chain.
     //
     // Backs off when Boot's property is explicitly enabled: Boot registers its filter under this same bean
     // name, and since bean-definition overriding is disabled by default the two definitions would otherwise
     // collide and fail application startup.
     @Bean
     @ConditionalOnMissingBean(value = HiddenHttpMethodFilter.class, name = "hiddenHttpMethodFilter")
-    @ConditionalOnBooleanProperty(name = Settings.WEB_HIDDEN_METHOD_FILTER_ENABLED, matchIfMissing = true)
+    @ConditionalOnBooleanProperty(name = Settings.WEB_HIDDEN_METHOD_FILTER_ENABLED)
     @ConditionalOnProperty(name = SPRING_HIDDEN_METHOD_FILTER_ENABLED, havingValue = "false", matchIfMissing = true)
     public FilterRegistrationBean<Filter> hiddenHttpMethodFilter() {
         FilterRegistrationBean<Filter> registrationBean = new FilterRegistrationBean<>();

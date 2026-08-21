@@ -19,11 +19,19 @@
 package org.grails.web.mapping.mvc
 
 import grails.artefact.Artefact
+import grails.config.Settings
 import grails.core.DefaultGrailsApplication
+import grails.core.GrailsApplication
 import grails.util.GrailsWebMockUtil
+import grails.util.Holders
 import grails.web.Action
 import grails.web.mapping.AbstractUrlMappingsSpec
 import grails.web.mapping.UrlMappingInfo
+
+import org.grails.config.PropertySourcesConfig
+import org.grails.support.MockApplicationContext
+import org.grails.web.mapping.DefaultUrlMappingEvaluator
+import org.grails.web.mapping.DefaultUrlMappingsHolder
 
 /**
  * With the hidden HTTP method filter disabled, the handler mapping resolves the '_method' parameter itself
@@ -81,19 +89,40 @@ class HiddenHttpMethodHandlerMappingSpec extends AbstractUrlMappingsSpec {
         given: 'unlike the servlet filter, which applies any method name it is given'
         def handler = bookHandlerMapping(true)
 
-        expect: 'a GET override is refused, so a POST cannot be turned into a read'
-        match(handler, 'POST', '/books/1', 'GET') == null
-        match(handler, 'POST', '/books/1', 'TRACE') == null
+        expect: 'the override is refused and the request stays a POST, so it can never become a read'
+        match(handler, 'POST', '/books/1', 'GET').actionName == 'update'
+        match(handler, 'POST', '/books/1', 'TRACE').actionName == 'update'
+
+        and: 'and a GET to the member URL still reaches show, not anything the parameter asked for'
+        match(handler, 'GET', '/books/1', 'DELETE').actionName == 'show'
     }
 
-    void 'a POST without the parameter is unaffected'() {
+    void 'a POST to the member URL reaches update without any _method parameter'() {
+        given: 'the shape AngularJS $resource and the clients modelled on it use to save an existing object'
+        def handler = bookHandlerMapping(true)
+
+        when:
+        UrlMappingInfo info = match(handler, 'POST', '/books/1', null)
+
+        then: 'RestfulController has permitted POST for update since #9926; this is the route for it'
+        info.actionName == 'update'
+        info.controllerName == 'book'
+        info.id == '1'
+    }
+
+    void 'the collection URL still routes a POST to save'() {
         given:
         def handler = bookHandlerMapping(true)
 
-        expect: 'the collection URL still routes to save'
+        expect: 'create and update stay separated by URL, exactly as $resource separates them'
         match(handler, 'POST', '/books', null).actionName == 'save'
+    }
 
-        and: 'and the member URL still matches nothing'
+    void 'no POST route is added to the member URL while the filter is enabled'() {
+        given: 'with the filter on, every path to update is rewritten to PUT before Spring Security sees it'
+        def handler = bookHandlerMapping(false)
+
+        expect: 'so the route is not generated, and the security posture of existing applications is unchanged'
         match(handler, 'POST', '/books/1', null) == null
     }
 
@@ -105,14 +134,32 @@ class HiddenHttpMethodHandlerMappingSpec extends AbstractUrlMappingsSpec {
         match(handler, 'DELETE', '/books/1', null).actionName == 'delete'
     }
 
-    private UrlMappingsHandlerMapping bookHandlerMapping(boolean resolveHiddenHttpMethod) {
+    void cleanup() {
+        // setConfig publishes to the static Holders, which would otherwise leak into sibling tests
+        Holders.clear()
+    }
+
+    /**
+     * @param filterDisabled whether the application has switched the hidden HTTP method filter off, which
+     *                       both moves the override into the request path and generates the POST update route
+     */
+    private UrlMappingsHandlerMapping bookHandlerMapping(boolean filterDisabled) {
+        def config = new PropertySourcesConfig()
+        config.merge([(Settings.WEB_HIDDEN_METHOD_FILTER_ENABLED): !filterDisabled])
+
         def grailsApplication = new DefaultGrailsApplication(BookController)
+        grailsApplication.config = config
         grailsApplication.initialise()
-        def holder = getUrlMappingsHolder {
+
+        def ctx = new MockApplicationContext()
+        ctx.registerMockBean(GrailsApplication.APPLICATION_ID, grailsApplication)
+        def evaluator = new DefaultUrlMappingEvaluator(ctx)
+        def holder = new DefaultUrlMappingsHolder(evaluator.evaluateMappings {
             "/books"(resources: 'book')
-        }
+        })
+
         def handler = new UrlMappingsHandlerMapping(new GrailsControllerUrlMappings(grailsApplication, holder))
-        handler.resolveHiddenHttpMethod = resolveHiddenHttpMethod
+        handler.resolveHiddenHttpMethod = filterDisabled
         handler
     }
 

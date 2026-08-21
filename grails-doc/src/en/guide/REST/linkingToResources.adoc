@@ -38,12 +38,16 @@ The best way to accomplish this is to use a form submit:
 Grails supports overriding the request method via the hidden `_method` parameter. This is for browser compatibility purposes. This is useful when using restful resource mappings to create powerful web interfaces.
 To make a link fire this type of event, perhaps capture all click events for links with a `data-method` attribute and issue a form submit via JavaScript.
 
-The same override can be requested with an `X-HTTP-Method-Override` header, for clients that cannot send a
-`PUT`, `PATCH` or `DELETE` directly.
+The same override can be requested with an `X-HTTP-Method-Override` header only while the hidden HTTP method
+filter is enabled; it is disabled by default as of Grails 8.
 
-By default the override is applied by a servlet filter that rewrites the request method before it reaches the
-dispatcher, so the whole filter chain -- including Spring Security -- sees the overridden method. The filter can
-be switched off:
+By default the `_method` parameter is resolved inside the dispatcher, after multipart handling and after the
+servlet filter chain. A `resources` mapping also routes a `POST` to the member URL at the `update` action, so
+`<g:form method="PUT">` submits a plain `POST` and needs no parameter at all. Only `method="DELETE"` still emits
+one, because `delete` and `update` share a URL.
+
+The previous behaviour -- a servlet filter rewriting the request method ahead of the dispatcher -- can be
+restored:
 
 [source,yaml]
 .grails-app/conf/application.yml
@@ -52,13 +56,9 @@ grails:
     web:
         hiddenmethod:
             filter:
-                enabled: false
+                enabled: true
 ----
 
-Forms are unaffected: the `_method` parameter is then resolved while URL mappings are matched instead, so
-`<g:form method="DELETE">` still reaches the `delete` action.
-
-WARNING: With the filter off, the override happens inside the dispatcher, so servlet filters and the Spring
-Security filter chain see the request's real `POST` method and the URL is unchanged. Authorization rules keyed
-on the HTTP method must be reviewed before switching it off. The `X-HTTP-Method-Override` header is also no
-longer honoured, and only `PUT`, `PATCH` and `DELETE` can be requested.
+WARNING: With the filter disabled, servlet filters and the Spring Security filter chain see the request's real
+`POST` method, and the URL does not distinguish `update` from `delete`. Authorization rules keyed on the HTTP
+method must be reviewed.

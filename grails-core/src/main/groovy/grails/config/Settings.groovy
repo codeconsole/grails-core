@@ -278,10 +278,12 @@ interface Settings {
     String WEB_REMOVE_WELCOME_PAGE_MAPPING = 'grails.web.removeWelcomePageMapping'
 
     /**
-     * Whether to register Grails' hidden HTTP method filter, which lets a browser form request a
-     * {@code PUT}, {@code PATCH} or {@code DELETE} by submitting a {@code POST} carrying a
-     * {@code _method} parameter or an {@code X-HTTP-Method-Override} header. Disable it in
-     * applications whose clients send real HTTP methods. Defaults to true
+     * Whether to register Grails' hidden HTTP method filter, which rewrites a {@code POST} carrying a
+     * {@code _method} parameter or an {@code X-HTTP-Method-Override} header before the request reaches the
+     * dispatcher. Defaults to false as of Grails 8: the filter reads a request parameter ahead of the
+     * dispatcher, which forces the servlet container to parse a {@code multipart/form-data} body before the
+     * request has been routed or authenticated. Browser forms are unaffected -- the {@code _method}
+     * parameter is resolved inside the dispatcher instead. Set to true to restore the filter
      *
      * @since 8.0
      */
