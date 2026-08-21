@@ -19,7 +19,6 @@
 package hello;
 
 import java.io.InputStream;
-import java.util.Collections;
 import java.util.Properties;
 
 import asset.pipeline.AssetPipelineConfigHolder;
@@ -29,8 +28,6 @@ import asset.pipeline.grails.AssetProcessorService;
 import asset.pipeline.grails.AssetsTagLib;
 
 import grails.core.GrailsApplication;
-import grails.web.mapping.UrlMappingsHolder;
-import org.grails.web.mapping.DefaultUrlMappingsHolder;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
@@ -52,16 +49,6 @@ import org.springframework.core.io.ResourceLoader;
  */
 @Configuration(proxyBeanMethods = false)
 public class AssetPipelineConfiguration {
-
-    /**
-     * Where a link generator looks a mapping up. The asset pipeline contributes a generator, which
-     * a Grails application gives its URL mappings; this application routes with Spring MVC and has
-     * none, and an asset URL is built from a path rather than from a mapping.
-     */
-    @Bean
-    public UrlMappingsHolder grailsUrlMappingsHolder() {
-        return new DefaultUrlMappingsHolder(Collections.emptyList());
-    }
 
     /**
      * The {@code <asset:...>} tag library. What it takes is given to it here rather than by name, as
