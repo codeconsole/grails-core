@@ -17,11 +17,9 @@
  *  under the License.
  */
 
-package spring.security.cas.test
+package grails.plugin.springsecurity.cas.test
 
-import com.test.Role
-import com.test.User
-import com.test.UserRole
+
 import groovy.transform.CompileStatic
 
 @CompileStatic
