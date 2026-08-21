@@ -42,7 +42,7 @@ ext {
             // Also declared in bomDependencyVersions so app BOMs and the Gradle plugin BOM stay aligned.
             'log4j2.version'                : '2.25.5',
             'maven-model.version'           : '3.9.16',
-            'objenesis.version'             : '3.4',
+            'objenesis.version'             : '3.6',
             'spring-boot.version'           : '4.1.1',
     ]
 
