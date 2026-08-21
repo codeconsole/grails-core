@@ -21,11 +21,18 @@ package grails.web.databinding
 import groovy.transform.CompileStatic
 import groovy.transform.Sortable
 
+import spock.lang.Issue
+import spock.lang.Specification
+import spock.lang.Unroll
+
+import org.springframework.context.support.StaticMessageSource
+
 import grails.config.Settings
 import grails.databinding.BindUsing
 import grails.databinding.BindingFormat
 import grails.databinding.DataBindingSource
 import grails.databinding.SimpleMapDataBindingSource
+import grails.databinding.converters.ValueConverter
 import grails.databinding.errors.BindingError
 import grails.databinding.events.DataBindingListenerAdapter
 import grails.persistence.Entity
@@ -33,10 +40,6 @@ import grails.testing.gorm.DataTest
 import grails.validation.DeferredBindingActions
 import grails.validation.Validateable
 import org.grails.config.PropertySourcesConfig
-import org.springframework.context.support.StaticMessageSource
-import spock.lang.Issue
-import spock.lang.Specification
-import spock.lang.Unroll
 
 class GrailsWebDataBinderSpec extends Specification implements DataTest {
 
@@ -46,9 +49,9 @@ class GrailsWebDataBinderSpec extends Specification implements DataTest {
 
     void setupSpec() {
         mockDomains(
-            AssociationBindingAuthor, AssociationBindingBook, AssociationBindingPage, Author, Child,
-            CollectionContainer, DataBindingBook, Fidget, Foo, GeneratedBindingChild, GeneratedBindingParent,
-            Parent, Publication, Publisher, Team, Widget
+                AssociationBindingAuthor, AssociationBindingBook, AssociationBindingPage, Author, BinderNullabilityEntity,
+                Child, CollectionContainer, DataBindingBook, Fidget, Foo, GeneratedBindingChild, GeneratedBindingParent,
+                Parent, Publication, Publisher, Team, Widget
         )
     }
 
@@ -58,6 +61,7 @@ class GrailsWebDataBinderSpec extends Specification implements DataTest {
     
     void cleanup() {
         Locale.setDefault(defaultLocale)
+        binder.convertEmptyStringsToNull = true
         grailsApplication.config.setAt(Settings.DATABINDING_DENY_BY_DEFAULT, null)
         DataBindingUtils.clearBindingCaches()
         GrailsWebDataBinder.resetWarnedBindingShapes()
@@ -1355,6 +1359,38 @@ class GrailsWebDataBinderSpec extends Specification implements DataTest {
         afterBindingArgs[0]['propertyName'] == 'someNumber'
     }
     
+    void 'blank binding errors respect domain property nullability'() {
+
+        given:
+        binder.convertEmptyStringsToNull = false
+        binder.registerConverter(new ValueConverter() {
+            boolean canConvert(Object value) {
+                value instanceof String
+            }
+
+            Object convert(Object value) {
+                throw new IllegalArgumentException('Blank status')
+            }
+
+            Class<?> getTargetType() {
+                BinderNullabilityStatus
+            }
+        })
+        def entity = new BinderNullabilityEntity()
+
+        when:
+        binder.bind(entity, new SimpleMapDataBindingSource(
+            optionalStatus: '',
+            requiredStatus: ''
+        ))
+
+        then:
+        entity.hasErrors()
+        entity.errors.errorCount == 1
+        entity.errors.getFieldError('requiredStatus').code == 'typeMismatch'
+        entity.errors.getFieldError('optionalStatus') == null
+    }
+
     void 'Test binding a List<String>'() {
 
         given:
@@ -1939,7 +1975,6 @@ class Team {
         members: Author,
         states: String
     ]
-
 }
 
 @Entity
@@ -1973,7 +2008,6 @@ class Publisher {
 class SomeNonDomainClass {
     Publication publication
     List<Long> listOfLong
-
 }
 
 @Entity
@@ -1982,9 +2016,12 @@ class Publication {
     String title
     Author author
 
+    static constraints = {
+        publisher nullable: true
+    }
+
     @SuppressWarnings('unused')
     static belongsTo = [publisher: Publisher]
-
 }
 
 @Entity
@@ -2065,13 +2102,11 @@ class ParentWidget implements Validateable {
 @Entity
 class Fidget extends ParentWidget {
     String name
-
 }
 
 @Entity
 class Parent {
     Child child
-
 }
 
 @Entity
@@ -2160,7 +2195,6 @@ class DataBindingBook {
         topics: String,
         importantPageNumbers: Integer
     ]
-
 }
 
 @Entity
@@ -2179,12 +2213,10 @@ class CollectionContainer {
         collectionOfWidgets: Widget,
         sortedSetOfWidgets: Widget
     ]
-
 }
 
 class DocumentHolder {
     List<ObjectId> objectIds
-
 }
 
 class ObjectId {
@@ -2194,7 +2226,6 @@ class ObjectId {
     ObjectId(String str) {
         value = str
     }
-
 }
 
 class PrimitiveContainer implements Validateable {
@@ -2206,19 +2237,30 @@ class PrimitiveContainer implements Validateable {
     long someLong
     float someFloat
     double someDouble
-
 }
 
 @SuppressWarnings('unused')
 class SomeValidateableClass implements Validateable {
     Integer someNumber
+}
 
+@Entity
+class BinderNullabilityEntity {
+    BinderNullabilityStatus optionalStatus
+    BinderNullabilityStatus requiredStatus
+
+    static constraints = {
+        requiredStatus nullable: false
+    }
+}
+
+enum BinderNullabilityStatus {
+    ACTIVE
 }
 
 @Entity
 class AssociationBindingPage {
     Integer number
-
 }
 
 @Entity
@@ -2230,7 +2272,6 @@ class AssociationBindingBook {
 
     static belongsTo = [author: AssociationBindingAuthor]
     static hasMany = [pages: AssociationBindingPage]
-
 }
 
 @Entity
@@ -2241,7 +2282,6 @@ class AssociationBindingAuthor {
     List<AssociationBindingBook> books
 
     static hasMany = [books: AssociationBindingBook]
-
 }
 
 @Entity
@@ -2299,17 +2339,14 @@ class Foo {
 class NonDomainClassWithMapProperty {
     String name
     Map<String, Album> albums
-
 }
 
 class NonDomainClassWithSetOfDomainInstances {
     Set<Publisher> publishers
-
 }
 
 class Album {
     String title
-
 }
 
 @SuppressWarnings('unused')
@@ -2324,11 +2361,9 @@ class AlbumHolder {
     Album getAlbum() {
         return new Album(title: album)
     }
-
 }
 
 @SuppressWarnings('unused')
 class ListCommand implements Validateable {
     List<Long> myLongList
-
 }
