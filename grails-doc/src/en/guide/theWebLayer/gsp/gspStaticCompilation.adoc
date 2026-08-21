@@ -104,7 +104,32 @@ A page introduces names of its own through the `var` and `status` attributes of 
 Total: ${total}
 ----
 
-What such a name holds is decided by the tag when the page renders, so it is read dynamically rather than reported.
+What such a name holds is decided by the tag when the page renders, so it is read dynamically rather than reported. Reading a member from it is fine; applying an operator to it is not, because nothing established what it holds:
+
+[,xml]
+----
+Total: ${total + 1}
+----
+----
+The type of [total] is not known here, and an operator cannot be applied to it.
+----
+
+Giving the name a type answers that, and the value is converted to it:
+
+[,xml]
+----
+<g:set type="int" var="total" value="${books.size()}"/>
+Total: ${total + 1}
+----
+
+`type` declares a local of that type and still writes the name into the page scope, so anything reading it afterwards is unaffected. It is only meaningful alongside `value`: a tag given a body or a `bean` produces its value as it runs, so there is nothing to declare from, and combining them is an error.
+
+Where the name is only read by the page itself, `<g:def>` declares it without the scope write:
+
+[,xml]
+----
+<g:def type="int" var="total" value="${books.size()}"/>
+----
 
 ==== Requiring Every Page to Declare What It Reads
 
@@ -176,7 +201,9 @@ An individual page always wins over either, and can opt back out:
 
 [NOTE]
 ====
-Enabling this for an existing application is not a transparent change: every page that references an undeclared model variable will fail to compile until it declares its model. Introduce the setting once the views it covers declare their models, and use `compileStatic="false"` for the pages that are not ready yet.
+Enabling this for an existing application is not entirely transparent. A page that reads a model variable it has not declared still compiles -- it reads it the way a dynamically compiled page does -- but two things are reported that were not before, and `compileStatic="false"` turns a page back off while it is dealt with.
+
+The first accounts for most of the work: an operator applied to a value whose type nothing established, such as `${a + b}` or `${rows[0]}`, is reported whether or not strictness is on. Declare the value in the `model` directive, or give it a type where the page introduces it.
 
 A model variable sharing a name with one the framework supplies -- `params`, `request`, `response`, `session`, `application`, `servletContext`, `flash`, `webRequest`, `controllerName`, `actionName` or `namespace` -- is no longer read as the model supplied it: the page reads it with the type the framework value has. Reading a member that type does not have is a compilation error the build reports. Passing a value of another type is not: it fails at render with a `GroovyCastException`, so precompiling the views will not catch it. Rename the model key, or declare it in the `model` directive to keep your own type.
 ====
@@ -215,4 +242,4 @@ grails:
 
 The declared namespaces are added to the defaults rather than replacing them.
 
-TIP: Static compilation of GSP pages is independent of the `grails { compileStatic { } }` build options described in link:staticTypeCheckingAndCompilation.html#grailsCompileStatic[GrailsCompileStatic], which apply to controllers, services and tag library classes.
+TIP: The other opt-ins in the `grails { compileStatic { } }` block described in link:staticTypeCheckingAndCompilation.html#grailsCompileStatic[GrailsCompileStatic] apply to controllers, services and tag library classes. `gsp` applies to pages, and is the one opt-in there that `all = true` does not include.
