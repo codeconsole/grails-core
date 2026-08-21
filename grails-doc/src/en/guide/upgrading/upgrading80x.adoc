@@ -2633,7 +2633,74 @@ used to apply to its own message source.
 Adding or removing a base name now needs a restart, because Spring Boot reads the configured base names
 once when it builds the message source.
 
-==== 48. `request` Is No Longer a `MultipartHttpServletRequest`
+==== 48. CAS Single Sign-Out Is Opt-In
+
+`grails.plugin.springsecurity.cas.useSingleSignout` now defaults to `false`. It previously defaulted
+to `true`, so every CAS application registered the CAS client's `SingleSignOutFilter` whether or not
+it wanted single sign-out.
+
+The default changed because enabling single sign-out is a security trade-off rather than a free
+feature. CAS maps the service ticket to the HTTP session id, so single sign-out cannot work while
+session fixation prevention is replacing the session when the user authenticates. Enabling
+`cas.useSingleSignout` disables session fixation prevention, and an application should make that
+choice deliberately.
+
+If your application relies on CAS single sign-out, enable it explicitly:
+
+[source,groovy]
+.grails-app/conf/application.groovy
+----
+grails.plugin.springsecurity.cas.useSingleSignout = true
+----
+
+The plugin logs a warning at startup when it is enabled, noting that session fixation prevention has
+been disabled.
+
+**Single sign-out did not actually work before Grails 8**, so an application upgrading from an
+earlier version is unlikely to lose working behaviour. The plugin set
+`useSessionFixationPrevention = false` from `doWithSpring`, but it declares `loadAfter =
+['springSecurityCore']`, so the core plugin had already defined `sessionAuthenticationStrategy` from
+the original value. The filter was registered, the session was still replaced on login, and CAS
+logout requests silently matched nothing. Grails 8 also redefines `sessionAuthenticationStrategy`
+from the CAS plugin, so enabling `cas.useSingleSignout` now has the documented effect.
+
+The Spring Security CAS configuration reference in this guide documents the setting in full.
+
+==== 49. GSPs Record a Source Checksum Instead of a Modification Time
+
+A GSP used to carry the modification time of its `.gsp` source, precompiled pages baking it into the
+generated class as a `LAST_MODIFIED` constant. Git stores no modification times, so every fresh clone or CI
+checkout gave each source a new one, and the generated classes differed on every checkout even when the
+sources were byte-for-byte identical. Because `LAST_MODIFIED` was a compile-time constant it was part of the
+class's ABI, so the difference survived even Gradle's compile-classpath normalization and every task
+downstream of a jar containing precompiled GSPs missed the build cache.
+
+Grails 8 records a `SOURCE_CHECKSUM` of the page source instead, for pages compiled at build time and at
+runtime alike. Identical sources now compile to identical bytes on every machine.
+
+Runtime reloading, described in
+<<makingChangesToADeployedApplication,Making Changes to a Deployed Application>>, is unaffected: a page is
+reloaded when its source no longer matches the recorded checksum. Detection is more accurate than it was.
+An edit is caught whenever the source's modification time or length moves, which any ordinary save does;
+previously a save landing within the old granularity window went unnoticed until a later edit moved it
+clear. In the other direction, a page whose modification time moves without its content changing is no
+longer recompiled, so touching a file — or a build step copying views into place — no longer reloads pages
+that did not actually change. If you were using `touch` to force a page to recompile, edit the page instead.
+
+**Removed API.** `GroovyPageMetaInfo.getLastModified()`, `setLastModified(long)` and
+`applyLastModifiedFromResource(Resource)` are gone, as are `GroovyPageParser.getLastModified()` and
+`setLastModified(long)`. Use `GroovyPageMetaInfo.getSourceChecksum()` to identify the source a page was
+compiled from. Generated page classes no longer declare a `LAST_MODIFIED` constant.
+
+**Removed setting.** `grails.gsp.reload.granularity` is gone. It existed to absorb rounding differences
+between modification times, which comparing content does not need; setting it now has no effect.
+`grails.gsp.reload.interval` is unchanged.
+
+A GSP precompiled by Grails 7 and shipped inside a binary plugin carries no checksum. Such a page is served
+normally; it is simply never reload-checked, which was already the case for views resolved out of a plugin
+jar.
+
+==== 50. `request` Is No Longer a `MultipartHttpServletRequest`
 
 The `request` object Grails exposes to controllers, tag libraries and GSPs is now always the outermost
 servlet request. Previously, for a file upload, Grails replaced it with the resolved
@@ -2680,11 +2747,11 @@ def file = request.getFile('myFile')
 Calling one of the file methods on a request that is not a file upload throws `IllegalStateException`
 with a diagnostic message, the same way it previously failed with `MissingMethodException`.
 
-==== 49. Request Processing Behaviour Changes
+==== 51. Request Processing Behaviour Changes
 
 Four changes fall out of Grails 8 delegating more of the request path to Spring.
 
-===== 49.1 API versioning headers are now emitted for Grails-mapped requests
+===== 51.1 API versioning headers are now emitted for Grails-mapped requests
 
 `UrlMappingsHandlerMapping` previously assembled its own handler execution chain rather than using
 Spring's. As a result, Grails-mapped requests skipped the interceptor Spring adds for API versioning,
@@ -2694,13 +2761,13 @@ never sent. The chain is now assembled by Spring, and those headers are emitted 
 If an application relied on those headers being absent, unset the corresponding
 `spring.mvc.apiversion.*` configuration.
 
-===== 49.2 The `LocaleContext` is restored rather than cleared
+===== 51.2 The `LocaleContext` is restored rather than cleared
 
 At the end of a request Grails previously called `LocaleContextHolder.setLocale(null)`, which discarded
 any `LocaleContext` established earlier in the filter chain by non-Grails code. Grails now saves and
 restores the previous `LocaleContext`, matching Spring's own `RequestContextFilter`.
 
-===== 49.3 The application attributes object is shared per servlet context
+===== 51.3 The application attributes object is shared per servlet context
 
 `GrailsApplicationAttributes` was constructed once per request. It is now created once per servlet
 context and reused, so the beans it caches are resolved once rather than on every request. It is
@@ -2709,10 +2776,10 @@ rebuilt automatically if the `ApplicationContext` is replaced.
 Applications that implemented `GrailsApplicationAttributes` themselves must ensure their
 implementation holds no request-scoped state and is safe to use from multiple request threads.
 
-===== 49.4 `GrailsWebRequest.getCurrentRequest()` is deprecated
+===== 51.4 `GrailsWebRequest.getCurrentRequest()` is deprecated
 
 `getCurrentRequest()` existed to hand back the resolved multipart request in place of the request Grails
-was bound to. That substitution is gone (see _48. `request` Is No Longer a `MultipartHttpServletRequest`_),
+was bound to. That substitution is gone (see _50. `request` Is No Longer a `MultipartHttpServletRequest`_),
 so the method now returns exactly what `getRequest()` returns. It is deprecated; call `getRequest()`
 instead.
 
@@ -2727,7 +2794,7 @@ def uri = webRequest.request.requestURI
 
 Nothing about the value returned has changed, so this is a rename, not a behaviour change. Code that
 reaches for the uploaded files of a multipart request should use the `request.getFile(..)` methods
-described in section 48.
+described in section 50.
 
 Tests that mock a `GrailsWebRequest` and stub `getCurrentRequest()` need updating. `getRequest()` is
 `final` on Spring's `ServletRequestAttributes`, so `getCurrentRequest()` was the only stubbable request
