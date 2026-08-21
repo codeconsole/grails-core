@@ -426,7 +426,7 @@ class GspCompileStaticConfigSpec extends Specification {
         given:
         GroovyPagesTemplateEngine engine = engineFor('grails.views.gsp.compileStatic': true)
 
-        when: 'a primitive type casts through its wrapper, since Class.cast on a primitive throws'
+        when: 'the value is converted to the declared type rather than required to already be it'
         GroovyPageTemplate template = compile(engine, source)
 
         then:
@@ -441,6 +441,11 @@ class GspCompileStaticConfigSpec extends Specification {
         '<g:def type="double" var="d" value="${1.5d}"/>${d}'                 || '1.5'
         '<g:def type="List" var="l" value="${[1, 2]}"/>${l.size()}'          || '2'
         '<g:def type="String" var="s" value="${123.toString()}"/>${s.reverse()}' || '321'
+        '<g:def type="long" var="n" value="${2}"/>${n + 1}'                  || '3'
+        '<g:def type="double" var="d" value="${2}"/>${d}'                    || '2.0'
+        '<g:def type="String" var="s" value="Total: ${1 + 1}"/>${s}'         || 'Total: 2'
+        '<g:def type="String" var="s" value="${1 + 1} and ${2 + 2}"/>${s}'   || '2 and 4'
+        '<g:def type="int" var="a" value="${5}"/><g:def type="int" var="b" value="${a}"/>${b}' || '5'
     }
 
     void 'a set tag given a type compiles the variable rather than looking it up'() {
@@ -458,6 +463,9 @@ class GspCompileStaticConfigSpec extends Specification {
                 '<g:set type="int" var="n" value="${2}"/>${n + 1}',
                 '<g:set type="String" var="s" value="${123.toString()}"/>${s.reverse()}',
                 '<g:set type="List" var="l" value="${[1, 2]}"/>${l[0]}',
+                '<g:set type="long" var="n" value="${2}"/>${n + 1}',
+                '<g:set type="double" var="d" value="${2}"/>${d + 1}',
+                '<g:set type="String" var="s" value="Total: ${1 + 1}"/>${s.reverse()}',
         ]
     }
 

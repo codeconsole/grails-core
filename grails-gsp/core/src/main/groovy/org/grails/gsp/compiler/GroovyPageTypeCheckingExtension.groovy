@@ -248,10 +248,6 @@ class GroovyPageTypeCheckingExtension extends GroovyTypeCheckingExtensionSupport
     }
 
     /**
-     * Whether the type of what a member is read from is not known, which is what {@code Object} means
-     * for an expression in a page: nothing said what it holds.
-     */
-    /**
      * The expressions an operator is applied to, which are what must not be resolved dynamically.
      *
      * <p>Resolving a name dynamically works where it is read from or called, because both go through
@@ -287,9 +283,15 @@ class GroovyPageTypeCheckingExtension extends GroovyTypeCheckingExtensionSupport
         expression != null && currentScope.operatorReceivers?.contains(positionOf(expression))
     }
 
+    /**
+     * Whether the type of what a member is read from is not known, which is what {@code Object} means
+     * for an expression in a page: nothing said what it holds.
+     *
+     * <p>Asked of the visitor rather than read from the expression, because a closure parameter
+     * carries its type there and not in its own metadata, and those are most of what a page reads
+     * from.</p>
+     */
     private boolean isUnknownReceiver(Expression expression) {
-        // Asked of the visitor rather than read from the expression: a closure parameter carries its
-        // type there and not in its own metadata, and those are most of what a page reads from.
         expression != null && ClassHelper.OBJECT_TYPE == getType(expression)
     }
 

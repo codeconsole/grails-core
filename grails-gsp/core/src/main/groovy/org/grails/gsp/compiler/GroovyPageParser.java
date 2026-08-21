@@ -115,10 +115,6 @@ public class GroovyPageParser implements Tokens {
     private static final String TYPE_ATTRIBUTE = "type";
     private static final String VAR_ATTRIBUTE = "var";
 
-    private static final Map<String, String> PRIMITIVE_WRAPPERS = Map.of(
-            "boolean", "Boolean", "byte", "Byte", "char", "Character", "short", "Short",
-            "int", "Integer", "long", "Long", "float", "Float", "double", "Double");
-
     public static final String MODEL_DIRECTIVE = "model";
     public static final String COMPILE_STATIC_DIRECTIVE = "compileStatic";
     public static final String TAGLIBS_DIRECTIVE = "taglibs";
@@ -1466,15 +1462,12 @@ public class GroovyPageParser implements Tokens {
         // A name typed once is declared; typing it again assigns to what was declared. Declaring it
         // twice would not compile, where the untyped tag simply writes the scope again.
         String declaration = declareTypedSetVariable(var) ? type + " " + var : var;
-        out.println(declaration + " = " + castingTypeFor(type) + ".cast(" + getExpressionText(value.toString()) + ")");
+        // A Groovy cast rather than Class.cast, which only accepts what is already of the type: a
+        // long declared from an integer literal, a String from a GString and a List from an array are
+        // all ordinary things to write, and all of them are conversions rather than instances.
+        out.println(declaration + " = (" + type + ") (" + getExpressionText(value.toString()) + ")");
         // and the tag is called with what was just declared, so it writes the same value into the scope
         attrs.put("\"value\"", var);
-    }
-
-    /** The wrapper to cast through for a primitive, whose own class rejects everything it is handed. */
-    private static String castingTypeFor(String typeName) {
-        String wrapper = PRIMITIVE_WRAPPERS.get(typeName);
-        return wrapper != null ? wrapper : typeName;
     }
 
     /** The plain text of a quoted attribute, or {@code null} where the page did not give one. */

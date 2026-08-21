@@ -18,8 +18,6 @@
  */
 package org.grails.gsp.compiler.tags;
 
-import java.util.Map;
-
 import grails.util.GrailsStringUtils;
 import org.grails.taglib.GrailsTagException;
 
@@ -30,16 +28,6 @@ import org.grails.taglib.GrailsTagException;
  */
 public class GroovyDefTag extends GroovySyntaxTag {
 
-    private static final Map<String, String> PRIMITIVE_WRAPPERS = Map.of(
-            "boolean", "Boolean",
-            "byte", "Byte",
-            "char", "Character",
-            "short", "Short",
-            "int", "Integer",
-            "long", "Long",
-            "float", "Float",
-            "double", "Double");
-
     public static final String TAG_NAME = "def";
     private static final String ATTRIBUTE_VALUE = "value";
     private static final String ATTRIBUTE_TYPE = "type";
@@ -49,7 +37,7 @@ public class GroovyDefTag extends GroovySyntaxTag {
         if (GrailsStringUtils.isBlank(expr)) {
             throw new GrailsTagException("Tag [" + TAG_NAME + "] missing required attribute [" + ATTRIBUTE_VALUE + "]", parser.getPageName(), parser.getCurrentOutputLineNumber());
         }
-        expr = calculateExpression(expr);
+        expr = groovyExpressionFor(expr);
 
         String var = attributes.get(ATTRIBUTE_VAR);
         if (GrailsStringUtils.isBlank(var)) {
@@ -71,16 +59,33 @@ public class GroovyDefTag extends GroovySyntaxTag {
         if (typeName.equals("def") || typeName.equals("Object")) {
             out.println(expr);
         } else {
-            // Cast through the wrapper for a primitive: Class.cast on a primitive class throws
-            // whatever it is handed, so int.cast(1) fails where Integer.cast(1) is what was meant.
-            // The declared type stays primitive, and the result unboxes into it.
-            out.println(castingTypeFor(typeName) + ".cast(" + expr + ")");
+            // A Groovy cast rather than Class.cast, which only accepts what is already of the type
+            // and so rejects every conversion Groovy would otherwise have made. The expression is
+            // parenthesised because it is written by the page and may be a GString or an operation.
+            out.println("(" + typeName + ") (" + expr + ")");
         }
     }
 
-    private static String castingTypeFor(String typeName) {
-        String wrapper = PRIMITIVE_WRAPPERS.get(typeName);
-        return wrapper != null ? wrapper : typeName;
+    /**
+     * The Groovy an attribute value stands for.
+     *
+     * <p>A lone <code>${...}</code> is the expression it holds, and text with no expression in it is
+     * read as written, which is what an untyped tag naming a variable relies on. Text mixing the two,
+     * or holding more than one expression, is neither: it is a GString, and emitting it unquoted
+     * produced source that did not parse.
+     */
+    private static String groovyExpressionFor(String value) {
+        String text = value.trim();
+        if ((text.startsWith("\"") && text.endsWith("\"")) || (text.startsWith("'") && text.endsWith("'"))) {
+            text = text.substring(1, text.length() - 1).trim();
+        }
+        if (!text.contains("${")) {
+            return text;
+        }
+        if (text.startsWith("${") && text.endsWith("}") && text.indexOf("${", 2) < 0) {
+            return text.substring(2, text.length() - 1).trim();
+        }
+        return '"' + text.replace("\\", "\\\\").replace("\"", "\\\"") + '"';
     }
 
     public void doEndTag() {

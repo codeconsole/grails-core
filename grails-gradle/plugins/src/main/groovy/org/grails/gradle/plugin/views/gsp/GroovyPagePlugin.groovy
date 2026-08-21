@@ -27,6 +27,7 @@ import org.gradle.api.file.Directory
 import org.gradle.api.file.DuplicatesStrategy
 import org.gradle.api.file.FileCollection
 import org.gradle.api.plugins.JavaPluginExtension
+import org.gradle.api.tasks.TaskProvider
 import org.gradle.api.provider.Provider
 import org.gradle.api.tasks.SourceSet
 import org.gradle.api.tasks.SourceSetOutput
@@ -36,6 +37,8 @@ import org.gradle.api.tasks.bundling.War
 import org.gradle.jvm.toolchain.JavaLauncher
 import org.gradle.jvm.toolchain.JavaToolchainService
 
+import org.grails.gradle.plugin.core.GrailsCompileStaticOptions
+import org.grails.gradle.plugin.core.GrailsGradlePlugin
 import org.grails.gradle.plugin.core.GrailsExtension
 import org.grails.gradle.plugin.util.SourceSets
 
@@ -56,22 +59,27 @@ class GroovyPagePlugin implements Plugin<Project> {
     }
 
     /**
-     * Whether pages are compiled statically, from {@code grails { compileStatic { gsp } }}.
+     * Points the page compilers at {@code grails { compileStatic { gsp; strictGsp } }} once the
+     * extension carrying it exists.
      *
-     * <p>Resolved when the task runs rather than now: this plugin is applied on its own as well as
-     * alongside the one that registers the {@code grails} extension, and there is no ordering between
-     * them. Where the extension is absent, pages compile the way configuration alone says.</p>
+     * <p>Wired when the plugin that registers the extension is applied rather than read through the
+     * project later: this plugin is applied on its own as well as alongside that one, with no ordering
+     * between them, and a provider that reaches the project to answer would put the project itself
+     * behind a task input. What the tasks hold is the option object, which is what they are asking
+     * about. Where the extension never appears, the values set below stand.</p>
      */
-    private static Provider<Boolean> resolveCompileStaticPages(Project project) {
-        project.provider {
-            project.extensions.findByType(GrailsExtension)?.compileStatic?.gsp?.getOrElse(false) ?: false
-        }
-    }
-
-    /** Whether pages are held to the names they declare, from {@code grails { compileStatic { strictGsp } }}. */
-    private static Provider<Boolean> resolveStrictPages(Project project) {
-        project.provider {
-            project.extensions.findByType(GrailsExtension)?.compileStatic?.strictGsp?.getOrElse(false) ?: false
+    private static void wireCompileStaticOptions(Project project, List<TaskProvider<GroovyPageForkCompileTask>> compilers) {
+        project.plugins.withType(GrailsGradlePlugin) {
+            GrailsCompileStaticOptions options = project.extensions.findByType(GrailsExtension)?.compileStatic
+            if (options == null) {
+                return
+            }
+            compilers.each { compiler ->
+                compiler.configure {
+                    it.compileStatic.set(options.gsp.orElse(false))
+                    it.compileStaticStrict.set(options.strictGsp.orElse(false))
+                }
+            }
         }
     }
 
@@ -100,9 +108,6 @@ class GroovyPagePlugin implements Plugin<Project> {
         JavaToolchainService toolchains = project.extensions.getByType(JavaToolchainService)
         Provider<JavaLauncher> launcher = toolchains.launcherFor(javaExtension.toolchain)
 
-        Provider<Boolean> compileStaticPages = resolveCompileStaticPages(project)
-        Provider<Boolean> strictPages = resolveStrictPages(project)
-
         def compileGroovyPages = tasks.register('compileGroovyPages', GroovyPageForkCompileTask) {
             it.destinationDirectory.set(destDir)
             it.tmpDirPath = getTmpDirPath(project)
@@ -110,8 +115,8 @@ class GroovyPagePlugin implements Plugin<Project> {
             it.serverpath.set('/WEB-INF/grails-app/views/')
             it.classpath = allClasspath
             it.javaLauncher.convention(launcher)
-            it.compileStatic.set(compileStaticPages)
-            it.compileStaticStrict.set(strictPages)
+            it.compileStatic.set(false)
+            it.compileStaticStrict.set(false)
         }
 
         def compileWebappGroovyPages = tasks.register('compileWebappGroovyPages', GroovyPageForkCompileTask) {
@@ -121,9 +126,11 @@ class GroovyPagePlugin implements Plugin<Project> {
             it.serverpath.set('/')
             it.classpath = allClasspath
             it.javaLauncher.convention(launcher)
-            it.compileStatic.set(compileStaticPages)
-            it.compileStaticStrict.set(strictPages)
+            it.compileStatic.set(false)
+            it.compileStaticStrict.set(false)
         }
+
+        wireCompileStaticOptions(project, [compileGroovyPages, compileWebappGroovyPages])
 
         compileGroovyPages.configure {
             it.dependsOn(
