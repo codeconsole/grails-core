@@ -186,9 +186,6 @@ ext {
             'pac4j-core'                  : "org.pac4j:pac4j-core:${bomDependencyVersions['pac4j.version']}",
             'pac4j-jakartaee'             : "org.pac4j:pac4j-jakartaee:${bomDependencyVersions['pac4j.version']}",
             'pac4j-oauth'                 : "org.pac4j:pac4j-oauth:${bomDependencyVersions['pac4j.version']}",
-            'plexus-utils'                                   : "org.codehaus.plexus:plexus-utils:${bomDependencyVersions['plexus-utils.version']}",
-            // Required alongside plexus-utils 4.x - see plexus-xml.version
-            'plexus-xml'                                     : "org.codehaus.plexus:plexus-xml:${bomDependencyVersions['plexus-xml.version']}",
             'rxjava'                   : "io.reactivex:rxjava:${bomDependencyVersions['rxjava.version']}",
             'rxjava2'                  : "io.reactivex.rxjava2:rxjava:${bomDependencyVersions['rxjava2.version']}",
             'scribejava-core'             : "com.github.scribejava:scribejava-core:${bomDependencyVersions['scribejava.version']}",
