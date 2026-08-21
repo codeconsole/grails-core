@@ -25,6 +25,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import org.springframework.beans.factory.SmartInitializingSingleton;
 import org.springframework.context.ApplicationListener;
 import org.springframework.context.event.ContextRefreshedEvent;
 
@@ -39,7 +40,8 @@ import org.grails.taglib.TagLibraryLookup;
  * @author Lari Hotari
  * @since 2.4.0
  */
-public class StandaloneTagLibraryLookup extends TagLibraryLookup implements ApplicationListener<ContextRefreshedEvent> {
+public class StandaloneTagLibraryLookup extends TagLibraryLookup
+        implements SmartInitializingSingleton, ApplicationListener<ContextRefreshedEvent> {
     Set<Object> tagLibInstancesSet;
 
     private StandaloneTagLibraryLookup() {
@@ -72,6 +74,16 @@ public class StandaloneTagLibraryLookup extends TagLibraryLookup implements Appl
     public void setTagLibInstances(List<Object> tagLibInstances) {
         this.tagLibInstancesSet = new LinkedHashSet<>();
         tagLibInstancesSet.addAll(tagLibInstances);
+    }
+
+    /**
+     * Registers the tag library beans of the context once they all exist, which is before the web
+     * server starts accepting requests. A context refreshed event would arrive after it already had,
+     * leaving the first render of a page racing the tag libraries it uses.
+     */
+    @Override
+    public void afterSingletonsInstantiated() {
+        detectAndRegisterTabLibBeans();
     }
 
     @Override

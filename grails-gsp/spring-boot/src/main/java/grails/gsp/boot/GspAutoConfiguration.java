@@ -19,6 +19,7 @@
 
 package grails.gsp.boot;
 
+import java.beans.Introspector;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
@@ -38,12 +39,10 @@ import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.beans.factory.config.BeanDefinition;
 import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
 import org.springframework.beans.factory.support.BeanDefinitionRegistry;
 import org.springframework.beans.factory.support.BeanDefinitionRegistryPostProcessor;
 import org.springframework.beans.factory.support.GenericBeanDefinition;
-import org.springframework.beans.factory.support.ManagedList;
 import org.springframework.boot.autoconfigure.AutoConfigureAfter;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -315,24 +314,29 @@ public class GspAutoConfiguration {
         public static final Class<?>[] DEFAULT_TAGLIB_CLASSES = new Class<?>[] {
             RenderTagLib.class, RenderSitemeshTagLib.class, Sitemesh3LayoutTagLib.class };
 
+        /**
+         * Registers the tag libraries as beans of the context and the lookup that finds them, which
+         * it does once they all exist rather than by holding them. Every tag library takes the
+         * lookup itself - {@code TagLibraryInvoker} autowires it - so a lookup that held its tag
+         * libraries would be a bean each of them depended on and which depended on each of them,
+         * a cycle an application had to allow before it would start.
+         */
         @Override
         public void registerBeanDefinitions(AnnotationMetadata importingClassMetadata, BeanDefinitionRegistry registry) {
+            registerTagLibs(registry);
             if (!registry.containsBeanDefinition("gspTagLibraryLookup")) {
-                GenericBeanDefinition beanDefinition = createBeanDefinition(StandaloneTagLibraryLookup.class);
-
-                ManagedList<BeanDefinition> list = new ManagedList<>();
-                registerTagLibs(list);
-
-                beanDefinition.getPropertyValues().addPropertyValue("tagLibInstances", list);
-
-                registry.registerBeanDefinition("gspTagLibraryLookup", beanDefinition);
+                registry.registerBeanDefinition("gspTagLibraryLookup",
+                        createBeanDefinition(StandaloneTagLibraryLookup.class));
                 registry.registerAlias("gspTagLibraryLookup", "tagLibraryLookup");
             }
         }
 
-        protected void registerTagLibs(ManagedList<BeanDefinition> list) {
+        protected void registerTagLibs(BeanDefinitionRegistry registry) {
             for (Class<?> taglibClazz : DEFAULT_TAGLIB_CLASSES) {
-                list.add(createTagLibBeanDefinition(taglibClazz));
+                String beanName = Introspector.decapitalize(taglibClazz.getSimpleName());
+                if (!registry.containsBeanDefinition(beanName)) {
+                    registry.registerBeanDefinition(beanName, createTagLibBeanDefinition(taglibClazz));
+                }
             }
         }
 
@@ -345,11 +349,11 @@ public class GspAutoConfiguration {
 
         /**
          * Tag libraries are wired from their own {@code @Autowired} declarations rather than by name.
-         * The tag libraries reachable from the lookup depend on the view resolver, which depends on
-         * the template engine, which depends on the lookup again; they break that cycle by declaring
-         * the dependency {@code @Lazy}. Autowiring them by name would inject the view resolver eagerly
-         * - {@code viewResolver} is an alias of {@code gspViewResolver} - and the context would fail
-         * to start with an unresolvable cycle.
+         * A tag library depends on the view resolver, which depends on the template engine, which
+         * depends on the lookup; they break that cycle by declaring the dependency {@code @Lazy}.
+         * Autowiring them by name would inject the view resolver eagerly - {@code viewResolver} is an
+         * alias of {@code gspViewResolver} - and the context would fail to start with a cycle nothing
+         * could break.
          */
         protected GenericBeanDefinition createTagLibBeanDefinition(Class<?> beanClass) {
             GenericBeanDefinition beanDefinition = new GenericBeanDefinition();
