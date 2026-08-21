@@ -18,6 +18,8 @@
  */
 package hello;
 
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpSession;
 import jakarta.validation.Valid;
 
@@ -26,6 +28,9 @@ import org.springframework.ui.Model;
 import org.springframework.validation.BindingResult;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestMethod;
+import org.springframework.web.servlet.HandlerInterceptor;
+import org.springframework.web.servlet.ModelAndView;
+import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.ViewControllerRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
@@ -37,15 +42,40 @@ public class WebController implements WebMvcConfigurer {
         registry.addViewController("/results").setViewName("results");
     }
 
-    @RequestMapping("/jsp") public String jsp() { return setJsp(true); }
+    /**
+     * Tells every view whether the JSP rendering can be offered, the results view included, which is
+     * rendered by the view controller above rather than by a handler method of this class.
+     */
+    @Override
+    public void addInterceptors(InterceptorRegistry registry) {
+        registry.addInterceptor(new HandlerInterceptor() {
+            @Override
+            public void postHandle(HttpServletRequest request, HttpServletResponse response, Object handler,
+                    ModelAndView modelAndView) {
+                // not onto a redirect, which would carry the attribute over as a query parameter
+                if (modelAndView != null && !modelAndView.getModel().containsKey("jspAvailable")
+                        && !isRedirect(modelAndView)) {
+                    modelAndView.addObject("jspAvailable", JspSupport.canServeJsp(request.getServletContext()));
+                }
+            }
 
-    @RequestMapping("/gsp") public String gsp() { return setJsp(false); }
+            private boolean isRedirect(ModelAndView modelAndView) {
+                String viewName = modelAndView.getViewName();
+                return viewName != null && viewName.startsWith("redirect:");
+            }
+        });
+    }
+
+    @RequestMapping("/gsp") public String gsp() {
+        selectJsp(false);
+        return "redirect:/";
+    }
 
     private static boolean jsp = false;
 
-    private String setJsp(boolean jsp) {
-        this.jsp = jsp;
-        return "redirect:/";
+    /** Called by {@link JspViewController}, which is mapped only where a JSP can be served. */
+    static void selectJsp(boolean selected) {
+        jsp = selected;
     }
 
     private String formView(Model model) {
