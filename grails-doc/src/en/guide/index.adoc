@@ -1110,55 +1110,55 @@ include::backgroundJobs.adoc[]
 
 include::backgroundJobs/backgroundJobsBasic.adoc[]
 
-[[backgroundJobsClustered]]
-=== Clustered Scheduling
+[[backgroundJobsAdvanced]]
+=== Advanced Scheduling
 
-include::backgroundJobs/backgroundJobsClustered.adoc[]
+include::backgroundJobs/backgroundJobsAdvanced.adoc[]
 
 [[quartzInstallation]]
 ==== Installation
 
-include::backgroundJobs/backgroundJobsClustered/quartzInstallation.adoc[]
+include::backgroundJobs/backgroundJobsAdvanced/quartzInstallation.adoc[]
 
 [[quartzScheduling]]
 ==== Writing Jobs
 
-include::backgroundJobs/backgroundJobsClustered/quartzScheduling.adoc[]
+include::backgroundJobs/backgroundJobsAdvanced/quartzScheduling.adoc[]
 
 [[quartzTriggers]]
 ==== Triggers
 
-include::backgroundJobs/backgroundJobsClustered/quartzTriggers.adoc[]
+include::backgroundJobs/backgroundJobsAdvanced/quartzTriggers.adoc[]
 
 [[quartzJobProperties]]
 ==== Job Properties
 
-include::backgroundJobs/backgroundJobsClustered/quartzJobProperties.adoc[]
+include::backgroundJobs/backgroundJobsAdvanced/quartzJobProperties.adoc[]
 
 [[quartzDynamicScheduling]]
 ==== Dynamic Job Scheduling
 
-include::backgroundJobs/backgroundJobsClustered/quartzDynamicScheduling.adoc[]
+include::backgroundJobs/backgroundJobsAdvanced/quartzDynamicScheduling.adoc[]
 
 [[quartzJobManagerService]]
 ==== Managing Jobs at Runtime
 
-include::backgroundJobs/backgroundJobsClustered/quartzJobManagerService.adoc[]
+include::backgroundJobs/backgroundJobsAdvanced/quartzJobManagerService.adoc[]
 
 [[quartzConfiguration]]
 ==== Configuration
 
-include::backgroundJobs/backgroundJobsClustered/quartzConfiguration.adoc[]
+include::backgroundJobs/backgroundJobsAdvanced/quartzConfiguration.adoc[]
 
 [[quartzClustering]]
 ==== Clustering
 
-include::backgroundJobs/backgroundJobsClustered/quartzClustering.adoc[]
+include::backgroundJobs/backgroundJobsAdvanced/quartzClustering.adoc[]
 
 [[quartzUsefulLinks]]
 ==== Useful Links
 
-include::backgroundJobs/backgroundJobsClustered/quartzUsefulLinks.adoc[]
+include::backgroundJobs/backgroundJobsAdvanced/quartzUsefulLinks.adoc[]
 
 [[redis]]
 == Redis

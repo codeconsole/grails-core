@@ -19,30 +19,35 @@ under the License.
 
 Most applications eventually need work to happen on a schedule rather than in response to a request: sending a nightly digest, expiring stale records, polling an upstream feed, rebuilding a cache.
 
-Grails offers two approaches, and the choice between them comes down to a single question: *will more than one instance of your application be running?*
+Grails offers two approaches:
 
 * <<backgroundJobsBasic,Basic Scheduling>> uses Spring's `@Scheduled` annotation. It is built into the framework, needs no dependencies, and is the right default for the large majority of applications.
-* <<backgroundJobsClustered,Clustered Scheduling>> uses the Quartz plugin. It coordinates through a shared database so that a given schedule fires exactly once across a whole deployment.
+* <<backgroundJobsAdvanced,Advanced Scheduling>> uses the Quartz plugin, which adds runtime-modifiable schedules, persistence, operational control, and — once configured for it — clustering across a multi-instance deployment.
 
-*Start with Basic Scheduling.* Spring's scheduler is simpler, has nothing to configure, and covers everything a single-instance application needs. Reach for Quartz when — and generally only when — you have a scheduling problem Spring's scheduler cannot solve.
+*Start with Basic Scheduling.* Spring's scheduler is simpler, has nothing to configure, and covers everything a single-instance application with fixed schedules needs. Reach for Quartz when you have a requirement Spring's scheduler cannot meet.
 
 ==== When you need Quartz
 
 Quartz earns its extra moving parts in these situations:
 
-* *Multiple instances.* This is the big one. `@Scheduled` fires on every instance independently, so a nightly job on a three-instance deployment runs three times. Quartz clustering ensures exactly one instance fires each trigger.
+* *Multiple instances.* This is the big one. `@Scheduled` fires on every instance independently, so a nightly job on a three-instance deployment runs three times. Quartz can be <<quartzClustering,configured to cluster>>, so exactly one instance fires each trigger.
 * *Schedules that change at runtime*, driven by user input or data rather than fixed in an annotation.
 * *Schedules that must survive a restart*, rather than being rebuilt from source at every startup.
 * *Operational control* — pausing, resuming, inspecting, or interrupting jobs while the application runs.
 * *Recovery of work lost to a crash*, re-running jobs that were executing when an instance died.
 
-If none of those apply, `@Scheduled` is the better choice and adding Quartz only adds a database schema and a set of configuration properties to get wrong.
+If none of those apply, `@Scheduled` is the better choice; adding Quartz only adds moving parts to get wrong.
+
+[IMPORTANT]
+====
+Adding the Quartz plugin does not by itself make a schedule cluster-safe. Quartz defaults to an in-memory job store, which duplicates work across instances exactly as `@Scheduled` does. Clustering is opt-in and requires a JDBC job store, a shared set of Quartz tables, and explicit configuration — see <<quartzClustering,Clustering>>.
+====
 
 ==== Comparison
 
 [cols="1,3,3"]
 |===
-| | <<backgroundJobsBasic,Basic Scheduling>> | <<backgroundJobsClustered,Clustered Scheduling>>
+| | <<backgroundJobsBasic,Basic Scheduling>> | <<backgroundJobsAdvanced,Advanced Scheduling>>
 
 | Mechanism
 | Spring `@Scheduled`
@@ -50,7 +55,7 @@ If none of those apply, `@Scheduled` is the better choice and adding Quartz only
 
 | Setup
 | Built in — nothing to add
-| Add `grails-quartz`, and a database schema for clustering
+| Add `grails-quartz`; clustering additionally needs a database schema and configuration
 
 | Where the schedule lives
 | An annotation on a bean method
@@ -66,7 +71,7 @@ If none of those apply, `@Scheduled` is the better choice and adding Quartz only
 
 | Safe to run on multiple instances
 | *No* — every instance fires independently
-| Yes, with clustering enabled
+| *Only when clustering is configured*; not by default
 
 | Pausing, resuming, inspecting jobs
 | Not supported

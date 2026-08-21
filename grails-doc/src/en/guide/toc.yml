@@ -341,8 +341,8 @@ mail:
 backgroundJobs:
   title: Background Jobs
   backgroundJobsBasic: Basic Scheduling
-  backgroundJobsClustered:
-    title: Clustered Scheduling
+  backgroundJobsAdvanced:
+    title: Advanced Scheduling
     quartzInstallation: Installation
     quartzScheduling: Writing Jobs
     quartzTriggers: Triggers
