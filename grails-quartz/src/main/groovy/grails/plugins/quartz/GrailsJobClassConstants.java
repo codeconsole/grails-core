@@ -62,7 +62,7 @@ public final class GrailsJobClassConstants {
 
     public static final String REQUESTS_RECOVERY = "requestsRecovery";
 
-	public static final String ENABLED = "jobEnabled";
+    public static final String ENABLED = "jobEnabled";
 
     // Default values for Job's properties
 
@@ -88,5 +88,5 @@ public final class GrailsJobClassConstants {
 
     public static final boolean DEFAULT_REQUESTS_RECOVERY = false;
 
-	public static final boolean DEFAULT_ENABLED = true;
+    public static final boolean DEFAULT_ENABLED = true;
 }

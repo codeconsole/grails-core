@@ -30,6 +30,7 @@ import org.springframework.util.Assert
 
 @CompileStatic
 trait QuartzJob implements GrailsApplicationAware {
+
     private static Scheduler internalScheduler
     private static GrailsJobClass internalJobArtefact
 
@@ -57,7 +58,7 @@ trait QuartzJob implements GrailsApplicationAware {
     static schedule(Trigger trigger, Map params = null) {
         def jobKey = new JobKey(this.getName(), internalJobArtefact.group)
         Assert.isTrue trigger.jobKey == jobKey || (trigger instanceof MutableTrigger),
-                "The trigger job key is not equal to the job key or the trigger is immutable"
+                'The trigger job key is not equal to the job key or the trigger is immutable'
 
         ((MutableTrigger)trigger).jobKey = jobKey
 
@@ -87,11 +88,11 @@ trait QuartzJob implements GrailsApplicationAware {
         internalScheduler.scheduleJob(trigger)
     }
 
-    public static setScheduler(Scheduler scheduler) {
+    static setScheduler(Scheduler scheduler) {
         internalScheduler = scheduler
     }
 
-    public static setGrailsJobClass(GrailsJobClass gjc) {
+    static setGrailsJobClass(GrailsJobClass gjc) {
         internalJobArtefact = gjc
     }
 }

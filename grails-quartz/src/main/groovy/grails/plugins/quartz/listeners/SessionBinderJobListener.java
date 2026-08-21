@@ -16,12 +16,13 @@
 
 package grails.plugins.quartz.listeners;
 
-import grails.persistence.support.PersistenceContextInterceptor;
 import org.quartz.JobExecutionContext;
 import org.quartz.JobExecutionException;
 import org.quartz.listeners.JobListenerSupport;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import grails.persistence.support.PersistenceContextInterceptor;
 
 /**
  * JobListener implementation which wraps the execution of a Quartz Job in a
@@ -44,7 +45,7 @@ public class SessionBinderJobListener extends JobListenerSupport {
 
     /**
      * It is used by the Spring to inject a persistence interceptor.
-	 * @return the reference of the currently active bean implementation of persistenceInterceptor
+     * @return the reference of the currently active bean implementation of persistenceInterceptor
      */
     @SuppressWarnings("UnusedDeclaration")
     public PersistenceContextInterceptor getPersistenceInterceptor() {
@@ -53,7 +54,7 @@ public class SessionBinderJobListener extends JobListenerSupport {
 
     /**
      * It is used by the Spring to inject a persistence interceptor.
-	 * @param persistenceInterceptor - Normally applied by bean injection to set the reference to the persistenceInterceptor
+     * @param persistenceInterceptor - Normally applied by bean injection to set the reference to the persistenceInterceptor
      */
     @SuppressWarnings("UnusedDeclaration")
     public void setPersistenceInterceptor(PersistenceContextInterceptor persistenceInterceptor) {

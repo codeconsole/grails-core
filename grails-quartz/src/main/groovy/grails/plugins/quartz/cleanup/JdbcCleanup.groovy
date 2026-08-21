@@ -21,9 +21,7 @@ package grails.plugins.quartz.cleanup
 
 import groovy.sql.Sql
 import groovy.util.logging.Slf4j
-import jakarta.annotation.PostConstruct;
-
-
+import jakarta.annotation.PostConstruct
 
 /**
  * Contributed by Rocketmiles
@@ -40,27 +38,26 @@ public class JdbcCleanup {
     @PostConstruct
     void init() {
 
-        log.info "[quartz-plugin] Purging Quartz tables...."
+        log.info '[quartz-plugin] Purging Quartz tables....'
 
         def queries = []
-        queries.add("DELETE FROM QRTZ_FIRED_TRIGGERS")
-        queries.add("DELETE FROM QRTZ_PAUSED_TRIGGER_GRPS")
-        queries.add("DELETE FROM QRTZ_SCHEDULER_STATE")
-        queries.add("DELETE FROM QRTZ_LOCKS")
-        queries.add("DELETE FROM QRTZ_SIMPLE_TRIGGERS")
-        queries.add("DELETE FROM QRTZ_SIMPROP_TRIGGERS")
-        queries.add("DELETE FROM QRTZ_CRON_TRIGGERS")
-        queries.add("DELETE FROM QRTZ_BLOB_TRIGGERS")
-        queries.add("DELETE FROM QRTZ_TRIGGERS")
-        queries.add("DELETE FROM QRTZ_JOB_DETAILS")
-        queries.add("DELETE FROM QRTZ_CALENDARS")
+        queries.add('DELETE FROM QRTZ_FIRED_TRIGGERS')
+        queries.add('DELETE FROM QRTZ_PAUSED_TRIGGER_GRPS')
+        queries.add('DELETE FROM QRTZ_SCHEDULER_STATE')
+        queries.add('DELETE FROM QRTZ_LOCKS')
+        queries.add('DELETE FROM QRTZ_SIMPLE_TRIGGERS')
+        queries.add('DELETE FROM QRTZ_SIMPROP_TRIGGERS')
+        queries.add('DELETE FROM QRTZ_CRON_TRIGGERS')
+        queries.add('DELETE FROM QRTZ_BLOB_TRIGGERS')
+        queries.add('DELETE FROM QRTZ_TRIGGERS')
+        queries.add('DELETE FROM QRTZ_JOB_DETAILS')
+        queries.add('DELETE FROM QRTZ_CALENDARS')
 
         def sql = new Sql(dataSource)
         queries.each { query ->
-                log.info("Executing " + query)
+                log.info('Executing ' + query)
             sql.execute(query)
         }
-
 
     }
 }

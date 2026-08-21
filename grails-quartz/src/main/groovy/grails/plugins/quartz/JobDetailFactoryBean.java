@@ -17,6 +17,7 @@
 package grails.plugins.quartz;
 
 import org.quartz.JobDetail;
+
 import org.springframework.beans.factory.FactoryBean;
 import org.springframework.beans.factory.InitializingBean;
 
@@ -38,7 +39,6 @@ public class JobDetailFactoryBean implements FactoryBean<JobDetail>, Initializin
 
     // Returned object
     private JobDetail jobDetail;
-
 
     public void setJobClass(GrailsJobClass jobClass) {
         this.jobClass = jobClass;

@@ -16,16 +16,32 @@
 
 package grails.plugins.quartz;
 
-import grails.plugins.quartz.config.TriggersConfigBuilder;
-import grails.util.GrailsClassUtils;
-import groovy.lang.Closure;
-import org.grails.core.AbstractGrailsClass;
-import org.quartz.JobExecutionContext;
-
 import java.util.HashMap;
 import java.util.Map;
-import static grails.plugins.quartz.GrailsJobClassConstants.*;
 
+import groovy.lang.Closure;
+
+import org.quartz.JobExecutionContext;
+
+import grails.plugins.quartz.config.TriggersConfigBuilder;
+import grails.util.GrailsClassUtils;
+import org.grails.core.AbstractGrailsClass;
+
+import static grails.plugins.quartz.GrailsJobClassConstants.CONCURRENT;
+import static grails.plugins.quartz.GrailsJobClassConstants.DEFAULT_CONCURRENT;
+import static grails.plugins.quartz.GrailsJobClassConstants.DEFAULT_DESCRIPTION;
+import static grails.plugins.quartz.GrailsJobClassConstants.DEFAULT_DURABILITY;
+import static grails.plugins.quartz.GrailsJobClassConstants.DEFAULT_ENABLED;
+import static grails.plugins.quartz.GrailsJobClassConstants.DEFAULT_GROUP;
+import static grails.plugins.quartz.GrailsJobClassConstants.DEFAULT_REQUESTS_RECOVERY;
+import static grails.plugins.quartz.GrailsJobClassConstants.DEFAULT_SESSION_REQUIRED;
+import static grails.plugins.quartz.GrailsJobClassConstants.DESCRIPTION;
+import static grails.plugins.quartz.GrailsJobClassConstants.DURABILITY;
+import static grails.plugins.quartz.GrailsJobClassConstants.ENABLED;
+import static grails.plugins.quartz.GrailsJobClassConstants.EXECUTE;
+import static grails.plugins.quartz.GrailsJobClassConstants.GROUP;
+import static grails.plugins.quartz.GrailsJobClassConstants.REQUESTS_RECOVERY;
+import static grails.plugins.quartz.GrailsJobClassConstants.SESSION_REQUIRED;
 
 /**
  * Grails artifact class which represents a Quartz job.
@@ -40,7 +56,6 @@ public class DefaultGrailsJobClass extends AbstractGrailsClass implements Grails
     public static final String JOB = "Job";
     private Map triggers = new HashMap();
     private boolean triggersEvaluated = false;
-
 
     public DefaultGrailsJobClass(Class clazz) {
         super(clazz, JOB);

@@ -16,9 +16,9 @@
 
 package grails.plugins.quartz;
 
-import grails.core.GrailsClass;
-
 import java.util.Map;
+
+import grails.core.GrailsClass;
 
 /**
  * Represents a job class in Grails.
@@ -71,15 +71,14 @@ public interface GrailsJobClass extends GrailsClass {
      */
     public boolean isRequestsRecovery();
 
-	/**
-	 * If job should be enabled or at all. Useful for testing new jobs and temporarily disabling jobs at the class property level
-	 *
-	 * @return true if this job is enabled
-	 */
-	public boolean isEnabled();
+    /**
+     * If job should be enabled or at all. Useful for testing new jobs and temporarily disabling jobs at the class property level
+     *
+     * @return true if this job is enabled
+     */
+    public boolean isEnabled();
 
-
-	/**
+    /**
      * Get job's description used for configuring job details.
      *
      * @return description for this job

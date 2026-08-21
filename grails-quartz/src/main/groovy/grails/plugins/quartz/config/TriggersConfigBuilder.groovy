@@ -34,14 +34,15 @@ import org.quartz.impl.triggers.SimpleTriggerImpl
  * @since 0.3
  */
 class TriggersConfigBuilder extends BuilderSupport {
+
     private triggerNumber = 0
     private jobName
-	GrailsApplication grailsApplication
+    GrailsApplication grailsApplication
     def triggers = [:]
 
     TriggersConfigBuilder(String jobName, GrailsApplication grailsApplication) {
         this.jobName = jobName
-		this.grailsApplication = grailsApplication
+        this.grailsApplication = grailsApplication
     }
 
     /**
@@ -83,12 +84,12 @@ class TriggersConfigBuilder extends BuilderSupport {
                     throw new Exception("Custom trigger must have 'triggerClass' attribute")
                 }
                 triggerClass = (Class) triggerAttributes.remove('triggerClass')
-                if (!Trigger.isAssignableFrom(triggerClass)){
-                    throw new Exception("Custom trigger class must implement org.quartz.Trigger class.")
+                if (!Trigger.isAssignableFrom(triggerClass)) {
+                    throw new Exception('Custom trigger class must implement org.quartz.Trigger class.')
                 }
                 break
             default:
-                throw new Exception("Invalid format")
+                throw new Exception('Invalid format')
         }
 
         new Expando(clazz: CustomTriggerFactoryBean, triggerClass: triggerClass, triggerAttributes: triggerAttributes)
@@ -119,7 +120,7 @@ class TriggersConfigBuilder extends BuilderSupport {
     private prepareCommonTriggerAttributes(Map triggerAttributes) {
         def prepare = prepareTriggerAttribute.curry(triggerAttributes)
 
-        if(triggerAttributes[Constants.NAME] == null) {
+        if (triggerAttributes[Constants.NAME] == null) {
             triggerAttributes[Constants.NAME] = "${jobName}${triggerNumber++}".toString()
         }
 
@@ -210,8 +211,8 @@ class TriggersConfigBuilder extends BuilderSupport {
         )
     }
 
-    private prepareTriggerAttribute = {Map attributes, String name, defaultValue, validate = {} ->
-        if(attributes[name] == null){
+    private prepareTriggerAttribute = { Map attributes, String name, defaultValue, validate = {} ->
+        if (attributes[name] == null) {
             attributes[name] = defaultValue
         }
         validate(attributes[name])

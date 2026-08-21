@@ -35,17 +35,17 @@ import static org.grails.io.support.GrailsResourceUtils.REGEX_FILE_SEPARATOR
  * @author Sergey Nebolsin (nebolsin@gmail.com)
  * @since 0.1
  */
-public class JobArtefactHandler extends ArtefactHandlerAdapter {
+class JobArtefactHandler extends ArtefactHandlerAdapter {
 
-    static final String TYPE = "Job"
-    public static Pattern JOB_PATH_PATTERN = Pattern.compile(".+" + REGEX_FILE_SEPARATOR + GRAILS_APP_DIR + REGEX_FILE_SEPARATOR + "jobs" + REGEX_FILE_SEPARATOR + "(.+)\\.(groovy)");
+    static final String TYPE = 'Job'
+    static final Pattern JOB_PATH_PATTERN = Pattern.compile('.+' + REGEX_FILE_SEPARATOR + GRAILS_APP_DIR + REGEX_FILE_SEPARATOR + 'jobs' + REGEX_FILE_SEPARATOR + /(.+)\.(groovy)/)
 
-    public JobArtefactHandler() {
-        super(TYPE, GrailsJobClass.class, DefaultGrailsJobClass.class, TYPE)
+    JobArtefactHandler() {
+        super(TYPE, GrailsJobClass, DefaultGrailsJobClass, TYPE)
     }
 
     boolean isArtefact(ClassNode classNode) {
-        if(classNode == null ||
+        if (classNode == null ||
            !isValidArtefactClassNode(classNode, classNode.getModifiers()) ||
            !classNode.getName().endsWith(DefaultGrailsJobClass.JOB) ||
            !classNode.getMethods(GrailsJobClassConstants.EXECUTE)) {

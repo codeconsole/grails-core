@@ -16,6 +16,10 @@
 
 package grails.plugins.quartz;
 
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
+import java.text.MessageFormat;
+
 import org.quartz.DisallowConcurrentExecution;
 import org.quartz.InterruptableJob;
 import org.quartz.JobExecutionContext;
@@ -23,15 +27,12 @@ import org.quartz.JobExecutionException;
 import org.quartz.PersistJobDataAfterExecution;
 import org.quartz.UnableToInterruptJobException;
 import org.quartz.spi.TriggerFiredBundle;
+
 import org.springframework.beans.BeansException;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.ApplicationContextAware;
 import org.springframework.scheduling.quartz.AdaptableJobFactory;
 import org.springframework.util.ReflectionUtils;
-
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
-import java.text.MessageFormat;
 
 /**
  * Job factory which retrieves Job instances from ApplicationContext.

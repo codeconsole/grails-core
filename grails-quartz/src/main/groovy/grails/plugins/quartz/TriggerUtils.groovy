@@ -30,8 +30,9 @@ import org.quartz.TriggerBuilder
  */
 @CompileStatic
 class TriggerUtils {
+
     private static String generateTriggerName() {
-        "GRAILS_" + UUID.randomUUID().toString()
+        'GRAILS_' + UUID.randomUUID().toString()
     }
 
     static Trigger buildDateTrigger(String jobName, String jobGroup, Date scheduleDate) {

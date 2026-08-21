@@ -38,8 +38,8 @@ class JobManagerService {
      *
      * @return Map <String , List<JobDescriptor>> with job group names as keys
      */
-    Map <String , List<JobDescriptor>> getAllJobs() {
-        quartzScheduler.jobGroupNames.collectEntries([:]) { group -> [(group):getJobs(group)]}
+    Map<String, List<JobDescriptor>> getAllJobs() {
+        quartzScheduler.jobGroupNames.collectEntries([:]) { group -> [(group): getJobs(group)] }
     }
 
     /**
@@ -52,7 +52,7 @@ class JobManagerService {
         List<JobDescriptor> list = new ArrayList<JobDescriptor>()
         quartzScheduler.getJobKeys(GroupMatcher.groupEquals(group)).each { jobKey ->
             def jobDetail = quartzScheduler.getJobDetail(jobKey)
-            if(jobDetail!=null){
+            if (jobDetail != null) {
                 list.add(JobDescriptor.build(jobDetail, quartzScheduler))
             }
         }
@@ -100,11 +100,11 @@ class JobManagerService {
         quartzScheduler.resumeJobs(GroupMatcher.groupEquals(group))
     }
 
-    def pauseAll(){
+    def pauseAll() {
         quartzScheduler.pauseAll()
     }
 
-    def resumeAll(){
+    def resumeAll() {
         quartzScheduler.resumeAll()
     }
 

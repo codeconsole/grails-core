@@ -16,19 +16,20 @@
 
 package grails.plugins.quartz;
 
+import java.beans.PropertyEditorSupport;
+import java.text.ParseException;
+import java.util.Date;
+import java.util.Map;
+
 import org.quartz.JobDetail;
 import org.quartz.Trigger;
 import org.quartz.impl.triggers.AbstractTrigger;
+
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.BeanWrapper;
 import org.springframework.beans.PropertyAccessorFactory;
 import org.springframework.beans.factory.FactoryBean;
 import org.springframework.beans.factory.InitializingBean;
-
-import java.beans.PropertyEditorSupport;
-import java.text.ParseException;
-import java.util.Date;
-import java.util.Map;
 
 /**
  * The factory bean to create and register trigger beans in Spring context.
@@ -47,11 +48,11 @@ public class CustomTriggerFactoryBean implements FactoryBean<Trigger>, Initializ
         customTrigger = BeanUtils.instantiateClass(triggerClass);
 
         // If trigger is a standard trigger, set standard properties
-        if(customTrigger instanceof AbstractTrigger){
-            AbstractTrigger at =(AbstractTrigger) customTrigger;
+        if (customTrigger instanceof AbstractTrigger) {
+            AbstractTrigger at = (AbstractTrigger) customTrigger;
 
             // Set job details
-            if(jobDetail!=null){
+            if (jobDetail != null) {
                 at.setJobKey(jobDetail.getKey());
             }
 
@@ -60,8 +61,8 @@ public class CustomTriggerFactoryBean implements FactoryBean<Trigger>, Initializ
                 Number startDelay = (Number) triggerAttributes.remove(GrailsJobClassConstants.START_DELAY);
                 at.setStartTime(new Date(System.currentTimeMillis() + startDelay.longValue()));
             } else {
-            	at.setStartTime(new Date());
-			}
+                at.setStartTime(new Date());
+            }
         }
 
         // Set non standard properties.

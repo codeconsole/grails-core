@@ -29,6 +29,7 @@ import org.quartz.Trigger
  */
 @CompileStatic
 class TriggerDescriptor {
+
     JobDescriptor jobDescriptor
 
     Trigger trigger
