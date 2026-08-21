@@ -86,11 +86,30 @@ ext {
             'graphql-java-extended-scalars.version': '24.0',
             'groovy.version'                : '5.1.0',
             'guava.version'                 : '33.7.1-jre',
+            // Groovy YAML 5.1.0 requires a minimum of Jackson 2.22.1, and 2.22.2 also overrides the
+            // 2.21.5 Spring Boot 4.1 manages: it adds the StreamReadConstraints length limit to
+            // GregorianCalendar/Duration (CVE-2026-68497) and restricts the URI schemes
+            // java.nio.file.Path deserialization accepts (CVE-2026-19032). Jackson 2 only releases
+            // jackson-annotations on the minor, hence the separate 2.22 below.
+            'jackson2.version'              : '2.22.2',
+            'jackson2-annotations.version'  : '2.22',
+            // Security: overrides the Jackson 3 line Spring Boot 4.1 manages (3.1.5). 3.1.6 adds the
+            // StreamReadConstraints length limit to GregorianCalendar/Duration (CVE-2026-68497) and
+            // restricts the URI schemes java.nio.file.Path deserialization accepts (CVE-2026-19032).
+            // Stays on Spring Boot's 3.1.x line so its Jackson 3 integration keeps a supported version.
+            'jackson3.version'              : '3.1.6',
             'jquery.version'                : '4.0.0',
             'kotlin.version'                : '2.2.21',
             'liquibase-hibernate5.version'  : '4.27.0',
+            // Security: overrides the 1.5.38 Spring Boot 4.1 manages. 1.6.3 strips slashes from MDC
+            // values before SiftingAppender uses them as discriminating keys (CVE-2026-19880). The
+            // 1.6.x line keeps SLF4J 2.0.x and a JDK 11 baseline, so it is a drop-in replacement.
+            'logback.version'               : '1.6.3',
             'mockito.version'               : '5.23.0',
-            'mongodb.version'               : '5.8.0',
+            // Security: overrides the 5.8.1 Spring Boot 4.1 manages. 5.9.2 stopped ProxySettings
+            // .toString() writing the SOCKS5 proxy credentials into the application log
+            // (CVE-2026-18710); 5.10.0 is the current release of that line.
+            'mongodb.version'               : '5.10.0',
             'nimbus-jose-jwt.version'       : '10.9.1',
             'pac4j.version'                 : '6.4.3',
             // Security: overrides the transitive 3.5.1. 4.0.3 fixes CVE-2025-67030 flagged against plexus-utils.
@@ -168,7 +187,28 @@ ext {
             'groovy-xml'               : "org.apache.groovy:groovy-xml:${bomDependencyVersions['groovy.version']}",
             'groovy-yaml'              : "org.apache.groovy:groovy-yaml:${bomDependencyVersions['groovy.version']}",
             'guava'                       : "com.google.guava:guava:${bomDependencyVersions['guava.version']}",
+            // Security override of the 2.21.5 spring-boot-dependencies imports through
+            // com.fasterxml.jackson:jackson-bom - see jackson2.version
+            'jackson2-annotations'     : "com.fasterxml.jackson.core:jackson-annotations:${bomDependencyVersions['jackson2-annotations.version']}",
+            'jackson2-core'            : "com.fasterxml.jackson.core:jackson-core:${bomDependencyVersions['jackson2.version']}",
+            'jackson2-databind'        : "com.fasterxml.jackson.core:jackson-databind:${bomDependencyVersions['jackson2.version']}",
+            'jackson2-datatype-jsr310' : "com.fasterxml.jackson.datatype:jackson-datatype-jsr310:${bomDependencyVersions['jackson2.version']}",
+            // Security override of the 3.1.5 spring-boot-dependencies imports through
+            // tools.jackson:jackson-bom - see jackson3.version
+            'jackson3-core'            : "tools.jackson.core:jackson-core:${bomDependencyVersions['jackson3.version']}",
+            'jackson3-databind'        : "tools.jackson.core:jackson-databind:${bomDependencyVersions['jackson3.version']}",
             'jquery'                   : "org.webjars.npm:jquery:${bomDependencyVersions['jquery.version']}",
+            // Security override of the transitive 1.5.38 - see logback.version
+            'logback-classic'          : "ch.qos.logback:logback-classic:${bomDependencyVersions['logback.version']}",
+            'logback-core'             : "ch.qos.logback:logback-core:${bomDependencyVersions['logback.version']}",
+            // Security override of the 5.8.1 spring-boot-dependencies imports through
+            // org.mongodb:mongodb-driver-bom - see mongodb.version. The whole driver family is
+            // pinned so a classpath cannot end up mixing driver versions.
+            'mongodb-bson'             : "org.mongodb:bson:${bomDependencyVersions['mongodb.version']}",
+            'mongodb-bson-record-codec': "org.mongodb:bson-record-codec:${bomDependencyVersions['mongodb.version']}",
+            'mongodb-driver-core'      : "org.mongodb:mongodb-driver-core:${bomDependencyVersions['mongodb.version']}",
+            'mongodb-driver-reactivestreams': "org.mongodb:mongodb-driver-reactivestreams:${bomDependencyVersions['mongodb.version']}",
+            'mongodb-driver-sync'      : "org.mongodb:mongodb-driver-sync:${bomDependencyVersions['mongodb.version']}",
             // Security override of the transitive 3.5.1 - see plexus-utils.version
             'plexus-utils'                : "org.codehaus.plexus:plexus-utils:${bomDependencyVersions['plexus-utils.version']}",
             // Required alongside plexus-utils 4.x - see plexus-xml.version
@@ -259,9 +299,6 @@ ext {
                 'hibernate-tools.version'       : '7.3.8.Final',
                 'hibernate.version'             : '7.4.1.Final',
                 'jandex.version'                : '3.2.3',
-                // Groovy YAML 5.1.0 requires minimum Jackson 2.22.1 on the Hibernate 7 classpath.
-                'jackson2.version'              : '2.22.2',
-                'jackson2-annotations.version'  : '2.22',
                 'liquibase-hibernate.version'   : '4.27.0',
                 'liquibase-test-harness.version': '1.0.11',
                 'liquibase.version'             : '4.27.0',
@@ -280,9 +317,6 @@ ext {
                 'hibernate-models'      : "org.hibernate.models:hibernate-models:${combinedVersions['hibernate-models.version']}",
                 'hibernate-tools-orm'   : "org.hibernate.tool:hibernate-tools-orm:${combinedVersions['hibernate-tools.version']}",
                 'hibernate-tools-utils' : "org.hibernate.tool:hibernate-tools-utils:${combinedVersions['hibernate-tools.version']}",
-                'jackson2-annotations' : "com.fasterxml.jackson.core:jackson-annotations:${combinedVersions['jackson2-annotations.version']}",
-                'jackson2-core'        : "com.fasterxml.jackson.core:jackson-core:${combinedVersions['jackson2.version']}",
-                'jackson2-databind'    : "com.fasterxml.jackson.core:jackson-databind:${combinedVersions['jackson2.version']}",
                 'jandex'                : "io.smallrye:jandex:${combinedVersions['jandex.version']}",
                 'liquibase'             : "org.liquibase:liquibase:${combinedVersions['liquibase.version']}",
                 'liquibase-cdi'         : "org.liquibase:liquibase-cdi:${combinedVersions['liquibase.version']}",
