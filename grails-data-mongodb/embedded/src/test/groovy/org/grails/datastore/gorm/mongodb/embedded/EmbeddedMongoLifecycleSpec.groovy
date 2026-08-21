@@ -139,6 +139,34 @@ class EmbeddedMongoLifecycleSpec extends Specification {
         lifecycle?.stop()
     }
 
+    void 'a server stopped by the context is stopped again by the shutdown hook'() {
+        given: 'a real mongod, whose process directory flapdoodle removes as it tears the server down'
+        RunningEmbeddedMongo running = new FlapdoodleMongoBackend()
+                .start(new EmbeddedMongoSettings(27979, null, null))
+
+        when: 'the context stops it, and the hook that covers a context that never closes follows'
+        running.stop()
+        running.stop()
+
+        then: 'the second stop finds the files the first one removed, and says nothing of it'
+        noExceptionThrown()
+        conditions.eventually { assert !listening(27979) }
+    }
+
+    void 'an in-memory server is stopped twice by the same pair'() {
+        given:
+        RunningEmbeddedMongo running = new InMemoryMongoBackend()
+                .start(new EmbeddedMongoSettings(27978, null, null))
+
+        when:
+        running.stop()
+        running.stop()
+
+        then:
+        noExceptionThrown()
+        conditions.eventually { assert !listening(27978) }
+    }
+
     void 'the flapdoodle backend keeps a persistent database across the same stop'() {
         given: 'a real mongod told to keep its data, which is how a production application runs'
         String databaseDir = temp.resolve('prodDb').toString()

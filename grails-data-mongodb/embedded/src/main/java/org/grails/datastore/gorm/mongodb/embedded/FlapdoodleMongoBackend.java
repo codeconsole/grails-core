@@ -142,9 +142,20 @@ public class FlapdoodleMongoBackend implements EmbeddedMongoBackend {
             return this.address.getPort();
         }
 
+        /**
+         * Stopping twice is what an ordinary shutdown does: the lifecycle bean stops the server
+         * when the application context closes, and the JVM shutdown hook - which is there for a
+         * context that never closes - runs after it. Flapdoodle deletes the process directory as
+         * it tears the server down, so a second teardown fails on the files the first one removed.
+         */
         @Override
-        public void stop() {
-            this.running.close();
+        public synchronized void stop() {
+            TransitionWalker.ReachedState<RunningMongodProcess> current = this.running;
+            if (current == null) {
+                return;
+            }
+            this.running = null;
+            current.close();
         }
 
         /**
@@ -153,7 +164,10 @@ public class FlapdoodleMongoBackend implements EmbeddedMongoBackend {
          * mongod is a separate process, so a checkpoint image does not contain it.
          */
         @Override
-        public void restart() {
+        public synchronized void restart() {
+            if (this.running != null) {
+                return;
+            }
             this.running = this.mongod.start(this.version);
         }
     }
