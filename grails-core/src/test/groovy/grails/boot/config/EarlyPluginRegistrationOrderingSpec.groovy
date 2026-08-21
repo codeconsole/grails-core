@@ -104,6 +104,27 @@ class EarlyPluginRegistrationOrderingSpec extends Specification {
             ctx.close()
     }
 
+    void 'an application GrailsApp launched gets the plugin lifecycle whatever its sources are'() {
+        given: 'the sources GrailsApp stashes, none of them a Grails application class'
+            def ctx = new AnnotationConfigApplicationContext()
+            ctx.register(EarlyOrderingAutoConfigLikeConfig)
+            promoteDiscovery(ctx, earlyOrderingPluginClass)
+            ctx.beanFactory.registerSingleton(GrailsEarlyPluginRegistrationPostProcessor.APPLICATION_SOURCE_CLASSES_BEAN_NAME,
+                    [EarlyOrderingAutoConfigLikeConfig] as Class<?>[])
+            new GrailsPluginLifecycleInitializer().initialize(ctx)
+
+        when:
+            ctx.refresh()
+
+        then: 'the plugin bean is registered, so the conditional default backed off'
+            ctx.getBean('myResolver') instanceof EarlyOrderingPluginResolver
+
+        cleanup:
+            ctx.close()
+            Holders.clear()
+            Environment.setInitializing(false)
+    }
+
     void 'a context that is not a Grails application does not get the plugin lifecycle'() {
         given: 'plugin discovery promoted to a context with no Grails application class in it'
             def ctx = new AnnotationConfigApplicationContext()

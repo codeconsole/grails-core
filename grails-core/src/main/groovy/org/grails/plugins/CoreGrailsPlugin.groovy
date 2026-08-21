@@ -97,10 +97,11 @@ class CoreGrailsPlugin extends Plugin {
             grailsApplication.classLoader
         }
 
-        bean('grailsConfigProperties', ConfigProperties).primary()
+        bean('grailsConfigProperties', ConfigProperties)
+                .primary()
                 .annotate(ConditionalOnBean, value: GrailsApplication) { GrailsApplication grailsApplication ->
-            new ConfigProperties(grailsApplication.config)
-        }
+                    new ConfigProperties(grailsApplication.config)
+                }
 
         // GroovyPagesGrailsPlugin registers its own caching, GSP-aware locator under this name
         // from doWithSpring, which runs earlier, so this backs off when GSP is present.

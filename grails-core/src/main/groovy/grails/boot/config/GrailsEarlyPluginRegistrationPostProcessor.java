@@ -64,7 +64,8 @@ import org.grails.spring.RuntimeSpringConfiguration;
  *
  * <p>It runs for a Grails application only: {@link GrailsPluginLifecycleInitializer} is registered for
  * every Spring Boot application that has grails-core on its class path, and this phase stands down
- * unless one of the context's sources is a {@link GrailsApplicationClass}. A Spring Boot application
+ * unless {@link grails.boot.GrailsApp} launched the application or one of the context's sources is a
+ * {@link GrailsApplicationClass}. A Spring Boot application
  * using a Grails library - GSP for its views, say - gets that library's auto-configuration and nothing
  * else: no plugin manager, no {@link GrailsApplication}, and no beans from plugins it never asked for.
  *
@@ -126,14 +127,17 @@ public class GrailsEarlyPluginRegistrationPostProcessor
             return;
         }
 
+        // Two things make a context a Grails application: GrailsApp launched it, which it records by
+        // stashing the sources it was given, or one of its sources is a Grails application class.
+        // This initializer is registered for every Spring Boot application with grails-core on its
+        // class path, and the plugin lifecycle is not something the rest of them asked for: it would
+        // contribute a GrailsApplication, a plugin manager and the beans of every plugin found, over
+        // the top of whatever the libraries they did ask for auto-configure for themselves.
+        boolean launchedByGrails =
+                applicationContext.getBeanFactory().getSingleton(APPLICATION_SOURCE_CLASSES_BEAN_NAME) != null;
         Class<?>[] applicationSources = resolveApplicationSourceClasses(registry);
-        if (!containsApplicationClass(applicationSources)) {
-            // Not a Grails application. This initializer is registered for every Spring Boot
-            // application with grails-core on its class path, and the Grails plugin lifecycle is not
-            // something such an application asked for: it would contribute a GrailsApplication, a
-            // plugin manager and the beans of every plugin found, over the top of whatever the
-            // libraries it did ask for auto-configure for themselves.
-            LOG.debug("No Grails application class in this context — the plugin lifecycle does not run");
+        if (!launchedByGrails && !containsApplicationClass(applicationSources)) {
+            LOG.debug("Not a Grails application — the plugin lifecycle does not run for this context");
             return;
         }
 
