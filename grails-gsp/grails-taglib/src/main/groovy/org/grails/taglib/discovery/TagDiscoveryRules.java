@@ -85,10 +85,6 @@ public final class TagDiscoveryRules {
     }
 
     /**
-     * @param method the method to classify
-     * @return true if the method can be invoked as a tag
-     */
-    /**
      * Finds every tag a tag library declares, from either view of it.
      *
      * <p>The two kinds are enumerated differently, because the runtime dispatches them differently. A
@@ -115,6 +111,10 @@ public final class TagDiscoveryRules {
         return tags;
     }
 
+    /**
+     * @param method the method to classify
+     * @return true if the method can be invoked as a tag
+     */
     public static boolean isTagMethod(TagMethodView method) {
         if (!method.isPublic() || method.isStatic() || method.isGenerated()) {
             return false;

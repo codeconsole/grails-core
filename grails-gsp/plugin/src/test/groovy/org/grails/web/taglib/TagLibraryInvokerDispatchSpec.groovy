@@ -87,6 +87,17 @@ class TagLibraryInvokerDispatchSpec extends Specification {
         result == '2026-08-19/yyyy'
     }
 
+    void 'a name whose shapes overlap resolves to the tag rather than the overload'() {
+        given: 'format is declared as a tag and as a one argument method, and a lone CharSequence is a body'
+        Caller caller = new Caller(tagLibraryLookup: newLookup())
+
+        when:
+        Object result = caller.callOverlappingOverload()
+
+        then: 'the tag runs and its output is captured, which is how a page has always dispatched this'
+        result.toString() == 'as a tag'
+    }
+
     void 'a name no tag library declares is still a missing method'() {
         given:
         Caller caller = new Caller(tagLibraryLookup: newLookup())
@@ -131,6 +142,10 @@ class Caller implements TagLibraryInvoker {
     Object callOverload() {
         format('2026-08-19', 'yyyy')
     }
+
+    Object callOverlappingOverload() {
+        format('2026-08-19')
+    }
 }
 
 @TagLib
@@ -153,5 +168,9 @@ class DispatchTagLib {
 
     def format(String value, String pattern) {
         "${value}/${pattern}"
+    }
+
+    def format(String value) {
+        "only the overload"
     }
 }

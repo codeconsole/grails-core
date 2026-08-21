@@ -229,6 +229,13 @@ class TagLibraryMetaUtils {
      * {@code foo(Map)} beside a helper {@code foo(String, String)}, would run the tag with nothing.
      * Such a call is left to the method lookup further down, which finds the overload.
      *
+     * <p>Where the shapes overlap the tag wins, deliberately. One CharSequence argument is a valid
+     * body, so {@code format('x')} beside a helper {@code format(String)} takes the tag; so does a
+     * call with no arguments beside a zero-argument helper, and {@code (Map, anything)} beside a
+     * {@code (Map, List)} helper. These are shapes a tag is legitimately called with, and preferring
+     * whichever overload matched would invoke the tag library's own method without capturing what it
+     * writes, which is how a page has always dispatched them.</p>
+     *
      * @param args the arguments the call was made with
      * @return true when the call can be treated as a tag invocation
      */

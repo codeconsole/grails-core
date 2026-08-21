@@ -422,11 +422,6 @@ public final class TagLibraryIndex {
     }
 
     /**
-     * Whether the build asked for a tag no compiled tag library declares to fail compilation.
-     *
-     * @return true when the build set {@code grails.compileStatic.strictTags}
-     */
-    /**
      * Whether a call written without a namespace may be compiled into an invocation.
      *
      * <p>Off unless the build asks for it. A namespaced call says which tag library it means; an
@@ -456,6 +451,11 @@ public final class TagLibraryIndex {
         return localNamespaces.contains(namespace);
     }
 
+    /**
+     * Whether the build asked for a tag no compiled tag library declares to fail compilation.
+     *
+     * @return true when the build set {@code grails.compileStatic.strictTags}
+     */
     public boolean isStrict() {
         return strict;
     }

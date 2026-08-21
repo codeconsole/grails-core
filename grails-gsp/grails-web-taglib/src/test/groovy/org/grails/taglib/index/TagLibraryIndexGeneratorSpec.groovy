@@ -56,7 +56,7 @@ class TagLibraryIndexGeneratorSpec extends Specification {
         when:
         TagLibraryIndexGenerator.generate(sources.toFile(), output.toFile(), true, 'UTF-8')
 
-        then: 'the closure form is marked so that callers keep dispatching it dynamically'
+        then: 'both forms are described by name, since both are dispatched the same way'
         descriptor('LegacyTagLib').tags == 'asClosure,asMethod'
     }
 
@@ -235,6 +235,7 @@ class TagLibraryIndexGeneratorSpec extends Specification {
         file.withReader('UTF-8') { properties.load(it) }
         properties.stringPropertyNames().sort()
     }
+
     void 'a class pulled in only to resolve a type is not described'() {
         given: 'a helper named like a tag library, referenced as a superclass but never asked for'
         Path taglibs = Files.createDirectories(tempDir.resolve('grails-app/taglib/demo'))

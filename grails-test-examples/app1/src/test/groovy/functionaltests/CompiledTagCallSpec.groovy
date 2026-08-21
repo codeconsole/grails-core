@@ -28,11 +28,12 @@ import spock.lang.Specification
  * the compile classpath and read, and the transform has to run after the trait that makes the class
  * able to call tags has been applied. This reads the class file this project actually produced.
  *
- * <p>It also covers ground a synthetic compilation cannot. An earlier spec drove the convention path
- * by writing a source into a temporary {@code grails-app/controllers} directory; it passed on macOS
- * and failed on Linux and Windows, because recognising a controller by its location depends on where
- * the compilation happens. Reading a real build's output has no such dependence, so this answers the
- * same question on every platform CI runs.
+ * <p>This is where the ordering was caught. The rewrite ran in the same phase as the transforms that
+ * inject artefact traits, ordered against them by priority, which holds only for transforms that
+ * declare one: a trait arriving from a local transform is applied after every global transform has
+ * run, so the class was read before it carried the trait. Which side of that a given class landed on
+ * varied, and this spec was what reported it -- passing on macOS while failing on Linux -- because a
+ * whole build is the only place the convention path is driven the way an application drives it.
  */
 class CompiledTagCallSpec extends Specification {
 
