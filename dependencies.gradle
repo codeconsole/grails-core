@@ -96,18 +96,12 @@ ext {
             'graphql-java-extended-scalars.version': '24.0',
             'groovy.version'                : '5.1.0',
             'guava.version'                 : '33.6.0-jre',
-            // Security: overrides spring-boot-dependencies (5.4.2). 5.4.3 fixes CVE-2026-54399 (httpcore5) and CVE-2026-54428 (httpcore5-h2).
-            'httpcore5.version'             : '5.4.3',
             // Security: overrides the transitive com.fasterxml Jackson 2.x. CVE-2026-54515 flagged against 2.21.4, fixed in 2.21.5.
             'jackson2.version'              : '2.22.1',
             'jackson2-annotations.version'  : '2.22',
-            // Security: overrides spring-boot-dependencies (3.1.4). 3.1.5 fixes CVE-2026-59889 (JsonView bypass) flagged against jackson-databind.
-            'jackson3.version'              : '3.1.5',
             'jquery.version'                : '4.0.0',
             'kotlin.version'                : '2.2.21',
             'liquibase-hibernate5.version'  : '4.27.0',
-            // Security: overrides spring-boot-dependencies (1.5.34). 1.5.37 fixes CVE-2026-13006 flagged against logback-core.
-            'logback.version'               : '1.5.37',
             // Security: overrides spring-boot-dependencies (2.24.3). 2.25.5 fixes CVE-2026-49844 flagged against log4j-api.
             'log4j2.version'                : '2.25.5',
             'mockito.version'               : '5.23.0',
@@ -192,22 +186,12 @@ ext {
             'groovy-xml'               : "org.apache.groovy:groovy-xml:${bomDependencyVersions['groovy.version']}",
             'groovy-yaml'              : "org.apache.groovy:groovy-yaml:${bomDependencyVersions['groovy.version']}",
             'guava'                       : "com.google.guava:guava:${bomDependencyVersions['guava.version']}",
-            // Security override of spring-boot-dependencies - see httpcore5.version
-            'httpcore5'                   : "org.apache.httpcomponents.core5:httpcore5:${bomDependencyVersions['httpcore5.version']}",
-            'httpcore5-h2'                : "org.apache.httpcomponents.core5:httpcore5-h2:${bomDependencyVersions['httpcore5.version']}",
             // Security override (CVE-2026-54515) of the transitive com.fasterxml Jackson 2.x - see jackson2.version.
             // Jackson annotations uses the available 2.22 release rather than 2.22.1.
             'jackson2-annotations'        : "com.fasterxml.jackson.core:jackson-annotations:${bomDependencyVersions['jackson2-annotations.version']}",
             'jackson2-core'               : "com.fasterxml.jackson.core:jackson-core:${bomDependencyVersions['jackson2.version']}",
             'jackson2-databind'           : "com.fasterxml.jackson.core:jackson-databind:${bomDependencyVersions['jackson2.version']}",
-            // Security override of spring-boot-dependencies - see jackson3.version. databind 3.1.5 pins
-            // jackson-core 3.1.5 via its parent pom, so the BOM must manage core in lockstep (rule 14).
-            'jackson3-core'               : "tools.jackson.core:jackson-core:${bomDependencyVersions['jackson3.version']}",
-            'jackson3-databind'           : "tools.jackson.core:jackson-databind:${bomDependencyVersions['jackson3.version']}",
             'jquery'                   : "org.webjars.npm:jquery:${bomDependencyVersions['jquery.version']}",
-            // Security override of spring-boot-dependencies - see logback.version
-            'logback-classic'            : "ch.qos.logback:logback-classic:${bomDependencyVersions['logback.version']}",
-            'logback-core'               : "ch.qos.logback:logback-core:${bomDependencyVersions['logback.version']}",
             // Security override of spring-boot-dependencies - see log4j2.version
             'log4j2-api'                 : "org.apache.logging.log4j:log4j-api:${bomDependencyVersions['log4j2.version']}",
             'log4j2-core'                : "org.apache.logging.log4j:log4j-core:${bomDependencyVersions['log4j2.version']}",
