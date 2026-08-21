@@ -17,19 +17,15 @@ specific language governing permissions and limitations
 under the License.
 ////
 
-[[scheduling]]
-== Scheduling Basics
-
-=== Scheduling Jobs
-
-To create a new job, run the `grails create-job` command and enter the name of the job. Grails will create a new job and place it in the `grails-app/jobs` directory:
+A job is a class in `grails-app/jobs` whose name ends in `Job` and which declares an `execute` method. The `triggers` block describes when it runs:
 
 [source,groovy]
 ----
 class MyJob {
 
     static group = 'MyGroup'
-    static description = 'Example job with Simple Trigger'
+    static description = 'Example job with a simple trigger'
+
     static triggers = {
         simple(
             name: 'mySimpleTrigger',
@@ -44,22 +40,21 @@ class MyJob {
 }
 ----
 
-The above example will wait for 1 minute and after that will call the `execute()` method every second. The `repeatInterval` and `startDelay` properties are specified in milliseconds and must have Integer or Long type. If these properties are not specified, default values are applied (1 minute for `repeatInterval` property and 30 seconds for `startDelay` property). Jobs can optionally be placed in different groups.
-The trigger name property must be unique across all triggers in the application.
+The example above waits one minute after the scheduler starts, then calls `execute()` every second. `repeatInterval` and `startDelay` are expressed in milliseconds and must be `Integer` or `Long`; a negative value is rejected at startup. When they are omitted, the defaults in <<quartzTriggers,Triggers>> apply.
 
-By default, jobs will not be executed when running under the test environment.
+The `name` of a trigger must be unique across every trigger in the application. If you do not supply one, the plugin generates a name from the job name and a counter.
 
+===== Scheduling a cron job
 
-==== Scheduling a Cron Job
-
-Jobs can be scheduled using a cron expression. For those unfamiliar with `cron`, this means being able to create a firing schedule such as "At 8:00am every Monday through Friday" or "At 1:30am every last Friday of the month". (See the API docs for the `CronTrigger` class in Quartz for more info on cron expressions).
+Jobs can also be scheduled with a cron expression — for example "at 6:00am every day" or "at 1:30am on the last Friday of the month":
 
 [source,groovy]
 ----
-class MyJob  {
+class MyJob {
 
     static group = 'MyGroup'
-    static description = 'Example job with Cron Trigger'
+    static description = 'Example job with a cron trigger'
+
     static triggers = {
         cron(
             name: 'myTrigger',
@@ -73,12 +68,12 @@ class MyJob  {
 }
 ----
 
-The fields in the cronExpression are: (summarizing the Quartz CronTrigger Tutorial)
+The fields of a `cronExpression` are:
 
-[,]
+[source]
 ----
 cronExpression: "s m h D M W Y"
-                 | | | | | | - Year <<optional>>
+                 | | | | | | - Year (optional)
                  | | | | | - Day of Week, 1-7 or SUN-SAT, ?
                  | | | | - Month, 1-12 or JAN-DEC
                  | | | - Day of Month, 1-31, ?
@@ -89,8 +84,55 @@ cronExpression: "s m h D M W Y"
 
 [NOTE]
 ====
-* Year is the only optional field and may be omitted, the rest are mandatory.
-* Day-of-Week and Month are case-insensitive, so "DEC" = "dec" = "Dec"
-* Either Day-of-Week or Day-of-Month must be "?", or you will get an error since support by the underlying library is not complete. So you can't specify both fields, nor leave both as the all-values wildcard "*"; this is a departure from the unix crontab specification.
-* See the CronTrigger Tutorial for an explanation of all the special characters you may use.
+* Year is the only optional field; the rest are mandatory.
+* Day-of-Week and Month are case-insensitive, so `DEC` = `dec` = `Dec`.
+* Either Day-of-Week or Day-of-Month must be `?`. You cannot specify both, nor leave both as the `*` wildcard — this is a departure from the unix crontab specification.
 ====
+
+See the Quartz https://www.quartz-scheduler.org/api/2.5.0/org/quartz/CronExpression.html[`CronExpression`] documentation for the full set of special characters.
+
+===== Receiving the execution context
+
+`execute` may optionally accept the Quartz https://www.quartz-scheduler.org/api/2.5.0/org/quartz/JobExecutionContext.html[`JobExecutionContext`], which carries the merged job data map and the fire-time details:
+
+[source,groovy]
+----
+class MyJob {
+
+    static triggers = {
+        simple repeatInterval: 5000L
+    }
+
+    void execute(JobExecutionContext context) {
+        println context.mergedJobDataMap.foo
+    }
+}
+----
+
+===== Interrupting a running job
+
+A job that declares an `interrupt()` method can be interrupted mid-execution through the <<quartzJobManagerService,`jobManagerService`>>. The plugin discovers the method reflectively, so the job class does not need to implement any Quartz interface:
+
+[source,groovy]
+----
+class MyJob {
+
+    private volatile boolean cancelled = false
+
+    static triggers = {
+        simple repeatInterval: 5000L
+    }
+
+    void execute() {
+        while (!cancelled) {
+            // do a unit of work
+        }
+    }
+
+    void interrupt() {
+        cancelled = true
+    }
+}
+----
+
+Calling `interruptJob` on a job that has no `interrupt()` method raises an `UnableToInterruptJobException`.

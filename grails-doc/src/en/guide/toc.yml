@@ -338,6 +338,16 @@ mail:
   mailMessageContent: Message Content
   mailAttachments: Attachments
   mailTesting: Testing
+quartz:
+  title: Quartz
+  quartzInstallation: Installation
+  quartzScheduling: Scheduling Basics
+  quartzTriggers: Triggers
+  quartzJobProperties: Job Properties
+  quartzDynamicScheduling: Dynamic Job Scheduling
+  quartzJobManagerService: Managing Jobs at Runtime
+  quartzConfiguration: Configuration
+  quartzUsefulLinks: Useful Links
 redis:
   title: Redis
   redisInstallation: Installation and Configuration
