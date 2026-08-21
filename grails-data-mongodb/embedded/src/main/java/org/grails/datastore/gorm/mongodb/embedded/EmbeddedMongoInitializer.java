@@ -110,6 +110,20 @@ public class EmbeddedMongoInitializer implements ApplicationContextInitializer<C
 
     public static final String VERSION = "embedded.mongodb.version";
 
+    /**
+     * The name of the replica set to run as. A transaction, a change stream and a causally
+     * consistent read all need one; a standalone server refuses them. Left unset, the server is
+     * standalone unless the application asks GORM for transactions.
+     */
+    public static final String REPLICA_SET = "embedded.mongodb.replica-set";
+
+    /**
+     * What GORM is told, which is the reason an application would want a replica set at all.
+     */
+    public static final String TRANSACTIONAL = "grails.mongodb.transactional";
+
+    public static final String DEFAULT_REPLICA_SET = "rs0";
+
     public static final String DEFAULT_PROPERTY_NAME = "grails.mongodb.url";
 
     private static final Logger log = LoggerFactory.getLogger(EmbeddedMongoInitializer.class);
@@ -233,7 +247,8 @@ public class EmbeddedMongoInitializer implements ApplicationContextInitializer<C
     private String start(ConfigurableEnvironment environment, int port, String database) {
         EmbeddedMongoBackend backend = selectBackend(environment);
         EmbeddedMongoSettings settings = new EmbeddedMongoSettings(port,
-                environment.getProperty(VERSION), environment.getProperty(DATABASE_DIR));
+                environment.getProperty(VERSION), environment.getProperty(DATABASE_DIR),
+                replicaSet(environment));
 
         RunningEmbeddedMongo running;
         try {
@@ -258,6 +273,19 @@ public class EmbeddedMongoInitializer implements ApplicationContextInitializer<C
         String url = "mongodb://" + running.getHost() + ":" + running.getPort() + "/" + database;
         log.info("Embedded MongoDB started at {} using the {} backend", url, backend.getName());
         return url;
+    }
+
+    /**
+     * An application that asks GORM for transactions is asking for a replica set, whether or not it
+     * knows that is what MongoDB calls it, so the server it is given is one - unless it named a
+     * replica set itself, which wins either way.
+     */
+    private String replicaSet(ConfigurableEnvironment environment) {
+        String named = environment.getProperty(REPLICA_SET);
+        if (named != null && !named.isEmpty()) {
+            return named;
+        }
+        return environment.getProperty(TRANSACTIONAL, Boolean.class, Boolean.FALSE) ? DEFAULT_REPLICA_SET : null;
     }
 
     private EmbeddedMongoBackend selectBackend(ConfigurableEnvironment environment) {

@@ -33,10 +33,17 @@ public final class EmbeddedMongoSettings {
 
     private final String databaseDir;
 
+    private final String replicaSet;
+
     public EmbeddedMongoSettings(int port, String version, String databaseDir) {
+        this(port, version, databaseDir, null);
+    }
+
+    public EmbeddedMongoSettings(int port, String version, String databaseDir, String replicaSet) {
         this.port = port;
         this.version = version;
         this.databaseDir = databaseDir;
+        this.replicaSet = replicaSet;
     }
 
     /**
@@ -58,6 +65,21 @@ public final class EmbeddedMongoSettings {
      */
     public String getDatabaseDir() {
         return this.databaseDir;
+    }
+
+    /**
+     * @return the name of the replica set to run as, or null for a standalone server
+     */
+    public String getReplicaSet() {
+        return this.replicaSet;
+    }
+
+    /**
+     * @return whether the server is meant to be a replica set, which is what a transaction,
+     *         a change stream and a causally consistent read all need
+     */
+    public boolean isReplicaSet() {
+        return this.replicaSet != null && !this.replicaSet.isEmpty();
     }
 
     /**

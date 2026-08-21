@@ -23,9 +23,11 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 
+import de.flapdoodle.embed.mongo.commands.ImmutableMongodArguments;
 import de.flapdoodle.embed.mongo.commands.MongodArguments;
 import de.flapdoodle.embed.mongo.commands.ServerAddress;
 import de.flapdoodle.embed.mongo.config.Net;
+import de.flapdoodle.embed.mongo.config.Storage;
 import de.flapdoodle.embed.mongo.distribution.Version;
 import de.flapdoodle.embed.mongo.transitions.ImmutableMongod;
 import de.flapdoodle.embed.mongo.transitions.Mongod;
@@ -64,6 +66,12 @@ public class FlapdoodleMongoBackend implements EmbeddedMongoBackend {
 
     private static final String DEFAULT_VERSION = "V8_0";
 
+    /** What runs {@code replSetInitiate}, which only a driver can send. */
+    private static final String MONGO_CLIENTS_CLASS = "com.mongodb.client.MongoClients";
+
+    /** Small, because a replica set of one keeps an oplog it never ships anywhere. */
+    private static final int OPLOG_SIZE_MB = 64;
+
     @Override
     public String getName() {
         return NAME;
@@ -89,18 +97,40 @@ public class FlapdoodleMongoBackend implements EmbeddedMongoBackend {
 
         ImmutableMongod mongod = Mongod.instance()
                 .withNet(Start.to(Net.class).initializedWith(Net.of("localhost", settings.getPort(), false)));
+
+        ImmutableMongodArguments arguments = MongodArguments.defaults();
         if (settings.isPersistent()) {
-            mongod = persistentIn(mongod, settings.getDatabaseDir());
+            mongod = keepDataIn(mongod, settings.getDatabaseDir());
+            // Flapdoodle's defaults turn syncing to disc off, which anything meant to outlive the
+            // process needs back on.
+            arguments = arguments.withUseDefaultSyncDelay(true);
         }
-        return new RunningMongod(mongod, version);
+        if (settings.isReplicaSet()) {
+            requireDriver(settings.getReplicaSet());
+            arguments = arguments.withReplication(Storage.of(settings.getReplicaSet(), OPLOG_SIZE_MB));
+        }
+        mongod = mongod.withMongodArguments(Start.to(MongodArguments.class).initializedWith(arguments));
+
+        return new RunningMongod(mongod, version, settings.getReplicaSet());
     }
 
     /**
-     * Flapdoodle otherwise stores the database under a temp path it deletes on shutdown,
-     * and its default arguments turn off syncing to disc, so both have to change before
-     * anything written here outlives the process.
+     * A replica set is initiated by a driver rather than by a command-line argument, and this module
+     * does not carry one: an application that talks to MongoDB brought its own.
      */
-    private ImmutableMongod persistentIn(ImmutableMongod mongod, String databaseDir) {
+    private void requireDriver(String replicaSet) {
+        if (!ClassUtils.isPresent(MONGO_CLIENTS_CLASS, getClass().getClassLoader())) {
+            throw new IllegalStateException(EmbeddedMongoInitializer.REPLICA_SET + "=" + replicaSet +
+                    " needs the MongoDB driver on the class path to initiate the replica set. Add " +
+                    "org.mongodb:mongodb-driver-sync, or leave the server standalone.");
+        }
+    }
+
+    /**
+     * Flapdoodle otherwise stores the database under a temp path it deletes on shutdown, so this
+     * has to change before anything written here outlives the process.
+     */
+    private ImmutableMongod keepDataIn(ImmutableMongod mongod, String databaseDir) {
         Path path;
         try {
             path = Files.createDirectories(Paths.get(databaseDir).toAbsolutePath());
@@ -108,10 +138,7 @@ public class FlapdoodleMongoBackend implements EmbeddedMongoBackend {
         catch (IOException ex) {
             throw new IllegalStateException("Could not create the embedded MongoDB directory " + databaseDir, ex);
         }
-        return mongod
-                .withDatabaseDir(Start.to(DatabaseDir.class).initializedWith(DatabaseDir.of(path)))
-                .withMongodArguments(Start.to(MongodArguments.class)
-                        .initializedWith(MongodArguments.defaults().withUseDefaultSyncDelay(true)));
+        return mongod.withDatabaseDir(Start.to(DatabaseDir.class).initializedWith(DatabaseDir.of(path)));
     }
 
     private static final class RunningMongod implements RunningEmbeddedMongo {
@@ -121,15 +148,32 @@ public class FlapdoodleMongoBackend implements EmbeddedMongoBackend {
 
         private final Version.Main version;
 
+        private final String replicaSet;
+
         private volatile TransitionWalker.ReachedState<RunningMongodProcess> running;
 
         private final ServerAddress address;
 
-        private RunningMongod(ImmutableMongod mongod, Version.Main version) {
+        private RunningMongod(ImmutableMongod mongod, Version.Main version, String replicaSet) {
             this.mongod = mongod;
             this.version = version;
+            this.replicaSet = replicaSet;
             this.running = mongod.start(version);
             this.address = this.running.current().getServerAddress();
+            initiateReplicaSet();
+        }
+
+        /**
+         * A mongod started with a replica set name refuses every write until the set is initiated,
+         * and answers reads and writes only once it has elected itself, so the server is not handed
+         * back before it has. A set that is already initiated - which is what a persistent database
+         * directory carries across a restart - says so, and that is an answer rather than a failure.
+         */
+        private void initiateReplicaSet() {
+            if (this.replicaSet == null || this.replicaSet.isEmpty()) {
+                return;
+            }
+            ReplicaSetInitiator.initiate(getHost(), getPort(), this.replicaSet);
         }
 
         @Override
@@ -169,6 +213,7 @@ public class FlapdoodleMongoBackend implements EmbeddedMongoBackend {
                 return;
             }
             this.running = this.mongod.start(this.version);
+            initiateReplicaSet();
         }
     }
 }
