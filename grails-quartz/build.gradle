@@ -17,70 +17,64 @@
  *  under the License.
  */
 
-import java.time.Instant
-import java.time.ZoneOffset
-import java.time.format.DateTimeFormatter
-
 plugins {
+    id 'groovy'
     id 'java-library'
+    id 'project-report'
+    id 'org.apache.grails.buildsrc.properties'
+    id 'org.apache.grails.buildsrc.dependency-validator'
+    id 'org.apache.grails.buildsrc.compile'
+    id 'org.apache.grails.buildsrc.publish'
+    id 'org.apache.grails.buildsrc.sbom'
+    id 'org.apache.grails.gradle.grails-code-style'
     id 'org.apache.grails.gradle.grails-plugin'
 }
 
-version =  projectVersion
+version = projectVersion
 group = 'org.apache.grails'
 
-def buildInstant = java.util.Optional.ofNullable(System.getenv('SOURCE_DATE_EPOCH'))
-        .filter(s -> !s.isEmpty())
-        .map(Long::parseLong)
-        .map(Instant::ofEpochSecond)
-        .orElseGet(Instant::now) as Instant
 ext {
-    formattedBuildDate = DateTimeFormatter.ISO_INSTANT.format(buildInstant)
-    buildDate = buildInstant.atZone(ZoneOffset.UTC) // for reproducible builds
-    isCiBuild = System.getenv().containsKey('CI')
-}
-
-repositories {
-    mavenCentral()
-    maven { url = 'https://repo.grails.org/grails/restricted' }
-    maven {
-        url = 'https://repository.apache.org/content/groups/snapshots'
-        content {
-            includeVersionByRegex('org[.]apache[.]grails.*', '.*', '.*SNAPSHOT')
-        }
-    }
-    maven {
-        url = 'https://repository.apache.org/content/groups/staging'
-        content {
-            includeGroupByRegex('org[.]apache[.]grails.*')
-        }
-    }
-}
-
-grails {
-    springDependencyManagement = false
+    pomTitle = 'Grails Quartz Plugin'
+    pomDescription = 'This plugin allows your Grails application to schedule jobs to be executed using a specified interval or cron expression.'
 }
 
 dependencies {
 
-    implementation platform("org.apache.grails:grails-bom:$grailsVersion")
+    implementation platform(project(':grails-bom'))
 
-    api "org.quartz-scheduler:quartz", {
-        // api: AdaptableJobFactory, InterruptableJob, JobExecutionContext, JobExecutionException,
-        //      UnableToInterruptJobException, TriggerFiredBundle,
-        // runtime: @DisallowConcurrentExecution(runtime), @PersistJobDataAfterExecution(runtime)
+    api 'org.quartz-scheduler:quartz', {
+        // api: InterruptableJob, JobDetail, JobExecutionContext, JobExecutionException, Scheduler, Trigger,
+        //      TriggerKey, UnableToInterruptJobException, MutableTrigger
+        // impl: CronScheduleBuilder, JobBuilder, SimpleScheduleBuilder, TriggerBuilder, CronTriggerImpl,
+        //       SimpleTriggerImpl, GroupMatcher, KeyMatcher, JobListenerSupport
+        // runtime: @DisallowConcurrentExecution, @PersistJobDataAfterExecution
     }
 
-    compileOnly 'org.apache.grails:grails-dependencies-starter-web'
+    compileOnly project(':grails-core'), { // Provided as this is a Grails plugin
+        // api: ArtefactHandlerAdapter, GrailsApplication, GrailsClass, PersistenceContextInterceptor, Plugin
+        // impl: AbstractGrailsClass, GrailsASTUtils, GrailsClassUtils, GrailsUtil, TraitInjector
+    }
+    compileOnly 'org.apache.grails.gradle:grails-gradle-model' // GrailsResourceUtils
+    compileOnly 'org.apache.groovy:groovy' // Provided as this is a Grails plugin
+    compileOnly 'org.apache.groovy:groovy-sql' // groovy.sql.Sql (JdbcCleanup)
+    compileOnly 'jakarta.annotation:jakarta.annotation-api' // @PostConstruct
+    compileOnly 'org.springframework:spring-beans' // BeanUtils, BeanWrapper, FactoryBean, MethodInvokingFactoryBean
+    compileOnly 'org.springframework:spring-context' // ApplicationContext, ApplicationContextAware
+    compileOnly 'org.springframework:spring-context-support' // AdaptableJobFactory, SchedulerFactoryBean
+    compileOnly 'org.springframework:spring-core' // Assert, ReflectionUtils
+    compileOnly 'org.slf4j:slf4j-api' // @Slf4j, Logger
 
-    testImplementation 'org.apache.grails:grails-dependencies-test'
+    testImplementation project(':grails-core')
+    testImplementation 'org.apache.groovy:groovy'
+    testImplementation 'org.springframework:spring-beans'
+    testImplementation 'org.spockframework:spock-core'
+
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+    testRuntimeOnly 'org.slf4j:slf4j-nop' // Remove the warning about a missing slf4j implementation during tests
 }
 
 apply {
-    from layout.projectDirectory.file('gradle/docs-config.gradle')
-    from layout.projectDirectory.file('gradle/java-config.gradle')
-    from layout.projectDirectory.file('gradle/publish-config.gradle')
-    from layout.projectDirectory.file('gradle/test-config.gradle')
-    from layout.projectDirectory.file('gradle/rat-root-config.gradle')
-    from layout.projectDirectory.file('gradle/reproducible-config.gradle')
+    from rootProject.layout.projectDirectory.file('gradle/docs-config.gradle')
+    from rootProject.layout.projectDirectory.file('gradle/grails-extension-gradle-config.gradle')
+    from rootProject.layout.projectDirectory.file('gradle/test-config.gradle')
 }

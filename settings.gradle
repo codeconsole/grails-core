@@ -190,6 +190,9 @@ include(
         // Mail
         'grails-mail',
 
+        // Quartz
+        'grails-quartz',
+
         // Redis
         'grails-redis',
 
