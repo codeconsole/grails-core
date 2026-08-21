@@ -1100,6 +1100,26 @@ include::mail/mailAttachments.adoc[]
 
 include::mail/mailTesting.adoc[]
 
+[[backgroundJobs]]
+== Background Jobs
+
+include::backgroundJobs.adoc[]
+
+[[backgroundJobsScheduled]]
+=== Scheduling with Spring
+
+include::backgroundJobs/backgroundJobsScheduled.adoc[]
+
+[[backgroundJobsQuartz]]
+=== Scheduling with Quartz
+
+include::backgroundJobs/backgroundJobsQuartz.adoc[]
+
+[[backgroundJobsClustering]]
+=== Clustered Jobs
+
+include::backgroundJobs/backgroundJobsClustering.adoc[]
+
 [[quartz]]
 == Quartz
 

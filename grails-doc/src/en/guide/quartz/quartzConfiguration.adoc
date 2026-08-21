@@ -125,4 +125,6 @@ Persistent storage interacts with the `durability` and `requestsRecovery` job pr
 [[_clustering]]
 ===== Clustering
 
-The plugin does not add anything of its own for clustering, but a standard Quartz clustering configuration works: enable `jdbcStore`, point every node at the same database, and configure `org.quartz.jobStore.isClustered` as described in the Quartz documentation. Give each node a distinct `org.quartz.scheduler.instanceId` — or set it to `AUTO` — so the nodes can tell each other apart.
+Quartz can coordinate a schedule across several instances of your application, so a given trigger fires exactly once no matter how many instances are deployed. This requires `jdbcStore`, a shared set of Quartz tables, and a handful of additional properties.
+
+Clustering is covered in full — including the requirements and the pitfalls — in the xref:backgroundJobs.adoc#backgroundJobsClustering[Clustered Jobs] section.

@@ -338,6 +338,11 @@ mail:
   mailMessageContent: Message Content
   mailAttachments: Attachments
   mailTesting: Testing
+backgroundJobs:
+  title: Background Jobs
+  backgroundJobsScheduled: Scheduling with Spring
+  backgroundJobsQuartz: Scheduling with Quartz
+  backgroundJobsClustering: Clustered Jobs
 quartz:
   title: Quartz
   quartzInstallation: Installation

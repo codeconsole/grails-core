@@ -29,3 +29,6 @@ A _job_ is an artefact: any class whose name ends in `Job`, placed in `grails-ap
 * A <<quartzJobManagerService,`jobManagerService`>> for inspecting, pausing, and resuming jobs and triggers.
 * Optional binding of a Hibernate `Session` to each job's execution thread, so jobs can use GORM the same way a controller or service does.
 * Optional JDBC job persistence for surviving restarts and for clustering.
+* Optional clustering, so a schedule fires exactly once across a multi-instance deployment.
+
+For an overview of the scheduling options available in Grails, and guidance on when to choose Quartz over Spring's `@Scheduled`, see the xref:backgroundJobs.adoc#backgroundJobs[Background Jobs] chapter.
