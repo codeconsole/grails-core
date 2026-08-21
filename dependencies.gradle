@@ -86,10 +86,9 @@ ext {
             'graphql-java-extended-scalars.version': '24.0',
             'groovy.version'                : '5.1.0',
             'guava.version'                 : '33.7.1-jre',
-            // Security: overrides the transitive com.fasterxml Jackson 2.x. CVE-2026-54515 flagged against 2.21.4, fixed in 2.21.5.
-            'jackson2.version'              : '2.22.1',
-            'jackson2-annotations.version'  : '2.22',
             'jquery.version'                : '4.0.0',
+            // Liquibase test harness 1.0.12 requires JUnit 6.1.0, newer than Spring Boot's managed version.
+            'junit.version'                 : '6.1.0',
             'kotlin.version'                : '2.2.21',
             'liquibase-hibernate5.version'  : '4.27.0',
             'mockito.version'               : '5.23.0',
@@ -172,11 +171,6 @@ ext {
             'groovy-xml'               : "org.apache.groovy:groovy-xml:${bomDependencyVersions['groovy.version']}",
             'groovy-yaml'              : "org.apache.groovy:groovy-yaml:${bomDependencyVersions['groovy.version']}",
             'guava'                       : "com.google.guava:guava:${bomDependencyVersions['guava.version']}",
-            // Security override (CVE-2026-54515) of the transitive com.fasterxml Jackson 2.x - see jackson2.version.
-            // Jackson annotations uses the available 2.22 release rather than 2.22.1.
-            'jackson2-annotations'        : "com.fasterxml.jackson.core:jackson-annotations:${bomDependencyVersions['jackson2-annotations.version']}",
-            'jackson2-core'               : "com.fasterxml.jackson.core:jackson-core:${bomDependencyVersions['jackson2.version']}",
-            'jackson2-databind'           : "com.fasterxml.jackson.core:jackson-databind:${bomDependencyVersions['jackson2.version']}",
             'jquery'                   : "org.webjars.npm:jquery:${bomDependencyVersions['jquery.version']}",
             // Security override of the transitive 3.5.1 - see plexus-utils.version
             'plexus-utils'                : "org.codehaus.plexus:plexus-utils:${bomDependencyVersions['plexus-utils.version']}",
@@ -268,6 +262,9 @@ ext {
                 'hibernate-tools.version'       : '7.3.8.Final',
                 'hibernate.version'             : '7.4.1.Final',
                 'jandex.version'                : '3.2.3',
+                // Groovy YAML 5.1.0 requires minimum Jackson 2.22.1 on the Hibernate 7 classpath.
+                'jackson2.version'              : '2.22.2',
+                'jackson2-annotations.version'  : '2.22',
                 'liquibase-hibernate.version'   : '4.27.0',
                 'liquibase-test-harness.version': '1.0.11',
                 'liquibase.version'             : '4.27.0',
@@ -286,6 +283,9 @@ ext {
                 'hibernate-models'      : "org.hibernate.models:hibernate-models:${combinedVersions['hibernate-models.version']}",
                 'hibernate-tools-orm'   : "org.hibernate.tool:hibernate-tools-orm:${combinedVersions['hibernate-tools.version']}",
                 'hibernate-tools-utils' : "org.hibernate.tool:hibernate-tools-utils:${combinedVersions['hibernate-tools.version']}",
+                'jackson2-annotations' : "com.fasterxml.jackson.core:jackson-annotations:${combinedVersions['jackson2-annotations.version']}",
+                'jackson2-core'        : "com.fasterxml.jackson.core:jackson-core:${combinedVersions['jackson2.version']}",
+                'jackson2-databind'    : "com.fasterxml.jackson.core:jackson-databind:${combinedVersions['jackson2.version']}",
                 'jandex'                : "io.smallrye:jandex:${combinedVersions['jandex.version']}",
                 'liquibase'             : "org.liquibase:liquibase:${combinedVersions['liquibase.version']}",
                 'liquibase-cdi'         : "org.liquibase:liquibase-cdi:${combinedVersions['liquibase.version']}",
