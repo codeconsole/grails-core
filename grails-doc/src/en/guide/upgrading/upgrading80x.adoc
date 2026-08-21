@@ -2357,3 +2357,20 @@ resolved unambiguously before can become ambiguous.
 
 Removing the packages from `grails.spring.bean.packages`, or the stray classes from those packages, restores
 the previous set of beans.
+
+==== 45. Grails Plugins Run for a Grails Application Only
+
+The Grails plugin lifecycle ran for any Spring Boot application that had `grails-core` on its class path,
+whether or not it was a Grails application. An application that depended on a Grails library — GSP for its
+views, say — was given a `GrailsApplication`, a plugin manager, and the beans of every plugin found on the
+class path, over the top of what the libraries it did ask for auto-configure for themselves.
+
+The lifecycle now runs only where one of the context's sources is a Grails application class, which is what
+`grails-app/init/Application.groovy` is. A Grails application is unaffected. A Spring Boot application using
+a Grails library gets that library's auto-configuration and nothing else.
+
+This matters if you deliberately put a Grails plugin on the class path of an application that is not a Grails
+application and relied on its `doWithSpring` or `beanRegistrar` beans being contributed. Those beans are no
+longer registered. A plugin that also publishes an auto-configuration — as the Grails modules do, and as
+`@GrailsBeans` generates for a plugin's `beans` block — continues to contribute through Spring Boot's own
+auto-configuration, which needs no lifecycle.

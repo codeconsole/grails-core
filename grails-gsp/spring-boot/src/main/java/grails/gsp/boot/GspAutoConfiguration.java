@@ -39,6 +39,7 @@ import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.config.BeanPostProcessor;
 import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
 import org.springframework.beans.factory.support.BeanDefinitionRegistry;
 import org.springframework.beans.factory.support.BeanDefinitionRegistryPostProcessor;
@@ -303,6 +304,16 @@ public class GspAutoConfiguration {
         @ConditionalOnMissingBean(name = "grailsApplication")
         public GrailsApplication grailsApplication() {
             return new StandaloneGrailsApplication();
+        }
+
+        /**
+         * Hands that application to the GSP beans that expect it, which a Grails application has
+         * from its core plugin and an application rendering views with GSP has from here.
+         */
+        @Bean
+        @ConditionalOnMissingBean(name = "grailsApplicationAwarePostProcessor")
+        static BeanPostProcessor grailsApplicationAwarePostProcessor(ObjectProvider<GrailsApplication> grailsApplication) {
+            return new StandaloneGrailsApplicationAwareBeanPostProcessor(grailsApplication);
         }
     }
 
