@@ -44,10 +44,14 @@ apply plugin: 'cloud.wondrify.asset-pipeline'
 assets {
     assetsPath = file("${project.projectDir}/src/main/assets")
     // A webjar carries far more than an application uses - Bootstrap ships its scss sources, its
-    // source maps and every build variant - so nothing of it is compiled but the file the manifest
-    // requires.
-    excludes = ['webjars/bootstrap/**']
-    includes = ['webjars/bootstrap/*/dist/css/bootstrap.css']
+    // source maps and every build variant - so none of it is served as it stands. What the two
+    // manifests require is compiled into application.css and application.js; the only files that
+    // ship beside them are the icon font's, which its stylesheet asks the browser for by name.
+    excludeWebjarsByDefault = true
+    includes = ['webjars/bootstrap-icons/*/font/fonts/*']
+    // A source map is for reading the sources of a page as it runs, and this application ships
+    // none of them.
+    enableSourceMaps = false
 }
 
 // Jasper compiles a JSP at run time with the Eclipse compiler, and an executable jar packages no JSP
@@ -88,7 +92,8 @@ dependencies {
     implementation 'org.hibernate.validator:hibernate-validator' // validation
 
     assets platform(project(':grails-bom')) // the assets configuration takes its versions from the BOM too
-    assets 'org.webjars.npm:bootstrap' // compiled into application.css, not shipped
+    assets 'org.webjars.npm:bootstrap' // compiled into application.css and application.js, not shipped
+    assets 'org.webjars.npm:bootstrap-icons' // the icons of the theme menu
 
     // The <asset:...> tag library, the service behind it and the filter that serves what the
     // pipeline compiled. The application declares them as beans, so it compiles against them.

@@ -50,7 +50,7 @@ class PrecompiledViewTest {
         HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
 
         assertThat(response.statusCode()).isEqualTo(200);
-        assertThat(response.body()).contains("Name:");
+        assertThat(response.body()).contains("<label for=\"name\"");
         assertThat(response.body()).contains("<title>Decorated");
         assertThat(response.body()).contains("Sample Inline Layout");
     }

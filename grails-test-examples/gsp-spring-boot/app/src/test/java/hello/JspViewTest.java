@@ -50,7 +50,7 @@ class JspViewTest {
 
     @Test
     void theFormOffersItsJspRendering() throws Exception {
-        assertThat(get("/")).contains("Try jsp");
+        assertThat(get("/")).contains("href=\"/jsp\"");
     }
 
     @Test
@@ -59,9 +59,9 @@ class JspViewTest {
 
         String body = get("/");
         // the heading is the layout's, carrying the view type of what it decorated
-        assertThat(body).containsPattern("<h1[^>]*>JSP</h1>");
+        assertThat(body).containsPattern("<h1[^>]*>Rendered by JSP</h1>");
         assertThat(body).contains("<title>Decorated");
-        assertThat(body).contains("Try gsp");
+        assertThat(body).contains("href=\"/gsp\"");
     }
 
     private String get(String path) throws Exception {

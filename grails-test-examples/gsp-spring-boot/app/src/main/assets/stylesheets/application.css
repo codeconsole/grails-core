@@ -16,14 +16,17 @@
 *  specific language governing permissions and limitations
 *  under the License.
 *
-* A manifest: everything it requires is compiled into a single application.css. The Bootstrap it
-* names comes from the webjar on the assets configuration, so the library is read at build time and
-* only what is compiled from it ships.
+* A manifest: everything it requires is compiled into a single application.css. What it names
+* comes from the webjars on the assets configuration, so those libraries are read at build time
+* and only what is compiled from them ships.
 *
 *= require webjars/bootstrap/%/dist/css/bootstrap.css
+*= require webjars/bootstrap-icons/%/font/bootstrap-icons.css
 *= require_self
 */
 
-body {
-    padding-top: 1rem;
+/* Spring's form tag library writes its field errors as <span>, one per error, so they need to be
+   laid out as a block to read as a list under the field they belong to. */
+.field-error {
+    display: block;
 }

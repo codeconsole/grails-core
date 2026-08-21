@@ -18,6 +18,7 @@
  */
 package hello;
 
+import java.net.CookieManager;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -48,7 +49,8 @@ class WebControllerTest {
     void gspViewRendersInSpringBootWithSpringDependencyManagement() throws Exception {
         String body = get("/");
 
-        assertThat(body).contains("Name:");
+        assertThat(body).contains("<label for=\"name\"");
+        assertThat(body).contains("id=\"name\"");
     }
 
     @Test
@@ -63,6 +65,16 @@ class WebControllerTest {
     }
 
     @Test
+    void theLayoutOffersTheThemeTheViewerPrefers() throws Exception {
+        String body = get("/");
+
+        // the menu is the layout's; theme.js applies the choice to Bootstrap's data-bs-theme
+        assertThat(body).contains("data-bs-theme-value=\"light\"");
+        assertThat(body).contains("data-bs-theme-value=\"dark\"");
+        assertThat(body).contains("data-bs-theme-value=\"auto\"");
+    }
+
+    @Test
     void gspViewIsDecoratedByItsSiteMeshLayout() throws Exception {
         String body = get("/");
 
@@ -72,6 +84,36 @@ class WebControllerTest {
         // the grailsLayout namespace the GSP compiler emits must be a registered tag library,
         // otherwise the capture tags reach the browser as literal markup
         assertThat(body).doesNotContain("grailsLayout:");
+    }
+
+    @Test
+    void theFormIsSubmittedAndItsResultRendered() throws Exception {
+        // as a browser does: the person is put in the session, which the results view reads back
+        HttpClient client = HttpClient.newBuilder()
+                .cookieHandler(new CookieManager())
+                .followRedirects(HttpClient.Redirect.ALWAYS)
+                .build();
+        HttpRequest submit = HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/"))
+                .header("Content-Type", "application/x-www-form-urlencoded")
+                .POST(HttpRequest.BodyPublishers.ofString("name=Ada&age=36"))
+                .build();
+
+        HttpResponse<String> response = client.send(submit, HttpResponse.BodyHandlers.ofString());
+
+        assertThat(response.statusCode()).isEqualTo(200);
+        assertThat(response.body()).contains("Congratulations Ada!");
+        // the results view is rendered by a view controller rather than by a handler method, and is
+        // told what renders it all the same
+        assertThat(response.body()).containsPattern("<h1[^>]*>Rendered by GSP</h1>");
+    }
+
+    @Test
+    void whatTheFormPostsToCarriesNoSessionId() throws Exception {
+        // a visitor arrives without a session cookie, and the container would otherwise rewrite the
+        // action to carry the session id - a path Spring MVC has no mapping for
+        String body = get("/");
+
+        assertThat(body).doesNotContain("jsessionid");
     }
 
     private String get(String path) throws Exception {
