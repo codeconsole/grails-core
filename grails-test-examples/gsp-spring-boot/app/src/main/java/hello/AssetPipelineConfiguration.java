@@ -46,6 +46,10 @@ import org.springframework.core.io.ResourceLoader;
  *
  * <p>The service the tag library reads asset URLs from is auto-configured by the asset pipeline, so
  * only the tag library and the filter that serves the compiled assets are declared here.
+ *
+ * <p>Wiring this by hand is what an application does today, and it belongs in the asset pipeline
+ * rather than in every application that wants it: the same beans are being contributed there as an
+ * auto-configuration, and this class goes when a release carries it.
  */
 @Configuration(proxyBeanMethods = false)
 public class AssetPipelineConfiguration {
