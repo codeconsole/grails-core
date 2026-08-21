@@ -87,8 +87,6 @@ ext {
             'groovy.version'                : '5.1.0',
             'guava.version'                 : '33.7.1-jre',
             'jquery.version'                : '4.0.0',
-            // Liquibase test harness 1.0.12 requires JUnit 6.1.0, newer than Spring Boot's managed version.
-            'junit.version'                 : '6.1.0',
             'kotlin.version'                : '2.2.21',
             'liquibase-hibernate5.version'  : '4.27.0',
             'mockito.version'               : '5.23.0',
@@ -126,7 +124,6 @@ ext {
     bomPlatformDependencies = [
             'asset-pipeline-bom': "cloud.wondrify:asset-pipeline-bom:${bomDependencyVersions['asset-pipeline-bom.version']}",
             'groovy-bom'        : "org.apache.groovy:groovy-bom:${bomDependencyVersions['groovy.version']}",
-            'junit-bom'         : "org.junit:junit-bom:${bomDependencyVersions['junit.version']}",
             'spock-bom'         : "org.spockframework:spock-bom:${bomDependencyVersions['spock.version']}",
     ]
 
