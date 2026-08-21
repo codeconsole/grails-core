@@ -19,6 +19,10 @@
 
 package gspstatic
 
+import java.nio.file.Files
+import java.nio.file.Path
+import java.nio.file.Paths
+
 import grails.testing.mixin.integration.Integration
 import org.grails.gsp.CompileStaticGroovyPage
 import org.grails.gsp.GroovyPagesTemplateEngine
@@ -96,6 +100,23 @@ class GspCompileStaticSpec extends Specification {
     void 'a page that declares nothing is compiled statically because the build asked for it'() {
         expect: 'nothing in this page opts in, so it is static only while grails.compileStatic.gsp is set'
         CompileStaticGroovyPage.isAssignableFrom(pageClassFor('/demo/frameworkNames.gsp'))
+    }
+
+    void 'the page compiler the build forked wrote statically compiled classes'() {
+        given: 'the classes compileGroovyPages actually wrote, not what the page locator resolves now'
+        Path output = Paths.get('build', 'gsp-classes', 'main')
+
+        expect:
+        Files.isDirectory(output)
+
+        when:
+        List<Path> pages = Files.list(output).filter { it.fileName.toString().endsWith('_gsp.class') }.toList()
+
+        then: 'which is the half of "it reaches both places a page is compiled" the other cases cannot see'
+        pages.size() >= 3
+        pages.every {
+            new String(Files.readAllBytes(it), 'ISO-8859-1').contains('org/grails/gsp/CompileStaticGroovyPage')
+        }
     }
 
     private Class<?> pageClassFor(String view) {

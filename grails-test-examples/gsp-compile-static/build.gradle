@@ -44,6 +44,12 @@ dependencies {
     integrationTestImplementation 'org.apache.grails.testing:grails-testing-support-core'
 }
 
+// The integration test reads the classes the forked page compiler wrote, which nothing else in the
+// test's own task graph produces.
+tasks.named('integrationTest') {
+    dependsOn tasks.named('compileGroovyPages')
+}
+
 apply {
     from rootProject.layout.projectDirectory.file('gradle/functional-test-config.gradle')
     from rootProject.layout.projectDirectory.file('gradle/grails-extension-gradle-config.gradle')
