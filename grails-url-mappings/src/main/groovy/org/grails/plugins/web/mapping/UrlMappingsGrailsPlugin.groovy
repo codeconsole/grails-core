@@ -123,7 +123,7 @@ class UrlMappingsGrailsPlugin extends Plugin {
             // With the hidden HTTP method filter switched off, the handler mapping resolves "_method" itself
             // so browser forms still reach the PUT, PATCH and DELETE routes of a 'resources' mapping.
             boolean resolveHiddenHttpMethod =
-                    !environment.getProperty(Settings.WEB_HIDDEN_METHOD_FILTER_ENABLED, Boolean, true)
+                    !environment.getProperty(Settings.WEB_HIDDEN_METHOD_FILTER_ENABLED, Boolean, false)
 
             // The url-mapping holder is a ProxyFactoryBean (reload mode) whose produced UrlMappings
             // type must stay visible to Spring's factory-bean type prediction for by-type autowiring
