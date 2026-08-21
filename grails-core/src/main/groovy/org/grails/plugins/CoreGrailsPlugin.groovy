@@ -28,6 +28,7 @@ import org.springframework.beans.factory.support.DefaultListableBeanFactory
 import org.springframework.beans.factory.xml.XmlBeanDefinitionReader
 import org.springframework.boot.autoconfigure.AutoConfiguration
 import org.springframework.boot.autoconfigure.AutoConfigureOrder
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean
 import org.springframework.boot.autoconfigure.context.PropertyPlaceholderAutoConfiguration
 import org.springframework.context.annotation.ConfigurationClassPostProcessor
 import org.springframework.context.support.GenericApplicationContext
@@ -88,11 +89,16 @@ class CoreGrailsPlugin extends Plugin {
     private static final String SPRING_PROXY_TARGET_CLASS_CONFIG = 'spring.aop.proxy-target-class'
 
     def beans = {
-        bean(ClassLoader).primary() { GrailsApplication grailsApplication ->
+        // Both of these are the GrailsApplication read through another type, so both stand down for
+        // an application that has none: this configuration is contributed by every Spring Boot
+        // application with grails-core on its class path, where only a Grails application has the
+        // plugin lifecycle that builds one.
+        bean(ClassLoader).primary().annotate(ConditionalOnBean, value: GrailsApplication) { GrailsApplication grailsApplication ->
             grailsApplication.classLoader
         }
 
-        bean('grailsConfigProperties', ConfigProperties).primary() { GrailsApplication grailsApplication ->
+        bean('grailsConfigProperties', ConfigProperties).primary()
+                .annotate(ConditionalOnBean, value: GrailsApplication) { GrailsApplication grailsApplication ->
             new ConfigProperties(grailsApplication.config)
         }
 
