@@ -36,6 +36,15 @@ plugins {
 // the responsibility of the Grails BOM below.
 apply plugin: 'org.apache.grails.gradle.grails-gsp'
 
+// Jasper compiles a JSP at run time with the Eclipse compiler, and an executable jar packages no JSP
+// to compile - src/main/webapp goes into a war. Jasper itself stays: the GSP form uses Spring's form
+// tag library, which is a JSP tag library and needs the JSP API Jasper carries. Excluding ecj from
+// Jasper outright would take the compiler from the war and from bootRun too, where a JSP does render,
+// so it is left out of this artifact rather than out of the dependency.
+bootJar {
+    classpath = classpath.filter { File entry -> !entry.name.startsWith('ecj-') }
+}
+
 // The packaged application renders the views compiled here, so the templates themselves are left out
 // of it. serverpath is the path each view is registered under in the view registry the task writes:
 // a standalone Spring Boot application looks a view up by its path below the template root, where a
