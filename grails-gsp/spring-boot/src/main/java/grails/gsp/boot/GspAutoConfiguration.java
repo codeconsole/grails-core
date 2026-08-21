@@ -20,12 +20,19 @@
 package grails.gsp.boot;
 
 import java.io.File;
+import java.io.IOException;
+import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Properties;
 
 import jakarta.servlet.ServletContext;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -49,7 +56,10 @@ import org.springframework.core.env.ConfigurableEnvironment;
 import org.springframework.core.env.Environment;
 import org.springframework.core.env.MapPropertySource;
 import org.springframework.core.env.PropertiesPropertySource;
+import org.springframework.core.io.Resource;
+import org.springframework.core.io.ResourceLoader;
 import org.springframework.core.type.AnnotationMetadata;
+import org.springframework.util.ResourceUtils;
 import org.springframework.util.StringUtils;
 import org.springframework.web.context.ServletContextAware;
 import org.springframework.web.context.WebApplicationContext;
@@ -94,8 +104,13 @@ public class GspAutoConfiguration {
     @Configuration
     @Import({TagLibraryLookupRegistrar.class, ReplaceViewResolverRegistrar.class})
     protected static class GspTemplateEngineAutoConfiguration extends AbstractGspConfig {
+        /** Where the {@code compileGroovyPages} build task writes the views it compiled. */
+        protected static final String PRECOMPILED_VIEWS_LOCATION = "classpath:gsp/views.properties";
+
         private static final String LOCAL_DIRECTORY_TEMPLATE_ROOT = "./src/main/resources/templates";
         private static final String CLASSPATH_TEMPLATE_ROOT = "classpath:/templates";
+
+        private static final Logger logger = LoggerFactory.getLogger(GspTemplateEngineAutoConfiguration.class);
 
         @Value("${spring.gsp.templateRoots:}")
         String[] templateRoots;
@@ -122,14 +137,16 @@ public class GspAutoConfiguration {
 
         @Bean
         @ConditionalOnMissingBean(name = "groovyPageLocator")
-        GrailsConventionGroovyPageLocator groovyPageLocator() {
+        GrailsConventionGroovyPageLocator groovyPageLocator(ResourceLoader resourceLoader) {
             final List<String> templateRootsCleaned = resolveTemplateRoots();
             CachingGrailsConventionGroovyPageLocator pageLocator = new CachingGrailsConventionGroovyPageLocator() {
                 protected List<String> resolveSearchPaths(String uri) {
-                    List<String> paths = new ArrayList<>(templateRootsCleaned.size());
+                    List<String> paths = new ArrayList<>(templateRootsCleaned.size() + 1);
                     for (String rootPath : templateRootsCleaned) {
                         paths.add(rootPath + cleanUri(uri));
                     }
+                    // the path a precompiled view is registered under, which names no resource root
+                    paths.add(cleanUri(uri));
                     return paths;
                 }
 
@@ -147,7 +164,45 @@ public class GspAutoConfiguration {
             };
             pageLocator.setReloadEnabled(gspReloadingEnabled);
             pageLocator.setCacheTimeout(gspReloadingEnabled ? locatorCacheTimeout : -1);
+            Map<String, String> precompiledViews = resolvePrecompiledViews(resourceLoader, templateRootsCleaned);
+            if (precompiledViews != null) {
+                pageLocator.setPrecompiledGspMap(precompiledViews);
+            }
             return pageLocator;
+        }
+
+        /**
+         * The registry of views compiled by the {@code compileGroovyPages} build task, read from
+         * {@value #PRECOMPILED_VIEWS_LOCATION}, or {@code null} when there is none to read.
+         *
+         * <p>A template root on the file system means the templates are there to be rendered, and
+         * re-rendered as they are edited, so the registry is left unread for it: the locator prefers a
+         * precompiled view over a template it can find, and would otherwise serve the view as it stood
+         * when the application was built.
+         */
+        protected Map<String, String> resolvePrecompiledViews(ResourceLoader resourceLoader, List<String> templateRoots) {
+            for (String templateRoot : templateRoots) {
+                if (templateRoot.startsWith(ResourceUtils.FILE_URL_PREFIX)) {
+                    return null;
+                }
+            }
+            Resource resource = resourceLoader.getResource(PRECOMPILED_VIEWS_LOCATION);
+            if (!resource.exists()) {
+                return null;
+            }
+            Properties views = new Properties();
+            try (InputStream input = resource.getInputStream()) {
+                views.load(input);
+            } catch (IOException e) {
+                logger.warn("Unable to read the precompiled view registry [{}]; views will be rendered from " +
+                        "their templates, if those are available", PRECOMPILED_VIEWS_LOCATION, e);
+                return null;
+            }
+            Map<String, String> precompiledViews = new LinkedHashMap<>(views.size());
+            for (String uri : views.stringPropertyNames()) {
+                precompiledViews.put(uri, views.getProperty(uri));
+            }
+            return precompiledViews;
         }
 
         protected List<String> resolveTemplateRoots() {
