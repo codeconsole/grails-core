@@ -126,7 +126,7 @@ ext {
             // Spring Boot 4 no longer manages spring-retry; pin it here so the
             // grails-shell-cli SpringRetryCompilerAutoConfiguration's unversioned
             // reference resolves and consumer apps using @Retryable get a known version.
-            'spring-retry.version'          : '2.0.11',
+            'spring-retry.version'          : '2.0.13',
             // Undertow is no longer managed by spring-boot-dependencies: Spring Boot 4
             // removed its Undertow support before GA. Servlet 6.1 support ships as
             // undertow-core 2.4.x plus the io.undertow.ee servlet/websockets artifacts,
