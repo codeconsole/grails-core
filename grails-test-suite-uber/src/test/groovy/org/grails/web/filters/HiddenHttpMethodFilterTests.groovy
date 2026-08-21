@@ -89,6 +89,39 @@ class HiddenHttpMethodFilterTests {
     }
 
     @Test
+    void testOversizedMultipartRequestSkipsTheParameterReadEntirely() {
+        // A request already declared (via Content-Length) larger than the configured limit must
+        // never attempt the parameter read - getParameter() would throw here exactly like the
+        // container does for a real oversized upload, so reaching "POST" proves the size guard
+        // skipped the read outright rather than relying on the tolerant catch.
+        def filter = new HiddenHttpMethodFilter()
+        filter.setMaxMultipartRequestSize(128_000L)
+        def req = unreadableParameterRequest('multipart/form-data; boundary=test')
+        req.content = new byte[200_000]
+        def res = new MockHttpServletResponse()
+        String method
+        filter.doFilter(req, res, { req2, res2 -> method = req2.method } as FilterChain)
+
+        assertEquals "POST", method
+    }
+
+    @Test
+    void testMultipartRequestWithinTheLimitStillHonoursTheMethodParameter() {
+        def filter = new HiddenHttpMethodFilter()
+        filter.setMaxMultipartRequestSize(128_000L)
+        def req = new MockMultipartHttpServletRequest()
+        req.contentType = 'multipart/form-data; boundary=test'
+        req.content = new byte[1_000]
+        req.addParameter("_method", "PUT")
+        req.setMethod("POST")
+        def res = new MockHttpServletResponse()
+        String method
+        filter.doFilter(req, res, { req2, res2 -> method = req2.method } as FilterChain)
+
+        assertEquals "PUT", method
+    }
+
+    @Test
     void testUnreadableParametersStillThrowForANonMultipartRequest() {
         def filter = new HiddenHttpMethodFilter()
         def req = unreadableParameterRequest('application/x-www-form-urlencoded')

@@ -105,7 +105,9 @@ public class ControllersAutoConfiguration {
     @ConditionalOnMissingBean(HiddenHttpMethodFilter.class)
     public FilterRegistrationBean<Filter> hiddenHttpMethodFilter() {
         FilterRegistrationBean<Filter> registrationBean = new FilterRegistrationBean<>();
-        registrationBean.setFilter(new HiddenHttpMethodFilter());
+        HiddenHttpMethodFilter filter = new HiddenHttpMethodFilter();
+        filter.setMaxMultipartRequestSize(maxRequestSize);
+        registrationBean.setFilter(filter);
         registrationBean.addUrlPatterns(Settings.DEFAULT_WEB_SERVLET_PATH);
         registrationBean.setOrder(GrailsFilters.HIDDEN_HTTP_METHOD_FILTER.getOrder());
         return registrationBean;
