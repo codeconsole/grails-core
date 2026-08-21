@@ -20,6 +20,7 @@ package org.grails.datastore.gorm.mongo.transactions
 
 import grails.gorm.annotation.Entity
 
+import org.apache.grails.testing.mongo.EmbeddedReplicaSetSpec
 import org.grails.datastore.mapping.mongo.MongoDatastore
 import spock.lang.AutoCleanup
 import spock.lang.Shared

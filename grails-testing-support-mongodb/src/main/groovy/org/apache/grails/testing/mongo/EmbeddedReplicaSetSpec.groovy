@@ -16,7 +16,7 @@
  *  specific language governing permissions and limitations
  *  under the License.
  */
-package org.grails.datastore.gorm.mongo.transactions
+package org.apache.grails.testing.mongo
 
 import org.grails.datastore.gorm.mongodb.embedded.EmbeddedMongoInitializer
 import org.grails.datastore.gorm.mongodb.embedded.FlapdoodleMongoBackend
@@ -33,6 +33,10 @@ import spock.lang.Specification
  *
  * <p>It is a real mongod, as a container is, and it needs no Docker - so a developer without one
  * runs these, and a CI job runs them without a container to lose halfway through a specification.
+ *
+ * <p>A specification extending this needs {@code grails-data-mongodb-embedded} and the flapdoodle
+ * library it runs the server with on its test class path; this module compiles against them and
+ * carries neither.
  */
 abstract class EmbeddedReplicaSetSpec extends Specification {
 
@@ -46,9 +50,9 @@ abstract class EmbeddedReplicaSetSpec extends Specification {
         int port = freePort()
         this.embedded = new GenericApplicationContext()
         this.embedded.environment.propertySources.addFirst(new MapPropertySource('embeddedMongoTest', [
-                (EmbeddedMongoInitializer.BACKEND)    : FlapdoodleMongoBackend.NAME,
+                (EmbeddedMongoInitializer.BACKEND): FlapdoodleMongoBackend.NAME,
                 (EmbeddedMongoInitializer.REPLICA_SET): 'rs0',
-                'grails.mongodb.url'                  : "mongodb://${EmbeddedMongoInitializer.EMBEDDED_HOST}:${port}/myDb".toString(),
+                'grails.mongodb.url': "mongodb://${EmbeddedMongoInitializer.EMBEDDED_HOST}:${port}/myDb".toString(),
         ]))
         new EmbeddedMongoInitializer().initialize(this.embedded)
         this.mongoUrl = this.embedded.environment.getProperty('grails.mongodb.url')
