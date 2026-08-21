@@ -50,6 +50,15 @@ dependencies {
         // runtime: @DisallowConcurrentExecution, @PersistJobDataAfterExecution
     }
 
+    api 'org.springframework:spring-context-support', {
+        // api: AdaptableJobFactory (superclass of GrailsJobFactory)
+        // impl: SchedulerFactoryBean (the quartzScheduler bean)
+        //
+        // Required at runtime. It is NOT safely inherited from the rest of the stack: grails-gsp
+        // excludes it from its transitive graph, so an application that depends on this plugin
+        // alone fails to start with a NoClassDefFoundError without this declaration.
+    }
+
     compileOnly project(':grails-core'), { // Provided as this is a Grails plugin
         // api: ArtefactHandlerAdapter, GrailsApplication, GrailsClass, PersistenceContextInterceptor, Plugin
         // impl: AbstractGrailsClass, GrailsASTUtils, GrailsClassUtils, GrailsUtil, TraitInjector
@@ -60,7 +69,6 @@ dependencies {
     compileOnly 'jakarta.annotation:jakarta.annotation-api' // @PostConstruct
     compileOnly 'org.springframework:spring-beans' // BeanUtils, BeanWrapper, FactoryBean, MethodInvokingFactoryBean
     compileOnly 'org.springframework:spring-context' // ApplicationContext, ApplicationContextAware
-    compileOnly 'org.springframework:spring-context-support' // AdaptableJobFactory, SchedulerFactoryBean
     compileOnly 'org.springframework:spring-core' // Assert, ReflectionUtils
     compileOnly 'org.slf4j:slf4j-api' // @Slf4j, Logger
 
