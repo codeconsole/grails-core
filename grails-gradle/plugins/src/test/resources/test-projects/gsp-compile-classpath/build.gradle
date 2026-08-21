@@ -28,8 +28,9 @@ tasks.register('inspectGspCompileClasspath') {
     }
 }
 
-// The pages these tasks compile have to be loadable by an application run or tested from the build,
-// not only by one started from an archive, so they belong on these class paths too.
+// The pages these tasks compile have to be loadable by a test of the application, not only by one
+// started from an archive. They are kept off the main runtime class path, which a boot archive
+// packages into its classes directory - where the pages are copied already.
 tasks.register('inspectGspRuntimeClasspath') {
     doLast {
         def mainRuntime = runtimeClasspathOf('main')
