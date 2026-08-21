@@ -35,6 +35,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.springframework.beans.BeansException;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.beans.factory.config.BeanDefinition;
@@ -126,10 +127,12 @@ public class GspAutoConfiguration {
 
         @Bean
         @ConditionalOnMissingBean(name = "groovyPagesTemplateEngine")
-        GroovyPagesTemplateEngine groovyPagesTemplateEngine(TagLibraryResolver tagLibraryResolver, TagLibraryLookup tagLibraryLookup, GroovyPagesTemplateRenderer groovyPagesTemplateRenderer) {
+        GroovyPagesTemplateEngine groovyPagesTemplateEngine(ObjectProvider<TagLibraryResolver> tagLibraryResolver, TagLibraryLookup tagLibraryLookup, GroovyPagesTemplateRenderer groovyPagesTemplateRenderer) {
             GroovyPagesTemplateEngine templateEngine = new GroovyPagesTemplateEngine();
             templateEngine.setReloadEnabled(gspReloadingEnabled);
-            templateEngine.setJspTagLibraryResolver(tagLibraryResolver);
+            // A resolver is contributed only where JSP support is on the class path. Without it a page
+            // can use no JSP tag library, which it could not do anyway, and renders GSP as it always did.
+            templateEngine.setJspTagLibraryResolver(tagLibraryResolver.getIfAvailable());
             templateEngine.setTagLibraryLookup(tagLibraryLookup);
             groovyPagesTemplateRenderer.setGroovyPagesTemplateEngine(templateEngine);
             return templateEngine;
