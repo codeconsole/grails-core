@@ -17,7 +17,7 @@
  *  under the License.
  */
 
-package spring.security.cas
+package grails.plugin.springsecurity.cas.test
 
 class UrlMappings {
 

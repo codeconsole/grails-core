@@ -17,7 +17,7 @@
  *  under the License.
  */
 
-package com.test
+package grails.plugin.springsecurity.cas.test
 
 import groovy.transform.EqualsAndHashCode
 import groovy.transform.ToString
