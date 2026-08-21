@@ -86,7 +86,13 @@ import org.grails.web.pages.StandaloneTagLibraryLookup;
 import org.grails.web.servlet.view.GroovyPageViewResolver;
 
 @Configuration
-@AutoConfigureAfter(WebMvcAutoConfiguration.class)
+// The codec lookup below stands in for the one the codecs module contributes, which is why this is
+// configured after it: both bean definitions are named codecLookup, and without an order between
+// them the unconditional one overrode the conditional one, which is a bean definition override an
+// application had to allow before it would start.
+// The codecs module is named rather than referenced so that GSP keeps working for an application
+// that does not have it on the class path.
+@AutoConfigureAfter(value = WebMvcAutoConfiguration.class, name = "org.grails.plugins.codecs.CodecsConfiguration")
 public class GspAutoConfiguration {
     protected static abstract class AbstractGspConfig {
         @Value("${spring.gsp.reloadingEnabled:true}")
