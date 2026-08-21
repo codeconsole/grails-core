@@ -41,8 +41,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.beans.factory.config.BeanPostProcessor;
 import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
+import org.springframework.beans.factory.config.BeanFactoryPostProcessor;
 import org.springframework.beans.factory.support.BeanDefinitionRegistry;
-import org.springframework.beans.factory.support.BeanDefinitionRegistryPostProcessor;
 import org.springframework.beans.factory.support.GenericBeanDefinition;
 import org.springframework.boot.autoconfigure.AutoConfigureAfter;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
@@ -249,9 +249,19 @@ public class GspAutoConfiguration {
         }
     }
 
-    @Configuration
+    /**
+     * Applies the SiteMesh defaults to the environment of a context that was not built by
+     * {@code SpringApplication}, where {@link Sitemesh3EnvironmentPostProcessor} - which applies them
+     * to every application that was - does not run.
+     *
+     * <p>It is a {@link BeanFactoryPostProcessor} so that it is instantiated, and so applies the
+     * defaults through {@link EnvironmentAware}, before anything reads a SiteMesh property; the
+     * post-processing itself has nothing to do. It declares no beans, so it is not proxied - which
+     * also settles the warning that being created this early otherwise draws.
+     */
+    @Configuration(proxyBeanMethods = false)
     @ConditionalOnMissingBean(name = "sitemesh3")
-    protected static class Sitemesh3Configuration implements EnvironmentAware, BeanDefinitionRegistryPostProcessor {
+    protected static class Sitemesh3Configuration implements EnvironmentAware, BeanFactoryPostProcessor {
         @Override
         public void setEnvironment(Environment environment) {
             if (environment instanceof ConfigurableEnvironment) {
@@ -262,9 +272,6 @@ public class GspAutoConfiguration {
                 }
             }
         }
-
-        @Override
-        public void postProcessBeanDefinitionRegistry(BeanDefinitionRegistry registry) throws BeansException {}
 
         @Override
         public void postProcessBeanFactory(ConfigurableListableBeanFactory beanFactory) throws BeansException {}
