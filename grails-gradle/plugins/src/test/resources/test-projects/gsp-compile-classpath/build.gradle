@@ -28,6 +28,24 @@ tasks.register('inspectGspCompileClasspath') {
     }
 }
 
+// The pages these tasks compile have to be loadable by an application run or tested from the build,
+// not only by one started from an archive, so they belong on these class paths too.
+tasks.register('inspectGspRuntimeClasspath') {
+    doLast {
+        def mainRuntime = runtimeClasspathOf('main')
+        def testRuntime = runtimeClasspathOf('test')
+
+        println "MAIN_RUNTIME_HAS_PAGES=${containsEntry(mainRuntime, 'build/gsp-classes/main')}"
+        println "MAIN_RUNTIME_HAS_WEBAPP_PAGES=${containsEntry(mainRuntime, 'build/gsp-classes/webapp')}"
+        println "TEST_RUNTIME_HAS_PAGES=${containsEntry(testRuntime, 'build/gsp-classes/main')}"
+        println "TEST_RUNTIME_HAS_WEBAPP_PAGES=${containsEntry(testRuntime, 'build/gsp-classes/webapp')}"
+    }
+}
+
+List<String> runtimeClasspathOf(String sourceSetName) {
+    sourceSets.named(sourceSetName).get().runtimeClasspath.files.collect { it.absolutePath.replace('\\', '/') }
+}
+
 List<String> classpathOf(String taskName) {
     tasks.named(taskName).get().classpath.files.collect { it.absolutePath.replace('\\', '/') }
 }

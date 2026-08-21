@@ -62,7 +62,6 @@ class GroovyPagePlugin implements Plugin<Project> {
         FileCollection classesDirs = resolveClassesDirs(output, project)
         Provider<Directory> destDir = project.layout.buildDirectory.dir('gsp-classes/main')
         Provider<Directory> webappDestDir = project.layout.buildDirectory.dir('gsp-classes/webapp')
-        output?.dir('gsp-classes')
 
         FileCollection allClasspath = project.getObjects().fileCollection().from(
                 [
@@ -124,6 +123,19 @@ class GroovyPagePlugin implements Plugin<Project> {
             } else {
                 war.classpath = project.files(destDir, webappDestDir)
             }
+        }
+
+        // The archives below take the compiled pages by copy. They belong on the run and test class
+        // paths too, so an application started or tested from the build loads the same pages it ships
+        // - the view registry among them. They cannot be registered as source set output: that output
+        // is what `classes` builds, and compileGroovyPages runs after `classes`, so it would cycle.
+        FileCollection compiledPages = project.files(destDir, webappDestDir).builtBy(compileGroovyPages)
+        if (mainSourceSet != null) {
+            mainSourceSet.runtimeClasspath = mainSourceSet.runtimeClasspath + compiledPages
+        }
+        SourceSet testSourceSet = SourceSets.findSourceSet(project, SourceSet.TEST_SOURCE_SET_NAME)
+        if (testSourceSet != null) {
+            testSourceSet.runtimeClasspath = testSourceSet.runtimeClasspath + compiledPages
         }
 
         tasks.withType(Jar).configureEach { Jar jar ->
