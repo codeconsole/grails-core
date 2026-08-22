@@ -104,6 +104,29 @@ class MyJob {
 }
 ----
 
+The binding covers the job's `execute` method. Quartz notifies any `JobListener` you register outside
+that method, so a listener must not rely on a session being bound to its thread — by the time
+`jobWasExecuted` is called, the session opened for the job has already been flushed and closed. A
+listener that needs GORM should open its own session:
+
+[source,groovy]
+----
+import org.quartz.JobExecutionContext
+import org.quartz.JobExecutionException
+import org.quartz.listeners.JobListenerSupport
+
+class AuditJobListener extends JobListenerSupport {
+
+    String getName() { 'auditJobListener' }
+
+    void jobWasExecuted(JobExecutionContext context, JobExecutionException exception) {
+        JobRun.withNewSession {
+            new JobRun(job: context.jobDetail.key.name).save(flush: true)
+        }
+    }
+}
+----
+
 [[_persistent_job_storage]]
 ===== Persistent job storage
 
