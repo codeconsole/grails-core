@@ -59,6 +59,17 @@ class QuartzSchedulingSpec extends Specification {
             }
     }
 
+    void 'a global job listener registered by the application observes every job execution'() {
+        given:
+            PollingConditions conditions = new PollingConditions(timeout: 30)
+
+        expect: 'the listener registered in BootStrap wraps the executions the scheduler drives'
+            conditions.eventually {
+                assert RecordingJobListener.BEFORE.get() > 0
+                assert RecordingJobListener.AFTER.get() > 0
+            }
+    }
+
     void 'a job without triggers only runs when it is triggered through the QuartzJob trait'() {
         given:
             PollingConditions conditions = new PollingConditions(timeout: 30)

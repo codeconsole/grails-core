@@ -104,10 +104,19 @@ class MyJob {
 }
 ----
 
-The binding covers the job's `execute` method. Quartz notifies any `JobListener` you register outside
-that method, so a listener must not rely on a session being bound to its thread — by the time
-`jobWasExecuted` is called, the session opened for the job has already been flushed and closed. A
-listener that needs GORM should open its own session:
+The binding covers the job's `execute` method only. Job listeners run outside it and must manage their
+own session — see <<_job_listeners,Job listeners>>.
+
+[[_job_listeners]]
+===== Job listeners
+
+To run code around *every* job — binding a security context, populating a logging context, or any other
+setup a job inherits rather than repeats — register a Quartz `JobListener` with the scheduler. This is
+the supported way to share behaviour across all jobs; the plugin uses the same mechanism internally for
+its own exception logging.
+
+Implement `JobListener` (or extend Quartz's `JobListenerSupport`, which no-ops the callbacks you do not
+need):
 
 [source,groovy]
 ----
@@ -115,17 +124,43 @@ import org.quartz.JobExecutionContext
 import org.quartz.JobExecutionException
 import org.quartz.listeners.JobListenerSupport
 
-class AuditJobListener extends JobListenerSupport {
+class SecurityContextJobListener extends JobListenerSupport {
 
-    String getName() { 'auditJobListener' }
+    String getName() { 'securityContextJobListener' }
+
+    void jobToBeExecuted(JobExecutionContext context) {
+        // bind whatever every job should see
+    }
 
     void jobWasExecuted(JobExecutionContext context, JobExecutionException exception) {
-        JobRun.withNewSession {
-            new JobRun(job: context.jobDetail.key.name).save(flush: true)
-        }
+        // and unbind it again
     }
 }
 ----
+
+Register it against the `quartzScheduler` bean, typically from `BootStrap`:
+
+[source,groovy]
+----
+import org.quartz.Scheduler
+
+class BootStrap {
+
+    Scheduler quartzScheduler
+
+    def init = { servletContext ->
+        quartzScheduler.listenerManager.addJobListener(new SecurityContextJobListener())
+    }
+}
+----
+
+A listener registered with no matcher observes every job. To restrict it to particular jobs, pass a
+`Matcher` — `KeyMatcher.keyEquals(...)` for a single job, or `GroupMatcher.jobGroupEquals(...)` for a
+whole <<quartzJobProperties,job group>>.
+
+WARNING: A job listener has no Hibernate `Session` bound to its thread. The session opened for the job
+is flushed and closed before `jobWasExecuted` is called, so a listener that needs GORM must open its own
+with `withNewSession` or `withTransaction`. See <<_hibernate_sessions_and_jobs,Hibernate sessions and jobs>>.
 
 [[_persistent_job_storage]]
 ===== Persistent job storage
