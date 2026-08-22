@@ -109,17 +109,9 @@ final class ActiveProcessorCountArgumentProvider implements CommandLineArgumentP
 
 subprojects {
 
-    tasks.withType(Test).configureEach { testTask ->
-        testTask.jvmArgumentProviders.add(new ActiveProcessorCountArgumentProvider(
+    tasks.withType(Test).configureEach {
+        jvmArgumentProviders.add(new ActiveProcessorCountArgumentProvider(
                 Runtime.runtime.availableProcessors(), gradle.startParameter.maxWorkerCount))
-
-        // The server a test starts is chosen by the build, and the test reads it as a system
-        // property: a project property named on the command line reaches the Gradle JVM and stops
-        // there, so a matrix asking for one version and a test defaulting to another agree only by
-        // accident. CI passes -PmongodbContainerVersion for exactly this.
-        if (rootProject.hasProperty('mongodbContainerVersion')) {
-            testTask.systemProperty('mongodbContainerVersion', rootProject.property('mongodbContainerVersion'))
-        }
     }
 
     for (String testPrefix : testProjectsStartWith) {
