@@ -109,8 +109,8 @@ final class ActiveProcessorCountArgumentProvider implements CommandLineArgumentP
 
 subprojects {
 
-    tasks.withType(Test).configureEach {
-        jvmArgumentProviders.add(new ActiveProcessorCountArgumentProvider(
+    tasks.withType(Test).configureEach { testTask ->
+        testTask.jvmArgumentProviders.add(new ActiveProcessorCountArgumentProvider(
                 Runtime.runtime.availableProcessors(), gradle.startParameter.maxWorkerCount))
     }
 
