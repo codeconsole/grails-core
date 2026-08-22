@@ -43,6 +43,13 @@ public interface RunningEmbeddedMongo {
     void stop();
 
     /**
+     * @return whether the server is listening, which it is until {@link #stop()} and again
+     *         after {@link #restart()}. A server outlives the application context that started
+     *         it, so a later context has to ask rather than assume.
+     */
+    boolean isRunning();
+
+    /**
      * Binds the server again on the port it was already using, after {@link #stop()}.
      *
      * <p>This exists for CRaC. A checkpoint refuses to run while the process holds an open

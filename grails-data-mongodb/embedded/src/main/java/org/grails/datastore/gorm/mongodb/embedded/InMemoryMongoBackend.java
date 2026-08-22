@@ -98,6 +98,8 @@ public class InMemoryMongoBackend implements EmbeddedMongoBackend {
 
         private volatile MongoServer server;
 
+        private volatile boolean running = true;
+
         /**
          * The port that was actually bound, which is not the requested one when that was 0.
          * Restarting reuses it so the url published into the environment stays correct.
@@ -123,6 +125,12 @@ public class InMemoryMongoBackend implements EmbeddedMongoBackend {
         @Override
         public void stop() {
             this.server.shutdownNow();
+            this.running = false;
+        }
+
+        @Override
+        public boolean isRunning() {
+            return this.running;
         }
 
         @Override
@@ -130,6 +138,7 @@ public class InMemoryMongoBackend implements EmbeddedMongoBackend {
             MongoServer restarted = new MongoServer(this.backend);
             restarted.bind("localhost", this.port);
             this.server = restarted;
+            this.running = true;
         }
     }
 }

@@ -18,6 +18,8 @@
  */
 package org.grails.datastore.gorm.mongodb.embedded;
 
+import java.util.Objects;
+
 /**
  * What to start a server with. Not every backend honours every setting; one that cannot
  * says so rather than starting a server that quietly behaves differently than asked.
@@ -87,5 +89,35 @@ public final class EmbeddedMongoSettings {
      */
     public boolean isPersistent() {
         return this.databaseDir != null && !this.databaseDir.isEmpty();
+    }
+
+    /**
+     * Two settings are the same when they describe the same server, which is how a restarted
+     * application decides whether the server already running is the one it asked for.
+     */
+    @Override
+    public boolean equals(Object other) {
+        if (this == other) {
+            return true;
+        }
+        if (!(other instanceof EmbeddedMongoSettings)) {
+            return false;
+        }
+        EmbeddedMongoSettings that = (EmbeddedMongoSettings) other;
+        return this.port == that.port &&
+                Objects.equals(this.version, that.version) &&
+                Objects.equals(this.databaseDir, that.databaseDir) &&
+                Objects.equals(this.replicaSet, that.replicaSet);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(this.port, this.version, this.databaseDir, this.replicaSet);
+    }
+
+    @Override
+    public String toString() {
+        return "port=" + this.port + ", version=" + this.version +
+                ", database-dir=" + this.databaseDir + ", replica-set=" + this.replicaSet;
     }
 }

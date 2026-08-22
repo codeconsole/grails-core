@@ -183,6 +183,68 @@ class EmbeddedMongoInitializerSpec extends Specification {
         restarted.environment.getProperty('grails.mongodb.url') == 'mongodb://localhost:27985/bookstore'
     }
 
+    void 'a restart that asks for a replica set is not handed the standalone server'() {
+        given: 'a standalone server, started before the developer asked for transactions'
+        GenericApplicationContext first = contextWith([
+                (EmbeddedMongoInitializer.BACKEND): InMemoryMongoBackend.NAME,
+                'grails.mongodb.url'              : 'mongodb://embedded:28003/bookstore',
+        ])
+        new EmbeddedMongoInitializer().initialize(first)
+        EmbeddedMongoLifecycle standalone = first.beanFactory
+                .getBean(EmbeddedMongoLifecycle.BEAN_NAME, EmbeddedMongoLifecycle)
+
+        when: 'the reloaded application asks for transactions, which need a replica set'
+        GenericApplicationContext restarted = contextWith([
+                (EmbeddedMongoInitializer.BACKEND)     : InMemoryMongoBackend.NAME,
+                (EmbeddedMongoInitializer.REPLICA_SET) : 'rs0',
+                'grails.mongodb.url'                   : 'mongodb://embedded:28003/bookstore',
+        ])
+        new EmbeddedMongoInitializer().initialize(restarted)
+
+        then: 'the server it is given is not the one that could not do it'
+        EmbeddedMongoLifecycle replacement = restarted.beanFactory
+                .getBean(EmbeddedMongoLifecycle.BEAN_NAME, EmbeddedMongoLifecycle)
+        !replacement.is(standalone)
+        restarted.environment.getProperty('grails.mongodb.url') == 'mongodb://localhost:28003/bookstore'
+
+        cleanup:
+        replacement?.stop()
+    }
+
+    void 'a restart that asks for the same server is handed the same server'() {
+        given:
+        GenericApplicationContext first = contextWith([
+                (EmbeddedMongoInitializer.BACKEND): InMemoryMongoBackend.NAME,
+                'grails.mongodb.url'              : 'mongodb://embedded:28004/bookstore',
+        ])
+        new EmbeddedMongoInitializer().initialize(first)
+        EmbeddedMongoLifecycle lifecycle = first.beanFactory
+                .getBean(EmbeddedMongoLifecycle.BEAN_NAME, EmbeddedMongoLifecycle)
+
+        when: 'the context closes and the reloaded application builds another'
+        lifecycle.stop()
+        GenericApplicationContext restarted = contextWith([
+                (EmbeddedMongoInitializer.BACKEND): InMemoryMongoBackend.NAME,
+                'grails.mongodb.url'              : 'mongodb://embedded:28004/bookstore',
+        ])
+        new EmbeddedMongoInitializer().initialize(restarted)
+        EmbeddedMongoLifecycle reused = restarted.beanFactory
+                .getBean(EmbeddedMongoLifecycle.BEAN_NAME, EmbeddedMongoLifecycle)
+
+        then: 'the url points at the server it already had, which is waiting to be started'
+        restarted.environment.getProperty('grails.mongodb.url') == 'mongodb://localhost:28004/bookstore'
+        !reused.running
+
+        when: 'the new context refreshes, which is when Spring starts it'
+        reused.start()
+
+        then: 'the application talks to a server that is listening'
+        reused.running
+
+        cleanup:
+        reused?.stop()
+    }
+
     void 'the in-memory backend refuses to pretend it can persist'() {
         given:
         GenericApplicationContext context = contextWith([
