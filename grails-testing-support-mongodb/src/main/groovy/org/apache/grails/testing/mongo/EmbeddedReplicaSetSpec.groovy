@@ -52,10 +52,23 @@ abstract class EmbeddedReplicaSetSpec extends Specification {
         this.embedded.environment.propertySources.addFirst(new MapPropertySource('embeddedMongoTest', [
                 (EmbeddedMongoInitializer.BACKEND): FlapdoodleMongoBackend.NAME,
                 (EmbeddedMongoInitializer.REPLICA_SET): 'rs0',
+                (EmbeddedMongoInitializer.VERSION): serverVersion(),
                 'grails.mongodb.url': "mongodb://${EmbeddedMongoInitializer.EMBEDDED_HOST}:${port}/myDb".toString(),
         ]))
         new EmbeddedMongoInitializer().initialize(this.embedded)
         this.mongoUrl = this.embedded.environment.getProperty('grails.mongodb.url')
+    }
+
+    /**
+     * The server the rest of the suite is run against, named the way the embedded server names
+     * versions. A build asks for one with -PmongodbContainerVersion, and this answers the same
+     * request, so a specification served from a container and one served from here are never
+     * quietly run against different servers.
+     */
+    private static String serverVersion() {
+        // '7.0.19' and '8.0' alike name the line the embedded server takes: V7_0, V8_0
+        List<String> parts = AbstractMongoGrailsExtension.desiredMongoVersion.tokenize('.')
+        "V${parts[0]}_${parts.size() > 1 ? parts[1] : '0'}".toString()
     }
 
     void cleanupSpec() {
