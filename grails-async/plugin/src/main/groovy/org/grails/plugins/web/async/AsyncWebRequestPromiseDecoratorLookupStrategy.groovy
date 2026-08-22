@@ -22,6 +22,11 @@ import groovy.transform.CompileStatic
 
 import grails.async.decorator.PromiseDecorator
 import grails.async.decorator.PromiseDecoratorLookupStrategy
+import groovy.util.logging.Slf4j
+import jakarta.servlet.http.HttpServletRequest
+
+import grails.async.web.AsyncGrailsWebRequest
+
 import org.grails.web.servlet.mvc.GrailsWebRequest
 
 /**
@@ -30,6 +35,7 @@ import org.grails.web.servlet.mvc.GrailsWebRequest
  * @author Graeme Rocher
  * @since 2.3
  */
+@Slf4j
 @CompileStatic
 class AsyncWebRequestPromiseDecoratorLookupStrategy implements PromiseDecoratorLookupStrategy {
 
@@ -38,10 +44,16 @@ class AsyncWebRequestPromiseDecoratorLookupStrategy implements PromiseDecoratorL
         final webRequest = GrailsWebRequest.lookup()
         if (webRequest) {
             List<PromiseDecorator> decorators = []
+            // Held so that a decorator which does not survive its own construction leaves the
+            // request as it found it: the web request it builds stores itself on the request
+            // before asking the container to start, and a later lookup that found that
+            // half-built object would use one whose asynchronous context was never assigned.
+            Object boundBefore = attachedWebRequest(webRequest)
             try {
                 decorators.add(new AsyncWebRequestPromiseDecorator(webRequest))
             }
             catch (IllegalStateException asynchronousProcessingUnavailable) {
+                reattach(webRequest, boundBefore)
                 if (!supportsAsync(webRequest)) {
                     // A request that cannot process asynchronously at all is a mistake worth
                     // reporting: the caller asked for something this request will never do.
@@ -57,11 +69,41 @@ class AsyncWebRequestPromiseDecoratorLookupStrategy implements PromiseDecoratorL
                 // async manager reports a concurrent result, say - is a check the container can
                 // invalidate between the answer and the call: measured over 4800 requests, asking
                 // still let one through, where catching let none through over twice as many.
+                log.debug('Not binding this request to the promise: {}',
+                        asynchronousProcessingUnavailable.message)
                 return Collections.emptyList()
             }
             return decorators
         }
         return Collections.emptyList()
+    }
+
+    /**
+     * What the request already carries, which is either nothing or the web request of an
+     * asynchronous cycle that is genuinely under way.
+     */
+    private static Object attachedWebRequest(GrailsWebRequest webRequest) {
+        try {
+            return webRequest.currentRequest.getAttribute(AsyncGrailsWebRequest.WEB_REQUEST)
+        }
+        catch (IllegalStateException requestIsGone) {
+            return null
+        }
+    }
+
+    private static void reattach(GrailsWebRequest webRequest, Object boundBefore) {
+        try {
+            HttpServletRequest request = webRequest.currentRequest
+            if (boundBefore == null) {
+                request.removeAttribute(AsyncGrailsWebRequest.WEB_REQUEST)
+            }
+            else {
+                request.setAttribute(AsyncGrailsWebRequest.WEB_REQUEST, boundBefore)
+            }
+        }
+        catch (IllegalStateException requestIsGone) {
+            // Recycled while this was running, so there is nothing left to put anything back on.
+        }
     }
 
     private static boolean supportsAsync(GrailsWebRequest webRequest) {
