@@ -255,7 +255,20 @@ public class FlapdoodleMongoBackend implements EmbeddedMongoBackend {
                 return;
             }
             this.running = this.mongod.start(this.version);
-            initiateReplicaSet();
+            try {
+                initiateReplicaSet();
+            }
+            catch (RuntimeException | Error setDidNotForm) {
+                // As in the constructor: a process that is running and cannot be used is worse than
+                // no process, and this one would hold the port against every later attempt.
+                try {
+                    stop();
+                }
+                catch (RuntimeException | Error alsoFailedToStop) {
+                    setDidNotForm.addSuppressed(alsoFailedToStop);
+                }
+                throw setDidNotForm;
+            }
         }
     }
 }
