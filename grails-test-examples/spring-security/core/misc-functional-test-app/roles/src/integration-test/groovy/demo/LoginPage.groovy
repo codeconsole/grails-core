@@ -36,5 +36,9 @@ class LoginPage extends Page {
         usernameInputField << username
         passwordInputField << password
         loginButton.click()
+        // Submitting the form is a navigation, and the browser goes on showing this page until the
+        // response lands. Returning before that leaves whatever the specification asserts next
+        // reading the login form rather than the page it logged in to.
+        waitFor { title != 'Login' }
     }
 }
