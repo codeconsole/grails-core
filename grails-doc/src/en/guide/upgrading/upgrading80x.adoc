@@ -1333,9 +1333,13 @@ class Book {
 }
 ----
 
-This is a *validation-layer* change only.
-Column/DDL nullability is governed separately by the mapping layer and is unaffected.
-Command objects are also unaffected: `Validateable` command-object fields remain required by default.
+This change also affects persistence mapping. Columns for unconstrained properties are
+nullable by default, so schema creation and schema migration can produce nullable columns
+where Grails 7 produced `NOT NULL` columns. Review existing schemas and declare
+`nullable: false` explicitly for properties that must remain required before running
+schema migration or diff tools.
+
+Command objects are unaffected: Validateable command-object properties remain non-nullable by default, except for collections and maps, which remain nullable by default.
 
 To restore the legacy required-by-default behaviour for an entire application, set the new `grails.gorm.default.nullable` property to `false`:
 
@@ -2358,7 +2362,345 @@ resolved unambiguously before can become ambiguous.
 Removing the packages from `grails.spring.bean.packages`, or the stray classes from those packages, restores
 the previous set of beans.
 
-==== 47. URL Mapping Names Come From the URI, Not From Request Parameters
+==== 45. GORM API Resolution Moves to a Registry
+
+GORM no longer allocates an API object for every (entity, connection) pair up front. Per-entity, per-qualifier
+state now lives in a registry (`org.grails.datastore.gorm.GormRegistry`), and APIs are built on first use by a
+pluggable factory. For applications this is invisible — `Book.list()`, dynamic finders, and
+`Book.withNewSession { }` behave as before. It does change some extension points that out-of-tree GORM
+implementations subclass.
+
+===== GormEnhancer
+
+`org.grails.datastore.gorm.GormEnhancer`'s public constructors, `enhance()`/`enhance(PersistentEntity)`,
+`dynamicEnhance`, and the `transactionManager` field are all unchanged in behaviour and signature (the
+`transactionManager` field is now `@Deprecated` and immutable after construction — read it, don't assign it).
+
+The following members were removed:
+
+[cols="1,2", options="header"]
+|===
+| Removed
+| Migration note
+
+| `finders` field / `getFinders()`
+| Use `createDynamicFinders(Datastore)`, or read the finders from the API object you are working with.
+
+| `removeConstraints()`
+| Moved to `GormRegistry.removeConstraints()`, called automatically from `GormRegistry.removeDatastore(Datastore)`
+as part of tearing a datastore down. There is nothing to call directly - it runs when the enhancer's `close()`
+removes the datastore from the registry, same as before.
+
+| `addStaticMethods(PersistentEntity, boolean)` / `addInstanceMethods(PersistentEntity, boolean)`
+| The `onlyExtendedMethods` parameter is gone; both methods now take only the entity. Installation mechanism
+also changed from per-method reflective registration to a single `methodMissing`/`propertyMissing` handler pair.
+
+| `findTenantId`, `apiQualifiers`, `findDatastoreByType`, `findSingleDatastore`,
+`findSingleTransactionManager`, `findTransactionManager(Class, String)`, `appliesToDatastore`,
+`getInstanceMethodApiProviders`, `registerStaticMethod`, `registerInstanceMethod`, `doesRealMethodExist`,
+`isRealMethod`
+| Internal helpers of the old per-method reflective registration mechanism, replaced wholesale by the registry
+and its `methodMissing`/`propertyMissing` handlers. If you overrode one of these to customise dispatch, override
+`registerApiFactories()` (below) or a `GormApiFactory` instead.
+|===
+
+A new `registerApiFactories()` hook is called once, before any entity is registered. Adapters that build
+specialised API objects should override it:
+
+[source,groovy]
+----
+class MyGormEnhancer extends GormEnhancer {
+
+    @Override
+    protected void registerApiFactories() {
+        GormRegistry.instance.registerApiFactory(MyDatastore, new MyGormApiFactory())
+    }
+}
+----
+
+WARNING: Earlier snapshots of this work registered API factories from `registerConstraints(Datastore)`.
+Move that code to `registerApiFactories()`; factory registration must not depend on the constraints lifecycle step.
+
+===== CurrentTenantHolder.get()
+
+`grails.gorm.multitenancy.CurrentTenantHolder.get()` — the no-argument form — now throws `TenantException` when
+different datastores hold different tenants on the calling thread, rather than returning an arbitrary one of
+them. Pass the datastore you are operating on:
+
+[source,groovy]
+----
+CurrentTenantHolder.get(datastore)
+----
+
+See <<multiTenancy,Multi-Tenancy>> for the full multi-tenancy API.
+
+===== Tenants.withId(Class, Serializable, Closure)
+
+`grails.gorm.multitenancy.Tenants` had two distinct 3-argument `withId` overloads that both erased to
+`withId(Class, Serializable, Closure)` at the bytecode level:
+
+[source,groovy]
+----
+// removed - resolved a datastore by its own type
+static <T> T withId(Class<? extends Datastore> datastoreClass, Serializable tenantId, Closure<T> callable)
+
+// kept - resolves the datastore that maps a domain class
+static <T> T withId(Class domainClass, Serializable tenantId, Closure<T> callable)
+----
+
+The datastore-class overload relied on `GormEnhancer.findDatastoreByType(Class)`, which was one of the internal
+per-method-dispatch helpers removed as part of the registry migration (see <<_gormenhancer,GormEnhancer>>
+above), so it could not be carried forward under its own name. Only the domain-class overload remains.
+
+Because both overloads share one erased signature, a call site that used to pass a datastore class -
+`Tenants.withId(SomeDatastore, tenantId) { ... }` - still compiles unchanged against the domain-class overload.
+It no longer resolves the datastore you named: `getDatastoreForDomain(SomeDatastore)` looks `SomeDatastore` up as
+if it were a *domain class*, finds no entity registered under that name, and falls through to the application's
+`DEFAULT` datastore. On a single-datastore application this is indistinguishable from the old behaviour. On a
+multi-datastore application it silently binds the tenant against the wrong datastore - no exception, no log -
+which can surface much later as a cross-database read or write.
+
+If you have a call site that passes a `Datastore` subclass to this method, migrate it to look the datastore up
+explicitly and call the datastore-instance overload instead. `Tenants.datastoreLocator` still resolves a
+datastore by its type - only the `withId(Class, ..)` shortcut for it is gone:
+
+[source,groovy]
+----
+MultiTenantCapableDatastore datastore = Tenants.datastoreLocator.getDatastore(SomeDatastore) as MultiTenantCapableDatastore
+Tenants.withId(datastore, tenantId) { ... }
+----
+
+or pass an actual domain class if that is what you meant:
+
+[source,groovy]
+----
+Tenants.withId(SomeDomainClass, tenantId) { ... }
+----
+
+
+==== 46. Startup Banner Shows the Servlet Container and Spring Security
+
+The banner now reports the servlet container it is running on, and the version of Spring Security where the
+application has it, without being asked for either. Both were previously opt-in through
+`grails.banner.versions.include`.
+
+What made them opt-in was that a version which could not be determined was shown as `unknown`, so turning one
+on by default would have printed `Spring Security: unknown` for every application without it. A version shown
+by default that cannot be determined is now left out instead, which is what allows the two to be shown at all.
+A version the application asked for by name still reads `unknown` where it cannot be determined, since saying
+nothing about something that was asked for reads as the option having been ignored.
+
+The container is named as itself: an application on Tomcat shows `Tomcat`, one on Jetty shows `Jetty`. It is
+configured under the single key `container`, whichever container that turns out to be.
+
+To restore the previous banner, exclude them:
+
+[source, yaml]
+.grails-app/conf/application.yml
+----
+grails:
+    banner:
+        versions:
+            exclude:
+                - container
+                - spring-security
+----
+
+An application that already asked for `spring-security` under `grails.banner.versions.include` keeps working
+and needs no change — the option is still recognised, and the version is shown either way. The same is true
+of `tomcat`, `jetty` and `undertow`, which remain available for an application that wants to be told about a
+particular container whether or not it is the one serving; naming one as well as taking the default shows it
+once, not twice.
+
+A version option that names none of the known keys is now reported as a warning after the banner is printed,
+rather than being dropped in silence.
+==== 47. Message Bundles Resolved by Spring Boot
+
+Grails no longer registers a `messageSource` bean. Spring Boot's `MessageSourceAutoConfiguration`
+supplies a standard `ResourceBundleMessageSource`, and Grails contributes only the base-name list, which
+it records at build time rather than discovering by scanning the classpath at runtime.
+
+Most applications need no change. The rest of this section covers the cases that do.
+
+===== `spring.messages.*` is now the configuration surface
+
+`spring.messages.*` was previously ignored, because Grails' own message source claimed the bean name and
+Boot's auto-configuration backed off. It is now honoured in full — `encoding`, `cache-duration`,
+`fallback-to-system-locale`, `always-use-message-format`, `use-code-as-default-message` and
+`common-messages`.
+
+Two Grails settings give way to it:
+
+[cols="2,2,3"]
+|===
+|Setting |Replacement |Status
+
+|`grails.i18n.cache.seconds`
+|`spring.messages.cache-duration`
+|Deprecated, still honoured for now — see below
+
+|`grails.i18n.filecache.seconds`
+|None
+|Ignored
+|===
+
+`grails.i18n.cache.seconds` is still honoured as a temporary upgrade aid: it is translated into
+`spring.messages.cache-duration` and logs a deprecation warning. As before, it applies only when reload
+is enabled, so an application that set it for development keeps the timing it had. Setting
+`spring.messages.cache-duration` explicitly always wins. Migrate before it is removed.
+
+`grails.i18n.filecache.seconds` has no replacement and is ignored: it tuned the file-timestamp re-check
+of the message source Grails used to own, which Spring Boot's has no equivalent for.
+
+`grails.i18n.availableLocales.includePlugins` is replaced by `grails.i18n.include-plugin-bundles`, which
+now governs both message resolution and the locales offered by a language selector, so the two can no
+longer disagree.
+
+===== Plugin authors: base names must be namespaced
+
+A plugin's message bundle base names must be its plugin name, or that name followed by a hyphen and a
+suffix:
+
+[source]
+----
+grails-app/i18n/spring-security-core.properties            <1>
+grails-app/i18n/spring-security-core_fr.properties
+grails-app/i18n/spring-security-core-validation.properties <2>
+----
+<1> the plugin's own name
+<2> further bundles inside its namespace
+
+The plugin build fails otherwise. A plugin shipping `messages.properties` used to contribute messages as
+a fallback behind the application's own bundle; Spring resolves a base name to the first matching
+resource on the classpath, so such a bundle would now silently shadow, or be shadowed by, the
+application's. Rename it into the plugin's namespace.
+
+Applications are unaffected — there is only one application, so its base names cannot collide.
+
+A namespaced bundle still works under Grails 7, so a plugin does not need a separate source branch to
+support both. Grails 7 discovers a plugin's bundles by scanning the plugin jar's root for
+`*.properties` and matching locale suffixes; it never inspects the base name, so
+`spring-security-core.properties` and `spring-security-core_fr.properties` are found exactly as
+`messages.properties` was. The `spring-security-core` plugin has shipped this layout for years. Rename
+once, and the same source builds for both: Grails 7 finds the bundles by scanning, Grails 8 through the
+generated descriptor.
+
+===== Every bundle needs a locale-independent file
+
+Spring Boot's auto-configuration only activates when a configured base name has a bundle without a
+locale suffix, and it contributes the whole `messageSource` bean. An application shipping only
+`messages_de.properties` would therefore have had no message source at all, so the build now rejects it.
+
+===== Ambiguous base names must be declared
+
+A base name ending in a valid locale identifier is ambiguous: `api_fr.properties` reads as base name
+`api` in French. Likewise `api_errors.properties` alongside `api.properties` reads as a mistyped locale
+variant of `api`. Both fail the build; declare the base name when the inference is wrong:
+
+[source,groovy]
+----
+grails {
+    i18n {
+        basenames = ['api', 'api_errors']
+    }
+}
+----
+
+===== `PluginAwareResourceBundleMessageSource` removed
+
+`org.grails.spring.context.support.PluginAwareResourceBundleMessageSource` and the Grails fork of
+`ReloadableResourceBundleMessageSource` beside it are removed. Code that injected `MessageSource` is
+unaffected. Code that cast the bean to either type, or called `getBundleCodes()`, must be updated —
+inject `MessageSource` and use its interface, or declare your own bean, which Boot's auto-configuration
+backs off from.
+
+===== Language selectors read the same plugin set as message resolution
+
+The locales offered by `g:localeSelect available="true"` now come from the recorded bundles rather than a
+classpath scan, and they follow exactly the plugin set that message resolution uses. A plugin that was
+evicted, excluded, or failed to load no longer contributes a language entry, so a selector can no longer
+offer a translation whose messages will not resolve.
+
+An application that declares its own `AvailableLocaleResolver` bean must supply the effective descriptors
+instead of a `ClassLoader`; most applications simply rely on the one Grails registers.
+
+===== Reloading during development
+
+Editing a value in an existing bundle still reloads without a restart: Grails contributes a short
+`spring.messages.cache-duration` when reload is enabled, in place of the `grails.i18n.cache.seconds` it
+used to apply to its own message source.
+
+Adding or removing a base name now needs a restart, because Spring Boot reads the configured base names
+once when it builds the message source.
+
+==== 48. CAS Single Sign-Out Is Opt-In
+
+`grails.plugin.springsecurity.cas.useSingleSignout` now defaults to `false`. It previously defaulted
+to `true`, so every CAS application registered the CAS client's `SingleSignOutFilter` whether or not
+it wanted single sign-out.
+
+The default changed because enabling single sign-out is a security trade-off rather than a free
+feature. CAS maps the service ticket to the HTTP session id, so single sign-out cannot work while
+session fixation prevention is replacing the session when the user authenticates. Enabling
+`cas.useSingleSignout` disables session fixation prevention, and an application should make that
+choice deliberately.
+
+If your application relies on CAS single sign-out, enable it explicitly:
+
+[source,groovy]
+.grails-app/conf/application.groovy
+----
+grails.plugin.springsecurity.cas.useSingleSignout = true
+----
+
+The plugin logs a warning at startup when it is enabled, noting that session fixation prevention has
+been disabled.
+
+**Single sign-out did not actually work before Grails 8**, so an application upgrading from an
+earlier version is unlikely to lose working behaviour. The plugin set
+`useSessionFixationPrevention = false` from `doWithSpring`, but it declares `loadAfter =
+['springSecurityCore']`, so the core plugin had already defined `sessionAuthenticationStrategy` from
+the original value. The filter was registered, the session was still replaced on login, and CAS
+logout requests silently matched nothing. Grails 8 also redefines `sessionAuthenticationStrategy`
+from the CAS plugin, so enabling `cas.useSingleSignout` now has the documented effect.
+
+The Spring Security CAS configuration reference in this guide documents the setting in full.
+
+==== 49. GSPs Record a Source Checksum Instead of a Modification Time
+
+A GSP used to carry the modification time of its `.gsp` source, precompiled pages baking it into the
+generated class as a `LAST_MODIFIED` constant. Git stores no modification times, so every fresh clone or CI
+checkout gave each source a new one, and the generated classes differed on every checkout even when the
+sources were byte-for-byte identical. Because `LAST_MODIFIED` was a compile-time constant it was part of the
+class's ABI, so the difference survived even Gradle's compile-classpath normalization and every task
+downstream of a jar containing precompiled GSPs missed the build cache.
+
+Grails 8 records a `SOURCE_CHECKSUM` of the page source instead, for pages compiled at build time and at
+runtime alike. Identical sources now compile to identical bytes on every machine.
+
+Runtime reloading, described in
+<<makingChangesToADeployedApplication,Making Changes to a Deployed Application>>, is unaffected: a page is
+reloaded when its source no longer matches the recorded checksum. Detection is more accurate than it was.
+An edit is caught whenever the source's modification time or length moves, which any ordinary save does;
+previously a save landing within the old granularity window went unnoticed until a later edit moved it
+clear. In the other direction, a page whose modification time moves without its content changing is no
+longer recompiled, so touching a file — or a build step copying views into place — no longer reloads pages
+that did not actually change. If you were using `touch` to force a page to recompile, edit the page instead.
+
+**Removed API.** `GroovyPageMetaInfo.getLastModified()`, `setLastModified(long)` and
+`applyLastModifiedFromResource(Resource)` are gone, as are `GroovyPageParser.getLastModified()` and
+`setLastModified(long)`. Use `GroovyPageMetaInfo.getSourceChecksum()` to identify the source a page was
+compiled from. Generated page classes no longer declare a `LAST_MODIFIED` constant.
+
+**Removed setting.** `grails.gsp.reload.granularity` is gone. It existed to absorb rounding differences
+between modification times, which comparing content does not need; setting it now has no effect.
+`grails.gsp.reload.interval` is unchanged.
+
+A GSP precompiled by Grails 7 and shipped inside a binary plugin carries no checksum. Such a page is served
+normally; it is simply never reload-checked, which was already the case for views resolved out of a plugin
+jar.
+
+==== 50. URL Mapping Names Come From the URI, Not From Request Parameters
 
 A mapping that captures its controller, action or namespace from the URL — `"/$controller/$action?/$id?"`,
 the default mapping every application starts with — used to resolve those names by reading the request's

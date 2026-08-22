@@ -901,7 +901,7 @@ class GrailsWebDataBinder extends SimpleDataBinder {
                         otherSide = ((Association) property).inverseSide
                     }
                 }
-                if (otherSide != null && List.isAssignableFrom(otherSide.getType()) && !property.isNullable()) {
+                if (otherSide != null && List.isAssignableFrom(otherSide.getType())) {
                     DeferredBindingActions.addBindingAction(new Runnable() {
                         void run() {
                             if (obj[propName] != null && otherSide instanceof OneToMany) {
