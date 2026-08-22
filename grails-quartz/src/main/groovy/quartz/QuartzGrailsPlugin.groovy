@@ -46,7 +46,10 @@ class QuartzGrailsPlugin extends Plugin {
     def author = 'Apache Grails Team'
     def description = 'Adds Quartz job scheduling features'
     def profiles = ['web']
-    List loadAfter = ['hibernate3', 'hibernate4', 'hibernate5', 'services']
+    // 'hibernate' is the GORM for Hibernate plugin. Quartz must be configured after it so that the
+    // dataSource, transactionManager and session beans it contributes already exist -- the scheduler
+    // refs them when the JDBC job store is enabled, and SessionBinderJobListener autowires by name.
+    List loadAfter = ['hibernate', 'services']
     def documentation = 'https://grails.apache.org/documentation.html'
     def license = 'APACHE'
     def issueManagement = [ system: 'Github Issues', url: 'https://github.com/apache/grails-core/issues' ]
