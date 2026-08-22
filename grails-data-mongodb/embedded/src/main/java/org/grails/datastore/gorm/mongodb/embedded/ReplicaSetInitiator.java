@@ -39,7 +39,6 @@ import org.bson.Document;
  * <p>Every reference to the MongoDB driver lives here, so a standalone embedded server needs
  * nothing of it on the class path.
  *
- * @author Grails
  * @since 8.0
  */
 final class ReplicaSetInitiator {
