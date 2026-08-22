@@ -44,14 +44,26 @@ class GroovyPageTypeCheckingExtension extends GroovyTypeCheckingExtensionSupport
     /**
      * The operators the class writer emits directly, rather than leaving to a call site.
      *
-     * <p>These are the ones that cannot be handed a receiver of no known type. A comparison or a
-     * logical operator is not among them: those report a type error of their own, which is an answer
-     * a page can act on, so the receiver of one is still resolved the way anything else is.</p>
+     * <p>These are the ones that cannot be handed a receiver of no known type. Handing them one
+     * reports the method the writer was about to call -- {@code remainder()}, {@code leftShift()} --
+     * or, for {@code <=>}, fails inside the transformer with an index out of bounds, none of which
+     * says anything a page can act on. An equality or logical operator is not among them: those
+     * report a type error of their own, so the receiver of one is resolved the way anything else is.</p>
+     *
+     * <p>Listed by token rather than by symbol, which is not the same thing: {@code %} is
+     * {@code REMAINDER} and {@code MOD} is emitted by nothing, so listing only the latter left
+     * {@code %} uncovered.</p>
      */
     private static final Set<Integer> WRITTEN_INTO_THE_CLASS = [
             Types.LEFT_SQUARE_BRACKET,
-            Types.PLUS, Types.MINUS, Types.MULTIPLY, Types.DIVIDE, Types.INTDIV, Types.MOD, Types.POWER,
-            Types.PLUS_EQUAL, Types.MINUS_EQUAL, Types.MULTIPLY_EQUAL, Types.DIVIDE_EQUAL] as Set
+            Types.PLUS, Types.MINUS, Types.MULTIPLY, Types.DIVIDE, Types.INTDIV, Types.MOD,
+            Types.REMAINDER, Types.POWER, Types.COMPARE_TO,
+            Types.LEFT_SHIFT, Types.RIGHT_SHIFT, Types.RIGHT_SHIFT_UNSIGNED,
+            Types.BITWISE_AND, Types.BITWISE_OR, Types.BITWISE_XOR,
+            Types.PLUS_EQUAL, Types.MINUS_EQUAL, Types.MULTIPLY_EQUAL, Types.DIVIDE_EQUAL,
+            Types.INTDIV_EQUAL, Types.MOD_EQUAL, Types.REMAINDER_EQUAL, Types.POWER_EQUAL,
+            Types.LEFT_SHIFT_EQUAL, Types.RIGHT_SHIFT_EQUAL, Types.RIGHT_SHIFT_UNSIGNED_EQUAL,
+            Types.BITWISE_AND_EQUAL, Types.BITWISE_OR_EQUAL, Types.BITWISE_XOR_EQUAL] as Set
 
     /**
      * Names the framework binds into every page whose members are answered at runtime rather than

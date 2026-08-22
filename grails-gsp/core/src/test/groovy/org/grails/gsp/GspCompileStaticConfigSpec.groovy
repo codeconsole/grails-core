@@ -38,6 +38,11 @@ import org.grails.taglib.TagLibraryLookup
  */
 class GspCompileStaticConfigSpec extends Specification {
 
+    private static final String UNTYPED = '<g:set var="n" value="${1}"/><g:set var="l" value="${[1]}"/>'
+    private static final String TYPED =
+            '<g:set type="int" var="n" value="${1}"/><g:set type="java.util.List" var="l" value="${[1]}"/>'
+
+
     void 'every page compiles statically when the config default is enabled'() {
         given:
         GroovyPagesTemplateEngine engine = engineFor('grails.views.gsp.compileStatic': true)
@@ -369,6 +374,8 @@ class GspCompileStaticConfigSpec extends Specification {
                 '${response.status}',
                 '${session?.id}',
                 '${application.serverInfo}',
+                '${servletContext.serverInfo}',
+                '${webRequest.currentRequest}',
         ]
     }
 
@@ -402,6 +409,53 @@ class GspCompileStaticConfigSpec extends Specification {
                 '<g:set var="rows" value="${[[a: 1]]}"/>${rows.withIndex().collect { r, i -> r + [n: i] }}',
                 '<g:set var="rows" value="${[1]}"/>${rows.collect { r -> r * 2 }}',
         ]
+    }
+
+    void 'every operator the class writer emits is reported against a receiver of no known type'() {
+        given:
+        GroovyPagesTemplateEngine engine = engineFor('grails.views.gsp.compileStatic': true)
+
+        when: 'the writer would emit remainder(), leftShift() and the rest straight into the class'
+        GroovyPageTemplate template = compile(engine, UNTYPED + body)
+
+        then: 'the page is told what to do about it, rather than being shown the method the writer wanted'
+        template.metaInfo.compilationException != null
+        template.metaInfo.compilationException.message.contains('is not known here')
+        !template.metaInfo.compilationException.message.contains('Cannot access method')
+
+        where:
+        body << ['${n % 2}', '<% n %= 2 %>', '${l << 1}', '<% l <<= 1 %>', '${n >> 1}', '${n >>> 1}',
+                 '${n & 1}', '${n | 1}', '${n ^ 1}', '<% n **= 2 %>', '${n <=> 2}', '${l[0]}', '${n + 1}']
+    }
+
+    void 'the report for a spaceship comes before the failure it does not prevent'() {
+        given:
+        GroovyPagesTemplateEngine engine = engineFor('grails.views.gsp.compileStatic': true)
+
+        when:
+        GroovyPageTemplate template = compile(engine, UNTYPED + '${n <=> 2}')
+
+        then: 'reporting the receiver does not stop the transformer that reads it from failing later,'
+        template.metaInfo.compilationException.message.contains('General error during canonicalization')
+
+        and: 'so what matters is that the page reads what it can act on first'
+        String message = template.metaInfo.compilationException.message
+        message.indexOf('is not known here') < message.indexOf('General error during canonicalization')
+    }
+
+    void 'the same operators are left alone once the receiver has a type'() {
+        given:
+        GroovyPagesTemplateEngine engine = engineFor('grails.views.gsp.compileStatic': true)
+
+        when: 'which is what puts the cause on the receiver rather than on the operator'
+        GroovyPageTemplate template = compile(engine, TYPED + body)
+
+        then:
+        template.metaInfo.compilationException == null
+
+        where:
+        body << ['${n % 2}', '<% n %= 2 %>', '${l << 1}', '<% l <<= 1 %>', '${n >> 1}', '${n >>> 1}',
+                 '${n & 1}', '${n | 1}', '${n ^ 1}', '${n <=> 2}', '${l[0]}', '${n + 1}']
     }
 
     void 'an operator on a name the page never declared is reported, not crashed on'() {
@@ -446,6 +500,8 @@ class GspCompileStaticConfigSpec extends Specification {
         '<g:def type="String" var="s" value="Total: ${1 + 1}"/>${s}'         || 'Total: 2'
         '<g:def type="String" var="s" value="${1 + 1} and ${2 + 2}"/>${s}'   || '2 and 4'
         '<g:def type="int" var="a" value="${5}"/><g:def type="int" var="b" value="${a}"/>${b}' || '5'
+        '<g:def type="String" var="s" value="a ${[1].collect { \"x$it\" }} b"/>${s}'   || 'a [x1] b'
+        '<g:def var="s" value="cost: \\${1}"/>${s}'                          || 'cost: ${1}'
     }
 
     void 'a set tag given a type compiles the variable rather than looking it up'() {

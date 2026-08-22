@@ -69,23 +69,19 @@ public class GroovyDefTag extends GroovySyntaxTag {
     /**
      * The Groovy an attribute value stands for.
      *
-     * <p>A lone <code>${...}</code> is the expression it holds, and text with no expression in it is
-     * read as written, which is what an untyped tag naming a variable relies on. Text mixing the two,
-     * or holding more than one expression, is neither: it is a GString, and emitting it unquoted
-     * produced source that did not parse.
+     * <p>The parser has already made it Groovy: a lone <code>${...}</code> arrives as the expression
+     * it holds, and anything else arrives quoted, as the GString or the string literal it is. Only
+     * the quoting a plain value carries is undone here, so that naming a variable still reads it.
      */
     private static String groovyExpressionFor(String value) {
         String text = value.trim();
+        if (text.contains("${")) {
+            return text;
+        }
         if ((text.startsWith("\"") && text.endsWith("\"")) || (text.startsWith("'") && text.endsWith("'"))) {
             text = text.substring(1, text.length() - 1).trim();
         }
-        if (!text.contains("${")) {
-            return text;
-        }
-        if (text.startsWith("${") && text.endsWith("}") && text.indexOf("${", 2) < 0) {
-            return text.substring(2, text.length() - 1).trim();
-        }
-        return '"' + text.replace("\\", "\\\\").replace("\"", "\\\"") + '"';
+        return text;
     }
 
     public void doEndTag() {
