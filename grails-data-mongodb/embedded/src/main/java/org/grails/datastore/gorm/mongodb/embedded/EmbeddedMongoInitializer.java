@@ -25,6 +25,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -150,6 +151,8 @@ public class EmbeddedMongoInitializer implements ApplicationContextInitializer<C
      */
     private static final Map<Integer, StartedServer> STARTED = new ConcurrentHashMap<>();
 
+    private static final AtomicBoolean SHUTDOWN_HOOK_ADDED = new AtomicBoolean();
+
     /**
      * Flapdoodle first, so that adding it to an application is all it takes to move from
      * the in-memory reimplementation to a real mongod.
@@ -273,11 +276,7 @@ public class EmbeddedMongoInitializer implements ApplicationContextInitializer<C
         }
 
         STARTED.put(port, new StartedServer(running, settings));
-
-        // Registered on the JVM rather than the application context so that it survives a
-        // devtools restart and fires only once, when the JVM itself exits. Stopping a server the
-        // context already stopped does nothing, which is the ordinary case.
-        Runtime.getRuntime().addShutdownHook(new Thread(running::stop));
+        stopEverythingAtExit();
 
         String url = "mongodb://" + running.getHost() + ":" + running.getPort() + "/" + database;
         log.info("Embedded MongoDB started at {} using the {} backend", url, backend.getName());
@@ -302,7 +301,9 @@ public class EmbeddedMongoInitializer implements ApplicationContextInitializer<C
         log.info("Replacing the embedded MongoDB this JVM started ({}): it is now asked for with {}",
                 started.settings(), settings);
         started.running().stop();
-        STARTED.remove(settings.getPort());
+        // Keyed removal, so a server another thread has just started on this port is not the one
+        // taken out of the registry.
+        STARTED.remove(settings.getPort(), started);
         return null;
     }
 
@@ -415,6 +416,23 @@ public class EmbeddedMongoInitializer implements ApplicationContextInitializer<C
      */
     private String resolveDatabase(String urlDatabase) {
         return urlDatabase == null || urlDatabase.isEmpty() ? DEFAULT_DATABASE : urlDatabase;
+    }
+
+    /**
+     * Registered on the JVM rather than the application context so that it survives a devtools
+     * restart and fires once, when the JVM itself exits. It reads the registry as it runs, so a
+     * server that was replaced along the way is not held by it, and a hook is not added for every
+     * server a long-running JVM starts. Stopping a server the context already stopped does nothing,
+     * which is the ordinary case.
+     */
+    private static void stopEverythingAtExit() {
+        if (SHUTDOWN_HOOK_ADDED.compareAndSet(false, true)) {
+            Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+                for (StartedServer started : STARTED.values()) {
+                    started.running().stop();
+                }
+            }));
+        }
     }
 
     /**
