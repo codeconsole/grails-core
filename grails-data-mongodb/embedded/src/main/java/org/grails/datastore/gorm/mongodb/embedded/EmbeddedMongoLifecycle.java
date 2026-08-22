@@ -33,7 +33,6 @@ import org.springframework.context.SmartLifecycle;
  * after the restore, so taking part costs no dependency on {@code org.crac}. It also means
  * the same bean covers an ordinary shutdown.
  *
- * @author Grails
  * @since 8.0
  */
 public class EmbeddedMongoLifecycle implements SmartLifecycle {

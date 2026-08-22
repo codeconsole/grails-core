@@ -24,7 +24,6 @@ import java.util.Objects;
  * What to start a server with. Not every backend honours every setting; one that cannot
  * says so rather than starting a server that quietly behaves differently than asked.
  *
- * @author Grails
  * @since 8.0
  */
 public final class EmbeddedMongoSettings {

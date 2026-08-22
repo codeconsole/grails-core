@@ -92,7 +92,6 @@ import org.springframework.util.ClassUtils;
  * by flapdoodle's own {@code de.flapdoodle.embed.mongo.spring3x} auto configuration,
  * which this deliberately does not duplicate.
  *
- * @author Grails
  * @since 8.0
  */
 public class EmbeddedMongoInitializer implements ApplicationContextInitializer<ConfigurableApplicationContext> {

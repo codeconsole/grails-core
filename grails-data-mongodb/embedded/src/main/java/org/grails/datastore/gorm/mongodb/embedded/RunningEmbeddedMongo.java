@@ -21,7 +21,6 @@ package org.grails.datastore.gorm.mongodb.embedded;
 /**
  * A started embedded MongoDB server.
  *
- * @author Grails
  * @since 8.0
  */
 public interface RunningEmbeddedMongo {

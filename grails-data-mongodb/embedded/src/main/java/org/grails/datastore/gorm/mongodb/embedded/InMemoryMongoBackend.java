@@ -33,7 +33,6 @@ import org.springframework.util.ClassUtils;
  * anything. An application that needs those should add flapdoodle and let
  * {@link FlapdoodleMongoBackend} run a real mongod instead.
  *
- * @author Grails
  * @since 8.0
  */
 public class InMemoryMongoBackend implements EmbeddedMongoBackend {

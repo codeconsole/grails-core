@@ -51,7 +51,6 @@ import org.springframework.util.ClassUtils;
  * itself, the same way an application picks its own SQL database driver. Every reference
  * to flapdoodle is therefore confined to methods that {@link #isAvailable()} guards.
  *
- * @author Grails
  * @since 8.0
  */
 public class FlapdoodleMongoBackend implements EmbeddedMongoBackend {
