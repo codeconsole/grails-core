@@ -181,7 +181,14 @@ public class FlapdoodleMongoBackend implements EmbeddedMongoBackend {
                 // would ever stop it: mongod is a child process that outlives the JVM that started
                 // it, and it holds both the port and the database directory. The next start would
                 // find them taken by a server no one can name.
-                stop();
+                try {
+                    stop();
+                }
+                catch (RuntimeException | Error alsoFailedToStop) {
+                    // The reason the caller asked is the set that never formed; how the cleanup
+                    // then went is worth carrying, but not worth reporting in its place.
+                    setDidNotForm.addSuppressed(alsoFailedToStop);
+                }
                 throw setDidNotForm;
             }
         }
@@ -221,8 +228,15 @@ public class FlapdoodleMongoBackend implements EmbeddedMongoBackend {
             if (current == null) {
                 return;
             }
-            this.running = null;
-            current.close();
+            try {
+                current.close();
+            }
+            finally {
+                // Cleared only once the server is actually down. Clearing first meant a close that
+                // threw left a running mongod that this object reported as stopped, which is a
+                // process nothing would stop and a port a restart would try to bind again.
+                this.running = null;
+            }
         }
 
         @Override
