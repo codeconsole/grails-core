@@ -111,7 +111,17 @@ public class FlapdoodleMongoBackend implements EmbeddedMongoBackend {
         }
         mongod = mongod.withMongodArguments(Start.to(MongodArguments.class).initializedWith(arguments));
 
-        return new RunningMongod(mongod, version, settings.getReplicaSet());
+        return new RunningMongod(this, mongod, version, settings.getReplicaSet());
+    }
+
+    /**
+     * Sends the command that turns a mongod started with a replica set name into one that answers.
+     *
+     * <p>Not private, so that the specification can stand in a failure here and see that the server
+     * this started does not outlive it.
+     */
+    void initiateReplicaSet(String host, int port, String replicaSet) {
+        ReplicaSetInitiator.initiate(host, port, replicaSet);
     }
 
     /**
@@ -146,6 +156,8 @@ public class FlapdoodleMongoBackend implements EmbeddedMongoBackend {
         /** Held so {@link #restart()} can start the same mongod again after a CRaC restore. */
         private final ImmutableMongod mongod;
 
+        private final FlapdoodleMongoBackend backend;
+
         private final Version.Main version;
 
         private final String replicaSet;
@@ -154,13 +166,25 @@ public class FlapdoodleMongoBackend implements EmbeddedMongoBackend {
 
         private final ServerAddress address;
 
-        private RunningMongod(ImmutableMongod mongod, Version.Main version, String replicaSet) {
+        private RunningMongod(FlapdoodleMongoBackend backend, ImmutableMongod mongod,
+                Version.Main version, String replicaSet) {
+            this.backend = backend;
             this.mongod = mongod;
             this.version = version;
             this.replicaSet = replicaSet;
             this.running = mongod.start(version);
             this.address = this.running.current().getServerAddress();
-            initiateReplicaSet();
+            try {
+                initiateReplicaSet();
+            }
+            catch (RuntimeException | Error setDidNotForm) {
+                // The process is running and this object is about to be thrown away, so nothing
+                // would ever stop it: mongod is a child process that outlives the JVM that started
+                // it, and it holds both the port and the database directory. The next start would
+                // find them taken by a server no one can name.
+                stop();
+                throw setDidNotForm;
+            }
         }
 
         /**
@@ -173,7 +197,7 @@ public class FlapdoodleMongoBackend implements EmbeddedMongoBackend {
             if (this.replicaSet == null || this.replicaSet.isEmpty()) {
                 return;
             }
-            ReplicaSetInitiator.initiate(getHost(), getPort(), this.replicaSet);
+            this.backend.initiateReplicaSet(getHost(), getPort(), this.replicaSet);
         }
 
         @Override
@@ -200,6 +224,11 @@ public class FlapdoodleMongoBackend implements EmbeddedMongoBackend {
             }
             this.running = null;
             current.close();
+        }
+
+        @Override
+        public boolean isRunning() {
+            return this.running != null;
         }
 
         /**

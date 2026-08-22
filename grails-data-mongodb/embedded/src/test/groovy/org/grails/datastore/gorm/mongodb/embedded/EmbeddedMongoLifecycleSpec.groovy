@@ -203,6 +203,71 @@ class EmbeddedMongoLifecycleSpec extends Specification {
         lifecycle?.stop()
     }
 
+    void 'a replica set that never forms leaves no server behind'() {
+        given: 'a backend whose set does not come up, as it would not if the node never elected itself'
+        FlapdoodleMongoBackend backend = new FlapdoodleMongoBackend() {
+            @Override
+            void initiateReplicaSet(String host, int port, String replicaSet) {
+                throw new IllegalStateException('the set never formed')
+            }
+        }
+
+        when:
+        backend.start(new EmbeddedMongoSettings(27976, null, null, 'rs0'))
+
+        then: 'the failure is what the caller sees'
+        IllegalStateException failure = thrown()
+        failure.message == 'the set never formed'
+
+        and: 'and the mongod it started is not left holding the port, since nothing else can stop it'
+        conditions.eventually { assert !listening(27976) }
+    }
+
+    void 'a server the context stopped is started again for the context after it'() {
+        given: 'a server, and the bean the context that started it manages it with'
+        RunningEmbeddedMongo running = new InMemoryMongoBackend()
+                .start(new EmbeddedMongoSettings(27975, null, null))
+        EmbeddedMongoLifecycle first = new EmbeddedMongoLifecycle(running)
+
+        when: 'that context closes, as devtools closes it before reloading'
+        first.stop()
+
+        then:
+        !first.running
+        conditions.eventually { assert !listening(27975) }
+
+        when: 'the reloaded application manages the same server from a new context'
+        EmbeddedMongoLifecycle second = new EmbeddedMongoLifecycle(running)
+
+        then: 'the bean says what the server says, so Spring knows there is something to start'
+        !second.running
+
+        when:
+        second.start()
+
+        then: 'the application is given a server that is actually listening'
+        second.running
+        conditions.eventually { assert listening(27975) }
+
+        cleanup:
+        second?.stop()
+    }
+
+    void 'stopping a server that is already stopped is what a shutdown hook does'() {
+        given: 'an in-memory server the context has stopped'
+        RunningEmbeddedMongo running = new InMemoryMongoBackend()
+                .start(new EmbeddedMongoSettings(27974, null, null))
+        new Socket('localhost', 27974).withCloseable { }
+        running.stop()
+
+        when: 'the JVM shutdown hook stops it again on the way out'
+        running.stop()
+
+        then: 'it says nothing, because a hook has nowhere to report to'
+        noExceptionThrown()
+        !running.running
+    }
+
     private static void write(String url, String title) {
         try (MongoClient client = MongoClients.create(url)) {
             client.getDatabase('bookstore').getCollection('books').insertOne(new Document('title', title))
