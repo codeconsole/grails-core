@@ -180,6 +180,41 @@ Two things are required for this to work:
 
 Persistent storage interacts with the `durability` and `requestsRecovery` job properties described in <<quartzJobProperties,Job Properties>>.
 
+[[_trigger_names_and_persistent_storage]]
+====== Trigger names are permanent
+
+A trigger is identified by its name and group, and with a persistent job store that identity outlives
+the application. On startup the plugin reconciles the triggers a job declares against the ones already
+in the store: a declared trigger whose name is already present is rescheduled, and a declared trigger
+that is missing is added. A trigger in the store that the job *no longer* declares is left alone,
+because the plugin cannot tell it apart from one scheduled at runtime through
+<<quartzDynamicScheduling,dynamic scheduling>> or <<quartzJobManagerService,jobManagerService>>.
+
+The practical consequence is that **renaming a trigger does not replace it — it adds a second one**, and
+the job then fires on both the old schedule and the new one. Changing the `cronExpression` of an
+existing trigger is safe; changing its `name` is not.
+
+WARNING: This applies to the generated names too. A trigger declared without a `name` is named
+`<jobClassName><n>`, numbered in declaration order — so inserting a trigger ahead of an existing one
+renumbers the rest and orphans their old names. Give every trigger an explicit `name` when using a
+persistent job store, and treat those names as permanent.
+
+[source,groovy]
+----
+class ReportJob {
+
+    static triggers = {
+        cron name: 'reportNightly', cronExpression: '0 0 2 * * ?'   // renaming this later adds a trigger
+    }
+
+    void execute() { }
+}
+----
+
+If a trigger has already been orphaned, remove it from the scheduler — through
+<<quartzJobManagerService,jobManagerService>>, or by deleting the row from the Quartz tables — before
+restarting. Nothing detects or reports the duplicate on its own.
+
 [[_clustering]]
 ===== Clustering
 
