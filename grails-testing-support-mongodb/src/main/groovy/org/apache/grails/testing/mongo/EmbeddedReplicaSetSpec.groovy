@@ -22,7 +22,6 @@ import org.grails.datastore.gorm.mongodb.embedded.EmbeddedMongoInitializer
 import org.grails.datastore.gorm.mongodb.embedded.EmbeddedMongoLifecycle
 import org.grails.datastore.gorm.mongodb.embedded.FlapdoodleMongoBackend
 
-import org.springframework.beans.factory.NoSuchBeanDefinitionException
 import org.springframework.context.support.GenericApplicationContext
 import org.springframework.core.env.MapPropertySource
 
@@ -110,13 +109,8 @@ abstract class EmbeddedReplicaSetSpec extends Specification {
      * that failed on the port has no such bean, and nothing to stop.
      */
     private static void stopServerOf(GenericApplicationContext context) {
-        try {
-            context?.beanFactory
-                    ?.getBean(EmbeddedMongoLifecycle.BEAN_NAME, EmbeddedMongoLifecycle)
-                    ?.stop()
-        }
-        catch (NoSuchBeanDefinitionException nothingWasStarted) {
-            // The attempt did not get as far as a server.
+        if (context?.beanFactory?.containsBean(EmbeddedMongoLifecycle.BEAN_NAME)) {
+            context.beanFactory.getBean(EmbeddedMongoLifecycle.BEAN_NAME, EmbeddedMongoLifecycle).stop()
         }
     }
 

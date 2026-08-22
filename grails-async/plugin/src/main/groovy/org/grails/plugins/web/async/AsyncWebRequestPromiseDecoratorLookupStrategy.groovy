@@ -102,7 +102,8 @@ class AsyncWebRequestPromiseDecoratorLookupStrategy implements PromiseDecoratorL
             }
         }
         catch (IllegalStateException requestIsGone) {
-            // Recycled while this was running, so there is nothing left to put anything back on.
+            log.debug('The request was recycled before its binding could be put back: {}',
+                    requestIsGone.message)
         }
     }
 
