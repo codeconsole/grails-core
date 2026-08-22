@@ -256,11 +256,7 @@ public class FlapdoodleMongoBackend implements EmbeddedMongoBackend {
          */
         @Override
         public synchronized void restart() {
-            TransitionWalker.ReachedState<RunningMongodProcess> current = this.running;
-            if (current != null) {
-                this.running = null;
-                current.close();
-            }
+            stop();
             this.running = this.mongod.start(this.version);
             try {
                 initiateReplicaSet();

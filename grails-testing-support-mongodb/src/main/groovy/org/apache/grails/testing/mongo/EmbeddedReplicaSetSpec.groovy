@@ -22,6 +22,7 @@ import org.grails.datastore.gorm.mongodb.embedded.EmbeddedMongoInitializer
 import org.grails.datastore.gorm.mongodb.embedded.EmbeddedMongoLifecycle
 import org.grails.datastore.gorm.mongodb.embedded.FlapdoodleMongoBackend
 
+import org.springframework.beans.factory.NoSuchBeanDefinitionException
 import org.springframework.context.support.GenericApplicationContext
 import org.springframework.core.env.MapPropertySource
 
@@ -65,7 +66,7 @@ abstract class EmbeddedReplicaSetSpec extends Specification {
             }
             catch (IllegalStateException failedToStart) {
                 portLost = failedToStart
-                context.close()
+                stopServerOf(context)
                 continue
             }
             this.embedded = context
@@ -99,12 +100,24 @@ abstract class EmbeddedReplicaSetSpec extends Specification {
     }
 
     void cleanupSpec() {
-        // Stopped through the bean the initializer registers rather than by closing the context:
-        // a context that was never refreshed is not active, and closing one that is not active
-        // does nothing at all - which left a mongod running for every specification in the fork.
-        this.embedded?.beanFactory
-                ?.getBean(EmbeddedMongoLifecycle.BEAN_NAME, EmbeddedMongoLifecycle)
-                ?.stop()
+        stopServerOf(this.embedded)
+    }
+
+    /**
+     * Stopped through the bean the initializer registers rather than by closing the context: a
+     * context that was never refreshed is not active, and closing one that is not active does
+     * nothing at all - which left a mongod running for every specification in the fork. An attempt
+     * that failed on the port has no such bean, and nothing to stop.
+     */
+    private static void stopServerOf(GenericApplicationContext context) {
+        try {
+            context?.beanFactory
+                    ?.getBean(EmbeddedMongoLifecycle.BEAN_NAME, EmbeddedMongoLifecycle)
+                    ?.stop()
+        }
+        catch (NoSuchBeanDefinitionException nothingWasStarted) {
+            // The attempt did not get as far as a server.
+        }
     }
 
     /**
