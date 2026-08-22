@@ -248,15 +248,10 @@ class EmbeddedMongoInitializerSpec extends Specification {
         EmbeddedMongoLifecycle reused = restarted.beanFactory
                 .getBean(EmbeddedMongoLifecycle.BEAN_NAME, EmbeddedMongoLifecycle)
 
-        then: 'the url points at the server it already had, which is waiting to be started'
+        then: 'the url points at a server that is listening, not one waiting to be started'
         restarted.environment.getProperty('grails.mongodb.url') == 'mongodb://localhost:28004/bookstore'
-        !reused.running
-
-        when: 'the new context refreshes, which is when Spring starts it'
-        reused.start()
-
-        then: 'the application talks to a server that is listening'
         reused.running
+        listening(28004)
 
         cleanup:
         reused?.stop()

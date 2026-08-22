@@ -218,8 +218,13 @@ public class EmbeddedMongoInitializer implements ApplicationContextInitializer<C
             // anything else holding the port makes the start below fail with an error that
             // says so, rather than publishing a MongoDB url pointing at an unrelated service.
             //
-            // The server is stopped by the context that started it, so by now it is usually
-            // not listening. Its lifecycle bean starts it again as the new context refreshes.
+            if (!started.running().isRunning()) {
+                // Started again here rather than left to the lifecycle bean, which Spring starts
+                // only once the context has refreshed: a datastore builds its indexes as it is
+                // constructed, which happens while beans are still being created, and a url
+                // published for a server that is not listening fails there first.
+                started.running().restart();
+            }
             url = "mongodb://" + started.running().getHost() + ":" + started.running().getPort() +
                     "/" + database;
             log.info("Reusing the embedded MongoDB this JVM already started at {}", url);
