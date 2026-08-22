@@ -197,8 +197,9 @@ the port rather than connecting to an unrelated service.
 
 A restart that carries a different setting - a database directory, a version, a replica set,
 or transactions being switched on - is given a server that matches it, which means the
-previous one is replaced and anything it held in memory goes with it. A `database-dir`
-survives that; nothing else does. To use a MongoDB started by hand,
+previous one is replaced and anything it held in memory goes with it. Data in a
+`database-dir` outlives the replacement, except across a change of `version`: MongoDB
+refuses to start against a directory written by a different release. To use a MongoDB started by hand,
 name its host in `grails.mongodb.url` as usual.
 
 ==== Outside Grails
