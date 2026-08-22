@@ -92,19 +92,31 @@ ext {
             'groovy.version'                : '4.0.33',
             'guava.version'                 : '33.6.0-jre',
             'h2.version'                    : '2.4.240',
+            // Security: overrides spring-boot-dependencies (5.5.2). 5.6.4 fixes CVE-2026-64607, a connection leak in
+            // the classic i/o model when a response carries an unsupported Content-Encoding. 5.6.4 still targets
+            // httpcore5 5.4.3, so it needs no companion httpcore5 change.
+            'httpclient5.version'           : '5.6.4',
             // Security: overrides spring-boot-dependencies (5.3.6). 5.4.3 fixes CVE-2026-54399 (httpcore5) and CVE-2026-54428 (httpcore5-h2).
             'httpcore5.version'             : '5.4.3',
-            // Security: 2.21.5 fixes CVE-2026-14683/14684/14685/14686 and CVE-2026-54515 flagged against 2.21.4.
-            'jackson.version'               : '2.21.5',
-            // Security: overrides spring-boot-dependencies (1.5.34). 1.5.37 fixes CVE-2026-13006 flagged against logback-core.
-            'logback.version'               : '1.5.37',
+            // Security: 2.21.6 fixes CVE-2026-19032 (unrestricted URI schemes in Path deserialization) and
+            // CVE-2026-68497 (unbounded number length in GregorianCalendar/Duration) flagged against 2.21.5.
+            'jackson.version'               : '2.21.6',
+            // Security: overrides spring-boot-dependencies (1.5.34). 1.5.38 is the newest release of the 1.5.x line
+            // and matches what Spring Boot 4.1.x manages. See the CVE-2026-19880 note in VulnerabilityScanPlugin
+            // for the one logback advisory this version does not clear.
+            'logback.version'               : '1.5.38',
             'jquery.version'                : '3.7.1',
+            // Security: pulled transitively via groovy-console. 2.6.0 fixes CVE-2026-26032, a path traversal in the
+            // PackagerResolver where '../' in module coordinates escapes the configured buildRoot.
+            'ivy.version'                   : '2.6.0',
             'hibernate-groovy-proxy.version': '1.1',
             'jakarta-servlet-api.version'   : '6.1.0',
             'jakarta-validation-api.version': '3.1.1',
             'junit.version'                 : '5.13.3',
             'junit-platform.version'        : '1.13.3',
-            'mongodb.version'               : '5.5.2',
+            // Security: 5.9.2 fixes CVE-2026-18710, where ProxySettings.toString() renders the SOCKS5 proxy
+            // username and password into application logs.
+            'mongodb.version'               : '5.9.2',
             'nimbus-jose-jwt.version'       : '10.5',
             'opentelemetry.version'         : '1.62.0',
             'plexus-utils.version'          : '4.0.3',
@@ -177,9 +189,13 @@ ext {
             'groovy-yaml'                 : "org.apache.groovy:groovy-yaml:${bomDependencyVersions['groovy.version']}",
             // end - restate the groovy-bom here because the spring dependency management
             'guava'                       : "com.google.guava:guava:${bomDependencyVersions['guava.version']}",
+            // Security override of spring-boot-dependencies - see httpclient5.version
+            'httpclient5'                 : "org.apache.httpcomponents.client5:httpclient5:${bomDependencyVersions['httpclient5.version']}",
             // Security override of spring-boot-dependencies - see httpcore5.version
             'httpcore5'                   : "org.apache.httpcomponents.core5:httpcore5:${bomDependencyVersions['httpcore5.version']}",
             'httpcore5-h2'                : "org.apache.httpcomponents.core5:httpcore5-h2:${bomDependencyVersions['httpcore5.version']}",
+            // Security override of the version groovy-console pulls in - see ivy.version
+            'ivy'                         : "org.apache.ivy:ivy:${bomDependencyVersions['ivy.version']}",
             'jquery'                      : "org.webjars.npm:jquery:${bomDependencyVersions['jquery.version']}",
             // Security override of spring-boot-dependencies - see logback.version
             'logback-classic'            : "ch.qos.logback:logback-classic:${bomDependencyVersions['logback.version']}",
