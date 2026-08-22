@@ -73,6 +73,10 @@ class GspCompileStaticSpec extends Specification {
 
         and: 'a tag call still runs'
         body.contains('<p id="link">/demo/declared</p>')
+
+        and: 'the names this PR newly binds are bound, servletContext to the same object as application'
+        body.contains('<p id="servletContext">true</p>')
+        body.contains('<p id="webRequest">true</p>')
     }
 
     void 'a page using closures and a tag library renders what it computed'() {

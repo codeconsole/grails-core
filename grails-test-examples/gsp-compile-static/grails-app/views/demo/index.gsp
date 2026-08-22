@@ -22,7 +22,6 @@
 <head><title>${title}</title></head>
 <body>
 <h1>${title}</h1>
-<g:def type="int" var="total" value="${0}"/>
 <ul>
 <g:each in="${books.findAll { it.pages > 0 }}" var="book" status="i">
     <li id="book-${i}">${book.title} has ${book.pages} pages</li>

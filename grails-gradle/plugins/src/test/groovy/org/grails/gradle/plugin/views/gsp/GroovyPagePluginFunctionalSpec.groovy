@@ -89,7 +89,8 @@ class GroovyPagePluginFunctionalSpec extends GradleSpecification {
         when:
         def result = executeTask('inspectGspCompileClasspath')
 
-        then: 'the project applies grails-gsp without the grails extension and still configures'
-        result.output.contains('HAS_GSP_COMPILE_CONFIGURATION=false')
+        then: 'the option is read only where the grails extension exists, so this project keeps the default'
+        result.output.contains('PAGE_COMPILER_STATIC=false')
+        result.output.contains('WEBAPP_PAGE_COMPILER_STATIC=false')
     }
 }

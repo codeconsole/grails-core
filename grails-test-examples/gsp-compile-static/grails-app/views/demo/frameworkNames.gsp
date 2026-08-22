@@ -25,5 +25,7 @@
 <p id="flash">${flash.message}</p>
 <p id="param">${params.int('n') ?: 0}</p>
 <p id="link"><g:createLink controller="demo" action="declared"/></p>
+<p id="servletContext">${servletContext.serverInfo == application.serverInfo}</p>
+<p id="webRequest">${webRequest.currentRequest != null}</p>
 </body>
 </html>
