@@ -183,32 +183,49 @@ class EmbeddedMongoInitializerSpec extends Specification {
         restarted.environment.getProperty('grails.mongodb.url') == 'mongodb://localhost:27985/bookstore'
     }
 
-    void 'a restart that asks for a replica set is not handed the standalone server'() {
-        given: 'a standalone server, started before the developer asked for transactions'
+    void 'a restart that asks for a different server is not handed the one already running'() {
+        given: 'a server started before the developer changed anything'
         GenericApplicationContext first = contextWith([
                 (EmbeddedMongoInitializer.BACKEND): InMemoryMongoBackend.NAME,
                 'grails.mongodb.url'              : 'mongodb://embedded:28003/bookstore',
         ])
         new EmbeddedMongoInitializer().initialize(first)
-        EmbeddedMongoLifecycle standalone = first.beanFactory
+        EmbeddedMongoLifecycle before = first.beanFactory
                 .getBean(EmbeddedMongoLifecycle.BEAN_NAME, EmbeddedMongoLifecycle)
 
-        when: 'the reloaded application asks for transactions, which need a replica set'
+        when: 'the reloaded application asks for another version of MongoDB'
         GenericApplicationContext restarted = contextWith([
-                (EmbeddedMongoInitializer.BACKEND)     : InMemoryMongoBackend.NAME,
-                (EmbeddedMongoInitializer.REPLICA_SET) : 'rs0',
-                'grails.mongodb.url'                   : 'mongodb://embedded:28003/bookstore',
+                (EmbeddedMongoInitializer.BACKEND): InMemoryMongoBackend.NAME,
+                (EmbeddedMongoInitializer.VERSION): 'V7_0',
+                'grails.mongodb.url'              : 'mongodb://embedded:28003/bookstore',
         ])
         new EmbeddedMongoInitializer().initialize(restarted)
 
-        then: 'the server it is given is not the one that could not do it'
+        then: 'the server it is given is not the one that was started for the settings before'
         EmbeddedMongoLifecycle replacement = restarted.beanFactory
                 .getBean(EmbeddedMongoLifecycle.BEAN_NAME, EmbeddedMongoLifecycle)
-        !replacement.is(standalone)
+        !replacement.is(before)
         restarted.environment.getProperty('grails.mongodb.url') == 'mongodb://localhost:28003/bookstore'
 
         cleanup:
         replacement?.stop()
+    }
+
+    void 'the in-memory backend refuses to pretend it can be a replica set'() {
+        given: 'what an application asking GORM for transactions configures'
+        GenericApplicationContext context = contextWith([
+                (EmbeddedMongoInitializer.BACKEND)      : InMemoryMongoBackend.NAME,
+                (EmbeddedMongoInitializer.TRANSACTIONAL): 'true',
+                'grails.mongodb.url'                    : 'mongodb://embedded:28005/bookstore',
+        ])
+
+        when:
+        new EmbeddedMongoInitializer().initialize(context)
+
+        then: 'it says so at startup rather than at the first transaction'
+        IllegalStateException refused = thrown()
+        refused.message.contains('cannot be a replica set')
+        refused.message.contains('de.flapdoodle.embed')
     }
 
     void 'a restart that asks for the same server is handed the same server'() {

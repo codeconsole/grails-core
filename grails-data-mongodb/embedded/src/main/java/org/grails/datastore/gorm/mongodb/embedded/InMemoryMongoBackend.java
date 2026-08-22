@@ -60,6 +60,13 @@ public class InMemoryMongoBackend implements EmbeddedMongoBackend {
                     "directory to accept a database that is discarded when the server stops.");
         }
 
+        if (settings.isReplicaSet()) {
+            throw new IllegalStateException("The " + NAME + " backend reimplements the wire protocol and cannot be a " +
+                    "replica set, which is what a transaction, a change stream and a causally consistent read need. " +
+                    "Add de.flapdoodle.embed:de.flapdoodle.embed.mongo to run a real mongod that can, or unset " +
+                    EmbeddedMongoInitializer.REPLICA_SET + " and " + EmbeddedMongoInitializer.TRANSACTIONAL + ".");
+        }
+
         MemoryBackend backend = new RetainingMemoryBackend();
         MongoServer server = new MongoServer(backend);
         server.bind("localhost", settings.getPort());
