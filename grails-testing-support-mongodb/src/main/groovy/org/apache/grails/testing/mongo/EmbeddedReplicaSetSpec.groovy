@@ -19,6 +19,7 @@
 package org.apache.grails.testing.mongo
 
 import org.grails.datastore.gorm.mongodb.embedded.EmbeddedMongoInitializer
+import org.grails.datastore.gorm.mongodb.embedded.EmbeddedMongoLifecycle
 import org.grails.datastore.gorm.mongodb.embedded.FlapdoodleMongoBackend
 
 import org.springframework.context.support.GenericApplicationContext
@@ -72,7 +73,12 @@ abstract class EmbeddedReplicaSetSpec extends Specification {
     }
 
     void cleanupSpec() {
-        this.embedded?.close()
+        // Stopped through the bean the initializer registers rather than by closing the context:
+        // a context that was never refreshed is not active, and closing one that is not active
+        // does nothing at all - which left a mongod running for every specification in the fork.
+        this.embedded?.beanFactory
+                ?.getBean(EmbeddedMongoLifecycle.BEAN_NAME, EmbeddedMongoLifecycle)
+                ?.stop()
     }
 
     /**
@@ -80,10 +86,10 @@ abstract class EmbeddedReplicaSetSpec extends Specification {
      * a build: a port named in advance is a port another fork may hold.
      */
     private static int freePort() {
-        new ServerSocket(0).withCloseable { ServerSocket socket ->
-            socket.reuseAddress = true
-            socket.localPort
-        }
+        // The port is free when it is read and taken when the server binds it, which is not the
+        // same moment; nothing here can close that gap, so a port that has just been handed out is
+        // the best this can offer.
+        new ServerSocket(0).withCloseable { ServerSocket socket -> socket.localPort }
     }
 
 }
