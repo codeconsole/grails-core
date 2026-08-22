@@ -38,9 +38,34 @@ class AsyncWebRequestPromiseDecoratorLookupStrategy implements PromiseDecoratorL
         final webRequest = GrailsWebRequest.lookup()
         if (webRequest) {
             List<PromiseDecorator> decorators = []
-            decorators.add(new AsyncWebRequestPromiseDecorator(webRequest))
+            try {
+                decorators.add(new AsyncWebRequestPromiseDecorator(webRequest))
+            }
+            catch (IllegalStateException asynchronousProcessingUnavailable) {
+                if (!supportsAsync(webRequest)) {
+                    // A request that cannot process asynchronously at all is a mistake worth
+                    // reporting: the caller asked for something this request will never do.
+                    throw asynchronousProcessingUnavailable
+                }
+                // Otherwise the request does support it and is simply past the point of taking
+                // another task: it is delivering the result of the one that ran, or has finished.
+                // A callback attached to a promise that completed while it was being attached
+                // arrives exactly here. Binding a request on its way out buys nothing, and
+                // insisting on it used to fail the response that was about to be sent.
+                return Collections.emptyList()
+            }
             return decorators
         }
         return Collections.emptyList()
+    }
+
+    private static boolean supportsAsync(GrailsWebRequest webRequest) {
+        try {
+            return webRequest.currentRequest.asyncSupported
+        }
+        catch (IllegalStateException requestIsGone) {
+            // The request has been recycled, so it is in no state to take a task either way.
+            return true
+        }
     }
 }
