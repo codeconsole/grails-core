@@ -42,81 +42,126 @@ class QuartzGrailsPlugin extends Plugin {
 
     def grailsVersion = '7.0.0-SNAPSHOT > *'
     def watchedResources = 'file:./grails-app/jobs/**/*Job.groovy'
-    def title = 'Quartz'
-    def author = 'Jeff Brown'
+    def title = 'Quartz Plugin'
+    def author = 'Apache Grails Team'
     def description = 'Adds Quartz job scheduling features'
     def profiles = ['web']
     List loadAfter = ['hibernate3', 'hibernate4', 'hibernate5', 'services']
-    def documentation = 'https://apache.github.io/grails-quartz/latest/'
+    def documentation = 'https://grails.apache.org/documentation.html'
     def license = 'APACHE'
-    def issueManagement = [ system: 'Github Issues', url: 'https://github.com/apache/grails-quartz/issues' ]
-
-    // Any additional developers beyond the author specified above.
-    def developers = [
-            [name: 'Sergey Nebolsin', email: 'nebolsin@gmail.com'],
-            [name: 'Graeme Rocher', email: 'graeme.rocher@gmail.com'],
-            [name: 'Ryan Vanderwerf', email: 'rvanderwerf@gmail.com'],
-            [name: 'Vitalii Samolovskikh', email: 'kefir@perm.ru']
-    ]
+    def issueManagement = [ system: 'Github Issues', url: 'https://github.com/apache/grails-core/issues' ]
 
     // Online location of the plugin's browsable source code.
-    def scm = [url: 'https://github.com/apache/grails-quartz']
+    def scm = [url: 'https://github.com/apache/grails-core']
+
+    /**
+     * Whether the plugin is active. When disabled no scheduler, job beans or listeners are registered
+     * and no job is ever scheduled.
+     * @return {@code true} unless {@code quartz.pluginEnabled} is configured otherwise
+     */
+    boolean isPluginEnabled() {
+        config.getProperty('quartz.pluginEnabled', Boolean, true)
+    }
+
+    /**
+     * Whether the scheduler is started once the application has finished bootstrapping.
+     * @return {@code true} unless {@code quartz.autoStartup} is configured otherwise
+     */
+    boolean isAutoStartup() {
+        config.getProperty('quartz.autoStartup', Boolean, true)
+    }
+
+    /**
+     * Whether Quartz persists jobs and triggers in a database instead of the in memory {@code RAMJobStore}.
+     * @return {@code false} unless {@code quartz.jdbcStore} is configured otherwise
+     */
+    boolean isJdbcStore() {
+        config.getProperty('quartz.jdbcStore', Boolean, false)
+    }
+
+    /**
+     * The name of the Spring bean holding the {@code DataSource} Quartz uses when the JDBC job store is enabled.
+     * @return the value of {@code quartz.jdbcStoreDataSource}, or {@code dataSource}
+     */
+    String getJdbcStoreDataSource() {
+        config.getProperty('quartz.jdbcStoreDataSource', String, 'dataSource')
+    }
+
+    /**
+     * Whether every Quartz table is emptied during startup. Only honoured when the JDBC job store is
+     * enabled and a Hibernate plugin is present.
+     * @return {@code false} unless {@code quartz.purgeQuartzTablesOnStartup} is configured otherwise
+     */
+    boolean isPurgeQuartzTablesOnStartup() {
+        config.getProperty('quartz.purgeQuartzTablesOnStartup', Boolean, false)
+    }
+
+    /**
+     * Whether shutdown blocks until currently executing jobs have finished.
+     * @return {@code true} unless {@code quartz.waitForJobsToCompleteOnShutdown} is configured otherwise
+     */
+    boolean isWaitForJobsToCompleteOnShutdown() {
+        config.getProperty('quartz.waitForJobsToCompleteOnShutdown', Boolean, true)
+    }
+
+    /**
+     * Whether the scheduler is registered with the Quartz {@code SchedulerRepository}.
+     * @return {@code false} unless {@code quartz.exposeSchedulerInRepository} is configured otherwise
+     */
+    boolean isExposeSchedulerInRepository() {
+        config.getProperty('quartz.exposeSchedulerInRepository', Boolean, false)
+    }
+
+    /**
+     * The name given to the scheduler. When unset the bean name is used.
+     * @return the value of {@code quartz.scheduler.instanceName}, or {@code null}
+     */
+    String getSchedulerInstanceName() {
+        config.getProperty('quartz.scheduler.instanceName', String)
+    }
 
     Closure doWithSpring() {
         { ->
-            Properties properties = loadQuartzProperties()
+            if (!isPluginEnabled()) {
+                return
+            }
 
             boolean hasHibernate = hasHibernate(manager)
-            def hasJdbcStore = properties['org.quartz.jdbcStore']?.toBoolean()
-            if (hasJdbcStore == null) {
-                hasJdbcStore = true
+
+            if (isJdbcStore() && hasHibernate && isPurgeQuartzTablesOnStartup()) {
+                String dataSourceName = getJdbcStoreDataSource()
+                purgeTablesBean(JdbcCleanup) { bean ->
+                    dataSource = ref(dataSourceName)
+                    bean.autowire = 'byName'
+                }
             }
 
-            def pluginEnabled = properties['org.quartz.pluginEnabled']?.toBoolean()
-            if (pluginEnabled == null) {
-                pluginEnabled = true
+            // Configure job beans
+            grailsApplication.jobClasses.each { GrailsJobClass jobClass ->
+                configureJobBeans.delegate = delegate
+                configureJobBeans(jobClass, hasHibernate)
             }
 
-            if (pluginEnabled) {
-                def purgeTables = properties['org.quartz.purgeQuartzTablesOnStartup']?.toBoolean()
+            // Configure the session listener if there is the Hibernate is configured
+            if (hasHibernate) {
+                log.debug('Registering hibernate SessionBinderJobListener')
 
-                if (purgeTables == null) {
-                    purgeTables = false
+                // register SessionBinderJobListener to bind Hibernate Session to each Job's thread
+                "${SessionBinderJobListener.NAME}"(SessionBinderJobListener) { bean ->
+                    bean.autowire = 'byName'
                 }
-
-                if (hasJdbcStore && hasHibernate && purgeTables) {
-                    purgeTablesBean(JdbcCleanup) { bean ->
-                        dataSource = ref(properties['org.quartz.jdbcStoreDataSource'] ?: 'dataSource')
-                        bean.autowire = 'byName'
-                    }
-                }
-                // Configure job beans
-                grailsApplication.jobClasses.each { GrailsJobClass jobClass ->
-                    configureJobBeans.delegate = delegate
-                    configureJobBeans(jobClass, hasHibernate)
-                }
-
-                // Configure the session listener if there is the Hibernate is configured
-                if (hasHibernate) {
-                    log.debug('Registering hibernate SessionBinderJobListener')
-
-                    // register SessionBinderJobListener to bind Hibernate Session to each Job's thread
-                    "${SessionBinderJobListener.NAME}"(SessionBinderJobListener) { bean ->
-                        bean.autowire = 'byName'
-                    }
-                }
-
-                // register global ExceptionPrinterJobListener which will log exceptions occured
-                // during job's execution
-                "${ExceptionPrinterJobListener.NAME}"(ExceptionPrinterJobListener)
-
-                // Configure the job factory to create job instances on executions.
-                quartzJobFactory(GrailsJobFactory)
-
-                // Configure Scheduler
-                configureScheduler.delegate = delegate
-                configureScheduler()
             }
+
+            // register global ExceptionPrinterJobListener which will log exceptions occured
+            // during job's execution
+            "${ExceptionPrinterJobListener.NAME}"(ExceptionPrinterJobListener)
+
+            // Configure the job factory to create job instances on executions.
+            quartzJobFactory(GrailsJobFactory)
+
+            // Configure Scheduler
+            configureScheduler.delegate = delegate
+            configureScheduler()
         }
     }
 
@@ -160,34 +205,36 @@ class QuartzGrailsPlugin extends Plugin {
     }
 
     def configureScheduler = { ->
+        // Everything the bean definition closure below needs is resolved here: within that closure
+        // property and method names are resolved against the bean builder, not against this plugin.
         Properties properties = loadQuartzProperties()
+        String instanceName = getSchedulerInstanceName()
+        boolean jdbcStore = isJdbcStore()
+        String dataSourceName = getJdbcStoreDataSource()
+        boolean waitForJobs = isWaitForJobsToCompleteOnShutdown()
+        boolean exposeInRepository = isExposeSchedulerInRepository()
+
         quartzScheduler(SchedulerFactoryBean) { bean ->
             quartzProperties = properties
+
             // The bean name is used by the factory bean as the scheduler name so you must explicitly set it if
             // you want a name different from the bean name.
-            if (quartzProperties['org.quartz.scheduler.instanceName']) {
-                schedulerName = properties['org.quartz.scheduler.instanceName']
+            if (instanceName) {
+                schedulerName = instanceName
             }
 
-            // delay scheduler startup to after-bootstrap stage
-            if (quartzProperties['org.quartz.autoStartup']) {
-                autoStartup = false // we dont want to auto startup this bean as this bean autostartup is not grails aware.
-            }
+            // Delay scheduler startup to the after-bootstrap stage: onStartup() honours quartz.autoStartup,
+            // whereas this bean's own startup is not grails aware.
+            autoStartup = false
+
             // Store
-            def hasJdbcStore = quartzProperties['org.quartz.jdbcStore']?.toBoolean()
-            if (hasJdbcStore == null) {
-                hasJdbcStore = true
-            }
-            if (hasJdbcStore) {
-                dataSource = ref(quartzProperties['org.quartz.jdbcStoreDataSource'] ?: 'dataSource')
+            if (jdbcStore) {
+                dataSource = ref(dataSourceName)
                 transactionManager = ref('transactionManager')
             }
-            if (quartzProperties['org.quartz.waitForJobsToCompleteOnShutdown']) {
-                waitForJobsToCompleteOnShutdown = quartzProperties['org.quartz.waitForJobsToCompleteOnShutdown']?.toBoolean()
-            }
-            if (quartzProperties['org.quartz.exposeSchedulerInRepository']) {
-                exposeSchedulerInRepository = quartzProperties['org.quartz.exposeSchedulerInRepository']?.toBoolean()
-            }
+
+            waitForJobsToCompleteOnShutdown = waitForJobs
+            exposeSchedulerInRepository = exposeInRepository
 
             jobFactory = quartzJobFactory
 
@@ -197,22 +244,19 @@ class QuartzGrailsPlugin extends Plugin {
     }
 
     void onChange(Map<String, Object> event) {
-        def pluginEnabled = properties['org.quartz.pluginEnabled']?.toBoolean()
-        if (pluginEnabled == null) {
-            pluginEnabled = true
+        if (!isPluginEnabled()) {
+            return
         }
 
-        if (pluginEnabled) {
-            if (event.source) {
-                boolean hasHibernate = hasHibernate(manager)
-                def jobClass = grailsApplication.addArtefact(JobArtefactHandler.TYPE, event.source)
-                beans {
-                    configureJobBeans.delegate = delegate
-                    configureJobBeans(jobClass, hasHibernate)
-                }
+        if (event.source) {
+            boolean hasHibernate = hasHibernate(manager)
+            def jobClass = grailsApplication.addArtefact(JobArtefactHandler.TYPE, event.source)
+            beans {
+                configureJobBeans.delegate = delegate
+                configureJobBeans(jobClass, hasHibernate)
             }
-            refreshJobs(true)
         }
+        refreshJobs(true)
     }
 
     /**
@@ -231,13 +275,9 @@ class QuartzGrailsPlugin extends Plugin {
 
             // adds the job to the scheduler, and associates triggers with it
             scheduler.addJob(jobDetail, true)
-            def hasJdbcStore = grailsApplication.config.getProperty('quartz.jdbcStore')?.toBoolean()
-            if (hasJdbcStore == null) {
-                hasJdbcStore = true
-            }
 
             // The session listener if is needed
-            if (hasHibernate && (jobClass.sessionRequired || hasJdbcStore)) {
+            if (hasHibernate && (jobClass.sessionRequired || isJdbcStore())) {
                 SessionBinderJobListener listener = ctx.getBean(SessionBinderJobListener.NAME)
                 if (listener != null) {
                     ListenerManager listenerManager = scheduler.getListenerManager()
@@ -283,62 +323,49 @@ class QuartzGrailsPlugin extends Plugin {
     }
 
     void refreshJobs(boolean ignoreErrors = false) {
-        def pluginEnabled = grailsApplication.config.getProperty('quartz.pluginEnabled')?.toBoolean()
-        if (pluginEnabled == null) {
-            pluginEnabled = true
+        if (!isPluginEnabled()) {
+            return
         }
-        if (pluginEnabled) {
-            def quartzScheduler = applicationContext.quartzScheduler
 
-            Set<JobKey> jobKeys = applicationContext.quartzScheduler.getJobKeys(GroupMatcher.anyGroup())
+        def quartzScheduler = applicationContext.quartzScheduler
 
-            //Remove any recently removed / disabled Jobs
-            jobKeys.each { JobKey key ->
-                def match = grailsApplication.jobClasses.find { GrailsJobClass jobClass -> jobClass.isEnabled() && jobClass.group == key.group && jobClass.clazz.name == key.name }
-                if (!match) {
-                    log.info("Removing No longer Active Job: ${key.name}")
-                    def triggersForJob = quartzScheduler.getTriggersOfJob(key)?.collect { it.key }
-                    if (triggersForJob) {
-                        //clean up triggers before we remove the job
-                        quartzScheduler.unscheduleJobs(triggersForJob)
-                    }
-                    quartzScheduler.deleteJob(key)
+        Set<JobKey> jobKeys = quartzScheduler.getJobKeys(GroupMatcher.anyGroup())
+
+        //Remove any recently removed / disabled Jobs
+        jobKeys.each { JobKey key ->
+            def match = grailsApplication.jobClasses.find { GrailsJobClass jobClass -> jobClass.isEnabled() && jobClass.group == key.group && jobClass.clazz.name == key.name }
+            if (!match) {
+                log.info("Removing No longer Active Job: ${key.name}")
+                def triggersForJob = quartzScheduler.getTriggersOfJob(key)?.collect { it.key }
+                if (triggersForJob) {
+                    //clean up triggers before we remove the job
+                    quartzScheduler.unscheduleJobs(triggersForJob)
                 }
-            }
-
-            //Add new jobs
-            grailsApplication.jobClasses.findAll { GrailsJobClass jobClass -> jobClass.isEnabled() }.each { GrailsJobClass jobClass ->
-                try {
-                    scheduleJob(jobClass, applicationContext, hasHibernate(manager))
-                    def clz = jobClass.clazz
-                    clz.scheduler = applicationContext.quartzScheduler
-                    clz.grailsJobClass = jobClass
-                } catch (Exception ex) {
-                    if (ignoreErrors) {
-                        log.error("Error Scheduling Job Class ${jobClass} - ${ex.message}", ex)
-                    } else {
-                        throw ex
-                    }
-                }
-
+                quartzScheduler.deleteJob(key)
             }
         }
 
+        //Add new jobs
+        grailsApplication.jobClasses.findAll { GrailsJobClass jobClass -> jobClass.isEnabled() }.each { GrailsJobClass jobClass ->
+            try {
+                scheduleJob(jobClass, applicationContext, hasHibernate(manager))
+                def clz = jobClass.clazz
+                clz.scheduler = quartzScheduler
+                clz.grailsJobClass = jobClass
+            } catch (Exception ex) {
+                if (ignoreErrors) {
+                    log.error("Error Scheduling Job Class ${jobClass} - ${ex.message}", ex)
+                } else {
+                    throw ex
+                }
+            }
+        }
     }
 
     void onStartup(Map<String, Object> event) {
-        def autoStart = grailsApplication.config.getProperty('quartz.autoStartup')?.toBoolean()
-        if (autoStart == null) {
-            autoStart = true
-        }
-        def pluginEnabled = grailsApplication.config.getProperty('quartz.pluginEnabled')?.toBoolean()
-        if (pluginEnabled == null) {
-            pluginEnabled = true
-        }
-
-        if (pluginEnabled) {
+        if (isPluginEnabled()) {
             refreshJobs()
-            if (autoStart) {
+            if (isAutoStartup()) {
                 applicationContext.quartzScheduler.start()
                 log.info('Quartz Scheduler - Started')
             }
@@ -347,17 +374,8 @@ class QuartzGrailsPlugin extends Plugin {
     }
 
     void onShutdown(Map<String, Object> event) {
-        def pluginEnabled = grailsApplication.config.getProperty('quartz.pluginEnabled')?.toBoolean()
-        if (pluginEnabled == null) {
-            pluginEnabled = true
-        }
-
-        if (pluginEnabled) {
-            Boolean waitForJobsToCompleteOnShutdown = grailsApplication.config.getProperty('quartz.waitForJobsToCompleteOnShutdown')?.toBoolean()
-            if (waitForJobsToCompleteOnShutdown == null) {
-                waitForJobsToCompleteOnShutdown = true
-            }
-            applicationContext.quartzScheduler.shutdown(waitForJobsToCompleteOnShutdown)
+        if (isPluginEnabled()) {
+            applicationContext.quartzScheduler.shutdown(isWaitForJobsToCompleteOnShutdown())
         }
     }
 }

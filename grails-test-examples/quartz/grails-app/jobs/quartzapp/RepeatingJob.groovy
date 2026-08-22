@@ -17,25 +17,23 @@
  *  under the License.
  */
 
-package grails.plugin.geb
+package quartzapp
 
-import groovy.transform.CompileStatic
+import java.util.concurrent.atomic.AtomicInteger
 
-import grails.plugins.Plugin
-import grails.plugins.metadata.PluginSource
+/**
+ * A job scheduled by a simple trigger, used to prove that the scheduler really fires jobs
+ * declared under grails-app/jobs.
+ */
+class RepeatingJob {
 
-@PluginSource
-@CompileStatic
-class GebGrailsPlugin extends Plugin {
+    static final AtomicInteger EXECUTIONS = new AtomicInteger()
 
-    def grailsVersion = '7.0.0-SNAPSHOT > *'
-    def pluginExcludes = []
-    def title = 'Grails Geb Plugin'
-    def author = 'Apache Grails Team'
-    def authorEmail = ''
-    def description = 'Plugin that adds Geb functional testing code generation features.'
-    def documentation = 'https://github.com/apache/grails-core/tree/HEAD/grails-geb#readme'
-    def license = 'APACHE'
-    def issueManagement = [system: 'Github Issues', url: 'https://github.com/apache/grails-core/issues']
-    def scm = [url: 'https://github.com/apache/grails-core']
+    static triggers = {
+        simple startDelay: 0L, repeatInterval: 200L
+    }
+
+    void execute() {
+        EXECUTIONS.incrementAndGet()
+    }
 }

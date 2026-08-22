@@ -1074,7 +1074,14 @@ dependencies {
 
 ===== 16.2 spring-context-support
 
-The plugin builds its scheduler from `SchedulerFactoryBean`, which lives in `org.springframework:spring-context-support`. Plugin version 4.0.x did not declare that dependency, and it is not reliably inherited from the rest of the stack, so an application could fail at startup with a `NoClassDefFoundError` until `spring-context-support` was added by hand.
+The plugin builds its scheduler from `SchedulerFactoryBean` and its job factory from `AdaptableJobFactory`, both of which live in `org.springframework:spring-context-support`. Plugin version 4.0.x did not declare that dependency, and it is not reliably inherited from the rest of the stack, so an application failed at startup with:
+
+[source]
+----
+java.lang.NoClassDefFoundError: org/springframework/scheduling/quartz/AdaptableJobFactory
+----
+
+until `spring-context-support` was added by hand. This affected any application using the standalone plugin releases, including one generated with the `grails-quartz` feature.
 
 The dependency is now declared by the plugin and comes in transitively. If you added it explicitly as a workaround, it can be removed:
 

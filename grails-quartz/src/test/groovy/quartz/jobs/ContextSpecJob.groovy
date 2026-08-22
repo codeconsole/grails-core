@@ -16,26 +16,27 @@
  *  specific language governing permissions and limitations
  *  under the License.
  */
+package quartz.jobs
 
-package grails.plugin.geb
+import grails.plugins.quartz.QuartzJob
 
-import groovy.transform.CompileStatic
+import java.util.concurrent.atomic.AtomicInteger
 
-import grails.plugins.Plugin
-import grails.plugins.metadata.PluginSource
+/**
+ * A job which records that it ran, so that a test can prove the scheduler really fires it.
+ *
+ * The {@code QuartzJob} trait is applied explicitly here; in an application it is contributed to every
+ * class under {@code grails-app/jobs} by {@code QuartzJobTraitInjector} at compile time.
+ */
+class ContextSpecJob implements QuartzJob {
 
-@PluginSource
-@CompileStatic
-class GebGrailsPlugin extends Plugin {
+    static final AtomicInteger EXECUTIONS = new AtomicInteger()
 
-    def grailsVersion = '7.0.0-SNAPSHOT > *'
-    def pluginExcludes = []
-    def title = 'Grails Geb Plugin'
-    def author = 'Apache Grails Team'
-    def authorEmail = ''
-    def description = 'Plugin that adds Geb functional testing code generation features.'
-    def documentation = 'https://github.com/apache/grails-core/tree/HEAD/grails-geb#readme'
-    def license = 'APACHE'
-    def issueManagement = [system: 'Github Issues', url: 'https://github.com/apache/grails-core/issues']
-    def scm = [url: 'https://github.com/apache/grails-core']
+    static triggers = {
+        simple startDelay: 0L, repeatInterval: 100L
+    }
+
+    void execute() {
+        EXECUTIONS.incrementAndGet()
+    }
 }
