@@ -42,9 +42,19 @@ public final class EmbeddedMongoSettings {
 
     public EmbeddedMongoSettings(int port, String version, String databaseDir, String replicaSet) {
         this.port = port;
-        this.version = version;
-        this.databaseDir = databaseDir;
-        this.replicaSet = replicaSet;
+        this.version = unset(version);
+        this.databaseDir = unset(databaseDir);
+        this.replicaSet = unset(replicaSet);
+    }
+
+    /**
+     * A setting written as empty is a setting that was not made - {@code database-dir:} with nothing
+     * after it is how a property ends up as an empty string rather than absent. They describe the
+     * same server, so they are the same settings, which matters where two of them are compared to
+     * decide whether the server already running is the one being asked for.
+     */
+    private static String unset(String value) {
+        return value == null || value.isEmpty() ? null : value;
     }
 
     /**
