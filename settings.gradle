@@ -233,6 +233,9 @@ include(
         // Mail
         'grails-mail',
 
+        // Quartz
+        'grails-quartz',
+
         // Redis
         'grails-redis',
 
@@ -604,6 +607,7 @@ include(
         'grails-test-examples-plugins-loadfirst',
         'grails-test-examples-plugins-loadsecond',
         'grails-test-examples-config-report',
+        'grails-test-examples-quartz',
         'grails-test-examples-scaffolding',
         'grails-test-examples-scaffolding-fields',
         'grails-test-examples-test-phases',
@@ -625,6 +629,7 @@ project(':grails-test-examples-exploded').projectDir = file('grails-test-example
 project(':grails-test-examples-datasources').projectDir = file('grails-test-examples/datasources')
 project(':grails-test-examples-database-cleanup').projectDir = file('grails-test-examples/database-cleanup')
 project(':grails-test-examples-gsp-compile-static').projectDir = file('grails-test-examples/gsp-compile-static')
+project(':grails-test-examples-quartz').projectDir = file('grails-test-examples/quartz')
 project(':grails-test-examples-geb').projectDir = file('grails-test-examples/geb')
 project(':grails-test-examples-geb-context-path').projectDir = file('grails-test-examples/geb-context-path')
 project(':grails-test-examples-geb-gebconfig').projectDir = file('grails-test-examples/geb-gebconfig')
