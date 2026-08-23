@@ -145,7 +145,16 @@ A change to a TTL index's `expireAfterSeconds` is handled automatically and does
 ==== Disabling Index Creation on Startup
 
 
-By default GORM creates and reconciles every index declared in a mapping block when the datastore starts. Set `buildIndexes` to `false` to switch that off:
+By default GORM creates and reconciles every index declared in a mapping block when the datastore starts. Set `buildIndexes` to `false` in `grails-app/conf/application.yml` to switch that off:
+
+[source,yaml]
+----
+grails:
+    mongodb:
+        buildIndexes: false
+----
+
+or, in `application.groovy`:
 
 [source,groovy]
 ----
@@ -158,7 +167,18 @@ grails {
 
 With this setting no `createIndex` or `collMod` command is issued for any domain class, and the indexes already present on the server are left exactly as they are. Queries are unaffected and continue to use whichever indexes exist. This is useful when deploying against live data whose indexes are managed separately — by a DBA or a migration step — so that a deployment does not build an index against a large production collection, and so an application running against an older index set does not have those indexes reconciled underneath it.
 
-The setting applies to every connection when declared at the top level, and can be set per connection inside a `connections` block. It also suppresses index creation for domain classes registered after startup.
+It also suppresses index creation for domain classes registered after startup. Declared at the top level the setting applies to every connection, and each connection can override it:
+
+[source,yaml]
+----
+grails:
+    mongodb:
+        buildIndexes: false
+        connections:
+            reporting:
+                url: mongodb://localhost/reporting
+                buildIndexes: true
+----
 
 NOTE: Because nothing is created, a collection that has never been initialised with `buildIndexes` enabled will have no declared indexes at all. Turn the setting off only where the indexes are already in place or are applied by other means. The setting governs only the indexes GORM derives from the mapping blocks; an explicit `createIndex` call made by application code against a collection is unaffected.
 
@@ -169,13 +189,11 @@ MongoDB answers a `createIndex` command only once the index has been built, so b
 
 Set `buildIndexesAsync` to have the startup index build run on a background thread instead:
 
-[source,groovy]
+[source,yaml]
 ----
-grails {
-    mongodb {
-        buildIndexesAsync = true
-    }
-}
+grails:
+    mongodb:
+        buildIndexesAsync: true
 ----
 
 Startup then continues without waiting. The indexes are still built one at a time, on a single daemon thread per connection named `gorm-mongo-index-build-<connection>`, so enabling this does not launch several index builds against the server at once.

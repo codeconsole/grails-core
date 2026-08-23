@@ -21,7 +21,20 @@ under the License.
 ==== Mongo Database Connection Configuration
 
 
-As mentioned the GORM for MongoDB plugin will configure all the defaults for you, but if you wish to customize those defaults you can do so in the `grails-app/conf/application.groovy` file:
+As mentioned the GORM for MongoDB plugin will configure all the defaults for you, but if you wish to customize those defaults you can do so in `grails-app/conf/application.yml`:
+
+[source,yaml]
+----
+grails:
+    mongodb:
+        host: localhost
+        port: 27017
+        username: blah
+        password: blah
+        databaseName: foo
+----
+
+or equivalently in `grails-app/conf/application.groovy`:
 
 [source,groovy]
 ----
@@ -35,6 +48,8 @@ grails {
     }
 }
 ----
+
+NOTE: These settings are read by name, so write them exactly as they are documented. Unlike Spring Boot's own configuration properties they are not relaxed-bound, and a kebab-case spelling such as `database-name` is not recognised — it is ignored, leaving the default in place.
 
 The `databaseName` setting configures the default database name. If not specified the `databaseName` will default to the name of your application.
 
