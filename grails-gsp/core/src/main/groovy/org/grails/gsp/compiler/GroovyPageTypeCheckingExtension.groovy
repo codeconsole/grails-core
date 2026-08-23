@@ -33,6 +33,9 @@ import org.codehaus.groovy.transform.stc.GroovyTypeCheckingExtensionSupport
 import org.codehaus.groovy.syntax.Types
 import org.codehaus.groovy.transform.stc.StaticTypesMarker
 
+import org.grails.gsp.GroovyPage
+import org.grails.taglib.index.TagLibraryIndex
+
 /**
  * CompileStatic type checking extension for GSPs
  *
@@ -75,6 +78,22 @@ class GroovyPageTypeCheckingExtension extends GroovyTypeCheckingExtensionSupport
     private static final Set<String> FRAMEWORK_DYNAMIC_NAMES =
             ['grailsApplication', 'applicationContext'] as Set
 
+    /**
+     * Tag libraries compiled ahead of this page, discovered from their compile-time descriptors.
+     * <p>
+     * Where the {@code taglibs} directive only states which namespaces a page is permitted to use,
+     * this states which tags actually exist. That removes the need to declare namespaces by hand for
+     * tag libraries that were on the compile classpath, and turns a call to a misspelled tag from
+     * something deferred to runtime dispatch into something reported when the page is compiled.
+     * <p>
+     * Read from the class loader compiling the page rather than from this extension's own, and cached
+     * against that loader rather than in a field here, so that one project's tag libraries are not
+     * carried into the next compilation in the same Gradle daemon.
+     */
+    private TagLibraryIndex getTagLibraryIndex() {
+        TagLibraryIndex.forClassLoader(typeCheckingVisitor?.sourceUnit?.classLoader)
+    }
+
     @Override
     Object run() {
         ClassNode configAnnotationClassNode = ClassHelper.make(GroovyPageTypeCheckingConfig)
@@ -98,6 +117,9 @@ class GroovyPageTypeCheckingExtension extends GroovyTypeCheckingExtensionSupport
             // property matched against a name, an implementation member behind an interface -- so they
             // are resolved the way a page that is not compiled statically resolves them.
             currentScope.allowedTagLibs.addAll(FRAMEWORK_DYNAMIC_NAMES)
+            // Namespaces backed by a compiled tag library need no declaration: their tags are known.
+            currentScope.allowedTagLibs.addAll(tagLibraryIndex.namespaces)
+            currentScope.allowedTagLibs.addAll(tagLibraryIndex.dynamicNamespaces)
         }
 
         unresolvedProperty { PropertyExpression pe ->
@@ -139,12 +161,19 @@ class GroovyPageTypeCheckingExtension extends GroovyTypeCheckingExtensionSupport
                 return null
             }
             if (isThisTheReceiver(call)) {
+                // An unqualified call in a page is resolved against the model the page was rendered
+                // with before it reaches a tag, and that model is not known here, so such a call is
+                // left dynamic and never judged as a tag. A call that names its namespace, and one
+                // written as markup, are checked where they are compiled.
                 return makeDynamic(call)
             }
             def objectExpression = call.objectExpression
             if (objectExpression == null) {
                 return null
             }
+            // A call naming its namespace is reported where it is rewritten, by
+            // CompiledTagCallRewriter, which sees every page rather than only a statically compiled
+            // one. Reporting it here as well would report it twice.
             if (currentScope.dynamicProperties.contains(objectExpression)) {
                 return makeDynamic(call)
             }

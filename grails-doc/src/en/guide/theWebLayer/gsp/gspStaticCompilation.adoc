@@ -218,7 +218,9 @@ Tags are dispatched dynamically even in a statically compiled page, but only for
 ${g.message(code: 'book.list.title')}
 ----
 
-A tag library in any other namespace must be declared, otherwise its namespace is treated as an undeclared variable. Declare the extra namespaces for a single page with the `taglibs` page directive:
+A tag library compiled ahead of the page needs no declaration either: link:../guide/theWebLayer.html#compiledTags[the tag library index] states which namespaces exist, and every namespace on the compile classpath is allowed from it. What still needs declaring is a namespace filled in while the application runs -- one registered at runtime, or contributed by a plugin built before descriptors existed -- since nothing describes it when the page is compiled.
+
+Such a namespace is otherwise treated as an undeclared variable, which is reported in a page held to the names it declares and resolved dynamically in one that is not. Declare the extra namespaces for a single page with the `taglibs` page directive:
 
 [,xml]
 ----

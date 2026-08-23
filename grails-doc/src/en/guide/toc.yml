@@ -156,6 +156,7 @@ theWebLayer:
       logicalTags: Logical Tags
       iterativeTags: Iterative Tags
       namespaces: Tag Namespaces
+      compiledTags: Compiled Tag Resolution
       usingJSPTagLibraries: Using JSP Tag Libraries
       tagReturnValue: Tag return value
   fields:
@@ -311,6 +312,7 @@ testing:
   integrationTesting: Integration Testing
   functionalTesting: Functional Testing
   testPhases: Custom Test Phases
+  testingMongodb: Testing GORM for MongoDB
 bestPractices:
   title: Building a Successful Application
   codeAnalysisGroovy: Code Analysis and Styling for Groovy
