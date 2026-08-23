@@ -42,6 +42,7 @@ tasks.named('rat') {
             '**/.sdkmanrc', // tool selection files aren't code
             '.github/**', // github configuration isn't shipped in the source distro
             '**/.gitignore', // git configuration isn't code
+            'scratch/**', // gitignored scratch space for local working notes, never shipped
             '**/.gitkeep', // git configuration isn't code
             '**/.classpath', // Eclipse generated files
             '**/.project', // Eclipse generated files
@@ -59,6 +60,7 @@ tasks.named('rat') {
             'grails-doc/src/en/ref/Versions/Grails BOM Hibernate7.adoc', // exclude generated data
             'grails-doc/src/en/ref/Versions/Grails BOM Micronaut.adoc', // exclude generated data
             'grails-doc/src/en/ref/Versions/Grails BOM Hibernate7 Micronaut.adoc', // exclude generated data
+            'grails-doc/src/en/ref/Versions/Grails BOM Neo4j.adoc', // exclude generated data
             'grails-profiles/**/templates/**', // template files that people are expected to use in the end application
             'grails-profiles/**/commands/**', // template files that people are expected to use in the end application
             'grails-profiles/**/features/**', // template files that people are expected to use in the end application
