@@ -50,6 +50,7 @@ class QuartzGrailsPluginSpec extends Specification {
             !plugin.isPurgeQuartzTablesOnStartup()
             plugin.isWaitForJobsToCompleteOnShutdown()
             !plugin.isExposeSchedulerInRepository()
+            !plugin.isFailOnNeverFiringTriggers()
             plugin.getSchedulerInstanceName() == null
     }
 
@@ -72,6 +73,7 @@ class QuartzGrailsPluginSpec extends Specification {
                     'quartz.purgeQuartzTablesOnStartup': true,
                     'quartz.waitForJobsToCompleteOnShutdown': false,
                     'quartz.exposeSchedulerInRepository': true,
+                    'quartz.failOnNeverFiringTriggers': true,
                     'quartz.scheduler.instanceName': 'reportScheduler')
 
         expect:
@@ -82,16 +84,21 @@ class QuartzGrailsPluginSpec extends Specification {
             plugin.isPurgeQuartzTablesOnStartup()
             !plugin.isWaitForJobsToCompleteOnShutdown()
             plugin.isExposeSchedulerInRepository()
+            plugin.isFailOnNeverFiringTriggers()
             plugin.getSchedulerInstanceName() == 'reportScheduler'
     }
 
     void 'options configured as strings are coerced to booleans'() {
         given:
-            QuartzGrailsPlugin plugin = pluginFor('quartz.pluginEnabled': 'false', 'quartz.jdbcStore': 'true')
+            QuartzGrailsPlugin plugin = pluginFor(
+                    'quartz.pluginEnabled': 'false',
+                    'quartz.jdbcStore': 'true',
+                    'quartz.failOnNeverFiringTriggers': 'true')
 
         expect:
             !plugin.isPluginEnabled()
             plugin.isJdbcStore()
+            plugin.isFailOnNeverFiringTriggers()
     }
 
     void 'the plugin registers a scheduler, a job factory and an exception listener'() {

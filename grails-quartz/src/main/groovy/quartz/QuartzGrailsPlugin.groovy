@@ -116,6 +116,16 @@ class QuartzGrailsPlugin extends Plugin {
     }
 
     /**
+     * Whether startup fails when a job declares a trigger which can never fire, for example a cron
+     * expression whose last occurrence is in the past. When {@code false} such a trigger is reported
+     * and skipped, and the rest of the application starts as usual.
+     * @return {@code false} unless {@code quartz.failOnNeverFiringTriggers} is configured otherwise
+     */
+    boolean isFailOnNeverFiringTriggers() {
+        config.getProperty('quartz.failOnNeverFiringTriggers', Boolean, false)
+    }
+
+    /**
      * The name given to the scheduler. When unset the bean name is used.
      * @return the value of {@code quartz.scheduler.instanceName}, or {@code null}
      */
@@ -305,6 +315,11 @@ class QuartzGrailsPlugin extends Plugin {
                 Trigger trigger = factory.object
 
                 TriggerKey key = trigger.key
+                if (!isFailOnNeverFiringTriggers() && !willEverFire(trigger)) {
+                    log.error("The trigger ${key} of the job ${fullName} will never fire based on its configured " +
+                            'schedule, so it has not been scheduled. Check its cron expression, start time and end time.')
+                    return
+                }
                 log.debug("Scheduling $fullName with trigger $key: ${trigger}")
                 if (scheduler.getTrigger(key) != null) {
                     scheduler.rescheduleJob(key, trigger)
@@ -316,6 +331,18 @@ class QuartzGrailsPlugin extends Plugin {
         } else {
             log.error('Failed to schedule job details and job triggers: scheduler not found.')
         }
+    }
+
+    /**
+     * Whether the trigger can fire at least once, which is what the scheduler demands of a trigger before
+     * it accepts it. The first fire time is computed the way the scheduler computes it, from the second
+     * before the start time. A trigger bound to a Quartz calendar can still be rejected by the scheduler,
+     * because the calendar which excludes its fire times lives in the job store.
+     */
+    private boolean willEverFire(Trigger trigger) {
+        Date startTime = trigger.startTime
+        // Without a start time the first fire time cannot be computed here, so leave the decision to the scheduler.
+        startTime == null || trigger.getFireTimeAfter(new Date(startTime.time - 1000L)) != null
     }
 
     private boolean hasHibernate(manager) {
