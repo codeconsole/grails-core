@@ -125,6 +125,7 @@ tasks.named('rat') {
             'grails-forge/**/src/main/resources/**', // src/main/resources are included in generated application and should not include a license
             'grails-forge/**/src/test/resources/**', // src/test/resources are used in tests against files included in generated application and should not include a license
             'grails-gradle/**/build/**', // grails-gradle does not have a build package name so exclude any build directories
+            'end-to-end/**/build/**', // its own build, so its build directories are not covered by the root exclude
             'grails-forge/*/build/**', // grails-forge build directories
             'grails-forge/build/**', // grails-forge build directories
             'grails-spring-security/plugin/src/main/templates/**', // template files that people are expected to use in the end application
