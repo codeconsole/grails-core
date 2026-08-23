@@ -2855,3 +2855,65 @@ class ReportController {
 A tag called *with* its namespace, and any tag called from a GSP, already captured, so only an
 unqualified call from a controller to a method-declared tag changes.
 
+==== 51. Quartz Job Scheduling Behavior Changes
+
+Three behaviors of the Quartz plugin changed in this release. All three concern what happens when
+something about a schedule is wrong; none of them require a change to a job class.
+
+===== 51.1 A trigger that can never fire no longer stops startup
+
+A job whose trigger has no possible fire time — a cron expression whose last occurrence is in the past,
+or an end time that has already passed — used to make the application fail to start, because the
+scheduler rejects such a trigger:
+
+----
+org.quartz.SchedulerException: Based on configured schedule, the given trigger will never fire.
+----
+
+The plugin now reports the trigger as an error in the log and leaves it unscheduled, so the rest of the
+application's jobs and triggers are scheduled and the application starts. The job itself is still
+registered, so it can be triggered and rescheduled at runtime.
+
+To go back to a failing startup, set `quartz.failOnNeverFiringTriggers`:
+
+[source,yaml]
+.application.yml
+----
+quartz:
+    failOnNeverFiringTriggers: true
+----
+
+===== 51.2 An application only removes the jobs it registered itself
+
+When an application starts, the plugin removes the jobs in the job store which are no longer enabled job
+artefacts of the application. It used to consider *every* job in the store, which with a persistent job
+store deleted the jobs and triggers of anything else using it — another application, or code that
+schedules through the Quartz API.
+
+Every job the plugin registers now carries the name of the application that registered it, taken from
+`info.app.name` or from the application metadata when that is unset, and only jobs carrying that name are
+removed. Two consequences for an application with `quartz.jdbcStore` enabled:
+
+* **Two applications sharing a job store must not share an application name.** Instances of one
+application do share it — that is what makes a clustered deployment clean up after itself — but two
+different applications on the same Quartz tables each need their own `info.app.name`. An application which
+does not name itself registers its jobs under the default name, which every unnamed application shares;
+with `quartz.jdbcStore` enabled the plugin warns about that at startup.
+* **A job written to the store by Grails 7 or earlier carries no application name**, so it is never
+removed automatically. A job class you deleted while running an older version leaves a row behind; remove
+it with `jobManagerService.removeJob(group, name)` or from the Quartz tables.
+
+===== 51.3 Scheduling methods report what is wrong instead of failing with a null pointer
+
+The static scheduling methods every job class gets — `schedule`, `reschedule`, `unschedule`,
+`triggerNow`, `removeJob` — used to fail with a `NullPointerException` when called with a null argument,
+or on a job the scheduler does not know about. They now raise:
+
+* an `IllegalArgumentException` naming the argument that is null. Note that a null argument resolves to
+`schedule(Trigger)` whichever method the caller meant, because the runtime type of `null` carries no
+information, so the message points at the other arguments too.
+* an `IllegalStateException` when the job is not registered with a scheduler — the plugin is disabled, the
+job is disabled with `jobEnabled = false`, or the class is not a job artefact of the application.
+
+An application that caught `NullPointerException` around these calls has to catch those instead. See
+<<quartzDynamicScheduling,Dynamic Job Scheduling>>.

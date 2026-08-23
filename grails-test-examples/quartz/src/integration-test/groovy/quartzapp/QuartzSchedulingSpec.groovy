@@ -120,6 +120,16 @@ class QuartzSchedulingSpec extends Specification {
             e.message.contains('resolves to the one taking a trigger')
     }
 
+    void 'a job whose trigger can never fire does not keep the application from starting'() {
+        given:
+            JobKey jobKey = JobKey.jobKey(NeverFiringJob.name, 'GRAILS_JOBS')
+
+        expect: 'the application is up, with the job registered but without the trigger it declared'
+            quartzScheduler.isStarted()
+            quartzScheduler.checkExists(jobKey)
+            quartzScheduler.getTriggersOfJob(jobKey).isEmpty()
+    }
+
     void 'scheduling a job that the scheduler does not know about reports why'() {
         when: 'a job that is turned off is scheduled at runtime'
             DisabledJob.triggerNow()

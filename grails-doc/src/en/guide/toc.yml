@@ -357,6 +357,7 @@ backgroundJobs:
     quartzJobProperties: Job Properties
     quartzDynamicScheduling: Dynamic Job Scheduling
     quartzJobManagerService: Managing Jobs at Runtime
+    quartzLongRunningJobs: Long-Running Jobs
     quartzConfiguration: Configuration
     quartzClustering: Clustering
     quartzUsefulLinks: Useful Links

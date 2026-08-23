@@ -365,7 +365,25 @@ Plugin message bundles must now be namespaced on the plugin name — `spring-sec
 rather than `messages.properties` — so that two plugins cannot shadow one another. See
 <<upgrading80x>> for the details.
 
-=== Compiled Tag Resolution
+==== Quartz Scheduling Survives a Bad Schedule
+
+The Quartz plugin no longer lets one broken schedule take an application with it. A trigger that can
+never fire — a cron expression whose last occurrence has passed, an end time
+already gone by — is reported in the log and left unscheduled instead of stopping startup, and
+`quartz.failOnNeverFiringTriggers` restores the old behaviour for anyone who wants a bad schedule to fail
+a deployment.
+
+Jobs are also stamped with the application that registered them, so an application starting up removes
+only its own jobs from the job store. Two applications, or a clustered application and code scheduling
+through the Quartz API, can now share Quartz tables without one deleting the other's jobs and triggers.
+
+The scheduling methods a job class gets say what is wrong when they are misused: a null repeat interval,
+cron expression, date or trigger names the argument that is missing, and calling them on a job the
+scheduler does not know about explains why it is not registered — neither ends in a `NullPointerException`
+any more. See <<quartzLongRunningJobs,Long-Running Jobs>> for what a job that outlives its trigger's
+interval needs, and <<upgrading80x>> for the details.
+
+==== Compiled Tag Resolution
 
 Tag libraries are now described when they are compiled, and that description resolves tag calls in
 pages, tag libraries and controllers compiled afterwards. In a tag library or a controller, a call
