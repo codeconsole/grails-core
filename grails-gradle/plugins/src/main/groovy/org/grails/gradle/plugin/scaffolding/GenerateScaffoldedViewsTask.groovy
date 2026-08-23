@@ -193,9 +193,20 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
      * Maps view directory name to the fully qualified domain class, for every {@code @Scaffold}
      * controller. Qualified rather than simple because a view declaring the type of its model has to
      * name a type that resolves.
+     *
+     * <p>A view directory is named for the controller alone - {@code getDeployedViewURI} builds
+     * {@code /WEB-INF/grails-app/views/<controller>/<view>.gsp} and never consults the namespace -
+     * so two controllers of the same simple name in different packages share one directory whatever
+     * their namespaces are. Where they scaffold different domains, no single page can serve both:
+     * whichever was written would declare one domain as its model and be rendered by the controller
+     * of the other. Both are left out rather than one of them guessed at, and the resolver goes on
+     * expanding a template per request for them, which is what it did before any of this and is the
+     * one thing that gets each controller its own domain. Everything else in the project is still
+     * precompiled.</p>
      */
     private Map<String, String> findScaffoldedControllers() {
         Map<String, String> found = [:]
+        Map<String, List<String>> claimants = [:]
         for (File dir : classesDirs.files) {
             if (!dir.isDirectory()) {
                 continue
@@ -205,10 +216,22 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
                     return
                 }
                 String domain = readScaffoldDomain(f)
-                if (domain != null) {
-                    String controllerName = decapitalize(f.name - 'Controller.class')
-                    found.put(controllerName, domain)
+                if (domain == null) {
+                    return
                 }
+                String controllerName = decapitalize(f.name - 'Controller.class')
+                claimants.computeIfAbsent(controllerName) { [] }.add(domain)
+                found.put(controllerName, domain)
+            }
+        }
+        claimants.each { String controllerName, List<String> domains ->
+            List<String> distinct = domains.unique(false)
+            if (distinct.size() > 1) {
+                found.remove(controllerName)
+                logger.warn("Not precompiling the views of ${controllerName}: " +
+                        "${distinct.size()} controllers named ${capitalize(controllerName)}Controller " +
+                        "scaffold different domains (${distinct.join(', ')}) and share the one view " +
+                        'directory. They are expanded per request instead, as they were before.')
             }
         }
         found

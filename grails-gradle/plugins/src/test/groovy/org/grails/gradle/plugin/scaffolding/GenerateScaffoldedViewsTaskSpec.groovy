@@ -100,6 +100,24 @@ class GenerateScaffoldedViewsTaskSpec extends Specification {
         target.bytes = writer.toByteArray()
     }
 
+    /**
+     * Writes a scaffolded controller into a package of its own, so two controllers of the same
+     * simple name can be put in one classes directory the way an application does it.
+     */
+    private void writeControllerIn(String packagePath, String controllerName, String domainInternalName) {
+        ClassWriter writer = new ClassWriter(0)
+        writer.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, "${packagePath}/${controllerName}", null,
+                'java/lang/Object', null)
+        AnnotationVisitor annotation = writer.visitAnnotation(
+                'Lgrails/plugin/scaffolding/annotation/Scaffold;', true)
+        annotation.visit('domain', Type.getObjectType(domainInternalName))
+        annotation.visitEnd()
+        writer.visitEnd()
+        File target = new File(classesDir, "${packagePath}/${controllerName}.class")
+        target.parentFile.mkdirs()
+        target.bytes = writer.toByteArray()
+    }
+
     private void writePlainController(String controllerName) {
         ClassWriter writer = new ClassWriter(0)
         writer.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, "com/example/${controllerName}", null,
@@ -271,5 +289,47 @@ class GenerateScaffoldedViewsTaskSpec extends Specification {
 
         then:
             generated(task, 'user/index.gsp').text == 'model="List<com.example.User> userList" in com.example'
+    }
+
+    void 'two controllers of one name scaffolding different domains get no views at all'() {
+        given: 'com.example.UserController and com.example.community.UserController'
+            writeControllerIn('com/example', 'UserController', 'com/example/User')
+            writeControllerIn('com/example/community', 'UserController', 'com/example/community/User')
+            def task = task()
+
+        when:
+            task.generate()
+
+        then: 'neither domain is guessed at - the resolver expands a template per request instead'
+            !generated(task, 'user/index.gsp').exists()
+            !generated(task, 'user/edit.gsp').exists()
+    }
+
+    void 'two controllers of one name scaffolding the same domain are precompiled'() {
+        given: 'the one page they would share serves both, so there is nothing to be ambiguous about'
+            writeControllerIn('com/example', 'UserController', 'com/example/User')
+            writeControllerIn('com/example/admin', 'UserController', 'com/example/User')
+            def task = task()
+
+        when:
+            task.generate()
+
+        then:
+            generated(task, 'user/index.gsp').text == 'list of user for User'
+    }
+
+    void 'a collision leaves every other controller precompiled'() {
+        given:
+            writeControllerIn('com/example', 'UserController', 'com/example/User')
+            writeControllerIn('com/example/community', 'UserController', 'com/example/community/User')
+            writeControllerIn('com/example', 'BookController', 'com/example/Book')
+            def task = task()
+
+        when:
+            task.generate()
+
+        then:
+            !generated(task, 'user/index.gsp').exists()
+            generated(task, 'book/index.gsp').text == 'list of book for Book'
     }
 }
