@@ -18,21 +18,10 @@
  */
 package com.example
 
-class BootStrap {
-    UserService userService
-    BookService bookService
+import grails.gorm.transactions.Transactional
+import grails.plugin.scaffolding.GormService
+import grails.plugin.scaffolding.annotation.Scaffold
 
-    def init = {
-        if (!userService.count()) {
-            User user = userService.save(new User(firstName: 'Test', lastName: 'User', email: 'test@grails.org', password: '{noop}letmein', roles: 'ROLE_USER'))
-            println("User created with username: ${user.email} password: ${user.password.replaceAll(/\{.+\}/, '')}")
-        }
-        if (!bookService.count()) {
-            bookService.save(new Book(title: 'The Definitive Guide to Grails', author: 'Graeme Rocher'))
-        }
-    }
-
-    def destroy = {
-    }
-
-}
+@Scaffold(GormService<Book>)
+@Transactional
+class BookService {}

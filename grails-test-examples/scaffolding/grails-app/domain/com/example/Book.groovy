@@ -18,21 +18,13 @@
  */
 package com.example
 
-class BootStrap {
-    UserService userService
-    BookService bookService
+class Book {
 
-    def init = {
-        if (!userService.count()) {
-            User user = userService.save(new User(firstName: 'Test', lastName: 'User', email: 'test@grails.org', password: '{noop}letmein', roles: 'ROLE_USER'))
-            println("User created with username: ${user.email} password: ${user.password.replaceAll(/\{.+\}/, '')}")
-        }
-        if (!bookService.count()) {
-            bookService.save(new Book(title: 'The Definitive Guide to Grails', author: 'Graeme Rocher'))
-        }
+    String title
+    String author
+
+    static constraints = {
+        title blank: false
+        author blank: false
     }
-
-    def destroy = {
-    }
-
 }

@@ -18,21 +18,15 @@
  */
 package com.example
 
-class BootStrap {
-    UserService userService
-    BookService bookService
+import grails.plugin.scaffolding.RestfulServiceController
+import grails.plugin.scaffolding.annotation.Scaffold
 
-    def init = {
-        if (!userService.count()) {
-            User user = userService.save(new User(firstName: 'Test', lastName: 'User', email: 'test@grails.org', password: '{noop}letmein', roles: 'ROLE_USER'))
-            println("User created with username: ${user.email} password: ${user.password.replaceAll(/\{.+\}/, '')}")
-        }
-        if (!bookService.count()) {
-            bookService.save(new Book(title: 'The Definitive Guide to Grails', author: 'Graeme Rocher'))
-        }
-    }
-
-    def destroy = {
-    }
-
+/**
+ * The one scaffolded controller of this application whose views can be precompiled: the two
+ * named UserController share a view directory and scaffold a domain apiece, so theirs are
+ * expanded per request. This one's are written by the build and compiled with the rest, which
+ * is what holds a scaffolded page to compiling statically.
+ */
+@Scaffold(RestfulServiceController<Book>)
+class BookController {
 }

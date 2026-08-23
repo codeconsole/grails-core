@@ -16,23 +16,17 @@
  *  specific language governing permissions and limitations
  *  under the License.
  */
-package com.example
+package com.example.pages
 
-class BootStrap {
-    UserService userService
-    BookService bookService
+import geb.Page
 
-    def init = {
-        if (!userService.count()) {
-            User user = userService.save(new User(firstName: 'Test', lastName: 'User', email: 'test@grails.org', password: '{noop}letmein', roles: 'ROLE_USER'))
-            println("User created with username: ${user.email} password: ${user.password.replaceAll(/\{.+\}/, '')}")
-        }
-        if (!bookService.count()) {
-            bookService.save(new Book(title: 'The Definitive Guide to Grails', author: 'Graeme Rocher'))
-        }
+class BookListPage extends Page {
+
+    static String pageTitle = 'Book List'
+
+    static url = 'book/index'
+    static at = { title == pageTitle }
+    static content = {
+        scaffoldTable { $('table.scaffold') }
     }
-
-    def destroy = {
-    }
-
 }
