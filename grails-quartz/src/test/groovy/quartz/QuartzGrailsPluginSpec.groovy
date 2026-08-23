@@ -25,6 +25,7 @@ import grails.plugins.quartz.JobArtefactHandler
 import grails.plugins.quartz.listeners.ExceptionPrinterJobListener
 import grails.plugins.quartz.listeners.SessionBinderJobListener
 import grails.spring.BeanBuilder
+import grails.util.Metadata
 import org.grails.config.PropertySourcesConfig
 import org.quartz.Scheduler
 import org.quartz.impl.matchers.GroupMatcher
@@ -52,6 +53,39 @@ class QuartzGrailsPluginSpec extends Specification {
             !plugin.isExposeSchedulerInRepository()
             !plugin.isFailOnNeverFiringTriggers()
             plugin.getSchedulerInstanceName() == null
+    }
+
+    void 'the application name the jobs of the application are stamped with comes from the configuration'() {
+        given:
+            QuartzGrailsPlugin plugin = pluginFor('info.app.name': 'reporting')
+
+        expect:
+            plugin.getApplicationName() == 'reporting'
+    }
+
+    void 'an application which does not name itself falls back to the name of its metadata'() {
+        given:
+            QuartzGrailsPlugin plugin = pluginFor([:])
+
+        expect:
+            plugin.getApplicationName() == plugin.grailsApplication.metadata.getApplicationName()
+            plugin.getApplicationName()
+    }
+
+    void 'an application which names itself registers its jobs under a name of its own'() {
+        given:
+            QuartzGrailsPlugin plugin = pluginFor('info.app.name': 'reporting')
+
+        expect:
+            plugin.isApplicationNamed()
+    }
+
+    void 'an application named as every unnamed application is does not count as named'() {
+        given:
+            QuartzGrailsPlugin plugin = pluginFor('info.app.name': Metadata.DEFAULT_APPLICATION_NAME)
+
+        expect:
+            !plugin.isApplicationNamed()
     }
 
     void 'a quartz block that does not mention an option leaves that option at its default'() {

@@ -24,6 +24,7 @@ import grails.plugins.quartz.JobDetailFactoryBean
 import grails.plugins.quartz.cleanup.JdbcCleanup
 import grails.plugins.quartz.listeners.ExceptionPrinterJobListener
 import grails.plugins.quartz.listeners.SessionBinderJobListener
+import grails.util.Metadata
 import groovy.util.logging.Slf4j
 import org.quartz.JobDetail
 import org.quartz.JobKey
@@ -123,6 +124,26 @@ class QuartzGrailsPlugin extends Plugin {
      */
     boolean isFailOnNeverFiringTriggers() {
         config.getProperty('quartz.failOnNeverFiringTriggers', Boolean, false)
+    }
+
+    /**
+     * The name of the application, which every job registered by the plugin is stamped with. It is what
+     * lets the plugin recognise its own jobs in a job store shared with other applications, so that it
+     * never removes a job it did not register itself.
+     * @return the value of {@code info.app.name}, or the name the application metadata reports
+     */
+    String getApplicationName() {
+        config.getProperty('info.app.name', String) ?: grailsApplication.metadata.getApplicationName()
+    }
+
+    /**
+     * Whether the application registers its jobs under a name of its own. An application which does not
+     * name itself registers them under the default name, which every application that does not name
+     * itself shares.
+     * @return {@code false} when the name of the application is the default one
+     */
+    boolean isApplicationNamed() {
+        getApplicationName() != Metadata.DEFAULT_APPLICATION_NAME
     }
 
     /**
@@ -283,6 +304,7 @@ class QuartzGrailsPlugin extends Plugin {
             // Creates job details
             JobDetailFactoryBean jdfb = new JobDetailFactoryBean()
             jdfb.jobClass = jobClass
+            jdfb.applicationName = getApplicationName()
             jdfb.afterPropertiesSet()
             JobDetail jobDetail = jdfb.object
 
@@ -334,6 +356,15 @@ class QuartzGrailsPlugin extends Plugin {
     }
 
     /**
+     * Whether the job was registered by this application, which is the case when it carries the name of
+     * the application as job data. A job of another application, and a job registered through the Quartz
+     * API rather than as a job artefact, does not.
+     */
+    private boolean isJobOfThisApplication(JobDetail jobDetail) {
+        jobDetail?.jobDataMap?.get(JobDetailFactoryBean.APPLICATION_NAME_PARAMETER) == getApplicationName()
+    }
+
+    /**
      * Whether the trigger can fire at least once, which is what the scheduler demands of a trigger before
      * it accepts it. The first fire time is computed the way the scheduler computes it, from the second
      * before the start time. A trigger bound to a Quartz calendar can still be rejected by the scheduler,
@@ -361,11 +392,17 @@ class QuartzGrailsPlugin extends Plugin {
 
         Set<JobKey> jobKeys = quartzScheduler.getJobKeys(GroupMatcher.anyGroup())
 
-        //Remove any recently removed / disabled Jobs
+        //Remove the jobs of this application which are no longer active. Jobs another application
+        //registered, and jobs registered through the Quartz API rather than as job artefacts, are left
+        //alone: a job store can be shared, and the plugin only owns what it registered itself.
         jobKeys.each { JobKey key ->
+            if (!isJobOfThisApplication(quartzScheduler.getJobDetail(key))) {
+                log.debug("Leaving job ${key} alone: it was not registered by this application")
+                return
+            }
             def match = grailsApplication.jobClasses.find { GrailsJobClass jobClass -> jobClass.isEnabled() && jobClass.group == key.group && jobClass.clazz.name == key.name }
             if (!match) {
-                log.info("Removing No longer Active Job: ${key.name}")
+                log.info("Removing job ${key}, which is no longer an enabled job artefact of this application")
                 def triggersForJob = quartzScheduler.getTriggersOfJob(key)?.collect { it.key }
                 if (triggersForJob) {
                     //clean up triggers before we remove the job
@@ -394,6 +431,11 @@ class QuartzGrailsPlugin extends Plugin {
 
     void onStartup(Map<String, Object> event) {
         if (isPluginEnabled()) {
+            if (isJdbcStore() && !isApplicationNamed()) {
+                log.warn('The application does not name itself, so it registers its jobs under the default ' +
+                        "name [${Metadata.DEFAULT_APPLICATION_NAME}]. Another application which shares both " +
+                        'the job store and that name removes them when it starts: set info.app.name.')
+            }
             refreshJobs()
             if (isAutoStartup()) {
                 applicationContext.quartzScheduler.start()
