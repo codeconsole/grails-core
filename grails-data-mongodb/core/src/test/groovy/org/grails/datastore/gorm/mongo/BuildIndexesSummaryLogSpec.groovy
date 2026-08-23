@@ -32,9 +32,10 @@ import org.grails.datastore.mapping.core.AbstractDatastore
 import org.grails.datastore.mapping.mongo.MongoDatastore
 
 /**
- * An index build that succeeds says so once, at the end: how many index declarations it applied, how
- * many domain classes they came from, and how long the caller spent waiting for them. That summary is
- * the only signal a background build has finished at all.
+ * An index build that succeeds says so once, at the end: what it created, what was already there, how many
+ * domain classes it covered, and how long the caller spent waiting. That summary is the only signal a
+ * background build has finished at all, and the created/already-present split is what makes the elapsed
+ * time interpretable — a build that created nothing had nothing to wait for.
  */
 class BuildIndexesSummaryLogSpec extends AutoStartedMongoSpec {
 
@@ -53,6 +54,9 @@ class BuildIndexesSummaryLogSpec extends AutoStartedMongoSpec {
     @Shared
     Level previousLevel
 
+    @Shared
+    List<String> startupMessages
+
     @Override
     boolean shouldInitializeDatastore() {
         false
@@ -69,6 +73,9 @@ class BuildIndexesSummaryLogSpec extends AutoStartedMongoSpec {
         datastore = new MongoDatastore(
                 ['grails.mongodb.url': dbContainer.getReplicaSetUrl(DATABASE)] as Map,
                 SummaryLoggedThing, OtherSummaryLoggedThing)
+
+        // Snapshotted so that a feature triggering another build cannot change what the startup build said
+        startupMessages = messagesForThisDatabase()
     }
 
     void cleanupSpec() {
@@ -77,31 +84,41 @@ class BuildIndexesSummaryLogSpec extends AutoStartedMongoSpec {
     }
 
     /**
-     * Other specifications create datastores of their own in this JVM, so the summary is picked out by
-     * the database this specification uses rather than by being the only message logged.
+     * Other specifications create datastores of their own in this JVM, so the summaries are picked out by
+     * the database this specification uses rather than by being the only messages logged.
      */
-    private String summaryMessage() {
-        logged.list.collect { it.formattedMessage }
-                .find { it.contains("index declaration(s)") && it.contains("database [$DATABASE]") }
+    private List<String> messagesForThisDatabase() {
+        logged.list.collect { it.formattedMessage }.findAll { it.contains("database [$DATABASE]") }
     }
 
     void "test a successful index build logs one summary of what it applied and what it cost"() {
-        expect: "the build reported itself"
-        summaryMessage() != null
+        given:
+        String summary = startupMessages.first()
 
-        and: "it counted every declared index: two on one domain class, one on the other"
-        summaryMessage().contains('Applied 3 index declaration(s)')
+        expect: "exactly one summary for the build, not one line per index"
+        startupMessages.size() == 1
+
+        and: "it counted every declared index as created: two on one domain class, one on the other"
+        summary.contains('3 created, 0 already present')
 
         and: "and the domain classes they came from"
-        summaryMessage().contains('from 2 domain class(es)')
+        summary.contains('from 2 domain class(es)')
 
         and: "and how long the caller waited"
-        summaryMessage() ==~ /.* in \d+ms$/
+        summary ==~ /Index build for database \[$DATABASE] finished in \d+ms: .*/
     }
 
-    void "test the summary is logged once for the build rather than once per index"() {
-        expect:
-        logged.list.count { it.formattedMessage.contains("database [$DATABASE]") } == 1
+    void "test a repeated build reports the indexes as already present rather than created"() {
+        given: "the summaries logged so far"
+        int before = messagesForThisDatabase().size()
+
+        when: "the same declarations are applied again, as they would be on the next restart"
+        datastore.buildIndex()
+
+        then: "the build reports that it created nothing, which is why it cost next to nothing"
+        List<String> since = messagesForThisDatabase().drop(before)
+        since.size() == 1
+        since.first().contains('0 created, 3 already present')
     }
 }
 

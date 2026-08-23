@@ -195,12 +195,12 @@ NOTE: If the application shuts down while a background build is still running, G
 An index build that finishes without error logs one summary line at `INFO`:
 
 ----
-Applied 7 index declaration(s) from 3 domain class(es) to database [myDb] in 412ms
+Index build for database [myDb] finished in 412ms: 2 created, 5 already present, from 3 domain class(es)
 ----
 
 The elapsed time is what the caller actually spent waiting — startup with the default settings, or the background thread when `buildIndexesAsync` is enabled, where this line is also the only signal that the build has finished.
 
-"Applied" means the server accepted the declaration, not that it had to build anything: `createIndex` is idempotent, so on every restart after the first most declarations are accepted immediately because the index is already there. If any declaration failed, the summary is logged at `WARN` instead and reports how many; the failures themselves are logged individually as they happen.
+The split between created and already present is what makes that time interpretable. MongoDB answers a `createIndex` for an index it already has immediately and without building anything, so a restart that changed no mappings reports everything as already present and costs milliseconds; a line reporting indexes created is the one that accounts for a slow start. If any declaration failed, the summary is logged at `WARN` instead and reports how many; the failures themselves are logged individually as they happen.
 
 To find which index is the slow one, enable `DEBUG` logging for `org.grails.datastore.mapping.core`, which adds a line per index with its own elapsed time:
 

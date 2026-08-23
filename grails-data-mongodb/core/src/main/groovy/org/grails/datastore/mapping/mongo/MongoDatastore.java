@@ -641,35 +641,99 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
             }
         }
         long elapsedMillis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt);
-        if (summary.indexes == 0) {
+        if (summary.applied() == 0 && summary.failures == 0) {
             LOG.debug("No indexes are declared by the {} domain class(es) mapped to database [{}]",
                     summary.entities, defaultDatabase);
+            return;
         }
-        else if (summary.failures == 0) {
-            LOG.info("Applied {} index declaration(s) from {} domain class(es) to database [{}] in {}ms",
-                    summary.indexes, summary.entities, defaultDatabase, elapsedMillis);
+        String outcome = summary.classified ?
+                summary.created + " created, " + summary.alreadyPresent + " already present" :
+                summary.applied() + " index declaration(s) applied";
+        if (summary.failures == 0) {
+            LOG.info("Index build for database [{}] finished in {}ms: {}, from {} domain class(es)",
+                    defaultDatabase, elapsedMillis, outcome, summary.entities);
         }
         else {
-            LOG.warn("Applied {} of {} index declaration(s) from {} domain class(es) to database [{}] in {}ms; " +
-                    "{} failed and are reported above",
-                    summary.indexes - summary.failures, summary.indexes, summary.entities, defaultDatabase,
-                    elapsedMillis, summary.failures);
+            LOG.warn("Index build for database [{}] finished in {}ms: {}, {} failed, from {} domain class(es). " +
+                    "The failures are reported above.",
+                    defaultDatabase, elapsedMillis, outcome, summary.failures, summary.entities);
+        }
+    }
+
+    /**
+     * The indexes a collection already had when the build reached it, listed once on first use and then
+     * reused. {@code createIndex} is idempotent and answers the same way whether or not it had to build
+     * anything — the driver hands back only the index name, discarding the {@code numIndexesBefore} /
+     * {@code numIndexesAfter} the server reports — so what was there beforehand is what distinguishes an
+     * index this build created from one it merely confirmed.
+     *
+     * <p>Listed lazily so that an entity declaring no indexes costs no round trip, and reused by the
+     * conflict path, which would otherwise list them again.
+     */
+    private static final class ExistingIndexes {
+
+        private final com.mongodb.client.MongoCollection<Document> collection;
+
+        private final IndexBuildSummary summary;
+
+        private List<Document> indexes;
+
+        private boolean listed;
+
+        private ExistingIndexes(com.mongodb.client.MongoCollection<Document> collection, IndexBuildSummary summary) {
+            this.collection = collection;
+            this.summary = summary;
+        }
+
+        /**
+         * @return the indexes present before the build, or {@code null} if they could not be listed
+         */
+        private List<Document> get() {
+            if (!listed) {
+                listed = true;
+                try {
+                    indexes = collection.listIndexes().into(new ArrayList<>());
+                } catch (RuntimeException e) {
+                    // Not fatal: the build can still create indexes, it just cannot report which of them
+                    // were new. Losing the breakdown is not worth failing a startup over.
+                    LOG.debug("Could not list the existing indexes of collection [{}]: {}",
+                            collection.getNamespace().getCollectionName(), e.getMessage(), e);
+                    summary.classified = false;
+                }
+            }
+            return indexes;
+        }
+
+        private boolean contains(Document keys) {
+            List<Document> existing = get();
+            return existing != null && findIndexByKeyPattern(existing, keys) != null;
         }
     }
 
     /**
      * Counts the work one index build did, so that it can be summarised once at the end rather than a line
-     * per index. An index declaration is counted as applied when the server has accepted it, which says
-     * nothing about whether it had to be built: {@code createIndex} is idempotent and an index that already
-     * exists is accepted without work.
+     * per index.
      */
     private static final class IndexBuildSummary {
 
         private int entities;
 
-        private int indexes;
+        private int created;
+
+        private int alreadyPresent;
 
         private int failures;
+
+        /**
+         * False once an entity's existing indexes could not be listed, which is the only thing that
+         * separates a created index from one that was already there. The summary then falls back to
+         * reporting how many declarations were applied without saying which did work.
+         */
+        private boolean classified = true;
+
+        private int applied() {
+            return created + alreadyPresent;
+        }
     }
 
     /**
@@ -1048,6 +1112,7 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
             return;
         }
         final com.mongodb.client.MongoCollection<Document> collection = getCollection(entity);
+        final ExistingIndexes existingIndexes = new ExistingIndexes(collection, summary);
         final ClassMapping<MongoCollection> classMapping = entity.getMapping();
         if (classMapping != null) {
             final MongoCollection mappedForm = classMapping.getMappedForm();
@@ -1055,7 +1120,8 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
                 List<MongoCollection.Index> indices = mappedForm.getIndices();
                 for (MongoCollection.Index index : indices) {
                     createOrUpdateIndex(entity, collection, new Document(index.getDefinition()),
-                            index.getOptions(), "with definition [" + index.getDefinition() + "]", summary);
+                            index.getOptions(), "with definition [" + index.getDefinition() + "]",
+                            summary, existingIndexes);
                 }
 
                 for (Map compoundIndex : mappedForm.getCompoundIndices()) {
@@ -1069,7 +1135,7 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
                     }
                     Document indexDef = new Document(compoundIndex);
                     createOrUpdateIndex(entity, collection, indexDef, indexAttributes,
-                            "compound index with definition [" + indexDef + "]", summary);
+                            "compound index with definition [" + indexDef + "]", summary, existingIndexes);
                 }
             }
         }
@@ -1094,7 +1160,7 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
                     }
                 }
                 createOrUpdateIndex(entity, collection, dbObject, options,
-                        "on property [" + property.getName() + "]", summary);
+                        "on property [" + property.getName() + "]", summary, existingIndexes);
             }
         }
 
@@ -1116,8 +1182,7 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
     private void createOrUpdateIndex(PersistentEntity entity,
                                      com.mongodb.client.MongoCollection<Document> collection,
                                      Document keys, Map<String, Object> rawOptions, String descriptor,
-                                     IndexBuildSummary summary) {
-        summary.indexes++;
+                                     IndexBuildSummary summary, ExistingIndexes existingIndexes) {
         Map<String, Object> options = rawOptions != null ? new HashMap<>(rawOptions) : new HashMap<>();
 
         // Control flag — not a Mongo index option.
@@ -1134,15 +1199,28 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
             indexOptions.expireAfter(expireAfterSeconds, TimeUnit.SECONDS);
         }
 
+        // Asked before the index is created, while the answer still means something.
+        boolean present = existingIndexes.contains(keys);
         long startedAt = System.nanoTime();
         try {
             collection.createIndex(keys, indexOptions);
-            LOG.debug("Applied index for entity [{}] {} in {}ms", entity.getName(), descriptor,
-                    TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt));
+            if (present) {
+                summary.alreadyPresent++;
+            }
+            else {
+                summary.created++;
+            }
+            LOG.debug("{} index for entity [{}] {} in {}ms", present ? "Confirmed" : "Created",
+                    entity.getName(), descriptor, TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt));
         } catch (MongoCommandException e) {
             if (e.getErrorCode() == INDEX_OPTIONS_CONFLICT_CODE) {
-                if (!reconcileIndexConflict(entity, collection, keys, indexOptions,
+                if (reconcileIndexConflict(entity, collection, existingIndexes, keys, indexOptions,
                         expireAfterSeconds, recreateOnConflict, descriptor, e)) {
+                    // A conflict means an index was already on these keys; reconciling it changed the one
+                    // that was there rather than adding one.
+                    summary.alreadyPresent++;
+                }
+                else {
                     summary.failures++;
                 }
             } else {
@@ -1164,16 +1242,16 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
      */
     private boolean reconcileIndexConflict(PersistentEntity entity,
                                         com.mongodb.client.MongoCollection<Document> collection,
+                                        ExistingIndexes existingIndexes,
                                         Document keys, IndexOptions desired, Long expireAfterSeconds,
                                         boolean recreateOnConflict, String descriptor, MongoCommandException original) {
-        Document existing;
-        try {
-            existing = findIndexByKeyPattern(collection, keys);
-        } catch (RuntimeException listError) {
+        List<Document> indexes = existingIndexes.get();
+        if (indexes == null) {
             LOG.error("Failed to create index for entity [{}] {} and could not inspect existing indexes: {}",
-                entity.getName(), descriptor, listError.getMessage(), original);
+                entity.getName(), descriptor, original.getMessage(), original);
             return false;
         }
+        Document existing = findIndexByKeyPattern(indexes, keys);
         if (existing == null) {
             LOG.error("Failed to create index for entity [{}] {}: {}",
                 entity.getName(), descriptor, original.getMessage(), original);
@@ -1233,9 +1311,9 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
      * existing text index is unambiguously the one a newly-declared text index conflicts with —
      * match it regardless of its key shape or name so {@code recreateOnConflict} can absorb it.</p>
      */
-    private static Document findIndexByKeyPattern(com.mongodb.client.MongoCollection<Document> collection, Document keys) {
+    private static Document findIndexByKeyPattern(Iterable<Document> indexes, Document keys) {
         boolean desiredIsText = isTextIndex(keys);
-        for (Document idx : collection.listIndexes()) {
+        for (Document idx : indexes) {
             Object key = idx.get("key");
             if (!(key instanceof Document)) {
                 continue;
