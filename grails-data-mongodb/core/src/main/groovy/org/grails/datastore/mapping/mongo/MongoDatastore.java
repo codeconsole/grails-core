@@ -624,17 +624,52 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
     }
 
     /**
-     * Creates and reconciles the indexes declared by every entity mapped to this datastore.
+     * Creates and reconciles the indexes declared by every entity mapped to this datastore, and reports
+     * what that cost. MongoDB answers each {@code createIndex} only once the index exists, so the elapsed
+     * time is the time the caller — startup, or the background build thread — actually spent waiting.
      */
     private void buildDeclaredIndexes() {
+        long startedAt = System.nanoTime();
+        IndexBuildSummary summary = new IndexBuildSummary();
         for (PersistentEntity entity : this.mappingContext.getPersistentEntities()) {
             // Only create Mongo templates for entities that are mapped with Mongo
             if (!entity.isExternal()) {
                 if (entity.isMultiTenant() && multiTenancyMode == MultiTenancySettings.MultiTenancyMode.SCHEMA) continue;
 
-                initializeIndices(entity);
+                summary.entities++;
+                initializeIndices(entity, summary);
             }
         }
+        long elapsedMillis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt);
+        if (summary.indexes == 0) {
+            LOG.debug("No indexes are declared by the {} domain class(es) mapped to database [{}]",
+                    summary.entities, defaultDatabase);
+        }
+        else if (summary.failures == 0) {
+            LOG.info("Applied {} index declaration(s) from {} domain class(es) to database [{}] in {}ms",
+                    summary.indexes, summary.entities, defaultDatabase, elapsedMillis);
+        }
+        else {
+            LOG.warn("Applied {} of {} index declaration(s) from {} domain class(es) to database [{}] in {}ms; " +
+                    "{} failed and are reported above",
+                    summary.indexes - summary.failures, summary.indexes, summary.entities, defaultDatabase,
+                    elapsedMillis, summary.failures);
+        }
+    }
+
+    /**
+     * Counts the work one index build did, so that it can be summarised once at the end rather than a line
+     * per index. An index declaration is counted as applied when the server has accepted it, which says
+     * nothing about whether it had to be built: {@code createIndex} is idempotent and an index that already
+     * exists is accepted without work.
+     */
+    private static final class IndexBuildSummary {
+
+        private int entities;
+
+        private int indexes;
+
+        private int failures;
     }
 
     /**
@@ -1003,6 +1038,10 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
      * @param entity The entity
      */
     protected void initializeIndices(final PersistentEntity entity) {
+        initializeIndices(entity, new IndexBuildSummary());
+    }
+
+    private void initializeIndices(final PersistentEntity entity, final IndexBuildSummary summary) {
         if (!buildIndexes) {
             LOG.debug("Index creation is disabled by [{} = false]. Skipping the indexes declared by entity [{}].",
                     MongoSettings.SETTING_BUILD_INDEXES, entity.getName());
@@ -1016,7 +1055,7 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
                 List<MongoCollection.Index> indices = mappedForm.getIndices();
                 for (MongoCollection.Index index : indices) {
                     createOrUpdateIndex(entity, collection, new Document(index.getDefinition()),
-                            index.getOptions(), "with definition [" + index.getDefinition() + "]");
+                            index.getOptions(), "with definition [" + index.getDefinition() + "]", summary);
                 }
 
                 for (Map compoundIndex : mappedForm.getCompoundIndices()) {
@@ -1030,7 +1069,7 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
                     }
                     Document indexDef = new Document(compoundIndex);
                     createOrUpdateIndex(entity, collection, indexDef, indexAttributes,
-                            "compound index with definition [" + indexDef + "]");
+                            "compound index with definition [" + indexDef + "]", summary);
                 }
             }
         }
@@ -1055,7 +1094,7 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
                     }
                 }
                 createOrUpdateIndex(entity, collection, dbObject, options,
-                        "on property [" + property.getName() + "]");
+                        "on property [" + property.getName() + "]", summary);
             }
         }
 
@@ -1076,7 +1115,9 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
      */
     private void createOrUpdateIndex(PersistentEntity entity,
                                      com.mongodb.client.MongoCollection<Document> collection,
-                                     Document keys, Map<String, Object> rawOptions, String descriptor) {
+                                     Document keys, Map<String, Object> rawOptions, String descriptor,
+                                     IndexBuildSummary summary) {
+        summary.indexes++;
         Map<String, Object> options = rawOptions != null ? new HashMap<>(rawOptions) : new HashMap<>();
 
         // Control flag — not a Mongo index option.
@@ -1093,13 +1134,19 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
             indexOptions.expireAfter(expireAfterSeconds, TimeUnit.SECONDS);
         }
 
+        long startedAt = System.nanoTime();
         try {
             collection.createIndex(keys, indexOptions);
+            LOG.debug("Applied index for entity [{}] {} in {}ms", entity.getName(), descriptor,
+                    TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt));
         } catch (MongoCommandException e) {
             if (e.getErrorCode() == INDEX_OPTIONS_CONFLICT_CODE) {
-                reconcileIndexConflict(entity, collection, keys, indexOptions,
-                        expireAfterSeconds, recreateOnConflict, descriptor, e);
+                if (!reconcileIndexConflict(entity, collection, keys, indexOptions,
+                        expireAfterSeconds, recreateOnConflict, descriptor, e)) {
+                    summary.failures++;
+                }
             } else {
+                summary.failures++;
                 LOG.error("Failed to create index for entity [{}] {}: {}",
                     entity.getName(), descriptor, e.getMessage(), e);
             }
@@ -1111,8 +1158,11 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
      * different options. A TTL difference is the common, safe case (e.g. a configurable retention
      * changed between restarts) and is updated in place via {@code collMod}; anything else needs an
      * explicit {@code recreateOnConflict:true} to authorise the drop-and-recreate.
+     *
+     * @return {@code true} if the index ended up in the declared state, {@code false} if the conflict
+     *         could not be resolved and the existing index was left as it was
      */
-    private void reconcileIndexConflict(PersistentEntity entity,
+    private boolean reconcileIndexConflict(PersistentEntity entity,
                                         com.mongodb.client.MongoCollection<Document> collection,
                                         Document keys, IndexOptions desired, Long expireAfterSeconds,
                                         boolean recreateOnConflict, String descriptor, MongoCommandException original) {
@@ -1122,12 +1172,12 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
         } catch (RuntimeException listError) {
             LOG.error("Failed to create index for entity [{}] {} and could not inspect existing indexes: {}",
                 entity.getName(), descriptor, listError.getMessage(), original);
-            return;
+            return false;
         }
         if (existing == null) {
             LOG.error("Failed to create index for entity [{}] {}: {}",
                 entity.getName(), descriptor, original.getMessage(), original);
-            return;
+            return false;
         }
 
         String existingName = existing.getString("name");
@@ -1144,7 +1194,7 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
                                         .append(INDEX_EXPIRE_AFTER_SECONDS, expireAfterSeconds)));
                 LOG.info("Updated TTL of index [{}] on entity [{}] to {}s",
                     existingName, entity.getName(), expireAfterSeconds);
-                return;
+                return true;
             } catch (MongoCommandException collModError) {
                 // collMod can't make every change (e.g. add a TTL to a non-TTL index on older
                 // servers) — fall through to recreate (if authorised) rather than fail outright.
@@ -1158,17 +1208,19 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
                 collection.dropIndex(existingName);
                 collection.createIndex(keys, desired);
                 LOG.info("Recreated index [{}] on entity [{}] {}", existingName, entity.getName(), descriptor);
+                return true;
             } catch (MongoCommandException recreateError) {
                 LOG.error("Failed to recreate index [{}] on entity [{}] {}: {}",
                     existingName, entity.getName(), descriptor, recreateError.getMessage(), recreateError);
+                return false;
             }
-            return;
         }
 
         LOG.error(
             "Index conflict for entity [{}] {}: an index [{}] already exists on the same keys with different options. " +
                 "Declare indexAttributes:[recreateOnConflict:true] to drop and recreate it. Original error: {}",
             entity.getName(), descriptor, existingName, original.getMessage());
+        return false;
     }
 
     /**

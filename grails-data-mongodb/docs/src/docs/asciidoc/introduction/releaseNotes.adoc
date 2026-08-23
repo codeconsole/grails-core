@@ -27,6 +27,7 @@ Below are the details of the changes across releases:
 * In-place reconciliation of changed index options, with opt-in `indexAttributes: [recreateOnConflict: true]`
 * Index creation on startup can be switched off with `grails.mongodb.buildIndexes = false`, or moved off the startup thread with `grails.mongodb.buildIndexesAsync = true`
 * `grails.mongodb` settings are now applied when GORM is given an existing `MongoClient`, such as the one contributed by Spring Boot
+* The index build reports what it applied and how long it took, in one summary line per build
 
 ==== 7.1
 

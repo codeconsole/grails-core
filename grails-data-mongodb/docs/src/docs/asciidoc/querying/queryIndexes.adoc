@@ -189,6 +189,28 @@ The setting is ignored when `buildIndexes` is `false`, and it applies only to th
 
 NOTE: If the application shuts down while a background build is still running, GORM stops waiting for it, but the server carries on building the index it was asked for.
 
+==== What the Index Build Reports
+
+
+An index build that finishes without error logs one summary line at `INFO`:
+
+----
+Applied 7 index declaration(s) from 3 domain class(es) to database [myDb] in 412ms
+----
+
+The elapsed time is what the caller actually spent waiting — startup with the default settings, or the background thread when `buildIndexesAsync` is enabled, where this line is also the only signal that the build has finished.
+
+"Applied" means the server accepted the declaration, not that it had to build anything: `createIndex` is idempotent, so on every restart after the first most declarations are accepted immediately because the index is already there. If any declaration failed, the summary is logged at `WARN` instead and reports how many; the failures themselves are logged individually as they happen.
+
+To find which index is the slow one, enable `DEBUG` logging for `org.grails.datastore.mapping.core`, which adds a line per index with its own elapsed time:
+
+[source,yaml]
+----
+logging:
+    level:
+        org.grails.datastore.mapping.core: DEBUG
+----
+
 ==== Indexing using the 'index' method
 
 
