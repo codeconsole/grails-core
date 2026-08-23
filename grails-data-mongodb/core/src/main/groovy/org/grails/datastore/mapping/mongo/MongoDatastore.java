@@ -25,6 +25,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 
 import groovy.lang.Closure;
@@ -163,6 +166,14 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
     protected final boolean codecEngine;
     protected final boolean transactionsEnabled;
     protected final boolean buildIndexes;
+    protected final boolean buildIndexesAsync;
+
+    /**
+     * Runs the startup index build off the thread that creates the datastore when
+     * {@code grails.mongodb.buildIndexesAsync} is enabled; {@code null} otherwise. A single thread,
+     * so the indexes are still built one at a time rather than all at once against the server.
+     */
+    private final ExecutorService indexBuildExecutor;
     private volatile Boolean transactionsSupported;
     private volatile boolean warnedTransactionsUnsupported = false;
     protected CodecRegistry codecRegistry;
@@ -207,6 +218,10 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
         this.codecEngine = settings.getEngine().equals(MongoConstants.CODEC_ENGINE);
         this.transactionsEnabled = settings.isTransactional();
         this.buildIndexes = settings.isBuildIndexes();
+        this.buildIndexesAsync = settings.isBuildIndexesAsync();
+        this.indexBuildExecutor = this.buildIndexes && this.buildIndexesAsync ?
+                Executors.newSingleThreadExecutor(new IndexBuildThreadFactory(defaultConnectionSource.getName())) :
+                null;
         codecRegistry = CodecRegistries.fromRegistries(
                 CodecRegistries.fromProviders(new CodecExtensions(), new PersistentEntityCodeRegistry()),
                 mappingContext.getCodecRegistry(),
@@ -567,7 +582,13 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
     }
 
     /**
-     * Builds the MongoDB index for this datastore
+     * Builds the MongoDB index for this datastore.
+     *
+     * <p>Each index is created by a command that the server answers only once the index has been built,
+     * so with the default settings this blocks whoever creates the datastore — in an application, the
+     * startup thread — for as long as MongoDB takes to build every declared index. Enabling
+     * {@code grails.mongodb.buildIndexesAsync} hands the work to a background thread and returns
+     * immediately instead.
      */
     public void buildIndex() {
         if (!buildIndexes) {
@@ -576,6 +597,36 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
                     MongoSettings.SETTING_BUILD_INDEXES);
             return;
         }
+        if (indexBuildExecutor == null) {
+            buildDeclaredIndexes();
+            return;
+        }
+        LOG.info("Building the indexes declared by the domain classes on a background thread ([{} = true]). " +
+                "Startup does not wait for them, so a query issued before its index exists is served without it.",
+                MongoSettings.SETTING_BUILD_INDEXES_ASYNC);
+        indexBuildExecutor.execute(() -> {
+            try {
+                buildDeclaredIndexes();
+            }
+            catch (Throwable e) {
+                // Nothing is waiting on this thread, so an error that would have failed startup has to be
+                // reported here or it is lost entirely.
+                if (indexBuildExecutor.isShutdown() || Thread.currentThread().isInterrupted()) {
+                    LOG.debug("The background index build was abandoned because the datastore is shutting down: {}",
+                            e.getMessage(), e);
+                }
+                else {
+                    LOG.error("The background index build failed: {}. The application is running without the " +
+                            "indexes that were not created.", e.getMessage(), e);
+                }
+            }
+        });
+    }
+
+    /**
+     * Creates and reconciles the indexes declared by every entity mapped to this datastore.
+     */
+    private void buildDeclaredIndexes() {
         for (PersistentEntity entity : this.mappingContext.getPersistentEntities()) {
             // Only create Mongo templates for entities that are mapped with Mongo
             if (!entity.isExternal()) {
@@ -772,6 +823,17 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
      */
     public boolean isBuildIndexes() {
         return buildIndexes;
+    }
+
+    /**
+     * Whether the startup index build runs on a background thread instead of blocking the thread that
+     * creates the datastore. Enabled with {@code grails.mongodb.buildIndexesAsync = true}.
+     *
+     * @return {@code true} if declared indexes are built asynchronously
+     * @since 8.0
+     */
+    public boolean isBuildIndexesAsync() {
+        return buildIndexesAsync;
     }
 
     public String getDatabaseName(PersistentEntity entity) {
@@ -1257,6 +1319,11 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
     @PreDestroy
     public void close() {
         MongoClient current = this.mongo;
+        if (indexBuildExecutor != null) {
+            // Interrupt rather than wait: an index build can run for minutes and shutdown must not wait
+            // for it. The server carries on building what it was asked for.
+            indexBuildExecutor.shutdownNow();
+        }
         try {
             super.destroy();
         } catch (Exception e) {
@@ -1282,6 +1349,28 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
                     // Ignore
                 }
             }
+        }
+    }
+
+    /**
+     * Names the background index build thread after the connection it serves, so that a log line or a
+     * thread dump says which datastore is building indexes. The thread is a daemon: an index build in
+     * flight must not hold the JVM open, and abandoning the wait does not abandon the build — the server
+     * finishes an index it has been asked for whether or not a client is still listening.
+     */
+    private static final class IndexBuildThreadFactory implements ThreadFactory {
+
+        private final String connectionName;
+
+        private IndexBuildThreadFactory(String connectionName) {
+            this.connectionName = connectionName;
+        }
+
+        @Override
+        public Thread newThread(Runnable runnable) {
+            Thread thread = new Thread(runnable, "gorm-mongo-index-build-" + connectionName);
+            thread.setDaemon(true);
+            return thread;
         }
     }
 

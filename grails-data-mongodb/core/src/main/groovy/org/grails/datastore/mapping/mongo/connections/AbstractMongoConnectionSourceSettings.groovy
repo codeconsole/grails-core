@@ -109,6 +109,17 @@ abstract class AbstractMongoConnectionSourceSettings extends ConnectionSourceSet
     boolean buildIndexes = true
 
     /**
+     * Whether the startup index build runs on a background thread instead of blocking the thread that
+     * creates the datastore. MongoDB answers a {@code createIndex} command only once the index has been
+     * built, so with the default {@code false} an application waits at startup for every declared index.
+     * Ignored when {@link #buildIndexes} is {@code false}. Bound from
+     * {@code grails.mongodb.buildIndexesAsync}.
+     *
+     * @since 8.0
+     */
+    boolean buildIndexesAsync = false
+
+    /**
      * Nested settings for domains with {@code String id}. Holds the global default
      * {@code defaultStoredAs} switch plus any future string-id configuration.
      *

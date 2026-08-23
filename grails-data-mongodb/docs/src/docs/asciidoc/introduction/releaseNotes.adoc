@@ -25,7 +25,8 @@ Below are the details of the changes across releases:
 * TTL indexes via `indexAttributes: [expireAfterSeconds: N]` in the mapping DSL
 * Text and other special indexes via `indexAttributes: [type: 'text']`
 * In-place reconciliation of changed index options, with opt-in `indexAttributes: [recreateOnConflict: true]`
-* Index creation on startup can be switched off with `grails.mongodb.buildIndexes = false`
+* Index creation on startup can be switched off with `grails.mongodb.buildIndexes = false`, or moved off the startup thread with `grails.mongodb.buildIndexesAsync = true`
+* `grails.mongodb` settings are now applied when GORM is given an existing `MongoClient`, such as the one contributed by Spring Boot
 
 ==== 7.1
 

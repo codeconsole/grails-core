@@ -162,6 +162,33 @@ The setting applies to every connection when declared at the top level, and can 
 
 NOTE: Because nothing is created, a collection that has never been initialised with `buildIndexes` enabled will have no declared indexes at all. Turn the setting off only where the indexes are already in place or are applied by other means. The setting governs only the indexes GORM derives from the mapping blocks; an explicit `createIndex` call made by application code against a collection is unaffected.
 
+==== Building Indexes in the Background
+
+
+MongoDB answers a `createIndex` command only once the index has been built, so by default the thread that creates the datastore — in an application, the startup thread — waits for every declared index before the application finishes starting. On an empty collection that is instant; on a large existing collection an index build can take minutes, and a deployment waits for all of them in turn.
+
+Set `buildIndexesAsync` to have the startup index build run on a background thread instead:
+
+[source,groovy]
+----
+grails {
+    mongodb {
+        buildIndexesAsync = true
+    }
+}
+----
+
+Startup then continues without waiting. The indexes are still built one at a time, on a single daemon thread per connection named `gorm-mongo-index-build-<connection>`, so enabling this does not launch several index builds against the server at once.
+
+Two consequences are worth planning for:
+
+* A query issued before its index has been built is served without it — correctly, but with the performance of an unindexed query. The same applies to a `unique` index: it constrains nothing until the build finishes.
+* Because startup no longer waits, a failure to build an index can no longer fail startup. It is logged at error level, and the application runs without that index. With the default synchronous build the exception propagates and the application does not start.
+
+The setting is ignored when `buildIndexes` is `false`, and it applies only to the index build performed when the datastore starts — a domain class registered after startup is indexed on the thread registering it.
+
+NOTE: If the application shuts down while a background build is still running, GORM stops waiting for it, but the server carries on building the index it was asked for.
+
 ==== Indexing using the 'index' method
 
 
