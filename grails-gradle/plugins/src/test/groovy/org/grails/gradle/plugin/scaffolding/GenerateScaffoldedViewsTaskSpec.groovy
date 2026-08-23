@@ -77,6 +77,29 @@ class GenerateScaffoldedViewsTaskSpec extends Specification {
         target.bytes = writer.toByteArray()
     }
 
+    /**
+     * Writes a class shaped like {@code @Scaffold(RestfulServiceController<Domain>)} after
+     * ScaffoldingControllerInjector has run: the domain it extracted from the type argument is
+     * written into {@code domain}, and {@code value} is left naming the class to extend. The two
+     * are emitted in the order javac and groovyc actually emit them, domain first, which is what
+     * makes reading whichever came last name the superclass as the domain.
+     */
+    private void writeSuperclassParameterizedController(String controllerName, String domainClassName) {
+        String superclass = 'grails/plugin/scaffolding/RestfulServiceController'
+        ClassWriter writer = new ClassWriter(0)
+        writer.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, "com/example/${controllerName}",
+                "L${superclass}<Lcom/example/${domainClassName};>;", superclass, null)
+        AnnotationVisitor annotation = writer.visitAnnotation(
+                'Lgrails/plugin/scaffolding/annotation/Scaffold;', true)
+        annotation.visit('domain', Type.getObjectType("com/example/${domainClassName}"))
+        annotation.visit('value', Type.getObjectType(superclass))
+        annotation.visitEnd()
+        writer.visitEnd()
+        File target = new File(classesDir, "com/example/${controllerName}.class")
+        target.parentFile.mkdirs()
+        target.bytes = writer.toByteArray()
+    }
+
     private void writePlainController(String controllerName) {
         ClassWriter writer = new ClassWriter(0)
         writer.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, "com/example/${controllerName}", null,
@@ -218,5 +241,35 @@ class GenerateScaffoldedViewsTaskSpec extends Specification {
 
         then:
             !stale.exists()
+    }
+
+    void 'the domain attribute is read in preference to the class the annotation extends'() {
+        given: 'a controller written as @Scaffold(RestfulServiceController<User>)'
+            writeSuperclassParameterizedController('UserController', 'User')
+            def task = task()
+
+        when:
+            task.generate()
+
+        then: 'the views are named for the domain, not for the class the annotation names'
+            generated(task, 'user/index.gsp').text == 'list of user for User'
+            !generated(task, 'restfulServiceController/index.gsp').exists()
+    }
+
+    void 'a controller that names its superclass still yields a type a view can declare'() {
+        given:
+            writeTemplateJar(templateJar, [
+                    index : 'model="List<${fullName}> ${propertyName}List" in ${packageName}',
+                    create: 'create ${className}',
+                    edit  : 'edit ${className}',
+                    show  : 'show ${className}'])
+            writeSuperclassParameterizedController('UserController', 'User')
+            def task = task()
+
+        when:
+            task.generate()
+
+        then:
+            generated(task, 'user/index.gsp').text == 'model="List<com.example.User> userList" in com.example'
     }
 }

@@ -218,9 +218,20 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
      * Returns the fully qualified name of the domain class a controller scaffolds, or {@code null}
      * when it is not scaffolded. Read with ASM so the application's classes are never loaded, which
      * keeps the task independent of the runtime classpath.
+     *
+     * <p>{@code domain} is what names the domain class, and it is read in preference to
+     * {@code value}, which names it only when it is the sole attribute given. Every form is
+     * normalised by the time this reads it - ScaffoldingControllerInjector writes the domain into
+     * {@code domain} whether it was written as {@code @Scaffold(User)},
+     * {@code @Scaffold(domain = User)} or {@code @Scaffold(RestfulServiceController<User>)} - so
+     * for the last of those {@code value} is the class to extend, and taking it would name the
+     * controller superclass as the domain. The precedence matters rather than merely tidying,
+     * because the two attributes are written in no guaranteed order.</p>
      */
     private String readScaffoldDomain(File classFile) {
-        String domain = null
+        boolean scaffolded = false
+        String fromValue = null
+        String fromDomain = null
         classFile.withInputStream { InputStream input ->
             new ClassReader(input).accept(new ClassVisitor(Opcodes.ASM9) {
                 @Override
@@ -228,22 +239,29 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
                     if (descriptor != SCAFFOLD_ANNOTATION) {
                         return null
                     }
+                    scaffolded = true
                     return new AnnotationVisitor(Opcodes.ASM9) {
                         @Override
                         void visit(String name, Object value) {
-                            // both @Scaffold(User) and @Scaffold(domain = User) name the domain class
-                            if (value instanceof Type && (name == 'value' || name == 'domain')) {
-                                String candidate = ((Type) value).className
-                                if (candidate.tokenize('.').last() != 'Void') {
-                                    domain = candidate
-                                }
+                            if (!(value instanceof Type)) {
+                                return
+                            }
+                            String candidate = ((Type) value).className
+                            if (candidate.tokenize('.').last() == 'Void') {
+                                return
+                            }
+                            if (name == 'domain') {
+                                fromDomain = candidate
+                            }
+                            else if (name == 'value') {
+                                fromValue = candidate
                             }
                         }
                     }
                 }
             }, ClassReader.SKIP_CODE | ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES)
         }
-        domain
+        scaffolded ? (fromDomain ?: fromValue) : null
     }
 
     private static String baseName(String fileName) {
