@@ -341,6 +341,20 @@ mail:
   mailMessageContent: Message Content
   mailAttachments: Attachments
   mailTesting: Testing
+backgroundJobs:
+  title: Background Jobs
+  backgroundJobsBasic: Basic Scheduling
+  backgroundJobsAdvanced:
+    title: Advanced Scheduling
+    quartzInstallation: Installation
+    quartzScheduling: Writing Jobs
+    quartzTriggers: Triggers
+    quartzJobProperties: Job Properties
+    quartzDynamicScheduling: Dynamic Job Scheduling
+    quartzJobManagerService: Managing Jobs at Runtime
+    quartzConfiguration: Configuration
+    quartzClustering: Clustering
+    quartzUsefulLinks: Useful Links
 redis:
   title: Redis
   redisInstallation: Installation and Configuration
