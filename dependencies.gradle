@@ -106,6 +106,9 @@ ext {
             // for the one logback advisory this version does not clear.
             'logback.version'               : '1.5.38',
             'jquery.version'                : '3.7.1',
+            // Overrides spring-boot-dependencies (1.0.0): micrometer 1.16.x annotates its API with JSpecify and
+            // pulls 1.0.1, so the BOM has to manage at least that - see micrometer.version.
+            'jspecify.version'              : '1.0.1',
             // Security: pulled transitively via groovy-console. 2.6.0 fixes CVE-2026-26032, a path traversal in the
             // PackagerResolver where '../' in module coordinates escapes the configured buildRoot.
             'ivy.version'                   : '2.6.0',
@@ -114,6 +117,10 @@ ext {
             'jakarta-validation-api.version': '3.1.1',
             'junit.version'                 : '5.13.3',
             'junit-platform.version'        : '1.13.3',
+            // Security: overrides spring-boot-dependencies (1.15.12). 1.16.7 is the oldest open source release that
+            // fixes CVE-2026-59295 (DoS in the Apache HttpAsyncClient instrumentation) and CVE-2026-59296 (metric
+            // name/tag injection via unsanitised newlines); the 1.15.13 patch is Enterprise Support only.
+            'micrometer.version'            : '1.16.7',
             // Security: 5.9.2 fixes CVE-2026-18710, where ProxySettings.toString() renders the SOCKS5 proxy
             // username and password into application logs.
             'mongodb.version'               : '5.9.2',
@@ -197,6 +204,8 @@ ext {
             // Security override of the version groovy-console pulls in - see ivy.version
             'ivy'                         : "org.apache.ivy:ivy:${bomDependencyVersions['ivy.version']}",
             'jquery'                      : "org.webjars.npm:jquery:${bomDependencyVersions['jquery.version']}",
+            // Version override of spring-boot-dependencies - see jspecify.version
+            'jspecify'                    : "org.jspecify:jspecify:${bomDependencyVersions['jspecify.version']}",
             // Security override of spring-boot-dependencies - see logback.version
             'logback-classic'            : "ch.qos.logback:logback-classic:${bomDependencyVersions['logback.version']}",
             'logback-core'               : "ch.qos.logback:logback-core:${bomDependencyVersions['logback.version']}",
@@ -219,6 +228,11 @@ ext {
             'junit-platform-suite-engine' : "org.junit.platform:junit-platform-suite-engine:${bomDependencyVersions['junit-platform.version']}",
             // end - boot & spock conflict, so pin the version we want (newest)
             'hibernate-groovy-proxy'      : "org.yakworks:hibernate-groovy-proxy:${bomDependencyVersions['hibernate-groovy-proxy.version']}",
+            // Security override of spring-boot-dependencies - see micrometer.version
+            'micrometer-commons'          : "io.micrometer:micrometer-commons:${bomDependencyVersions['micrometer.version']}",
+            'micrometer-core'             : "io.micrometer:micrometer-core:${bomDependencyVersions['micrometer.version']}",
+            'micrometer-jakarta9'         : "io.micrometer:micrometer-jakarta9:${bomDependencyVersions['micrometer.version']}",
+            'micrometer-observation'      : "io.micrometer:micrometer-observation:${bomDependencyVersions['micrometer.version']}",
             'mongodb-bson'                : "org.mongodb:bson:${bomDependencyVersions['mongodb.version']}",
             'mongodb-driver-core'         : "org.mongodb:mongodb-driver-core:${bomDependencyVersions['mongodb.version']}",
             'mongodb-driver-sync'         : "org.mongodb:mongodb-driver-sync:${bomDependencyVersions['mongodb.version']}",
