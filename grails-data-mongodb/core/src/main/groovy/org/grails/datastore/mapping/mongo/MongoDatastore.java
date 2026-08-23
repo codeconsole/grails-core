@@ -162,6 +162,7 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
     protected final boolean stateless;
     protected final boolean codecEngine;
     protected final boolean transactionsEnabled;
+    protected final boolean buildIndexes;
     private volatile Boolean transactionsSupported;
     private volatile boolean warnedTransactionsUnsupported = false;
     protected CodecRegistry codecRegistry;
@@ -205,6 +206,7 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
         this.stateless = settings.isStateless();
         this.codecEngine = settings.getEngine().equals(MongoConstants.CODEC_ENGINE);
         this.transactionsEnabled = settings.isTransactional();
+        this.buildIndexes = settings.isBuildIndexes();
         codecRegistry = CodecRegistries.fromRegistries(
                 CodecRegistries.fromProviders(new CodecExtensions(), new PersistentEntityCodeRegistry()),
                 mappingContext.getCodecRegistry(),
@@ -568,6 +570,12 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
      * Builds the MongoDB index for this datastore
      */
     public void buildIndex() {
+        if (!buildIndexes) {
+            LOG.info("Index creation is disabled by [{} = false]. The indexes declared by the domain classes " +
+                    "will not be created or reconciled; the indexes already present on the server are left untouched.",
+                    MongoSettings.SETTING_BUILD_INDEXES);
+            return;
+        }
         for (PersistentEntity entity : this.mappingContext.getPersistentEntities()) {
             // Only create Mongo templates for entities that are mapped with Mongo
             if (!entity.isExternal()) {
@@ -754,6 +762,18 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
         }
     }
 
+    /**
+     * Whether GORM creates and reconciles the indexes declared in the domain class mapping blocks when
+     * the datastore starts. Disabled with {@code grails.mongodb.buildIndexes = false}, which leaves the
+     * indexes on the server exactly as they are.
+     *
+     * @return {@code true} if declared indexes are created on startup
+     * @since 8.0
+     */
+    public boolean isBuildIndexes() {
+        return buildIndexes;
+    }
+
     public String getDatabaseName(PersistentEntity entity) {
         if (entity.isMultiTenant() && multiTenancyMode == MultiTenancySettings.MultiTenancyMode.SCHEMA) {
             return Tenants.currentId(getClass()).toString();
@@ -921,6 +941,11 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
      * @param entity The entity
      */
     protected void initializeIndices(final PersistentEntity entity) {
+        if (!buildIndexes) {
+            LOG.debug("Index creation is disabled by [{} = false]. Skipping the indexes declared by entity [{}].",
+                    MongoSettings.SETTING_BUILD_INDEXES, entity.getName());
+            return;
+        }
         final com.mongodb.client.MongoCollection<Document> collection = getCollection(entity);
         final ClassMapping<MongoCollection> classMapping = entity.getMapping();
         if (classMapping != null) {

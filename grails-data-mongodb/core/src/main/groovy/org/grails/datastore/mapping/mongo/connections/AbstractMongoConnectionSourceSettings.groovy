@@ -98,6 +98,17 @@ abstract class AbstractMongoConnectionSourceSettings extends ConnectionSourceSet
     boolean decimalType = true
 
     /**
+     * Whether GORM creates and reconciles the indexes declared in domain class mapping blocks
+     * when the datastore starts. When {@code false} the indexes on the server are left exactly
+     * as they are and no {@code createIndex} or {@code collMod} command is issued; queries are
+     * unaffected and continue to use whatever indexes already exist. Bound from
+     * {@code grails.mongodb.buildIndexes}.
+     *
+     * @since 8.0
+     */
+    boolean buildIndexes = true
+
+    /**
      * Nested settings for domains with {@code String id}. Holds the global default
      * {@code defaultStoredAs} switch plus any future string-id configuration.
      *

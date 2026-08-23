@@ -49,6 +49,21 @@ class MongoConnectionSourceSettingsSpec extends Specification {
         settings.options.build().readPreference == ReadPreference.secondary()
     }
 
+    void "test index building is enabled unless it is switched off in configuration"() {
+        when: "no buildIndexes setting is supplied"
+        def settings = new MongoConnectionSourceSettingsBuilder(DatastoreUtils.createPropertyResolver([:])).build()
+
+        then: "declared indexes are built on startup"
+        settings.buildIndexes
+
+        when: "the setting is switched off"
+        def resolver = DatastoreUtils.createPropertyResolver([(MongoSettings.SETTING_BUILD_INDEXES): 'false'])
+        settings = new MongoConnectionSourceSettingsBuilder(resolver).build()
+
+        then: "index building is disabled"
+        !settings.buildIndexes
+    }
+
     void "test mongo client settings builder with URL"() {
         when:"using a property resolver"
         Map myMap = ['grails.mongodb.url': 'mongodb://foo:bar@mycompany/mydb?maxPoolSize=5']

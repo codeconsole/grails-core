@@ -96,6 +96,18 @@ interface MongoSettings extends Settings {
     String SETTING_ENGINE = 'grails.mongodb.engine'
 
     /**
+     * Whether GORM creates and reconciles the indexes declared in domain class mapping blocks
+     * when the datastore starts. Defaults to {@code true}.
+     *
+     * <p>Set to {@code false} to leave the indexes on the server exactly as they are, which is
+     * useful when deploying against live data where index changes are applied separately by a
+     * DBA or a migration step rather than by the application on startup.
+     *
+     * @since 8.0
+     */
+    String SETTING_BUILD_INDEXES = 'grails.mongodb.buildIndexes'
+
+    /**
      * Global default storage type for {@code String id} fields when no per-domain
      * {@code id storedAs: ...} mapping is declared. Accepted values are the names (or hex
      * aliases) {@code 'string'} (default, current behavior) and {@code 'objectid'}.
