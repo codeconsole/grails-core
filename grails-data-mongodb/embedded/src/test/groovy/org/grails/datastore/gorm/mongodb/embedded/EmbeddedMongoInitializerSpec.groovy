@@ -33,13 +33,29 @@ import spock.lang.TempDir
 import java.nio.file.Path
 
 /**
- * Exercises both backends against real servers. Servers started here are reaped by the
- * shutdown hook the initializer registers, when this JVM exits.
+ * Exercises both backends against real servers, and stops every one of them.
+ *
+ * <p>Leaving them to the shutdown hook the initializer registers does not work here: a Gradle test
+ * worker cannot exit while a server it started holds a thread that is not a daemon, and the hook
+ * that would stop the server runs only on the way out. The worker waits for what only its own exit
+ * would release, Gradle waits for the worker, and a build whose tests have all passed never
+ * finishes.
  */
 class EmbeddedMongoInitializerSpec extends Specification {
 
     @TempDir
     Path temp
+
+    private final List<GenericApplicationContext> contexts = []
+
+    void cleanup() {
+        contexts.each { GenericApplicationContext context ->
+            if (context.beanFactory.containsBean(EmbeddedMongoLifecycle.BEAN_NAME)) {
+                context.beanFactory.getBean(EmbeddedMongoLifecycle.BEAN_NAME, EmbeddedMongoLifecycle).stop()
+            }
+        }
+        contexts.clear()
+    }
 
 
     void 'a url naming a host is left to the driver'() {
@@ -579,9 +595,10 @@ class EmbeddedMongoInitializerSpec extends Specification {
         }
     }
 
-    private static GenericApplicationContext contextWith(Map<String, Object> properties) {
+    private GenericApplicationContext contextWith(Map<String, Object> properties) {
         GenericApplicationContext context = new GenericApplicationContext()
         context.environment.propertySources.addFirst(new MapPropertySource('test', properties))
+        contexts << context
         context
     }
 }
