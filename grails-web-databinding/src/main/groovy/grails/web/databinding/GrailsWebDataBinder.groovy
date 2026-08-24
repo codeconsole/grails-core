@@ -505,7 +505,7 @@ class GrailsWebDataBinder extends SimpleDataBinder {
             } else if (Collection.isAssignableFrom(metaProperty.type)) {
                 def referencedType = getReferencedTypeForCollection(propName, obj)
                 if (referencedType) {
-                    def listValue
+                    List listValue
                     if (val instanceof List) {
                         listValue = (List) val
                     } else if (val instanceof GPathResultMap && ((GPathResultMap) val).size() == 1) {
