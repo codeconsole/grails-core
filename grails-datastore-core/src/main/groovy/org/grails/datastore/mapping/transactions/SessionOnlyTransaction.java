@@ -26,6 +26,11 @@ import org.grails.datastore.mapping.core.Session;
  * </p>
  *
  * <p>
+ * A read-only transaction commits without flushing. It has no pending operations of its own, so the
+ * only thing a flush could write is whatever the surrounding session already had queued.
+ * </p>
+ *
+ * <p>
  * No other resource level transaction management is provided.
  * </p>
  *
@@ -37,17 +42,25 @@ public class SessionOnlyTransaction<T> implements Transaction<T> {
 
     private T nativeInterface;
     private Session session;
+    private boolean readOnly;
     private boolean active = true;
 
     public SessionOnlyTransaction(T nativeInterface, Session session) {
+        this(nativeInterface, session, false);
+    }
+
+    public SessionOnlyTransaction(T nativeInterface, Session session, boolean readOnly) {
         this.nativeInterface = nativeInterface;
         this.session = session;
+        this.readOnly = readOnly;
     }
 
     public void commit() {
         if (active) {
             try {
-                session.flush();
+                if (!readOnly) {
+                    session.flush();
+                }
             }
             finally {
                 active = false;
