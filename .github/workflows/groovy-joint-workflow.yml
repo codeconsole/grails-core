@@ -154,6 +154,7 @@ jobs:
           path: |
             ~/.gradle/caches/modules-2
             ~/.gradle/wrapper
+            ~/.embedmongo
           key: gradle-deps-${{ runner.os }}-${{ github.base_ref || github.ref_name }}-${{ hashFiles('**/dependencies.gradle', '**/gradle-wrapper.properties') }}
           restore-keys: |
             gradle-deps-${{ runner.os }}-${{ github.base_ref || github.ref_name }}-
@@ -197,4 +198,5 @@ jobs:
           path: |
             ~/.gradle/caches/modules-2
             ~/.gradle/wrapper
+            ~/.embedmongo
           key: gradle-deps-${{ runner.os }}-${{ github.base_ref || github.ref_name }}-${{ hashFiles('**/dependencies.gradle', '**/gradle-wrapper.properties') }}
