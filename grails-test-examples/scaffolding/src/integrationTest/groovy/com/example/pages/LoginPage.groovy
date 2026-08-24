@@ -31,11 +31,25 @@ class LoginPage extends NavigationPage {
     }
 
     void login(String username = 'test@grails.org', String password = 'letmein') {
-        this.username = username
-        this.password = password
+        // Filled again until the values stay. This page is rendered because a protected page
+        // asked for it, and the document can be replaced under the driver after it is first
+        // parsed - taking the typed values with it. What is left is a form whose two required
+        // fields are empty, which the browser will not submit, so nothing reaches the server
+        // and the wait below waits for a page that will never change.
+        waitFor { fillCredentials(username, password) }
         loginButton.click()
         // Wait for a definitive authenticated signal: the login page must be fully replaced
         // (title changed AND the login form is gone), not merely a transient title change.
         waitFor { title != pageTitle && $('input', name: 'username').empty }
+    }
+
+    /**
+     * @return whether the credentials are in the form now, which is false while a replaced
+     *         document is still being filled in again
+     */
+    private boolean fillCredentials(String username, String password) {
+        this.username = username
+        this.password = password
+        this.username.value() == username && this.password.value() == password
     }
 }

@@ -33,8 +33,11 @@ class LoginPage extends Page {
     }
 
     void login(String username, String password) {
-        usernameInputField << username
-        passwordInputField << password
+        // Set rather than appended, and set again until the values stay: this page is rendered
+        // because a secured page asked for it, and a document replaced under the driver after it
+        // was first parsed takes the typed values with it, leaving a form that submits nothing
+        // useful. Appending would also double the text on a second attempt.
+        waitFor { fillCredentials(username, password) }
         loginButton.click()
         // Submitting the form is a navigation, and the browser goes on showing this page until the
         // response lands. Returning before that leaves whatever the specification asserts next
@@ -42,6 +45,16 @@ class LoginPage extends Page {
         // left, where the title would only say the page reads differently - and a page reads
         // differently in another language.
         waitFor { !browser.currentUrl.contains('/login/') }
+    }
+
+    /**
+     * @return whether the credentials are in the form now, which is false while a replaced
+     *         document is still being filled in again
+     */
+    private boolean fillCredentials(String username, String password) {
+        usernameInputField.value(username)
+        passwordInputField.value(password)
+        usernameInputField.value() == username && passwordInputField.value() == password
     }
 
     @Override
