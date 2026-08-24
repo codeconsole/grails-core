@@ -39,9 +39,11 @@ on:
     branches:
       - '[0-9]+.[0-9]+.x'
   # Runs on PRs whose BASE branch is a release branch so the autolabeler can
-  # apply labels (bug/feature/docs/...) and the draft picks up new PRs as soon
-  # as they are opened. Feature-to-feature PRs (e.g. fix/foo -> feat/bar)
-  # are intentionally excluded - they cannot affect any release.
+  # apply labels (bug/feature/docs/...). The draft itself is not written here:
+  # release notes are built from MERGED pull requests, so a run for an open one
+  # can only rewrite the draft it already wrote. Feature-to-feature PRs (e.g.
+  # fix/foo -> feat/bar) are intentionally excluded - they cannot affect any
+  # release.
   pull_request:
     types: [opened, reopened, synchronize, labeled]
     branches:
@@ -64,11 +66,21 @@ on:
 # uploads assets to the *current published* tag (e.g. v7.0.11). Splitting the
 # concurrency groups is therefore safe.
 #
-# `cancel-in-progress: true`: if multiple pushes land on the same branch in
-# quick succession, only the latest matters - the latest run sees every PR
-# the older one would have seen, so cancelling pending runs is correct.
+# Keyed on the pull request, not on the branch it targets. Every open PR against
+# a release branch used to compute the same group name, so two PRs pushed within
+# seconds of each other landed in one slot and `cancel-in-progress` had the later
+# one kill the earlier: a red "cancelled" check on a PR that nothing was wrong
+# with, and no labels applied to it. Raising several PRs at once - rebasing a
+# stack, or merging a branch into each of them - made that routine.
+#
+# Queueing instead of cancelling would not have fixed it: GitHub keeps one
+# pending run per group and cancels the previously pending one, so a sweep of
+# ten PRs would still have shown eight cancellations, just of queued runs.
+#
+# `cancel-in-progress: true` remains right within a single subject: pushing twice
+# to the same PR, or twice to a release branch, means only the later run matters.
 concurrency:
-  group: release-drafter-${{ github.event.pull_request.base.ref || github.ref_name }}
+  group: release-drafter-${{ github.event.pull_request.number || github.ref_name }}
   cancel-in-progress: true
 
 jobs:
@@ -154,6 +166,13 @@ jobs:
         # silently produced no draft (e.g. rate-limit exhaustion).
         continue-on-error: true
         with:
+          # A pull request run labels; it does not draft. Release notes are built
+          # from merged pull requests, so an open one contributes nothing and the
+          # releaser would rewrite the identical draft - which is also what forced
+          # every PR to share a concurrency slot, since two runs creating the same
+          # draft at once is how duplicate drafts appear. Pushes to the release
+          # branch, which is when a merge actually changes the notes, still draft.
+          disable-releaser: ${{ github.event_name == 'pull_request' }}
           # Explicit `commitish` is critical on `pull_request` events: without
           # it, release-drafter would default to `refs/pull/N/merge` (a
           # virtual ref) which the GitHub API rejects when creating a release,
