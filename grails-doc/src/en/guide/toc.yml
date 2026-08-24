@@ -143,6 +143,7 @@ theWebLayer:
       formsAndFields: Forms and Fields
       tagsAsMethodCalls: Tags as Method Calls
     viewsAndTemplates: Views and Templates
+    gspStaticCompilation: Static Compilation
     layouts:
       title: Layouts
       contentBlocks: Content Blocks
