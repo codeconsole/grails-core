@@ -57,29 +57,64 @@ class GrailsCompileStaticOptions implements Serializable {
     private static final long serialVersionUID = 0L
 
     /**
-     * Whether every controller, service and tag library should be compiled with {@code @GrailsCompileStatic}.
-     * A shortcut equivalent to enabling {@link #getControllers() controllers}, {@link #getServices() services}
-     * and {@link #getTagLibs() tagLibs} together. Disabled by default.
+     * What every artefact type falls back to where it says nothing of its own. A shortcut for enabling
+     * {@link #getControllers() controllers}, {@link #getServices() services} and {@link #getTagLibs()
+     * tagLibs} together. Disabled by default.
+     *
+     * <p>An artefact type that states a value keeps it, so a single type can be held back from the
+     * shortcut:</p>
+     *
+     * <pre>
+     * grails {
+     *     compileStatic {
+     *         all = true
+     *         services = false   // every artefact type but services
+     *     }
+     * }
+     * </pre>
      */
     final Property<Boolean> all
 
     /**
      * Whether every controller under {@code grails-app/controllers} should be compiled with
-     * {@code @GrailsCompileStatic}. Disabled by default.
+     * {@code @GrailsCompileStatic}. Follows {@link #getAll() all} where it is not set.
      */
     final Property<Boolean> controllers
 
     /**
      * Whether every service under {@code grails-app/services} should be compiled with
-     * {@code @GrailsCompileStatic}. Disabled by default.
+     * {@code @GrailsCompileStatic}. Follows {@link #getAll() all} where it is not set.
      */
     final Property<Boolean> services
 
     /**
      * Whether every tag library under {@code grails-app/taglib} should be compiled with
-     * {@code @GrailsCompileStatic}. Disabled by default.
+     * {@code @GrailsCompileStatic}. Follows {@link #getAll() all} where it is not set.
      */
     final Property<Boolean> tagLibs
+
+    /**
+     * Whether every GSP page under {@code grails-app/views} should be compiled statically, by stating
+     * the {@code grails.views.gsp.compileStatic} configuration setting for both the build and the
+     * running application. Disabled by default.
+     *
+     * <p>Deliberately not covered by {@link #getAll() all}. The artefact opt-ins fail on code that is
+     * doubtful anyway; this one fails on a page that reads a model variable it has not declared, which
+     * describes most pages in an application that has never declared one. Enabling it is a migration,
+     * not a switch, so it is never turned on as a side effect of asking for everything.</p>
+     */
+    final Property<Boolean> gsp
+
+    /**
+     * Whether every page is held to the names it declares, rather than only the pages that declare a
+     * model. Disabled by default.
+     *
+     * <p>A page that declares a model is held to it either way: declaring one states what the page is
+     * rendered with, so a name outside it is a mistake. This asks for the same of a page that declares
+     * nothing, which otherwise reads what it is rendered with the way a dynamically compiled page
+     * does. Meaningless unless {@link #getGsp() gsp} is enabled.</p>
+     */
+    final Property<Boolean> strictGsp
 
     /**
      * Whether a tag call written without its namespace may be compiled into a direct invocation.
@@ -132,12 +167,18 @@ class GrailsCompileStaticOptions implements Serializable {
 
     @Inject
     GrailsCompileStaticOptions(ObjectFactory objects) {
+        // Only `all` carries a convention. The artefact types are left unset so that setting one to
+        // false is distinguishable from never setting it, which is what lets an explicit value be kept
+        // where `all` would otherwise supply it.
         this.all = objects.property(Boolean).convention(false)
-        this.controllers = objects.property(Boolean).convention(false)
-        this.services = objects.property(Boolean).convention(false)
-        this.tagLibs = objects.property(Boolean).convention(false)
+        this.controllers = objects.property(Boolean)
+        this.services = objects.property(Boolean)
+        this.tagLibs = objects.property(Boolean)
         this.strictTags = objects.property(Boolean).convention(false)
         this.unqualifiedTagCalls = objects.property(Boolean).convention(false)
         this.dynamicTagNamespaces = objects.setProperty(String).convention(Collections.<String> emptySet())
+        // Not part of `all`, so these carry a convention of their own rather than falling back to it.
+        this.gsp = objects.property(Boolean).convention(false)
+        this.strictGsp = objects.property(Boolean).convention(false)
     }
 }
