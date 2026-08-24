@@ -199,6 +199,13 @@ tasks.withType(Test).configureEach { Test task ->
     systemProperty('geb.build.reportsDir', reporting.file("$projectDir/build/geb-reports"))
     systemProperty('grails.geb.reporting.directory', reporting.file("$projectDir/build/geb-reports").canonicalFile.absolutePath)
     systemProperty('TESTCONFIG', System.getProperty('TESTCONFIG'))
+
+    if (isMongo && rootProject.hasProperty('mongodbContainerVersion')) {
+        // The version the build asks for reaches the Gradle JVM as a project property and stops
+        // there, while the application under test reads a system property: without this a matrix
+        // asking for one version and an application defaulting to another agree only by accident.
+        systemProperty('mongodbContainerVersion', rootProject.property('mongodbContainerVersion'))
+    }
 }
 
 tasks.named('groovydoc').configure {
