@@ -51,7 +51,7 @@ class GrailsWebDataBinderSpec extends Specification implements DataTest {
         mockDomains(
                 AssociationBindingAuthor, AssociationBindingBook, AssociationBindingPage, Author, BinderNullabilityEntity,
                 Child, CollectionContainer, DataBindingBook, Fidget, Foo, GeneratedBindingChild, GeneratedBindingParent,
-                Parent, Publication, Publisher, Team, Widget
+                Parent, Publication, Publisher, RawCollectionContainer, Team, Widget
         )
     }
 
@@ -1962,6 +1962,31 @@ class GrailsWebDataBinderSpec extends Specification implements DataTest {
         obj.publishers.find { it.name == 'Pub One' }
         obj.publishers.find { it.name == 'Pub Three' }
     }
+
+    void 'test binding maps into a raw collection preserves the map elements'() {
+        given: 'a domain with a raw (non-generic) collection, whose component type falls back to Object'
+        def obj = new RawCollectionContainer()
+
+        when: 'a list of maps is bound to it'
+        binder.bind(obj, new SimpleMapDataBindingSource([
+            rawList: [[label: 'Answered', param: 'status=resolved'],
+                      [label: 'Pending', param: 'status=pending']]
+        ]))
+
+        then: 'the maps survive binding rather than being replaced by empty Object instances'
+        obj.rawList.size() == 2
+        obj.rawList.every { it instanceof Map }
+        obj.rawList[0].label == 'Answered'
+        obj.rawList[0].param == 'status=resolved'
+        obj.rawList[1].label == 'Pending'
+        obj.rawList[1].param == 'status=pending'
+    }
+}
+
+@Entity
+class RawCollectionContainer {
+
+    List rawList = []
 }
 
 @Entity

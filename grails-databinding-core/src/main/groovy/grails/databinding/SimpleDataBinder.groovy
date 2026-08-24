@@ -426,6 +426,16 @@ class SimpleDataBinder implements DataBinder {
     }
 
     protected Object instantiateAndBindOrUseMapConstructor(Class referencedType, Map values, DataBindingListener listener) {
+        if (referencedType == null || referencedType == Object) {
+            // A raw collection -- List/Set/Map written without a type argument -- reports Object as
+            // its component type: Basic#componentType falls back to Object.class when a property
+            // carries no generic signature. Object declares no properties, so instantiating one and
+            // binding into it has nowhere to put the element's data and the element silently becomes
+            // an empty Object. A value that is never used as a property source cannot mass-assign
+            // anything, so it is kept as it stands, which is also how these collections bound before
+            // deny-by-default.
+            return values
+        }
         def instance
         try {
             instance = referencedType.getDeclaredConstructor().newInstance()
