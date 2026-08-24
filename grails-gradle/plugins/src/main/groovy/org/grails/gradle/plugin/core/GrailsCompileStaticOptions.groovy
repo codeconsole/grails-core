@@ -24,6 +24,7 @@ import groovy.transform.CompileStatic
 
 import org.gradle.api.model.ObjectFactory
 import org.gradle.api.provider.Property
+import org.gradle.api.provider.SetProperty
 
 /**
  * Lazy opt-ins for compiling Grails artefacts with {@code @GrailsCompileStatic} automatically,
@@ -80,11 +81,63 @@ class GrailsCompileStaticOptions implements Serializable {
      */
     final Property<Boolean> tagLibs
 
+    /**
+     * Whether a tag call written without its namespace may be compiled into a direct invocation.
+     *
+     * <p>Off by default. A namespaced call names the tag library it means; a bare name is a tag only
+     * when nothing nearer answers to it, and what answers to it is not fully visible when compiling -
+     * a method Groovy gives every object, a delegate an enclosing closure is handed, an overload the
+     * tag library also declares. Turn this on to compile those calls too, in a project whose tag
+     * names are known not to collide.
+     */
+    final Property<Boolean> unqualifiedTagCalls
+
+    /**
+     * Whether a tag no compiled tag library declares should fail compilation. Disabled by default,
+     * where such a tag is left to resolve at runtime with nothing reported.
+     *
+     * <p>Checked only where the source says a call is a tag: one naming its namespace, as
+     * {@code g.message(code: 'x')} does, and one written as markup, as {@code <g:message/>} is. A call
+     * written without a namespace is not checked, because such a name may equally be a method
+     * contributed by any of the dynamic mechanisms an application has, and in a page it may be part of
+     * the model the page was rendered with.
+     *
+     * <p>Knowing that a namespace holds some compiled tag libraries is not the same as knowing it
+     * holds all of them: a plugin built before tag library descriptors existed contributes tags
+     * without one, and a tag library registered while an application runs contributes more. Enable
+     * this once every tag library an application uses is described, and declare the namespaces that
+     * are genuinely filled in at runtime through {@link #getDynamicTagNamespaces() dynamicTagNamespaces}:
+     *
+     * <pre>
+     * grails {
+     *     compileStatic {
+     *         strictTags = true
+     *         dynamicTagNamespaces = ['legacy']
+     *     }
+     * }
+     * </pre>
+     *
+     * @since 8.0
+     */
+    final Property<Boolean> strictTags
+
+    /**
+     * Namespaces whose tag libraries are registered while the application runs rather than described
+     * when it is compiled. Tags in them are never reported as unknown, however complete the tag
+     * library index is, and calls to them keep being dispatched dynamically.
+     *
+     * @since 8.0
+     */
+    final SetProperty<String> dynamicTagNamespaces
+
     @Inject
     GrailsCompileStaticOptions(ObjectFactory objects) {
         this.all = objects.property(Boolean).convention(false)
         this.controllers = objects.property(Boolean).convention(false)
         this.services = objects.property(Boolean).convention(false)
         this.tagLibs = objects.property(Boolean).convention(false)
+        this.strictTags = objects.property(Boolean).convention(false)
+        this.unqualifiedTagCalls = objects.property(Boolean).convention(false)
+        this.dynamicTagNamespaces = objects.setProperty(String).convention(Collections.<String> emptySet())
     }
 }
