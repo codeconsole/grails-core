@@ -1981,12 +1981,42 @@ class GrailsWebDataBinderSpec extends Specification implements DataTest {
         obj.rawList[1].label == 'Pending'
         obj.rawList[1].param == 'status=pending'
     }
+
+    void 'test binding maps into a raw Map property preserves the map values'() {
+        given:
+        def obj = new RawCollectionContainer()
+
+        when:
+        binder.bind(obj, new SimpleMapDataBindingSource([
+            rawMap: [first: [label: 'Answered', param: 'status=resolved']]
+        ]))
+
+        then:
+        obj.rawMap.first instanceof Map
+        obj.rawMap.first.label == 'Answered'
+    }
+
+    void 'test binding maps into a raw Set property preserves the map elements'() {
+        given:
+        def obj = new RawCollectionContainer()
+
+        when:
+        binder.bind(obj, new SimpleMapDataBindingSource([
+            rawSet: [[label: 'Answered', param: 'status=resolved']]
+        ]))
+
+        then:
+        obj.rawSet.every { it instanceof Map }
+        obj.rawSet.first().label == 'Answered'
+    }
 }
 
 @Entity
 class RawCollectionContainer {
 
     List rawList = []
+    Map rawMap = [:]
+    Set rawSet = []
 }
 
 @Entity
