@@ -579,6 +579,7 @@ include(
         'grails-test-examples-beans-dsl-plugin',
         'grails-test-examples-cache',
         'grails-test-examples-database-cleanup',
+        'grails-test-examples-gsp-compile-static',
         'grails-test-examples-datasources',
         'grails-test-examples-demo33',
         'grails-test-examples-enable-mvc-check',
@@ -627,6 +628,7 @@ project(':grails-test-examples-external-configuration').projectDir = file('grail
 project(':grails-test-examples-exploded').projectDir = file('grails-test-examples/exploded')
 project(':grails-test-examples-datasources').projectDir = file('grails-test-examples/datasources')
 project(':grails-test-examples-database-cleanup').projectDir = file('grails-test-examples/database-cleanup')
+project(':grails-test-examples-gsp-compile-static').projectDir = file('grails-test-examples/gsp-compile-static')
 project(':grails-test-examples-quartz').projectDir = file('grails-test-examples/quartz')
 project(':grails-test-examples-geb').projectDir = file('grails-test-examples/geb')
 project(':grails-test-examples-geb-context-path').projectDir = file('grails-test-examples/geb-context-path')
