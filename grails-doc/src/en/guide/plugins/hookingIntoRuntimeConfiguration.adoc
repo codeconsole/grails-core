@@ -254,7 +254,22 @@ Every annotation on the plugin class that only makes sense on whatever Spring Bo
 
 The `@AutoConfiguration` annotation is required whenever `@GrailsBeans` is applied to a `Plugin` subclass, even with no `before=`/`after=`: without it, the generated sibling would carry no annotation telling Spring Boot to process it, and its beans would silently never be registered. Omitting it is a compile-time error rather than a silent runtime gap.
 
-Set `@GrailsBeans(autoConfigurationName = "...")` to override the derived name (still generated in the plugin's own package) — useful when converting an existing, already-public `@AutoConfiguration` class whose name doesn't follow the convention, since other modules may reference it by name (`exclude =`, `before=`/`after=` ordering, `AutoConfiguration.imports`) or import it directly in tests.
+Set `@GrailsBeans(autoConfigurationName = "...")` to override the derived name — useful when converting an existing, already-public `@AutoConfiguration` class whose name doesn't follow the convention, since other modules may reference it by name (`exclude =`, `before=`/`after=` ordering, `AutoConfiguration.imports`) or import it directly in tests.
+
+A bare identifier renames the sibling within the plugin's own package. What those references actually name is the qualified name, though, and a plugin descriptor conventionally sits in the package its implementation classes sit *beneath* rather than alongside them — so the class being replaced is frequently in another package. Give a qualified name and the sibling is generated there instead:
+
+[source,groovy]
+----
+package com.example
+
+@GrailsBeans(autoConfigurationName = 'com.example.web.ExampleAutoConfiguration')
+@AutoConfiguration
+class ExampleGrailsPlugin extends Plugin {
+    def beans = { /* ... */ }
+}
+----
+
+Each part of the name must be a valid Java identifier and none may be a keyword; anything else is a compile-time error. Name one of the plugin's own packages: generating into a package the plugin does not otherwise own splits that package across two jars, which a modular or native-image consumer pays for.
 
 `@GrailsBeans` compiles cleanly alongside `@CompileStatic`/`@GrailsCompileStatic` on the same class. The `beans` closure is rewritten into real `@Bean` methods during `CompilePhase.CANONICALIZATION`, which runs before static type checking (`CompilePhase.INSTRUCTION_SELECTION`) ever examines the class, so the type checker only ever sees the generated, concretely-typed methods — never the `bean(...)` DSL calls themselves.
 

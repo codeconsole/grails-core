@@ -302,10 +302,7 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
                     " class would never be processed by Spring Boot");
         }
 
-        String siblingSimpleName = siblingSimpleName(pluginClass, grailsBeansAnnotation, source);
-        String packageName = pluginClass.getPackageName();
-        String siblingName = (packageName == null || packageName.isEmpty()) ?
-                siblingSimpleName : packageName + "." + siblingSimpleName;
+        String siblingName = siblingName(pluginClass, grailsBeansAnnotation, source);
         ClassNode sibling = new ClassNode(siblingName, Modifier.PUBLIC, ClassHelper.OBJECT_TYPE);
         // Without a position, anything Groovy later reports against a generated node - a sibling
         // name clash, a typo in .annotate(...) - is reported at line -1, column -1.
@@ -362,8 +359,13 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
         return simpleName + AUTO_CONFIGURATION_SUFFIX;
     }
 
-    private String siblingSimpleName(ClassNode pluginClass, AnnotationNode grailsBeansAnnotation, SourceUnit source) {
-        String defaultName = defaultSiblingSimpleName(pluginClass);
+    // The name of the generated sibling, qualified. A bare identifier names it in the plugin's own
+    // package, which is where it lands by default; a name that is already qualified is taken as
+    // written, so a conversion can keep the package of the class it replaces as well as its simple
+    // name - the two together being what an exclude= or a before=/after= from another module names.
+    private String siblingName(ClassNode pluginClass, AnnotationNode grailsBeansAnnotation, SourceUnit source) {
+        String packageName = pluginClass.getPackageName();
+        String defaultName = qualify(packageName, defaultSiblingSimpleName(pluginClass));
         Expression nameArg = grailsBeansAnnotation.getMember(AUTO_CONFIGURATION_NAME_MEMBER);
         if (nameArg == null) {
             return defaultName;
@@ -379,12 +381,17 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
                     "blank - omit the attribute entirely to use the default " + defaultName + " instead");
             return defaultName;
         }
-        if (!isValidJavaIdentifier(name)) {
+        if (!isValidQualifiedName(name)) {
             addError(nameArg, source, "@GrailsBeans(autoConfigurationName = \"" + name + "\") is not a valid " +
-                    "name: it becomes the generated sibling's simple class name, so it must be a valid Java identifier");
+                    "name: it becomes the generated sibling's class name, so it must be a valid Java " +
+                    "identifier, or a qualified name whose every part is one");
             return defaultName;
         }
-        return name;
+        return name.indexOf('.') < 0 ? qualify(packageName, name) : name;
+    }
+
+    private static String qualify(String packageName, String simpleName) {
+        return (packageName == null || packageName.isEmpty()) ? simpleName : packageName + "." + simpleName;
     }
 
     private boolean belongsOnSibling(ClassNode annotationType, Set<String> moveAnnotationNames) {
@@ -1373,6 +1380,11 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
 
     private boolean isValidJavaIdentifier(String name) {
         return SourceVersion.isIdentifier(name) && !SourceVersion.isKeyword(name);
+    }
+
+    // A single identifier or a dotted sequence of them, none of which is a keyword.
+    private boolean isValidQualifiedName(String name) {
+        return SourceVersion.isName(name);
     }
 
     private void addError(ASTNode node, SourceUnit source, String message) {
