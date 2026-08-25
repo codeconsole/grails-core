@@ -47,10 +47,12 @@ class AsyncWebRequestPromiseDecoratorSpec extends Specification {
 
     void 'a task runs while the cycle its decorator started is running'() {
         given:
-        MockHttpServletRequest request = new MockHttpServletRequest(servletContext)
-        request.asyncSupported = true
-        AsyncWebRequestPromiseDecorator decorator =
-                new AsyncWebRequestPromiseDecorator(new GrailsWebRequest(request, response, servletContext))
+        def request = new MockHttpServletRequest(servletContext).tap {
+            asyncSupported = true
+        }
+        def decorator = new AsyncWebRequestPromiseDecorator(
+                new GrailsWebRequest(request, response, servletContext)
+        )
 
         expect:
         decorator.decorate { it -> 'ran' }.call('in') == 'ran'
@@ -58,28 +60,33 @@ class AsyncWebRequestPromiseDecoratorSpec extends Specification {
 
     void 'a task refuses to run once the cycle its decorator started is no longer running'() {
         given:
-        MockHttpServletRequest request = new MockHttpServletRequest(servletContext)
-        request.asyncSupported = true
-        AsyncWebRequestPromiseDecorator decorator =
-                new AsyncWebRequestPromiseDecorator(new GrailsWebRequest(request, response, servletContext))
+        def request = new MockHttpServletRequest(servletContext).tap {
+            asyncSupported = true
+        }
+        def decorator = new AsyncWebRequestPromiseDecorator(
+                new GrailsWebRequest(request, response, servletContext)
+        )
 
         when: 'the cycle is dispatched, so the request reports it as no longer started'
         request.asyncStarted = false
         decorator.decorate { it -> 'ran' }.call('in')
 
         then: 'completion has not been observed yet, but a cycle this decorator started must still be running'
-        IllegalStateException exception = thrown()
+        def exception = thrown(IllegalStateException)
         exception.message == 'Asynchronous request already terminated. Likely timeout reached'
     }
 
     void 'a task joining a cycle in flight runs while the container delivers its result'() {
         given: 'an asynchronous request whose cycle is dispatching: live, but no longer started'
-        MockHttpServletRequest request = new MockHttpServletRequest(servletContext)
-        request.asyncSupported = true
-        AsyncGrailsWebRequest asyncWebRequest = new AsyncGrailsWebRequest(request, response, servletContext)
-        asyncWebRequest.asyncContext = new MockAsyncContext(request, response)
-        AsyncWebRequestPromiseDecorator decorator =
-                new AsyncWebRequestPromiseDecorator(new GrailsWebRequest(request, response, servletContext))
+        def request = new MockHttpServletRequest(servletContext).tap {
+            asyncStarted = true
+        }
+        def asyncWebRequest = new AsyncGrailsWebRequest(request, response, servletContext).tap {
+            asyncContext = new MockAsyncContext(request, response)
+        }
+        def decorator = new AsyncWebRequestPromiseDecorator(
+                new GrailsWebRequest(request, response, servletContext)
+        )
 
         expect:
         decorator.decorate { it -> 'ran' }.call('in') == 'ran'
@@ -87,20 +94,23 @@ class AsyncWebRequestPromiseDecoratorSpec extends Specification {
 
     void 'a task joining a cycle refuses to run once that cycle completes'() {
         given:
-        MockHttpServletRequest request = new MockHttpServletRequest(servletContext)
-        request.asyncSupported = true
-        AsyncGrailsWebRequest asyncWebRequest = new AsyncGrailsWebRequest(request, response, servletContext)
-        MockAsyncContext asyncContext = new MockAsyncContext(request, response)
-        asyncWebRequest.asyncContext = asyncContext
-        AsyncWebRequestPromiseDecorator decorator =
-                new AsyncWebRequestPromiseDecorator(new GrailsWebRequest(request, response, servletContext))
+        def request = new MockHttpServletRequest(servletContext).tap {
+            asyncSupported = true
+        }
+        def asyncContext = new MockAsyncContext(request, response)
+        def asyncWebRequest = new AsyncGrailsWebRequest(request, response, servletContext).tap {
+            it.asyncContext = asyncContext
+        }
+        def decorator = new AsyncWebRequestPromiseDecorator(
+                new GrailsWebRequest(request, response, servletContext)
+        )
 
         when: 'the cycle completes after the task was attached but before it runs'
         asyncWebRequest.onComplete(new AsyncEvent(asyncContext))
         decorator.decorate { it -> 'ran' }.call('in')
 
         then:
-        IllegalStateException exception = thrown()
+        def exception = thrown(IllegalStateException)
         exception.message == 'Asynchronous request already terminated. Likely timeout reached'
     }
 
