@@ -61,9 +61,9 @@ import org.codehaus.groovy.control.messages.WarningMessage;
  *
  * @since 8.0
  */
-final class AutoConfigurationImportsWriter {
+public final class AutoConfigurationImportsWriter {
 
-    static final String IMPORTS_LOCATION =
+    public static final String IMPORTS_LOCATION =
             "META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports";
 
     static final String SOURCE_IMPORTS_LOCATION = "src/main/resources/" + IMPORTS_LOCATION;
@@ -136,7 +136,19 @@ final class AutoConfigurationImportsWriter {
         }
         entries = written;
 
+        return write(importsFile, entries);
+    }
+
+    /**
+     * Writes the entries, or deletes the file when none are left - an empty imports file is a
+     * resource that says nothing, and leaving one behind is the sort of thing that shows up in a
+     * reproducible-build diff.
+     */
+    private static boolean write(File importsFile, Set<String> entries) {
         try {
+            if (entries.isEmpty()) {
+                return Files.deleteIfExists(importsFile.toPath());
+            }
             Files.createDirectories(importsFile.toPath().getParent());
             // Sorted and newline-terminated, so recompiling the same sources rewrites the same bytes.
             Files.write(importsFile.toPath(), (String.join("\n", entries) + "\n")
@@ -148,6 +160,45 @@ final class AutoConfigurationImportsWriter {
             // over the convenience of not having to would be the worse trade.
             return false;
         }
+    }
+
+    /**
+     * Drops entries naming classes this module no longer generates, adding none.
+     *
+     * <p>{@link #register} prunes as it writes, but only runs when something is generated: a
+     * descriptor that is deleted outright, loses its {@code beans} closure, or is left with an empty
+     * one calls nothing at all, and the entry naming the class it used to generate would survive a
+     * build that removed the class. This runs from the compilation itself rather than from the
+     * generating of a class, so it happens either way.
+     *
+     * @param targetDirectory the compilation output directory holding the generated file
+     * @param compilation what scopes the names registered so far, so a class generated in this
+     *                    compilation is not pruned before its class file is written
+     * @return {@code true} when an entry was dropped
+     */
+    public static boolean reconcile(File targetDirectory, Object compilation) {
+        if (targetDirectory == null) {
+            return false;
+        }
+        File importsFile = new File(targetDirectory, IMPORTS_LOCATION);
+        if (!importsFile.isFile()) {
+            // Nothing generated here, which is also how a module keeping the file by hand looks.
+            return false;
+        }
+
+        Set<String> entries = new TreeSet<>();
+        readEntries(importsFile, entries);
+        Set<String> registeredHere = registeredBy(compilation);
+        Set<String> kept = new TreeSet<>();
+        for (String entry : entries) {
+            if (registeredHere.contains(entry) || isGeneratedHere(targetDirectory, entry)) {
+                kept.add(entry);
+            }
+        }
+        if (kept.equals(entries)) {
+            return false;
+        }
+        return write(importsFile, kept);
     }
 
     private static Set<String> registeredBy(Object compilation) {

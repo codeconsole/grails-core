@@ -120,6 +120,53 @@ class AutoConfigurationImportsWriterSpec extends Specification {
         importsEntries() == ['com.example.FarewellAutoConfiguration', 'com.example.GreetingAutoConfiguration']
     }
 
+    void 'a descriptor deleted with nothing to replace it takes its entry with it'() {
+        given: 'the descriptor is gone, so nothing generates a sibling and register is never called'
+        compile(plugin('Greeting'))
+        new File(targetDir, 'com/example/GreetingAutoConfiguration.class').delete()
+        new File(targetDir, 'com/example/GreetingGrailsPlugin.class').delete()
+
+        when: 'the compilation reconciles, which it does whether or not anything was generated'
+        AutoConfigurationImportsWriter.reconcile(targetDir, null)
+
+        then: 'the file goes with the last entry - an empty imports file is a resource saying nothing'
+        importsEntries() == []
+        !new File(targetDir, IMPORTS).exists()
+    }
+
+    void 'reconciling leaves an entry whose class is still generated'() {
+        given:
+        compile(plugin('Greeting'))
+
+        when:
+        AutoConfigurationImportsWriter.reconcile(targetDir, null)
+
+        then:
+        importsEntries() == ['com.example.GreetingAutoConfiguration']
+    }
+
+    void 'reconciling does not create a file for a module that generates nothing'() {
+        when: 'a module with no beans closure anywhere, which is most of them'
+        AutoConfigurationImportsWriter.reconcile(targetDir, null)
+
+        then:
+        !new File(targetDir, IMPORTS).exists()
+    }
+
+    void 'reconciling leaves a hand-authored file alone'() {
+        given: 'no generated file, which is how a module keeping its own looks from here'
+        File handAuthored = new File(projectDir, "src/main/resources/${IMPORTS}")
+        handAuthored.parentFile.mkdirs()
+        handAuthored.text = 'com.elsewhere.FromAnotherJar\n'
+
+        when:
+        AutoConfigurationImportsWriter.reconcile(targetDir, null)
+
+        then:
+        handAuthored.readLines() == ['com.elsewhere.FromAnotherJar']
+        !new File(targetDir, IMPORTS).exists()
+    }
+
     void 'a module that keeps the file by hand keeps it'() {
         given: 'a hand-authored file, which may hold entries no compilation can discover'
         File handAuthored = new File(projectDir, "src/main/resources/${IMPORTS}")

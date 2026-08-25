@@ -58,6 +58,7 @@ import grails.io.IOUtils
 import grails.plugins.metadata.GrailsPlugin
 import grails.util.GrailsNameUtils
 import org.apache.grails.common.compiler.GroovyTransformOrder
+import org.grails.compiler.beans.AutoConfigurationImportsWriter
 import org.grails.core.io.support.GrailsFactoriesLoader
 import org.grails.io.support.AntPathMatcher
 import org.grails.io.support.GrailsResourceUtils
@@ -194,6 +195,12 @@ class GlobalGrailsClassInjectorTransformation implements ASTTransformation, Comp
             // create or update grails-plugin.xml
             generatePluginXml(pluginClassNode, pluginVersion, transformedClassNames, pluginXmlFile)
         }
+
+        // The generated auto-configurations register themselves as they are created, but a descriptor
+        // that was deleted, or that no longer has a beans closure, creates nothing and so says nothing
+        // about the entry it used to leave behind. This runs for every source unit of a Grails
+        // project, which is what makes the entry go when the class it names does.
+        AutoConfigurationImportsWriter.reconcile(compilationTargetDirectory, compilationUnit)
     }
 
     /**
