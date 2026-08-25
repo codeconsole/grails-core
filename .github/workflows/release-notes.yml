@@ -38,16 +38,19 @@ on:
   push:
     branches:
       - '[0-9]+.[0-9]+.x'
-  # Runs on PRs whose BASE branch is a release branch so the autolabeler can
-  # apply labels (bug/feature/docs/...). The draft itself is not written here:
-  # release notes are built from MERGED pull requests, so a run for an open one
-  # can only rewrite the draft it already wrote. Feature-to-feature PRs (e.g.
-  # fix/foo -> feat/bar) are intentionally excluded - they cannot affect any
-  # release.
-  pull_request:
-    types: [opened, reopened, synchronize, labeled]
-    branches:
-      - '[0-9]+.[0-9]+.x'
+  # There is deliberately no `pull_request` trigger. It was here so the autolabeler could
+  # label pull requests, and the action pinned below cannot do that: release-drafter 7 split
+  # labelling into a second entrypoint, `release-drafter/release-drafter/autolabeler`, and the
+  # entrypoint used here contains no labelling at all. A pull request run therefore applied no
+  # labels, and on a pull request from a fork it could not write a draft either - the token is
+  # read only, so it failed with "Resource not accessible by integration" and was hidden by
+  # `continue-on-error` below. Runs that could only fail also collided with each other: every
+  # pull request against a release branch computed the same concurrency group, so one cancelled
+  # another's check twelve seconds in.
+  #
+  # Restoring labels means adding the autolabeler entrypoint, which is a separate action and is
+  # not on the ASF approved list - `approved_patterns.yml` carries only
+  # `release-drafter/release-drafter@*` - so it needs an INFRA request first.
   # Manual recovery: rerun against any branch (e.g. to recreate a draft after
   # one was accidentally deleted, or to seed an initial draft on a new branch).
   workflow_dispatch:
@@ -66,21 +69,13 @@ on:
 # uploads assets to the *current published* tag (e.g. v7.0.11). Splitting the
 # concurrency groups is therefore safe.
 #
-# Keyed on the pull request, not on the branch it targets. Every open PR against
-# a release branch used to compute the same group name, so two PRs pushed within
-# seconds of each other landed in one slot and `cancel-in-progress` had the later
-# one kill the earlier: a red "cancelled" check on a PR that nothing was wrong
-# with, and no labels applied to it. Raising several PRs at once - rebasing a
-# stack, or merging a branch into each of them - made that routine.
-#
-# Queueing instead of cancelling would not have fixed it: GitHub keeps one
-# pending run per group and cancels the previously pending one, so a sweep of
-# ten PRs would still have shown eight cancellations, just of queued runs.
-#
-# `cancel-in-progress: true` remains right within a single subject: pushing twice
-# to the same PR, or twice to a release branch, means only the later run matters.
+# `cancel-in-progress: true`: if multiple pushes land on the same branch in
+# quick succession, only the latest matters - the latest run sees every PR
+# the older one would have seen, so cancelling pending runs is correct. With no
+# pull request trigger, a branch is the only subject there is, so nothing shares
+# this group with anything unrelated.
 concurrency:
-  group: release-drafter-${{ github.event.pull_request.number || github.ref_name }}
+  group: release-drafter-${{ github.ref_name }}
   cancel-in-progress: true
 
 jobs:
@@ -112,7 +107,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -uo pipefail
-          BRANCH="${{ github.event.pull_request.base.ref || github.ref_name }}"
+          BRANCH="${{ github.ref_name }}"
           if [[ ! "$BRANCH" =~ ^([0-9]+)\.([0-9]+)\.x$ ]]; then
             echo "Branch $BRANCH is not a release branch; no version seed."
             echo "version=" >> "$GITHUB_OUTPUT"
@@ -166,19 +161,11 @@ jobs:
         # silently produced no draft (e.g. rate-limit exhaustion).
         continue-on-error: true
         with:
-          # A pull request run labels; it does not draft. Release notes are built
-          # from merged pull requests, so an open one contributes nothing and the
-          # releaser would rewrite the identical draft - which is also what forced
-          # every PR to share a concurrency slot, since two runs creating the same
-          # draft at once is how duplicate drafts appear. Pushes to the release
-          # branch, which is when a merge actually changes the notes, still draft.
-          disable-releaser: ${{ github.event_name == 'pull_request' }}
-          # Explicit `commitish` is critical on `pull_request` events: without
-          # it, release-drafter would default to `refs/pull/N/merge` (a
-          # virtual ref) which the GitHub API rejects when creating a release,
-          # producing the "Validation Failed: target_commitish invalid" error
-          # historically seen on PRs (see INFRA-27602).
-          commitish: ${{ github.event.pull_request.base.ref || github.ref_name }}
+          # Explicit `commitish`, kept from when this also ran on pull requests: it
+          # defaulted to `refs/pull/N/merge`, a virtual ref the GitHub API rejects
+          # when creating a release ("Validation Failed: target_commitish invalid",
+          # see INFRA-27602). Naming the branch is right for a push in any case.
+          commitish: ${{ github.ref_name }}
           # Empty for branches that already have a release (release-drafter
           # treats an empty version as "no override" and resolves the next
           # version itself). On a release-less branch this is MAJOR.MINOR.0 so
@@ -202,7 +189,7 @@ jobs:
           DRAFT_NAME: ${{ steps.drafter.outputs.name }}
           DRAFT_URL: ${{ steps.drafter.outputs.html_url }}
           DRAFT_OUTCOME: ${{ steps.drafter.outcome }}
-          BRANCH: ${{ github.event.pull_request.base.ref || github.ref_name }}
+          BRANCH: ${{ github.ref_name }}
         run: |
           set -euo pipefail
           {
