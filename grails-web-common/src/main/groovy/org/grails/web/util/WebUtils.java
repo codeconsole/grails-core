@@ -36,6 +36,9 @@ import jakarta.servlet.ServletRequest;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import org.springframework.context.ApplicationContext;
 import org.springframework.util.Assert;
 import org.springframework.web.context.ContextLoader;
@@ -68,6 +71,8 @@ import org.grails.web.servlet.view.CompositeViewResolver;
  * @since 1.0
  */
 public class WebUtils extends org.springframework.web.util.WebUtils {
+
+    private static final Logger LOG = LoggerFactory.getLogger(WebUtils.class);
 
     public static final char SLASH = '/';
     public static final String ENABLE_FILE_EXTENSIONS = "grails.mime.file.extensions";
@@ -474,19 +479,15 @@ public class WebUtils extends org.springframework.web.util.WebUtils {
         RequestAttributes reqAttrs = RequestContextHolder.getRequestAttributes();
         if (reqAttrs != null) {
             try {
-                // First remove the web request from the HTTP request attributes. A container
-                // recycles a request as soon as it completes, and an asynchronous task can be
-                // cleaning up after one that has: reaching into it then throws, which used to
-                // leave the thread bound and take the response down with it.
+                // First remove the web request from the HTTP request attributes.
                 GrailsWebRequest webRequest = (GrailsWebRequest) reqAttrs;
                 webRequest.getRequest().removeAttribute(GrailsApplicationAttributes.WEB_REQUEST);
             }
-            catch (IllegalStateException alreadyRecycled) {
-                // the request is gone, so there is nothing left on it to remove
+            catch (IllegalStateException recycledRequest) {
+                LOG.warn("Unable to remove the Grails web request attribute because the container recycled the request", recycledRequest);
             }
             finally {
-                // Now remove it from RequestContextHolder. This is the half that matters on a
-                // pooled thread: one left carrying a finished request poisons the next it serves.
+                // Always remove it from the thread, even if the container has recycled the request.
                 RequestContextHolder.resetRequestAttributes();
             }
         }

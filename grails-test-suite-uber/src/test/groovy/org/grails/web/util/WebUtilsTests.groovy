@@ -207,4 +207,22 @@ grails.mime.file.extensions=true
         assertNull RequestContextHolder.getRequestAttributes()
         assertNull mockHttpRequest.getAttribute(GrailsApplicationAttributes.WEB_REQUEST)
     }
+
+    @Test
+    void clearGrailsWebRequestUnbindsARecycledRequest() {
+        def recycledRequest = new MockHttpServletRequest() {
+            @Override
+            void removeAttribute(String name) {
+                throw new IllegalStateException('The request has been recycled')
+            }
+        }
+        def webRequest = new GrailsWebRequest(
+                recycledRequest,
+                new MockHttpServletResponse(),
+                new MockServletContext())
+        RequestContextHolder.setRequestAttributes(webRequest)
+
+        WebUtils.clearGrailsWebRequest()
+        assertNull RequestContextHolder.getRequestAttributes()
+    }
 }

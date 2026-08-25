@@ -55,13 +55,15 @@ class AsyncWebRequestPromiseDecorator implements PromiseDecorator {
         this.webRequest = webRequest
         HttpServletRequest currentServletRequest = webRequest.currentRequest
         WebAsyncManager asyncManager = WebAsyncUtils.getAsyncManager(currentServletRequest)
-        AsyncGrailsWebRequest newWebRequest
-        if (asyncManager.isConcurrentHandlingStarted()) {
-            newWebRequest = AsyncGrailsWebRequest.lookup(currentServletRequest)
-            asyncContext = newWebRequest.asyncContext
-            if (newWebRequest == null || newWebRequest.isAsyncComplete()) {
+        AsyncGrailsWebRequest newWebRequest = AsyncGrailsWebRequest.lookup(currentServletRequest)
+        if (newWebRequest != null) {
+            if (newWebRequest.isAsyncComplete() || newWebRequest.asyncContext == null) {
                 throw new IllegalStateException('Cannot start a task once asynchronous request processing has completed')
             }
+            asyncContext = newWebRequest.asyncContext
+        }
+        else if (asyncManager.isConcurrentHandlingStarted()) {
+            throw new IllegalStateException('Cannot find the asynchronous request currently being processed')
         }
         else {
             newWebRequest = new AsyncGrailsWebRequest(currentServletRequest, webRequest.currentResponse, webRequest.servletContext, webRequest.applicationContext)
@@ -83,7 +85,7 @@ class AsyncWebRequestPromiseDecorator implements PromiseDecorator {
                 throw new TimeoutException('Asynchronous request processing timeout reached')
             }
             HttpServletRequest request = (HttpServletRequest) asyncContext.request
-            if (request.isAsyncStarted()) {
+            if (!asyncRequest.isAsyncComplete()) {
 
                 WebUtils.storeGrailsWebRequest(new GrailsWebRequest(request, (HttpServletResponse)asyncContext.response, webRequest.attributes))
                 try {
