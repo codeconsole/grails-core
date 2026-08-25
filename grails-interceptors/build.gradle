@@ -37,6 +37,7 @@ group = 'org.apache.grails'
 dependencies {
 
     implementation platform(project(':grails-bom'))
+    testImplementation platform(project(':grails-bom'))
 
     api project(':grails-controllers')
     api project(':grails-url-mappings')
@@ -46,6 +47,7 @@ dependencies {
     compileOnly 'jakarta.servlet:jakarta.servlet-api'
     compileOnly 'org.slf4j:slf4j-nop' // Prevents warning about missing slf4j implementation during compilation
 
+    testImplementation testFixtures(project(':grails-web-common'))
     testImplementation 'jakarta.servlet:jakarta.servlet-api'
     testImplementation 'org.springframework:spring-test'
 

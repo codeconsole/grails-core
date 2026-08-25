@@ -52,6 +52,7 @@ dependencies {
     }
     implementation 'com.github.ben-manes.caffeine:caffeine'
 
+    testImplementation testFixtures(project(':grails-web-common'))
     testImplementation project(':grails-url-mappings')
     testImplementation project(':grails-test-suite-base')
 
