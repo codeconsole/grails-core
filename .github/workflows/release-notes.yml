@@ -84,8 +84,10 @@ jobs:
     permissions:
       # Required to create or update the draft GitHub Release
       contents: write
-      # Required for the autolabeler to add labels to PRs
-      pull-requests: write
+      # Read, not write: nothing here labels anything any more. The draft is built from merged
+      # pull requests - the action's find-recent-merged-pull-requests asks for them - and a
+      # permissions block is restrictive, so the scope has to be named even to read.
+      pull-requests: read
     runs-on: ubuntu-latest
     steps:
       # Seed an initial version for release branches that have no published
