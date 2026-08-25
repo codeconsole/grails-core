@@ -74,13 +74,17 @@ public class EntityASTTransformation implements ASTTransformation, CompilationUn
         }
         GrailsASTUtils.markApplied(classNode, EntityASTTransformation.class);
 
-        GrailsDomainClassInjector domainInjector = new DefaultGrailsDomainClassInjector();
-        domainInjector.performInjectionOnAnnotatedEntity(classNode);
-
         ClassInjector[] classInjectors = GrailsAwareInjectionOperation.getClassInjectors();
 
         final List<ClassInjector> domainInjectors = ArtefactTypeAstTransformation.findInjectors(DomainClassArtefactHandler.TYPE, classInjectors);
 
+        // The discovered injectors run first so that GORM's own transformation, where it is on the
+        // classpath, decides the type of the injected id: it knows which GORM implementation the
+        // entity is mapped with, and this one does not. DefaultGrailsDomainClassInjector then fills in
+        // whatever is still missing - which is everything, for an entity GORM did not process, and
+        // nothing for one it did, since each of its injections is guarded on the property already
+        // being there. The same order holds for entities under grails-app/domain, where
+        // GrailsAwareInjectionOperation sorts GormTransformer ahead of this injector by name.
         for (ClassInjector injector : domainInjectors) {
             try {
                 injector.performInjection(sourceUnit, classNode);
@@ -93,6 +97,9 @@ public class EntityASTTransformation implements ASTTransformation, CompilationUn
                 throw e;
             }
         }
+
+        GrailsDomainClassInjector domainInjector = new DefaultGrailsDomainClassInjector();
+        domainInjector.performInjectionOnAnnotatedEntity(classNode);
 
         if (compilationUnit != null) {
             TraitInjectionUtils.processTraitsForNode(sourceUnit, classNode, DomainClassArtefactHandler.TYPE, compilationUnit);
