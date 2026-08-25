@@ -154,10 +154,18 @@ jobs:
           path: |
             ~/.gradle/caches/modules-2
             ~/.gradle/wrapper
-            ~/.embedmongo
           key: gradle-deps-${{ runner.os }}-${{ github.base_ref || github.ref_name }}-${{ hashFiles('**/dependencies.gradle', '**/gradle-wrapper.properties') }}
           restore-keys: |
             gradle-deps-${{ runner.os }}-${{ github.base_ref || github.ref_name }}-
+      - name: "🗄️ Cache the mongod the embedded server runs"
+        uses: actions/cache@v4
+        with:
+          # Separate from the dependency jars, for the reasons given on the same step in
+          # gradle.yml. This job names no version, so it gets the one
+          # AbstractMongoGrailsExtension.DEFAULT_MONGO_VERSION names; a change there costs one
+          # download, not a wrong binary, since this key has no other reader.
+          path: ~/.embedmongo
+          key: embedmongo-${{ runner.os }}-7.0
       - name: "🐘 Setup Gradle"
         uses: gradle/actions/setup-gradle@50e97c2cd7a37755bbfafc9c5b7cafaece252f6e # v6.1.0
         with:
@@ -198,5 +206,4 @@ jobs:
           path: |
             ~/.gradle/caches/modules-2
             ~/.gradle/wrapper
-            ~/.embedmongo
           key: gradle-deps-${{ runner.os }}-${{ github.base_ref || github.ref_name }}-${{ hashFiles('**/dependencies.gradle', '**/gradle-wrapper.properties') }}
