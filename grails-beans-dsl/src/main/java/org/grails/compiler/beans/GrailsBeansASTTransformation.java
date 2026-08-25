@@ -19,6 +19,7 @@
 package org.grails.compiler.beans;
 
 import java.beans.Introspector;
+import java.io.File;
 import java.lang.reflect.Modifier;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -63,6 +64,7 @@ import org.codehaus.groovy.ast.stmt.ReturnStatement;
 import org.codehaus.groovy.ast.stmt.Statement;
 import org.codehaus.groovy.control.CompilationUnit;
 import org.codehaus.groovy.control.CompilePhase;
+import org.codehaus.groovy.control.CompilerConfiguration;
 import org.codehaus.groovy.control.SourceUnit;
 import org.codehaus.groovy.syntax.SyntaxException;
 import org.codehaus.groovy.syntax.Types;
@@ -324,7 +326,16 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
         sibling.addAnnotations(siblingAnnotations);
         pluginClass.getAnnotations().removeAll(siblingAnnotations);
 
+        // The name is settled here and nowhere else, so this is where it can be registered.
+        AutoConfigurationImportsWriter.register(siblingName, targetDirectory(source), source);
+
         return sibling;
+    }
+
+    /** The compiler's output directory, which is where generated metadata belongs. */
+    private static File targetDirectory(SourceUnit source) {
+        CompilerConfiguration configuration = source == null ? null : source.getConfiguration();
+        return configuration == null ? null : configuration.getTargetDirectory();
     }
 
     private Set<String> parseMoveAnnotations(AnnotationNode grailsBeansAnnotation, SourceUnit source) {
