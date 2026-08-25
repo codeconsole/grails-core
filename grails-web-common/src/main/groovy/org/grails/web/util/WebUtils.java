@@ -36,9 +36,6 @@ import jakarta.servlet.ServletRequest;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import org.springframework.context.ApplicationContext;
 import org.springframework.util.Assert;
 import org.springframework.web.context.ContextLoader;
@@ -71,8 +68,6 @@ import org.grails.web.servlet.view.CompositeViewResolver;
  * @since 1.0
  */
 public class WebUtils extends org.springframework.web.util.WebUtils {
-
-    private static final Logger LOG = LoggerFactory.getLogger(WebUtils.class);
 
     public static final char SLASH = '/';
     public static final String ENABLE_FILE_EXTENSIONS = "grails.mime.file.extensions";
@@ -483,11 +478,12 @@ public class WebUtils extends org.springframework.web.util.WebUtils {
                 GrailsWebRequest webRequest = (GrailsWebRequest) reqAttrs;
                 webRequest.getRequest().removeAttribute(GrailsApplicationAttributes.WEB_REQUEST);
             }
-            catch (IllegalStateException recycledRequest) {
-                LOG.warn("Unable to remove the Grails web request attribute because the container recycled the request", recycledRequest);
-            }
             finally {
-                // Always remove it from the thread, even if the container has recycled the request.
+                // Now remove it from RequestContextHolder, whether or not the request could be
+                // reached. A thread handed back to the pool still carrying a finished request
+                // poisons the next one it serves, so this cannot be left to depend on the servlet
+                // request still being usable. Nothing is caught here: most callers clear a request
+                // they are still using, and a failure to reach one is theirs to see.
                 RequestContextHolder.resetRequestAttributes();
             }
         }
