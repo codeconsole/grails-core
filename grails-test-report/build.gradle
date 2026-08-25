@@ -35,6 +35,7 @@ def isolatedUnitTestPhases = [
         'isolatedRestRendererTests',
         'isolatedPersonTests',
         'isolatedRestfulControllerTests',
+        'execIsolatedTests',
 ]
 
 def reportVariants = [
