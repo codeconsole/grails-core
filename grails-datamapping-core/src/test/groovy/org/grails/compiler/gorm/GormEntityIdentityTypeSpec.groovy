@@ -29,12 +29,25 @@ import spock.lang.Specification
  * for itself is covered where that implementation is on the classpath - see
  * {@code MongoEntityIdentityTypeSpec} in GORM for MongoDB.</p>
  *
+ * <p>Also pins the name of that property to its literal value. The Grails Gradle plugin publishes the
+ * same name from a constant of its own, in a separate Gradle build that cannot reference this one, so
+ * nothing but a test on each side stops the two drifting apart - and a build that publishes a name the
+ * compiler no longer reads changes no behaviour visibly, it just quietly stops working. The Gradle side
+ * of the pair is {@code GormDefaultIdTypeFunctionalSpec}, which asserts the same literal.</p>
+ *
  * @since 8.0
  */
 class GormEntityIdentityTypeSpec extends Specification {
 
     void cleanup() {
         System.clearProperty(GormEntityTransformation.DEFAULT_ID_TYPE_PROPERTY)
+    }
+
+    void 'the property name is the one the Grails Gradle plugin publishes'() {
+        expect: 'the literal, not the constant - this is a wire contract, not a tautology'
+        GormEntityTransformation.DEFAULT_ID_TYPE_PROPERTY == 'grails.compile.gorm.default.id.type'
+        GormEntityTransformation.DEFAULT_ID_TYPE_LONG == 'long'
+        GormEntityTransformation.DEFAULT_ID_TYPE_NATIVE == 'native'
     }
 
     void 'an entity that declares no id is given a Long id'() {
