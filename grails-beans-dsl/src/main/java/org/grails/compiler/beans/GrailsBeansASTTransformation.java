@@ -327,7 +327,7 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
         pluginClass.getAnnotations().removeAll(siblingAnnotations);
 
         // The name is settled here and nowhere else, so this is where it can be registered.
-        AutoConfigurationImportsWriter.register(siblingName, targetDirectory(source), source);
+        AutoConfigurationImportsWriter.register(siblingName, targetDirectory(source), source, compilationUnit);
 
         return sibling;
     }

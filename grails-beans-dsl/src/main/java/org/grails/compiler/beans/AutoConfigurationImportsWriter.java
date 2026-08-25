@@ -22,8 +22,11 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.util.Collections;
+import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.WeakHashMap;
 
 import org.codehaus.groovy.control.SourceUnit;
 import org.codehaus.groovy.control.messages.WarningMessage;
@@ -38,12 +41,19 @@ import org.codehaus.groovy.control.messages.WarningMessage;
  * to write is one only the compiler knows, since it follows from the descriptor's name and package.
  * Writing it where the class is created is the only point at which that name is known for certain.
  *
- * <p>A module that keeps the file by hand keeps it: generating a second copy would put the same
- * resource at the same path twice, and folding its entries into a copy under the build directory
- * would lose them the moment anyone deleted the file that was, until then, where they were written
- * down. Such a module is warned when the generated class is missing from it and is otherwise left
- * alone, so nothing that builds today builds differently - deleting the hand-authored file is what
- * opts in, and is safe once it holds nothing but what is generated.
+ * <p>A module that keeps the file by hand at {@value #SOURCE_IMPORTS_LOCATION} keeps it: generating
+ * a second copy would put the same resource at the same path twice, and folding its entries into a
+ * copy under the build directory would lose them the moment anyone deleted the file that was, until
+ * then, where they were written down. Such a module is warned when the generated class is missing
+ * from it and is otherwise left alone, so nothing that builds today builds differently - deleting
+ * the hand-authored file is what opts in, and is safe once it holds nothing but what is generated.
+ *
+ * <p>That one conventional location is all a compiler can look in: a source set's resource
+ * directories are a build-tool notion and are not among the things the compiler is told, so a module
+ * that relocates them keeps a file this cannot see and gets a second copy generated, which the build
+ * then reports as two resources at one path. {@code FactoriesFileWriter} reads
+ * {@code META-INF/grails.factories} from the same fixed location for the same reason. Handling a
+ * relocated one needs the build to say where it is.
  *
  * <p>Hand-authored entries have to remain possible: a module may register a class from another jar,
  * one annotated with a composed annotation, or one carrying no annotation at all, the imports file
@@ -63,6 +73,17 @@ final class AutoConfigurationImportsWriter {
 
     private static final String COMMENT_START = "#";
 
+    private static final String CLASS_FILE_EXTENSION = ".class";
+
+    /**
+     * What each compilation has registered so far, so an entry survives the pruning below before the
+     * class file backing it has been written - class generation runs long after this does, and two
+     * descriptors recompiling together would otherwise prune each other. Weakly keyed on the
+     * compilation, which is what makes the state per-build rather than per-JVM in a reused daemon.
+     */
+    private static final Map<Object, Set<String>> REGISTERED_BY_COMPILATION =
+            Collections.synchronizedMap(new WeakHashMap<>());
+
     private AutoConfigurationImportsWriter() {
     }
 
@@ -77,7 +98,7 @@ final class AutoConfigurationImportsWriter {
      *                        stays registerable by hand
      * @return {@code true} when the file was written
      */
-    static boolean register(String className, File targetDirectory, SourceUnit source) {
+    static boolean register(String className, File targetDirectory, SourceUnit source, Object compilation) {
         if (className == null || className.isEmpty() || targetDirectory == null) {
             return false;
         }
@@ -95,13 +116,25 @@ final class AutoConfigurationImportsWriter {
             return false;
         }
 
+        Set<String> registeredHere = registeredBy(compilation);
+        registeredHere.add(className);
+
         File importsFile = new File(targetDirectory, IMPORTS_LOCATION);
         Set<String> entries = new TreeSet<>();
-        // Entries an earlier source unit of the same compilation already registered
         readEntries(importsFile, entries);
-        if (!entries.add(className) && importsFile.isFile()) {
+
+        // A descriptor that was renamed, deleted, or given a different autoConfigurationName leaves
+        // an entry naming a class that is no longer generated, and Spring Boot fails to start on an
+        // auto-configuration it cannot load. Anything this compilation registered is kept regardless:
+        // its class file is written in a later phase than this one runs in.
+        entries.removeIf(entry -> !registeredHere.contains(entry) && !isGeneratedHere(targetDirectory, entry));
+
+        Set<String> written = new TreeSet<>(entries);
+        written.addAll(registeredHere);
+        if (written.equals(entries) && importsFile.isFile() && entries.contains(className)) {
             return false;
         }
+        entries = written;
 
         try {
             Files.createDirectories(importsFile.toPath().getParent());
@@ -115,6 +148,21 @@ final class AutoConfigurationImportsWriter {
             // over the convenience of not having to would be the worse trade.
             return false;
         }
+    }
+
+    private static Set<String> registeredBy(Object compilation) {
+        if (compilation == null) {
+            // No compilation to scope to, so nothing is remembered between calls; the pruning below
+            // then rests entirely on which class files are present, which is right for a single one.
+            return Collections.synchronizedSet(new TreeSet<>());
+        }
+        return REGISTERED_BY_COMPILATION.computeIfAbsent(compilation,
+                key -> Collections.synchronizedSet(new TreeSet<>()));
+    }
+
+    /** Whether {@code className} is still a class this module generates into its own output. */
+    private static boolean isGeneratedHere(File targetDirectory, String className) {
+        return new File(targetDirectory, className.replace('.', File.separatorChar) + CLASS_FILE_EXTENSION).isFile();
     }
 
     private static void warn(SourceUnit source, String message) {

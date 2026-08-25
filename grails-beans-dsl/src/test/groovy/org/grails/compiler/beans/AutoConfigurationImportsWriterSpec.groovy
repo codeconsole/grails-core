@@ -80,6 +80,46 @@ class AutoConfigurationImportsWriterSpec extends Specification {
         importsEntries() == ['com.example.FirstAutoConfiguration', 'com.example.SecondAutoConfiguration']
     }
 
+    void 'a renamed descriptor does not leave its old entry behind'() {
+        given: 'a descriptor compiles, is renamed, and the stale output is cleaned - an incremental build'
+        compile(plugin('Greeting'))
+        new File(targetDir, 'com/example/GreetingAutoConfiguration.class').delete()
+        new File(targetDir, 'com/example/GreetingGrailsPlugin.class').delete()
+
+        when:
+        compile(plugin('Farewell'))
+
+        then: 'an entry naming a class that is no longer generated fails Spring Boot at startup'
+        importsEntries() == ['com.example.FarewellAutoConfiguration']
+    }
+
+    void 'a descriptor left untouched by an incremental build keeps its entry'() {
+        given: 'two descriptors, then only the one about to be rebuilt is cleaned, as Gradle does'
+        compile(plugin('Greeting'))
+        compile(plugin('Farewell'))
+        new File(targetDir, 'com/example/FarewellAutoConfiguration.class').delete()
+
+        when:
+        compile(plugin('Farewell'))
+
+        then: 'the one that was not rebuilt is still generated, so it is still registered'
+        importsEntries() == ['com.example.FarewellAutoConfiguration', 'com.example.GreetingAutoConfiguration']
+    }
+
+    void 'two descriptors recompiling together do not prune one another'() {
+        given: 'both were built before, and both stale outputs are cleaned'
+        compile(plugin('Greeting'))
+        compile(plugin('Farewell'))
+        new File(targetDir, 'com/example/GreetingAutoConfiguration.class').delete()
+        new File(targetDir, 'com/example/FarewellAutoConfiguration.class').delete()
+
+        when: 'they compile as one unit, so neither class file exists while the other registers'
+        compileTogether([plugin('Greeting'), plugin('Farewell')])
+
+        then:
+        importsEntries() == ['com.example.FarewellAutoConfiguration', 'com.example.GreetingAutoConfiguration']
+    }
+
     void 'a module that keeps the file by hand keeps it'() {
         given: 'a hand-authored file, which may hold entries no compilation can discover'
         File handAuthored = new File(projectDir, "src/main/resources/${IMPORTS}")
@@ -140,15 +180,33 @@ class AutoConfigurationImportsWriterSpec extends Specification {
         """
     }
 
+    private CompilerConfiguration compileTogether(List<String> sources) {
+        CompilationUnit unit = newUnit()
+        sources.eachWithIndex { String source, int index -> unit.addSource("Together${index}.groovy", source) }
+        run(unit)
+    }
+
     /** A real compilation, since only a target directory makes the generated file observable. */
     private CompilerConfiguration compile(String source) {
+        CompilationUnit unit = newUnit()
+        unit.addSource("Source${System.identityHashCode(source)}.groovy", source)
+        run(unit)
+    }
+
+    private CompilationUnit newUnit() {
         CompilerConfiguration configuration = new CompilerConfiguration()
         configuration.targetDirectory = targetDir
-        CompilationUnit unit = new CompilationUnit(configuration, null,
-                new GroovyClassLoader(getClass().classLoader, configuration))
-        unit.addSource("Source${System.identityHashCode(source)}.groovy", source)
+        new CompilationUnit(configuration, null, new GroovyClassLoader(getClass().classLoader, configuration))
+    }
+
+    /**
+     * Compiled through to OUTPUT, which is the phase that writes the class files. Stopping earlier
+     * would leave the output directory empty, and what is still generated there is exactly what
+     * decides whether an entry is kept.
+     */
+    private CompilerConfiguration run(CompilationUnit unit) {
         try {
-            unit.compile(Phases.CLASS_GENERATION)
+            unit.compile(Phases.OUTPUT)
         }
         catch (Exception ignored) {
             // the generated file is what is under test, not the class
@@ -157,7 +215,7 @@ class AutoConfigurationImportsWriterSpec extends Specification {
         if (warningMessages) {
             collectedWarnings.addAll(warningMessages.collect { it.message?.toString() ?: it.toString() })
         }
-        configuration
+        unit.configuration
     }
 
 }
