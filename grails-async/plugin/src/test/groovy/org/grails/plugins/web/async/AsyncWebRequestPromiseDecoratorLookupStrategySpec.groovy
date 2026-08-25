@@ -53,14 +53,15 @@ class AsyncWebRequestPromiseDecoratorLookupStrategySpec extends Specification {
         strategy.findDecorators()
 
         then: 'the invalid lifecycle is reported instead of silently running undecorated'
-        IllegalStateException exception = thrown()
+        def exception = thrown(IllegalStateException)
         exception.message.contains('Async state [DISPATCHING]')
     }
 
     void 'a request that cannot process asynchronously at all still says so'() {
         given: 'what a caller gets for asking of a request that will never do this'
-        MockHttpServletRequest request = requestRefusingToStart()
-        request.asyncSupported = false
+        def request = requestRefusingToStart().tap {
+            asyncSupported = false
+        }
         bind(request)
 
         when:
@@ -76,7 +77,7 @@ class AsyncWebRequestPromiseDecoratorLookupStrategySpec extends Specification {
     }
 
     private static MockHttpServletRequest requestRefusingToStart() {
-        MockHttpServletRequest request = new MockHttpServletRequest() {
+        new MockHttpServletRequest() {
 
             @Override
             AsyncContext startAsync() {
@@ -88,9 +89,9 @@ class AsyncWebRequestPromiseDecoratorLookupStrategySpec extends Specification {
             AsyncContext startAsync(ServletRequest servletRequest, ServletResponse servletResponse) {
                 startAsync()
             }
+        }.tap {
+            asyncSupported = true
         }
-        request.asyncSupported = true
-        request
     }
 
     private static void bind(HttpServletRequest request) {

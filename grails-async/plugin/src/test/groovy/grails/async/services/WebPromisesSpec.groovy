@@ -18,23 +18,23 @@
  */
 package grails.async.services
 
+import jakarta.servlet.AsyncContext
 import jakarta.servlet.AsyncEvent
 
-import grails.async.web.AsyncGrailsWebRequest
-import grails.async.Promises
-import grails.async.web.WebPromises
-import grails.util.GrailsWebMockUtil
-import org.grails.web.servlet.mvc.GrailsWebRequest
+import spock.lang.Specification
+
 import org.springframework.mock.web.MockAsyncContext
 import org.springframework.mock.web.MockHttpServletRequest
 import org.springframework.mock.web.MockHttpServletResponse
 import org.springframework.mock.web.MockServletContext
 import org.springframework.web.context.request.RequestContextHolder
-import spock.lang.Specification
 
-/**
- * Created by graemerocher on 20/02/2017.
- */
+import grails.async.Promises
+import grails.async.web.AsyncGrailsWebRequest
+import grails.async.web.WebPromises
+import grails.util.GrailsWebMockUtil
+import org.grails.web.servlet.mvc.GrailsWebRequest
+
 class WebPromisesSpec extends Specification {
 
     void cleanup() {
@@ -66,24 +66,25 @@ class WebPromisesSpec extends Specification {
 
     void 'a callback attached during async dispatch reuses the active request'() {
         given:
-        MockServletContext servletContext = new MockServletContext()
-        MockHttpServletResponse response = new MockHttpServletResponse()
+        def servletContext = new MockServletContext()
+        def response = new MockHttpServletResponse()
         int starts = 0
-        MockHttpServletRequest request = new MockHttpServletRequest(servletContext) {
+        def request = new MockHttpServletRequest(servletContext) {
             @Override
             boolean isAsyncStarted() {
                 false
             }
 
             @Override
-            jakarta.servlet.AsyncContext startAsync() {
+            AsyncContext startAsync() {
                 starts++
                 throw new IllegalStateException('The request is already dispatching')
             }
+        }.tap {
+            asyncSupported = true
         }
-        request.asyncSupported = true
-        MockAsyncContext asyncContext = new MockAsyncContext(request, response)
-        AsyncGrailsWebRequest asyncWebRequest = new AsyncGrailsWebRequest(request, response, servletContext)
+        def asyncContext = new MockAsyncContext(request, response)
+        def asyncWebRequest = new AsyncGrailsWebRequest(request, response, servletContext)
         asyncWebRequest.asyncContext = asyncContext
         RequestContextHolder.setRequestAttributes(new GrailsWebRequest(request, response, servletContext))
 
@@ -99,12 +100,13 @@ class WebPromisesSpec extends Specification {
 
     void 'a callback attached after async completion still fails visibly'() {
         given:
-        MockServletContext servletContext = new MockServletContext()
-        MockHttpServletRequest request = new MockHttpServletRequest(servletContext)
-        MockHttpServletResponse response = new MockHttpServletResponse()
-        MockAsyncContext asyncContext = new MockAsyncContext(request, response)
-        AsyncGrailsWebRequest asyncWebRequest = new AsyncGrailsWebRequest(request, response, servletContext)
-        asyncWebRequest.asyncContext = asyncContext
+        def servletContext = new MockServletContext()
+        def request = new MockHttpServletRequest(servletContext)
+        def response = new MockHttpServletResponse()
+        def asyncContext = new MockAsyncContext(request, response)
+        def asyncWebRequest = new AsyncGrailsWebRequest(request, response, servletContext).tap {
+            it.asyncContext = asyncContext
+        }
         asyncWebRequest.onComplete(new AsyncEvent(asyncContext))
         RequestContextHolder.setRequestAttributes(new GrailsWebRequest(request, response, servletContext))
 
@@ -112,7 +114,7 @@ class WebPromisesSpec extends Specification {
         WebPromises.task { 'too late' }
 
         then:
-        IllegalStateException exception = thrown()
+        def exception = thrown(IllegalStateException)
         exception.message == 'Cannot start a task once asynchronous request processing has completed'
     }
 }
