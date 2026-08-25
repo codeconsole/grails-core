@@ -86,6 +86,7 @@ tasks.withType(Test).configureEach { Test task ->
     boolean isMongo = project.name.startsWith('grails-test-examples-mongodb')
     boolean isSpringSecurity = project.name.startsWith('grails-test-examples-spring-security')
     boolean isRedis = project.name.startsWith('grails-test-examples-redis')
+    boolean isNeo4j = project.name.startsWith('grails-test-examples-neo4j')
 
     // Honor DO_NOT_CACHE_TESTS=1 so developers can repeatedly invoke the same test command
     // without --rerun-tasks (and without recompiling everything else).
@@ -102,6 +103,10 @@ tasks.withType(Test).configureEach { Test task ->
         }
 
         if (!isHibernate7 && project.hasProperty('onlyHibernate7Tests')) {
+            return false
+        }
+
+        if (!isNeo4j && project.hasProperty('onlyNeo4jTests')) {
             return false
         }
 
@@ -134,6 +139,10 @@ tasks.withType(Test).configureEach { Test task ->
         }
 
         if (isRedis && project.hasProperty('skipRedisTests')) {
+            return false
+        }
+
+        if (isNeo4j && project.hasProperty('skipNeo4jTests')) {
             return false
         }
 
@@ -187,6 +196,13 @@ tasks.withType(Test).configureEach { Test task ->
     systemProperty('geb.build.reportsDir', reporting.file("$projectDir/build/geb-reports"))
     systemProperty('grails.geb.reporting.directory', reporting.file("$projectDir/build/geb-reports").canonicalFile.absolutePath)
     systemProperty('TESTCONFIG', System.getProperty('TESTCONFIG'))
+
+    if (isMongo && rootProject.hasProperty('mongodbContainerVersion')) {
+        // The version the build asks for reaches the Gradle JVM as a project property and stops
+        // there, while the application under test reads a system property: without this a matrix
+        // asking for one version and an application defaulting to another agree only by accident.
+        systemProperty('mongodbContainerVersion', rootProject.property('mongodbContainerVersion'))
+    }
 }
 
 tasks.named('groovydoc').configure {

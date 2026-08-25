@@ -146,6 +146,7 @@ dependencies {
         exclude group: 'org.apache.grails.web', module: 'grails-web-url-mappings'
         exclude group: 'org.apache.grails.views', module: 'grails-web-gsp'
     }
+    astImplementation project(':grails-web-taglib')
     astImplementation project(':grails-controllers'), {
         // API dependencies in grails-plugin-controllers
         //exclude group: 'org.apache.grails', module: 'grails-core' // TraitInjector
