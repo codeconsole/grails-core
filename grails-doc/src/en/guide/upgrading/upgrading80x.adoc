@@ -748,6 +748,35 @@ If your test infrastructure registers it explicitly, remove the registration; Sp
 Update the import.
 A new `RestTestClient` and corresponding `@AutoConfigureRestTestClient` annotation are also available as a fluent alternative.
 
+==== 17.1 Test Helpers Moved to Test Fixtures
+
+Several legacy Grails test helpers are no longer included in the production classpath.
+They are published as Gradle test fixtures instead, so applications and plugins that use them directly must request the fixture variant explicitly.
+
+This affects the following helpers:
+
+* `grails.plugin.json.view.test.JsonViewTest` and related JSON view test helpers
+* `org.grails.gorm.graphql.testing.GraphQLSchemaSpec`
+* `org.grails.gorm.graphql.testing.MockDataFetchingEnvironment`
+* `grails.util.GrailsWebMockUtil`
+* Mock resource and plugin helpers from `grails-core`, including `MockResourceLoader`, `MockStringResourceLoader`, `MockFileResource`, `MockPluginDiscovery`, and `MockGrailsPluginManager`
+
+If your tests import one of these classes, add the corresponding `testFixtures(...)` dependency to the configuration that compiles those tests:
+
+[source,groovy]
+.build.gradle
+----
+dependencies {
+    testImplementation testFixtures('org.apache.grails:grails-core')
+    testImplementation testFixtures('org.apache.grails.web:grails-web-common')
+    testImplementation testFixtures('org.apache.grails:grails-views-gson')
+    testImplementation testFixtures('org.apache.grails.data:grails-data-graphql-core')
+}
+----
+
+Only add the fixture dependencies that provide helpers used by the project.
+Do not add them to `implementation`, because these artifacts contain test infrastructure and should not be part of the application runtime classpath.
+
 ==== 18. DevTools Live Reload Disabled by Default
 
 Spring Boot 4 changed the default of `spring.devtools.livereload.enabled` from `true` to `false`.
