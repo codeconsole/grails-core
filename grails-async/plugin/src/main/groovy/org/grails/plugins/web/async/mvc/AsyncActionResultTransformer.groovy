@@ -20,10 +20,7 @@ package org.grails.plugins.web.async.mvc
 
 import groovy.transform.CompileStatic
 
-import jakarta.servlet.AsyncContext
-import jakarta.servlet.http.HttpServletRequest
-import jakarta.servlet.http.HttpServletResponse
-
+import org.springframework.web.context.request.async.DeferredResult
 import org.springframework.web.context.request.async.WebAsyncManager
 import org.springframework.web.context.request.async.WebAsyncUtils
 import org.springframework.web.servlet.ModelAndView
@@ -31,8 +28,6 @@ import org.springframework.web.servlet.ModelAndView
 import grails.async.Promise
 import grails.async.PromiseList
 import grails.async.web.AsyncGrailsWebRequest
-import org.grails.plugins.web.async.GrailsAsyncContext
-import org.grails.web.errors.GrailsExceptionResolver
 import org.grails.web.servlet.mvc.ActionResultTransformer
 import org.grails.web.servlet.mvc.GrailsWebRequest
 import org.grails.web.util.GrailsApplicationAttributes
@@ -46,12 +41,9 @@ import org.grails.web.util.GrailsApplicationAttributes
 @CompileStatic
 class AsyncActionResultTransformer implements ActionResultTransformer {
 
-    private GrailsExceptionResolver exceptionResolver
-
     Object transformActionResult(GrailsWebRequest webRequest, String viewName, Object actionResult) {
 
         if (actionResult instanceof Promise) {
-
             final request = webRequest.getCurrentRequest()
             WebAsyncManager asyncManager = WebAsyncUtils.getAsyncManager(request)
             final response = webRequest.getResponse()
@@ -64,70 +56,38 @@ class AsyncActionResultTransformer implements ActionResultTransformer {
                 }
             }
             else {
-                asyncWebRequest = new AsyncGrailsWebRequest(request, response, webRequest.servletContext)
+                asyncWebRequest = new AsyncGrailsWebRequest(
+                        request,
+                        response,
+                        webRequest.servletContext,
+                        webRequest.applicationContext)
                 asyncManager.setAsyncWebRequest(asyncWebRequest)
-                asyncWebRequest.startAsync()
             }
-
-            AsyncContext asyncContext = asyncWebRequest.asyncContext
+            DeferredResult<Object> deferredResult = new DeferredResult<Object>()
+            asyncManager.startDeferredResultProcessing(deferredResult)
             request.setAttribute(GrailsApplicationAttributes.ASYNC_STARTED, true)
-            asyncContext = new GrailsAsyncContext(asyncContext, webRequest)
 
-            asyncContext.start {
-                Promise p = (Promise) actionResult
-                if (p instanceof PromiseList) {
-                    p.onComplete { List results ->
-                        handleComplete(request, response, asyncContext)
-                    }
-                } else {
-                    p.onComplete {
-                        if (it instanceof Map) {
-                            def modelAndView = new ModelAndView(viewName, it)
-                            asyncContext.getRequest().setAttribute(GrailsApplicationAttributes.MODEL_AND_VIEW, modelAndView)
-
-                            asyncContext.dispatch()
-                        } else {
-                            final modelAndView = asyncContext.getRequest().getAttribute(GrailsApplicationAttributes.MODEL_AND_VIEW)
-                            if (modelAndView) {
-                                asyncContext.dispatch()
-                            } else {
-                                handleComplete(request, response, asyncContext)
-                            }
-                        }
-                    }
+            Promise promise = (Promise) actionResult
+            promise.onComplete { Object value ->
+                if (promise instanceof PromiseList) {
+                    deferredResult.setResult(null)
                 }
-                p.onError { Throwable t ->
-                    if (!response.isCommitted()) {
-                        GrailsExceptionResolver exceptionResolver = createExceptionResolver(webRequest)
-                        request.setAttribute(GrailsExceptionResolver.EXCEPTION_ATTRIBUTE, t)
-                        def modelAndView = exceptionResolver.resolveException(request, response, this, (Exception) t)
-                        asyncContext.getRequest().setAttribute(GrailsApplicationAttributes.MODEL_AND_VIEW, modelAndView)
-                        asyncContext.dispatch()
-                    }
-                    else {
-                        asyncContext.complete()
-                    }
+                else if (value instanceof Map) {
+                    deferredResult.setResult(new ModelAndView(viewName, (Map) value))
                 }
+                else {
+                    deferredResult.setResult(request.getAttribute(GrailsApplicationAttributes.MODEL_AND_VIEW))
+                }
+            }
+            promise.onError { Throwable failure ->
+                deferredResult.setErrorResult(unwrap(failure))
             }
             return null
         }
         return actionResult
     }
 
-    protected void handleComplete(HttpServletRequest request, HttpServletResponse response, AsyncContext asyncContext) {
-        asyncContext.complete()
-    }
-
-    private GrailsExceptionResolver createExceptionResolver(GrailsWebRequest webRequest) {
-        if (!exceptionResolver) {
-            exceptionResolver = new GrailsExceptionResolver()
-            exceptionResolver.servletContext = webRequest.servletContext
-            exceptionResolver.grailsApplication = webRequest.attributes.grailsApplication
-            exceptionResolver.mappedHandlers = [this] as Set
-            def properties = new Properties()
-            properties['java.lang.Exception'] = '/error'
-            exceptionResolver.exceptionMappings = properties
-        }
-        return exceptionResolver
+    private static Throwable unwrap(Throwable failure) {
+        return failure.cause ?: failure
     }
 }

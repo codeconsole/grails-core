@@ -29,6 +29,8 @@ import jakarta.servlet.http.HttpServletResponse
 
 import org.springframework.context.ApplicationContext
 import org.springframework.context.ApplicationContextAware
+import org.springframework.web.context.request.async.WebAsyncManager
+import org.springframework.web.context.request.async.WebAsyncUtils
 import org.springframework.web.servlet.HandlerAdapter
 import org.springframework.web.servlet.ModelAndView
 import org.springframework.web.servlet.view.InternalResourceView
@@ -83,6 +85,20 @@ class UrlMappingsInfoHandlerAdapter implements HandlerAdapter, ApplicationContex
             Object modelAndView = request.getAttribute(GrailsApplicationAttributes.MODEL_AND_VIEW)
             if (modelAndView instanceof ModelAndView) {
                 return (ModelAndView) modelAndView
+            }
+            WebAsyncManager asyncManager = WebAsyncUtils.getAsyncManager(request)
+            if (asyncManager.hasConcurrentResult()) {
+                Object asyncResult = asyncManager.concurrentResult
+                asyncManager.clearConcurrentResult()
+                if (asyncResult instanceof Exception) {
+                    throw (Exception) asyncResult
+                }
+                if (asyncResult instanceof Throwable) {
+                    throw new IllegalStateException('Asynchronous controller action failed', (Throwable) asyncResult)
+                }
+                if (asyncResult instanceof ModelAndView) {
+                    return (ModelAndView) asyncResult
+                }
             }
         }
         else {
