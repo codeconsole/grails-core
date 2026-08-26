@@ -20,14 +20,15 @@ package org.grails.plugins.web.async.mvc
 
 import groovy.transform.CompileStatic
 
+import org.springframework.web.context.request.async.AsyncWebRequest
 import org.springframework.web.context.request.async.DeferredResult
+import org.springframework.web.context.request.async.StandardServletAsyncWebRequest
 import org.springframework.web.context.request.async.WebAsyncManager
 import org.springframework.web.context.request.async.WebAsyncUtils
 import org.springframework.web.servlet.ModelAndView
 
 import grails.async.Promise
 import grails.async.PromiseList
-import grails.async.web.AsyncGrailsWebRequest
 import org.grails.web.servlet.mvc.ActionResultTransformer
 import org.grails.web.servlet.mvc.GrailsWebRequest
 import org.grails.web.util.GrailsApplicationAttributes
@@ -48,19 +49,8 @@ class AsyncActionResultTransformer implements ActionResultTransformer {
             WebAsyncManager asyncManager = WebAsyncUtils.getAsyncManager(request)
             final response = webRequest.getResponse()
 
-            AsyncGrailsWebRequest asyncWebRequest
-            if (asyncManager.isConcurrentHandlingStarted()) {
-                asyncWebRequest = AsyncGrailsWebRequest.lookup(request)
-                if (asyncWebRequest == null) {
-                    throw new IllegalStateException('Concurrency handling already started by another process')
-                }
-            }
-            else {
-                asyncWebRequest = new AsyncGrailsWebRequest(
-                        request,
-                        response,
-                        webRequest.servletContext,
-                        webRequest.applicationContext)
+            if (!asyncManager.isConcurrentHandlingStarted()) {
+                AsyncWebRequest asyncWebRequest = new StandardServletAsyncWebRequest(request, response)
                 asyncManager.setAsyncWebRequest(asyncWebRequest)
             }
             DeferredResult<Object> deferredResult = new DeferredResult<Object>()

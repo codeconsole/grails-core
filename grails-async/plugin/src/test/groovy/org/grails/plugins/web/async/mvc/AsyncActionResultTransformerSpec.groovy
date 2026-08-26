@@ -23,9 +23,9 @@ import org.springframework.mock.web.MockHttpServletResponse
 import org.springframework.mock.web.MockServletContext
 import org.springframework.web.context.request.async.WebAsyncManager
 import org.springframework.web.context.request.async.WebAsyncUtils
+import org.springframework.web.context.request.async.StandardServletAsyncWebRequest
 import org.springframework.web.servlet.ModelAndView
 
-import grails.async.web.AsyncGrailsWebRequest
 import org.grails.async.factory.future.CompletableFuturePromise
 import org.grails.web.servlet.mvc.GrailsWebRequest
 import spock.lang.Specification
@@ -78,10 +78,7 @@ class AsyncActionResultTransformerSpec extends Specification {
 
     void 'joins async processing started eagerly by a web promise'() {
         given:
-        AsyncGrailsWebRequest asyncWebRequest = new AsyncGrailsWebRequest(
-                request,
-                response,
-                request.servletContext)
+        StandardServletAsyncWebRequest asyncWebRequest = new StandardServletAsyncWebRequest(request, response)
         asyncManager.asyncWebRequest = asyncWebRequest
         asyncWebRequest.startAsync()
         CompletableFuturePromise<Map<String, Object>> promise = new CompletableFuturePromise<>()
