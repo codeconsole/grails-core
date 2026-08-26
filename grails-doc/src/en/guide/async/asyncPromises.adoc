@@ -168,6 +168,12 @@ Promises.promiseFactory = new SynchronousPromiseFactory()
 
 Using the `PromiseFactory` mechanism it is theoretically possible to plug in other concurrency libraries into the Grails framework. For this you need to override the two interfaces `grails.async.Promise` and `grails.async.PromiseFactory`.
 
+==== Migrating Legacy Promise Configuration
+
+The FutureTask-based promise classes and the Spring `PromiseFactoryBean` are deprecated for removal. Applications should use the normal async plugin registration and configure `spring.task.execution` instead of constructing `CachedThreadPoolPromiseFactory` or `PromiseFactoryBean` beans.
+
+Code that needs a standalone factory can construct `CompletableFuturePromiseFactory` with a JDK `Executor`. Grails applications should normally inject `PromiseFactory` and allow Spring Boot to supply and manage the executor.
+
 === Promise Chaining
 
 
