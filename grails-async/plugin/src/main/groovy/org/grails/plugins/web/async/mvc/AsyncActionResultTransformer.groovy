@@ -44,7 +44,7 @@ class AsyncActionResultTransformer implements ActionResultTransformer {
 
     Object transformActionResult(GrailsWebRequest webRequest, String viewName, Object actionResult) {
 
-        if (actionResult instanceof Promise) {
+        if (actionResult instanceof Promise promise) {
             final request = webRequest.getCurrentRequest()
             WebAsyncManager asyncManager = WebAsyncUtils.getAsyncManager(request)
             final response = webRequest.getResponse()
@@ -57,13 +57,12 @@ class AsyncActionResultTransformer implements ActionResultTransformer {
             asyncManager.startDeferredResultProcessing(deferredResult)
             request.setAttribute(GrailsApplicationAttributes.ASYNC_STARTED, true)
 
-            Promise promise = (Promise) actionResult
             promise.onComplete { Object value ->
                 if (promise instanceof PromiseList) {
                     deferredResult.setResult(null)
                 }
-                else if (value instanceof Map) {
-                    deferredResult.setResult(new ModelAndView(viewName, (Map) value))
+                else if (value instanceof Map model) {
+                    deferredResult.setResult(new ModelAndView(viewName, model))
                 }
                 else {
                     deferredResult.setResult(request.getAttribute(GrailsApplicationAttributes.MODEL_AND_VIEW))

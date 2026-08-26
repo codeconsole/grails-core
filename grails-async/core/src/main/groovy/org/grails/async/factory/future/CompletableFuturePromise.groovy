@@ -20,6 +20,7 @@ package org.grails.async.factory.future
 
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CompletionStage
+import java.util.concurrent.Executor
 import java.util.concurrent.ExecutionException
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
@@ -37,10 +38,26 @@ import grails.async.Promise
 @CompileStatic
 class CompletableFuturePromise<T> extends CompletableFuture<T> implements Promise<T> {
 
+    final Executor executor
     private final boolean unwrapFailureOnGet
 
     CompletableFuturePromise(boolean unwrapFailureOnGet = false) {
+        this(null, unwrapFailureOnGet)
+    }
+
+    CompletableFuturePromise(Executor executor, boolean unwrapFailureOnGet = false) {
+        this.executor = executor
         this.unwrapFailureOnGet = unwrapFailureOnGet
+    }
+
+    @Override
+    Executor defaultExecutor() {
+        return executor ?: super.defaultExecutor()
+    }
+
+    @Override
+    <U> CompletableFuturePromise<U> newIncompleteFuture() {
+        return new CompletableFuturePromise<U>(executor, unwrapFailureOnGet)
     }
 
     @Override
@@ -51,12 +68,12 @@ class CompletableFuturePromise<T> extends CompletableFuture<T> implements Promis
 
     @Override
     Promise<T> onComplete(Closure<T> callable) {
-        return fromStage(thenApply(callable))
+        return fromStage(thenApply(callable), executor)
     }
 
     @Override
     Promise<T> onError(Closure<T> callable) {
-        CompletableFuturePromise<T> child = new CompletableFuturePromise<T>()
+        CompletableFuturePromise<T> child = new CompletableFuturePromise<T>(executor)
         whenComplete { T value, Throwable failure ->
             if (failure == null) {
                 child.complete(value)
@@ -106,8 +123,15 @@ class CompletableFuturePromise<T> extends CompletableFuture<T> implements Promis
         }
     }
 
-    static <T> CompletableFuturePromise<T> fromStage(CompletionStage<T> stage) {
-        CompletableFuturePromise<T> promise = new CompletableFuturePromise<T>(true)
+    static <T> CompletableFuturePromise<T> fromStage(
+            CompletionStage<T> stage,
+            Executor executor = null,
+            boolean unwrapFailureOnGet = true) {
+        Executor stageExecutor = executor
+        if (stageExecutor == null && stage instanceof CompletableFuturePromise) {
+            stageExecutor = ((CompletableFuturePromise<?>) stage).executor
+        }
+        CompletableFuturePromise<T> promise = new CompletableFuturePromise<T>(stageExecutor, unwrapFailureOnGet)
         stage.whenComplete { T value, Throwable failure ->
             if (failure == null) {
                 promise.complete(value)

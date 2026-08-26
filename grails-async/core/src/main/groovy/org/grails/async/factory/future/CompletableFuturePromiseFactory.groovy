@@ -18,13 +18,13 @@
  */
 package org.grails.async.factory.future
 
-import java.util.concurrent.Callable
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.Executor
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.ExecutionException
 import java.util.concurrent.TimeUnit
+import java.util.function.Supplier
 
 import groovy.transform.AutoFinal
 import groovy.transform.CompileStatic
@@ -75,16 +75,10 @@ class CompletableFuturePromiseFactory extends AbstractPromiseFactory implements 
     <T> Promise<T> createPromise(Closure<T>... closures) {
         if (closures.length == 1) {
             Closure<T> decorated = applyDecorators(closures[0], null)
-            CompletableFuturePromise<T> promise = new CompletableFuturePromise<T>()
-            executor.execute {
-                try {
-                    promise.complete((decorated as Callable<T>).call())
-                }
-                catch (Throwable failure) {
-                    promise.completeExceptionally(failure)
-                }
-            }
-            return promise
+            CompletableFuture<T> future = CompletableFuture.supplyAsync(
+                    { decorated.call() } as Supplier<T>,
+                    executor)
+            return CompletableFuturePromise.fromStage(future, executor, false)
         }
 
         PromiseList<T> promises = new PromiseList<T>()
@@ -116,7 +110,7 @@ class CompletableFuturePromiseFactory extends AbstractPromiseFactory implements 
         return CompletableFuturePromise.fromStage(all.thenApply {
             List<T> values = promises.collect { Promise<T> promise -> promise.get() }
             return callable.call(values) as List<T>
-        })
+        }, executor)
     }
 
     @Override
@@ -124,8 +118,8 @@ class CompletableFuturePromiseFactory extends AbstractPromiseFactory implements 
         CompletableFuture<Void> all = CompletableFuture.allOf(*promises.collect { Promise<T> promise ->
             asCompletableFuture(promise)
         } as CompletableFuture[])
-        CompletableFuturePromise<List<T>> result = new CompletableFuturePromise<List<T>>()
-        all.whenComplete { Void ignored, Throwable failure ->
+        CompletableFuturePromise<List<T>> result = new CompletableFuturePromise<List<T>>(executor)
+        all.whenComplete { Void _, Throwable failure ->
             if (failure == null) {
                 result.complete(promises.collect { Promise<T> promise -> promise.get() })
             }
@@ -145,11 +139,11 @@ class CompletableFuturePromiseFactory extends AbstractPromiseFactory implements 
         return result
     }
 
-    private static <T> CompletableFuture<T> asCompletableFuture(Promise<T> promise) {
-        if (promise instanceof CompletableFuture) {
-            return (CompletableFuture<T>) promise
+    private <T> CompletableFuture<T> asCompletableFuture(Promise<T> promise) {
+        if (promise instanceof CompletableFuture future) {
+            return (CompletableFuture<T>) future
         }
-        return CompletableFuture.supplyAsync { promise.get() }
+        return CompletableFuture.supplyAsync({ promise.get() } as Supplier<T>, executor)
     }
 
     @Override

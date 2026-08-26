@@ -18,8 +18,11 @@
  */
 package grails.async
 
+import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ExecutionException
 import java.util.concurrent.Executor
+import java.util.concurrent.Future
+import java.util.concurrent.atomic.AtomicInteger
 
 import org.grails.async.factory.PromiseFactoryBuilder
 import org.grails.async.factory.future.CompletableFuturePromise
@@ -47,6 +50,41 @@ class CompletableFuturePromiseFactorySpec extends Specification {
         then:
         promise instanceof CompletableFuturePromise
         ((CompletableFuturePromise<Integer>) promise).thenApply { it + 1 }.get() == 43
+    }
+
+    void 'preserves the supplied executor across asynchronous completion stages'() {
+        given:
+        AtomicInteger executions = new AtomicInteger()
+        Executor executor = { Runnable task ->
+            executions.incrementAndGet()
+            task.run()
+        }
+        CompletableFuturePromiseFactory executorFactory = new CompletableFuturePromiseFactory(executor)
+
+        when:
+        CompletableFuturePromise<Integer> promise = (CompletableFuturePromise<Integer>) executorFactory.createPromise { 42 }
+        CompletableFuture<Integer> chained = promise.thenApplyAsync { it + 1 }
+        CompletableFuturePromise<Integer> future = (CompletableFuturePromise<Integer>) chained
+
+        then:
+        chained instanceof CompletableFuturePromise
+        future.get() == 43
+        future.defaultExecutor().is(executor)
+        executions.get() == 2
+    }
+
+    void 'exposes Java 21 Future state and immediate result APIs'() {
+        when:
+        CompletableFuturePromise<Integer> successful = (CompletableFuturePromise<Integer>) factory.createPromise { 42 }
+        CompletableFuturePromise<Integer> failed = (CompletableFuturePromise<Integer>) factory.createPromise {
+            throw new IllegalStateException('bad')
+        }
+
+        then:
+        successful.state() == Future.State.SUCCESS
+        successful.resultNow() == 42
+        failed.state() == Future.State.FAILED
+        failed.exceptionNow() instanceof IllegalStateException
     }
 
     void 'preserves falsey values'() {

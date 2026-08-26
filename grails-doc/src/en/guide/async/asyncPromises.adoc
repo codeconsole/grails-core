@@ -119,6 +119,8 @@ spring:
 
 Spring Boot also composes any `org.springframework.core.task.TaskDecorator` beans with the executor. Grails contributes a decorator that makes the current `GrailsWebRequest` available inside `task { }`. When Micrometer context propagation is on the classpath, setting `spring.task.execution.propagate-context` to `true` additionally propagates observation and logging context.
 
+The default promise is also a JDK `CompletionStage`. Asynchronous stage operations such as `thenApplyAsync` continue to use Boot's `applicationTaskExecutor`, so they retain the same lifecycle, virtual-thread, and context-propagation configuration as Groovy `then` callbacks.
+
 However, the design of the Grails promises framework is such that you can swap out the underlying implementation for your own or one of the pre-supported implementations. For example to use RxJava 1.x simply add the RxJava dependency to `build.gradle`:
 
 [source,groovy,subs="attributes"]
