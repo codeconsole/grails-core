@@ -45,6 +45,7 @@ class ControllersAsyncGrailsPluginSpec extends Specification {
         beanFactory.getBeanDefinition('asyncPromiseResponseActionResultTransformer').beanClassName == AsyncActionResultTransformer.name
         beanFactory.getBeanDefinition('grailsPromiseFactory').beanClassName == PromiseFactory.name
         beanFactory.getBeanDefinition('grailsWebRequestTaskDecorator').beanClassName == TaskDecorator.name
+        beanFactory.getBeanDefinition('grailsPromiseExecutor').fallback
     }
 
     void 'promise factory uses the application task executor'() {
@@ -60,5 +61,22 @@ class ControllersAsyncGrailsPluginSpec extends Specification {
 
         then:
         promiseFactory.createPromise { Thread.currentThread() }.get().is(Thread.currentThread())
+    }
+
+    void 'promise factory uses a managed fallback executor when Boot does not provide one'() {
+        given:
+        def beanFactory = new DefaultListableBeanFactory()
+        def registrar = new ControllersAsyncGrailsPlugin().beanRegistrar()
+        new BeanRegistryAdapter(beanFactory, new StandardEnvironment(), registrar.getClass()).register(registrar)
+
+        when:
+        PromiseFactory promiseFactory = beanFactory.getBean('grailsPromiseFactory', PromiseFactory)
+        Thread worker = promiseFactory.createPromise { Thread.currentThread() }.get()
+
+        then:
+        worker.name.startsWith('grails-promise-')
+
+        cleanup:
+        beanFactory.destroySingletons()
     }
 }
