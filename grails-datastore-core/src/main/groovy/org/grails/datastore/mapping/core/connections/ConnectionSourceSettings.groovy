@@ -116,6 +116,12 @@ class ConnectionSourceSettings implements Settings {
     @Builder(builderStrategy = SimpleStrategy, prefix = '')
     static class DefaultSettings {
         /**
+         * The identity type to use when a portable, precompiled domain declares
+         * {@code Serializable id}. Accepted values are {@code long} and {@code native}.
+         */
+        String idType = 'long'
+
+        /**
          * The default mapping
          */
         Closure mapping
@@ -143,4 +149,3 @@ class ConnectionSourceSettings implements Settings {
         List<CustomTypeMarshaller> types = []
     }
 }
-

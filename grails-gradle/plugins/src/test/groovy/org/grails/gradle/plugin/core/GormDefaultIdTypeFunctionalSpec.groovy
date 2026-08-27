@@ -80,7 +80,7 @@ class GormDefaultIdTypeFunctionalSpec extends GradleSpecification {
         e.message.contains('defaultIdType')
     }
 
-    void 'an application native id setting does not reach a separately compiled plugin'() {
+    void 'a separately compiled plugin can preserve a portable identity for its consumer'() {
         given:
         setupTestResourceProject('gorm-default-id-type-plugin-consumer')
 
@@ -90,5 +90,6 @@ class GormDefaultIdTypeFunctionalSpec extends GradleSpecification {
         then:
         result.output.contains('PLUGIN_GORM_ID_TYPE_ARGS=[]')
         result.output.contains('APP_GORM_ID_TYPE_ARGS=[-Dgrails.compile.gorm.default.id.type=native]')
+        result.output.contains('PLUGIN_DECLARED_ID_TYPE=java.io.Serializable')
     }
 }

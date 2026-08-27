@@ -4,13 +4,11 @@
  * this work for additional information regarding copyright ownership.
  * The ASF licenses this file to You under the Apache License, Version 2.0.
  */
+package example;
 
-plugins {
-    id 'org.apache.grails.gradle.grails-plugin'
-}
+import java.io.Serializable;
 
-ext.grailsCliAutoProvision = false
-
-grails {
-    bom = null
+public class PortableBook {
+    public Serializable id;
+    public String title;
 }

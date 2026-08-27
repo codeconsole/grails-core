@@ -238,6 +238,22 @@ from its `mapWith` property and the GORM implementations on the compilation clas
 using more than one gets the right type for each domain class from the single setting. A domain class
 that declares an `id` keeps the type it declares.
 
+For a domain class shipped precompiled in a plugin, declare `Serializable id` in the plugin. The
+consumer then selects the effective persistent type at runtime as well as at compilation time:
+
+[source,yaml]
+.grails-app/conf/application.yml
+----
+grails:
+    gorm:
+        default:
+            idType: native
+----
+
+MongoDB maps that portable declaration to `String` for `native` and to `Long` for `long`; Hibernate
+maps it to its native `Long` identity either way. The resolved type is cached in GORM's mapping metadata,
+so this adds no per-operation type lookup. Concrete identity declarations remain authoritative.
+
 The default is `defaultIdType = 'long'`, which is the behaviour of every earlier release. Turning it on
 changes the type of a field that already holds data, so it is a choice to make when an application is
 written rather than one to switch on over an existing database. See the
