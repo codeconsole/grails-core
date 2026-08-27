@@ -68,6 +68,20 @@ class GrailsGormIdTypeProviderSpec extends Specification {
                 ["-D${BuildSettings.GORM_DEFAULT_ID_TYPE}=${BuildSettings.GORM_DEFAULT_ID_TYPE_NATIVE}".toString()]
     }
 
+    void 'identity type values use the same case-insensitive contract as the compiler'() {
+        given:
+        GrailsGormOptions gorm = options()
+        gorm.defaultIdType.set(configured)
+
+        expect:
+        new GrailsGormIdTypeProvider(gorm).asArguments().toList() == arguments
+
+        where:
+        configured || arguments
+        'Long'     || []
+        'Native'   || ["-D${BuildSettings.GORM_DEFAULT_ID_TYPE}=${BuildSettings.GORM_DEFAULT_ID_TYPE_NATIVE}".toString()]
+    }
+
     void 'the effective value is exposed as a task input so that changing it recompiles'() {
         given:
         GrailsGormOptions gorm = options()

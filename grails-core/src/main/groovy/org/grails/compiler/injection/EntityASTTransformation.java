@@ -84,7 +84,7 @@ public class EntityASTTransformation implements ASTTransformation, CompilationUn
         // whatever is still missing - which is everything, for an entity GORM did not process, and
         // nothing for one it did, since each of its injections is guarded on the property already
         // being there. The same order holds for entities under grails-app/domain, where
-        // GrailsAwareInjectionOperation sorts GormTransformer ahead of this injector by name.
+        // GormTransformer explicitly has the highest injector precedence.
         for (ClassInjector injector : domainInjectors) {
             try {
                 injector.performInjection(sourceUnit, classNode);

@@ -55,7 +55,7 @@ class GrailsGormIdTypeProvider implements CommandLineArgumentProvider {
      */
     @Input
     String getDefaultIdType() {
-        String value = gorm.defaultIdType.getOrElse(BuildSettings.GORM_DEFAULT_ID_TYPE_LONG)
+        String value = gorm.defaultIdType.getOrElse(BuildSettings.GORM_DEFAULT_ID_TYPE_LONG).toLowerCase(Locale.ROOT)
         if (!(value in [BuildSettings.GORM_DEFAULT_ID_TYPE_LONG, BuildSettings.GORM_DEFAULT_ID_TYPE_NATIVE])) {
             throw new InvalidUserDataException("Invalid value [$value] for grails { gorm { defaultIdType } }. " +
                     "Expected '$BuildSettings.GORM_DEFAULT_ID_TYPE_LONG' or '$BuildSettings.GORM_DEFAULT_ID_TYPE_NATIVE'.")

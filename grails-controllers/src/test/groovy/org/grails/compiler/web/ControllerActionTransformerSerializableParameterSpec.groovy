@@ -96,7 +96,7 @@ class ControllerActionTransformerSerializableParameterSpec extends Specification
                 }
             }
         ''')
-        def controller = cls.newInstance()
+        def controller = cls.getDeclaredConstructor().newInstance()
 
         when:
         controller.params['personId'] = 'abc'
@@ -132,7 +132,7 @@ class ControllerActionTransformerSerializableParameterSpec extends Specification
                 String name
             }
         ''')
-        def controller = cls.newInstance()
+        def controller = cls.getDeclaredConstructor().newInstance()
         def command = controller.$newCommand()
 
         then: 'it went down the command object path, which is what makes it validateable'
@@ -151,7 +151,7 @@ class ControllerActionTransformerSerializableParameterSpec extends Specification
                 }
             }
         ''')
-        def controller = cls.newInstance()
+        def controller = cls.getDeclaredConstructor().newInstance()
         controller.params.id = '7'
 
         then:
@@ -166,6 +166,6 @@ class ControllerActionTransformerSerializableParameterSpec extends Specification
                     [value: id]
                 }
             }
-        ''').newInstance()
+        ''').getDeclaredConstructor().newInstance()
     }
 }
