@@ -45,7 +45,7 @@ class HiddenHttpMethodSpec extends Specification {
         HiddenHttpMethod.resolveOverride(post(requested)) == null
 
         where:
-        requested << ['GET', 'HEAD', 'OPTIONS', 'TRACE', 'POST', 'BOGUS', '']
+        requested << ['GET', 'HEAD', 'OPTIONS', 'TRACE', 'POST', 'BOGUS', '', '   ']
     }
 
     void 'a POST without the parameter resolves to nothing'() {
