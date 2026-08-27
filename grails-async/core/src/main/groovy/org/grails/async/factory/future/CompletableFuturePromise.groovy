@@ -80,13 +80,11 @@ class CompletableFuturePromise<T> extends CompletableFuture<T> implements Promis
             }
             else {
                 try {
-                    callable.call(unwrap(failure))
+                    child.complete(callable.call(unwrap(failure)) as T)
                 }
                 catch (Throwable callbackFailure) {
                     child.completeExceptionally(callbackFailure)
-                    return
                 }
-                child.completeExceptionally(unwrap(failure))
             }
         }
         return child

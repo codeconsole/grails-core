@@ -19,7 +19,6 @@
 package grails.async
 
 import java.util.concurrent.CompletableFuture
-import java.util.concurrent.ExecutionException
 import java.util.concurrent.Executor
 import java.util.concurrent.Future
 import java.util.concurrent.atomic.AtomicInteger
@@ -105,19 +104,20 @@ class CompletableFuturePromiseFactorySpec extends Specification {
         factory.createPromise { 2 }.then { it * 4 }.then { it + 2 }.get() == 10
     }
 
-    void 'invokes error callbacks and retains exceptional completion'() {
+    void 'invokes error callbacks and recovers with the callback result'() {
         given:
         Throwable observed
 
         when:
-        factory.createPromise { throw new IllegalStateException('bad') }
-                .onError { Throwable failure -> observed = failure }
-                .get()
+        Integer result = factory.createPromise { throw new IllegalStateException('bad') }
+                .onError { Throwable failure ->
+                    observed = failure
+                    return 42
+                }.get()
 
         then:
-        ExecutionException failure = thrown()
-        failure.cause instanceof IllegalStateException
-        observed.is(failure.cause)
+        result == 42
+        observed instanceof IllegalStateException
     }
 
     void 'uses the modern factory by default'() {
