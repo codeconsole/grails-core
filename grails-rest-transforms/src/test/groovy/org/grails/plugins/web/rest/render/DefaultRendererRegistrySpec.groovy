@@ -22,7 +22,6 @@ import grails.rest.render.AbstractRenderer
 import grails.rest.render.RenderContext
 import grails.rest.render.hal.HalJsonCollectionRenderer
 import grails.web.mime.MimeType
-import org.grails.web.mime.HttpServletResponseExtension
 import org.springframework.context.annotation.AnnotationConfigApplicationContext
 import org.springframework.context.support.PropertySourcesPlaceholderConfigurer
 import org.springframework.core.env.MapPropertySource
@@ -67,16 +66,6 @@ class DefaultRendererRegistrySpec extends Specification {
             registry.findRenderer(MimeType.XML, new URL('https://grails.apache.org')).encoding == 'ISO-8859-1'
     }
 
-    void setup() {
-        // Clear the static mimeTypes cache to prevent test environment pollution
-        HttpServletResponseExtension.@mimeTypes = null
-    }
-
-    void cleanup() {
-        // Clear the static mimeTypes cache after each test for test isolation
-        HttpServletResponseExtension.@mimeTypes = null
-    }
-
     void "Test that registering a HAL collection renderer works"() {
         given:"A registry with a specific renderer"
             def registry = new DefaultRendererRegistry()
@@ -88,8 +77,7 @@ class DefaultRendererRegistrySpec extends Specification {
         then:"The renderer is available"
             registry.findContainerRenderer(MimeType.HAL_JSON, LinkedList, list) != null
 
-    }
-
+}
     void "Test that the registry returns an appropriate render for a container type"() {
         when:"A registry with a specific renderer"
             def registry = new DefaultRendererRegistry()
@@ -172,4 +160,3 @@ class DefaultRendererRegistrySpec extends Specification {
             registry.findRenderer(mimeType, "foo").mimeTypes.contains mimeType
     }
 }
-

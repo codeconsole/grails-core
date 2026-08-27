@@ -29,7 +29,6 @@ import org.grails.core.lifecycle.ShutdownOperations
 import org.grails.plugins.web.mime.MimeTypesConfiguration
 import org.grails.web.mime.DefaultMimeUtility
 import org.grails.web.mime.GrailsContentNegotiationStrategy
-import org.grails.web.mime.HttpServletResponseExtension
 import org.springframework.context.ApplicationContext
 import org.springframework.context.support.GenericApplicationContext
 import org.springframework.core.env.MapPropertySource
@@ -56,8 +55,6 @@ class RequestAndResponseMimeTypesApiSpec extends Specification{
     }
 
     void setup() {
-        // Clear the static mimeTypes cache to prevent test environment pollution
-        HttpServletResponseExtension.@mimeTypes = null
         application = new DefaultGrailsApplication()
         application.config = testConfig
     }
@@ -65,8 +62,6 @@ class RequestAndResponseMimeTypesApiSpec extends Specification{
     void cleanup() {
         RequestContextHolder.resetRequestAttributes()
         ShutdownOperations.runOperations()
-        // Clear the static mimeTypes cache after each test for test isolation
-        HttpServletResponseExtension.@mimeTypes = null
     }
 
     void "Test format property is valid for CONTENT_TYPE header only"() {
