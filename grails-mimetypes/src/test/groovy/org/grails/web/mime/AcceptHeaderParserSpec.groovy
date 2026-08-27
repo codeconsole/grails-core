@@ -22,6 +22,7 @@ package org.grails.web.mime
 import grails.core.DefaultGrailsApplication
 import grails.spring.BeanBuilder
 import grails.util.Holders
+import grails.web.mime.MimeType
 import org.grails.config.PropertySourcesConfig
 import org.grails.plugins.web.mime.MimeTypesConfiguration
 import org.grails.web.mime.HttpServletResponseExtension
@@ -220,5 +221,47 @@ grails.mime.types = [ xml: ['text/xml', 'application/xml'],
         then:
         ['foov1'] == mimesV1.extension
         ['foov2'] == mimesV2.extension
+    }
+
+    void "preserves configured header parameters on the negotiated mime type"() {
+        when:
+        MimeType[] mimeTypes = getAcceptHeaderParser().parse('application/json;charset=UTF-8;profile=compact;q=0.7')
+
+        then:
+        mimeTypes*.name == ['application/json']
+        mimeTypes*.extension == ['json']
+        mimeTypes[0].parameters == [q: '0.7', charset: 'UTF-8', profile: 'compact']
+    }
+
+    void "orders configured mime types by quality while retaining header order for equal quality"() {
+        when:
+        MimeType[] mimeTypes = getAcceptHeaderParser().parse(
+                'text/plain;q=0.8,application/json;q=0.9,text/html;q=0.9,*/*;q=0.1'
+        )
+
+        then:
+        mimeTypes*.name == ['application/json', 'text/html', 'text/plain', '*/*']
+        mimeTypes*.extension == ['json', 'html', 'text', 'all']
+    }
+
+    void "filters unconfigured media types without disturbing configured choices"() {
+        when:
+        MimeType[] mimeTypes = getAcceptHeaderParser().parse(
+                'image/avif,application/json;q=0.8,image/webp;q=0.7,text/plain;q=0.6'
+        )
+
+        then:
+        mimeTypes*.name == ['application/json', 'text/plain']
+        mimeTypes*.extension == ['json', 'text']
+    }
+
+    void "falls back to the configured media type when a requested vendor version is unknown"() {
+        when:
+        MimeType[] mimeTypes = getAcceptHeaderParser().parse('application/vnd.foo+json;v=3.0')
+
+        then:
+        mimeTypes*.name == ['application/vnd.foo+json']
+        mimeTypes*.extension == ['foov1']
+        mimeTypes*.version == ['3.0']
     }
 }
