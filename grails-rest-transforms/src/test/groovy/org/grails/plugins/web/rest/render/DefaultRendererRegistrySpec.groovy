@@ -63,7 +63,7 @@ class DefaultRendererRegistrySpec extends Specification {
         expect: "every default renderer stamps content types with that encoding"
             registry.findRenderer(MimeType.HTML, new URL('https://grails.apache.org')).encoding == 'ISO-8859-1'
             registry.findRenderer(MimeType.JSON, new URL('https://grails.apache.org')).encoding == 'ISO-8859-1'
-            registry.findRenderer(MimeType.XML, new URL('https://grails.apache.org')).encoding == 'ISO-8859-1'
+            registry.findRenderer(MimeType.XML, new URL('https://grails.apache.org')) == null
     }
 
     void "Test that registering a HAL collection renderer works"() {
@@ -84,8 +84,8 @@ class DefaultRendererRegistrySpec extends Specification {
             registry.initialize()
 
 
-        then:"An errors renderer can be found"
-            registry.findContainerRenderer(MimeType.XML, Errors, new BeanPropertyBindingResult("foo", "bar"))
+        then:"XML renderers are not installed by the core registry"
+            !registry.findContainerRenderer(MimeType.XML, Errors, new BeanPropertyBindingResult("foo", "bar"))
             !registry.findContainerRenderer(MimeType.XML, List, new URL("https://grails.apache.org"))
 
         when:"A collection renderer is specified"

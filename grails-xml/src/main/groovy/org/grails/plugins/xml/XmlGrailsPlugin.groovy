@@ -16,7 +16,7 @@
  *  specific language governing permissions and limitations
  *  under the License.
  */
-package org.grails.plugins.converters
+package org.grails.plugins.xml
 
 import groovy.transform.CompileStatic
 
@@ -24,44 +24,42 @@ import org.springframework.beans.factory.BeanRegistrar
 import org.springframework.beans.factory.BeanRegistry
 import org.springframework.core.env.Environment
 
-import grails.converters.JSON
+import grails.converters.XML
 import grails.plugins.Plugin
 import grails.util.GrailsUtil
-import org.grails.plugins.codecs.JSONCodec
-import org.grails.web.converters.configuration.ConvertersConfigurationInitializer
+import org.grails.plugins.codecs.XMLCodec
 import org.grails.web.converters.configuration.ObjectMarshallerRegisterer
-import org.grails.web.converters.marshaller.json.ValidationErrorsMarshaller as JsonErrorsMarshaller
+import org.grails.web.converters.configuration.XmlConvertersConfigurationInitializer
+import org.grails.web.converters.marshaller.xml.ValidationErrorsMarshaller
+import org.grails.web.databinding.bindingsource.HalXmlDataBindingSourceCreator
+import org.grails.web.databinding.bindingsource.XmlDataBindingSourceCreator
 
 /**
- * Allows the "obj as XML" and "obj as JSON" syntax.
+ * Provides optional XML conversion, rendering, and request binding support.
  *
- * @author Siegfried Puchbauer
- * @author Graeme Rocher
- *
- * @since 0.6
+ * @since 8.0
  */
 @CompileStatic
-class ConvertersGrailsPlugin extends Plugin {
+class XmlGrailsPlugin extends Plugin {
 
     def version = GrailsUtil.getGrailsVersion()
-    def observe = ['controllers']
-    def dependsOn = [controllers: version, domainClass: version]
-    def providedArtefacts = [
-        JSONCodec
-    ]
+    def dependsOn = [converters: version, dataBinding: version, restResponder: version]
+    def providedArtefacts = [XMLCodec]
 
     @Override
     BeanRegistrar beanRegistrar() {
         return { BeanRegistry registry, Environment environment ->
-            registry.registerBean('jsonErrorsMarshaller', JsonErrorsMarshaller)
+            registry.registerBean('xmlErrorsMarshaller', ValidationErrorsMarshaller)
+            registry.registerBean('xmlConvertersConfigurationInitializer', XmlConvertersConfigurationInitializer)
+            registry.registerBean('xmlDataBindingSourceCreator', XmlDataBindingSourceCreator)
+            registry.registerBean('halXmlDataBindingSourceCreator', HalXmlDataBindingSourceCreator)
+            registry.registerBean('xmlRendererRegistrar', XmlRendererRegistrar)
 
-            registry.registerBean('convertersConfigurationInitializer', ConvertersConfigurationInitializer)
-
-            registry.registerBean('errorsJsonMarshallerRegisterer', ObjectMarshallerRegisterer) {
+            registry.registerBean('errorsXmlMarshallerRegisterer', ObjectMarshallerRegisterer) {
                 it.supplier {
                     new ObjectMarshallerRegisterer(
-                            marshaller: it.bean('jsonErrorsMarshaller', JsonErrorsMarshaller),
-                            converterClass: JSON
+                            marshaller: it.bean('xmlErrorsMarshaller', ValidationErrorsMarshaller),
+                            converterClass: XML
                     )
                 }
             }

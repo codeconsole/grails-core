@@ -41,7 +41,6 @@ import grails.util.GrailsClassUtils
 import grails.web.mime.MimeType
 import org.grails.plugins.web.rest.render.html.DefaultHtmlRenderer
 import org.grails.plugins.web.rest.render.json.DefaultJsonRenderer
-import org.grails.plugins.web.rest.render.xml.DefaultXmlRenderer
 import org.grails.web.gsp.io.GrailsConventionGroovyPageLocator
 import org.grails.web.util.ClassAndMimeTypeRegistry
 
@@ -79,9 +78,6 @@ class DefaultRendererRegistry extends ClassAndMimeTypeRegistry<Renderer, Rendere
 
     @PostConstruct
     void initialize() {
-        final defaultXmlRenderer = new DefaultXmlRenderer<Object>(Object, groovyPageLocator, this)
-        defaultXmlRenderer.encoding = encoding
-        addDefaultRenderer(defaultXmlRenderer)
         final defaultJsonRenderer = new DefaultJsonRenderer<Object>(Object, groovyPageLocator, this)
         defaultJsonRenderer.encoding = encoding
         addDefaultRenderer(defaultJsonRenderer)
@@ -95,11 +91,6 @@ class DefaultRendererRegistry extends ClassAndMimeTypeRegistry<Renderer, Rendere
         allHtmlRenderer.proxyHandler = proxyHandler
         allHtmlRenderer.encoding = encoding
         addDefaultRenderer(allHtmlRenderer)
-        [MimeType.XML, MimeType.TEXT_XML].each { MimeType mimeType ->
-            final errorsXmlRenderer = new DefaultXmlRenderer(Errors)
-            errorsXmlRenderer.encoding = encoding
-            containerRenderers.put(new ContainerRendererCacheKey(Errors, Object, mimeType), errorsXmlRenderer)
-        }
         [MimeType.JSON, MimeType.TEXT_JSON].each { MimeType mimeType ->
             final errorsJsonRenderer = new DefaultJsonRenderer(Errors)
             errorsJsonRenderer.encoding = encoding

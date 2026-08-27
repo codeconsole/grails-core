@@ -22,14 +22,14 @@ import groovy.xml.XmlSlurper
 
 import grails.core.DefaultGrailsApplication
 import org.grails.web.converters.configuration.ConvertersConfigurationHolder
-import org.grails.web.converters.configuration.ConvertersConfigurationInitializer
+import org.grails.web.converters.configuration.XmlConvertersConfigurationInitializer
 
 import spock.lang.Specification
 
 class XmlCompatibilitySpec extends Specification {
 
     void setup() {
-        new ConvertersConfigurationInitializer().tap {
+        new XmlConvertersConfigurationInitializer().tap {
             grailsApplication = new DefaultGrailsApplication()
             initialize()
         }

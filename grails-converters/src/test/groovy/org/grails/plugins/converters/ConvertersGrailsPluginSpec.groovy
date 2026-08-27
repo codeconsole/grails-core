@@ -23,11 +23,9 @@ import org.springframework.beans.factory.support.DefaultListableBeanFactory
 import org.springframework.core.env.StandardEnvironment
 
 import grails.converters.JSON
-import grails.converters.XML
 import org.grails.web.converters.configuration.ConvertersConfigurationInitializer
 import org.grails.web.converters.configuration.ObjectMarshallerRegisterer
 import org.grails.web.converters.marshaller.json.ValidationErrorsMarshaller as JsonErrorsMarshaller
-import org.grails.web.converters.marshaller.xml.ValidationErrorsMarshaller as XmlErrorsMarshaller
 
 import spock.lang.Specification
 
@@ -44,21 +42,16 @@ class ConvertersGrailsPluginSpec extends Specification {
         expect:
         with(beanFactory) {
             getBeanDefinition('jsonErrorsMarshaller').beanClassName == JsonErrorsMarshaller.name
-            getBeanDefinition('xmlErrorsMarshaller').beanClassName == XmlErrorsMarshaller.name
             getBeanDefinition('convertersConfigurationInitializer').beanClassName == ConvertersConfigurationInitializer.name
-            containsBeanDefinition('errorsXmlMarshallerRegisterer')
             containsBeanDefinition('errorsJsonMarshallerRegisterer')
         }
     }
 
     void "the errors marshaller registerers use the named errors marshaller beans"() {
         when:
-        def xmlRegisterer = beanFactory.getBean('errorsXmlMarshallerRegisterer', ObjectMarshallerRegisterer)
         def jsonRegisterer = beanFactory.getBean('errorsJsonMarshallerRegisterer', ObjectMarshallerRegisterer)
 
         then:
-        xmlRegisterer.marshaller.is(beanFactory.getBean('xmlErrorsMarshaller', XmlErrorsMarshaller))
-        xmlRegisterer.converterClass == XML
         jsonRegisterer.marshaller.is(beanFactory.getBean('jsonErrorsMarshaller', JsonErrorsMarshaller))
         jsonRegisterer.converterClass == JSON
     }

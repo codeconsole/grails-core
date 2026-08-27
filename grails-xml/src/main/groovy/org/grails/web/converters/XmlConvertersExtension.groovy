@@ -22,38 +22,17 @@ import groovy.transform.CompileStatic
 
 import jakarta.servlet.http.HttpServletRequest
 
-import grails.converters.JSON
-import org.grails.web.servlet.mvc.GrailsWebRequest
+import grails.converters.XML
 
 /**
+ * XML-specific request extensions contributed by the optional XML module.
  *
- *
- *
- * @author Jeff Brown
- * @author Graeme Rocher
- *
- * @since 3.0
- *
+ * @since 8.0
  */
 @CompileStatic
-class ConvertersExtension {
+class XmlConvertersExtension {
 
-    static getJSON(HttpServletRequest request) {
-        JSON.parse(request)
-    }
-
-    static <T> T asType(instance, Class<T> clazz) {
-        if (ConverterUtil.isConverterClass(clazz)) {
-            return ConverterUtil.createConverter(clazz,
-                                                 instance,
-                                                 GrailsWebRequest.lookup()?.applicationContext)
-        }
-        else {
-            return (T) ConverterUtil.invokeOriginalAsTypeMethod(instance, clazz)
-        }
-    }
-
-    static <T> T  asType(Object[] array, Class<T> clazz) {
-        asType((Object) array, clazz)
+    static getXML(HttpServletRequest request) {
+        XML.parse(request)
     }
 }

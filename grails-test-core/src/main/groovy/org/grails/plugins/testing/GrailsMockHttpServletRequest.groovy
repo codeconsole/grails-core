@@ -42,7 +42,6 @@ import org.springframework.web.multipart.MultipartFile
 import org.springframework.web.multipart.MultipartHttpServletRequest
 
 import grails.converters.JSON
-import grails.converters.XML
 import grails.web.mime.MimeType
 import org.grails.web.servlet.mvc.GrailsWebRequest
 import org.grails.web.util.GrailsApplicationAttributes
@@ -136,12 +135,17 @@ class GrailsMockHttpServletRequest extends MockHttpServletRequest implements Mul
             setContent(sourceXml.getBytes(StandardCharsets.UTF_8))
         }
         else {
-            XML xml
-            if (sourceXml instanceof XML) {
-                xml = (XML) sourceXml
-            } else {
-                xml = new XML(sourceXml)
+            Class<?> xmlClass
+            try {
+                xmlClass = getClass().classLoader.loadClass('grails.converters.XML')
             }
+            catch (ClassNotFoundException ignored) {
+                throw new IllegalStateException(
+                        'Object-to-XML conversion requires org.apache.grails:grails-xml on the test classpath',
+                        ignored
+                )
+            }
+            Object xml = xmlClass.isInstance(sourceXml) ? sourceXml : xmlClass.getConstructor(Object).newInstance(sourceXml)
             setContent(xml.toString().getBytes(StandardCharsets.UTF_8))
         }
 
