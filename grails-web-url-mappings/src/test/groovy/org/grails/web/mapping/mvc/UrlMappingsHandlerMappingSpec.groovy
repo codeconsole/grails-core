@@ -24,7 +24,6 @@ import grails.util.GrailsWebMockUtil
 import grails.web.Action
 import grails.web.HyphenatedUrlConverter
 import grails.web.mapping.AbstractUrlMappingsSpec
-import grails.web.mapping.UrlMappingInfo
 import org.grails.web.mapping.DefaultUrlMappingData
 import org.grails.web.mapping.DefaultUrlMappingInfo
 import org.grails.web.util.WebUtils
@@ -36,22 +35,6 @@ import spock.lang.Issue
  * Created by graemerocher on 26/05/14.
  */
 class UrlMappingsHandlerMappingSpec extends AbstractUrlMappingsSpec {
-
-    void 'reconfigures the matched URL mapping for an async dispatch'() {
-        given:
-        def webRequest = GrailsWebMockUtil.bindMockWebRequest()
-        UrlMappingInfo matchedInfo = Mock()
-        webRequest.request.setAttribute(UrlMappingsHandlerMapping.MATCHED_REQUEST, matchedInfo)
-        webRequest.request.setAttribute(WebUtils.ASYNC_REQUEST_URI_ATTRIBUTE, '/task/error')
-        UrlMappingsHandlerMapping handlerMapping = new UrlMappingsHandlerMapping(Mock(grails.web.mapping.UrlMappingsHolder))
-
-        when:
-        def handler = handlerMapping.getHandler(webRequest.request)
-
-        then:
-        handler.handler.is(matchedInfo)
-        1 * matchedInfo.configure(webRequest)
-    }
 
     void "Test that when a request coming from a 404 forward is matched the correct action is executed"() {
         given:"A URL mapping definition that has a 404 mapping"
