@@ -95,7 +95,7 @@ class GrailsDispatcherServlet extends DispatcherServlet implements ServletContex
             HttpServletRequest processedRequest = super.checkMultipart(request)
             if (!processedRequest.is(request)) {
                 currentRequest = processedRequest
-                def webRequest = GrailsWebRequest.lookup(request)
+                GrailsWebRequest webRequest = GrailsWebRequest.lookup(request)
                 if (webRequest != null) {
                     webRequest.multipartRequest = processedRequest
                 }
@@ -115,7 +115,7 @@ class GrailsDispatcherServlet extends DispatcherServlet implements ServletContex
             String override = HiddenHttpMethod.resolveOverride(currentRequest)
             if (override != null) {
                 HttpServletRequest wrapped = HiddenHttpMethod.wrap(override, currentRequest)
-                def webRequest = GrailsWebRequest.lookup(request)
+                GrailsWebRequest webRequest = GrailsWebRequest.lookup(request)
                 if (webRequest != null) {
                     webRequest.multipartRequest = wrapped
                 }

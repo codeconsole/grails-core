@@ -23,8 +23,6 @@ import jakarta.servlet.ServletRequest
 import jakarta.servlet.ServletResponse
 import jakarta.servlet.http.HttpServletRequest
 
-import grails.async.web.AsyncGrailsWebRequest
-
 import org.springframework.mock.web.MockHttpServletRequest
 import org.springframework.mock.web.MockHttpServletResponse
 import org.springframework.mock.web.MockServletContext
@@ -47,33 +45,23 @@ class AsyncWebRequestPromiseDecoratorLookupStrategySpec extends Specification {
         RequestContextHolder.resetRequestAttributes()
     }
 
-    void 'a request the container will not start again is not decorated'() {
+    void 'a request the container will not start again fails visibly'() {
         given: 'a request that supports asynchronous processing and refuses to start another cycle'
         bind(requestRefusingToStart())
 
         when:
-        List decorators = strategy.findDecorators()
-
-        then: 'the promise runs with nothing bound to it, rather than failing the response'
-        decorators.isEmpty()
-    }
-
-    void 'a request that will not start again is left as it was found'() {
-        given:
-        MockHttpServletRequest request = requestRefusingToStart()
-        bind(request)
-
-        when: 'the decorator stores its web request on the request and is then refused'
         strategy.findDecorators()
 
-        then: 'nothing half-built is left behind for the next lookup to find and use'
-        request.getAttribute(AsyncGrailsWebRequest.WEB_REQUEST) == null
+        then: 'the invalid lifecycle is reported instead of silently running undecorated'
+        def exception = thrown(IllegalStateException)
+        exception.message.contains('Async state [DISPATCHING]')
     }
 
     void 'a request that cannot process asynchronously at all still says so'() {
         given: 'what a caller gets for asking of a request that will never do this'
-        MockHttpServletRequest request = requestRefusingToStart()
-        request.asyncSupported = false
+        def request = requestRefusingToStart().tap {
+            asyncSupported = false
+        }
         bind(request)
 
         when:
@@ -89,7 +77,7 @@ class AsyncWebRequestPromiseDecoratorLookupStrategySpec extends Specification {
     }
 
     private static MockHttpServletRequest requestRefusingToStart() {
-        MockHttpServletRequest request = new MockHttpServletRequest() {
+        new MockHttpServletRequest() {
 
             @Override
             AsyncContext startAsync() {
@@ -101,9 +89,9 @@ class AsyncWebRequestPromiseDecoratorLookupStrategySpec extends Specification {
             AsyncContext startAsync(ServletRequest servletRequest, ServletResponse servletResponse) {
                 startAsync()
             }
+        }.tap {
+            asyncSupported = true
         }
-        request.asyncSupported = true
-        request
     }
 
     private static void bind(HttpServletRequest request) {
