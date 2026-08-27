@@ -128,7 +128,16 @@ class UrlMappingsHandlerMapping extends AbstractHandlerMapping {
 
         def matchedInfo = request.getAttribute(MATCHED_REQUEST)
         def errorStatus = request.getAttribute(WebUtils.ERROR_STATUS_CODE_ATTRIBUTE)
-        if (matchedInfo != null && errorStatus == null) return matchedInfo
+        if (matchedInfo != null && errorStatus == null) {
+            if (WebUtils.isAsync(request)) {
+                GrailsWebRequest webRequest = GrailsWebRequest.lookup(request)
+                if (webRequest != null) {
+                    webRequest.resetParams()
+                    ((UrlMappingInfo) matchedInfo).configure(webRequest)
+                }
+            }
+            return matchedInfo
+        }
 
         String uri = urlHelper.getPathWithinApplication(request)
         def webRequest = GrailsWebRequest.lookup(request)
