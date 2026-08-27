@@ -40,9 +40,10 @@ final class SpringMediaTypeAdapter {
 
         MediaType parsed = MediaType.parseMediaType(mimeType.name)
         Map<String, String> parameters = new LinkedHashMap<>(parsed.parameters)
-        mimeType.parameters.each { String name, Object value ->
+        Map rawParameters = (Map) mimeType.parameters
+        rawParameters.each { Object name, Object value ->
             if (value != null) {
-                parameters.put(name, value.toString())
+                parameters.put(name.toString(), value.toString())
             }
         }
         return new MediaType(parsed.type, parsed.subtype, parameters)

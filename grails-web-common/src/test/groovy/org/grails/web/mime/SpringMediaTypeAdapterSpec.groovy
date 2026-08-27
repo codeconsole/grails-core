@@ -71,6 +71,14 @@ class SpringMediaTypeAdapterSpec extends Specification {
         converted.parameters == original.parameters
     }
 
+    void "converts numeric parameters produced during accept header negotiation"() {
+        given:
+        MimeType mimeType = new MimeType('application/json', 'json', [q: 0.8G])
+
+        expect:
+        SpringMediaTypeAdapter.toMediaType(mimeType).qualityValue == 0.8d
+    }
+
     void "returns null when there is no type to adapt"() {
         expect:
         SpringMediaTypeAdapter.toMediaType(null) == null

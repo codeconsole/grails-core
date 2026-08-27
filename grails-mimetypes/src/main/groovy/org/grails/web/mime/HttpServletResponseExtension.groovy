@@ -27,6 +27,7 @@ import jakarta.servlet.http.HttpServletRequest
 import jakarta.servlet.http.HttpServletResponse
 
 import org.springframework.beans.factory.NoSuchBeanDefinitionException
+import org.springframework.web.context.support.WebApplicationContextUtils
 
 import grails.config.Config
 import grails.config.Settings
@@ -253,6 +254,17 @@ class HttpServletResponseExtension {
     private static MimeType[] getMimeTypesInternal(HttpServletRequest request) {
         MimeType[] result = (MimeType[]) request.getAttribute(GrailsApplicationAttributes.RESPONSE_FORMATS)
         if (!result) {
+
+            def applicationContext = GrailsWebRequest.lookup()?.applicationContext ?:
+                    WebApplicationContextUtils.getWebApplicationContext(request.servletContext)
+            GrailsContentNegotiationStrategy strategy = applicationContext?.getBeanProvider(
+                    GrailsContentNegotiationStrategy
+            )?.getIfAvailable()
+            if (strategy != null) {
+                result = strategy.resolveMimeTypes(request)
+                request.setAttribute(GrailsApplicationAttributes.RESPONSE_FORMATS, result)
+                return result
+            }
 
             def userAgent = request.getHeader(HttpHeaders.USER_AGENT)
 
