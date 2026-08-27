@@ -46,7 +46,7 @@ interface GormEntityTraitProvider {
      * @return the default identity type, never {@code null}
      * @since 8.0
      */
-    default Class getDefaultIdentityType() {
+    default Class<?> getDefaultIdentityType() {
         Long
     }
 }

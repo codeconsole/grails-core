@@ -269,7 +269,7 @@ class GormEntityTransformation extends AbstractASTTransformation implements Comp
         MethodNode getAssociationMethodNode = GET_ASSOCIATION_ID_METHOD_NODE
 
         if (!isRxEntity) {
-            Class classGormEntityTrait = traitProvider?.entityTrait ?: GormEntity
+            Class<?> classGormEntityTrait = traitProvider?.entityTrait ?: GormEntity
             AstUtils.injectTrait(classNode, classGormEntityTrait)
         } else {
             addToMethodNode = rxEntityClassNode.getMethods('addTo').get(0)
@@ -512,7 +512,7 @@ class GormEntityTransformation extends AbstractASTTransformation implements Comp
             // inject into furthest relative
             ClassNode parent = AstUtils.getFurthestUnresolvedParent(classNode)
 
-            Class identityType = resolveIdentityType(classNode, sourceUnit, traitProvider)
+            Class<?> identityType = resolveIdentityType(classNode, sourceUnit, traitProvider)
             parent.addProperty(GormProperties.IDENTITY, Modifier.PUBLIC, new ClassNode(identityType), null, null, null)
         }
     }
@@ -533,7 +533,7 @@ class GormEntityTransformation extends AbstractASTTransformation implements Comp
      * @return the identity type, never {@code null}
      * @since 8.0
      */
-    protected Class resolveIdentityType(ClassNode classNode, SourceUnit sourceUnit, GormEntityTraitProvider traitProvider) {
+    protected Class<?> resolveIdentityType(ClassNode classNode, SourceUnit sourceUnit, GormEntityTraitProvider traitProvider) {
         String configured = System.getProperty(DEFAULT_ID_TYPE_PROPERTY, DEFAULT_ID_TYPE_LONG)
         if (DEFAULT_ID_TYPE_LONG.equalsIgnoreCase(configured)) {
             return Long

@@ -52,7 +52,7 @@ class GormEntityIdentityTypeSpec extends Specification {
 
     void 'an entity that declares no id is given a Long id'() {
         when:
-        Class bookClass = compileBook()
+        Class<?> bookClass = compileBook()
 
         then:
         bookClass.getDeclaredField('id').type == Long
@@ -64,7 +64,7 @@ class GormEntityIdentityTypeSpec extends Specification {
                 GormEntityTransformation.DEFAULT_ID_TYPE_NATIVE)
 
         when:
-        Class bookClass = compileBook()
+        Class<?> bookClass = compileBook()
 
         then:
         bookClass.getDeclaredField('id').type == Long
@@ -75,7 +75,7 @@ class GormEntityIdentityTypeSpec extends Specification {
         System.setProperty(GormEntityTransformation.DEFAULT_ID_TYPE_PROPERTY, 'objectid')
 
         when:
-        Class bookClass = compileBook()
+        Class<?> bookClass = compileBook()
 
         then:
         bookClass.getDeclaredField('id').type == Long
@@ -87,7 +87,7 @@ class GormEntityIdentityTypeSpec extends Specification {
                 GormEntityTransformation.DEFAULT_ID_TYPE_NATIVE)
 
         when:
-        Class bookClass = compileBook('String id')
+        Class<?> bookClass = compileBook('String id')
 
         then:
         bookClass.getDeclaredField('id').type == String
@@ -99,13 +99,13 @@ class GormEntityIdentityTypeSpec extends Specification {
                 GormEntityTransformation.DEFAULT_ID_TYPE_NATIVE)
 
         when:
-        Class bookClass = compileBook('String id')
+        Class<?> bookClass = compileBook('String id')
 
         then:
         bookClass.getDeclaredField('version').type == Long
     }
 
-    private static Class compileBook(String declaredId = '') {
+    private static Class<?> compileBook(String declaredId = '') {
         new GroovyClassLoader().parseClass("""
             import grails.gorm.annotation.Entity
 

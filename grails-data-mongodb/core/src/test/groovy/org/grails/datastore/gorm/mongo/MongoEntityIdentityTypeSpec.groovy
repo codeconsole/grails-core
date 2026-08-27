@@ -48,7 +48,7 @@ class MongoEntityIdentityTypeSpec extends Specification {
 
     void 'a MongoDB domain class is given a Long id by default'() {
         when:
-        Class personClass = compilePerson()
+        Class<?> personClass = compilePerson()
 
         then:
         personClass.getDeclaredField('id').type == Long
@@ -59,7 +59,7 @@ class MongoEntityIdentityTypeSpec extends Specification {
         nativeIdTypes()
 
         when:
-        Class personClass = compilePerson()
+        Class<?> personClass = compilePerson()
 
         then:
         personClass.getDeclaredField('id').type == String
@@ -70,7 +70,7 @@ class MongoEntityIdentityTypeSpec extends Specification {
         nativeIdTypes()
 
         when:
-        Class personClass = compilePerson('', "static mapWith = 'mongo'")
+        Class<?> personClass = compilePerson('', "static mapWith = 'mongo'")
 
         then:
         personClass.getDeclaredField('id').type == String
@@ -81,7 +81,7 @@ class MongoEntityIdentityTypeSpec extends Specification {
         nativeIdTypes()
 
         when:
-        Class personClass = compilePerson('Long id')
+        Class<?> personClass = compilePerson('Long id')
 
         then:
         personClass.getDeclaredField('id').type == Long
@@ -92,7 +92,7 @@ class MongoEntityIdentityTypeSpec extends Specification {
         nativeIdTypes()
 
         when:
-        Class personClass = compilePerson('org.bson.types.ObjectId id')
+        Class<?> personClass = compilePerson('org.bson.types.ObjectId id')
 
         then:
         personClass.getDeclaredField('id').type == ObjectId
@@ -103,7 +103,7 @@ class MongoEntityIdentityTypeSpec extends Specification {
         nativeIdTypes()
 
         when:
-        Class personClass = compilePerson()
+        Class<?> personClass = compilePerson()
 
         then:
         personClass.getDeclaredField('version').type == Long
@@ -114,7 +114,7 @@ class MongoEntityIdentityTypeSpec extends Specification {
                 GormEntityTransformation.DEFAULT_ID_TYPE_NATIVE)
     }
 
-    private static Class compilePerson(String declaredId = '', String mapping = '') {
+    private static Class<?> compilePerson(String declaredId = '', String mapping = '') {
         new GroovyClassLoader().parseClass("""
             import grails.gorm.annotation.Entity
 

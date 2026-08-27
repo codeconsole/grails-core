@@ -50,5 +50,5 @@ class MongoEntityTraitProvider implements GormEntityTraitProvider {
      *
      * @since 8.0
      */
-    final Class defaultIdentityType = String
+    final Class<?> defaultIdentityType = String
 }
