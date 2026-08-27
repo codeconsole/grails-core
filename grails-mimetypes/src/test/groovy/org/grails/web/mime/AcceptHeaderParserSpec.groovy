@@ -164,6 +164,14 @@ grails.mime.types = [ xml: ['text/xml', 'application/xml'],
         ['html','html','xml', 'all'] == mimes.extension
     }
 
+    void "retains header order when a lenient quality value precedes another equally ranked type"() {
+        when:
+        MimeType[] mimeTypes = getAcceptHeaderParser().parse('application/xml;q=invalid,text/html')
+
+        then:
+        mimeTypes*.extension == ['xml', 'html']
+    }
+
     void testAcceptHeaderWithQNumberOrdering() {
 
         when:
