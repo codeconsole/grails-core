@@ -79,4 +79,16 @@ class GormDefaultIdTypeFunctionalSpec extends GradleSpecification {
         e.message.contains('objectid')
         e.message.contains('defaultIdType')
     }
+
+    void 'an application native id setting does not reach a separately compiled plugin'() {
+        given:
+        setupTestResourceProject('gorm-default-id-type-plugin-consumer')
+
+        when:
+        def result = executeTask('inspectGormIdType')
+
+        then:
+        result.output.contains('PLUGIN_GORM_ID_TYPE_ARGS=[]')
+        result.output.contains('APP_GORM_ID_TYPE_ARGS=[-Dgrails.compile.gorm.default.id.type=native]')
+    }
 }
