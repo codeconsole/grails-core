@@ -16,7 +16,7 @@ limitations under the License.
 
 # AWS Elastic Beanstalk Deployment Runbook
 
-This runbook describes the AWS migration configuration in this repository. It is an operating procedure, not a statement that production traffic has already moved.
+This runbook describes operating the five Forge API slots on AWS Elastic Beanstalk. Public DNS for `latest.grails.org`, `snapshot.grails.org`, `next.grails.org`, `prev.grails.org`, and `prev-snapshot.grails.org` points at the shared ALB. The UI remains at `https://start.grails.org`.
 
 ## Architecture
 
