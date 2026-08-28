@@ -19,6 +19,7 @@
 package org.grails.web.databinding.bindingsource.json
 
 import org.grails.web.databinding.bindingsource.JsonDataBindingSourceCreator
+import grails.web.databinding.GrailsWebDataBinder
 import grails.web.mime.MimeType
 
 import spock.lang.Specification
@@ -99,4 +100,69 @@ class JsonDataBindingSourceCreatorSpec extends Specification {
         then:
         bindingSource['name'] == 'Grails'
     }
+
+    void 'Jackson parsed sources preserve nested indexed null and missing values through public binding'() {
+        given:
+        def json = '''{
+  "name": "updated",
+  "protectedValue": "attempted",
+  "missingValue": null,
+  "child": {"name": "nested"},
+  "children": [{"name": "zero"}, {"name": "one"}]
+}'''
+        def source = new JsonDataBindingSourceCreator().createDataBindingSource(
+                MimeType.JSON, JsonBindingTarget, new ByteArrayInputStream(json.bytes))
+        def target = new JsonBindingTarget(
+                name: 'original', protectedValue: 'protected', missingValue: 'retained')
+
+        when:
+        new GrailsWebDataBinder(null).bind(
+                target, source, ['name', 'missingValue', 'child', 'children'], ['protectedValue'])
+
+        then:
+        target.name == 'updated'
+        target.protectedValue == 'protected'
+        target.missingValue == null
+        target.child.name == 'nested'
+        target.children*.name == ['zero', 'one']
+    }
+
+    void 'missing JSON properties do not clear existing target values'() {
+        given:
+        def source = new JsonDataBindingSourceCreator().createDataBindingSource(
+                MimeType.JSON, JsonBindingTarget, new StringReader('{"name":"updated"}'))
+        def target = new JsonBindingTarget(name: 'original', missingValue: 'retained')
+
+        when:
+        new GrailsWebDataBinder(null).bind(target, source)
+
+        then:
+        target.name == 'updated'
+        target.missingValue == 'retained'
+    }
+
+    void 'top-level JSON arrays create one binding source per object element'() {
+        when:
+        def sources = new JsonDataBindingSourceCreator().createCollectionDataBindingSource(
+                MimeType.JSON, JsonBindingTarget, new StringReader('[{"name":"first"},42,{"name":"third"}]'))
+
+        then:
+        (sources.dataBindingSources[0].propertyNames as Set) == (['name'] as Set)
+        sources.dataBindingSources[1].propertyNames.empty
+        (sources.dataBindingSources[2].propertyNames as Set) == (['name'] as Set)
+        sources.dataBindingSources[0]['name'] == 'first'
+        sources.dataBindingSources[2]['name'] == 'third'
+    }
+}
+
+class JsonBindingTarget {
+    String name
+    String protectedValue
+    String missingValue
+    JsonBindingChild child
+    List<JsonBindingChild> children
+}
+
+class JsonBindingChild {
+    String name
 }
