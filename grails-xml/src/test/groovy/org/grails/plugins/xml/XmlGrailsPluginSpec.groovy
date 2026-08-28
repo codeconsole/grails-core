@@ -100,4 +100,17 @@ class XmlGrailsPluginSpec extends Specification {
             springHttpMessageConverters == [first, second]
         }
     }
+
+    void 'Atom feed rendering remains opt-in'() {
+        given:
+        def rendererRegistry = new DefaultRendererRegistry()
+        rendererRegistry.initialize()
+        def registrar = new XmlRendererRegistrar(rendererRegistry: rendererRegistry, encoding: 'UTF-8')
+
+        when:
+        registrar.afterPropertiesSet()
+
+        then:
+        rendererRegistry.findRenderer(MimeType.ATOM_XML, new URL('https://grails.apache.org')) == null
+    }
 }
