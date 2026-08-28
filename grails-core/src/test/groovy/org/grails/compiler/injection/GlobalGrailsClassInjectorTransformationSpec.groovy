@@ -336,7 +336,7 @@ class GlobalGrailsClassInjectorTransformationSpec extends Specification {
                     sourceFile,
                     '''
                         @org.springframework.boot.autoconfigure.AutoConfiguration
-                        class DslBeansGrailsPlugin {
+                        class DslBeansGrailsPlugin extends grails.plugins.Plugin {
                             def version = '1.0'
                             def beans = {
                                 bean('greeting', String) { 'hello' }
@@ -349,6 +349,11 @@ class GlobalGrailsClassInjectorTransformationSpec extends Specification {
 
         then: "the property is consumed by the transform, unlike the two cases above"
             classNode.getProperty('beans') == null
+
+        and: "the name settled by the local transform is registered at the global transform's target"
+            new File(targetDir,
+                    'META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports').text.trim() ==
+                    'DslBeansAutoConfiguration'
     }
 
     void "the implicit beans convention claims an application class's DSL-shaped beans closure"() {

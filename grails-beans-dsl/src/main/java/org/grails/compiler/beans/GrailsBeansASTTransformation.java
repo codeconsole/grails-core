@@ -160,6 +160,10 @@ import org.springframework.context.annotation.Scope;
 @GroovyASTTransformation(phase = CompilePhase.CANONICALIZATION)
 public class GrailsBeansASTTransformation implements ASTTransformation, CompilationUnitAware {
 
+    /** Class-node metadata carrying the generated sibling's binary name to the global transform. */
+    public static final String GENERATED_AUTO_CONFIGURATION_NAME_METADATA =
+            GrailsBeansASTTransformation.class.getName() + ".generatedAutoConfigurationName";
+
     private static final String BEANS_PROPERTY = "beans";
     private static final String BEAN_CALL = "bean";
     private static final String FIELD_CALL = "field";
@@ -326,13 +330,21 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
         sibling.addAnnotations(siblingAnnotations);
         pluginClass.getAnnotations().removeAll(siblingAnnotations);
 
-        // The name is settled here and nowhere else, so this is where it can be registered.
-        AutoConfigurationImportsWriter.register(siblingName, targetDirectory(source), source, compilationUnit);
+        // The name is settled here and nowhere else. The global transform consumes this metadata
+        // and registers it using its Eclipse-aware compilation target resolution.
+        pluginClass.putNodeMetaData(GENERATED_AUTO_CONFIGURATION_NAME_METADATA, siblingName);
+        if (!isEclipseSourceUnit(source)) {
+            AutoConfigurationImportsWriter.register(siblingName, targetDirectory(source), source, compilationUnit);
+        }
 
         return sibling;
     }
 
-    /** The compiler's output directory, which is where generated metadata belongs. */
+    private static boolean isEclipseSourceUnit(SourceUnit source) {
+        return source != null && "org.codehaus.jdt.groovy.control.EclipseSourceUnit".equals(source.getClass().getName());
+    }
+
+    /** The standard compiler's output directory; Eclipse is resolved by the global transform. */
     private static File targetDirectory(SourceUnit source) {
         CompilerConfiguration configuration = source == null ? null : source.getConfiguration();
         return configuration == null ? null : configuration.getTargetDirectory();

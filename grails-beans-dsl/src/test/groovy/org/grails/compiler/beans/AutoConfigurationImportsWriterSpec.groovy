@@ -21,6 +21,7 @@ package org.grails.compiler.beans
 import org.codehaus.groovy.control.CompilationUnit
 import org.codehaus.groovy.control.CompilerConfiguration
 import org.codehaus.groovy.control.Phases
+import org.codehaus.groovy.control.SourceUnit
 import spock.lang.Specification
 import spock.lang.TempDir
 
@@ -127,7 +128,7 @@ class AutoConfigurationImportsWriterSpec extends Specification {
         new File(targetDir, 'com/example/GreetingGrailsPlugin.class').delete()
 
         when: 'the compilation reconciles, which it does whether or not anything was generated'
-        AutoConfigurationImportsWriter.reconcile(targetDir, null)
+        AutoConfigurationImportsWriter.reconcile(targetDir, null, null)
 
         then: 'the file goes with the last entry - an empty imports file is a resource saying nothing'
         importsEntries() == []
@@ -139,7 +140,7 @@ class AutoConfigurationImportsWriterSpec extends Specification {
         compile(plugin('Greeting'))
 
         when:
-        AutoConfigurationImportsWriter.reconcile(targetDir, null)
+        AutoConfigurationImportsWriter.reconcile(targetDir, null, null)
 
         then:
         importsEntries() == ['com.example.GreetingAutoConfiguration']
@@ -147,7 +148,7 @@ class AutoConfigurationImportsWriterSpec extends Specification {
 
     void 'reconciling does not create a file for a module that generates nothing'() {
         when: 'a module with no beans closure anywhere, which is most of them'
-        AutoConfigurationImportsWriter.reconcile(targetDir, null)
+        AutoConfigurationImportsWriter.reconcile(targetDir, null, null)
 
         then:
         !new File(targetDir, IMPORTS).exists()
@@ -160,7 +161,7 @@ class AutoConfigurationImportsWriterSpec extends Specification {
         handAuthored.text = 'com.elsewhere.FromAnotherJar\n'
 
         when:
-        AutoConfigurationImportsWriter.reconcile(targetDir, null)
+        AutoConfigurationImportsWriter.reconcile(targetDir, null, null)
 
         then:
         handAuthored.readLines() == ['com.elsewhere.FromAnotherJar']
@@ -183,6 +184,39 @@ class AutoConfigurationImportsWriterSpec extends Specification {
         handAuthored.readLines().contains('com.elsewhere.FromAnotherJar')
     }
 
+    void 'adding a hand-authored file removes a previously generated copy'() {
+        given:
+        compile(plugin('Greeting'))
+        File generated = new File(targetDir, IMPORTS)
+        assert generated.isFile()
+        File handAuthored = new File(projectDir, "src/main/resources/${IMPORTS}")
+        handAuthored.parentFile.mkdirs()
+        handAuthored.text = 'com.example.GreetingAutoConfiguration\n'
+
+        when:
+        compile(plugin('Greeting'))
+
+        then:
+        !generated.exists()
+        handAuthored.readLines() == ['com.example.GreetingAutoConfiguration']
+    }
+
+    void 'deleting a hand-authored file opts into generation'() {
+        given:
+        File handAuthored = new File(projectDir, "src/main/resources/${IMPORTS}")
+        handAuthored.parentFile.mkdirs()
+        handAuthored.text = 'com.example.GreetingAutoConfiguration\n'
+        compile(plugin('Greeting'))
+        assert !new File(targetDir, IMPORTS).exists()
+
+        when:
+        assert handAuthored.delete()
+        compile(plugin('Greeting'))
+
+        then:
+        importsEntries() == ['com.example.GreetingAutoConfiguration']
+    }
+
     void 'a hand-authored file missing the generated class is warned about'() {
         given:
         File handAuthored = new File(projectDir, "src/main/resources/${IMPORTS}")
@@ -196,6 +230,20 @@ class AutoConfigurationImportsWriterSpec extends Specification {
         warnings().any {
             it.contains('com.example.GreetingAutoConfiguration') && it.contains(IMPORTS)
         }
+    }
+
+    void 'a generated imports write failure is a compilation error'() {
+        given: 'a regular file blocks creation of the META-INF/spring directory'
+        File blockedParent = new File(targetDir, 'META-INF')
+        blockedParent.text = 'not a directory'
+        SourceUnit source = SourceUnit.create('Broken.groovy', 'class Broken {}')
+
+        when:
+        AutoConfigurationImportsWriter.register('com.example.BrokenAutoConfiguration', targetDir, source, null)
+
+        then:
+        source.errorCollector.hasErrors()
+        source.errorCollector.getSyntaxError(0).message.contains('Could not write generated auto-configuration imports')
     }
 
     private List<String> collectedWarnings = []
@@ -220,6 +268,8 @@ class AutoConfigurationImportsWriterSpec extends Specification {
             @GrailsBeans(${grailsBeansMembers})
             @AutoConfiguration
             class ${name}GrailsPlugin extends Plugin {
+                String version = '1.0.0'
+
                 def beans = {
                     bean('${name.uncapitalize()}Greeting', String) { 'hello' }
                 }
@@ -252,12 +302,7 @@ class AutoConfigurationImportsWriterSpec extends Specification {
      * decides whether an entry is kept.
      */
     private CompilerConfiguration run(CompilationUnit unit) {
-        try {
-            unit.compile(Phases.OUTPUT)
-        }
-        catch (Exception ignored) {
-            // the generated file is what is under test, not the class
-        }
+        unit.compile(Phases.OUTPUT)
         List warningMessages = unit.errorCollector.warnings
         if (warningMessages) {
             collectedWarnings.addAll(warningMessages.collect { it.message?.toString() ?: it.toString() })

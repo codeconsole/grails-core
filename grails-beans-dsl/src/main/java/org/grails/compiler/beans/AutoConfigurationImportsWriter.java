@@ -30,6 +30,7 @@ import java.util.WeakHashMap;
 
 import org.codehaus.groovy.control.SourceUnit;
 import org.codehaus.groovy.control.messages.WarningMessage;
+import org.codehaus.groovy.syntax.SyntaxException;
 
 /**
  * Registers a generated auto-configuration in
@@ -96,9 +97,11 @@ public final class AutoConfigurationImportsWriter {
      * @param targetDirectory the compilation output directory, or {@code null} when the compiler did
      *                        not supply one - in which case there is nowhere to write and the class
      *                        stays registerable by hand
+     * @param source the source being compiled, used for warnings and write errors
+     * @param compilation what scopes names registered before their class files are written
      * @return {@code true} when the file was written
      */
-    static boolean register(String className, File targetDirectory, SourceUnit source, Object compilation) {
+    public static boolean register(String className, File targetDirectory, SourceUnit source, Object compilation) {
         if (className == null || className.isEmpty() || targetDirectory == null) {
             return false;
         }
@@ -113,6 +116,7 @@ public final class AutoConfigurationImportsWriter {
                         SOURCE_IMPORTS_LOCATION + ", so Spring Boot will not read it. Add it there, or delete " +
                         "that file once it holds nothing that is not generated and it will be written for you.");
             }
+            write(new File(targetDirectory, IMPORTS_LOCATION), Collections.emptySet(), source);
             return false;
         }
 
@@ -136,7 +140,7 @@ public final class AutoConfigurationImportsWriter {
         }
         entries = written;
 
-        return write(importsFile, entries);
+        return write(importsFile, entries, source);
     }
 
     /**
@@ -144,7 +148,7 @@ public final class AutoConfigurationImportsWriter {
      * resource that says nothing, and leaving one behind is the sort of thing that shows up in a
      * reproducible-build diff.
      */
-    private static boolean write(File importsFile, Set<String> entries) {
+    private static boolean write(File importsFile, Set<String> entries, SourceUnit source) {
         try {
             if (entries.isEmpty()) {
                 return Files.deleteIfExists(importsFile.toPath());
@@ -156,8 +160,13 @@ public final class AutoConfigurationImportsWriter {
             return true;
         }
         catch (IOException notWritable) {
-            // The class is still generated and still registerable by hand, so failing compilation
-            // over the convenience of not having to would be the worse trade.
+            String message = "Could not write generated auto-configuration imports at " + importsFile;
+            if (source != null) {
+                source.addErrorAndContinue(new SyntaxException(message, 1, 1));
+            }
+            else {
+                throw new IllegalStateException(message, notWritable);
+            }
             return false;
         }
     }
@@ -174,13 +183,19 @@ public final class AutoConfigurationImportsWriter {
      * @param targetDirectory the compilation output directory holding the generated file
      * @param compilation what scopes the names registered so far, so a class generated in this
      *                    compilation is not pruned before its class file is written
+     * @param source the source being compiled, used to report a metadata write failure
      * @return {@code true} when an entry was dropped
      */
-    public static boolean reconcile(File targetDirectory, Object compilation) {
+    public static boolean reconcile(File targetDirectory, Object compilation, SourceUnit source) {
         if (targetDirectory == null) {
             return false;
         }
         File importsFile = new File(targetDirectory, IMPORTS_LOCATION);
+        File sourceDirectory = findSourceDirectory(targetDirectory);
+        File handAuthored = sourceDirectory == null ? null : new File(sourceDirectory, SOURCE_IMPORTS_LOCATION);
+        if (handAuthored != null && handAuthored.isFile()) {
+            return write(importsFile, Collections.emptySet(), source);
+        }
         if (!importsFile.isFile()) {
             // Nothing generated here, which is also how a module keeping the file by hand looks.
             return false;
@@ -198,7 +213,7 @@ public final class AutoConfigurationImportsWriter {
         if (kept.equals(entries)) {
             return false;
         }
-        return write(importsFile, kept);
+        return write(importsFile, kept, source);
     }
 
     private static Set<String> registeredBy(Object compilation) {

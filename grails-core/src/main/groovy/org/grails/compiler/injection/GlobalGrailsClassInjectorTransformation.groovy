@@ -59,6 +59,7 @@ import grails.plugins.metadata.GrailsPlugin
 import grails.util.GrailsNameUtils
 import org.apache.grails.common.compiler.GroovyTransformOrder
 import org.grails.compiler.beans.AutoConfigurationImportsWriter
+import org.grails.compiler.beans.GrailsBeansASTTransformation
 import org.grails.core.io.support.GrailsFactoriesLoader
 import org.grails.io.support.AntPathMatcher
 import org.grails.io.support.GrailsResourceUtils
@@ -149,6 +150,10 @@ class GlobalGrailsClassInjectorTransformation implements ASTTransformation, Comp
                 pluginVersion = resolvePluginVersion(classNode, projectVersion?.toString())
                 addPluginVersionProperty(classNode, pluginVersion)
                 compileBeansDsl(classNode, source)
+                String generatedAutoConfigurationName = classNode.getNodeMetaData(
+                        GrailsBeansASTTransformation.GENERATED_AUTO_CONFIGURATION_NAME_METADATA)
+                AutoConfigurationImportsWriter.register(
+                        generatedAutoConfigurationName, compilationTargetDirectory, source, compilationUnit)
                 continue
             }
             if (GrailsASTUtils.isSubclassOfOrImplementsInterface(classNode, GRAILS_AUTO_CONFIGURATION_CLASS_NAME)) {
@@ -200,7 +205,7 @@ class GlobalGrailsClassInjectorTransformation implements ASTTransformation, Comp
         // that was deleted, or that no longer has a beans closure, creates nothing and so says nothing
         // about the entry it used to leave behind. This runs for every source unit of a Grails
         // project, which is what makes the entry go when the class it names does.
-        AutoConfigurationImportsWriter.reconcile(compilationTargetDirectory, compilationUnit)
+        AutoConfigurationImportsWriter.reconcile(compilationTargetDirectory, compilationUnit, source)
     }
 
     /**
