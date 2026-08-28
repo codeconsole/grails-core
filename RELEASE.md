@@ -321,7 +321,15 @@ There is one workflow and two choices: **Use workflow from** (the maintenance br
 | `prev` | `prev.grails.org` | previous release line |
 | `prev-snapshot` | `prev-snapshot.grails.org` | previous snapshot line |
 
-Do not select a historical git tag in **Use workflow from**. The AWS workflow file is not on old tags. Snapshot slots can deploy from the maintenance branch. A tagged release that must match an exact tag is packaged locally with the AWS zip overlay, then uploaded to Elastic Beanstalk.
+Do not select a historical git tag in **Use workflow from**. The AWS workflow file is not on old tags. Snapshot slots can deploy from the maintenance branch.
+
+A tagged release that must match an exact tag is packaged locally, then uploaded to Elastic Beanstalk. From a checkout of that tag, copy `grails-forge/grails-forge-web-netty/aws/` from the matching maintenance branch, then from `grails-forge` run:
+
+```bash
+./gradlew grails-forge-web-netty:awsElasticBeanstalk
+```
+
+The bundle is `grails-forge-web-netty/build/distributions/grails-forge-web-netty-aws.zip`. See [AWS Elastic Beanstalk Deployment Runbook](grails-forge/docs/aws-elastic-beanstalk.md).
 
 (The `release` job in the `Release` workflow includes a step titled `🚀 MANUAL - Deploy Grails Forge` that serves as a reminder to perform the deployment described above.)
 
