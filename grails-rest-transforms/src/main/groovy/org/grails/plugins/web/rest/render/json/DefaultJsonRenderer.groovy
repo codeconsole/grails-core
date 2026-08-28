@@ -18,11 +18,17 @@
  */
 package org.grails.plugins.web.rest.render.json
 
+import java.nio.charset.Charset
+
 import groovy.transform.CompileStatic
 
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.http.HttpStatus
+import org.springframework.http.HttpHeaders
+import org.springframework.http.HttpOutputMessage
+import org.springframework.http.MediaType
+import org.springframework.http.converter.json.JacksonJsonHttpMessageConverter
 import org.springframework.validation.Errors
 
 import grails.converters.JSON
@@ -57,6 +63,8 @@ class DefaultJsonRenderer<T> implements Renderer<T> {
 
     String namedConfiguration
     HttpStatus errorsHttpStatus = HttpStatus.UNPROCESSABLE_ENTITY
+    boolean useSpringJson
+    JacksonJsonHttpMessageConverter springJsonHttpMessageConverter
 
     DefaultJsonRenderer(Class<T> targetType) {
         this.targetType = targetType
@@ -108,6 +116,11 @@ class DefaultJsonRenderer<T> implements Renderer<T> {
      * @param context
      */
     protected void renderJson(T object, RenderContext context) {
+        if (canUseSpringConverter(context)) {
+            renderWithSpringConverter(object, context)
+            return
+        }
+
         JSON converter
         if (namedConfiguration) {
             JSON.use(namedConfiguration) {
@@ -117,6 +130,35 @@ class DefaultJsonRenderer<T> implements Renderer<T> {
             converter = object as JSON
         }
         renderJson(converter, context)
+    }
+
+    private boolean canUseSpringConverter(RenderContext context) {
+        return useSpringJson && springJsonHttpMessageConverter != null && !namedConfiguration &&
+                !context.includes && !context.excludes
+    }
+
+    private void renderWithSpringConverter(Object object, RenderContext context) {
+        ByteArrayOutputStream output = new ByteArrayOutputStream()
+        HttpOutputMessage message = new HttpOutputMessage() {
+            private final HttpHeaders headers = new HttpHeaders()
+
+            @Override
+            OutputStream getBody() {
+                return output
+            }
+
+            @Override
+            HttpHeaders getHeaders() {
+                return headers
+            }
+        }
+        MediaType mediaType = MediaType.parseMediaType((context.acceptMimeType ?: MimeType.JSON).name)
+        if (!springJsonHttpMessageConverter.canWrite(object?.getClass() ?: Object, mediaType)) {
+            renderJson(object as JSON, context)
+            return
+        }
+        springJsonHttpMessageConverter.write(object, mediaType, message)
+        context.writer.write(output.toString(Charset.forName(encoding)))
     }
 
     protected void renderJson(JSON converter, RenderContext context) {

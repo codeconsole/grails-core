@@ -22,6 +22,7 @@ import grails.rest.render.AbstractRenderer
 import grails.rest.render.RenderContext
 import grails.rest.render.hal.HalJsonCollectionRenderer
 import grails.web.mime.MimeType
+import tools.jackson.databind.json.JsonMapper
 import org.springframework.context.annotation.AnnotationConfigApplicationContext
 import org.springframework.context.support.PropertySourcesPlaceholderConfigurer
 import org.springframework.core.env.MapPropertySource
@@ -64,6 +65,27 @@ class DefaultRendererRegistrySpec extends Specification {
             registry.findRenderer(MimeType.HTML, new URL('https://grails.apache.org')).encoding == 'ISO-8859-1'
             registry.findRenderer(MimeType.JSON, new URL('https://grails.apache.org')).encoding == 'ISO-8859-1'
             registry.findRenderer(MimeType.XML, new URL('https://grails.apache.org')) == null
+    }
+
+    void 'Spring JSON rendering is opt-in and uses the configured Boot mapper'() {
+        given:
+        def context = new AnnotationConfigApplicationContext()
+        context.environment.propertySources.addFirst(
+                new MapPropertySource('test', ['grails.web.rendering.json.spring': 'true']))
+        context.registerBean(PropertySourcesPlaceholderConfigurer)
+        context.registerBean(JsonMapper) { JsonMapper.builder().build() }
+        context.registerBean(DefaultRendererRegistry)
+        context.refresh()
+
+        when:
+        def renderer = context.getBean(DefaultRendererRegistry).findRenderer(MimeType.JSON, new URL('https://grails.apache.org'))
+
+        then:
+        renderer.useSpringJson
+        renderer.springJsonHttpMessageConverter.mapper.is(context.getBean(JsonMapper))
+
+        cleanup:
+        context.close()
     }
 
     void "Test that registering a HAL collection renderer works"() {

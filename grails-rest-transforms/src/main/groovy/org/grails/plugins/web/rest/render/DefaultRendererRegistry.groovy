@@ -27,9 +27,11 @@ import jakarta.annotation.PostConstruct
 
 import com.github.benmanes.caffeine.cache.Cache
 import com.github.benmanes.caffeine.cache.Caffeine
+import tools.jackson.databind.json.JsonMapper
 
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.beans.factory.annotation.Value
+import org.springframework.http.converter.json.JacksonJsonHttpMessageConverter
 import org.springframework.validation.BeanPropertyBindingResult
 import org.springframework.validation.Errors
 
@@ -76,10 +78,17 @@ class DefaultRendererRegistry extends ClassAndMimeTypeRegistry<Renderer, Rendere
     @Value('${grails.converters.encoding:UTF-8}')
     String encoding = grails.util.GrailsWebUtil.DEFAULT_ENCODING
 
+    @Autowired(required = false)
+    JsonMapper jsonMapper
+
+    @Value('${grails.web.rendering.json.spring:false}')
+    boolean useSpringJson
+
     @PostConstruct
     void initialize() {
         final defaultJsonRenderer = new DefaultJsonRenderer<Object>(Object, groovyPageLocator, this)
         defaultJsonRenderer.encoding = encoding
+        configureJsonRenderer(defaultJsonRenderer)
         addDefaultRenderer(defaultJsonRenderer)
         final defaultHtmlRenderer = new DefaultHtmlRenderer<Object>(Object)
         defaultHtmlRenderer.suffix = modelSuffix
@@ -94,6 +103,7 @@ class DefaultRendererRegistry extends ClassAndMimeTypeRegistry<Renderer, Rendere
         [MimeType.JSON, MimeType.TEXT_JSON].each { MimeType mimeType ->
             final errorsJsonRenderer = new DefaultJsonRenderer(Errors)
             errorsJsonRenderer.encoding = encoding
+            configureJsonRenderer(errorsJsonRenderer)
             containerRenderers.put(new ContainerRendererCacheKey(Errors, Object, mimeType), errorsJsonRenderer)
         }
         final defaultContainerHtmlRenderer = new DefaultHtmlRenderer(Errors)
@@ -102,6 +112,13 @@ class DefaultRendererRegistry extends ClassAndMimeTypeRegistry<Renderer, Rendere
         defaultContainerHtmlRenderer.encoding = encoding
         containerRenderers.put(new ContainerRendererCacheKey(Errors, Object, MimeType.HTML), defaultContainerHtmlRenderer)
         containerRenderers.put(new ContainerRendererCacheKey(Errors, Object, MimeType.ALL), defaultContainerHtmlRenderer)
+    }
+
+    private void configureJsonRenderer(DefaultJsonRenderer renderer) {
+        renderer.useSpringJson = useSpringJson
+        if (jsonMapper != null) {
+            renderer.springJsonHttpMessageConverter = new JacksonJsonHttpMessageConverter(jsonMapper)
+        }
     }
 
     @Autowired(required = false)
