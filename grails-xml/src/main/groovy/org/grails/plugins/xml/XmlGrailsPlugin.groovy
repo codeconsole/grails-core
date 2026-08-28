@@ -23,7 +23,6 @@ import groovy.transform.CompileStatic
 import org.springframework.beans.factory.BeanRegistrar
 import org.springframework.beans.factory.BeanRegistry
 import org.springframework.core.env.Environment
-import org.springframework.http.converter.xml.JacksonXmlHttpMessageConverter
 
 import grails.converters.XML
 import grails.plugins.Plugin
@@ -55,8 +54,6 @@ class XmlGrailsPlugin extends Plugin {
             registry.registerBean('xmlDataBindingSourceCreator', XmlDataBindingSourceCreator)
             registry.registerBean('halXmlDataBindingSourceCreator', HalXmlDataBindingSourceCreator)
             registry.registerBean('xmlRendererRegistrar', XmlRendererRegistrar)
-            registry.registerBean('grailsJacksonXmlHttpMessageConverter', JacksonXmlHttpMessageConverter)
-
             registry.registerBean('errorsXmlMarshallerRegisterer', ObjectMarshallerRegisterer) {
                 it.supplier {
                     new ObjectMarshallerRegisterer(

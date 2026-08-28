@@ -28,7 +28,7 @@ import org.springframework.http.HttpStatus
 import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpOutputMessage
 import org.springframework.http.MediaType
-import org.springframework.http.converter.xml.JacksonXmlHttpMessageConverter
+import org.springframework.http.converter.HttpMessageConverter
 import org.springframework.validation.Errors
 
 import grails.converters.XML
@@ -61,8 +61,7 @@ class DefaultXmlRenderer<T> implements Renderer<T> {
     @Autowired(required = false)
     RendererRegistry rendererRegistry
 
-    @Autowired(required = false)
-    JacksonXmlHttpMessageConverter grailsJacksonXmlHttpMessageConverter
+    List<HttpMessageConverter<?>> springHttpMessageConverters = []
 
     String namedConfiguration
 
@@ -117,8 +116,9 @@ class DefaultXmlRenderer<T> implements Renderer<T> {
      * @param context
      */
     protected void renderXml(Object object, RenderContext context) {
-        if (canUseSpringConverter(object, context)) {
-            renderWithSpringConverter(object, context)
+        HttpMessageConverter<Object> springConverter = findSpringConverter(object, context)
+        if (springConverter != null) {
+            renderWithSpringConverter(springConverter, object, context)
             return
         }
 
@@ -134,19 +134,22 @@ class DefaultXmlRenderer<T> implements Renderer<T> {
         renderXml(converter, context)
     }
 
-    private boolean canUseSpringConverter(Object object, RenderContext context) {
-        if (grailsJacksonXmlHttpMessageConverter == null || namedConfiguration || context.includes || context.excludes) {
-            return false
+    private HttpMessageConverter<Object> findSpringConverter(Object object, RenderContext context) {
+        if (!springHttpMessageConverters || namedConfiguration || context.includes || context.excludes) {
+            return null
         }
         if (object == null || object instanceof Errors || object instanceof Map || object instanceof Collection ||
                 object.getClass().isArray()) {
-            return false
+            return null
         }
         MediaType mediaType = MediaType.parseMediaType((context.acceptMimeType ?: MimeType.XML).name)
-        return grailsJacksonXmlHttpMessageConverter.canWrite(object.getClass(), mediaType)
+        return (HttpMessageConverter<Object>) springHttpMessageConverters.find { HttpMessageConverter<?> converter ->
+            converter.canWrite(object.getClass(), mediaType)
+        }
     }
 
-    private void renderWithSpringConverter(Object object, RenderContext context) {
+    private void renderWithSpringConverter(
+            HttpMessageConverter<Object> converter, Object object, RenderContext context) {
         ByteArrayOutputStream output = new ByteArrayOutputStream()
         HttpOutputMessage message = new HttpOutputMessage() {
             private final HttpHeaders headers = new HttpHeaders()
@@ -162,7 +165,7 @@ class DefaultXmlRenderer<T> implements Renderer<T> {
             }
         }
         MediaType mediaType = MediaType.parseMediaType((context.acceptMimeType ?: MimeType.XML).name)
-        grailsJacksonXmlHttpMessageConverter.write(object, mediaType, message)
+        converter.write(object, mediaType, message)
         context.writer.write(output.toString(Charset.forName(encoding)))
     }
 

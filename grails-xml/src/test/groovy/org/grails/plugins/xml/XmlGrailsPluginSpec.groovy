@@ -23,7 +23,8 @@ import org.springframework.beans.factory.support.DefaultListableBeanFactory
 import org.springframework.core.env.StandardEnvironment
 import org.springframework.validation.BeanPropertyBindingResult
 import org.springframework.validation.Errors
-import org.springframework.http.converter.xml.JacksonXmlHttpMessageConverter
+import org.springframework.http.converter.HttpMessageConverter
+import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerAdapter
 
 import grails.converters.XML
 import grails.web.mime.MimeType
@@ -56,8 +57,7 @@ class XmlGrailsPluginSpec extends Specification {
                     HalXmlDataBindingSourceCreator.name
             getBeanDefinition('xmlRendererRegistrar').beanClassName == XmlRendererRegistrar.name
             containsBeanDefinition('errorsXmlMarshallerRegisterer')
-            getBeanDefinition('grailsJacksonXmlHttpMessageConverter').beanClassName ==
-                    JacksonXmlHttpMessageConverter.name
+            !containsBeanDefinition('grailsJacksonXmlHttpMessageConverter')
         }
     }
 
@@ -72,10 +72,14 @@ class XmlGrailsPluginSpec extends Specification {
 
     void 'the renderer registrar adds XML defaults to the core registry'() {
         given:
+        def first = Stub(HttpMessageConverter)
+        def second = Stub(HttpMessageConverter)
+        def adapter = new RequestMappingHandlerAdapter(messageConverters: [first, second])
         def rendererRegistry = new DefaultRendererRegistry()
         rendererRegistry.initialize()
         def registrar = new XmlRendererRegistrar(
                 rendererRegistry: rendererRegistry,
+                requestMappingHandlerAdapter: adapter,
                 encoding: 'ISO-8859-1'
         )
 
@@ -83,11 +87,17 @@ class XmlGrailsPluginSpec extends Specification {
         registrar.afterPropertiesSet()
 
         then:
-        rendererRegistry.findRenderer(MimeType.XML, new URL('https://grails.apache.org')).encoding == 'ISO-8859-1'
-        rendererRegistry.findContainerRenderer(
+        with(rendererRegistry.findRenderer(MimeType.XML, new URL('https://grails.apache.org'))) {
+            encoding == 'ISO-8859-1'
+            springHttpMessageConverters == [first, second]
+        }
+        with(rendererRegistry.findContainerRenderer(
                 MimeType.XML,
                 Errors,
                 new BeanPropertyBindingResult('value', 'target')
-        ).encoding == 'ISO-8859-1'
+        )) {
+            encoding == 'ISO-8859-1'
+            springHttpMessageConverters == [first, second]
+        }
     }
 }

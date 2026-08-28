@@ -24,6 +24,7 @@ import org.springframework.beans.factory.InitializingBean
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.validation.Errors
+import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerAdapter
 
 import grails.rest.render.RendererRegistry
 import org.grails.plugins.web.rest.render.xml.DefaultXmlRenderer
@@ -43,6 +44,9 @@ class XmlRendererRegistrar implements InitializingBean {
     @Autowired(required = false)
     GrailsConventionGroovyPageLocator groovyPageLocator
 
+    @Autowired(required = false)
+    RequestMappingHandlerAdapter requestMappingHandlerAdapter
+
     @Value('${grails.converters.encoding:UTF-8}')
     String encoding
 
@@ -51,10 +55,12 @@ class XmlRendererRegistrar implements InitializingBean {
         DefaultXmlRenderer<Object> defaultRenderer =
                 new DefaultXmlRenderer<Object>(Object, groovyPageLocator, rendererRegistry)
         defaultRenderer.encoding = encoding
+        defaultRenderer.springHttpMessageConverters = requestMappingHandlerAdapter?.messageConverters ?: []
         rendererRegistry.addDefaultRenderer(defaultRenderer)
 
         DefaultXmlRenderer<Errors> errorsRenderer = new DefaultXmlRenderer<Errors>(Errors)
         errorsRenderer.encoding = encoding
+        errorsRenderer.springHttpMessageConverters = requestMappingHandlerAdapter?.messageConverters ?: []
         rendererRegistry.addContainerRenderer(Object, errorsRenderer)
     }
 }

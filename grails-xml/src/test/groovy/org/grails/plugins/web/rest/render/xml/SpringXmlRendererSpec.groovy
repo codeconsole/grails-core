@@ -21,24 +21,40 @@ package org.grails.plugins.web.rest.render.xml
 import groovy.xml.XmlSlurper
 
 import org.springframework.http.converter.xml.JacksonXmlHttpMessageConverter
+import org.springframework.http.MediaType
+import org.springframework.http.converter.HttpMessageConverter
 import org.springframework.mock.web.MockHttpServletRequest
 import org.springframework.mock.web.MockHttpServletResponse
 import org.springframework.mock.web.MockServletContext
 
 import grails.web.mime.MimeType
+import grails.core.DefaultGrailsApplication
 import org.grails.plugins.web.rest.render.ServletRenderContext
 import org.grails.web.servlet.mvc.GrailsWebRequest
+import org.grails.web.converters.configuration.ConvertersConfigurationHolder
+import org.grails.web.converters.configuration.XmlConvertersConfigurationInitializer
 
 import spock.lang.Specification
 import spock.lang.Unroll
 
 class SpringXmlRendererSpec extends Specification {
 
+    void setup() {
+        new XmlConvertersConfigurationInitializer().tap {
+            grailsApplication = new DefaultGrailsApplication()
+            initialize()
+        }
+    }
+
+    void cleanup() {
+        ConvertersConfigurationHolder.clear()
+    }
+
     @Unroll
     void 'ordinary beans are written through the Spring XML message converter for #acceptedMimeType'() {
         given:
         def renderer = new DefaultXmlRenderer<XmlGreeting>(XmlGreeting)
-        renderer.grailsJacksonXmlHttpMessageConverter = new JacksonXmlHttpMessageConverter()
+        renderer.springHttpMessageConverters = [new JacksonXmlHttpMessageConverter()]
         def response = new MockHttpServletResponse()
         def webRequest = new GrailsWebRequest(new MockHttpServletRequest(), response, new MockServletContext())
         def context = new FixedMimeServletRenderContext(webRequest, acceptedMimeType)
@@ -55,6 +71,43 @@ class SpringXmlRendererSpec extends Specification {
                 MimeType.TEXT_XML,
                 new MimeType('application/vnd.grails.test+xml', 'xml'),
         ]
+    }
+
+    void 'the first capable MVC converter is selected in configured order'() {
+        given:
+        def first = Mock(HttpMessageConverter)
+        def second = Mock(HttpMessageConverter)
+        def renderer = new DefaultXmlRenderer<XmlGreeting>(XmlGreeting)
+        renderer.springHttpMessageConverters = [first, second]
+        def response = new MockHttpServletResponse()
+        def webRequest = new GrailsWebRequest(new MockHttpServletRequest(), response, new MockServletContext())
+        def context = new FixedMimeServletRenderContext(webRequest, MimeType.XML)
+
+        when:
+        renderer.render(new XmlGreeting(message: 'hello'), context)
+
+        then:
+        1 * first.canWrite(XmlGreeting, MediaType.APPLICATION_XML) >> false
+        1 * second.canWrite(XmlGreeting, MediaType.APPLICATION_XML) >> true
+        1 * second.write(_, MediaType.APPLICATION_XML, _)
+        0 * _
+    }
+
+    void 'legacy XML conversion is retained for compatibility shapes'() {
+        given:
+        def mvcConverter = Mock(HttpMessageConverter)
+        def renderer = new DefaultXmlRenderer<Map>(Map)
+        renderer.springHttpMessageConverters = [mvcConverter]
+        def response = new MockHttpServletResponse()
+        def webRequest = new GrailsWebRequest(new MockHttpServletRequest(), response, new MockServletContext())
+        def context = new FixedMimeServletRenderContext(webRequest, MimeType.XML)
+
+        when:
+        renderer.render([message: 'hello'], context)
+
+        then:
+        0 * mvcConverter._
+        new XmlSlurper().parseText(response.contentAsString).entry.text() == 'hello'
     }
 }
 
