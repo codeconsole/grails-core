@@ -26,6 +26,7 @@ import org.springframework.validation.BeanPropertyBindingResult
 
 import grails.core.DefaultGrailsApplication
 import grails.web.mime.MimeType
+import grails.rest.render.errors.VndErrorXmlRenderer
 import org.grails.web.converters.configuration.ConvertersConfigurationHolder
 import org.grails.web.converters.configuration.XmlConvertersConfigurationInitializer
 import org.grails.web.converters.marshaller.xml.ValidationErrorsMarshaller
@@ -34,6 +35,14 @@ import org.grails.web.databinding.bindingsource.XmlDataBindingSourceCreator
 import spock.lang.Specification
 
 class XmlCompatibilitySpec extends Specification {
+
+    void 'legacy XML validation error formats are deprecated for a future major release'() {
+        expect:
+        VndErrorXmlRenderer.getAnnotation(Deprecated).since() == '8.0'
+        !VndErrorXmlRenderer.getAnnotation(Deprecated).forRemoval()
+        ValidationErrorsMarshaller.getAnnotation(Deprecated).since() == '8.0'
+        !ValidationErrorsMarshaller.getAnnotation(Deprecated).forRemoval()
+    }
 
     void setup() {
         new XmlConvertersConfigurationInitializer().tap {

@@ -39,6 +39,7 @@ import org.grails.web.xml.XMLStreamWriter
  * @since 2.3
  */
 @CompileStatic
+@Deprecated(since = '8.0')
 class VndErrorXmlRenderer extends AbstractVndErrorRenderer {
 
     public static final MimeType MIME_TYPE = new MimeType('application/vnd.error+xml', 'xml')
