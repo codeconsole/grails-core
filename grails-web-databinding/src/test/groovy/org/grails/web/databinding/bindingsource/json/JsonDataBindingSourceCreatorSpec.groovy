@@ -18,12 +18,17 @@
  */
 package org.grails.web.databinding.bindingsource.json
 
-import groovy.json.JsonException
 import org.grails.web.databinding.bindingsource.JsonDataBindingSourceCreator
+import grails.web.mime.MimeType
 
 import spock.lang.Specification
 
 import java.nio.charset.StandardCharsets
+
+import org.grails.web.databinding.bindingsource.InvalidRequestBodyException
+
+import tools.jackson.core.json.JsonReadFeature
+import tools.jackson.databind.json.JsonMapper
 
 class JsonDataBindingSourceCreatorSpec extends Specification {
 
@@ -36,7 +41,7 @@ class JsonDataBindingSourceCreatorSpec extends Specification {
 }'''
 
         def inputStream = new ByteArrayInputStream(json.getBytes(StandardCharsets.UTF_8))
-        def bindingSource = new JsonDataBindingSourceCreator().createBindingSource(inputStream, StandardCharsets.UTF_8.name())
+        def bindingSource = new JsonDataBindingSourceCreator().createDataBindingSource(MimeType.JSON, Object, inputStream)
 
         when:
         def propertyNames = bindingSource.propertyNames
@@ -74,9 +79,24 @@ class JsonDataBindingSourceCreatorSpec extends Specification {
 
 
         when:
-        def bindingSource = new JsonDataBindingSourceCreator().createBindingSource(inputStream, "UTF-8")
+        def bindingSource = new JsonDataBindingSourceCreator().createDataBindingSource(MimeType.JSON, Object, inputStream)
 
         then:
-        thrown JsonException
+        thrown InvalidRequestBodyException
+    }
+
+    void 'uses an injected Boot JsonMapper for request parsing'() {
+        given:
+        def jsonMapper = JsonMapper.builder()
+                .enable(JsonReadFeature.ALLOW_JAVA_COMMENTS)
+                .build()
+        def creator = new JsonDataBindingSourceCreator(jsonMapper: jsonMapper)
+        def inputStream = new ByteArrayInputStream('{/* configured mapper */"name":"Grails"}'.bytes)
+
+        when:
+        def bindingSource = creator.createDataBindingSource(MimeType.JSON, Object, inputStream)
+
+        then:
+        bindingSource['name'] == 'Grails'
     }
 }
