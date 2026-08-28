@@ -23,6 +23,7 @@ import org.springframework.beans.factory.support.DefaultListableBeanFactory
 import org.springframework.core.env.StandardEnvironment
 import org.springframework.validation.BeanPropertyBindingResult
 import org.springframework.validation.Errors
+import org.springframework.http.converter.xml.JacksonXmlHttpMessageConverter
 
 import grails.converters.XML
 import grails.web.mime.MimeType
@@ -55,6 +56,8 @@ class XmlGrailsPluginSpec extends Specification {
                     HalXmlDataBindingSourceCreator.name
             getBeanDefinition('xmlRendererRegistrar').beanClassName == XmlRendererRegistrar.name
             containsBeanDefinition('errorsXmlMarshallerRegisterer')
+            getBeanDefinition('grailsJacksonXmlHttpMessageConverter').beanClassName ==
+                    JacksonXmlHttpMessageConverter.name
         }
     }
 

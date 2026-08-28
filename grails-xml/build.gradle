@@ -41,6 +41,7 @@ dependencies {
     api project(':grails-databinding')
     api project(':grails-rest-transforms')
     api 'org.apache.groovy:groovy'
+    api 'tools.jackson.dataformat:jackson-dataformat-xml'
 
     implementation 'io.micrometer:micrometer-observation'
     implementation project(':grails-datamapping-core')
