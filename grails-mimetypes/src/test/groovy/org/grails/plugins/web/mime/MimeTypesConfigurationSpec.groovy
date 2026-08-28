@@ -21,6 +21,8 @@ package org.grails.plugins.web.mime
 import grails.core.DefaultGrailsApplication
 import grails.spring.BeanBuilder
 import grails.web.mime.MimeType
+import org.grails.web.mime.GrailsContentNegotiationStrategy
+import org.grails.web.mime.GrailsMimeTypesWebMvcConfigurer
 import spock.lang.Specification
 
 class MimeTypesConfigurationSpec extends Specification {
@@ -95,6 +97,23 @@ class MimeTypesConfigurationSpec extends Specification {
         and: "other defaults are untouched"
         mimeTypes.find { it.extension == 'html' && it.name == 'text/html' }
         mimeTypes.findAll { it.extension == 'xml' }*.name == ['text/xml', 'application/xml']
+    }
+
+    void 'the MVC integration does not expose a strategy bean to type-based consumers'() {
+        given:
+        def application = new DefaultGrailsApplication()
+        def bb = new BeanBuilder()
+        bb.beans {
+            grailsApplication = application
+            mimeConfiguration(MimeTypesConfiguration, application, [])
+        }
+        application.setApplicationContext(bb.createApplicationContext())
+
+        expect:
+        application.mainContext.getBeansOfType(GrailsContentNegotiationStrategy).isEmpty()
+        application.mainContext.getBean(MimeTypesConfiguration)
+                .grailsMimeTypesWebMvcConfigurer(new MimeTypesHolder(MimeType.createDefaults())) instanceof
+                GrailsMimeTypesWebMvcConfigurer
     }
 
     private MimeType[] resolveMimeTypes(Map config, boolean mergeDefaults = false) {

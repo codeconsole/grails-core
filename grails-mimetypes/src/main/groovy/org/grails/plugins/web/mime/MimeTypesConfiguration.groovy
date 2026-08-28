@@ -125,14 +125,10 @@ class MimeTypesConfiguration {
     }
 
     @Bean
-    GrailsContentNegotiationStrategy grailsContentNegotiationStrategy(MimeTypesHolder mimeTypesHolder) {
-        return new GrailsContentNegotiationStrategy(mimeTypesHolder.mimeTypes, grailsApplication.config)
-    }
-
-    @Bean
     GrailsMimeTypesWebMvcConfigurer grailsMimeTypesWebMvcConfigurer(
-            GrailsContentNegotiationStrategy contentNegotiationStrategy) {
-        return new GrailsMimeTypesWebMvcConfigurer(contentNegotiationStrategy)
+            MimeTypesHolder mimeTypesHolder) {
+        return new GrailsMimeTypesWebMvcConfigurer(
+                new GrailsContentNegotiationStrategy(mimeTypesHolder.mimeTypes, grailsApplication.config))
     }
 
     @CompileStatic(TypeCheckingMode.SKIP)
