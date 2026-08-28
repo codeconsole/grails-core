@@ -30,30 +30,48 @@ import org.grails.plugins.web.rest.render.ServletRenderContext
 import org.grails.web.servlet.mvc.GrailsWebRequest
 
 import spock.lang.Specification
+import spock.lang.Unroll
 
 class SpringXmlRendererSpec extends Specification {
 
-    void 'ordinary beans are written through the Spring XML message converter'() {
+    @Unroll
+    void 'ordinary beans are written through the Spring XML message converter for #acceptedMimeType'() {
         given:
         def renderer = new DefaultXmlRenderer<XmlGreeting>(XmlGreeting)
         renderer.grailsJacksonXmlHttpMessageConverter = new JacksonXmlHttpMessageConverter()
         def response = new MockHttpServletResponse()
         def webRequest = new GrailsWebRequest(new MockHttpServletRequest(), response, new MockServletContext())
-        def context = new ServletRenderContext(webRequest) {
-            @Override
-            MimeType getAcceptMimeType() {
-                MimeType.XML
-            }
-        }
+        def context = new FixedMimeServletRenderContext(webRequest, acceptedMimeType)
 
         when:
         renderer.render(new XmlGreeting(message: 'hello'), context)
 
         then:
         new XmlSlurper().parseText(response.contentAsString).message.text() == 'hello'
+
+        where:
+        acceptedMimeType << [
+                MimeType.XML,
+                MimeType.TEXT_XML,
+                new MimeType('application/vnd.grails.test+xml', 'xml'),
+        ]
     }
 }
 
 class XmlGreeting {
     String message
+}
+
+class FixedMimeServletRenderContext extends ServletRenderContext {
+    private final MimeType mimeType
+
+    FixedMimeServletRenderContext(GrailsWebRequest webRequest, MimeType mimeType) {
+        super(webRequest)
+        this.mimeType = mimeType
+    }
+
+    @Override
+    MimeType getAcceptMimeType() {
+        mimeType
+    }
 }

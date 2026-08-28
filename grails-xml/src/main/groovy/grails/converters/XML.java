@@ -253,7 +253,7 @@ public class XML extends AbstractConverter<XMLStreamWriter> implements IncludeEx
                 StringBuilder ref = new StringBuilder();
                 int idx = referenceStack.indexOf(o);
                 ref.append("../".repeat(Math.max(0, referenceStack.size() - 1 - idx)));
-                attribute("ref", ref.substring(0, ref.length() - 1));
+                attribute("ref", ref.isEmpty() ? "." : ref.substring(0, ref.length() - 1));
                 break;
             case EXCEPTION:
                 throw new ConverterException("Circular Reference detected: class " + o.getClass().getName());
