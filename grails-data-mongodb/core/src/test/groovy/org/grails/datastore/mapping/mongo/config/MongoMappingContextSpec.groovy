@@ -67,7 +67,7 @@ class MongoMappingContextSpec extends Specification {
     void "portable identities use the configured datastore identity type"() {
         given:
         def settings = new MongoConnectionSourceSettings()
-        settings.default.idType = configuredType
+        settings.defaultIdType = configuredType
 
         when:
         def entity = new MongoMappingContext(settings)

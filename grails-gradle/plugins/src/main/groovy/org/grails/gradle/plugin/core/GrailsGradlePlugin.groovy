@@ -677,6 +677,7 @@ ${importStatements}
 
             Map<String, Object> buildPropertiesContents = [
                     'grails.env': Environment.isSystemSet() ? Environment.getCurrent().getName() : Environment.PRODUCTION.getName(),
+                    (BuildSettings.GORM_DEFAULT_ID_TYPE): project.extensions.getByType(GrailsExtension).gorm.defaultIdType.get(),
                     'info.app.name': project.name,
                     'info.app.version': project.version instanceof Serializable ? project.version : project.version.toString(),
                     'info.app.grailsVersion': project.findProperty('grailsVersion')

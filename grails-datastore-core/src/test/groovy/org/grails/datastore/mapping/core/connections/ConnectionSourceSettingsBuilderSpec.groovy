@@ -27,12 +27,12 @@ class ConnectionSourceSettingsBuilderSpec extends Specification {
 
     void "portable identity type is long by default"() {
         expect:
-        buildSettings([:]).default.idType == 'long'
+        buildSettings([:]).defaultIdType == 'long'
     }
 
     void "portable identity type is read from GORM runtime configuration"() {
         expect:
-        buildSettings(['grails.gorm.default.idType': 'native']).default.idType == 'native'
+        buildSettings(['grails.gorm.defaultIdType': 'native']).defaultIdType == 'native'
     }
 
     private static ConnectionSourceSettings buildSettings(Map<String, Object> values) {

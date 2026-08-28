@@ -87,17 +87,10 @@ class Book {
 }
 ----
 
-The consuming application uses the build setting above for its source domains and mirrors the choice
-for precompiled plugin domains in runtime configuration:
-
-[source,yaml]
-.grails-app/conf/application.yml
-----
-grails:
-    gorm:
-        default:
-            idType: native
-----
+The consuming application uses the same build setting above for both cases. The Grails Gradle plugin
+packages its value as `grails.gorm.defaultIdType`, which is used at runtime for precompiled plugin
+domains. No duplicate application configuration is required, although normal external configuration
+can override the packaged value.
 
 MongoDB resolves the portable identity to `String` for `native` and `Long` for `long`. The result is
 stored in the entity mapping metadata, so normal persistence operations do not perform repeated type

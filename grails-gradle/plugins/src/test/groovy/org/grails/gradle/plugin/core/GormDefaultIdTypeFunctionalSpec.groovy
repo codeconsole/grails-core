@@ -42,7 +42,8 @@ class GormDefaultIdTypeFunctionalSpec extends GradleSpecification {
         def result = executeTask('inspectGormIdType', ['-PidType=native'])
 
         then:
-        result.output.contains('GORM_ID_TYPE_ARGS=[-Dgrails.compile.gorm.default.id.type=native]')
+        result.output.contains('GORM_ID_TYPE_ARGS=[-Dgrails.gorm.defaultIdType=native]')
+        result.output.contains('PACKAGED_GORM_ID_TYPE=native')
     }
 
     void 'a project that states nothing sends nothing, leaving the compiler on its Long default'() {
@@ -54,6 +55,7 @@ class GormDefaultIdTypeFunctionalSpec extends GradleSpecification {
 
         then:
         result.output.contains('GORM_ID_TYPE_ARGS=[]')
+        result.output.contains('PACKAGED_GORM_ID_TYPE=long')
     }
 
     void 'stating the default explicitly also sends nothing'() {
@@ -89,7 +91,7 @@ class GormDefaultIdTypeFunctionalSpec extends GradleSpecification {
 
         then:
         result.output.contains('PLUGIN_GORM_ID_TYPE_ARGS=[]')
-        result.output.contains('APP_GORM_ID_TYPE_ARGS=[-Dgrails.compile.gorm.default.id.type=native]')
+        result.output.contains('APP_GORM_ID_TYPE_ARGS=[-Dgrails.gorm.defaultIdType=native]')
         result.output.contains('PLUGIN_DECLARED_ID_TYPE=java.io.Serializable')
     }
 }

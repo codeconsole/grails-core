@@ -225,7 +225,7 @@ class BuildSettings {
      * its own default, so a Mongo entity is given a {@code String} id while a Hibernate entity keeps
      * {@code Long}.</p>
      */
-    public static final String GORM_DEFAULT_ID_TYPE = 'grails.compile.gorm.default.id.type'
+    public static final String GORM_DEFAULT_ID_TYPE = 'grails.gorm.defaultIdType'
 
     /**
      * The {@link #GORM_DEFAULT_ID_TYPE} value that gives every entity a {@code Long} id.

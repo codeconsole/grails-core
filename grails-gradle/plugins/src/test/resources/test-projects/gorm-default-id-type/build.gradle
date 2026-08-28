@@ -12,6 +12,8 @@ grails {
 }
 
 tasks.register('inspectGormIdType') {
+    dependsOn tasks.named('buildProperties')
+
     doLast {
         // Read back what the compiler worker JVM would actually be started with. This is the wiring
         // under test: the plugin has to attach the provider to compileGroovy for the setting to reach
@@ -19,7 +21,13 @@ tasks.register('inspectGormIdType') {
         def jvmArguments = tasks.named('compileGroovy').get()
                 .groovyOptions.forkOptions.jvmArgumentProviders
                 .collectMany { it.asArguments().toList() }
-        def idTypeArguments = jvmArguments.findAll { it.startsWith('-Dgrails.compile.gorm.default.id.type=') }
+        def idTypeArguments = jvmArguments.findAll { it.startsWith('-Dgrails.gorm.defaultIdType=') }
         println "GORM_ID_TYPE_ARGS=${idTypeArguments}"
+
+        def buildInfo = new Properties()
+        sourceSets.main.output.resourcesDir.toPath().resolve('META-INF/grails.build.info').toFile().withInputStream {
+            buildInfo.load(it)
+        }
+        println "PACKAGED_GORM_ID_TYPE=${buildInfo.getProperty('grails.gorm.defaultIdType')}"
     }
 }

@@ -45,7 +45,7 @@ class GormEntityIdentityTypeSpec extends Specification {
 
     void 'the property name is the one the Grails Gradle plugin publishes'() {
         expect: 'the literal, not the constant - this is a wire contract, not a tautology'
-        GormEntityTransformation.DEFAULT_ID_TYPE_PROPERTY == 'grails.compile.gorm.default.id.type'
+        GormEntityTransformation.DEFAULT_ID_TYPE_PROPERTY == 'grails.gorm.defaultIdType'
         GormEntityTransformation.DEFAULT_ID_TYPE_LONG == 'long'
         GormEntityTransformation.DEFAULT_ID_TYPE_NATIVE == 'native'
     }

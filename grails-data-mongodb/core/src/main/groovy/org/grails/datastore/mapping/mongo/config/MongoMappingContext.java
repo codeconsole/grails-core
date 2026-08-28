@@ -193,7 +193,7 @@ public class MongoMappingContext extends DocumentMappingContext {
         String storedAsDefault = configuration.getProperty(MongoSettings.SETTING_STRING_IDS_DEFAULT_STORED_AS, String.class, null);
         this.stringIdDefaultStoredAs = parseStoredAs(storedAsDefault);
         this.portableIdentityType = resolvePortableIdentityType(
-                configuration.getProperty("grails.gorm.default.idType", String.class, "long"));
+                configuration.getProperty("grails.gorm.defaultIdType", String.class, "long"));
         initialize(classes);
     }
 
@@ -225,7 +225,7 @@ public class MongoMappingContext extends DocumentMappingContext {
         // (invoked during entity registration) can read the global default.
         String storedAsDefault = settings.getStringIds() != null ? settings.getStringIds().getDefaultStoredAs() : null;
         this.stringIdDefaultStoredAs = parseStoredAs(storedAsDefault);
-        this.portableIdentityType = resolvePortableIdentityType(settings.getDefault().getIdType());
+        this.portableIdentityType = resolvePortableIdentityType(settings.getDefaultIdType());
         initialize(classes);
     }
 

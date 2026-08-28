@@ -25,7 +25,7 @@ import org.apache.grails.data.testing.tck.base.GrailsDataTckSpec
 class PortableIdentityPersistenceSpec extends GrailsDataTckSpec<GrailsDataMongoTckManager> {
 
     void setupSpec() {
-        manager.configuration['grails.gorm.default.idType'] = 'native'
+        manager.configuration['grails.gorm.defaultIdType'] = 'native'
         manager.registerDomainClasses(PortableMongoBook)
     }
 

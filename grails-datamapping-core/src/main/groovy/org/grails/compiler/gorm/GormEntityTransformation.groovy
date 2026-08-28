@@ -125,7 +125,7 @@ class GormEntityTransformation extends AbstractASTTransformation implements Comp
      *
      * @since 8.0
      */
-    public static final String DEFAULT_ID_TYPE_PROPERTY = 'grails.compile.gorm.default.id.type'
+    public static final String DEFAULT_ID_TYPE_PROPERTY = 'grails.gorm.defaultIdType'
 
     /**
      * The {@link #DEFAULT_ID_TYPE_PROPERTY} value that gives every entity a {@code Long} id. The
