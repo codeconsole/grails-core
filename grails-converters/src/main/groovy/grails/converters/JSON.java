@@ -393,6 +393,10 @@ public class JSON extends AbstractConverter<JSONWriter> implements IncludeExclud
         }
     }
 
+    /**
+     * @deprecated Prefer a Jackson {@code ObjectWriter} configured with a view, filter, or writer attribute.
+     */
+    @Deprecated(since = "8.0", forRemoval = false)
     public static ConverterConfiguration<JSON> getNamedConfig(String configName) throws ConverterException {
         ConverterConfiguration<JSON> cfg = ConvertersConfigurationHolder.getNamedConverterConfiguration(configName, JSON.class);
         if (cfg == null) {
@@ -401,6 +405,10 @@ public class JSON extends AbstractConverter<JSONWriter> implements IncludeExclud
         return cfg;
     }
 
+    /**
+     * @deprecated Prefer a scoped Jackson {@code ObjectWriter} configured for the required representation.
+     */
+    @Deprecated(since = "8.0", forRemoval = false)
     public static Object use(String configName, Closure<?> callable) throws ConverterException {
         ConverterConfiguration<JSON> old = ConvertersConfigurationHolder.getThreadLocalConverterConfiguration(JSON.class);
         ConverterConfiguration<JSON> cfg = getNamedConfig(configName);
@@ -413,6 +421,11 @@ public class JSON extends AbstractConverter<JSONWriter> implements IncludeExclud
         }
     }
 
+    /**
+     * @deprecated Prefer passing a configured Jackson {@code ObjectWriter} explicitly. This thread-local API
+     * remains available for legacy converter compatibility.
+     */
+    @Deprecated(since = "8.0", forRemoval = false)
     public static void use(String cfgName) throws ConverterException {
         if (cfgName == null || "default".equals(cfgName)) {
             ConvertersConfigurationHolder.setThreadLocalConverterConfiguration(JSON.class, null);
@@ -478,6 +491,11 @@ public class JSON extends AbstractConverter<JSONWriter> implements IncludeExclud
         ((DefaultConverterConfiguration<JSON>) cfg).registerObjectMarshaller(om, priority);
     }
 
+    /**
+     * @deprecated Prefer Jackson views, filters, or writer attributes configured through the Boot
+     * {@code JsonMapper}.
+     */
+    @Deprecated(since = "8.0", forRemoval = false)
     public static void createNamedConfig(String name, Closure<?> callable) throws ConverterException {
         DefaultConverterConfiguration<JSON> cfg = new DefaultConverterConfiguration<>(ConvertersConfigurationHolder.getConverterConfiguration(JSON.class));
         try {
@@ -489,6 +507,10 @@ public class JSON extends AbstractConverter<JSONWriter> implements IncludeExclud
         }
     }
 
+    /**
+     * @deprecated Prefer a Spring Boot {@code JsonMapperBuilderCustomizer} for application-wide JSON defaults.
+     */
+    @Deprecated(since = "8.0", forRemoval = false)
     public static void withDefaultConfiguration(Closure<?> callable) throws ConverterException {
         ConverterConfiguration<JSON> cfg = ConvertersConfigurationHolder.getConverterConfiguration(JSON.class);
         if (!(cfg instanceof DefaultConverterConfiguration<?>)) {

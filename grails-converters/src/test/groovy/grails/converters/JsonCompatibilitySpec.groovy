@@ -94,6 +94,20 @@ class JsonCompatibilitySpec extends Specification {
         }
     }
 
+    void 'legacy named and default configuration APIs are deprecated but remain available'() {
+        when:
+        def methods = JSON.declaredMethods.findAll {
+            it.name in ['getNamedConfig', 'use', 'createNamedConfig', 'withDefaultConfiguration']
+        }
+
+        then:
+        methods.size() == 5
+        methods.every { method ->
+            Deprecated deprecated = method.getAnnotation(Deprecated)
+            deprecated?.since() == '8.0' && !deprecated.forRemoval()
+        }
+    }
+
     void 'named configurations override marshallers only inside their scope'() {
         given:
         JSON.registerObjectMarshaller(Date) { 'default-date' }
