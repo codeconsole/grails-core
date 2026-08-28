@@ -75,6 +75,18 @@ class JsonCompatibilitySpec extends Specification {
         expect:
         JSON.parse(new JSON(new JsonCompatibilityBean(value: 'custom')).toString()) == [renamed: 'CUSTOM']
     }
+
+    void 'legacy object marshaller registration overloads are deprecated but not scheduled for removal'() {
+        when:
+        def methods = JSON.declaredMethods.findAll { it.name == 'registerObjectMarshaller' }
+
+        then:
+        methods.size() == 4
+        methods.every { method ->
+            Deprecated deprecated = method.getAnnotation(Deprecated)
+            deprecated?.since() == '8.0' && !deprecated.forRemoval()
+        }
+    }
 }
 
 enum JsonCompatibilityMode {

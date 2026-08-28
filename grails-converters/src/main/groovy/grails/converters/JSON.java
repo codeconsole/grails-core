@@ -422,14 +422,32 @@ public class JSON extends AbstractConverter<JSONWriter> implements IncludeExclud
         }
     }
 
+    /**
+     * @deprecated Prefer a Spring Boot {@code JsonMapperBuilderCustomizer} that registers a Jackson
+     * {@code SimpleModule} or {@code ValueSerializer}. This method remains available for legacy
+     * {@code render ... as JSON} compatibility.
+     */
+    @Deprecated(since = "8.0", forRemoval = false)
     public static void registerObjectMarshaller(Class<?> clazz, Closure<?> callable) throws ConverterException {
         registerObjectMarshaller(new ClosureObjectMarshaller<>(clazz, callable));
     }
 
+    /**
+     * @deprecated Prefer a Spring Boot {@code JsonMapperBuilderCustomizer} that registers a Jackson
+     * {@code SimpleModule} or {@code ValueSerializer}. This method remains available for legacy
+     * {@code render ... as JSON} compatibility.
+     */
+    @Deprecated(since = "8.0", forRemoval = false)
     public static void registerObjectMarshaller(Class<?> clazz, int priority, Closure<?> callable) throws ConverterException {
         registerObjectMarshaller(new ClosureObjectMarshaller<>(clazz, callable), priority);
     }
 
+    /**
+     * @deprecated Prefer a Spring Boot {@code JsonMapperBuilderCustomizer} that registers a Jackson
+     * {@code SimpleModule} or {@code ValueSerializer}. This method remains available for legacy
+     * {@code render ... as JSON} compatibility.
+     */
+    @Deprecated(since = "8.0", forRemoval = false)
     public static void registerObjectMarshaller(ObjectMarshaller<JSON> om) throws ConverterException {
         ConverterConfiguration<JSON> cfg = ConvertersConfigurationHolder.getConverterConfiguration(JSON.class);
         if (cfg == null) {
@@ -442,6 +460,12 @@ public class JSON extends AbstractConverter<JSONWriter> implements IncludeExclud
         ((DefaultConverterConfiguration<JSON>) cfg).registerObjectMarshaller(om);
     }
 
+    /**
+     * @deprecated Prefer a Spring Boot {@code JsonMapperBuilderCustomizer} that registers a Jackson
+     * {@code SimpleModule} or {@code ValueSerializer}. This method remains available for legacy
+     * {@code render ... as JSON} compatibility.
+     */
+    @Deprecated(since = "8.0", forRemoval = false)
     public static void registerObjectMarshaller(ObjectMarshaller<JSON> om, int priority) throws ConverterException {
         ConverterConfiguration<JSON> cfg = ConvertersConfigurationHolder.getConverterConfiguration(JSON.class);
         if (cfg == null) {

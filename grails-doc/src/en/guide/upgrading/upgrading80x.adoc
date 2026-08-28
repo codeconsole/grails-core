@@ -1142,6 +1142,26 @@ If you previously customized JSON view rendering with Grails-specific generator 
 This change applies to JSON views rendered by the `grails-views-gson` module.
 The `grails.converters.JSON.registerObjectMarshaller(...)` API is still used by the `grails-converters` module
 for `render ... as JSON` and related converter-based rendering.
+It is deprecated in Grails 8 but is not scheduled for removal. Existing registrations continue to work on the
+legacy converter path. For new code, customize Spring Boot's `JsonMapper` instead so the same serializer is used
+by `respond`, Spring MVC message conversion, and other Jackson-based integrations:
+
+[source,groovy]
+----
+import org.springframework.boot.jackson.autoconfigure.JsonMapperBuilderCustomizer
+import tools.jackson.databind.module.SimpleModule
+
+@Bean
+JsonMapperBuilderCustomizer bookJsonCustomizer() {
+    { builder ->
+        builder.addModule(new SimpleModule()
+                .addSerializer(Book, new BookValueSerializer()))
+    } as JsonMapperBuilderCustomizer
+}
+----
+
+`BookValueSerializer` is an application-provided Jackson `ValueSerializer<Book>`. Use a module when several
+serializers belong together, or register an individual serializer directly through the builder customizer.
 
 To migrate your custom converters:
 
