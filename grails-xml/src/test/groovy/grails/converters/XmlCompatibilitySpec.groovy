@@ -27,6 +27,8 @@ import org.springframework.validation.BeanPropertyBindingResult
 import grails.core.DefaultGrailsApplication
 import grails.web.mime.MimeType
 import grails.rest.render.errors.VndErrorXmlRenderer
+import grails.rest.render.hal.HalXmlCollectionRenderer
+import grails.rest.render.hal.HalXmlRenderer
 import org.grails.web.converters.configuration.ConvertersConfigurationHolder
 import org.grails.web.converters.configuration.XmlConvertersConfigurationInitializer
 import org.grails.web.converters.marshaller.xml.ValidationErrorsMarshaller
@@ -42,6 +44,14 @@ class XmlCompatibilitySpec extends Specification {
         !VndErrorXmlRenderer.getAnnotation(Deprecated).forRemoval()
         ValidationErrorsMarshaller.getAnnotation(Deprecated).since() == '8.0'
         !ValidationErrorsMarshaller.getAnnotation(Deprecated).forRemoval()
+    }
+
+    void 'HAL XML renderers are deprecated for a future major release'() {
+        expect:
+        HalXmlRenderer.getAnnotation(Deprecated).since() == '8.0'
+        !HalXmlRenderer.getAnnotation(Deprecated).forRemoval()
+        HalXmlCollectionRenderer.getAnnotation(Deprecated).since() == '8.0'
+        !HalXmlCollectionRenderer.getAnnotation(Deprecated).forRemoval()
     }
 
     void setup() {
