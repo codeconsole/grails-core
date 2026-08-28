@@ -29,6 +29,7 @@ import grails.plugins.Plugin
 import grails.util.GrailsUtil
 import org.grails.plugins.codecs.JSONCodec
 import org.grails.web.converters.configuration.ConvertersConfigurationInitializer
+import org.grails.web.converters.jackson.GrailsJsonMapperCustomizer
 import org.grails.web.converters.configuration.ObjectMarshallerRegisterer
 import org.grails.web.converters.marshaller.json.ValidationErrorsMarshaller as JsonErrorsMarshaller
 
@@ -56,6 +57,7 @@ class ConvertersGrailsPlugin extends Plugin {
             registry.registerBean('jsonErrorsMarshaller', JsonErrorsMarshaller)
 
             registry.registerBean('convertersConfigurationInitializer', ConvertersConfigurationInitializer)
+            registry.registerBean('grailsJsonMapperCustomizer', GrailsJsonMapperCustomizer)
 
             registry.registerBean('errorsJsonMarshallerRegisterer', ObjectMarshallerRegisterer) {
                 it.supplier {
