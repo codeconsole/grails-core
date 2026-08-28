@@ -81,7 +81,7 @@ class DefaultRendererRegistry extends ClassAndMimeTypeRegistry<Renderer, Rendere
     @Autowired(required = false)
     JsonMapper jsonMapper
 
-    @Value('${grails.web.rendering.json.spring:false}')
+    @Value('${grails.web.rendering.json.spring:true}')
     boolean useSpringJson
 
     @PostConstruct

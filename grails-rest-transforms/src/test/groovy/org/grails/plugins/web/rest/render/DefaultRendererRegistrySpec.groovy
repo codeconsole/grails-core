@@ -67,7 +67,7 @@ class DefaultRendererRegistrySpec extends Specification {
             registry.findRenderer(MimeType.XML, new URL('https://grails.apache.org')) == null
     }
 
-    void 'Spring JSON rendering is opt-in and uses the configured Boot mapper'() {
+    void 'Spring JSON rendering can be enabled with the configured Boot mapper'() {
         given:
         def context = new AnnotationConfigApplicationContext()
         context.environment.propertySources.addFirst(
@@ -83,6 +83,22 @@ class DefaultRendererRegistrySpec extends Specification {
         then:
         renderer.useSpringJson
         renderer.springJsonHttpMessageConverter.mapper.is(context.getBean(JsonMapper))
+
+        cleanup:
+        context.close()
+    }
+
+    void 'Spring JSON rendering is enabled by default when a Boot mapper is available'() {
+        given:
+        def context = new AnnotationConfigApplicationContext()
+        context.registerBean(PropertySourcesPlaceholderConfigurer)
+        context.registerBean(JsonMapper) { JsonMapper.builder().build() }
+        context.registerBean(DefaultRendererRegistry)
+        context.refresh()
+
+        expect:
+        context.getBean(DefaultRendererRegistry)
+                .findRenderer(MimeType.JSON, new URL('https://grails.apache.org')).useSpringJson
 
         cleanup:
         context.close()
