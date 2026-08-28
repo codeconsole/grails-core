@@ -130,6 +130,7 @@ include(
         'grails-logging',
         'grails-mimetypes',
         'grails-rest-transforms',
+        'grails-spring-hateoas',
         'grails-scaffolding',
         'grails-services',
         'grails-shell-cli',

@@ -3068,3 +3068,20 @@ Applications can also inject the factory when they need to create or customize t
 Rejected field values are excluded by default because they can contain passwords, tokens, or other
 sensitive request data. Applications that deliberately need those values can define their own
 `new ValidationProblemDetailFactory(true)` bean after reviewing that exposure risk.
+
+==== 56. Spring HATEOAS HAL JSON Is Optional
+
+Applications that want Spring HATEOAS representation models can add the optional integration without
+adding Spring HATEOAS to every Grails web application:
+
+[source,groovy]
+----
+dependencies {
+    implementation 'org.apache.grails:grails-spring-hateoas'
+}
+----
+
+The module provides a `GrailsSpringHateoasAdapter` bean. Its `toEntityModel(content, links)` method
+copies links created through the existing `grails.rest.Link` API into a Spring HATEOAS `EntityModel`.
+Return that model through the existing `respond()` API and Spring MVC's configured HAL JSON converter
+handles the response. Existing Grails HAL renderers remain available for compatibility.
