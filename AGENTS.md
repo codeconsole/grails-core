@@ -52,6 +52,7 @@ export GRADLE_OPTS="-Xms2G -Xmx5G"
 9. **Test via public APIs** - Tests must exercise behavior through the same APIs an end user calls; never invoke internal implementations, package-private methods, or bypass the public surface directly
 10. **Always review and extend tests** - Review existing unit and functional tests before making changes; every code change must include new or enhanced tests that cover the affected behavior
 11. **The BOM must manage the latest version** - `validateDependencyVersions` enforces that the BOM (`dependencies.gradle`) manages a version `>=` every transitively-resolved version. When it fails, **bump the version in `dependencies.gradle`** so the BOM wins — never silence it with `allowedBomOverrides` or an exclusion unless there is an explicit, documented conflict or an agreed-upon workaround. See [Dependency Management](#dependency-management).
+12. **GitHub Actions must use ASF-approved pins** - Every third-party action SHA must appear in the ASF allowlist. See [GitHub Actions](#github-actions).
 
 ## Available Skills
 
@@ -223,6 +224,21 @@ class MyService { }
 | Style check | `./gradlew codeStyle` |
 | Build docs | `./gradlew :grails-doc:publishGuide -x aggregateGroovydoc` |
 | Debug | `./gradlew bootRun --debug-jvm` |
+
+## GitHub Actions
+
+Apache GitHub Actions policy blocks third-party actions unless they are on the organization allowlist. A workflow that uses an unlisted `uses:` SHA fails at **startup** before any job runs.
+
+The allowlist source of truth is:
+
+https://github.com/apache/infrastructure-actions/blob/main/approved_patterns.yml
+
+Rules:
+
+- Pin every third-party action to a **full commit SHA** that appears in that file, with a trailing `# version` comment.
+- `actions/*`, `github/*`, and `apache/*` are allowed by namespace. Still SHA-pin them for supply-chain consistency.
+- Do not use a newer SHA, tag, or major version until it is on the allowlist. If you need a new pin, open a PR against `apache/infrastructure-actions` (`actions.yml`, not the generated `approved_patterns.yml`).
+- Before adding or bumping a `uses:` line, search `approved_patterns.yml` for that action and copy an approved SHA.
 
 ## Branch Naming (Auto-Labels PRs)
 
