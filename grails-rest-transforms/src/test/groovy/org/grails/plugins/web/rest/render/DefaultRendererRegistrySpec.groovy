@@ -22,12 +22,13 @@ import grails.rest.render.AbstractRenderer
 import grails.rest.render.RenderContext
 import grails.rest.render.hal.HalJsonCollectionRenderer
 import grails.web.mime.MimeType
-import tools.jackson.databind.json.JsonMapper
+import org.springframework.http.converter.HttpMessageConverter
 import org.springframework.context.annotation.AnnotationConfigApplicationContext
 import org.springframework.context.support.PropertySourcesPlaceholderConfigurer
 import org.springframework.core.env.MapPropertySource
 import org.springframework.validation.BeanPropertyBindingResult
 import org.springframework.validation.Errors
+import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerAdapter
 import spock.lang.Specification
 
 class DefaultRendererRegistrySpec extends Specification {
@@ -67,37 +68,34 @@ class DefaultRendererRegistrySpec extends Specification {
             registry.findRenderer(MimeType.XML, new URL('https://grails.apache.org')) == null
     }
 
-    void 'Spring JSON rendering can be enabled with the configured Boot mapper'() {
+    void 'Spring JSON rendering uses the converters configured by MVC in their established order'() {
         given:
-        def context = new AnnotationConfigApplicationContext()
-        context.environment.propertySources.addFirst(
-                new MapPropertySource('test', ['grails.web.rendering.json.spring': 'true']))
-        context.registerBean(PropertySourcesPlaceholderConfigurer)
-        context.registerBean(JsonMapper) { JsonMapper.builder().build() }
-        context.registerBean(DefaultRendererRegistry)
-        context.refresh()
+        def first = Stub(HttpMessageConverter)
+        def second = Stub(HttpMessageConverter)
+        def adapter = new RequestMappingHandlerAdapter()
+        adapter.messageConverters = [first, second]
+        def registry = new DefaultRendererRegistry(requestMappingHandlerAdapter: adapter, useSpringJson: true)
+        registry.initialize()
 
         when:
-        def renderer = context.getBean(DefaultRendererRegistry).findRenderer(MimeType.JSON, new URL('https://grails.apache.org'))
+        def renderer = registry.findRenderer(MimeType.JSON, new URL('https://grails.apache.org'))
 
         then:
         renderer.useSpringJson
-        renderer.springJsonHttpMessageConverter.mapper.is(context.getBean(JsonMapper))
-
-        cleanup:
-        context.close()
+        renderer.springHttpMessageConverters == [first, second]
     }
 
-    void 'Spring JSON rendering is enabled by default when a Boot mapper is available'() {
+    void 'Spring JSON rendering can be disabled during migration'() {
         given:
         def context = new AnnotationConfigApplicationContext()
+        context.environment.propertySources.addFirst(
+                new MapPropertySource('test', ['grails.web.rendering.json.spring': 'false']))
         context.registerBean(PropertySourcesPlaceholderConfigurer)
-        context.registerBean(JsonMapper) { JsonMapper.builder().build() }
         context.registerBean(DefaultRendererRegistry)
         context.refresh()
 
         expect:
-        context.getBean(DefaultRendererRegistry)
+        !context.getBean(DefaultRendererRegistry)
                 .findRenderer(MimeType.JSON, new URL('https://grails.apache.org')).useSpringJson
 
         cleanup:

@@ -28,7 +28,7 @@ import org.springframework.http.HttpStatus
 import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpOutputMessage
 import org.springframework.http.MediaType
-import org.springframework.http.converter.json.JacksonJsonHttpMessageConverter
+import org.springframework.http.converter.HttpMessageConverter
 import org.springframework.validation.Errors
 
 import grails.converters.JSON
@@ -64,7 +64,7 @@ class DefaultJsonRenderer<T> implements Renderer<T> {
     String namedConfiguration
     HttpStatus errorsHttpStatus = HttpStatus.UNPROCESSABLE_ENTITY
     boolean useSpringJson
-    JacksonJsonHttpMessageConverter springJsonHttpMessageConverter
+    List<HttpMessageConverter<?>> springHttpMessageConverters = []
 
     DefaultJsonRenderer(Class<T> targetType) {
         this.targetType = targetType
@@ -88,7 +88,7 @@ class DefaultJsonRenderer<T> implements Renderer<T> {
 
     @Override
     void render(Object object, RenderContext context) {
-        final mimeType = context.acceptMimeType ?: MimeType.JSON
+        final mimeType = resolveMimeType(context)
         context.setContentType(GrailsWebUtil.getContentType(mimeType.name, encoding))
         def viewName = context.viewName ?: context.actionName
         final view = groovyPageLocator?.findViewForFormat(context.controllerName, viewName, mimeType.extension)
@@ -133,7 +133,7 @@ class DefaultJsonRenderer<T> implements Renderer<T> {
     }
 
     private boolean canUseSpringConverter(RenderContext context) {
-        return useSpringJson && springJsonHttpMessageConverter != null && !namedConfiguration &&
+        return useSpringJson && springHttpMessageConverters && !namedConfiguration &&
                 !context.includes && !context.excludes
     }
 
@@ -152,13 +152,22 @@ class DefaultJsonRenderer<T> implements Renderer<T> {
                 return headers
             }
         }
-        MediaType mediaType = MediaType.parseMediaType((context.acceptMimeType ?: MimeType.JSON).name)
-        if (!springJsonHttpMessageConverter.canWrite(object?.getClass() ?: Object, mediaType)) {
+        MediaType mediaType = MediaType.parseMediaType(resolveMimeType(context).name)
+        Class<?> objectType = object?.getClass() ?: Object
+        HttpMessageConverter<Object> converter = (HttpMessageConverter<Object>) springHttpMessageConverters.find {
+            HttpMessageConverter<?> candidate -> candidate.canWrite(objectType, mediaType)
+        }
+        if (converter == null) {
             renderJson(object as JSON, context)
             return
         }
-        springJsonHttpMessageConverter.write(object, mediaType, message)
+        converter.write(object, mediaType, message)
         context.writer.write(output.toString(Charset.forName(encoding)))
+    }
+
+    private MimeType resolveMimeType(RenderContext context) {
+        MimeType mimeType = context.acceptMimeType
+        return mimeType == null || mimeType == MimeType.ALL ? MimeType.JSON : mimeType
     }
 
     protected void renderJson(JSON converter, RenderContext context) {

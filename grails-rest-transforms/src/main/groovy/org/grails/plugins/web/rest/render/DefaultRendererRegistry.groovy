@@ -27,13 +27,12 @@ import jakarta.annotation.PostConstruct
 
 import com.github.benmanes.caffeine.cache.Cache
 import com.github.benmanes.caffeine.cache.Caffeine
-import tools.jackson.databind.json.JsonMapper
 
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.beans.factory.annotation.Value
-import org.springframework.http.converter.json.JacksonJsonHttpMessageConverter
 import org.springframework.validation.BeanPropertyBindingResult
 import org.springframework.validation.Errors
+import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerAdapter
 
 import grails.core.support.proxy.ProxyHandler
 import grails.rest.render.ContainerRenderer
@@ -79,7 +78,7 @@ class DefaultRendererRegistry extends ClassAndMimeTypeRegistry<Renderer, Rendere
     String encoding = grails.util.GrailsWebUtil.DEFAULT_ENCODING
 
     @Autowired(required = false)
-    JsonMapper jsonMapper
+    RequestMappingHandlerAdapter requestMappingHandlerAdapter
 
     @Value('${grails.web.rendering.json.spring:true}')
     boolean useSpringJson
@@ -116,8 +115,8 @@ class DefaultRendererRegistry extends ClassAndMimeTypeRegistry<Renderer, Rendere
 
     private void configureJsonRenderer(DefaultJsonRenderer renderer) {
         renderer.useSpringJson = useSpringJson
-        if (jsonMapper != null) {
-            renderer.springJsonHttpMessageConverter = new JacksonJsonHttpMessageConverter(jsonMapper)
+        if (requestMappingHandlerAdapter != null) {
+            renderer.springHttpMessageConverters = requestMappingHandlerAdapter.messageConverters
         }
     }
 

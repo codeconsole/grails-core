@@ -2997,13 +2997,16 @@ published in its existing descriptor format; `grails-xml` concerns application H
 ==== 53. `respond()` Uses Spring JSON Conversion
 
 Ordinary JSON responses selected by `respond()` now use Spring Framework's
-`JacksonJsonHttpMessageConverter` and the `JsonMapper` configured by Spring Boot. This makes standard
-Jackson 3 modules, mixins, naming strategies, and mapper customizations apply consistently to MVC and
-Grails REST responses.
+ordered MVC `HttpMessageConverter` infrastructure. Grails selects the first configured converter that
+can write the response type and negotiated JSON media type; in a standard Spring Boot application this
+is `JacksonJsonHttpMessageConverter` backed by Boot's `JsonMapper`. Standard Jackson 3 modules, mixins,
+naming strategies, and mapper customizations therefore apply consistently to MVC and Grails REST
+responses, while application-provided MVC converters retain their configured precedence.
 
 Grails retains the legacy converter path when a named converter configuration or per-response
-`includes`/`excludes` projection is requested. Explicit application and plugin `Renderer` beans continue
-to take precedence over the default renderer.
+`includes`/`excludes` projection is requested, or when no configured MVC converter can write the
+selected type and media type. Explicit application and plugin `Renderer` beans continue to take
+precedence over the default renderer.
 
 To temporarily restore legacy JSON rendering for ordinary `respond()` payloads:
 
