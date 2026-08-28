@@ -3030,3 +3030,31 @@ features such as support for an application-specific input format.
 Malformed request bodies continue to raise `InvalidRequestBodyException` through the public data-binding
 API. Code that directly replaced or configured the internal Groovy `JsonSlurper` should move that
 configuration to a `JsonMapperBuilderCustomizer`.
+
+==== 55. Validation Errors Can Be Exposed as RFC 9457 Problems
+
+Grails provides a `ValidationProblemDetailFactory` bean that adapts Spring `Errors` to Spring Framework's
+RFC 9457 `ProblemDetail` type. The resulting response has status 422, the title `Validation failed`, and
+an `errors` extension containing stable maps with the object name, optional field name, message, and error
+codes:
+
+[source,groovy]
+----
+import grails.rest.render.errors.ValidationProblemDetailFactory
+
+class BookController {
+    ValidationProblemDetailFactory validationProblemDetailFactory
+
+    def save(Book book) {
+        if (book.hasErrors()) {
+            respond validationProblemDetailFactory.create(book.errors)
+            return
+        }
+        // save the valid book
+    }
+}
+----
+
+Rejected field values are excluded by default because they can contain passwords, tokens, or other
+sensitive request data. Applications that deliberately need those values can define their own
+`new ValidationProblemDetailFactory(true)` bean after reviewing that exposure risk.

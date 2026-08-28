@@ -32,6 +32,7 @@ import grails.core.GrailsApplication
 import grails.core.GrailsClass
 import grails.plugins.Plugin
 import grails.rest.Resource
+import grails.rest.render.errors.ValidationProblemDetailFactory
 import grails.util.GrailsUtil
 import org.grails.core.artefact.ControllerArtefactHandler
 import org.grails.core.artefact.DomainClassArtefactHandler
@@ -64,6 +65,7 @@ class RestResponderGrailsPlugin extends Plugin {
                     return rendererRegistry
                 }
             }
+            registry.registerBean('validationProblemDetailFactory', ValidationProblemDetailFactory)
         }
     }
 
