@@ -20,15 +20,21 @@ package grails.converters
 
 import java.time.Instant
 
+import org.springframework.validation.BeanPropertyBindingResult
+
+import grails.core.DefaultGrailsApplication
 import org.grails.web.converters.configuration.ConvertersConfigurationHolder
 import org.grails.web.converters.configuration.ConvertersConfigurationInitializer
+import org.grails.web.converters.marshaller.json.ValidationErrorsMarshaller
 
 import spock.lang.Specification
 
 class JsonCompatibilitySpec extends Specification {
 
     void setup() {
-        new ConvertersConfigurationInitializer().initialize()
+        def initializer = new ConvertersConfigurationInitializer()
+        initializer.grailsApplication = new DefaultGrailsApplication()
+        initializer.initialize()
     }
 
     void cleanup() {
@@ -87,6 +93,61 @@ class JsonCompatibilitySpec extends Specification {
             deprecated?.since() == '8.0' && !deprecated.forRemoval()
         }
     }
+
+    void 'named configurations override marshallers only inside their scope'() {
+        given:
+        JSON.registerObjectMarshaller(Date) { 'default-date' }
+        JSON.createNamedConfig('compatibility-date') { configuration ->
+            configuration.registerObjectMarshaller(Date) { 'named-date' }
+        }
+        def value = [created: new Date(0)]
+
+        when:
+        def before = JSON.parse(new JSON(value).toString())
+        def named
+        JSON.use('compatibility-date') {
+            named = JSON.parse(new JSON(value).toString())
+        }
+        def after = JSON.parse(new JSON(value).toString())
+
+        then:
+        before == [created: 'default-date']
+        named == [created: 'named-date']
+        after == before
+    }
+
+    void 'circular maps retain the established empty-object reference shape'() {
+        given:
+        def circular = [:]
+        circular.self = circular
+
+        expect:
+        JSON.parse(new JSON(circular).toString()) == [self: [:]]
+    }
+
+    void 'Hibernate-shaped proxies are unwrapped before legacy marshalling'() {
+        given:
+        def target = new JsonCompatibilityBean(value: 'unwrapped')
+        def proxy = new JsonCompatibilityProxy(hibernateLazyInitializer: [implementation: target])
+
+        expect:
+        JSON.parse(new JSON([bean: proxy]).toString()) == [bean: [value: 'unwrapped']]
+    }
+
+    void 'validation errors retain their legacy JSON field shape'() {
+        given:
+        JSON.registerObjectMarshaller(new ValidationErrorsMarshaller(), 100)
+        def errors = new BeanPropertyBindingResult(new JsonCompatibilityBean(), 'bean')
+        errors.rejectValue('value', 'blank', 'Value is required')
+
+        expect:
+        JSON.parse(new JSON(errors).toString()) == [errors: [[
+                object: 'bean',
+                field: 'value',
+                'rejected-value': null,
+                message: 'Value is required',
+        ]]]
+    }
 }
 
 enum JsonCompatibilityMode {
@@ -95,4 +156,8 @@ enum JsonCompatibilityMode {
 
 class JsonCompatibilityBean {
     String value
+}
+
+class JsonCompatibilityProxy {
+    Map hibernateLazyInitializer
 }
