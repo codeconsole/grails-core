@@ -22,6 +22,11 @@ import tools.jackson.databind.module.SimpleModule;
 import org.springframework.boot.jackson.autoconfigure.JsonMapperBuilderCustomizer;
 import org.springframework.validation.Errors;
 
+import grails.core.GrailsApplication;
+import grails.core.support.proxy.DefaultProxyHandler;
+import grails.core.support.proxy.ProxyHandler;
+import org.grails.datastore.mapping.model.PersistentEntity;
+
 /**
  * Adds Grails-specific serializers to Spring Boot's configured JSON mapper.
  *
@@ -29,10 +34,43 @@ import org.springframework.validation.Errors;
  */
 public final class GrailsJsonMapperCustomizer implements JsonMapperBuilderCustomizer {
 
+    static final String INCLUDES_ATTRIBUTE = GrailsJsonMapperCustomizer.class.getName() + ".includes";
+    static final String EXCLUDES_ATTRIBUTE = GrailsJsonMapperCustomizer.class.getName() + ".excludes";
+
+    private final GrailsApplication grailsApplication;
+    private final ProxyHandler proxyHandler;
+
+    public GrailsJsonMapperCustomizer() {
+        this(null, new DefaultProxyHandler());
+    }
+
+    public GrailsJsonMapperCustomizer(GrailsApplication grailsApplication) {
+        this(grailsApplication, new DefaultProxyHandler());
+    }
+
+    public GrailsJsonMapperCustomizer(GrailsApplication grailsApplication, ProxyHandler proxyHandler) {
+        this.grailsApplication = grailsApplication;
+        this.proxyHandler = proxyHandler;
+    }
+
     @Override
     public void customize(JsonMapper.Builder builder) {
         SimpleModule module = new SimpleModule("grails-json");
         module.addSerializer(Errors.class, new SpringErrorsJsonSerializer());
+        if (grailsApplication != null && grailsApplication.getMappingContext() != null) {
+            boolean defaultIncludeVersion = grailsApplication.getConfig()
+                    .getProperty("grails.converters.domain.include.version", Boolean.class, false);
+            boolean includeVersion = grailsApplication.getConfig()
+                    .getProperty("grails.converters.json.domain.include.version", Boolean.class, defaultIncludeVersion);
+            boolean defaultIncludeClass = grailsApplication.getConfig()
+                    .getProperty("grails.converters.domain.include.class", Boolean.class, false);
+            boolean includeClass = grailsApplication.getConfig()
+                    .getProperty("grails.converters.json.domain.include.class", Boolean.class, defaultIncludeClass);
+            for (PersistentEntity entity : grailsApplication.getMappingContext().getPersistentEntities()) {
+                module.addSerializer(entity.getJavaClass(),
+                        new GrailsDomainJsonSerializer(entity, proxyHandler, includeVersion, includeClass));
+            }
+        }
         builder.addModule(module);
     }
 }

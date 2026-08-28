@@ -25,6 +25,8 @@ import org.springframework.beans.factory.BeanRegistry
 import org.springframework.core.env.Environment
 
 import grails.converters.JSON
+import grails.core.GrailsApplication
+import grails.core.support.proxy.ProxyHandler
 import grails.plugins.Plugin
 import grails.util.GrailsUtil
 import org.grails.plugins.codecs.JSONCodec
@@ -57,7 +59,14 @@ class ConvertersGrailsPlugin extends Plugin {
             registry.registerBean('jsonErrorsMarshaller', JsonErrorsMarshaller)
 
             registry.registerBean('convertersConfigurationInitializer', ConvertersConfigurationInitializer)
-            registry.registerBean('grailsJsonMapperCustomizer', GrailsJsonMapperCustomizer)
+            registry.registerBean('grailsJsonMapperCustomizer', GrailsJsonMapperCustomizer) {
+                it.supplier {
+                    new GrailsJsonMapperCustomizer(
+                            it.bean('grailsApplication', GrailsApplication),
+                            it.bean('proxyHandler', ProxyHandler)
+                    )
+                }
+            }
 
             registry.registerBean('errorsJsonMarshallerRegisterer', ObjectMarshallerRegisterer) {
                 it.supplier {
