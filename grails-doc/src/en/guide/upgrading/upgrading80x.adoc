@@ -3038,10 +3038,12 @@ Malformed request bodies continue to raise `InvalidRequestBodyException` through
 API. Code that directly replaced or configured the internal Groovy `JsonSlurper` should move that
 configuration to a `JsonMapperBuilderCustomizer`.
 
-==== 55. Validation Errors Can Be Exposed as RFC 9457 Problems
+==== 55. REST Validation Errors Use RFC 9457 Problems
 
-Grails provides a `ValidationProblemDetailFactory` bean that adapts Spring `Errors` to Spring Framework's
-RFC 9457 `ProblemDetail` type. The resulting response has status 422, the title `Validation failed`, and
+When Spring JSON rendering is enabled, `respond()` renders Spring `Errors` as
+`application/problem+json` by default. Grails uses the public `ValidationProblemDetailFactory` bean to
+adapt the errors to Spring Framework's RFC 9457 `ProblemDetail` type. The resulting response has status
+422, the title `Validation failed`, and
 an `errors` extension containing stable maps with the object name, optional field name, message, and error
 codes:
 
@@ -3062,6 +3064,7 @@ class BookController {
 }
 ----
 
+Applications can also inject the factory when they need to create or customize the problem explicitly.
 Rejected field values are excluded by default because they can contain passwords, tokens, or other
 sensitive request data. Applications that deliberately need those values can define their own
 `new ValidationProblemDetailFactory(true)` bean after reviewing that exposure risk.

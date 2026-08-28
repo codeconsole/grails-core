@@ -99,7 +99,7 @@ class DefaultRendererRegistry extends ClassAndMimeTypeRegistry<Renderer, Rendere
         allHtmlRenderer.proxyHandler = proxyHandler
         allHtmlRenderer.encoding = encoding
         addDefaultRenderer(allHtmlRenderer)
-        [MimeType.JSON, MimeType.TEXT_JSON].each { MimeType mimeType ->
+        [DefaultJsonRenderer.PROBLEM_JSON, MimeType.JSON, MimeType.TEXT_JSON].each { MimeType mimeType ->
             final errorsJsonRenderer = new DefaultJsonRenderer(Errors)
             errorsJsonRenderer.encoding = encoding
             configureJsonRenderer(errorsJsonRenderer)

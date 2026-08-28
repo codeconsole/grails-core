@@ -20,6 +20,10 @@ package org.grails.plugins.web.rest.render.json
 
 import org.springframework.http.MediaType
 import org.springframework.http.converter.HttpMessageConverter
+import org.springframework.http.ProblemDetail
+import org.springframework.validation.BeanPropertyBindingResult
+import org.springframework.validation.Errors
+import org.springframework.validation.FieldError
 
 import grails.core.DefaultGrailsApplication
 import grails.util.GrailsWebMockUtil
@@ -92,6 +96,32 @@ class DefaultJsonRendererSpec extends Specification {
         then:
         0 * converter._
         webRequest.response.contentAsString == '{"title":"Included"}'
+    }
+
+    void 'validation errors render as problem JSON through Spring conversion by default'() {
+        given:
+        def converter = Mock(HttpMessageConverter)
+        def renderer = new DefaultJsonRenderer<Errors>(Errors)
+        renderer.useSpringJson = true
+        renderer.springHttpMessageConverters = [converter]
+        def errors = new BeanPropertyBindingResult(new Object(), 'book')
+        errors.addError(new FieldError('book', 'title', 'secret', false,
+                ['book.title.blank'] as String[], null, 'Title must not be blank'))
+        def webRequest = GrailsWebMockUtil.bindMockWebRequest()
+
+        when:
+        renderer.render(errors, new ServletRenderContext(webRequest))
+
+        then:
+        1 * converter.canWrite(ProblemDetail, MediaType.APPLICATION_PROBLEM_JSON) >> true
+        1 * converter.write({ ProblemDetail problem ->
+            problem.status == 422 && !problem.properties.errors.first().containsKey('rejectedValue')
+        }, MediaType.APPLICATION_PROBLEM_JSON, _) >> { arguments ->
+            arguments[2].body.write('{"status":422,"title":"Validation failed"}'.bytes)
+        }
+        webRequest.response.status == 422
+        webRequest.response.contentType == 'application/problem+json;charset=UTF-8'
+        webRequest.response.contentAsString == '{"status":422,"title":"Validation failed"}'
     }
 }
 

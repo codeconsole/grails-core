@@ -35,6 +35,7 @@ import grails.converters.JSON
 import grails.rest.render.RenderContext
 import grails.rest.render.Renderer
 import grails.rest.render.RendererRegistry
+import grails.rest.render.errors.ValidationProblemDetailFactory
 import grails.util.GrailsWebUtil
 import grails.web.mime.MimeType
 import org.grails.plugins.web.rest.render.html.DefaultHtmlRenderer
@@ -48,6 +49,8 @@ import org.grails.web.gsp.io.GrailsConventionGroovyPageLocator
  */
 @CompileStatic
 class DefaultJsonRenderer<T> implements Renderer<T> {
+
+    static final MimeType PROBLEM_JSON = new MimeType('application/problem+json', 'json')
 
     final Class<T> targetType
     MimeType[] mimeTypes = [MimeType.JSON, MimeType.TEXT_JSON] as MimeType[]
@@ -65,6 +68,7 @@ class DefaultJsonRenderer<T> implements Renderer<T> {
     HttpStatus errorsHttpStatus = HttpStatus.UNPROCESSABLE_ENTITY
     boolean useSpringJson
     List<HttpMessageConverter<?>> springHttpMessageConverters = []
+    ValidationProblemDetailFactory validationProblemDetailFactory = new ValidationProblemDetailFactory()
 
     DefaultJsonRenderer(Class<T> targetType) {
         this.targetType = targetType
@@ -117,8 +121,16 @@ class DefaultJsonRenderer<T> implements Renderer<T> {
      */
     protected void renderJson(T object, RenderContext context) {
         if (canUseSpringConverter(context)) {
-            renderWithSpringConverter(object, context)
-            return
+            Object springValue = object instanceof Errors ? validationProblemDetailFactory.create((Errors) object) : object
+            MediaType mediaType = object instanceof Errors ?
+                    MediaType.parseMediaType(PROBLEM_JSON.name) :
+                    MediaType.parseMediaType(resolveMimeType(context).name)
+            if (renderWithSpringConverter(springValue, mediaType, context)) {
+                if (object instanceof Errors) {
+                    context.setContentType(GrailsWebUtil.getContentType(PROBLEM_JSON.name, encoding))
+                }
+                return
+            }
         }
 
         JSON converter
@@ -137,7 +149,7 @@ class DefaultJsonRenderer<T> implements Renderer<T> {
                 !context.includes && !context.excludes
     }
 
-    private void renderWithSpringConverter(Object object, RenderContext context) {
+    private boolean renderWithSpringConverter(Object object, MediaType mediaType, RenderContext context) {
         ByteArrayOutputStream output = new ByteArrayOutputStream()
         HttpOutputMessage message = new HttpOutputMessage() {
             private final HttpHeaders headers = new HttpHeaders()
@@ -152,17 +164,16 @@ class DefaultJsonRenderer<T> implements Renderer<T> {
                 return headers
             }
         }
-        MediaType mediaType = MediaType.parseMediaType(resolveMimeType(context).name)
         Class<?> objectType = object?.getClass() ?: Object
         HttpMessageConverter<Object> converter = (HttpMessageConverter<Object>) springHttpMessageConverters.find {
             HttpMessageConverter<?> candidate -> candidate.canWrite(objectType, mediaType)
         }
         if (converter == null) {
-            renderJson(object as JSON, context)
-            return
+            return false
         }
         converter.write(object, mediaType, message)
         context.writer.write(output.toString(Charset.forName(encoding)))
+        return true
     }
 
     private MimeType resolveMimeType(RenderContext context) {

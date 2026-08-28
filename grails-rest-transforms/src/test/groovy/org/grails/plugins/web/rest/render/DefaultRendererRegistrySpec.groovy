@@ -22,6 +22,7 @@ import grails.rest.render.AbstractRenderer
 import grails.rest.render.RenderContext
 import grails.rest.render.hal.HalJsonCollectionRenderer
 import grails.web.mime.MimeType
+import org.grails.plugins.web.rest.render.json.DefaultJsonRenderer
 import org.springframework.http.converter.HttpMessageConverter
 import org.springframework.context.annotation.AnnotationConfigApplicationContext
 import org.springframework.context.support.PropertySourcesPlaceholderConfigurer
@@ -32,6 +33,16 @@ import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandl
 import spock.lang.Specification
 
 class DefaultRendererRegistrySpec extends Specification {
+
+    void 'validation errors negotiate the problem JSON media type'() {
+        given:
+        def registry = new DefaultRendererRegistry()
+        registry.initialize()
+        def errors = new BeanPropertyBindingResult(new Object(), 'book')
+
+        expect:
+        registry.findContainerRenderer(DefaultJsonRenderer.PROBLEM_JSON, Errors, errors) instanceof DefaultJsonRenderer
+    }
 
     void "Test the registry resolves grails.converters.encoding from the environment"() {
         given: "an application context whose environment configures a non-default encoding"
