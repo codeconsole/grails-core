@@ -18,6 +18,8 @@
  */
 package grails.rest.render.hal
 
+import groovy.transform.CompileStatic
+
 import grails.rest.render.ContainerRenderer
 import grails.web.mime.MimeType
 
@@ -28,6 +30,7 @@ import grails.web.mime.MimeType
  * @author Graeme Rocher
  * @since 2.3
  */
+@CompileStatic
 class HalXmlCollectionRenderer extends HalXmlRenderer implements ContainerRenderer {
 
     final Class componentType

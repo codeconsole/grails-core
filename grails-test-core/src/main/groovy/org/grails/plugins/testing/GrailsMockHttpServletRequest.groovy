@@ -20,6 +20,8 @@ package org.grails.plugins.testing
 
 import java.nio.charset.StandardCharsets
 
+import groovy.transform.CompileStatic
+
 import jakarta.servlet.AsyncContext
 import jakarta.servlet.AsyncEvent
 import jakarta.servlet.AsyncListener
@@ -127,6 +129,7 @@ class GrailsMockHttpServletRequest extends MockHttpServletRequest implements Mul
      *
      * @param sourceXml
      */
+    @CompileStatic
     void setXml(Object sourceXml) {
         setContentType('text/xml; charset=UTF-8')
         setFormat('xml')
@@ -149,7 +152,8 @@ class GrailsMockHttpServletRequest extends MockHttpServletRequest implements Mul
             setContent(xml.toString().getBytes(StandardCharsets.UTF_8))
         }
 
-        getAttribute('org.codehaus.groovy.grails.WEB_REQUEST')?.informParameterCreationListeners()
+        GrailsWebRequest webRequest = (GrailsWebRequest) getAttribute('org.codehaus.groovy.grails.WEB_REQUEST')
+        webRequest?.informParameterCreationListeners()
     }
 
     void setXML(Object sourceXml) {

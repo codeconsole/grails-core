@@ -18,6 +18,8 @@
  */
 package grails.rest.render.atom
 
+import groovy.transform.CompileStatic
+
 import grails.rest.render.ContainerRenderer
 
 /**
@@ -26,6 +28,7 @@ import grails.rest.render.ContainerRenderer
  * @author Graeme Rocher
  * @since 2.3
  */
+@CompileStatic
 class AtomCollectionRenderer extends AtomRenderer implements ContainerRenderer {
 
     final Class componentType
