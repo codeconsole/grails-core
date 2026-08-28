@@ -2946,3 +2946,30 @@ job is disabled with `jobEnabled = false`, or the class is not a job artefact of
 
 An application that caught `NullPointerException` around these calls has to catch those instead. See
 <<quartzDynamicScheduling,Dynamic Job Scheduling>>.
+
+==== 52. XML Web Support Is Optional
+
+XML conversion, request-body binding, codecs, and REST renderers now live in the optional
+`grails-xml` module. Newly generated applications and the web starter no longer include that module by
+default. MIME type negotiation still recognizes `application/xml`, `text/xml`, Atom, and other XML media
+types; recognizing a media type does not install an XML serializer.
+
+Applications that expose XML endpoints or use `grails.converters.XML`, XML object marshallers, XML data
+binding, or the XML and Atom renderers must add the module explicitly:
+
+[source,groovy]
+.build.gradle
+----
+dependencies {
+    implementation 'org.apache.grails:grails-xml'
+}
+----
+
+The module preserves the established Grails XML APIs and compatibility marshalling for domain-shaped
+payloads, collections, maps, validation errors, named converter configurations, and include/exclude
+projections. Ordinary bean responses use Spring Framework's `JacksonXmlHttpMessageConverter`, backed by
+the Spring Boot-managed Jackson XML mapper. Applications may still register their own Spring XML message
+converter or OXM/JAXB infrastructure through public Spring configuration APIs.
+
+This change does not affect Grails plugin descriptors. Plugin metadata continues to be generated and
+published in its existing descriptor format; `grails-xml` concerns application HTTP payloads only.

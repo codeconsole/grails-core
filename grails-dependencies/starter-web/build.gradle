@@ -64,7 +64,6 @@ def configurations = [
                 System.getenv('SITEMESH2_TESTING_ENABLED') == 'true' ? ':grails-layout' : ':grails-sitemesh3',
                 ':grails-logging',
                 ':grails-rest-transforms',
-                ':grails-xml',
                 ':grails-services',
                 ':grails-url-mappings',
                 ':grails-web-boot',
