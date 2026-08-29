@@ -394,7 +394,8 @@ public class JSON extends AbstractConverter<JSONWriter> implements IncludeExclud
     }
 
     /**
-     * @deprecated Prefer a Jackson {@code ObjectWriter} configured with a view, filter, or writer attribute.
+     * @deprecated Inject {@link grails.converters.json.NamedJsonConfigurationRegistry} and call
+     * {@link grails.converters.json.NamedJsonConfigurationRegistry#writer(String)}.
      */
     @Deprecated(since = "8.0", forRemoval = false)
     public static ConverterConfiguration<JSON> getNamedConfig(String configName) throws ConverterException {
@@ -406,7 +407,9 @@ public class JSON extends AbstractConverter<JSONWriter> implements IncludeExclud
     }
 
     /**
-     * @deprecated Prefer a scoped Jackson {@code ObjectWriter} configured for the required representation.
+     * @deprecated Inject {@link grails.converters.json.NamedJsonConfigurationRegistry} and call
+     * {@link grails.converters.json.NamedJsonConfigurationRegistry#writeValueAsString(String, Object)} or
+     * {@link grails.converters.json.NamedJsonConfigurationRegistry#writeValue(String, java.io.Writer, Object)}.
      */
     @Deprecated(since = "8.0", forRemoval = false)
     public static Object use(String configName, Closure<?> callable) throws ConverterException {
@@ -422,8 +425,8 @@ public class JSON extends AbstractConverter<JSONWriter> implements IncludeExclud
     }
 
     /**
-     * @deprecated Prefer passing a configured Jackson {@code ObjectWriter} explicitly. This thread-local API
-     * remains available for legacy converter compatibility.
+     * @deprecated Inject {@link grails.converters.json.NamedJsonConfigurationRegistry} and select the
+     * configuration explicitly for each write. The replacement does not mutate thread-local state.
      */
     @Deprecated(since = "8.0", forRemoval = false)
     public static void use(String cfgName) throws ConverterException {
@@ -492,8 +495,8 @@ public class JSON extends AbstractConverter<JSONWriter> implements IncludeExclud
     }
 
     /**
-     * @deprecated Prefer Jackson views, filters, or writer attributes configured through the Boot
-     * {@code JsonMapper}.
+     * @deprecated Inject {@link grails.converters.json.NamedJsonConfigurationRegistry} and use
+     * {@link grails.converters.json.NamedJsonConfigurationRegistry#register(String, java.util.function.Consumer)}.
      */
     @Deprecated(since = "8.0", forRemoval = false)
     public static void createNamedConfig(String name, Closure<?> callable) throws ConverterException {

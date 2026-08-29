@@ -40,6 +40,7 @@ import grails.rest.render.Renderer
 import grails.rest.render.RendererRegistry
 import grails.util.GrailsClassUtils
 import grails.web.mime.MimeType
+import grails.web.render.NamedJsonRenderer
 import org.grails.plugins.web.rest.render.html.DefaultHtmlRenderer
 import org.grails.plugins.web.rest.render.json.DefaultJsonRenderer
 import org.grails.web.gsp.io.GrailsConventionGroovyPageLocator
@@ -80,6 +81,9 @@ class DefaultRendererRegistry extends ClassAndMimeTypeRegistry<Renderer, Rendere
     @Autowired(required = false)
     RequestMappingHandlerAdapter requestMappingHandlerAdapter
 
+    @Autowired(required = false)
+    NamedJsonRenderer namedJsonRenderer
+
     @Value('${grails.web.rendering.json.spring:true}')
     boolean useSpringJson
 
@@ -115,6 +119,7 @@ class DefaultRendererRegistry extends ClassAndMimeTypeRegistry<Renderer, Rendere
 
     private void configureJsonRenderer(DefaultJsonRenderer renderer) {
         renderer.useSpringJson = useSpringJson
+        renderer.namedJsonRenderer = namedJsonRenderer
         if (requestMappingHandlerAdapter != null) {
             renderer.springHttpMessageConverters = requestMappingHandlerAdapter.messageConverters
         }

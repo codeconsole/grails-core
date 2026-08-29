@@ -27,6 +27,7 @@ import org.springframework.validation.FieldError
 
 import grails.core.DefaultGrailsApplication
 import grails.util.GrailsWebMockUtil
+import grails.web.render.NamedJsonRenderer
 import org.grails.plugins.web.rest.render.ServletRenderContext
 import org.grails.web.converters.configuration.ConvertersConfigurationHolder
 import org.grails.web.converters.configuration.ConvertersConfigurationInitializer
@@ -96,6 +97,24 @@ class DefaultJsonRendererSpec extends Specification {
         then:
         0 * converter._
         webRequest.response.contentAsString == '{"title":"Included"}'
+    }
+
+    void 'respond selects a registered named JSON configuration'() {
+        given:
+        def namedRenderer = Mock(NamedJsonRenderer)
+        def renderer = new DefaultJsonRenderer<Map>(Map)
+        renderer.namedJsonRenderer = namedRenderer
+        def webRequest = GrailsWebMockUtil.bindMockWebRequest()
+
+        when:
+        renderer.render([title: 'Named'], new ServletRenderContext(webRequest, [jsonConfiguration: 'deep']))
+
+        then:
+        1 * namedRenderer.contains('deep') >> true
+        1 * namedRenderer.render('deep', [title: 'Named'], _) >> { arguments ->
+            arguments[2].write('{"configured":true}')
+        }
+        webRequest.response.contentAsString == '{"configured":true}'
     }
 
     void 'validation errors render as problem JSON through Spring conversion by default'() {

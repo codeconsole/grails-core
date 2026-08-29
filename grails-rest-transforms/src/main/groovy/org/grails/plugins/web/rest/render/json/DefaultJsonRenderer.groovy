@@ -38,6 +38,7 @@ import grails.rest.render.RendererRegistry
 import grails.rest.render.errors.ValidationProblemDetailFactory
 import grails.util.GrailsWebUtil
 import grails.web.mime.MimeType
+import grails.web.render.NamedJsonRenderer
 import org.grails.plugins.web.rest.render.html.DefaultHtmlRenderer
 import org.grails.web.gsp.io.GrailsConventionGroovyPageLocator
 
@@ -69,6 +70,7 @@ class DefaultJsonRenderer<T> implements Renderer<T> {
     boolean useSpringJson
     List<HttpMessageConverter<?>> springHttpMessageConverters = []
     ValidationProblemDetailFactory validationProblemDetailFactory = new ValidationProblemDetailFactory()
+    NamedJsonRenderer namedJsonRenderer
 
     DefaultJsonRenderer(Class<T> targetType) {
         this.targetType = targetType
@@ -120,7 +122,12 @@ class DefaultJsonRenderer<T> implements Renderer<T> {
      * @param context
      */
     protected void renderJson(T object, RenderContext context) {
-        if (canUseSpringConverter(context)) {
+        String selectedConfiguration = context.arguments?.get('jsonConfiguration')?.toString()
+        if (selectedConfiguration && namedJsonRenderer?.contains(selectedConfiguration)) {
+            namedJsonRenderer.render(selectedConfiguration, object, context.writer)
+            return
+        }
+        if (!selectedConfiguration && canUseSpringConverter(context)) {
             Object springValue = object instanceof Errors ? validationProblemDetailFactory.create((Errors) object) : object
             MediaType mediaType = object instanceof Errors ?
                     MediaType.parseMediaType(PROBLEM_JSON.name) :
@@ -134,8 +141,9 @@ class DefaultJsonRenderer<T> implements Renderer<T> {
         }
 
         JSON converter
-        if (namedConfiguration) {
-            JSON.use(namedConfiguration) {
+        String legacyConfiguration = selectedConfiguration ?: namedConfiguration
+        if (legacyConfiguration) {
+            JSON.use(legacyConfiguration) {
                 converter = object as JSON
             }
         } else {

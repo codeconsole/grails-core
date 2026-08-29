@@ -1163,6 +1163,40 @@ JsonMapperBuilderCustomizer bookJsonCustomizer() {
 `BookValueSerializer` is an application-provided Jackson `ValueSerializer<Book>`. Use a module when several
 serializers belong together, or register an individual serializer directly through the builder customizer.
 
+For different JSON shapes selected by name, replace `JSON.createNamedConfig(...)` with the injectable
+`NamedJsonConfigurationRegistry`. Each registration derives an isolated mapper from Spring Boot's configured
+`JsonMapper`, so it retains application-wide Jackson settings without changing the shared mapper:
+
+[source,groovy]
+----
+import grails.converters.json.NamedJsonConfigurationRegistry
+
+class BootStrap {
+    NamedJsonConfigurationRegistry namedJsonConfigurationRegistry
+
+    def init = { servletContext ->
+        namedJsonConfigurationRegistry.register('deep') {
+            it.serializer(Type, new TypeValueSerializer())
+            it.serializer(Category, new CategoryValueSerializer())
+        }
+    }
+}
+----
+
+Select the configuration independently for `render` or `respond`:
+
+[source,groovy]
+----
+render book, jsonConfiguration: 'deep'
+respond book, jsonConfiguration: 'deep'
+----
+
+For direct serialization, inject the same registry and use
+`namedJsonConfigurationRegistry.writeValueAsString('deep', book)` or
+`namedJsonConfigurationRegistry.writeValue('deep', writer, book)`. These explicit operations replace the
+thread-local scope established by `JSON.use('deep')`. The legacy `JSON.createNamedConfig(...)` and `JSON.use(...)`
+APIs remain available for compatibility, but are deprecated in favor of the request-safe Jackson registry.
+
 To migrate your custom converters:
 
 - Implement `groovy.json.JsonGenerator.Converter` (was previously `grails.plugin.json.builder.JsonGenerator.Converter`)

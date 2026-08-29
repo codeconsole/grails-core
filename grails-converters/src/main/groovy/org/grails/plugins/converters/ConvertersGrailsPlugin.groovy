@@ -25,14 +25,17 @@ import org.springframework.beans.factory.BeanRegistry
 import org.springframework.core.env.Environment
 
 import grails.converters.JSON
+import grails.converters.json.NamedJsonConfigurationRegistry
 import grails.core.GrailsApplication
 import grails.core.support.proxy.ProxyHandler
 import grails.plugins.Plugin
 import grails.util.GrailsUtil
 import org.grails.plugins.codecs.JSONCodec
 import org.grails.web.converters.configuration.ConvertersConfigurationInitializer
-import org.grails.web.converters.jackson.GrailsJsonMapperCustomizer
 import org.grails.web.converters.configuration.ObjectMarshallerRegisterer
+import org.grails.web.converters.jackson.GrailsJsonMapperCustomizer
+import org.grails.web.converters.jackson.JacksonNamedJsonRenderer
+import tools.jackson.databind.json.JsonMapper
 import org.grails.web.converters.marshaller.json.ValidationErrorsMarshaller as JsonErrorsMarshaller
 
 /**
@@ -65,6 +68,16 @@ class ConvertersGrailsPlugin extends Plugin {
                             it.bean('grailsApplication', GrailsApplication),
                             it.bean('proxyHandler', ProxyHandler)
                     )
+                }
+            }
+            registry.registerBean('namedJsonConfigurationRegistry', NamedJsonConfigurationRegistry) {
+                it.supplier {
+                    new NamedJsonConfigurationRegistry(it.bean(JsonMapper))
+                }
+            }
+            registry.registerBean('namedJsonRenderer', JacksonNamedJsonRenderer) {
+                it.supplier {
+                    new JacksonNamedJsonRenderer(it.bean('namedJsonConfigurationRegistry', NamedJsonConfigurationRegistry))
                 }
             }
 

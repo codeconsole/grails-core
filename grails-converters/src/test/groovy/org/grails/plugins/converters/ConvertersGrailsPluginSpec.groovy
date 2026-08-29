@@ -23,6 +23,7 @@ import org.springframework.beans.factory.support.DefaultListableBeanFactory
 import org.springframework.core.env.StandardEnvironment
 
 import grails.converters.JSON
+import grails.converters.json.NamedJsonConfigurationRegistry
 import org.grails.web.converters.configuration.ConvertersConfigurationInitializer
 import org.grails.web.converters.configuration.ObjectMarshallerRegisterer
 import org.grails.web.converters.marshaller.json.ValidationErrorsMarshaller as JsonErrorsMarshaller
@@ -43,6 +44,8 @@ class ConvertersGrailsPluginSpec extends Specification {
         with(beanFactory) {
             getBeanDefinition('jsonErrorsMarshaller').beanClassName == JsonErrorsMarshaller.name
             getBeanDefinition('convertersConfigurationInitializer').beanClassName == ConvertersConfigurationInitializer.name
+            containsBeanDefinition('namedJsonConfigurationRegistry')
+            containsBeanDefinition('namedJsonRenderer')
             containsBeanDefinition('errorsJsonMarshallerRegisterer')
         }
     }
