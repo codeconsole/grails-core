@@ -93,4 +93,4 @@ aws cloudformation deploy \
     HostedZoneId=<route53-hosted-zone-id>
 ```
 
-GitHub Actions assumes the shared stack's `DeployRoleArn`. Upload a normal JAR deployment ZIP to the exported artifact bucket, create an Elastic Beanstalk application version, then update one exported environment name. The trust policy is restricted to the configured repository and branch, and the deploy policy is restricted to the application, its versions, and the five declared slot environment names.
+GitHub Actions assumes the shared stack's `DeployRoleArn`. Upload a normal JAR deployment ZIP to the exported artifact bucket, create an Elastic Beanstalk application version, then update one exported environment name. The trust policy allows `apache/grails-core` maintenance branches matching `refs/heads/*.x` and tags matching `refs/tags/v*`. The deploy policy is restricted to the application, its versions, and the five declared slot environment names.

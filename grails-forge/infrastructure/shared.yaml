@@ -34,10 +34,6 @@ Parameters:
     Type: String
     Default: apache/grails-core
     Description: GitHub repository trusted to assume the deployment role.
-  GitHubBranch:
-    Type: String
-    Default: 7.0.x
-    Description: Git branch trusted to assume the deployment role.
   ApplicationName:
     Type: String
     Default: grails-forge
@@ -229,14 +225,20 @@ Resources:
   GitHubDeployRole:
     Type: AWS::IAM::Role
     Properties:
+      ManagedPolicyArns:
+        - Fn::Sub: arn:${AWS::Partition}:iam::aws:policy/AdministratorAccess-AWSElasticBeanstalk
+        - Fn::Sub: arn:${AWS::Partition}:iam::aws:policy/AWSElasticBeanstalkWebTier
+        - Fn::Sub: arn:${AWS::Partition}:iam::aws:policy/AWSElasticBeanstalkManagedUpdatesCustomerRolePolicy
       AssumeRolePolicyDocument:
         Statement:
           - Action: sts:AssumeRoleWithWebIdentity
             Condition:
               StringEquals:
                 token.actions.githubusercontent.com:aud: sts.amazonaws.com
+              StringLike:
                 token.actions.githubusercontent.com:sub:
-                  Fn::Sub: repo:${GitHubRepository}:ref:refs/heads/${GitHubBranch}
+                  - Fn::Sub: repo:${GitHubRepository}:ref:refs/heads/*.x
+                  - Fn::Sub: repo:${GitHubRepository}:ref:refs/tags/v*
             Effect: Allow
             Principal:
               Federated:
@@ -248,10 +250,24 @@ Resources:
               - Action:
                   - s3:GetObject
                   - s3:GetObjectVersion
+                  - s3:GetObjectAcl
                   - s3:PutObject
+                  - s3:PutObjectAcl
+                  - s3:DeleteObject
                 Effect: Allow
                 Resource:
-                  Fn::Sub: ${ArtifactBucket.Arn}/*
+                  - Fn::Sub: ${ArtifactBucket.Arn}/*
+                  - Fn::Sub: arn:${AWS::Partition}:s3:::elasticbeanstalk-${AWS::Region}-${AWS::AccountId}/*
+              - Action:
+                  - s3:ListBucket
+                  - s3:GetBucketLocation
+                Effect: Allow
+                Resource:
+                  - Fn::Sub: ${ArtifactBucket.Arn}
+                  - Fn::Sub: arn:${AWS::Partition}:s3:::elasticbeanstalk-${AWS::Region}-${AWS::AccountId}
+              - Action: elasticbeanstalk:CreateStorageLocation
+                Effect: Allow
+                Resource: '*'
               - Action:
                   - elasticbeanstalk:CreateApplicationVersion
                 Effect: Allow
@@ -279,8 +295,18 @@ Resources:
                   - Fn::Sub: arn:${AWS::Partition}:elasticbeanstalk:${AWS::Region}:${AWS::AccountId}:applicationversion/${ApplicationName}/*
               - Action:
                   - cloudformation:DescribeStacks
+                  - cloudformation:DescribeStackResource
                   - cloudformation:DescribeStackResources
                   - cloudformation:GetTemplate
+                Effect: Allow
+                Resource: '*'
+              - Action:
+                  - autoscaling:DescribeAutoScalingGroups
+                  - autoscaling:DescribeAutoScalingInstances
+                  - autoscaling:DescribeScalingActivities
+                  - autoscaling:DescribeLaunchConfigurations
+                  - ec2:DescribeInstances
+                  - ec2:DescribeInstanceStatus
                 Effect: Allow
                 Resource: '*'
             Version: '2012-10-17'
