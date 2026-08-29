@@ -34,6 +34,8 @@ import org.grails.web.xml.XMLStreamWriter
 /**
  * A renderer that renders errors in in the Vnd.Error format (see https://github.com/blongden/vnd.error)
  *
+ * @deprecated Use {@code respond errors} with JSON content negotiation to render RFC 9457
+ * Problem Details. Keep this renderer only while migrating existing Vnd.Error XML clients.
  *
  * @author Graeme Rocher
  * @since 2.3

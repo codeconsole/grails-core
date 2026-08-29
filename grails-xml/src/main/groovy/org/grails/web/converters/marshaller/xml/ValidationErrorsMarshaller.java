@@ -33,6 +33,9 @@ import org.grails.web.converters.marshaller.NameAwareMarshaller;
 import org.grails.web.converters.marshaller.ObjectMarshaller;
 
 /**
+ * @deprecated Use {@code respond errors} with JSON content negotiation to render RFC 9457
+ * Problem Details. Keep this marshaller only while migrating existing XML validation-error clients.
+ *
  * @author Siegfried Puchbauer
  * @since 1.1
  */
