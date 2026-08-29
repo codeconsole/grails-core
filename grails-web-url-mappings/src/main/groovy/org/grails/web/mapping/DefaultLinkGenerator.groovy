@@ -29,6 +29,7 @@ import jakarta.annotation.PostConstruct
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.beans.factory.annotation.Value
+import org.springframework.core.ResolvableType
 import org.springframework.http.HttpMethod
 
 import grails.config.Settings
@@ -92,6 +93,9 @@ class DefaultLinkGenerator implements LinkGenerator, PluginManagerAware {
 
     private volatile Map<String, Set<String>> controllerNamespacesByName
     private volatile GrailsClass[] cachedControllers
+
+    private volatile Map<String, Set<String>> controllerNamesByDomainClass
+    private volatile GrailsClass[] cachedDomainIndexControllers
 
     @Value('${grails.resources.pattern:/static/**}')
     String resourcePattern = Settings.DEFAULT_RESOURCE_PATTERN
@@ -185,7 +189,7 @@ class DefaultLinkGenerator implements LinkGenerator, PluginManagerAware {
                         PersistentEntity persistentEntity = (mappingContext != null) ? mappingContext.getPersistentEntity(resourceAttribute.getClass().getName()) : null
                         boolean hasId = false
                         if (persistentEntity != null) {
-                            resource = persistentEntity.getDecapitalizedName()
+                            resource = controllerNameForDomainClass(persistentEntity.name) ?: persistentEntity.getDecapitalizedName()
                             hasId = true
                         } else if (DomainClassArtefactHandler.isDomainClass(resourceAttribute.getClass(), true)) {
                             resource = GrailsNameUtils.getPropertyName(resourceAttribute.getClass())
@@ -395,12 +399,90 @@ class DefaultLinkGenerator implements LinkGenerator, PluginManagerAware {
     }
 
     /**
-     * Clears the cached controller-to-namespace index so it is rebuilt on next use. Invoked when the
-     * set of controllers may have changed (for example during development-mode reloads).
+     * Clears the cached controller-to-namespace and domain-class-to-controller indexes so they are
+     * rebuilt on next use. Invoked when the set of controllers may have changed (for example during
+     * development-mode reloads).
      */
     void resetControllerNamespaceCache() {
         controllerNamespacesByName = null
         cachedControllers = null
+        controllerNamesByDomainClass = null
+        cachedDomainIndexControllers = null
+    }
+
+    /**
+     * Resolves the logical name of the controller that exposes the given domain class as a REST
+     * resource. This allows a controller whose name does not match its domain class name, such as a
+     * {@code PeopleController} handling {@code Person}, to be the target of a {@code resource} link.
+     *
+     * @param domainClassName the fully qualified domain class name
+     * @return the controller's logical name, or {@code null} when no controller declares the domain
+     *         class or when more than one does
+     */
+    protected String controllerNameForDomainClass(String domainClassName) {
+        Set<String> candidates = getControllerNamesByDomainClass().get(domainClassName)
+        candidates != null && candidates.size() == 1 ? candidates.iterator().next() : null
+    }
+
+    private Map<String, Set<String>> getControllerNamesByDomainClass() {
+        GrailsApplication application = grailsApplication
+        if (application == null || mappingContext == null) {
+            return Collections.emptyMap()
+        }
+        // Mirrors getControllerNamespacesByName(): getArtefacts returns a cached array replaced with a
+        // new instance whenever the set of controllers changes, so comparing the array identity rebuilds
+        // the index on any such change while staying O(1) on the common path.
+        GrailsClass[] controllers = application.getArtefacts(ControllerArtefactHandler.TYPE)
+        Map<String, Set<String>> index = controllerNamesByDomainClass
+        if (index == null || !controllers.is(cachedDomainIndexControllers)) {
+            index = buildDomainClassControllerIndex(controllers)
+            controllerNamesByDomainClass = index
+            cachedDomainIndexControllers = controllers
+        }
+        return index
+    }
+
+    private Map<String, Set<String>> buildDomainClassControllerIndex(GrailsClass[] controllers) {
+        Map<String, Set<String>> index = new HashMap<>()
+        for (GrailsClass gc in controllers) {
+            GrailsControllerClass controllerClass = (GrailsControllerClass) gc
+            String controllerName = controllerClass.logicalPropertyName
+            if (controllerName == null) {
+                continue
+            }
+            String domainClassName = domainClassNameFor(controllerClass.clazz)
+            if (domainClassName == null) {
+                continue
+            }
+            Set<String> names = index.get(domainClassName)
+            if (names == null) {
+                names = new HashSet<>()
+                index.put(domainClassName, names)
+            }
+            names.add(controllerName)
+        }
+        return index
+    }
+
+    /**
+     * Walks a controller's superclass hierarchy looking for a generic type argument that the mapping
+     * context recognises as a persistent entity. Resolving through the whole hierarchy rather than the
+     * immediate superclass means an intermediate base class does not hide the domain class, and
+     * matching on the mapping context rather than on a known base type keeps this class free of any
+     * dependency on the REST controller hierarchy.
+     */
+    private String domainClassNameFor(Class<?> controllerClass) {
+        ResolvableType type = ResolvableType.forClass(controllerClass).superType
+        while (type?.resolve() != null) {
+            for (ResolvableType generic in type.generics) {
+                Class<?> resolved = generic.resolve()
+                if (resolved != null && mappingContext.getPersistentEntity(resolved.name) != null) {
+                    return resolved.name
+                }
+            }
+            type = type.superType
+        }
+        return null
     }
 
     @CompileStatic(TypeCheckingMode.SKIP)

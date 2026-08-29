@@ -192,6 +192,12 @@ As a convenience you can also pass a domain instance to the `resource` attribute
 
 This will automatically produce the correct link (in this case "/books/1" for an id of "1").
 
+NOTE: The controller is resolved from the domain class the controller exposes, so a controller does
+not have to be named after its domain class. A `PeopleController` declared as
+`RestfulController<Person>` is the target of a `resource` link for a `Person` instance. If more than
+one controller exposes the same domain class, or none does, the link falls back to the domain class
+name; pass the `controller` attribute explicitly in that case.
+
 
 The case of nested resources is a little different as they typically required two identifiers (the id of the resource and the one it is nested within). For example given the nested resources:
 
