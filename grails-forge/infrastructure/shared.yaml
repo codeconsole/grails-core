@@ -225,6 +225,10 @@ Resources:
   GitHubDeployRole:
     Type: AWS::IAM::Role
     Properties:
+      ManagedPolicyArns:
+        - Fn::Sub: arn:${AWS::Partition}:iam::aws:policy/AdministratorAccess-AWSElasticBeanstalk
+        - Fn::Sub: arn:${AWS::Partition}:iam::aws:policy/AWSElasticBeanstalkWebTier
+        - Fn::Sub: arn:${AWS::Partition}:iam::aws:policy/AWSElasticBeanstalkManagedUpdatesCustomerRolePolicy
       AssumeRolePolicyDocument:
         Statement:
           - Action: sts:AssumeRoleWithWebIdentity
