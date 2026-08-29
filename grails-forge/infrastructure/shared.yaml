@@ -248,6 +248,8 @@ Resources:
                   - s3:GetObjectVersion
                   - s3:GetObjectAcl
                   - s3:PutObject
+                  - s3:PutObjectAcl
+                  - s3:DeleteObject
                 Effect: Allow
                 Resource:
                   - Fn::Sub: ${ArtifactBucket.Arn}/*
@@ -257,7 +259,8 @@ Resources:
                   - s3:GetBucketLocation
                 Effect: Allow
                 Resource:
-                  Fn::Sub: arn:${AWS::Partition}:s3:::elasticbeanstalk-${AWS::Region}-${AWS::AccountId}
+                  - Fn::Sub: ${ArtifactBucket.Arn}
+                  - Fn::Sub: arn:${AWS::Partition}:s3:::elasticbeanstalk-${AWS::Region}-${AWS::AccountId}
               - Action: elasticbeanstalk:CreateStorageLocation
                 Effect: Allow
                 Resource: '*'
