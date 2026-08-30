@@ -59,7 +59,10 @@ public final class GrailsJsonMapperCustomizer implements JsonMapperBuilderCustom
     @Override
     public void customize(JsonMapper.Builder builder) {
         SimpleModule module = new SimpleModule("grails-json");
-        module.addSerializer(Errors.class, new SpringErrorsJsonSerializer());
+        // Resolved per write rather than captured here: the mapper is built once, but the
+        // application context that resolves messages is not necessarily available at that point.
+        module.addSerializer(Errors.class, new SpringErrorsJsonSerializer(
+                () -> this.grailsApplication == null ? null : this.grailsApplication.getMainContext()));
         if (grailsApplication != null && grailsApplication.getMappingContext() != null) {
             boolean defaultIncludeVersion = grailsApplication.getConfig()
                     .getProperty("grails.converters.domain.include.version", Boolean.class, false);

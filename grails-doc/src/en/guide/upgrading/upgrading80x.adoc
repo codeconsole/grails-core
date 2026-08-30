@@ -3180,6 +3180,10 @@ class BookController {
 }
 ----
 
+Each message is resolved through the application's `MessageSource` for the current locale, so
+`messages.properties` entries and Spring Boot's `spring.messages.*` settings apply to validation
+responses as they do elsewhere.
+
 Applications can also inject the factory when they need to create or customize the problem explicitly.
 Rejected field values are excluded by default because they can contain passwords, tokens, or other
 sensitive request data. Applications that deliberately need those values can define their own

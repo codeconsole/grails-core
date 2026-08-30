@@ -23,6 +23,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.springframework.context.MessageSource;
+import org.springframework.context.NoSuchMessageException;
+import org.springframework.context.i18n.LocaleContextHolder;
 import org.springframework.validation.FieldError;
 import org.springframework.validation.ObjectError;
 
@@ -46,6 +49,18 @@ public final class ValidationErrorEntries {
      * @return a stable, ordered entry describing the error
      */
     public static Map<String, Object> toEntry(ObjectError error, boolean includeRejectedValue) {
+        return toEntry(error, includeRejectedValue, null);
+    }
+
+    /**
+     * @param error the validation error
+     * @param includeRejectedValue whether to include the submitted value, which may be sensitive
+     * @param messageSource resolves the message for the current locale; when null the error's
+     * default message is used verbatim, which still contains its {@code {0}} argument placeholders
+     * @return a stable, ordered entry describing the error
+     */
+    public static Map<String, Object> toEntry(ObjectError error, boolean includeRejectedValue,
+            MessageSource messageSource) {
         Map<String, Object> entry = new LinkedHashMap<>();
         entry.put("object", error.getObjectName());
         if (error instanceof FieldError fieldError) {
@@ -56,7 +71,21 @@ public final class ValidationErrorEntries {
         }
         String[] codes = error.getCodes();
         entry.put("codes", codes == null ? List.of() : Arrays.asList(codes));
-        entry.put("message", error.getDefaultMessage());
+        entry.put("message", resolveMessage(error, messageSource));
         return entry;
+    }
+
+    private static String resolveMessage(ObjectError error, MessageSource messageSource) {
+        if (messageSource == null) {
+            return error.getDefaultMessage();
+        }
+        try {
+            // Resolves the error's codes, and substitutes the arguments into whichever message
+            // wins -- including the default message, which is a template until this runs.
+            return messageSource.getMessage(error, LocaleContextHolder.getLocale());
+        }
+        catch (NoSuchMessageException ignored) {
+            return error.getDefaultMessage();
+        }
     }
 }

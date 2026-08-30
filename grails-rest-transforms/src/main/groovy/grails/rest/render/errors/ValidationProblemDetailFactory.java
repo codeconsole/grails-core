@@ -23,6 +23,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
+import org.springframework.context.MessageSource;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ProblemDetail;
@@ -46,12 +47,24 @@ public final class ValidationProblemDetailFactory {
 
     private final boolean includeRejectedValues;
 
+    private final MessageSource messageSource;
+
     public ValidationProblemDetailFactory() {
-        this(false);
+        this(false, null);
     }
 
     public ValidationProblemDetailFactory(boolean includeRejectedValues) {
+        this(includeRejectedValues, null);
+    }
+
+    /**
+     * @param includeRejectedValues whether to expose submitted values, which may be sensitive
+     * @param messageSource resolves each error message for the current locale; without one the
+     * errors carry their unresolved default messages, argument placeholders included
+     */
+    public ValidationProblemDetailFactory(boolean includeRejectedValues, MessageSource messageSource) {
         this.includeRejectedValues = includeRejectedValues;
+        this.messageSource = messageSource;
     }
 
     /**
@@ -83,7 +96,7 @@ public final class ValidationProblemDetailFactory {
 
         List<Map<String, Object>> entries = new ArrayList<>(errors.getErrorCount());
         for (ObjectError error : errors.getAllErrors()) {
-            entries.add(ValidationErrorEntries.toEntry(error, this.includeRejectedValues));
+            entries.add(ValidationErrorEntries.toEntry(error, this.includeRejectedValues, this.messageSource));
         }
         problem.setProperty(ERRORS_PROPERTY, entries);
         return problem;

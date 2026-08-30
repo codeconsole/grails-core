@@ -16,11 +16,14 @@
  */
 package org.grails.web.converters.jackson;
 
+import java.util.function.Supplier;
+
 import tools.jackson.core.JacksonException;
 import tools.jackson.core.JsonGenerator;
 import tools.jackson.databind.SerializationContext;
 import tools.jackson.databind.ValueSerializer;
 
+import org.springframework.context.MessageSource;
 import org.springframework.validation.Errors;
 import org.springframework.validation.ObjectError;
 
@@ -28,6 +31,12 @@ import org.grails.web.errors.ValidationErrorEntries;
 
 /** Serializes Spring validation errors without exposing internal binding state. */
 final class SpringErrorsJsonSerializer extends ValueSerializer<Errors> {
+
+    private final Supplier<MessageSource> messageSource;
+
+    SpringErrorsJsonSerializer(Supplier<MessageSource> messageSource) {
+        this.messageSource = messageSource;
+    }
 
     @Override
     public void serialize(Errors errors, JsonGenerator generator, SerializationContext context) throws JacksonException {
@@ -37,7 +46,7 @@ final class SpringErrorsJsonSerializer extends ValueSerializer<Errors> {
         for (ObjectError error : errors.getAllErrors()) {
             // Rejected values are never included here: this path serializes whatever Errors object
             // reaches the mapper, with no opportunity for an application to opt in.
-            context.writeValue(generator, ValidationErrorEntries.toEntry(error, false));
+            context.writeValue(generator, ValidationErrorEntries.toEntry(error, false, messageSource.get()));
         }
         generator.writeEndArray();
         generator.writeEndObject();

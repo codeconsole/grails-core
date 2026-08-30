@@ -22,6 +22,8 @@ import org.springframework.validation.BeanPropertyBindingResult
 import org.springframework.validation.FieldError
 import org.springframework.validation.ObjectError
 
+import org.springframework.context.i18n.LocaleContextHolder
+import org.springframework.context.support.StaticMessageSource
 import org.springframework.http.HttpStatus
 
 import spock.lang.Specification
@@ -64,6 +66,50 @@ class ValidationProblemDetailFactorySpec extends Specification {
 
         and: "the default overload still reports 422"
         new ValidationProblemDetailFactory().create(errors).status == 422
+    }
+
+    void 'messages are resolved through the MessageSource for the current locale'() {
+        given: "an error whose default message is a template, as Grails constraints produce"
+        LocaleContextHolder.locale = Locale.ENGLISH
+        def messageSource = new StaticMessageSource()
+        messageSource.addMessage('book.title.blank', Locale.ENGLISH, 'Title must not be blank')
+        def errors = new BeanPropertyBindingResult(new Object(), 'book')
+        errors.addError(new FieldError('book', 'title', null, false,
+                ['book.title.blank'] as String[], null, 'Property [{0}] cannot be null'))
+
+        when:
+        def problem = new ValidationProblemDetailFactory(false, messageSource).create(errors)
+
+        then: "the bundle entry wins over the raw default template"
+        problem.properties.errors.first().message == 'Title must not be blank'
+
+        cleanup:
+        LocaleContextHolder.resetLocaleContext()
+    }
+
+    void 'an unresolved code still substitutes the default message arguments'() {
+        given: "no bundle entry, so the default message is used -- but as a resolved template"
+        def messageSource = new StaticMessageSource()
+        def errors = new BeanPropertyBindingResult(new Object(), 'book')
+        errors.addError(new FieldError('book', 'title', null, false,
+                ['book.title.nullable'] as String[], ['title'] as Object[],
+                'Property [{0}] cannot be null'))
+
+        expect:
+        new ValidationProblemDetailFactory(false, messageSource).create(errors)
+                .properties.errors.first().message == 'Property [title] cannot be null'
+    }
+
+    void 'without a MessageSource the default message is used verbatim'() {
+        given:
+        def errors = new BeanPropertyBindingResult(new Object(), 'book')
+        errors.addError(new FieldError('book', 'title', null, false,
+                ['book.title.nullable'] as String[], ['title'] as Object[],
+                'Property [{0}] cannot be null'))
+
+        expect: "the no-context constructor still works, placeholders and all"
+        new ValidationProblemDetailFactory().create(errors)
+                .properties.errors.first().message == 'Property [{0}] cannot be null'
     }
 
     void 'includes rejected values only when explicitly requested'() {

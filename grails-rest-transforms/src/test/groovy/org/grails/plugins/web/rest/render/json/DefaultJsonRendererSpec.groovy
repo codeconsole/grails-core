@@ -20,6 +20,8 @@ package org.grails.plugins.web.rest.render.json
 
 import java.nio.charset.Charset
 
+import org.springframework.context.i18n.LocaleContextHolder
+import org.springframework.context.support.StaticMessageSource
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.http.converter.HttpMessageConverter
@@ -30,6 +32,7 @@ import org.springframework.validation.FieldError
 import org.springframework.validation.ObjectError
 
 import grails.core.DefaultGrailsApplication
+import grails.rest.render.errors.ValidationProblemDetailFactory
 import grails.util.GrailsWebMockUtil
 import grails.web.render.NamedJsonRenderer
 import org.grails.plugins.web.rest.render.ServletRenderContext
@@ -223,6 +226,34 @@ class DefaultJsonRendererSpec extends Specification {
 
         and: "the bytes it produced decode back to the same characters"
         webRequest.response.contentAsString == '{"title":"caf\u00e9"}'
+    }
+
+    void 'the problem body carries a resolved message, not a raw template'() {
+        given: "a constraint-style error whose default message still has argument placeholders"
+        LocaleContextHolder.locale = Locale.ENGLISH
+        def converter = Mock(HttpMessageConverter)
+        def renderer = new DefaultJsonRenderer<Errors>(Errors)
+        renderer.useSpringJson = true
+        renderer.springHttpMessageConverters = [converter]
+        renderer.validationProblemDetailFactory =
+                new ValidationProblemDetailFactory(false, new StaticMessageSource())
+        def errors = new BeanPropertyBindingResult(new Object(), 'book')
+        errors.addError(new FieldError('book', 'title', null, false,
+                ['book.title.nullable'] as String[], ['title'] as Object[],
+                'Property [{0}] cannot be null'))
+        def webRequest = GrailsWebMockUtil.bindMockWebRequest()
+
+        when:
+        renderer.render(errors, new ServletRenderContext(webRequest))
+
+        then:
+        1 * converter.canWrite(ProblemDetail, MediaType.APPLICATION_PROBLEM_JSON) >> true
+        1 * converter.write({ ProblemDetail problem ->
+            problem.properties.errors.first().message == 'Property [title] cannot be null'
+        }, _, _) >> { arguments -> arguments[2].body.write('{}'.bytes) }
+
+        cleanup:
+        LocaleContextHolder.resetLocaleContext()
     }
 
     void 'the problem body reports the same status the response is sent with'() {
