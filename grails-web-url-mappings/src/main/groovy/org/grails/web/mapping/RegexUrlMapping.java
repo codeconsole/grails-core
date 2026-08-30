@@ -32,8 +32,6 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 
-import groovy.lang.Closure;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -779,7 +777,11 @@ public class RegexUrlMapping extends AbstractUrlMapping {
 
     /**
      * This method will look for a constraint for the given name and return a closure that when executed will
-     * attempt to evaluate its value from the bound request parameters at runtime.
+     * attempt to evaluate its value at runtime.
+     *
+     * <p>The mapping is shared by every request it matches, so the returned evaluator holds only the name
+     * of the token to resolve. The {@link UrlMappingInfo} produced by a match resolves it against the values
+     * that match captured.</p>
      *
      * @param name        The name of the constrained property
      * @param constraints The array of current ConstrainedProperty instances
@@ -790,15 +792,7 @@ public class RegexUrlMapping extends AbstractUrlMapping {
 
         for (ConstrainedProperty constraint : constraints) {
             if (constraint.getPropertyName().equals(name)) {
-                return new Closure(this) {
-                    private static final long serialVersionUID = -2404119898659287216L;
-
-                    @Override
-                    public Object call(Object... objects) {
-                        GrailsWebRequest webRequest = (GrailsWebRequest) RequestContextHolder.currentRequestAttributes();
-                        return webRequest.getParams().get(name);
-                    }
-                };
+                return new RuntimeConstraintEvaluator(this, name);
             }
         }
         return null;
