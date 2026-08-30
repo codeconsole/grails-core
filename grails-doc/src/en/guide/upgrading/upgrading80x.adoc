@@ -3079,9 +3079,24 @@ dependencies {
 
 The module preserves the established Grails XML APIs and compatibility marshalling for domain-shaped
 payloads, collections, maps, validation errors, named converter configurations, and include/exclude
-projections. Ordinary bean responses use Spring Framework's `JacksonXmlHttpMessageConverter`, backed by
-the Spring Boot-managed Jackson XML mapper. Applications may still register their own Spring XML message
-converter or OXM/JAXB infrastructure through public Spring configuration APIs.
+projections.
+
+Ordinary bean responses can also be written by Spring Framework's `JacksonXmlHttpMessageConverter`,
+backed by the Spring Boot-managed Jackson XML mapper. As in a plain Spring Boot application, that
+converter is registered only when Jackson's XML dataformat is on the classpath, so applications that
+want it add the dependency themselves:
+
+[source,groovy]
+.build.gradle
+----
+dependencies {
+    runtimeOnly 'tools.jackson.dataformat:jackson-dataformat-xml'
+}
+----
+
+Without it, `grails-xml` still renders XML through the Grails converter. Applications may also register
+their own Spring XML message converter or OXM/JAXB infrastructure through public Spring configuration
+APIs.
 
 This change does not affect Grails plugin descriptors. Plugin metadata continues to be generated and
 published in its existing descriptor format; `grails-xml` concerns application HTTP payloads only.

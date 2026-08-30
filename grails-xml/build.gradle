@@ -41,7 +41,6 @@ dependencies {
     api project(':grails-databinding')
     api project(':grails-rest-transforms')
     api 'org.apache.groovy:groovy'
-    api 'tools.jackson.dataformat:jackson-dataformat-xml'
 
     implementation 'io.micrometer:micrometer-observation'
     implementation project(':grails-datamapping-core')
@@ -50,6 +49,10 @@ dependencies {
     compileOnly 'org.slf4j:slf4j-nop'
 
     testImplementation 'jakarta.servlet:jakarta.servlet-api'
+    // Spring's XML message converter needs this at runtime. Applications opt in the same way a
+    // plain Spring Boot application does, by adding it themselves; it is only needed here to
+    // exercise that path in tests.
+    testImplementation 'tools.jackson.dataformat:jackson-dataformat-xml'
     testImplementation project(':grails-core')
     testImplementation project(':grails-datastore-core')
     testImplementation 'org.springframework:spring-test'
