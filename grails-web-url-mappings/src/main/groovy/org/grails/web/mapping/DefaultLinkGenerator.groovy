@@ -189,7 +189,7 @@ class DefaultLinkGenerator implements LinkGenerator, PluginManagerAware {
                         PersistentEntity persistentEntity = (mappingContext != null) ? mappingContext.getPersistentEntity(resourceAttribute.getClass().getName()) : null
                         boolean hasId = false
                         if (persistentEntity != null) {
-                            resource = controllerNameForDomainClass(persistentEntity.name) ?: persistentEntity.getDecapitalizedName()
+                            resource = controllerNameForResource(persistentEntity)
                             hasId = true
                         } else if (DomainClassArtefactHandler.isDomainClass(resourceAttribute.getClass(), true)) {
                             resource = GrailsNameUtils.getPropertyName(resourceAttribute.getClass())
@@ -411,17 +411,25 @@ class DefaultLinkGenerator implements LinkGenerator, PluginManagerAware {
     }
 
     /**
-     * Resolves the logical name of the controller that exposes the given domain class as a REST
-     * resource. This allows a controller whose name does not match its domain class name, such as a
-     * {@code PeopleController} handling {@code Person}, to be the target of a {@code resource} link.
+     * Resolves the logical name of the controller a {@code resource} link for the given entity should
+     * target.
      *
-     * @param domainClassName the fully qualified domain class name
-     * @return the controller's logical name, or {@code null} when no controller declares the domain
-     *         class or when more than one does
+     * <p>A controller named after the domain class always wins, so an application that relies on the
+     * naming convention is unaffected. Only when no such controller exists is the controller that
+     * declares the domain class used, which allows a controller named for the resource rather than the
+     * domain class, such as a {@code PeopleController} handling {@code Person}, to be linked to.</p>
+     *
+     * @param entity the domain class being linked to
+     * @return the controller's logical name, falling back to the domain class name when no single
+     *         controller declares it
      */
-    protected String controllerNameForDomainClass(String domainClassName) {
-        Set<String> candidates = getControllerNamesByDomainClass().get(domainClassName)
-        candidates != null && candidates.size() == 1 ? candidates.iterator().next() : null
+    protected String controllerNameForResource(PersistentEntity entity) {
+        String derivedName = entity.getDecapitalizedName()
+        if (getControllerNamespacesByName().containsKey(derivedName)) {
+            return derivedName
+        }
+        Set<String> candidates = getControllerNamesByDomainClass().get(entity.name)
+        candidates != null && candidates.size() == 1 ? candidates.iterator().next() : derivedName
     }
 
     private Map<String, Set<String>> getControllerNamesByDomainClass() {
@@ -435,14 +443,14 @@ class DefaultLinkGenerator implements LinkGenerator, PluginManagerAware {
         GrailsClass[] controllers = application.getArtefacts(ControllerArtefactHandler.TYPE)
         Map<String, Set<String>> index = controllerNamesByDomainClass
         if (index == null || !controllers.is(cachedDomainIndexControllers)) {
-            index = buildDomainClassControllerIndex(controllers)
+            index = buildDomainClassControllerIndex(controllers, mappingContext)
             controllerNamesByDomainClass = index
             cachedDomainIndexControllers = controllers
         }
         return index
     }
 
-    private Map<String, Set<String>> buildDomainClassControllerIndex(GrailsClass[] controllers) {
+    private Map<String, Set<String>> buildDomainClassControllerIndex(GrailsClass[] controllers, MappingContext context) {
         Map<String, Set<String>> index = new HashMap<>()
         for (GrailsClass gc in controllers) {
             GrailsControllerClass controllerClass = (GrailsControllerClass) gc
@@ -450,7 +458,7 @@ class DefaultLinkGenerator implements LinkGenerator, PluginManagerAware {
             if (controllerName == null) {
                 continue
             }
-            String domainClassName = domainClassNameFor(controllerClass.clazz)
+            String domainClassName = domainClassNameFor(controllerClass.clazz, context)
             if (domainClassName == null) {
                 continue
             }
@@ -465,24 +473,52 @@ class DefaultLinkGenerator implements LinkGenerator, PluginManagerAware {
     }
 
     /**
-     * Walks a controller's superclass hierarchy looking for a generic type argument that the mapping
-     * context recognises as a persistent entity. Resolving through the whole hierarchy rather than the
-     * immediate superclass means an intermediate base class does not hide the domain class, and
-     * matching on the mapping context rather than on a known base type keeps this class free of any
-     * dependency on the REST controller hierarchy.
+     * Walks a controller's supertypes looking for a generic type argument that the mapping context
+     * recognises as a persistent entity. Superclasses and interfaces are both walked, so a domain class
+     * declared by an intermediate base class or by a Groovy trait is still found, and matching on the
+     * mapping context rather than on a known base type keeps this class free of any dependency on the
+     * REST controller hierarchy.
+     *
+     * <p>A supertype that declares more than one persistent entity is ambiguous and is skipped rather
+     * than guessed at, so a base class parameterised on both a parent and a child resource does not
+     * index the controller under the wrong one.</p>
      */
-    private String domainClassNameFor(Class<?> controllerClass) {
-        ResolvableType type = ResolvableType.forClass(controllerClass).superType
-        while (type?.resolve() != null) {
-            for (ResolvableType generic in type.generics) {
-                Class<?> resolved = generic.resolve()
-                if (resolved != null && mappingContext.getPersistentEntity(resolved.name) != null) {
-                    return resolved.name
-                }
+    private String domainClassNameFor(Class<?> controllerClass, MappingContext context) {
+        Deque<ResolvableType> queue = new ArrayDeque<>()
+        Set<Class<?>> seen = new HashSet<>()
+        queue.add(ResolvableType.forClass(controllerClass))
+        while (!queue.isEmpty()) {
+            ResolvableType type = queue.poll()
+            Class<?> raw = type.resolve()
+            if (raw == null || !seen.add(raw)) {
+                continue
             }
-            type = type.superType
+            String found = singleEntityGeneric(type, context)
+            if (found != null) {
+                return found
+            }
+            queue.add(type.superType)
+            queue.addAll(type.interfaces)
         }
         return null
+    }
+
+    /**
+     * @return the name of the only persistent entity among the type's generic arguments, or
+     *         {@code null} when there is none or more than one
+     */
+    private static String singleEntityGeneric(ResolvableType type, MappingContext context) {
+        String found = null
+        for (ResolvableType generic in type.generics) {
+            Class<?> resolved = generic.resolve()
+            if (resolved != null && context.getPersistentEntity(resolved.name) != null) {
+                if (found != null) {
+                    return null
+                }
+                found = resolved.name
+            }
+        }
+        return found
     }
 
     @CompileStatic(TypeCheckingMode.SKIP)

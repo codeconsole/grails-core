@@ -100,3 +100,61 @@ class NoteController {
     def index() {}
     def show() {}
 }
+
+class Chapter {
+    Long id
+    String title
+}
+
+/**
+ * A plain controller named after {@code Chapter}, alongside {@link ChapterApiController} which declares
+ * the domain class. The naming convention has to win, or an application that already relies on it has
+ * its links silently retargeted.
+ */
+@Artefact('Controller')
+class ChapterController {
+    def index() {}
+    def show() {}
+}
+
+@Artefact('Controller')
+class ChapterApiController extends ResourceControllerBase<Chapter> {
+    def index() {}
+    def show() {}
+}
+
+class Tag {
+    Long id
+    String label
+}
+
+/**
+ * Stands in for a generic REST trait. Groovy traits compile to an interface, so a domain class declared
+ * this way is reachable only by walking interfaces rather than superclasses.
+ */
+interface ResourceHolder<T> {
+}
+
+@Artefact('Controller')
+class TagsController implements ResourceHolder<Tag> {
+    def index() {}
+    def show() {}
+}
+
+class Chronicle {
+    Long id
+    String name
+}
+
+/**
+ * A base parameterised on both a parent and a child resource, so its own type arguments are ambiguous
+ * and the domain class has to come from further up the hierarchy.
+ */
+abstract class NestedResourceControllerBase<P, T> extends ResourceControllerBase<T> {
+}
+
+@Artefact('Controller')
+class ChroniclesController extends NestedResourceControllerBase<Person, Chronicle> {
+    def index() {}
+    def show() {}
+}

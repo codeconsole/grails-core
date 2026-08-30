@@ -26,12 +26,19 @@ import grails.web.mapping.UrlMappingsHolder
 import org.grails.datastore.mapping.keyvalue.mapping.config.KeyValueMappingContext
 import org.grails.datastore.mapping.model.MappingContext
 import org.grails.web.mapping.domainlink.AdminGadgetsController
+import org.grails.web.mapping.domainlink.Chapter
+import org.grails.web.mapping.domainlink.ChapterApiController
+import org.grails.web.mapping.domainlink.ChapterController
+import org.grails.web.mapping.domainlink.Chronicle
+import org.grails.web.mapping.domainlink.ChroniclesController
 import org.grails.web.mapping.domainlink.Gadget
 import org.grails.web.mapping.domainlink.GadgetsController
 import org.grails.web.mapping.domainlink.Note
 import org.grails.web.mapping.domainlink.NoteController
 import org.grails.web.mapping.domainlink.PeopleController
 import org.grails.web.mapping.domainlink.Person
+import org.grails.web.mapping.domainlink.Tag
+import org.grails.web.mapping.domainlink.TagsController
 import org.grails.web.mapping.domainlink.Widget
 import org.grails.web.mapping.domainlink.WidgetsController
 import org.grails.web.util.WebUtils
@@ -58,7 +65,11 @@ class LinkGeneratorResourceControllerSpec extends Specification {
                 WidgetsController,
                 GadgetsController,
                 AdminGadgetsController,
-                NoteController
+                NoteController,
+                ChapterController,
+                ChapterApiController,
+                TagsController,
+                ChroniclesController
         ).tap {
             initialise()
         }
@@ -109,25 +120,54 @@ class LinkGeneratorResourceControllerSpec extends Specification {
         generator.link(resource: new Person(id: 5), controller: 'note', action: 'show') == '/bar/note/show/5'
     }
 
-    def "resolution is skipped when no mapping context is available"() {
-        given: 'a generator with no mapping context, as in a non-GORM application'
-        def generator = createGenerator(false)
+    def "a controller named after the domain class wins over one that declares it"() {
+        given: 'ChapterController is named for Chapter, and ChapterApiController declares it'
+        def generator = createGenerator()
 
-        expect: 'the domain class is never resolved to its controller'
-        !generator.link(resource: new Person(id: 6), action: 'show').contains('/people/')
+        expect: 'the naming convention wins, so an application relying on it is unaffected'
+        generator.link(resource: new Chapter(id: 6), action: 'show') == '/bar/chapter/show/6'
     }
 
-    def "resetting the cache rebuilds the index against the current controllers"() {
+    def "the domain class is resolved through a generic interface"() {
+        given: 'TagsController declares Tag through an interface rather than a superclass'
+        def generator = createGenerator()
+
+        expect: 'interfaces are walked too, as Groovy traits compile to interfaces'
+        generator.link(resource: new Tag(id: 7), action: 'show') == '/bar/tags/show/7'
+    }
+
+    def "a base class declaring two domain classes does not claim the wrong one"() {
+        given: 'ChroniclesController extends a base parameterised on both Person and Chronicle'
+        def generator = createGenerator()
+
+        expect: 'the ambiguous level is skipped and the resource comes from further up the hierarchy'
+        generator.link(resource: new Chronicle(id: 8), action: 'show') == '/bar/chronicles/show/8'
+
+        and: 'the other type argument is not claimed by that controller'
+        generator.link(resource: new Person(id: 9), action: 'show') == '/bar/people/show/9'
+    }
+
+    def "resolution requires a mapping context"() {
+        given: 'the same link generated with and without a mapping context'
+        def person = new Person(id: 10)
+
+        expect: 'the mapping context is what enables resolution'
+        createGenerator(true).link(resource: person, action: 'show') == '/bar/people/show/10'
+        createGenerator(false).link(resource: person, action: 'show') != '/bar/people/show/10'
+    }
+
+    def "re-registering controllers rebuilds the index"() {
         given: 'an index built while PeopleController is registered'
         def generator = createGenerator()
-        generator.link(resource: new Person(id: 7), action: 'show') == '/bar/people/show/7'
 
-        when: 'PeopleController is no longer registered and the cache is reset'
+        expect: 'it resolves'
+        generator.link(resource: new Person(id: 11), action: 'show') == '/bar/people/show/11'
+
+        when: 'PeopleController is no longer registered'
         generator.grailsApplication = new DefaultGrailsApplication(NoteController).tap { initialise() }
-        generator.resetControllerNamespaceCache()
 
         then: 'the stale mapping is not reused'
-        generator.link(resource: new Person(id: 7), action: 'show') == '/bar/person/show/7'
+        generator.link(resource: new Person(id: 11), action: 'show') != '/bar/people/show/11'
     }
 
     private MappingContext createMappingContext() {
@@ -136,6 +176,9 @@ class LinkGeneratorResourceControllerSpec extends Specification {
         context.addPersistentEntity(Widget)
         context.addPersistentEntity(Gadget)
         context.addPersistentEntity(Note)
+        context.addPersistentEntity(Chapter)
+        context.addPersistentEntity(Tag)
+        context.addPersistentEntity(Chronicle)
         context
     }
 
