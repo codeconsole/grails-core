@@ -34,8 +34,11 @@ import org.grails.datastore.mapping.model.PersistentEntity;
  */
 public final class GrailsJsonMapperCustomizer implements JsonMapperBuilderCustomizer {
 
-    static final String INCLUDES_ATTRIBUTE = GrailsJsonMapperCustomizer.class.getName() + ".includes";
-    static final String EXCLUDES_ATTRIBUTE = GrailsJsonMapperCustomizer.class.getName() + ".excludes";
+    /** Writer attribute holding the property names to include, as a List or a Map keyed by type. */
+    public static final String INCLUDES_ATTRIBUTE = GrailsJsonMapperCustomizer.class.getName() + ".includes";
+
+    /** Writer attribute holding the property names to exclude, as a List or a Map keyed by type. */
+    public static final String EXCLUDES_ATTRIBUTE = GrailsJsonMapperCustomizer.class.getName() + ".excludes";
 
     private final GrailsApplication grailsApplication;
     private final ProxyHandler proxyHandler;
