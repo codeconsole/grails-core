@@ -52,11 +52,6 @@ class JsonDataBindingSourceCreator extends AbstractRequestBodyDataBindingSourceC
     @Autowired(required = false)
     JsonMapper jsonMapper = JsonMapper.builder().build()
 
-    @Autowired(required = false)
-    void setJsonMapper(JsonMapper jsonMapper) {
-        this.jsonMapper = jsonMapper
-    }
-
     @Override
     MimeType[] getMimeTypes() {
         [MimeType.JSON, MimeType.TEXT_JSON] as MimeType[]
