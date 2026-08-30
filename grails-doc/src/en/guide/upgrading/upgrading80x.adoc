@@ -2763,7 +2763,12 @@ grails:
 That restores the filter exactly as it behaved in Grails 7, including the header and the unrestricted method
 names, and suppresses the `POST` member route so the mappings a `resources` block generates are unchanged.
 
-NOTE: `grails.web.hiddenmethod.filter.enabled` is a Grails property, independent of Spring Boot's
-`spring.mvc.hiddenmethod.filter.enabled`. Setting Boot's property to `true` makes the Grails filter back off in
-favour of Spring's, which is registered under the same bean name -- previously the two bean definitions collided
-and failed application startup.
+Spring Boot's `spring.mvc.hiddenmethod.filter.enabled` selects the same mode, registering Spring's filter
+rather than the Grails one. Either property is enough: whichever is set, a filter is on the chain, the
+dispatcher stops resolving `_method` itself, `<g:form>` emits the field again, and the `POST` member route is
+not generated.
+
+NOTE: Spring's filter is contributed by `WebMvcAutoConfiguration`, which backs off entirely for an application
+declaring `@EnableWebMvc`. Grails contributes its own filter in that case, so asking for Boot's still leaves a
+filter on the chain rather than silently leaving none. Previously the two definitions could also collide on the
+shared `hiddenHttpMethodFilter` bean name and fail application startup; they no longer can.

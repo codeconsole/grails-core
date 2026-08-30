@@ -54,7 +54,6 @@ import org.springframework.http.HttpMethod;
 import org.springframework.util.Assert;
 import org.springframework.web.context.WebApplicationContext;
 
-import grails.config.Settings;
 import grails.core.GrailsApplication;
 import grails.core.support.ClassLoaderAware;
 import grails.gorm.validation.ConstrainedProperty;
@@ -70,6 +69,7 @@ import org.grails.datastore.gorm.validation.constraints.eval.DefaultConstraintEv
 import org.grails.datastore.gorm.validation.constraints.registry.ConstraintRegistry;
 import org.grails.datastore.gorm.validation.constraints.registry.DefaultConstraintRegistry;
 import org.grails.datastore.mapping.keyvalue.mapping.config.KeyValueMappingContext;
+import org.grails.web.util.HiddenHttpMethod;
 
 import static grails.web.mapping.UrlMapping.ACTION;
 import static grails.web.mapping.UrlMapping.CONTROLLER;
@@ -152,8 +152,7 @@ public class DefaultUrlMappingEvaluator implements UrlMappingEvaluator, ClassLoa
      * Security sees it.
      */
     private boolean isPostUpdateVariantEnabled() {
-        return grailsApplication != null && !grailsApplication.getConfig()
-                .getProperty(Settings.WEB_HIDDEN_METHOD_FILTER_ENABLED, Boolean.class, Boolean.FALSE);
+        return grailsApplication != null && !HiddenHttpMethod.isServletFilterMode(grailsApplication.getConfig());
     }
 
     public DefaultUrlMappingEvaluator(ApplicationContext applicationContext) {
