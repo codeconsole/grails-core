@@ -18,6 +18,8 @@
  */
 package org.grails.plugins.web.rest.render.json
 
+import java.nio.charset.Charset
+
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.http.converter.HttpMessageConverter
@@ -35,6 +37,8 @@ import org.grails.web.converters.configuration.ConvertersConfigurationHolder
 import org.grails.web.converters.configuration.ConvertersConfigurationInitializer
 
 import spock.lang.Specification
+
+import static java.nio.charset.StandardCharsets.UTF_8
 
 class DefaultJsonRendererSpec extends Specification {
 
@@ -61,7 +65,7 @@ class DefaultJsonRendererSpec extends Specification {
         then:
         1 * first.canWrite(LinkedHashMap, MediaType.APPLICATION_JSON) >> false
         1 * selected.canWrite(LinkedHashMap, MediaType.APPLICATION_JSON) >> true
-        1 * selected.write(_, MediaType.APPLICATION_JSON, _) >> { arguments ->
+        1 * selected.write(_, new MediaType(MediaType.APPLICATION_JSON, UTF_8), _) >> { arguments ->
             arguments[2].body.write('{"title":"MVC"}'.bytes)
         }
         webRequest.response.contentAsString == '{"title":"MVC"}'
@@ -137,12 +141,37 @@ class DefaultJsonRendererSpec extends Specification {
         1 * converter.canWrite(ProblemDetail, MediaType.APPLICATION_PROBLEM_JSON) >> true
         1 * converter.write({ ProblemDetail problem ->
             problem.status == 422 && !problem.properties.errors.first().containsKey('rejectedValue')
-        }, MediaType.APPLICATION_PROBLEM_JSON, _) >> { arguments ->
+        }, new MediaType(MediaType.APPLICATION_PROBLEM_JSON, UTF_8), _) >> { arguments ->
             arguments[2].body.write('{"status":422,"title":"Validation failed"}'.bytes)
         }
         webRequest.response.status == 422
         webRequest.response.contentType == 'application/problem+json;charset=UTF-8'
         webRequest.response.contentAsString == '{"status":422,"title":"Validation failed"}'
+    }
+
+    void 'a non UTF-8 encoding round-trips through the Spring converter'() {
+        given: "a renderer configured with a non UTF-8 encoding"
+        def converter = Mock(HttpMessageConverter)
+        def renderer = new DefaultJsonRenderer<Object>(Object)
+        renderer.useSpringJson = true
+        renderer.encoding = 'ISO-8859-1'
+        renderer.springHttpMessageConverters = [converter]
+        def webRequest = GrailsWebMockUtil.bindMockWebRequest()
+
+        when:
+        renderer.render([title: 'Cafe\u0301'], new ServletRenderContext(webRequest))
+
+        then: "the configured charset is handed to the converter"
+        1 * converter.canWrite(_, MediaType.APPLICATION_JSON) >> true
+        1 * converter.write(_, { MediaType mediaType ->
+            mediaType.charset == Charset.forName('ISO-8859-1')
+        }, _) >> { arguments ->
+            // a converter honours the charset on the media type it is given
+            arguments[2].body.write('{"title":"caf\u00e9"}'.getBytes(arguments[1].charset))
+        }
+
+        and: "the bytes it produced decode back to the same characters"
+        webRequest.response.contentAsString == '{"title":"caf\u00e9"}'
     }
 
     void 'the problem body reports the same status the response is sent with'() {
@@ -162,7 +191,7 @@ class DefaultJsonRendererSpec extends Specification {
         then:
         1 * converter.canWrite(ProblemDetail, MediaType.APPLICATION_PROBLEM_JSON) >> true
         1 * converter.write({ ProblemDetail problem -> problem.status == 400 },
-                MediaType.APPLICATION_PROBLEM_JSON, _) >> { arguments ->
+                new MediaType(MediaType.APPLICATION_PROBLEM_JSON, UTF_8), _) >> { arguments ->
             arguments[2].body.write('{"status":400}'.bytes)
         }
         webRequest.response.status == 400

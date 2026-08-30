@@ -159,6 +159,18 @@ class DefaultJsonRenderer<T> implements Renderer<T> {
     }
 
     private boolean renderWithSpringConverter(Object object, MediaType mediaType, RenderContext context) {
+        Class<?> objectType = object?.getClass() ?: Object
+        HttpMessageConverter<Object> converter = (HttpMessageConverter<Object>) springHttpMessageConverters.find {
+            HttpMessageConverter<?> candidate -> candidate.canWrite(objectType, mediaType)
+        }
+        if (converter == null) {
+            return false
+        }
+
+        // Write in the configured encoding rather than the converter's default so that the bytes it
+        // produces and the characters decoded back out agree. A media type carries no charset here,
+        // so Jackson would otherwise emit UTF-8 and any other configured encoding would mis-decode.
+        Charset charset = Charset.forName(encoding)
         ByteArrayOutputStream output = new ByteArrayOutputStream()
         HttpOutputMessage message = new HttpOutputMessage() {
             private final HttpHeaders headers = new HttpHeaders()
@@ -173,15 +185,8 @@ class DefaultJsonRenderer<T> implements Renderer<T> {
                 return headers
             }
         }
-        Class<?> objectType = object?.getClass() ?: Object
-        HttpMessageConverter<Object> converter = (HttpMessageConverter<Object>) springHttpMessageConverters.find {
-            HttpMessageConverter<?> candidate -> candidate.canWrite(objectType, mediaType)
-        }
-        if (converter == null) {
-            return false
-        }
-        converter.write(object, mediaType, message)
-        context.writer.write(output.toString(Charset.forName(encoding)))
+        converter.write(object, new MediaType(mediaType, charset), message)
+        context.writer.write(output.toString(charset))
         return true
     }
 
