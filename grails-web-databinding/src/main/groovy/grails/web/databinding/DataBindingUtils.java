@@ -833,11 +833,15 @@ public class DataBindingUtils {
     }
 
     /**
-     * A singleton bean looked up at most once per {@link ApplicationContext}. Each bean is resolved lazily so that
-     * asking for one of them never triggers the creation of another.
+     * A singleton bean looked up at most once per {@link ApplicationContext} once it is found. Each bean is
+     * resolved lazily so that asking for one of them never triggers the creation of another.
      * <p>
-     * Both fields are volatile and {@code resolved} is written last, so a thread which sees {@code resolved} also
-     * sees the bean it was resolved to. Two threads racing simply look the same singleton up twice.
+     * A context that does not hold the bean is not remembered as a miss: the lookup is repeated until the bean
+     * is found, so one registered after the first attempt is still picked up. That matters for a context which
+     * is still being populated, and costs nothing once the bean is there.
+     * <p>
+     * The field is volatile, so a thread which sees a non-null bean also sees it fully constructed. Two threads
+     * racing simply look the same singleton up twice.
      *
      * @param <T> the type of the bean
      */
@@ -846,7 +850,6 @@ public class DataBindingUtils {
         private final String beanName;
         private final Class<T> beanType;
         private volatile T bean;
-        private volatile boolean resolved;
 
         private CachedBean(String beanName, Class<T> beanType) {
             this.beanName = beanName;
@@ -854,11 +857,12 @@ public class DataBindingUtils {
         }
 
         private T get(ApplicationContext applicationContext) {
-            if (!resolved) {
-                bean = applicationContext.containsBean(beanName) ? applicationContext.getBean(beanName, beanType) : null;
-                resolved = true;
+            T resolved = bean;
+            if (resolved == null && applicationContext.containsBean(beanName)) {
+                resolved = applicationContext.getBean(beanName, beanType);
+                bean = resolved;
             }
-            return bean;
+            return resolved;
         }
     }
 }

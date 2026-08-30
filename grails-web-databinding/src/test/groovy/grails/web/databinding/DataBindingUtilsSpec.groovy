@@ -177,6 +177,30 @@ class DataBindingUtilsSpec extends Specification {
         secondContext.close()
     }
 
+    void 'test a bean registered after a lookup found nothing is still picked up'() {
+        given: 'a context which does not hold the resolver yet'
+        def context = createContext([:])
+        def application = Stub(GrailsApplication) {
+            getMainContext() >> context
+        }
+
+        expect: 'the lookup reports that there is no resolver'
+        DataBindingUtils.getMimeTypeResolver(application) == null
+
+        when: 'the bean is registered into that same context afterwards'
+        def resolver = Stub(MimeTypeResolver)
+        context.beanFactory.registerSingleton(MimeTypeResolver.BEAN_NAME, resolver)
+
+        then: 'the next lookup finds it, rather than returning a remembered miss for the life of the context'
+        DataBindingUtils.getMimeTypeResolver(application).is(resolver)
+
+        and: 'and it is then held, so the context is not searched again'
+        DataBindingUtils.getMimeTypeResolver(application).is(resolver)
+
+        cleanup:
+        context.close()
+    }
+
     void 'test the data binder of the current application context is used after the context is replaced'() {
         given:
         def firstBinder = Mock(DataBinder)
