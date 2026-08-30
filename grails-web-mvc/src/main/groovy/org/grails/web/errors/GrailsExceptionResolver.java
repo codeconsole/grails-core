@@ -75,6 +75,10 @@ public class GrailsExceptionResolver extends SimpleMappingExceptionResolver impl
 
     public static final String EXCEPTION_ATTRIBUTE = WebUtils.EXCEPTION_ATTRIBUTE;
 
+    /** Marks a request that is currently inside a forward to a status-code controller mapping. */
+    private static final String ERROR_HANDLER_FORWARD_IN_PROGRESS_ATTRIBUTE =
+            "org.grails.web.errors.ERROR_HANDLER_FORWARD_IN_PROGRESS";
+
     protected static final Logger LOG = LoggerFactory.getLogger(GrailsExceptionResolver.class);
     protected static final String LINE_SEPARATOR = System.getProperty("line.separator");
 
@@ -211,13 +215,23 @@ public class GrailsExceptionResolver extends SimpleMappingExceptionResolver impl
                 resolveView(request, info, mv);
             }
             else if (info != null && info.getControllerName() != null) {
+                if (isErrorHandlerForwardInProgress(request)) {
+                    LOG.error("The error handler for this request failed as well; not forwarding to it again");
+                    return mv;
+                }
                 String uri = determineUri(request);
                 if (!response.isCommitted()) {
                     if (response instanceof GrailsResponseMutator) {
                         // prevent further mutation of the request since an error page needs rendered instead
                         ((GrailsResponseMutator) response).deactivateResponseMutator();
                     }
-                    forwardRequest(info, request, response, mv, uri);
+                    request.setAttribute(ERROR_HANDLER_FORWARD_IN_PROGRESS_ATTRIBUTE, Boolean.TRUE);
+                    try {
+                        forwardRequest(info, request, response, mv, uri);
+                    }
+                    finally {
+                        request.removeAttribute(ERROR_HANDLER_FORWARD_IN_PROGRESS_ATTRIBUTE);
+                    }
                     // return an empty ModelAndView since the error handler has been processed
                     return new ModelAndView();
                 }
@@ -228,6 +242,29 @@ public class GrailsExceptionResolver extends SimpleMappingExceptionResolver impl
             LOG.error("Unable to render errors view: {}", e.getMessage(), e);
             throw new GrailsRuntimeException(e);
         }
+    }
+
+    /**
+     * Whether a forward to a status-code controller mapping is already running for this request.
+     * <p>
+     * The forward re-enters the {@code DispatcherServlet}, and the forwarded dispatch resolves the same
+     * status-code mapping again, because {@link WebUtils#ERROR_STATUS_CODE_ATTRIBUTE} is set on the
+     * request. An error handler that fails for a reason that is a property of the request rather than of
+     * the moment - an unparseable multipart body, a missing collaborator - therefore fails again inside
+     * that forward, and the failure resolves back into this method. Without this guard that is an
+     * unbounded recursion which ends in {@code StackOverflowError} after tens of thousands of nested
+     * dispatches.
+     * <p>
+     * The error handler is not forwarded to from inside itself: a second attempt would produce the same
+     * failure. The exception is returned to the {@code DispatcherServlet} instead, which reports it once
+     * through the container. The flag is cleared when the forward returns, so an error handler that runs
+     * successfully leaves a later, unrelated error on the same request free to use it again.
+     *
+     * @param request The request
+     * @return True when this request is inside an error handler forward
+     */
+    protected boolean isErrorHandlerForwardInProgress(HttpServletRequest request) {
+        return request.getAttribute(ERROR_HANDLER_FORWARD_IN_PROGRESS_ATTRIBUTE) != null;
     }
 
     protected void forwardRequest(UrlMappingInfo info, HttpServletRequest request, HttpServletResponse response,
@@ -388,7 +425,9 @@ public class GrailsExceptionResolver extends SimpleMappingExceptionResolver impl
         final boolean shouldLogRequestParameters = config != null ? config.getProperty(Settings.SETTING_LOG_REQUEST_PARAMETERS, Boolean.class, Environment.getCurrent() == Environment.DEVELOPMENT) : false;
 
         if (shouldLogRequestParameters) {
-            Enumeration<String> params = request.getParameterNames();
+            // The exception being logged may be the container refusing to parse a multipart body, in which
+            // case every parameter read on this request fails too - see WebUtils.readParameterNames.
+            Enumeration<String> params = WebUtils.readParameterNames(request);
 
             if (params.hasMoreElements()) {
                 String param;

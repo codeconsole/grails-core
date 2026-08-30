@@ -23,6 +23,8 @@ import java.net.URLDecoder;
 import java.net.URLEncoder;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
+import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
@@ -30,11 +32,15 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Supplier;
 
 import jakarta.servlet.ServletContext;
 import jakarta.servlet.ServletRequest;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import org.springframework.context.ApplicationContext;
 import org.springframework.util.Assert;
@@ -69,6 +75,8 @@ import org.grails.web.servlet.view.CompositeViewResolver;
  * @since 1.0
  */
 public class WebUtils extends org.springframework.web.util.WebUtils {
+
+    private static final Logger LOG = LoggerFactory.getLogger(WebUtils.class);
 
     public static final char SLASH = '/';
     public static final String ENABLE_FILE_EXTENSIONS = "grails.mime.file.extensions";
@@ -574,6 +582,85 @@ public class WebUtils extends org.springframework.web.util.WebUtils {
         }
         Object attribute = request.getAttribute(MULTIPART_HTTP_SERVLET_REQUEST_ATTRIBUTE);
         return attribute instanceof MultipartHttpServletRequest multipartRequest ? multipartRequest : null;
+    }
+
+    /**
+     * Check whether the given request declares a multipart content type.
+     *
+     * @param request The request
+     * @return True if the content type is {@code multipart/*}
+     */
+    public static boolean isMultipartContentType(HttpServletRequest request) {
+        String contentType = request.getContentType();
+        return contentType != null && contentType.toLowerCase(Locale.ROOT).startsWith("multipart/");
+    }
+
+    /**
+     * Read the servlet parameter map, tolerating a multipart request the container refuses to parse.
+     *
+     * @param request The request
+     * @return The parameter map, or an empty map when the parameters are unreadable
+     * @see #readTolerantly(HttpServletRequest, Supplier, Object)
+     */
+    public static Map<String, String[]> readParameterMap(HttpServletRequest request) {
+        return readTolerantly(request, request::getParameterMap, Collections.emptyMap());
+    }
+
+    /**
+     * Read a single servlet parameter, tolerating a multipart request the container refuses to parse.
+     *
+     * @param request The request
+     * @param name The parameter name
+     * @return The parameter value, or {@code null} when it is absent or unreadable
+     * @see #readTolerantly(HttpServletRequest, Supplier, Object)
+     */
+    public static String readParameter(HttpServletRequest request, String name) {
+        return readTolerantly(request, () -> request.getParameter(name), null);
+    }
+
+    /**
+     * Read the servlet parameter names, tolerating a multipart request the container refuses to parse.
+     *
+     * @param request The request
+     * @return The parameter names, or an empty enumeration when they are unreadable
+     * @see #readTolerantly(HttpServletRequest, Supplier, Object)
+     */
+    public static Enumeration<String> readParameterNames(HttpServletRequest request) {
+        return readTolerantly(request, request::getParameterNames, Collections.emptyEnumeration());
+    }
+
+    /**
+     * Perform a request parameter read that must not fail the request when the container cannot parse a
+     * multipart body.
+     * <p>
+     * A {@code multipart/form-data} request breaching the configured upload limits fails the container's
+     * part parsing, and from then on every parameter read on that request fails with it. Grails reads
+     * request parameters on paths that run before, alongside and after the handler - the {@code _method}
+     * override in the filter chain, {@code params}, the locale-change interceptor, the exception
+     * resolver's request log - and throwing from any of them replaces the failure the application should
+     * see with a secondary one raised somewhere the application cannot handle it. The read yields
+     * {@code fallback} instead; the request cannot reach a controller either way, because
+     * {@code DispatcherServlet.checkMultipart} raises the multipart failure during dispatch.
+     * <p>
+     * The tolerance is confined to multipart requests: an unreadable parameter on any other request still
+     * propagates.
+     *
+     * @param request The request
+     * @param read The read to perform
+     * @param fallback The value to use when the parameters are unreadable
+     * @return The read value, or {@code fallback} when the parameters are unreadable
+     */
+    private static <T> T readTolerantly(HttpServletRequest request, Supplier<T> read, T fallback) {
+        try {
+            return read.get();
+        }
+        catch (RuntimeException e) {
+            if (!isMultipartContentType(request)) {
+                throw e;
+            }
+            LOG.debug("Multipart request parameters could not be parsed; deferring to multipart resolution", e);
+            return fallback;
+        }
     }
 
 }
