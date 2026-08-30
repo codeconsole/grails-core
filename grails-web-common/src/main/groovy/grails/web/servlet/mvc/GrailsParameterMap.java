@@ -94,7 +94,9 @@ public class GrailsParameterMap extends TypeConvertingMap implements Cloneable {
         // layer by Spring's FormContentFilter) are read straight from the request parameter map.
         // updateNestedKeys only reads this map - everything it builds goes into wrappedMap - so the
         // servlet's own map is used directly, and copied only when uploaded files have to be merged in.
-        Map requestMap = request.getParameterMap();
+        // A multipart body the container refuses to parse leaves every parameter read on the request
+        // failing, so the map is read tolerantly - see WebUtils.readParameterMap.
+        Map requestMap = WebUtils.readParameterMap(request);
 
         // The request is the outermost request, so the multipart request is discovered from its wrapper
         // chain rather than being the request itself.

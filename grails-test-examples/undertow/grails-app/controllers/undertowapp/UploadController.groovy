@@ -16,23 +16,15 @@
  *  specific language governing permissions and limitations
  *  under the License.
  */
-package app4
+package undertowapp
 
-import grails.compiler.GrailsCompileStatic
-import grails.converters.JSON
+class UploadController {
 
-@GrailsCompileStatic
-class ErrorsController {
-
-    static responseFormats = ['json']
-
-    def notFound() {
-        render(status: 404, text: ([error: 'Not Found'] as JSON).toString(), contentType: 'application/json')
+    def upload() {
+        render(status: 200, text: 'uploaded', contentType: 'text/plain')
     }
 
     def tooLarge() {
-        render(status: 413, text: ([error: 'Content Too Large', handledBy: 'errors.tooLarge'] as JSON).toString(),
-                contentType: 'application/json')
+        render(status: 413, text: 'handled-by-413-mapping', contentType: 'text/plain')
     }
 }
-
