@@ -67,6 +67,13 @@ class GrailsContentNegotiationStrategy implements ContentNegotiationStrategy {
         }
     }
 
+    /**
+     * @return the MIME types this strategy resolves against, as configured by grails.mime.types
+     */
+    MimeType[] getConfiguredMimeTypes() {
+        return mimeTypes
+    }
+
     MimeType[] resolveMimeTypes(HttpServletRequest request) {
         String formatOverride = request.getParameter('format')
         if (!formatOverride) {

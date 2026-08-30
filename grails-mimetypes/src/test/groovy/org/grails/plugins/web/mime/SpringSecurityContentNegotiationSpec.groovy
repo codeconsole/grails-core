@@ -68,6 +68,44 @@ class SpringSecurityContentNegotiationSpec extends Specification {
         context.close()
     }
 
+    void 'an unknown media type is not widened to the Grails defaults'() {
+        given:
+        def context = new AnnotationConfigWebApplicationContext()
+        context.servletContext = new MockServletContext()
+        context.register(SecurityWebConfiguration)
+        context.refresh()
+        def manager = context.getBean('mvcContentNegotiationManager', ContentNegotiationManager)
+        def request = new MockHttpServletRequest('GET', '/books')
+        request.addHeader('Accept', 'application/vnd.myapi.v2+json')
+
+        when: "a media type absent from grails.mime.types is requested"
+        def resolved = manager.resolveMediaTypes(new ServletWebRequest(request))
+
+        then: "Spring reports exactly what was asked for, so an endpoint can still answer 406"
+        resolved == [MediaType.parseMediaType('application/vnd.myapi.v2+json')]
+
+        and: "it is not replaced by the Grails default list, which contains */*"
+        !resolved.contains(MediaType.ALL)
+
+        cleanup:
+        context.close()
+    }
+
+    void 'a format alias configured by Grails is registered with Spring'() {
+        given:
+        def context = new AnnotationConfigWebApplicationContext()
+        context.servletContext = new MockServletContext()
+        context.register(SecurityWebConfiguration)
+        context.refresh()
+
+        expect: "Spring resolves the Grails extension through its own alias mechanism"
+        context.getBean('mvcContentNegotiationManager', ContentNegotiationManager)
+                .getMediaTypeMappings()['json'] == MediaType.APPLICATION_JSON
+
+        cleanup:
+        context.close()
+    }
+
     @Configuration(proxyBeanMethods = false)
     @EnableWebMvc
     @EnableWebSecurity

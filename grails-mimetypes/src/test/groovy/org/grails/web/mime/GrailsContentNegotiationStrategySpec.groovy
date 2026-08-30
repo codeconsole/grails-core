@@ -97,16 +97,23 @@ class GrailsContentNegotiationStrategySpec extends Specification {
         strategy.resolveMimeTypes(request)*.extension == ['json']
     }
 
-    void "the Web MVC configurer installs the Grails strategy"() {
+    void "the Web MVC configurer contributes format aliases and leaves Spring's strategies alone"() {
         given:
-        def strategy = strategy()
         def configurer = Mock(ContentNegotiationConfigurer)
 
         when:
-        new GrailsMimeTypesWebMvcConfigurer(strategy).configureContentNegotiation(configurer)
+        new GrailsMimeTypesWebMvcConfigurer(strategy()).configureContentNegotiation(configurer)
 
-        then:
-        1 * configurer.strategies([strategy])
+        then: "Spring keeps its own header strategy, so unknown media types still get a 406"
+        0 * configurer.strategies(_)
+
+        and: "the configured extensions are registered as Spring format aliases"
+        1 * configurer.mediaTypes({ Map<String, MediaType> aliases ->
+            aliases['json'] == MediaType.APPLICATION_JSON &&
+                    aliases['xml'] == MediaType.APPLICATION_XML &&
+                    aliases['html'] == MediaType.TEXT_HTML &&
+                    !aliases.containsKey('all')
+        })
     }
 
     private static GrailsContentNegotiationStrategy strategy(Config config = config([:])) {

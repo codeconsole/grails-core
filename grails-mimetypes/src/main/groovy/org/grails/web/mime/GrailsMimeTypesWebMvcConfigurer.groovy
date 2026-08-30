@@ -20,6 +20,9 @@ package org.grails.web.mime
 
 import groovy.transform.CompileStatic
 
+import grails.web.mime.MimeType
+
+import org.springframework.http.MediaType
 import org.springframework.web.servlet.config.annotation.ContentNegotiationConfigurer
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer
 
@@ -46,6 +49,26 @@ class GrailsMimeTypesWebMvcConfigurer implements WebMvcConfigurer {
 
     @Override
     void configureContentNegotiation(ContentNegotiationConfigurer configurer) {
-        configurer.strategies([contentNegotiationStrategy])
+        // Contribute the configured format aliases and nothing else. Replacing Spring's strategy
+        // list would hand Grails' parser authority over every Spring MVC endpoint: it drops media
+        // types absent from grails.mime.types and falls back to the defaults, which include */*, so
+        // a request for an unknown type would be answered instead of rejected with 406. It would
+        // also disable spring.mvc.contentnegotiation.* and apply the 'format' request parameter to
+        // endpoints that never asked for it. Grails' own format resolution does not go through the
+        // Spring manager; it uses this configurer's strategy directly.
+        Map<String, MediaType> aliases = [:]
+        for (MimeType mimeType in contentNegotiationStrategy.configuredMimeTypes) {
+            String extension = mimeType.extension
+            if (!extension || extension == MimeType.ALL.extension) {
+                continue
+            }
+            MediaType mediaType = SpringMediaTypeAdapter.toMediaType(mimeType)
+            if (mediaType != null && !mediaType.isWildcardType() && !mediaType.isWildcardSubtype()) {
+                aliases.putIfAbsent(extension, new MediaType(mediaType.type, mediaType.subtype))
+            }
+        }
+        if (aliases) {
+            configurer.mediaTypes(aliases)
+        }
     }
 }

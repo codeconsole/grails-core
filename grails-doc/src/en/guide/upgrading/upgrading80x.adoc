@@ -1603,6 +1603,16 @@ grails:
                         - Trident
 ----
 
+Grails format resolution -- `withFormat`, `respond`, and `response.format` -- applies these rules.
+Spring MVC keeps its own content negotiation: an `@RestController`, an actuator endpoint or any other
+Spring handler continues to match `produces` against the `Accept` header exactly as in a plain Spring
+Boot application, and still answers `406 Not Acceptable` for a media type it cannot produce. The
+`spring.mvc.contentnegotiation.*` properties therefore continue to work.
+
+The extensions declared in `grails.mime.types` are additionally registered with Spring as format
+aliases, so enabling `spring.mvc.contentnegotiation.favor-parameter` resolves them without any further
+configuration.
+
 ==== 31. @EnableWebMvc No Longer Added to Grails Applications
 
 In earlier versions, Grails added Spring's `@EnableWebMvc` annotation to the generated `Application` class at compile time.
