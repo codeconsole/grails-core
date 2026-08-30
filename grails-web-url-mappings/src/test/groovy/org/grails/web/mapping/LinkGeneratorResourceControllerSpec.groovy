@@ -147,6 +147,18 @@ class LinkGeneratorResourceControllerSpec extends Specification {
         generator.link(resource: new Person(id: 9), action: 'show') == '/bar/people/show/9'
     }
 
+    def "a domain class passed instead of an instance resolves the same controller"() {
+        given: 'the domain class rather than an instance, as used for an uninitialised association'
+        def generator = createGenerator()
+
+        expect: 'the same controller is resolved, so a lazy proxy and a loaded instance agree'
+        generator.link(resource: Person, id: 1, action: 'show') == '/bar/people/show/1'
+        generator.link(resource: new Person(id: 1), action: 'show') == '/bar/people/show/1'
+
+        and: 'the naming convention still wins for a domain class'
+        generator.link(resource: Chapter, id: 2, action: 'show') == '/bar/chapter/show/2'
+    }
+
     def "resolution requires a mapping context"() {
         given: 'the same link generated with and without a mapping context'
         def person = new Person(id: 10)

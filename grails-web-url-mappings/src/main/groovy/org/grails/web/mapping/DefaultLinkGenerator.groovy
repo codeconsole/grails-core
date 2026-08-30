@@ -195,7 +195,13 @@ class DefaultLinkGenerator implements LinkGenerator, PluginManagerAware {
                             resource = GrailsNameUtils.getPropertyName(resourceAttribute.getClass())
                             hasId = true
                         } else if (resourceAttribute instanceof Class) {
-                            resource = GrailsNameUtils.getPropertyName(resourceAttribute)
+                            // A domain class rather than an instance, used where loading the instance would
+                            // defeat the point, such as an uninitialised association rendered from its proxy.
+                            PersistentEntity classEntity = (mappingContext != null) ?
+                                    mappingContext.getPersistentEntity(((Class) resourceAttribute).name) : null
+                            resource = classEntity != null ?
+                                    controllerNameForResource(classEntity) :
+                                    GrailsNameUtils.getPropertyName(resourceAttribute)
                         } else {
                             resource = resourceAttribute.toString()
                         }
