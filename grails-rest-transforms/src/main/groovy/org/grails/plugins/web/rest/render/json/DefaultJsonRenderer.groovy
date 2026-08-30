@@ -133,11 +133,18 @@ class DefaultJsonRenderer<T> implements Renderer<T> {
             MediaType mediaType = object instanceof Errors ?
                     MediaType.parseMediaType(PROBLEM_JSON.name) :
                     MediaType.parseMediaType(resolveMimeType(context).name)
+            // Set the content type before writing: once the writer flushes, the response is
+            // committed and a later content type change is silently discarded.
+            if (object instanceof Errors) {
+                context.setContentType(GrailsWebUtil.getContentType(PROBLEM_JSON.name, encoding))
+            }
             if (renderWithSpringConverter(springValue, mediaType, context)) {
-                if (object instanceof Errors) {
-                    context.setContentType(GrailsWebUtil.getContentType(PROBLEM_JSON.name, encoding))
-                }
                 return
+            }
+            if (object instanceof Errors) {
+                // No converter could write the problem; restore the negotiated type for the
+                // legacy converter path below.
+                context.setContentType(GrailsWebUtil.getContentType(resolveMimeType(context).name, encoding))
             }
         }
 

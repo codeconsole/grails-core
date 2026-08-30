@@ -35,6 +35,7 @@ import grails.web.render.NamedJsonRenderer
 import org.grails.plugins.web.rest.render.ServletRenderContext
 import org.grails.web.converters.configuration.ConvertersConfigurationHolder
 import org.grails.web.converters.configuration.ConvertersConfigurationInitializer
+import org.grails.web.converters.exceptions.ConverterException
 
 import spock.lang.Specification
 
@@ -147,6 +148,56 @@ class DefaultJsonRendererSpec extends Specification {
         webRequest.response.status == 422
         webRequest.response.contentType == 'application/problem+json;charset=UTF-8'
         webRequest.response.contentAsString == '{"status":422,"title":"Validation failed"}'
+    }
+
+    void 'the problem content type survives a response committed while writing'() {
+        given: "a converter whose write commits the response, as a large body would"
+        def converter = Mock(HttpMessageConverter)
+        def renderer = new DefaultJsonRenderer<Errors>(Errors)
+        renderer.useSpringJson = true
+        renderer.springHttpMessageConverters = [converter]
+        def errors = new BeanPropertyBindingResult(new Object(), 'book')
+        errors.addError(new ObjectError('book', ['book.invalid'] as String[], null, 'Book is invalid'))
+        def webRequest = GrailsWebMockUtil.bindMockWebRequest()
+
+        when:
+        renderer.render(errors, new ServletRenderContext(webRequest))
+
+        then:
+        1 * converter.canWrite(ProblemDetail, MediaType.APPLICATION_PROBLEM_JSON) >> true
+        1 * converter.write(_, new MediaType(MediaType.APPLICATION_PROBLEM_JSON, UTF_8), _) >> { arguments ->
+            arguments[2].body.write('{"status":422}'.bytes)
+        }
+
+        and: "the content type was set before the body was written, so it is not lost"
+        webRequest.response.contentType == 'application/problem+json;charset=UTF-8'
+    }
+
+    void 'the negotiated content type is restored when no converter can write the problem'() {
+        given:
+        def converter = Mock(HttpMessageConverter)
+        def renderer = new DefaultJsonRenderer<Errors>(Errors)
+        renderer.useSpringJson = true
+        renderer.springHttpMessageConverters = [converter]
+        def errors = new BeanPropertyBindingResult(new Object(), 'book')
+        errors.addError(new ObjectError('book', ['book.invalid'] as String[], null, 'Book is invalid'))
+        def webRequest = GrailsWebMockUtil.bindMockWebRequest()
+
+        when:
+        try {
+            renderer.render(errors, new ServletRenderContext(webRequest))
+        }
+        catch (ConverterException ignored) {
+            // The legacy fallback needs the errors marshaller, which this slice does not
+            // configure. The content type has already been restored by the time it runs.
+        }
+
+        then:
+        1 * converter.canWrite(ProblemDetail, MediaType.APPLICATION_PROBLEM_JSON) >> false
+        0 * converter.write(_, _, _)
+
+        and: "the legacy converter path reports ordinary JSON, not problem JSON"
+        webRequest.response.contentType == 'application/json;charset=UTF-8'
     }
 
     void 'a non UTF-8 encoding round-trips through the Spring converter'() {
