@@ -40,6 +40,9 @@ import org.grails.datastore.mapping.model.types.OneToOne;
 /** Serializes a mapped Grails domain type using its persistent metadata. */
 final class GrailsDomainJsonSerializer extends ValueSerializer<Object> {
 
+    // Stateless, and consulted once per property of every serialized object.
+    private static final IncludeExcludeSupport<String> INCLUDE_EXCLUDE_SUPPORT = new IncludeExcludeSupport<>();
+
     private final PersistentEntity entity;
     private final ProxyHandler proxyHandler;
     private final boolean includeVersion;
@@ -145,6 +148,6 @@ final class GrailsDomainJsonSerializer extends ValueSerializer<Object> {
     }
 
     private boolean shouldInclude(List<String> includes, List<String> excludes, String property) {
-        return new IncludeExcludeSupport<String>().shouldInclude(includes, excludes, property);
+        return INCLUDE_EXCLUDE_SUPPORT.shouldInclude(includes, excludes, property);
     }
 }
