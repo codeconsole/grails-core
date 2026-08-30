@@ -53,6 +53,7 @@ dependencies {
 
     testImplementation project(':grails-web-url-mappings')
     testImplementation project(':grails-test-suite-base')
+    testImplementation project(':grails-datamapping-validation')
     testImplementation 'org.apache.groovy:groovy-test-junit5'
     testImplementation 'org.junit.jupiter:junit-jupiter-api'
     testImplementation 'org.spockframework:spock-core'

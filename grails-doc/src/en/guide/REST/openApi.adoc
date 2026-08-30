@@ -60,6 +60,35 @@ URL variables become OpenAPI path parameters, so `"/books/$id"` is documented as
 optional `.format` extension Grails appends to REST mappings is omitted, because OpenAPI describes
 response formats through content types rather than the path.
 
+==== Domain Schemas
+
+Every mapped domain class is described in `components/schemas`, built from the GORM mapping model.
+Associations are referenced rather than inlined, so a `Book` with `hasMany` readers refers to the
+`User` schema.
+
+Each domain class produces two schemas. The response schema carries every persistent property. The
+request schema, named with a `Request` suffix, omits the identifier and the version, because a
+client does not supply either. Operations that accept a body reference the request schema.
+
+Declared constraints are carried across:
+
+[cols="1,1"]
+|===
+| Constraint | OpenAPI
+
+| `nullable: false` | listed in `required`
+| `maxSize` / `size` | `maxLength` and `minLength`
+| `min` / `max` / `range` | `minimum` and `maximum`
+| `inList` | `enum`
+| `matches` | `pattern`
+| `email` / `url` | `format`
+|===
+
+A domain class without a constraints block still produces a schema; it simply carries no
+validation facets.
+
+Operations addressed by an identifier also document a `404` response.
+
 Two kinds of mapping are not documented in full:
 
 * Mappings whose controller is only known per request - such as the default
