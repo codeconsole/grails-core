@@ -748,6 +748,35 @@ If your test infrastructure registers it explicitly, remove the registration; Sp
 Update the import.
 A new `RestTestClient` and corresponding `@AutoConfigureRestTestClient` annotation are also available as a fluent alternative.
 
+==== 17.1 Test Helpers Moved to Test Fixtures
+
+Several legacy Grails test helpers are no longer included in the production classpath.
+They are published as Gradle test fixtures instead, so applications and plugins that use them directly must request the fixture variant explicitly.
+
+This affects the following helpers:
+
+* `grails.plugin.json.view.test.JsonViewTest` and related JSON view test helpers
+* `org.grails.gorm.graphql.testing.GraphQLSchemaSpec`
+* `org.grails.gorm.graphql.testing.MockDataFetchingEnvironment`
+* `grails.util.GrailsWebMockUtil`
+* Mock resource and plugin helpers from `grails-core`, including `MockResourceLoader`, `MockStringResourceLoader`, `MockFileResource`, `MockPluginDiscovery`, and `MockGrailsPluginManager`
+
+If your tests import one of these classes, add the corresponding `testFixtures(...)` dependency to the configuration that compiles those tests:
+
+[source,groovy]
+.build.gradle
+----
+dependencies {
+    testImplementation testFixtures('org.apache.grails:grails-core')
+    testImplementation testFixtures('org.apache.grails.web:grails-web-common')
+    testImplementation testFixtures('org.apache.grails:grails-views-gson')
+    testImplementation testFixtures('org.apache.grails.data:grails-data-graphql-core')
+}
+----
+
+Only add the fixture dependencies that provide helpers used by the project.
+Do not add them to `implementation`, because these artifacts contain test infrastructure and should not be part of the application runtime classpath.
+
 ==== 18. DevTools Live Reload Disabled by Default
 
 Spring Boot 4 changed the default of `spring.devtools.livereload.enabled` from `true` to `false`.
@@ -2700,7 +2729,80 @@ A GSP precompiled by Grails 7 and shipped inside a binary plugin carries no chec
 normally; it is simply never reload-checked, which was already the case for views resolved out of a plugin
 jar.
 
-==== 50. Tag Libraries Are Described When Compiled
+==== 50. The Hidden HTTP Method Filter Is Disabled by Default
+
+Grails has always registered a servlet filter that rewrites a `POST` into a `PUT`, `PATCH` or `DELETE` when the
+request carries a `_method` parameter or an `X-HTTP-Method-Override` header. It runs ahead of the dispatcher --
+and ahead of the Spring Security filter chain. **As of Grails 8 it is no longer registered by default.**
+
+Browser forms keep working. The `_method` parameter is still honoured; it is resolved inside the dispatcher
+instead, after multipart handling and after the filter chain. `<g:form method="DELETE">`, the scaffolded views
+and existing GSP templates need no changes.
+
+===== 50.1 Why the default changed
+
+The filter reads a request parameter before the dispatcher runs. Because a `MultipartConfigElement` is attached
+to the dispatcher servlet registration, the servlet container resolves it at filter time, so reading `_method`
+on a `multipart/form-data` POST forces the container to parse the entire body -- writing its temporary files --
+**before the request has been routed or authenticated**. An unauthenticated request can therefore cause uploads
+to be written to disk.
+
+Spring Boot disabled its equivalent filter by default in 2.2 for the same reason: it "causes early consumption
+of a request body if the body may contain parameters".
+
+The filter is also wider than Spring's. Spring's `HiddenHttpMethodFilter` reads only the `_method` parameter and
+honours only `PUT`, `PATCH` and `DELETE`. The Grails filter additionally trusts the `X-HTTP-Method-Override`
+header -- which any client can set -- and applies **any** method name it is given, including `GET`. The
+in-dispatcher resolution that replaces it accepts the parameter only, and only those three methods.
+
+===== 50.2 What changes for an application
+
+* **`POST` to a member URL now reaches `update`.** A `resources` mapping generates `POST /books/$id` alongside
+`PUT /books/$id`. `RestfulController` has permitted `POST` for `update` since Grails 3 (issue #9926, raised
+because AngularJS `$resource` and the clients modelled on it POST to save an existing object) but no mapping
+was ever generated for it. That is now fixed, and it is what lets a form submit without a `_method` parameter.
+* **`<g:form method="PUT">` no longer emits a `_method` field.** It submits a plain `POST` to the same URL,
+which the route above answers. `method="DELETE"` still emits the field, because `delete` and `update` share a
+URL and the parameter is what distinguishes them. `method="PATCH"` behaves as `PUT`: `RestfulController.patch()`
+delegates to `update()`.
+* **Servlet filters see the real request method.** This is the one consequence that fails silently. A `POST`
+carrying `_method=DELETE` now reaches Spring Security and every servlet filter as a `POST`, because the rewrite
+happens inside the dispatcher. A security rule matching `DELETE /books/**` **will no longer fire for a browser
+form submit**, and since the URL is unchanged, `update` and `delete` cannot be told apart by path either.
+**Review any authorization rule keyed on the HTTP method before upgrading.**
+* **`X-HTTP-Method-Override` is no longer honoured**, and a `_method` value other than `PUT`, `PATCH` or
+`DELETE` is ignored rather than applied.
+
+Everything reading the request through the Grails API is unaffected: a controller's `request`, `allowedMethods`,
+interceptors and URL mapping resolution all agree on the overridden method.
+
+===== 50.3 Restoring the previous behaviour
+
+[source,yaml]
+.grails-app/conf/application.yml
+----
+grails:
+    web:
+        hiddenmethod:
+            filter:
+                enabled: true
+----
+
+That restores the filter exactly as it behaved in Grails 7, including the header and the unrestricted method
+names, and suppresses the `POST` member route so the mappings a `resources` block generates are unchanged.
+
+Spring Boot's `spring.mvc.hiddenmethod.filter.enabled` selects the same mode, registering Spring's filter
+rather than the Grails one. Either property is enough: whichever is set, a filter is on the chain, the
+dispatcher stops resolving `_method` itself, `<g:form>` emits the field again, and the `POST` member route is
+not generated.
+
+NOTE: Spring's filter is contributed by `WebMvcAutoConfiguration`, which backs off entirely for an application
+declaring `@EnableWebMvc`. Grails contributes its own filter in that case, so asking for Boot's still leaves a
+filter on the chain rather than silently leaving none. Previously the two definitions could also collide on the
+shared `hiddenHttpMethodFilter` bean name and fail application startup; they no longer can.
+
+
+==== 51. Tag Libraries Are Described When Compiled
 
 Tag calls are resolved against a description each tag library contributes as it is compiled, and a
 resolved call is compiled into a direct invocation. The tag itself is still selected by name when the
@@ -2855,7 +2957,7 @@ class ReportController {
 A tag called *with* its namespace, and any tag called from a GSP, already captured, so only an
 unqualified call from a controller to a method-declared tag changes.
 
-==== 51. Quartz Job Scheduling Behavior Changes
+==== 52. Quartz Job Scheduling Behavior Changes
 
 Three behaviors of the Quartz plugin changed in this release. All three concern what happens when
 something about a schedule is wrong; none of them require a change to a job class.

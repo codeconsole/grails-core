@@ -22,6 +22,8 @@ import groovy.transform.CompileStatic
 
 import jakarta.servlet.http.HttpServletRequest
 
+import org.grails.web.util.HiddenHttpMethod
+
 /**
  * A helper class for interrogating the allowedMethods property.
  *
@@ -35,7 +37,10 @@ class AllowedMethodsHelper {
     static boolean isAllowed(final String actionName, final HttpServletRequest request, final Map allowedMethods) {
         boolean isAllowed = true
         if (allowedMethods?.containsKey(actionName)) {
-            def method = request.method
+            // The method the handler was selected for, which is the overridden one when a POST carried
+            // _method and the dispatcher resolved it. With a servlet filter doing the override the request
+            // itself already reports it, so this is the same answer in either mode.
+            def method = HiddenHttpMethod.effectiveMethod(request)
             def value = allowedMethods[actionName]
             if (value instanceof String) {
                 isAllowed = method.equalsIgnoreCase(value)

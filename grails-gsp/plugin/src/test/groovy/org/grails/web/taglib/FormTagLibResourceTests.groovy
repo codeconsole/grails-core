@@ -39,7 +39,7 @@ class FormTagLibResourceTests extends Specification implements UrlMappingsUnitTe
         String output = applyTemplate(template)
 
         then:
-        output == '<form action="/books/1" method="post" ><input type="hidden" name="_method" value="PUT" id="_method" /></form>'
+        output == '<form action="/books/1" method="post" ></form>'
     }
 
     def testResourceUpdateIdInParams() {
@@ -48,7 +48,7 @@ class FormTagLibResourceTests extends Specification implements UrlMappingsUnitTe
         String output = applyTemplate(template)
 
         then:
-        output == '<form action="/books/1" method="post" ><input type="hidden" name="_method" value="PUT" id="_method" /></form>'
+        output == '<form action="/books/1" method="post" ></form>'
     }
 
     def testResourcePatch() {
@@ -57,7 +57,7 @@ class FormTagLibResourceTests extends Specification implements UrlMappingsUnitTe
         String output = applyTemplate(template)
 
         then:
-        output == '<form action="/books/1" method="post" ><input type="hidden" name="_method" value="PATCH" id="_method" /></form>'
+        output == '<form action="/books/1" method="post" ></form>'
     }
 
     def testResourcePatchIdInParams() {
@@ -66,7 +66,27 @@ class FormTagLibResourceTests extends Specification implements UrlMappingsUnitTe
         String output = applyTemplate(template)
 
         then:
-        output == '<form action="/books/1" method="post" ><input type="hidden" name="_method" value="PATCH" id="_method" /></form>'
+        output == '<form action="/books/1" method="post" ></form>'
+    }
+
+    // delete and update share the member URL, so the parameter is what distinguishes them and is still
+    // emitted. update and patch need none: a POST to that URL already reaches update.
+    def testResourceDelete() {
+        when:
+        def template = '<g:form resource="book" action="delete" id="1"/>'
+        String output = applyTemplate(template)
+
+        then:
+        output == '<form action="/books/1" method="post" ><input type="hidden" name="_method" value="DELETE" id="_method" /></form>'
+    }
+
+    def testResourceNestedDelete() {
+        when:
+        def template = '<g:form resource="book/author" action="delete" id="2" params="[bookId:1]"/>'
+        String output = applyTemplate(template)
+
+        then:
+        output == '<form action="/books/1/authors/2" method="post" ><input type="hidden" name="_method" value="DELETE" id="_method" /></form>'
     }
 
     def testResourceNestedSave() {
@@ -87,7 +107,7 @@ class FormTagLibResourceTests extends Specification implements UrlMappingsUnitTe
         String output = applyTemplate(template)
 
         then:
-        output =='<form action="/books/1/authors/2" method="post" ><input type="hidden" name="_method" value="PUT" id="_method" /></form>'
+        output =='<form action="/books/1/authors/2" method="post" ></form>'
     }
 
     def testResourceNestedUpdateIdInParams() {
@@ -96,7 +116,7 @@ class FormTagLibResourceTests extends Specification implements UrlMappingsUnitTe
         String output = applyTemplate(template)
 
         then:
-        output == '<form action="/books/1/authors/2" method="post" ><input type="hidden" name="_method" value="PUT" id="_method" /></form>'
+        output == '<form action="/books/1/authors/2" method="post" ></form>'
     }
 
     def testResourceNestedPatch() {
@@ -105,7 +125,7 @@ class FormTagLibResourceTests extends Specification implements UrlMappingsUnitTe
         String output = applyTemplate(template)
 
         then:
-        output == '<form action="/books/1/authors/2" method="post" ><input type="hidden" name="_method" value="PATCH" id="_method" /></form>'
+        output == '<form action="/books/1/authors/2" method="post" ></form>'
     }
 
     void testResourceNestedPatchIdInParams() {
@@ -114,7 +134,7 @@ class FormTagLibResourceTests extends Specification implements UrlMappingsUnitTe
         String output = applyTemplate(template)
 
         then:
-        output == '<form action="/books/1/authors/2" method="post" ><input type="hidden" name="_method" value="PATCH" id="_method" /></form>'
+        output == '<form action="/books/1/authors/2" method="post" ></form>'
     }
 
 
