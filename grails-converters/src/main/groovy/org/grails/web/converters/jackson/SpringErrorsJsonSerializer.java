@@ -22,8 +22,9 @@ import tools.jackson.databind.SerializationContext;
 import tools.jackson.databind.ValueSerializer;
 
 import org.springframework.validation.Errors;
-import org.springframework.validation.FieldError;
 import org.springframework.validation.ObjectError;
+
+import org.grails.web.errors.ValidationErrorEntries;
 
 /** Serializes Spring validation errors without exposing internal binding state. */
 final class SpringErrorsJsonSerializer extends ValueSerializer<Errors> {
@@ -34,20 +35,9 @@ final class SpringErrorsJsonSerializer extends ValueSerializer<Errors> {
         generator.writeName("errors");
         generator.writeStartArray();
         for (ObjectError error : errors.getAllErrors()) {
-            generator.writeStartObject();
-            generator.writeStringProperty("object", error.getObjectName());
-            if (error instanceof FieldError fieldError) {
-                generator.writeStringProperty("field", fieldError.getField());
-            }
-            String code = error.getCode();
-            if (code != null) {
-                generator.writeStringProperty("code", code);
-            }
-            String message = error.getDefaultMessage();
-            if (message != null) {
-                generator.writeStringProperty("message", message);
-            }
-            generator.writeEndObject();
+            // Rejected values are never included here: this path serializes whatever Errors object
+            // reaches the mapper, with no opportunity for an application to opt in.
+            context.writeValue(generator, ValidationErrorEntries.toEntry(error, false));
         }
         generator.writeEndArray();
         generator.writeEndObject();

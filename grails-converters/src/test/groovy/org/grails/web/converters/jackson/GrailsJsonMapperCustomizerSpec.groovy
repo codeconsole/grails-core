@@ -42,11 +42,16 @@ class GrailsJsonMapperCustomizerSpec extends Specification {
         context.register(JacksonAutoConfiguration)
         context.refresh()
 
-        expect:
+        expect: "the same entry shape the RFC 9457 problem uses, so the two cannot drift apart"
         def mapper = context.getBean(JsonMapper)
-        mapper.readValue(mapper.writeValueAsString(errors), Map) == [
-                errors: [[object: 'command', field: 'name', code: 'blank', message: 'must not be blank']]
-        ]
+        def entry = mapper.readValue(mapper.writeValueAsString(errors), Map).errors.first()
+        entry.object == 'command'
+        entry.field == 'name'
+        entry.codes.contains('blank')
+        entry.message == 'must not be blank'
+
+        and: "the submitted value is never exposed on this path"
+        !entry.containsKey('rejectedValue')
 
         cleanup:
         context.close()

@@ -19,8 +19,6 @@
 package grails.rest.render.errors;
 
 import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -29,8 +27,9 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ProblemDetail;
 import org.springframework.validation.Errors;
-import org.springframework.validation.FieldError;
 import org.springframework.validation.ObjectError;
+
+import org.grails.web.errors.ValidationErrorEntries;
 
 /**
  * Creates an RFC 9457 problem detail from Spring validation errors.
@@ -84,25 +83,10 @@ public final class ValidationProblemDetailFactory {
 
         List<Map<String, Object>> entries = new ArrayList<>(errors.getErrorCount());
         for (ObjectError error : errors.getAllErrors()) {
-            entries.add(toEntry(error));
+            entries.add(ValidationErrorEntries.toEntry(error, this.includeRejectedValues));
         }
         problem.setProperty(ERRORS_PROPERTY, entries);
         return problem;
-    }
-
-    private Map<String, Object> toEntry(ObjectError error) {
-        Map<String, Object> entry = new LinkedHashMap<>();
-        entry.put("object", error.getObjectName());
-        if (error instanceof FieldError fieldError) {
-            entry.put("field", fieldError.getField());
-            if (includeRejectedValues) {
-                entry.put("rejectedValue", fieldError.getRejectedValue());
-            }
-        }
-        String[] codes = error.getCodes();
-        entry.put("codes", codes == null ? List.of() : Arrays.asList(codes));
-        entry.put("message", error.getDefaultMessage());
-        return entry;
     }
 
     private static String detailFor(int errorCount) {
