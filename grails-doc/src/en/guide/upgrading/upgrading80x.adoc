@@ -1183,11 +1183,10 @@ class BootStrap {
 }
 ----
 
-Select the configuration independently for `render` or `respond`:
+Select the configuration per response with `respond`:
 
 [source,groovy]
 ----
-render book, jsonConfiguration: 'deep'
 respond book, jsonConfiguration: 'deep'
 ----
 

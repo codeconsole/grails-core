@@ -46,7 +46,6 @@ import grails.web.mime.MimeType
 import grails.web.mime.MimeUtility
 import grails.web.pages.GrailsLayoutSelector
 import grails.web.pages.GrailsRenderViewMutator
-import grails.web.render.NamedJsonRenderer
 import org.grails.gsp.GroovyPageTemplate
 import org.grails.io.support.SpringIOUtils
 import org.grails.web.json.JSONElement
@@ -93,26 +92,12 @@ import static org.grails.plugins.web.controllers.metaclass.RenderDynamicMethod.T
 @CompileStatic
 trait ResponseRenderer extends WebAttributes {
 
-    static final String ARGUMENT_JSON_CONFIGURATION = 'jsonConfiguration'
-
     private Collection<ActionResultTransformer> actionResultTransformers = []
 
     private MimeUtility mimeUtility
     private GrailsRenderViewMutator grailsRenderViewMutator
     private GrailsLayoutSelector grailsLayoutSelector
     private GrailsPluginManager pluginManager
-    private NamedJsonRenderer namedJsonRenderer
-
-    @Generated
-    @Autowired(required = false)
-    void setNamedJsonRenderer(NamedJsonRenderer namedJsonRenderer) {
-        this.namedJsonRenderer = namedJsonRenderer
-    }
-
-    @Generated
-    NamedJsonRenderer getNamedJsonRenderer() {
-        return namedJsonRenderer
-    }
 
     @Generated
     @Autowired(required = false)
@@ -156,39 +141,6 @@ trait ResponseRenderer extends WebAttributes {
         }
         catch (IOException e) {
             throw new ControllerExecutionException('I/O error obtaining response writer: ' + e.getMessage(), e)
-        }
-    }
-
-    /**
-     * Renders an object with a named Jackson configuration.
-     *
-     * @param argMap render arguments, including {@code jsonConfiguration}
-     * @param object object to render
-     */
-    @Generated
-    void render(Map argMap, Object object) {
-        Object configuration = argMap.get(ARGUMENT_JSON_CONFIGURATION)
-        if (configuration == null) {
-            throw new IllegalArgumentException("Argument [$ARGUMENT_JSON_CONFIGURATION] is required when rendering an object.")
-        }
-        String configurationName = configuration.toString()
-        if (namedJsonRenderer == null || !namedJsonRenderer.contains(configurationName)) {
-            throw new IllegalArgumentException("Named JSON configuration [$configurationName] is not registered.")
-        }
-
-        GrailsWebRequest webRequest = (GrailsWebRequest) RequestContextHolder.currentRequestAttributes()
-        HttpServletResponse response = webRequest.currentResponse
-        handleStatusArgument(argMap, webRequest, response)
-        if (!applyContentType(response, argMap, object, false)) {
-            setContentType(response, MimeType.JSON.name, DEFAULT_ENCODING)
-        }
-        try {
-            namedJsonRenderer.render(configurationName, object, response.writer)
-            response.writer.flush()
-            webRequest.renderView = false
-        }
-        catch (IOException e) {
-            throw new ControllerExecutionException("I/O error rendering named JSON configuration [$configurationName].", e)
         }
     }
 
