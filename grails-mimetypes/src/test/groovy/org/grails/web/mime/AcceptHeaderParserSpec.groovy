@@ -167,6 +167,14 @@ grails.mime.types = [ xml: ['text/xml', 'application/xml'],
         mimeTypes*.extension == ['xml', 'html']
     }
 
+    void "a lenient quality value is still recognised when a space precedes the parameter"() {
+        when: "Spring rejects the header, so the lenient path parses it"
+        MimeType[] mimeTypes = getAcceptHeaderParser().parse('text/html ; q=2.0')
+
+        then: "the media type name is trimmed, so it still matches the configured types"
+        mimeTypes*.extension == ['html']
+    }
+
     void testAcceptHeaderWithQNumberOrdering() {
 
         when:
