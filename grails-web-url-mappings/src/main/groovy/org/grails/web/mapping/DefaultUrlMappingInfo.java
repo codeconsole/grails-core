@@ -205,6 +205,25 @@ public class DefaultUrlMappingInfo extends AbstractUrlMappingInfo {
                 namespace instanceof Closure;
     }
 
+    @Override
+    public boolean isNameResolutionRequestDependent() {
+        return isRequestDependent(controllerName) || isRequestDependent(actionName) ||
+                isRequestDependent(namespace) || isRequestDependent(viewName);
+    }
+
+    /**
+     * A name captured from the URI is held by this instance, so resolving it needs nothing from the
+     * request. A name computed by a closure the mapping supplied reads whatever that closure reaches
+     * for, which is typically the parameters of the current request. A name selected by HTTP method
+     * reads the method from the request directly, which configuring it does not affect.
+     *
+     * @param name The controller, action, namespace or view name held by this instance
+     * @return true if resolving the name needs the request to have been configured
+     */
+    private static boolean isRequestDependent(Object name) {
+        return name instanceof Closure && !(name instanceof RuntimeConstraintEvaluator);
+    }
+
     public String getViewName() {
         return evaluateNameForValue(viewName);
     }
