@@ -78,6 +78,10 @@ dependencies {
     // action binds the way it does in a running application rather than building a binder per call.
     implementation project(':grails-web-databinding')
     implementation project(':grails-mimetypes')
+    // GrailsWebMockUtil, which binds a GrailsWebRequest for the benchmarks that measure a request path.
+    // It lives in grails-web-common's test fixtures, so it is consumed the same way the framework modules'
+    // own test suites consume it.
+    implementation testFixtures(project(':grails-web-common'))
     implementation 'org.apache.groovy:groovy'
 
     // ObservationRegistry, which GrailsInterceptorHandlerInterceptorAdapter branches on
