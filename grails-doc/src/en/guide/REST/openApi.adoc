@@ -1,0 +1,84 @@
+Grails applications can publish an https://www.openapis.org/[OpenAPI] description of their REST
+endpoints and browse it with Swagger UI.
+
+springdoc-openapi builds its document from Spring MVC handler methods. Grails dispatches through its
+own URL mappings instead, so springdoc on its own produces a document with no paths. The optional
+`grails-openapi` module supplies those paths from the application's URL mappings.
+
+==== Getting Started
+
+Add the module, and add the springdoc Swagger UI starter if the browsable UI is also wanted:
+
+[source,groovy]
+----
+dependencies {
+    implementation 'org.apache.grails:grails-openapi'
+    implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui'
+}
+----
+
+Grails serves static resources under `/static/**` and disables Spring Boot's catch-all resource
+handler by default. Swagger UI needs that handler, so re-enable it:
+
+[source,yaml]
+----
+spring:
+    web:
+        resources:
+            add-mappings: true
+----
+
+If the application declares a catch-all URL mapping that resolves to a view or a URI, exclude the
+springdoc paths so they reach Spring MVC:
+
+[source,groovy]
+----
+class UrlMappings {
+    static excludes = ['/swagger-ui/**', '/v3/api-docs/**']
+}
+----
+
+The document is then served from `/v3/api-docs` and the UI from `/swagger-ui/index.html`.
+
+==== What Is Documented
+
+Every URL mapping that names a controller statically becomes a path. A `resources` mapping
+contributes each of its generated HTTP methods:
+
+[source,groovy]
+----
+class UrlMappings {
+    static mappings = {
+        "/books"(resources: 'book')
+    }
+}
+----
+
+produces `GET` and `POST` on `/books`, and `GET`, `PUT`, `PATCH` and `DELETE` on `/books/{id}`.
+
+URL variables become OpenAPI path parameters, so `"/books/$id"` is documented as `/books/{id}`. The
+optional `.format` extension Grails appends to REST mappings is omitted, because OpenAPI describes
+response formats through content types rather than the path.
+
+Two kinds of mapping are not documented in full:
+
+* Mappings whose controller is only known per request - such as the default
+  `"/$controller/$action?/$id?"` mapping - are skipped, because their controller and action are
+  resolved per request rather than declared.
+* A mapping that accepts any HTTP method is documented as `GET`, because OpenAPI requires a
+  concrete operation.
+
+==== Customizing the Document
+
+The module contributes paths through the springdoc `OpenApiCustomizer` interface, and applications
+can register further customizers of their own. Document level information is configured the usual
+springdoc way:
+
+[source,yaml]
+----
+springdoc:
+    api-docs:
+        path: /v3/api-docs
+    swagger-ui:
+        path: /swagger-ui.html
+----

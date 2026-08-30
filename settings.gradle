@@ -129,6 +129,7 @@ include(
         'grails-interceptors',
         'grails-logging',
         'grails-mimetypes',
+        'grails-openapi',
         'grails-rest-transforms',
         'grails-scaffolding',
         'grails-services',
