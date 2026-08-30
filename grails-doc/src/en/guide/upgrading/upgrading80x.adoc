@@ -3177,17 +3177,29 @@ sensitive request data. Applications that deliberately need those values can def
 
 ==== 56. Spring HATEOAS HAL JSON Is Optional
 
-Applications that want Spring HATEOAS representation models can add the optional integration without
-adding Spring HATEOAS to every Grails web application:
+Applications that want Spring HATEOAS representation models add Spring Boot's starter, exactly as a
+plain Spring Boot application does:
 
 [source,groovy]
 ----
 dependencies {
-    implementation 'org.apache.grails:grails-spring-hateoas'
+    implementation 'org.springframework.boot:spring-boot-starter-hateoas'
 }
 ----
 
-The module provides a `GrailsSpringHateoasAdapter` bean. Its `toEntityModel(content, links)` method
-copies links created through the existing `grails.rest.Link` API into a Spring HATEOAS `EntityModel`.
-Return that model through the existing `respond()` API and Spring MVC's configured HAL JSON converter
-handles the response. Existing Grails HAL renderers remain available for compatibility.
+Boot's `HypermediaAutoConfiguration` registers the HAL message converter, so building an
+`EntityModel` and returning it through the existing `respond()` API is enough:
+
+[source,groovy]
+----
+import org.springframework.hateoas.EntityModel
+import org.springframework.hateoas.Link
+
+def show(Book book) {
+    respond EntityModel.of(book).add(
+            Link.of("/book/${book.id}", 'self').withTitle('Book'))
+}
+----
+
+Spring HATEOAS `Link` supports the same attributes as `grails.rest.Link`, including `title`, `type`,
+`hreflang` and `deprecation`. Existing Grails HAL renderers remain available for compatibility.

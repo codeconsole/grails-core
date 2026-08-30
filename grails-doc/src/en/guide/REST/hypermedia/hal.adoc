@@ -127,7 +127,8 @@ Content-Type: application/hal+json;charset=ISO-8859-1
 
 HAL XML renderers are deprecated since Grails 8.0 and will be removed in a future major release. Existing
 clients can retain them temporarily by adding the optional `grails-xml` module. New development should
-use HAL JSON, either through the Grails HAL JSON renderer or the optional `grails-spring-hateoas` module.
+use HAL JSON, either through the Grails HAL JSON renderer or Spring HATEOAS via
+`spring-boot-starter-hateoas`.
 
 
 ==== Rendering Collections Using HAL

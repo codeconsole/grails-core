@@ -134,7 +134,6 @@ include(
         'grails-services',
         'grails-shell-cli',
         'grails-spring',
-        'grails-spring-hateoas',
         'grails-test-core',
         'grails-undertow',
         'grails-undertow-spring-boot',
