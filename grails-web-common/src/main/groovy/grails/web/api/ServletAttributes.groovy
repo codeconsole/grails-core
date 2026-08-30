@@ -45,7 +45,7 @@ trait ServletAttributes implements WebAttributes {
 
     @Generated
     HttpServletRequest getRequest() {
-        currentRequestAttributes().getRequest()
+        currentRequestAttributes().getCurrentRequest()
     }
 
     @Generated

@@ -119,7 +119,11 @@ class GrailsDispatcherServlet extends DispatcherServlet implements ServletContex
                 // an attribute rather than by substituting a wrapper for it. HiddenHttpMethod.effectiveMethod
                 // reads it, which is how allowedMethods sees the same method the URL mappings matched on.
                 request.setAttribute(HiddenHttpMethod.OVERRIDDEN_METHOD_ATTRIBUTE, override)
-                return HiddenHttpMethod.wrap(override, currentRequest)
+                HttpServletRequest wrapped = HiddenHttpMethod.wrap(override, currentRequest)
+                // So that the request an application reads reports the same method, whichever mode applied
+                // the override: the servlet filter wraps before the request is bound, the dispatcher after.
+                GrailsWebRequest.lookup(request)?.setOverriddenMethodRequest(wrapped)
+                return wrapped
             }
         }
         return currentRequest
