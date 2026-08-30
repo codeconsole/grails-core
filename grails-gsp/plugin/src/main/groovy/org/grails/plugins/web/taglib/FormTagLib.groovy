@@ -38,6 +38,7 @@ import org.springframework.web.servlet.support.RequestDataValueProcessor
 
 import grails.artefact.TagLibrary
 import grails.config.Config
+import grails.compiler.GrailsCompileStatic
 import grails.core.support.GrailsConfigurationAware
 import grails.gsp.TagLib
 import grails.web.mapping.LinkGenerator
@@ -49,6 +50,7 @@ import org.grails.encoder.Encoder
 import org.grails.plugins.web.GrailsTagDateHelper
 import org.grails.taglib.TagOutput
 import org.grails.web.servlet.mvc.SynchronizerTokensHolder
+import org.grails.web.util.HiddenHttpMethod
 
 /**
  * Tags for working with form controls.
@@ -88,6 +90,10 @@ class FormTagLib implements ApplicationContextAware, InitializingBean, TagLibrar
 
     // Set if Spring Security is being used and the CsrfFilter is in the Filter Chain
     Class<?> springSecurityCsrfTokenClass
+
+    // Whether a servlet filter rewrites the request method. No filter is registered by default as of
+    // Grails 8, so the field defaults to false.
+    private boolean hiddenHttpMethodFilterEnabled = false
 
     void afterPropertiesSet() {
         if (applicationContext.containsBean('requestDataValueProcessor')) {
@@ -510,7 +516,12 @@ class FormTagLib implements ApplicationContextAware, InitializingBean, TagLibrar
             hiddenFieldImpl(writer, [name: 'execution', value: request['flowExecutionKey']])
         }
 
-        if (notGet && httpMethod != HttpMethod.POST) {
+        // Emitted only where something still reads it. With the hidden method filter registered that is any
+        // method a browser cannot submit; without it only DELETE, because a POST to the member URL already
+        // reaches update -- PUT and PATCH resolve to the same action and need no parameter to distinguish
+        // them, while delete and update share a URL and do.
+        if (notGet && httpMethod != HttpMethod.POST &&
+                (hiddenHttpMethodFilterEnabled || httpMethod == HttpMethod.DELETE)) {
             hiddenFieldImpl(writer, [name: '_method', value: httpMethod.toString()])
         }
         if (notGet && springSecurityCsrfTokenClass) {
@@ -1575,9 +1586,11 @@ class FormTagLib implements ApplicationContextAware, InitializingBean, TagLibrar
     }
 
     @Override
+    @GrailsCompileStatic
     void setConfiguration(Config co) {
         // Some attributes can be treated as boolean, but must be converted to the
         // expected value.
         booleanAttributes = co.getProperty('grails.tags.booleanToAttributes', List, DEFAULT_BOOLEAN_ATTRIBUTES)
+        hiddenHttpMethodFilterEnabled = HiddenHttpMethod.isServletFilterMode(co)
     }
 }
