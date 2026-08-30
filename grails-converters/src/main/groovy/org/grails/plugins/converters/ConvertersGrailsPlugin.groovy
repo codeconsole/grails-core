@@ -72,7 +72,10 @@ class ConvertersGrailsPlugin extends Plugin {
             }
             registry.registerBean('namedJsonConfigurationRegistry', NamedJsonConfigurationRegistry) {
                 it.supplier {
-                    new NamedJsonConfigurationRegistry(it.bean(JsonMapper))
+                    // Boot's JsonMapper is absent outside a Jackson auto-configured context, such as a
+                    // unit test slice, so fall back to a plain mapper rather than failing the context.
+                    JsonMapper jsonMapper = it.beanProvider(JsonMapper).getIfAvailable() ?: JsonMapper.builder().build()
+                    new NamedJsonConfigurationRegistry(jsonMapper)
                 }
             }
             registry.registerBean('namedJsonRenderer', JacksonNamedJsonRenderer) {

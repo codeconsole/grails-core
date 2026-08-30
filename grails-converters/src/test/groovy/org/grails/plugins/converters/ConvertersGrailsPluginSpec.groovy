@@ -26,6 +26,7 @@ import grails.converters.JSON
 import grails.converters.json.NamedJsonConfigurationRegistry
 import org.grails.web.converters.configuration.ConvertersConfigurationInitializer
 import org.grails.web.converters.configuration.ObjectMarshallerRegisterer
+import org.grails.web.converters.jackson.JacksonNamedJsonRenderer
 import org.grails.web.converters.marshaller.json.ValidationErrorsMarshaller as JsonErrorsMarshaller
 
 import spock.lang.Specification
@@ -48,6 +49,28 @@ class ConvertersGrailsPluginSpec extends Specification {
             containsBeanDefinition('namedJsonRenderer')
             containsBeanDefinition('errorsJsonMarshallerRegisterer')
         }
+    }
+
+    void "the named JSON configuration registry is created without a Boot JsonMapper"() {
+        when: "the bean is instantiated in a context that has no JsonMapper, such as a unit test slice"
+        def configurationRegistry = beanFactory.getBean('namedJsonConfigurationRegistry', NamedJsonConfigurationRegistry)
+
+        then: "it falls back to a plain mapper instead of failing the application context"
+        configurationRegistry != null
+
+        and: "named configurations still register and serialize"
+        configurationRegistry.register('deep') { it.attribute('depth', 'deep') }
+        configurationRegistry.contains('deep')
+        configurationRegistry.writeValueAsString('deep', [title: 'Grails']) == '{"title":"Grails"}'
+    }
+
+    void "the named JSON renderer is created without a Boot JsonMapper"() {
+        when:
+        def renderer = beanFactory.getBean('namedJsonRenderer', JacksonNamedJsonRenderer)
+
+        then:
+        renderer != null
+        !renderer.contains('absent')
     }
 
     void "the errors marshaller registerers use the named errors marshaller beans"() {
