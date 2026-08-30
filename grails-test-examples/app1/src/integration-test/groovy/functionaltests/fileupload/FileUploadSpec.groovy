@@ -330,12 +330,27 @@ class FileUploadSpec extends Specification implements HttpClientSupport {
         when:
         def response = httpPostMultipart('/fileUploadTest/uploadWithMethodOverride', body)
 
-        then:
+        then: 'the action is declared allowedMethods PUT, so reaching it at all is the override doing its work'
         response.assertJsonContains(200, [
                 success : true,
-                method  : 'PUT',
                 filename: 'override.txt'
         ])
+
+        and: 'while the request reports the method it actually arrived as'
+        response.json().method == 'POST'
+    }
+
+    def "without the override the same POST is refused"() {
+        given: 'the same upload, with nothing asking for a different method'
+        def body = MultipartBody.builder()
+                .addPart('file', 'override.txt', 'text/plain', 'content'.bytes)
+                .build()
+
+        when:
+        def response = httpPostMultipart('/fileUploadTest/uploadWithMethodOverride', body)
+
+        then: 'allowedMethods rejects it, which is what makes the test above meaningful'
+        response.assertStatus(405)
     }
 
     def "upload xml file with content"() {
