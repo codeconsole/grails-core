@@ -35,6 +35,8 @@ import org.grails.web.converters.configuration.ConvertersConfigurationHolder
 import org.grails.web.converters.configuration.XmlConvertersConfigurationInitializer
 
 import spock.lang.Specification
+
+import static java.nio.charset.StandardCharsets.UTF_8
 import spock.lang.Unroll
 
 class SpringXmlRendererSpec extends Specification {
@@ -89,7 +91,7 @@ class SpringXmlRendererSpec extends Specification {
         then:
         1 * first.canWrite(XmlGreeting, MediaType.APPLICATION_XML) >> false
         1 * second.canWrite(XmlGreeting, MediaType.APPLICATION_XML) >> true
-        1 * second.write(_, MediaType.APPLICATION_XML, _)
+        1 * second.write(_, new MediaType(MediaType.APPLICATION_XML, UTF_8), _)
         0 * _
     }
 

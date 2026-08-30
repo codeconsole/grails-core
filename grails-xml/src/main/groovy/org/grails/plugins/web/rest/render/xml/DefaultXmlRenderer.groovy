@@ -38,6 +38,7 @@ import grails.rest.render.RendererRegistry
 import grails.util.GrailsWebUtil
 import grails.web.mime.MimeType
 import org.grails.plugins.web.rest.render.html.DefaultHtmlRenderer
+import org.grails.plugins.web.rest.render.WriterOutputStream
 import org.grails.web.gsp.io.GrailsConventionGroovyPageLocator
 
 /**
@@ -150,23 +151,28 @@ class DefaultXmlRenderer<T> implements Renderer<T> {
 
     private void renderWithSpringConverter(
             HttpMessageConverter<Object> converter, Object object, RenderContext context) {
-        ByteArrayOutputStream output = new ByteArrayOutputStream()
-        HttpOutputMessage message = new HttpOutputMessage() {
-            private final HttpHeaders headers = new HttpHeaders()
+        // Write in the configured encoding rather than the converter's default so the bytes it
+        // produces and the characters decoded back out agree, and stream them through instead of
+        // holding the whole response in memory.
+        Charset charset = Charset.forName(encoding)
+        MediaType contentType = new MediaType(
+                MediaType.parseMediaType((context.acceptMimeType ?: MimeType.XML).name), charset)
+        WriterOutputStream.writeThrough(context.writer, charset) { OutputStream body ->
+            HttpOutputMessage message = new HttpOutputMessage() {
+                private final HttpHeaders headers = new HttpHeaders()
 
-            @Override
-            OutputStream getBody() {
-                return output
-            }
+                @Override
+                OutputStream getBody() {
+                    return body
+                }
 
-            @Override
-            HttpHeaders getHeaders() {
-                return headers
+                @Override
+                HttpHeaders getHeaders() {
+                    return headers
+                }
             }
+            converter.write(object, contentType, message)
         }
-        MediaType mediaType = MediaType.parseMediaType((context.acceptMimeType ?: MimeType.XML).name)
-        converter.write(object, mediaType, message)
-        context.writer.write(output.toString(Charset.forName(encoding)))
     }
 
     /**

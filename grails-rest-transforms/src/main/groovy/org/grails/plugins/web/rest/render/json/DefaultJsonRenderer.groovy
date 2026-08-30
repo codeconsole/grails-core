@@ -39,6 +39,7 @@ import grails.rest.render.errors.ValidationProblemDetailFactory
 import grails.util.GrailsWebUtil
 import grails.web.mime.MimeType
 import grails.web.render.NamedJsonRenderer
+import org.grails.plugins.web.rest.render.WriterOutputStream
 import org.grails.plugins.web.rest.render.html.DefaultHtmlRenderer
 import org.grails.web.gsp.io.GrailsConventionGroovyPageLocator
 
@@ -178,22 +179,23 @@ class DefaultJsonRenderer<T> implements Renderer<T> {
         // produces and the characters decoded back out agree. A media type carries no charset here,
         // so Jackson would otherwise emit UTF-8 and any other configured encoding would mis-decode.
         Charset charset = Charset.forName(encoding)
-        ByteArrayOutputStream output = new ByteArrayOutputStream()
-        HttpOutputMessage message = new HttpOutputMessage() {
-            private final HttpHeaders headers = new HttpHeaders()
+        MediaType contentType = new MediaType(mediaType, charset)
+        WriterOutputStream.writeThrough(context.writer, charset) { OutputStream body ->
+            HttpOutputMessage message = new HttpOutputMessage() {
+                private final HttpHeaders headers = new HttpHeaders()
 
-            @Override
-            OutputStream getBody() {
-                return output
-            }
+                @Override
+                OutputStream getBody() {
+                    return body
+                }
 
-            @Override
-            HttpHeaders getHeaders() {
-                return headers
+                @Override
+                HttpHeaders getHeaders() {
+                    return headers
+                }
             }
+            converter.write(object, contentType, message)
         }
-        converter.write(object, new MediaType(mediaType, charset), message)
-        context.writer.write(output.toString(charset))
         return true
     }
 
