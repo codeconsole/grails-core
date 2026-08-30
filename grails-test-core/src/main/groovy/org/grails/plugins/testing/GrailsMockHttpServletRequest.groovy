@@ -44,6 +44,7 @@ import org.springframework.web.multipart.MultipartFile
 import org.springframework.web.multipart.MultipartHttpServletRequest
 
 import grails.converters.JSON
+import grails.converters.XML
 import grails.web.mime.MimeType
 import org.grails.web.servlet.mvc.GrailsWebRequest
 import org.grails.web.util.GrailsApplicationAttributes
@@ -138,22 +139,46 @@ class GrailsMockHttpServletRequest extends MockHttpServletRequest implements Mul
             setContent(sourceXml.getBytes(StandardCharsets.UTF_8))
         }
         else {
-            Class<?> xmlClass
-            try {
-                xmlClass = getClass().classLoader.loadClass('grails.converters.XML')
-            }
-            catch (ClassNotFoundException ignored) {
-                throw new IllegalStateException(
-                        'Object-to-XML conversion requires org.apache.grails:grails-xml on the test classpath',
-                        ignored
-                )
-            }
-            Object xml = xmlClass.isInstance(sourceXml) ? sourceXml : xmlClass.getConstructor(Object).newInstance(sourceXml)
-            setContent(xml.toString().getBytes(StandardCharsets.UTF_8))
+            setContent(convertToXml(sourceXml).toString().getBytes(StandardCharsets.UTF_8))
         }
 
         GrailsWebRequest webRequest = (GrailsWebRequest) getAttribute('org.codehaus.groovy.grails.WEB_REQUEST')
         webRequest?.informParameterCreationListeners()
+    }
+
+    /**
+     * grails-xml is optional, so these touch {@code grails.converters.XML} only inside the method
+     * body, never in a signature: Groovy builds a class's metaclass by reflecting over method
+     * signatures, and a signature naming an absent class leaves the metaclass incomplete. Keeping
+     * the reference to the executing instruction means the failure surfaces here, with a usable
+     * message, only when object-to-XML conversion is actually requested.
+     */
+    private static Object convertToXml(Object sourceXml) {
+        try {
+            return sourceXml instanceof XML ? sourceXml : new XML(sourceXml)
+        }
+        catch (NoClassDefFoundError e) {
+            throw missingXmlModule(e)
+        }
+    }
+
+    // Statically compiled so that XML binds as a class. Left dynamic, Groovy resolves the bare
+    // name as a property read, which routes back through getXML() and recurses.
+    @CompileStatic
+    private static Object parseXml(GrailsMockHttpServletRequest request) {
+        try {
+            return XML.parse(request)
+        }
+        catch (NoClassDefFoundError e) {
+            throw missingXmlModule(e)
+        }
+    }
+
+    private static IllegalStateException missingXmlModule(Throwable cause) {
+        return new IllegalStateException(
+                'Object-to-XML conversion requires org.apache.grails:grails-xml on the test classpath',
+                cause
+        )
     }
 
     void setXML(Object sourceXml) {
@@ -243,7 +268,7 @@ class GrailsMockHttpServletRequest extends MockHttpServletRequest implements Mul
      */
     def getXML() {
         if (!cachedXml) {
-            cachedXml = GrailsMockHttpServletRequest.classLoader.loadClass('grails.converters.XML').parse(this)
+            cachedXml = parseXml(this)
         }
         return cachedXml
     }
@@ -255,7 +280,7 @@ class GrailsMockHttpServletRequest extends MockHttpServletRequest implements Mul
      */
     def getJSON() {
         if (!cachedJson) {
-            cachedJson = GrailsMockHttpServletRequest.classLoader.loadClass('grails.converters.JSON').parse(this)
+            cachedJson = JSON.parse(this)
         }
         return cachedJson
     }
