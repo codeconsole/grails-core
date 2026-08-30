@@ -30,7 +30,6 @@ import org.springframework.context.support.PropertySourcesPlaceholderConfigurer
 import org.springframework.core.env.MapPropertySource
 import org.springframework.validation.BeanPropertyBindingResult
 import org.springframework.validation.Errors
-import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerAdapter
 import spock.lang.Specification
 
 class DefaultRendererRegistrySpec extends Specification {
@@ -84,9 +83,9 @@ class DefaultRendererRegistrySpec extends Specification {
         given:
         def first = Stub(HttpMessageConverter)
         def second = Stub(HttpMessageConverter)
-        def adapter = new RequestMappingHandlerAdapter()
-        adapter.messageConverters = [first, second]
-        def registry = new DefaultRendererRegistry(requestMappingHandlerAdapter: adapter, useSpringJson: true)
+        def holder = new SpringMessageConverters()
+        holder.extendMessageConverters([first, second])
+        def registry = new DefaultRendererRegistry(springMessageConverters: holder, useSpringJson: true)
         registry.initialize()
 
         when:
@@ -94,7 +93,7 @@ class DefaultRendererRegistrySpec extends Specification {
 
         then:
         renderer.useSpringJson
-        renderer.springHttpMessageConverters == [first, second]
+        renderer.springHttpMessageConvertersSupplier.get() == [first, second]
     }
 
     void 'an application supplied validation problem factory reaches the error renderers'() {
@@ -109,6 +108,26 @@ class DefaultRendererRegistrySpec extends Specification {
                 .validationProblemDetailFactory.is(factory)
         registry.findContainerRenderer(MimeType.JSON, Errors, errors)
                 .validationProblemDetailFactory.is(factory)
+    }
+
+    void 'converters are resolved when a response is written, not when the registry is built'() {
+        given: "a holder that MVC has not populated yet, as during bean creation"
+        def holder = new SpringMessageConverters()
+        def registry = new DefaultRendererRegistry(springMessageConverters: holder, useSpringJson: true)
+
+        when: "the registry initializes before MVC has contributed any converter"
+        registry.initialize()
+        def renderer = registry.findRenderer(MimeType.JSON, new URL('https://grails.apache.org'))
+
+        then: "nothing was captured at build time"
+        renderer.springHttpMessageConvertersSupplier.get() == []
+
+        when: "MVC finishes configuring the converters"
+        def converter = Stub(HttpMessageConverter)
+        holder.extendMessageConverters([converter])
+
+        then: "the already-built renderer sees them"
+        renderer.springHttpMessageConvertersSupplier.get() == [converter]
     }
 
     void 'Spring JSON rendering can be disabled during migration'() {

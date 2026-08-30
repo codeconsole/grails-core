@@ -37,6 +37,7 @@ import grails.util.GrailsUtil
 import org.grails.core.artefact.ControllerArtefactHandler
 import org.grails.core.artefact.DomainClassArtefactHandler
 import org.grails.plugins.web.rest.render.DefaultRendererRegistry
+import org.grails.plugins.web.rest.render.SpringMessageConverters
 
 /**
  * @since 2.3
@@ -66,6 +67,7 @@ class RestResponderGrailsPlugin extends Plugin {
                 }
             }
             registry.registerBean('validationProblemDetailFactory', ValidationProblemDetailFactory)
+            registry.registerBean('springMessageConverters', SpringMessageConverters)
         }
     }
 

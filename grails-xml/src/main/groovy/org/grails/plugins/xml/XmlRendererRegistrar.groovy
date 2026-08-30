@@ -18,15 +18,18 @@
  */
 package org.grails.plugins.xml
 
+import java.util.function.Supplier
+
 import groovy.transform.CompileStatic
 
 import org.springframework.beans.factory.InitializingBean
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.beans.factory.annotation.Value
+import org.springframework.http.converter.HttpMessageConverter
 import org.springframework.validation.Errors
-import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerAdapter
 
 import grails.rest.render.RendererRegistry
+import org.grails.plugins.web.rest.render.SpringMessageConverters
 import org.grails.plugins.web.rest.render.xml.DefaultXmlRenderer
 import org.grails.web.gsp.io.GrailsConventionGroovyPageLocator
 
@@ -45,22 +48,27 @@ class XmlRendererRegistrar implements InitializingBean {
     GrailsConventionGroovyPageLocator groovyPageLocator
 
     @Autowired(required = false)
-    RequestMappingHandlerAdapter requestMappingHandlerAdapter
+    SpringMessageConverters springMessageConverters
 
     @Value('${grails.converters.encoding:UTF-8}')
     String encoding
+
+    private Supplier<List<HttpMessageConverter<?>>> converterSupplier() {
+        SpringMessageConverters holder = springMessageConverters
+        return holder == null ? null : (Supplier<List<HttpMessageConverter<?>>>) holder::getConverters
+    }
 
     @Override
     void afterPropertiesSet() {
         DefaultXmlRenderer<Object> defaultRenderer =
                 new DefaultXmlRenderer<Object>(Object, groovyPageLocator, rendererRegistry)
         defaultRenderer.encoding = encoding
-        defaultRenderer.springHttpMessageConverters = requestMappingHandlerAdapter?.messageConverters ?: []
+        defaultRenderer.springHttpMessageConvertersSupplier = converterSupplier()
         rendererRegistry.addDefaultRenderer(defaultRenderer)
 
         DefaultXmlRenderer<Errors> errorsRenderer = new DefaultXmlRenderer<Errors>(Errors)
         errorsRenderer.encoding = encoding
-        errorsRenderer.springHttpMessageConverters = requestMappingHandlerAdapter?.messageConverters ?: []
+        errorsRenderer.springHttpMessageConvertersSupplier = converterSupplier()
         rendererRegistry.addContainerRenderer(Object, errorsRenderer)
     }
 }

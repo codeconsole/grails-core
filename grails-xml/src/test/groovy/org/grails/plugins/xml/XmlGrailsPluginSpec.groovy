@@ -24,11 +24,11 @@ import org.springframework.core.env.StandardEnvironment
 import org.springframework.validation.BeanPropertyBindingResult
 import org.springframework.validation.Errors
 import org.springframework.http.converter.HttpMessageConverter
-import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerAdapter
 
 import grails.converters.XML
 import grails.web.mime.MimeType
 import org.grails.plugins.web.rest.render.DefaultRendererRegistry
+import org.grails.plugins.web.rest.render.SpringMessageConverters
 import org.grails.web.converters.configuration.ObjectMarshallerRegisterer
 import org.grails.web.converters.configuration.XmlConvertersConfigurationInitializer
 import org.grails.web.converters.marshaller.xml.ValidationErrorsMarshaller
@@ -74,12 +74,13 @@ class XmlGrailsPluginSpec extends Specification {
         given:
         def first = Stub(HttpMessageConverter)
         def second = Stub(HttpMessageConverter)
-        def adapter = new RequestMappingHandlerAdapter(messageConverters: [first, second])
+        def holder = new SpringMessageConverters()
+        holder.extendMessageConverters([first, second])
         def rendererRegistry = new DefaultRendererRegistry()
         rendererRegistry.initialize()
         def registrar = new XmlRendererRegistrar(
                 rendererRegistry: rendererRegistry,
-                requestMappingHandlerAdapter: adapter,
+                springMessageConverters: holder,
                 encoding: 'ISO-8859-1'
         )
 
@@ -89,7 +90,7 @@ class XmlGrailsPluginSpec extends Specification {
         then:
         with(rendererRegistry.findRenderer(MimeType.XML, new URL('https://grails.apache.org'))) {
             encoding == 'ISO-8859-1'
-            springHttpMessageConverters == [first, second]
+            springHttpMessageConvertersSupplier.get() == [first, second]
         }
         with(rendererRegistry.findContainerRenderer(
                 MimeType.XML,
@@ -97,7 +98,7 @@ class XmlGrailsPluginSpec extends Specification {
                 new BeanPropertyBindingResult('value', 'target')
         )) {
             encoding == 'ISO-8859-1'
-            springHttpMessageConverters == [first, second]
+            springHttpMessageConvertersSupplier.get() == [first, second]
         }
     }
 

@@ -32,7 +32,6 @@ import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.validation.BeanPropertyBindingResult
 import org.springframework.validation.Errors
-import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerAdapter
 
 import grails.core.support.proxy.ProxyHandler
 import grails.rest.render.ContainerRenderer
@@ -80,7 +79,7 @@ class DefaultRendererRegistry extends ClassAndMimeTypeRegistry<Renderer, Rendere
     String encoding = grails.util.GrailsWebUtil.DEFAULT_ENCODING
 
     @Autowired(required = false)
-    RequestMappingHandlerAdapter requestMappingHandlerAdapter
+    SpringMessageConverters springMessageConverters
 
     @Autowired(required = false)
     NamedJsonRenderer namedJsonRenderer
@@ -127,8 +126,8 @@ class DefaultRendererRegistry extends ClassAndMimeTypeRegistry<Renderer, Rendere
         if (validationProblemDetailFactory != null) {
             renderer.validationProblemDetailFactory = validationProblemDetailFactory
         }
-        if (requestMappingHandlerAdapter != null) {
-            renderer.springHttpMessageConverters = requestMappingHandlerAdapter.messageConverters
+        if (springMessageConverters != null) {
+            renderer.springHttpMessageConvertersSupplier = springMessageConverters::getConverters
         }
     }
 

@@ -19,6 +19,7 @@
 package org.grails.plugins.web.rest.render.json
 
 import java.nio.charset.Charset
+import java.util.function.Supplier
 
 import groovy.transform.CompileStatic
 
@@ -70,6 +71,12 @@ class DefaultJsonRenderer<T> implements Renderer<T> {
     HttpStatus errorsHttpStatus = HttpStatus.UNPROCESSABLE_ENTITY
     boolean useSpringJson
     List<HttpMessageConverter<?>> springHttpMessageConverters = []
+
+    /**
+     * Resolved when a response is written rather than when this renderer is built, so that
+     * obtaining the converters cannot force MVC initialization during bean creation.
+     */
+    Supplier<List<HttpMessageConverter<?>>> springHttpMessageConvertersSupplier
     ValidationProblemDetailFactory validationProblemDetailFactory = new ValidationProblemDetailFactory()
     NamedJsonRenderer namedJsonRenderer
 
@@ -161,14 +168,19 @@ class DefaultJsonRenderer<T> implements Renderer<T> {
         renderJson(converter, context)
     }
 
+    private List<HttpMessageConverter<?>> resolveSpringHttpMessageConverters() {
+        List<HttpMessageConverter<?>> supplied = springHttpMessageConvertersSupplier?.get()
+        return supplied ?: springHttpMessageConverters
+    }
+
     private boolean canUseSpringConverter(RenderContext context) {
-        return useSpringJson && springHttpMessageConverters && !namedConfiguration &&
+        return useSpringJson && resolveSpringHttpMessageConverters() && !namedConfiguration &&
                 !context.includes && !context.excludes
     }
 
     private boolean renderWithSpringConverter(Object object, MediaType mediaType, RenderContext context) {
         Class<?> objectType = object?.getClass() ?: Object
-        HttpMessageConverter<Object> converter = (HttpMessageConverter<Object>) springHttpMessageConverters.find {
+        HttpMessageConverter<Object> converter = (HttpMessageConverter<Object>) resolveSpringHttpMessageConverters().find {
             HttpMessageConverter<?> candidate -> candidate.canWrite(objectType, mediaType)
         }
         if (converter == null) {

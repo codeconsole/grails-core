@@ -19,6 +19,7 @@
 package org.grails.plugins.web.rest.render.xml
 
 import java.nio.charset.Charset
+import java.util.function.Supplier
 
 import groovy.transform.CompileStatic
 
@@ -63,6 +64,17 @@ class DefaultXmlRenderer<T> implements Renderer<T> {
     RendererRegistry rendererRegistry
 
     List<HttpMessageConverter<?>> springHttpMessageConverters = []
+
+    /**
+     * Resolved when a response is written rather than when this renderer is built, so that
+     * obtaining the converters cannot force MVC initialization during bean creation.
+     */
+    Supplier<List<HttpMessageConverter<?>>> springHttpMessageConvertersSupplier
+
+    private List<HttpMessageConverter<?>> resolveSpringHttpMessageConverters() {
+        List<HttpMessageConverter<?>> supplied = springHttpMessageConvertersSupplier?.get()
+        return supplied ?: springHttpMessageConverters
+    }
 
     String namedConfiguration
 
@@ -136,7 +148,7 @@ class DefaultXmlRenderer<T> implements Renderer<T> {
     }
 
     private HttpMessageConverter<Object> findSpringConverter(Object object, RenderContext context) {
-        if (!springHttpMessageConverters || namedConfiguration || context.includes || context.excludes) {
+        if (!resolveSpringHttpMessageConverters() || namedConfiguration || context.includes || context.excludes) {
             return null
         }
         if (object == null || object instanceof Errors || object instanceof Map || object instanceof Collection ||
@@ -144,7 +156,7 @@ class DefaultXmlRenderer<T> implements Renderer<T> {
             return null
         }
         MediaType mediaType = MediaType.parseMediaType((context.acceptMimeType ?: MimeType.XML).name)
-        return (HttpMessageConverter<Object>) springHttpMessageConverters.find { HttpMessageConverter<?> converter ->
+        return (HttpMessageConverter<Object>) resolveSpringHttpMessageConverters().find { HttpMessageConverter<?> converter ->
             converter.canWrite(object.getClass(), mediaType)
         }
     }
