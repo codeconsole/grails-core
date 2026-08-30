@@ -18,12 +18,14 @@
  */
 package org.grails.plugins.web.rest.render.json
 
+import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.http.converter.HttpMessageConverter
 import org.springframework.http.ProblemDetail
 import org.springframework.validation.BeanPropertyBindingResult
 import org.springframework.validation.Errors
 import org.springframework.validation.FieldError
+import org.springframework.validation.ObjectError
 
 import grails.core.DefaultGrailsApplication
 import grails.util.GrailsWebMockUtil
@@ -141,6 +143,29 @@ class DefaultJsonRendererSpec extends Specification {
         webRequest.response.status == 422
         webRequest.response.contentType == 'application/problem+json;charset=UTF-8'
         webRequest.response.contentAsString == '{"status":422,"title":"Validation failed"}'
+    }
+
+    void 'the problem body reports the same status the response is sent with'() {
+        given: "a renderer configured to answer validation failures with 400"
+        def converter = Mock(HttpMessageConverter)
+        def renderer = new DefaultJsonRenderer<Errors>(Errors)
+        renderer.useSpringJson = true
+        renderer.springHttpMessageConverters = [converter]
+        renderer.errorsHttpStatus = HttpStatus.BAD_REQUEST
+        def errors = new BeanPropertyBindingResult(new Object(), 'book')
+        errors.addError(new ObjectError('book', ['book.invalid'] as String[], null, 'Book is invalid'))
+        def webRequest = GrailsWebMockUtil.bindMockWebRequest()
+
+        when:
+        renderer.render(errors, new ServletRenderContext(webRequest))
+
+        then:
+        1 * converter.canWrite(ProblemDetail, MediaType.APPLICATION_PROBLEM_JSON) >> true
+        1 * converter.write({ ProblemDetail problem -> problem.status == 400 },
+                MediaType.APPLICATION_PROBLEM_JSON, _) >> { arguments ->
+            arguments[2].body.write('{"status":400}'.bytes)
+        }
+        webRequest.response.status == 400
     }
 }
 

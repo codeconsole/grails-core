@@ -22,6 +22,8 @@ import org.springframework.validation.BeanPropertyBindingResult
 import org.springframework.validation.FieldError
 import org.springframework.validation.ObjectError
 
+import org.springframework.http.HttpStatus
+
 import spock.lang.Specification
 
 class ValidationProblemDetailFactorySpec extends Specification {
@@ -47,6 +49,21 @@ class ValidationProblemDetailFactorySpec extends Specification {
                 [object: 'book', codes: ['book.invalid'], message: 'Book is invalid'],
         ]
         !entries.first().containsKey('rejectedValue')
+    }
+
+    void 'the problem status matches the status the response is sent with'() {
+        given: "a renderer configured to answer validation failures with 400"
+        def errors = new BeanPropertyBindingResult(new Object(), 'book')
+        errors.addError(new ObjectError('book', ['book.invalid'] as String[], null, 'Book is invalid'))
+
+        when:
+        def problem = new ValidationProblemDetailFactory().create(errors, HttpStatus.BAD_REQUEST)
+
+        then: "RFC 9457 requires the status member to agree with the HTTP status"
+        problem.status == 400
+
+        and: "the default overload still reports 422"
+        new ValidationProblemDetailFactory().create(errors).status == 422
     }
 
     void 'includes rejected values only when explicitly requested'() {

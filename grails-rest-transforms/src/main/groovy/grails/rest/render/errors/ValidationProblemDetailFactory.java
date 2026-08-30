@@ -26,6 +26,7 @@ import java.util.Map;
 import java.util.Objects;
 
 import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ProblemDetail;
 import org.springframework.validation.Errors;
 import org.springframework.validation.FieldError;
@@ -61,9 +62,23 @@ public final class ValidationProblemDetailFactory {
      * @return the validation problem detail
      */
     public ProblemDetail create(Errors errors) {
-        Objects.requireNonNull(errors, "errors");
+        return create(errors, HttpStatus.UNPROCESSABLE_CONTENT);
+    }
 
-        ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.UNPROCESSABLE_CONTENT);
+    /**
+     * Creates a problem for the given status containing stable, JSON-friendly validation error
+     * entries. RFC 9457 requires the {@code status} member to match the HTTP status code of the
+     * response, so callers that respond with a status other than 422 must pass it here.
+     *
+     * @param errors the validation errors
+     * @param status the status the response is sent with
+     * @return the validation problem detail
+     */
+    public ProblemDetail create(Errors errors, HttpStatusCode status) {
+        Objects.requireNonNull(errors, "errors");
+        Objects.requireNonNull(status, "status");
+
+        ProblemDetail problem = ProblemDetail.forStatus(status);
         problem.setTitle("Validation failed");
         problem.setDetail(detailFor(errors.getErrorCount()));
 

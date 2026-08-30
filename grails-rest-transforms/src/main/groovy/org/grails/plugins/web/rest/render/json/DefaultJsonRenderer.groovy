@@ -128,7 +128,8 @@ class DefaultJsonRenderer<T> implements Renderer<T> {
             return
         }
         if (!selectedConfiguration && canUseSpringConverter(context)) {
-            Object springValue = object instanceof Errors ? validationProblemDetailFactory.create((Errors) object) : object
+            Object springValue = object instanceof Errors ?
+                    validationProblemDetailFactory.create((Errors) object, errorsHttpStatus) : object
             MediaType mediaType = object instanceof Errors ?
                     MediaType.parseMediaType(PROBLEM_JSON.name) :
                     MediaType.parseMediaType(resolveMimeType(context).name)
