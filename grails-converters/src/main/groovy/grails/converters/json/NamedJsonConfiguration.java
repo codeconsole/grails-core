@@ -36,6 +36,7 @@ public final class NamedJsonConfiguration {
     private final SimpleModule module;
     private final Map<Object, Object> attributes = new LinkedHashMap<>();
     private Class<?> serializationView;
+    private volatile ObjectWriter writer;
 
     NamedJsonConfiguration(String name) {
         this.module = new SimpleModule("grails-json-" + name);
@@ -61,5 +62,24 @@ public final class NamedJsonConfiguration {
         ObjectWriter writer = serializationView == null ? configuredMapper.writer() :
                 configuredMapper.writerWithView(serializationView);
         return attributes.isEmpty() ? writer : writer.withAttributes(attributes);
+    }
+
+    /**
+     * Returns the writer for this configuration, deriving it from the given mapper once.
+     * Rebuilding a mapper is expensive, and this configuration is immutable after registration,
+     * so the derived writer is cached rather than rebuilt for every response.
+     */
+    ObjectWriter writer(JsonMapper mapper) {
+        ObjectWriter current = this.writer;
+        if (current == null) {
+            synchronized (this) {
+                current = this.writer;
+                if (current == null) {
+                    current = createWriter(mapper);
+                    this.writer = current;
+                }
+            }
+        }
+        return current;
     }
 }

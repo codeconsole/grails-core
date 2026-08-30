@@ -61,7 +61,7 @@ public final class NamedJsonConfigurationRegistry {
         if (configuration == null) {
             throw new IllegalArgumentException("Named JSON configuration [" + name + "] is not registered.");
         }
-        return configuration.createWriter(jsonMapper);
+        return configuration.writer(jsonMapper);
     }
 
     public String writeValueAsString(String name, Object value) {

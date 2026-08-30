@@ -60,6 +60,29 @@ class NamedJsonConfigurationRegistrySpec extends Specification {
         def error = thrown(IllegalArgumentException)
         error.message == 'Named JSON configuration [missing] is not registered.'
     }
+
+    void 'the writer for a configuration is derived once and reused'() {
+        given:
+        def registry = new NamedJsonConfigurationRegistry(JsonMapper.builder().build())
+        registry.register('deep') { it.attribute('depth', 'deep') }
+
+        expect: "rebuilding a mapper per response is expensive, so the writer is cached"
+        registry.writer('deep').is(registry.writer('deep'))
+    }
+
+    void 'a re-registered configuration derives a new writer'() {
+        given:
+        def registry = new NamedJsonConfigurationRegistry(JsonMapper.builder().build())
+        registry.register('deep') { it.attribute('depth', 'shallow') }
+        def first = registry.writer('deep')
+
+        when:
+        registry.register('deep') { it.attribute('depth', 'deep') }
+
+        then:
+        !registry.writer('deep').is(first)
+    }
+
 }
 
 class NamedJsonValue {
