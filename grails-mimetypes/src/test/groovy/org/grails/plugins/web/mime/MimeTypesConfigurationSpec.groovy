@@ -111,9 +111,11 @@ class MimeTypesConfigurationSpec extends Specification {
 
         expect:
         application.mainContext.getBeansOfType(GrailsContentNegotiationStrategy).isEmpty()
+
+        and: "the configurer still exposes the strategy so Grails format resolution can reach it"
         application.mainContext.getBean(MimeTypesConfiguration)
-                .grailsMimeTypesWebMvcConfigurer(new MimeTypesHolder(MimeType.createDefaults())) instanceof
-                GrailsMimeTypesWebMvcConfigurer
+                .grailsMimeTypesWebMvcConfigurer(new MimeTypesHolder(MimeType.createDefaults()))
+                .contentNegotiationStrategy instanceof GrailsContentNegotiationStrategy
     }
 
     private MimeType[] resolveMimeTypes(Map config, boolean mergeDefaults = false) {

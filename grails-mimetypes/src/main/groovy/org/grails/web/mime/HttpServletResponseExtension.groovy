@@ -191,9 +191,11 @@ class HttpServletResponseExtension {
             if (applicationContext == null && request.servletContext != null) {
                 applicationContext = WebApplicationContextUtils.getWebApplicationContext(request.servletContext)
             }
+            // The strategy is not a bean of its own so that Spring Security does not adopt it, so
+            // reach it through the configurer that holds it rather than by its own type.
             GrailsContentNegotiationStrategy strategy = applicationContext?.getBeanProvider(
-                    GrailsContentNegotiationStrategy
-            )?.getIfAvailable()
+                    GrailsMimeTypesWebMvcConfigurer
+            )?.getIfAvailable()?.contentNegotiationStrategy
             if (strategy == null) {
                 GrailsApplication application = applicationContext?.getBeanProvider(GrailsApplication)?.getIfAvailable()
                 if (application != null) {
