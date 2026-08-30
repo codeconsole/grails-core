@@ -36,19 +36,13 @@ dependencies {
 }
 ----
 
-Grails serves static resources under `/static/**` and disables Spring Boot's catch-all resource
-handler by default. Swagger UI needs that handler, so re-enable it:
+No further configuration is required. springdoc registers its own resource handlers, so Swagger UI
+is served even though Grails leaves Spring Boot's catch-all resource handler disabled, and the
+springdoc paths fall through the Grails URL mappings because they resolve to no controller.
 
-[source,yaml]
-----
-spring:
-    web:
-        resources:
-            add-mappings: true
-----
-
-If the application declares a catch-all URL mapping that resolves to a view or a URI, exclude the
-springdoc paths so they reach Spring MVC:
+An application whose URL mappings include a catch-all that resolves to a view or a URI - a
+single page application forwarding unmatched paths to an index view, for example - does need to let
+the springdoc paths through:
 
 [source,groovy]
 ----
