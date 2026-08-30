@@ -280,9 +280,16 @@ class GrailsMockHttpServletRequest extends MockHttpServletRequest implements Mul
      */
     def getJSON() {
         if (!cachedJson) {
-            cachedJson = JSON.parse(this)
+            cachedJson = parseJson(this)
         }
         return cachedJson
+    }
+
+    // Statically compiled so that JSON binds as a class. Left dynamic, Groovy resolves the bare
+    // name as a property read, which routes back through getJSON() and recurses.
+    @CompileStatic
+    private static Object parseJson(GrailsMockHttpServletRequest request) {
+        return JSON.parse(request)
     }
 
     /**
