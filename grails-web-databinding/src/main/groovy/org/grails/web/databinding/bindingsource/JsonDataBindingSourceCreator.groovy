@@ -23,6 +23,8 @@ import java.util.regex.Pattern
 import groovy.transform.CompileStatic
 
 import tools.jackson.core.JacksonException
+import tools.jackson.databind.DeserializationFeature
+import tools.jackson.databind.ObjectReader
 import tools.jackson.databind.json.JsonMapper
 
 import org.springframework.beans.factory.annotation.Autowired
@@ -52,6 +54,15 @@ class JsonDataBindingSourceCreator extends AbstractRequestBodyDataBindingSourceC
     @Autowired(required = false)
     JsonMapper jsonMapper = JsonMapper.builder().build()
 
+    /**
+     * Reads untyped JSON values. Decimals are read as {@link BigDecimal} so that binding a
+     * fractional value to a BigDecimal property keeps the digits the request sent; reading them
+     * as doubles first would round them before the binder ever saw them.
+     */
+    protected ObjectReader untypedReader() {
+        return jsonMapper.reader().forType(Object).with(DeserializationFeature.USE_BIG_DECIMAL_FOR_FLOATS)
+    }
+
     @Override
     MimeType[] getMimeTypes() {
         [MimeType.JSON, MimeType.TEXT_JSON] as MimeType[]
@@ -73,7 +84,7 @@ class JsonDataBindingSourceCreator extends AbstractRequestBodyDataBindingSourceC
     @Override
     protected CollectionDataBindingSource createCollectionBindingSource(Reader reader) {
 
-        Object jsonElement = jsonMapper.readValue(reader, Object)
+        Object jsonElement = untypedReader().readValue(reader)
         def dataBindingSources = jsonElement.collect { element ->
             if (element instanceof Map) {
                 new SimpleMapDataBindingSource(createJsonMap(element))
@@ -91,7 +102,7 @@ class JsonDataBindingSourceCreator extends AbstractRequestBodyDataBindingSourceC
 
     @Override
     protected DataBindingSource createBindingSource(Reader reader) {
-        final jsonElement = jsonMapper.readValue(reader, Object)
+        final Object jsonElement = untypedReader().readValue(reader)
 
         if (jsonElement instanceof Map) {
             return new SimpleMapDataBindingSource(createJsonMap(jsonElement))

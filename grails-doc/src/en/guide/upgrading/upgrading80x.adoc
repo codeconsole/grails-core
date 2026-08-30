@@ -3126,6 +3126,10 @@ Malformed request bodies continue to raise `InvalidRequestBodyException` through
 API. Code that directly replaced or configured the internal Groovy `JsonSlurper` should move that
 configuration to a `JsonMapperBuilderCustomizer`.
 
+Untyped JSON numbers keep the types the previous parser produced. Values with a fractional part are read
+as `BigDecimal` rather than `Double`, so binding a request value such as `1.15` to a `BigDecimal` property
+retains exactly the digits the request sent. Whole numbers continue to bind as `Integer` or `Long`.
+
 ==== 55. REST Validation Errors Use RFC 9457 Problems
 
 When Spring JSON rendering is enabled, `respond()` renders Spring `Errors` as

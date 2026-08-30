@@ -33,6 +33,38 @@ import tools.jackson.databind.json.JsonMapper
 
 class JsonDataBindingSourceCreatorSpec extends Specification {
 
+    void 'JSON decimals bind as BigDecimal so fractional values keep their digits'() {
+        given: "a body carrying values that lose digits when read as a double"
+        def json = '{"price": 1.15, "precise": 12345678901234567890.12345, "qty": 3}'
+        def inputStream = new ByteArrayInputStream(json.getBytes(StandardCharsets.UTF_8))
+
+        when:
+        def bindingSource = new JsonDataBindingSourceCreator()
+                .createDataBindingSource(MimeType.JSON, Object, inputStream)
+
+        then: "decimals arrive as BigDecimal, matching the digits the request sent"
+        bindingSource['price'] instanceof BigDecimal
+        bindingSource['price'] == 1.15G
+        bindingSource['precise'] instanceof BigDecimal
+        bindingSource['precise'].toPlainString() == '12345678901234567890.12345'
+
+        and: "integral values are unaffected"
+        bindingSource['qty'] instanceof Integer
+        bindingSource['qty'] == 3
+    }
+
+    void 'JSON decimals inside a collection body also bind as BigDecimal'() {
+        given:
+        def inputStream = new ByteArrayInputStream('[{"price": 1.15}]'.getBytes(StandardCharsets.UTF_8))
+
+        when:
+        def sources = new JsonDataBindingSourceCreator()
+                .createCollectionDataBindingSource(MimeType.JSON, Object, inputStream)
+
+        then:
+        sources.dataBindingSources.first()['price'] instanceof BigDecimal
+    }
+
     void 'Test JSON parsing'() {
         given:
         def json = '''{
