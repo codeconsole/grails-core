@@ -29,6 +29,7 @@ import grails.plugins.Plugin
 import grails.util.GrailsUtil
 import org.grails.plugins.codecs.XMLCodec
 import org.grails.web.converters.configuration.ObjectMarshallerRegisterer
+import org.grails.plugins.web.rest.render.xml.DefaultXmlRenderer
 import org.grails.web.converters.configuration.XmlConvertersConfigurationInitializer
 import org.grails.web.converters.marshaller.xml.ValidationErrorsMarshaller
 import org.grails.web.databinding.bindingsource.HalXmlDataBindingSourceCreator
@@ -54,6 +55,15 @@ class XmlGrailsPlugin extends Plugin {
             registry.registerBean('xmlDataBindingSourceCreator', XmlDataBindingSourceCreator)
             registry.registerBean('halXmlDataBindingSourceCreator', HalXmlDataBindingSourceCreator)
             registry.registerBean('xmlRendererRegistrar', XmlRendererRegistrar)
+            // Registered as a Renderer bean as well: DefaultRendererRegistry autowires every
+            // Renderer, so whichever registry instance Spring creates picks this up, whereas a
+            // registrar holding a reference can end up writing into an instance nothing reads.
+            registry.registerBean('xmlRenderer', DefaultXmlRenderer) {
+                it.supplier {
+                    new DefaultXmlRenderer<Object>(Object)
+                }
+            }
+            registry.registerBean('xmlErrorsRenderer', XmlErrorsRenderer)
             registry.registerBean('errorsXmlMarshallerRegisterer', ObjectMarshallerRegisterer) {
                 it.supplier {
                     new ObjectMarshallerRegisterer(
