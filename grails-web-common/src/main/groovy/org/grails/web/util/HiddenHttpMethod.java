@@ -18,8 +18,8 @@
  */
 package org.grails.web.util;
 
-import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletRequestWrapper;
@@ -52,8 +52,8 @@ public final class HiddenHttpMethod {
      * The only methods a form may ask for: the three a browser cannot submit itself. Matches the set
      * Spring's own {@code HiddenHttpMethodFilter} permits, so a POST can never be turned into a GET.
      */
-    private static final List<String> OVERRIDABLE_METHODS =
-            List.of(HttpMethod.PUT.name(), HttpMethod.PATCH.name(), HttpMethod.DELETE.name());
+    private static final Set<String> OVERRIDABLE_METHODS =
+            Set.of(HttpMethod.PUT.name(), HttpMethod.PATCH.name(), HttpMethod.DELETE.name());
 
     private HiddenHttpMethod() {
     }
@@ -87,10 +87,10 @@ public final class HiddenHttpMethod {
             return null;
         }
         String requested = request.getParameter(DEFAULT_METHOD_PARAM);
-        if (requested == null || requested.isEmpty()) {
+        if (requested == null || requested.isBlank()) {
             return null;
         }
-        String candidate = requested.toUpperCase(Locale.ENGLISH);
+        String candidate = requested.toUpperCase(Locale.ROOT);
         return OVERRIDABLE_METHODS.contains(candidate) ? candidate : null;
     }
 
