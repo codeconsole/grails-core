@@ -3206,25 +3206,22 @@ rebuilt automatically if the `ApplicationContext` is replaced.
 Applications that implemented `GrailsApplicationAttributes` themselves must ensure their
 implementation holds no request-scoped state and is safe to use from multiple request threads.
 
-===== 54.4 `GrailsWebRequest.getCurrentRequest()` is deprecated
+===== 54.4 `GrailsWebRequest.getCurrentRequest()` no longer substitutes the multipart request
 
-`getCurrentRequest()` existed to hand back the resolved multipart request in place of the request Grails
-was bound to. That substitution is gone (see _52. `request` Is No Longer a `MultipartHttpServletRequest`_),
-so the method now returns exactly what `getRequest()` returns. It is deprecated; call `getRequest()`
-instead.
+`getCurrentRequest()` used to hand back the resolved multipart request in place of the request Grails was
+bound to, which discarded the wrappers other filters had contributed. That substitution is gone — see
+_53. `request` Is No Longer a `MultipartHttpServletRequest`_ — so for a file upload it now returns the
+request Grails was bound to, and the uploaded files are reached through the `request.getFile(..)` methods
+described there.
 
-[source,groovy]
-----
-// Before
-def uri = webRequest.currentRequest.requestURI
+The method itself remains, and remains the accessor an application reads through. When the hidden HTTP
+method filter is disabled, the dispatcher resolves the `_method` override after the filter chain and
+publishes a wrapper reporting the overridden method; `getCurrentRequest()` returns that wrapper. The
+wrapper delegates to the request beneath it, so nothing contributed by another filter is lost.
 
-// After
-def uri = webRequest.request.requestURI
-----
-
-Nothing about the value returned has changed, so this is a rename, not a behaviour change. Code that
-reaches for the uploaded files of a multipart request should use the `request.getFile(..)` methods
-described in section 52.
+That is what keeps the two override modes agreeing: an application sees the same request method whether
+the servlet filter applied the override before the request was bound, or the dispatcher resolved it
+afterwards.
 
 Tests that mock a `GrailsWebRequest` and stub `getCurrentRequest()` need updating. `getRequest()` is
 `final` on Spring's `ServletRequestAttributes`, so `getCurrentRequest()` was the only stubbable request

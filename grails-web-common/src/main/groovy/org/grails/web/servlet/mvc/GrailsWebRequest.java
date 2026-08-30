@@ -100,6 +100,7 @@ public class GrailsWebRequest extends DispatcherServletWebRequest {
     private HttpServletResponse wrappedResponse;
 
     private EncodingStateRegistry encodingStateRegistry;
+    private HttpServletRequest overriddenMethodRequest;
 
     public GrailsWebRequest(HttpServletRequest request, HttpServletResponse response, GrailsApplicationAttributes attributes) {
         super(request, response);
@@ -261,13 +262,27 @@ public class GrailsWebRequest extends DispatcherServletWebRequest {
     /**
      * @return The currently executing request
      *
-     * @deprecated as of 8.0, use {@link #getRequest()} instead. This used to return the resolved
-     *             multipart request in place of the request Grails was bound to; that substitution is
-     *             gone, so the two are now the same object.
+     *         This is the bound request, unless a hidden method override was resolved by the dispatcher,
+     *         in which case it is a wrapper reporting the overridden method.
      */
-    @Deprecated(since = "8.0")
     public HttpServletRequest getCurrentRequest() {
-        return getRequest();
+        return overriddenMethodRequest != null ? overriddenMethodRequest : getRequest();
+    }
+
+    /**
+     * Publishes a request wrapper reporting the method a hidden method override asked for, so that the
+     * request Grails exposes agrees with the method the URL mappings matched on.
+     * <p>
+     * The wrapper delegates to the request it wraps rather than replacing it, so wrappers contributed by
+     * other filters are preserved -- unlike the multipart substitution this class used to perform. It exists
+     * so that an application sees the same method whether the override was applied by the servlet filter,
+     * which wraps before the request is bound, or by the dispatcher, which resolves it afterwards.
+     *
+     * @param overriddenMethodRequest the wrapped request, or null to expose the bound request unchanged
+     * @since 8.0
+     */
+    public void setOverriddenMethodRequest(HttpServletRequest overriddenMethodRequest) {
+        this.overriddenMethodRequest = overriddenMethodRequest;
     }
 
     public HttpServletResponse getCurrentResponse() {
