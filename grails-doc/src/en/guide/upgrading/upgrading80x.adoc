@@ -3074,7 +3074,7 @@ job is disabled with `jobEnabled = false`, or the class is not a job artefact of
 An application that caught `NullPointerException` around these calls has to catch those instead. See
 <<quartzDynamicScheduling,Dynamic Job Scheduling>>.
 
-==== 52. `request` Is No Longer a `MultipartHttpServletRequest`
+==== 53. `request` Is No Longer a `MultipartHttpServletRequest`
 
 The `request` object Grails exposes to controllers, tag libraries and GSPs is now always the outermost
 servlet request. Previously, for a file upload, Grails replaced it with the resolved
@@ -3121,7 +3121,7 @@ def file = request.getFile('myFile')
 Calling one of the file methods on a request that is not a file upload throws `IllegalStateException`
 with a diagnostic message, the same way it previously failed with `MissingMethodException`.
 
-===== 52.1 Oversized uploads now reach the application's error handling
+===== 53.1 Oversized uploads now reach the application's error handling
 
 An upload larger than `grails.controllers.upload.maxFileSize` or
 `grails.controllers.upload.maxRequestSize` (both 128000 bytes by default) fails when the servlet
@@ -3163,7 +3163,7 @@ code runs at all: the response is a bare `413` with an empty body, and a `"413"`
 consulted. Raising `grails.controllers.upload.maxRequestSize` raises the point at which Undertow
 refuses, but there is no way to render a body for a request the container never dispatches.
 
-===== 52.2 An error handler that fails is no longer forwarded to from inside itself
+===== 53.2 An error handler that fails is no longer forwarded to from inside itself
 
 A `"500"` (or exception-specific) URL mapping that names a controller is reached by forwarding to it.
 That forward re-enters the `DispatcherServlet`, and the forwarded dispatch resolves the same status
@@ -3177,11 +3177,11 @@ the container, so the response is a single container-level error rather than a d
 terminates. Once the forward returns, a later error on the same request — from an enclosing request
 whose include failed, for instance — is forwarded to the error handler as before.
 
-==== 53. Request Processing Behaviour Changes
+==== 54. Request Processing Behaviour Changes
 
 Four changes fall out of Grails 8 delegating more of the request path to Spring.
 
-===== 53.1 API versioning headers are now emitted for Grails-mapped requests
+===== 54.1 API versioning headers are now emitted for Grails-mapped requests
 
 `UrlMappingsHandlerMapping` previously assembled its own handler execution chain rather than using
 Spring's. As a result, Grails-mapped requests skipped the interceptor Spring adds for API versioning,
@@ -3191,13 +3191,13 @@ never sent. The chain is now assembled by Spring, and those headers are emitted 
 If an application relied on those headers being absent, unset the corresponding
 `spring.mvc.apiversion.*` configuration.
 
-===== 53.2 The `LocaleContext` is restored rather than cleared
+===== 54.2 The `LocaleContext` is restored rather than cleared
 
 At the end of a request Grails previously called `LocaleContextHolder.setLocale(null)`, which discarded
 any `LocaleContext` established earlier in the filter chain by non-Grails code. Grails now saves and
 restores the previous `LocaleContext`, matching Spring's own `RequestContextFilter`.
 
-===== 53.3 The application attributes object is shared per servlet context
+===== 54.3 The application attributes object is shared per servlet context
 
 `GrailsApplicationAttributes` was constructed once per request. It is now created once per servlet
 context and reused, so the beans it caches are resolved once rather than on every request. It is
@@ -3206,7 +3206,7 @@ rebuilt automatically if the `ApplicationContext` is replaced.
 Applications that implemented `GrailsApplicationAttributes` themselves must ensure their
 implementation holds no request-scoped state and is safe to use from multiple request threads.
 
-===== 53.4 `GrailsWebRequest.getCurrentRequest()` is deprecated
+===== 54.4 `GrailsWebRequest.getCurrentRequest()` is deprecated
 
 `getCurrentRequest()` existed to hand back the resolved multipart request in place of the request Grails
 was bound to. That substitution is gone (see _52. `request` Is No Longer a `MultipartHttpServletRequest`_),
@@ -3242,7 +3242,7 @@ def webRequest = new GrailsWebRequest(request, response, servletContext)
 ----
 
 
-==== 54. URL Mapping Names Come From the URI, Not From Request Parameters
+==== 55. URL Mapping Names Come From the URI, Not From Request Parameters
 
 A mapping that captures its controller, action or namespace from the URL — `"/$controller/$action?/$id?"`,
 the default mapping every application starts with — used to resolve those names by reading the request's
