@@ -221,6 +221,10 @@ class FileUploadTestController {
         ] as JSON)
     }
 
+    // Reachable only as a PUT, so a POST carrying _method=PUT proves the override is what got it here:
+    // allowedMethods resolves the overridden method through HiddenHttpMethod.effectiveMethod.
+    static allowedMethods = [uploadWithMethodOverride: 'PUT']
+
     def uploadWithMethodOverride() {
         def file = request.getFile('file')
         if (!file || file.empty) {
