@@ -27,7 +27,6 @@ import org.springframework.mock.web.MockServletContext
 import org.springframework.web.context.support.StaticWebApplicationContext
 
 import org.grails.web.util.GrailsApplicationAttributes
-import org.grails.web.util.HiddenHttpMethod
 
 import spock.lang.Specification
 
@@ -72,7 +71,7 @@ class GrailsWebRequestSpec extends Specification {
                 (ServletContext) null).attributes != null
     }
 
-    void 'the current request is the request the web request was built with when nothing overrode it'() {
+    void 'the deprecated current request is an alias for the request the web request was built with'() {
         given: 'a request already wrapped by a filter, as the outermost request usually is'
         def wrapped = new HttpServletRequestWrapper(new MockHttpServletRequest(servletContext))
 
@@ -99,29 +98,9 @@ class GrailsWebRequestSpec extends Specification {
         !webRequest.params.containsKey('name')
     }
 
-    void 'the current request accessor returns the bound request'() {
-        given:
-        def webRequest = newWebRequest()
-
-        expect: 'no multipart substitution, so it is the request the filter bound'
-        webRequest.currentRequest.is(webRequest.request)
-    }
-
-    void 'the current request accessor reports a dispatcher-resolved method override'() {
-        given: 'the wrapper the dispatcher publishes when it resolves _method itself'
-        def webRequest = newWebRequest()
-        webRequest.request.method = 'POST'
-        def wrapped = HiddenHttpMethod.wrap('DELETE', webRequest.request)
-
-        when:
-        webRequest.overriddenMethodRequest = wrapped
-
-        then: 'an application sees the overridden method, as it does when the servlet filter applies it'
-        webRequest.currentRequest.is(wrapped)
-        webRequest.currentRequest.method == 'DELETE'
-
-        and: 'while the bound request itself still reports what the client actually sent'
-        webRequest.request.method == 'POST'
+    void 'the current request accessor is deprecated in favour of getRequest'() {
+        expect: 'plugins still compile against it, but are told where to go instead'
+        GrailsWebRequest.getMethod('getCurrentRequest').isAnnotationPresent(Deprecated)
     }
 
     private GrailsWebRequest newWebRequest() {
