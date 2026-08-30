@@ -38,6 +38,7 @@ import grails.core.support.proxy.ProxyHandler
 import grails.rest.render.ContainerRenderer
 import grails.rest.render.Renderer
 import grails.rest.render.RendererRegistry
+import grails.rest.render.errors.ValidationProblemDetailFactory
 import grails.util.GrailsClassUtils
 import grails.web.mime.MimeType
 import grails.web.render.NamedJsonRenderer
@@ -84,6 +85,9 @@ class DefaultRendererRegistry extends ClassAndMimeTypeRegistry<Renderer, Rendere
     @Autowired(required = false)
     NamedJsonRenderer namedJsonRenderer
 
+    @Autowired(required = false)
+    ValidationProblemDetailFactory validationProblemDetailFactory
+
     @Value('${grails.web.rendering.json.spring:true}')
     boolean useSpringJson
 
@@ -120,6 +124,9 @@ class DefaultRendererRegistry extends ClassAndMimeTypeRegistry<Renderer, Rendere
     private void configureJsonRenderer(DefaultJsonRenderer renderer) {
         renderer.useSpringJson = useSpringJson
         renderer.namedJsonRenderer = namedJsonRenderer
+        if (validationProblemDetailFactory != null) {
+            renderer.validationProblemDetailFactory = validationProblemDetailFactory
+        }
         if (requestMappingHandlerAdapter != null) {
             renderer.springHttpMessageConverters = requestMappingHandlerAdapter.messageConverters
         }

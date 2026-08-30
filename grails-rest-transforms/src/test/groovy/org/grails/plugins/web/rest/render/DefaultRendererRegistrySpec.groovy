@@ -21,6 +21,7 @@ package org.grails.plugins.web.rest.render
 import grails.rest.render.AbstractRenderer
 import grails.rest.render.RenderContext
 import grails.rest.render.hal.HalJsonCollectionRenderer
+import grails.rest.render.errors.ValidationProblemDetailFactory
 import grails.web.mime.MimeType
 import org.grails.plugins.web.rest.render.json.DefaultJsonRenderer
 import org.springframework.http.converter.HttpMessageConverter
@@ -94,6 +95,20 @@ class DefaultRendererRegistrySpec extends Specification {
         then:
         renderer.useSpringJson
         renderer.springHttpMessageConverters == [first, second]
+    }
+
+    void 'an application supplied validation problem factory reaches the error renderers'() {
+        given: "an application that opts in to exposing rejected values"
+        def factory = new ValidationProblemDetailFactory(true)
+        def registry = new DefaultRendererRegistry(validationProblemDetailFactory: factory)
+        registry.initialize()
+        def errors = new BeanPropertyBindingResult(new Object(), 'book')
+
+        expect: "both the default JSON renderer and the errors container renderer use it"
+        registry.findRenderer(MimeType.JSON, new URL('https://grails.apache.org'))
+                .validationProblemDetailFactory.is(factory)
+        registry.findContainerRenderer(MimeType.JSON, Errors, errors)
+                .validationProblemDetailFactory.is(factory)
     }
 
     void 'Spring JSON rendering can be disabled during migration'() {
