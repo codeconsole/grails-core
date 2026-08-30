@@ -23,7 +23,6 @@ import java.util.function.Supplier
 
 import jakarta.servlet.Filter
 
-import grails.config.Settings
 import grails.core.DefaultGrailsApplication
 import grails.core.GrailsApplication
 
@@ -40,13 +39,11 @@ import org.springframework.mock.web.MockHttpServletResponse
 import org.springframework.mock.web.MockServletContext
 import org.springframework.web.context.WebApplicationContext
 import org.springframework.web.context.support.StaticWebApplicationContext
-import org.springframework.web.filter.HiddenHttpMethodFilter as SpringHiddenHttpMethodFilter
 import org.springframework.web.filter.RequestContextFilter
 import org.springframework.web.servlet.handler.SimpleMappingExceptionResolver
 
 import org.grails.web.config.http.GrailsFilters
 import org.grails.web.errors.GrailsExceptionResolver
-import org.grails.web.filters.HiddenHttpMethodFilter
 import org.grails.web.servlet.mvc.GrailsWebRequestFilter
 
 import spock.lang.Specification
@@ -205,51 +202,6 @@ class ControllersAutoConfigurationSpec extends Specification {
                 }
     }
 
-    void 'the hidden HTTP method filter is not registered by default'() {
-        expect: 'off as of Grails 8: the override is resolved inside the dispatcher instead'
-        hiddenMethodContextRunner()
-                .run { context ->
-                    assert hiddenHttpMethodFilterRegistrations(context) == 0
-                }
-    }
-
-    void 'the filter is restored when the Grails property is true'() {
-        expect: 'the escape hatch for an application that wants the pre-dispatch rewrite back'
-        hiddenMethodContextRunner()
-                .withPropertyValues("${Settings.WEB_HIDDEN_METHOD_FILTER_ENABLED}=true")
-                .run { context ->
-                    assert hiddenHttpMethodFilterRegistrations(context) == 1
-                    assert context.getBean('hiddenHttpMethodFilter').order ==
-                            GrailsFilters.HIDDEN_HTTP_METHOD_FILTER.order
-                }
-    }
-
-    void 'enabling the Spring Boot property does not collide on the shared bean name'() {
-        expect: 'Boot registers its filter under this same name, so only one definition may be contributed'
-        hiddenMethodContextRunner()
-                .withPropertyValues('spring.mvc.hiddenmethod.filter.enabled=true')
-                .run { context ->
-                    assert context.startupFailure == null
-                    assert hiddenHttpMethodFilterRegistrations(context) == 0
-                    assert context.getBeanNamesForType(SpringHiddenHttpMethodFilter).length == 1
-                }
-    }
-
-    void 'a user-defined hiddenHttpMethodFilter registration bean wins'() {
-        given:
-        FilterRegistrationBean<Filter> userRegistration = new FilterRegistrationBean<>()
-        Supplier<FilterRegistrationBean> userRegistrationSupplier = () -> userRegistration
-
-        expect:
-        hiddenMethodContextRunner()
-                .withPropertyValues("${Settings.WEB_HIDDEN_METHOD_FILTER_ENABLED}=true")
-                .withBean('hiddenHttpMethodFilter', FilterRegistrationBean, userRegistrationSupplier)
-                .run { context ->
-                    assert context.getBean('hiddenHttpMethodFilter').is(userRegistration)
-                    assert hiddenHttpMethodFilterRegistrations(context) == 0
-                }
-    }
-
     private WebApplicationContextRunner hiddenMethodContextRunner() {
         def grailsApplication = Mock(GrailsApplication) {
             getClassLoader() >> getClass().classLoader
@@ -277,13 +229,6 @@ class ControllersAutoConfigurationSpec extends Specification {
         new ServletContextInitializerBeans(context.beanFactory).count { initializer ->
             initializer instanceof AbstractFilterRegistrationBean &&
                     ((AbstractFilterRegistrationBean) initializer).filter instanceof GrailsWebRequestFilter
-        }
-    }
-
-    private static int hiddenHttpMethodFilterRegistrations(ConfigurableApplicationContext context) {
-        new ServletContextInitializerBeans(context.beanFactory).count { initializer ->
-            initializer instanceof AbstractFilterRegistrationBean &&
-                    ((AbstractFilterRegistrationBean) initializer).filter instanceof HiddenHttpMethodFilter
         }
     }
 }

@@ -38,7 +38,6 @@ import org.springframework.web.servlet.support.RequestDataValueProcessor
 
 import grails.artefact.TagLibrary
 import grails.config.Config
-import grails.config.Settings
 import grails.core.support.GrailsConfigurationAware
 import grails.gsp.TagLib
 import grails.web.mapping.LinkGenerator
@@ -50,6 +49,7 @@ import org.grails.encoder.Encoder
 import org.grails.plugins.web.GrailsTagDateHelper
 import org.grails.taglib.TagOutput
 import org.grails.web.servlet.mvc.SynchronizerTokensHolder
+import org.grails.web.util.HiddenHttpMethod
 
 /**
  * Tags for working with form controls.
@@ -90,7 +90,8 @@ class FormTagLib implements ApplicationContextAware, InitializingBean, TagLibrar
     // Set if Spring Security is being used and the CsrfFilter is in the Filter Chain
     Class<?> springSecurityCsrfTokenClass
 
-    // Mirrors grails.web.hiddenmethod.filter.enabled, which is off by default as of Grails 8
+    // Whether a servlet filter rewrites the request method. No filter is registered by default as of
+    // Grails 8, so the field defaults to false.
     private boolean hiddenHttpMethodFilterEnabled = false
 
     void afterPropertiesSet() {
@@ -1588,6 +1589,6 @@ class FormTagLib implements ApplicationContextAware, InitializingBean, TagLibrar
         // Some attributes can be treated as boolean, but must be converted to the
         // expected value.
         booleanAttributes = co.getProperty('grails.tags.booleanToAttributes', List, DEFAULT_BOOLEAN_ATTRIBUTES)
-        hiddenHttpMethodFilterEnabled = co.getProperty(Settings.WEB_HIDDEN_METHOD_FILTER_ENABLED, Boolean, Boolean.FALSE)
+        hiddenHttpMethodFilterEnabled = HiddenHttpMethod.isServletFilterMode(co)
     }
 }

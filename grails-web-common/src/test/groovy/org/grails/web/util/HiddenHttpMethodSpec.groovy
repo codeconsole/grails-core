@@ -18,6 +18,9 @@
  */
 package org.grails.web.util
 
+import grails.config.Settings
+
+import org.springframework.mock.env.MockEnvironment
 import org.springframework.mock.web.MockHttpServletRequest
 
 import spock.lang.Specification
@@ -87,6 +90,31 @@ class HiddenHttpMethodSpec extends Specification {
         wrapped.method == 'DELETE'
         wrapped.requestURI == '/books/1'
         wrapped.getParameter('title') == 'Red'
+    }
+
+    @Unroll
+    void 'filter mode is #expected when grails=#grails and spring=#spring'() {
+        given:
+        def environment = new MockEnvironment()
+        if (grails != null) {
+            environment.setProperty(Settings.WEB_HIDDEN_METHOD_FILTER_ENABLED, grails)
+        }
+        if (spring != null) {
+            environment.setProperty(HiddenHttpMethod.SPRING_FILTER_ENABLED, spring)
+        }
+
+        expect: 'either property puts the application in filter mode; a filter is registered for both'
+        HiddenHttpMethod.isServletFilterMode(environment) == expected
+
+        where:
+        grails  | spring  || expected
+        null    | null    || false
+        'false' | 'false' || false
+        'true'  | null    || true
+        null    | 'true'  || true
+        'true'  | 'true'  || true
+        'false' | 'true'  || true
+        'true'  | 'false' || true
     }
 
     private static MockHttpServletRequest post(String requested) {
