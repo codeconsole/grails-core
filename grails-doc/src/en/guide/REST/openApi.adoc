@@ -75,9 +75,10 @@ response formats through content types rather than the path.
 
 ==== Domain Schemas
 
-Every mapped domain class is described in `components/schemas`, built from the GORM mapping model.
-Associations are referenced rather than inlined, so a `Book` with `hasMany` readers refers to the
-`User` schema.
+A domain class served by a documented path is described in `components/schemas`, built from the GORM
+mapping model. Associations are referenced rather than inlined, so a `Book` with `hasMany` readers
+refers to the `User` schema, and an associated class is defined even when it has no documented path
+of its own. A domain class that nothing documented refers to is left out.
 
 Each domain class produces two schemas. The response schema carries every persistent property. The
 request schema, named with a `Request` suffix, omits the identifier and the version, because a

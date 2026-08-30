@@ -43,6 +43,7 @@ import grails.web.mapping.UrlMapping
 import grails.web.mapping.UrlMappingsHolder
 import org.grails.datastore.mapping.model.MappingContext
 import org.grails.datastore.mapping.model.PersistentEntity
+import org.grails.datastore.mapping.model.types.Association
 
 /**
  * Contributes the application's Grails URL mappings to the springdoc generated OpenAPI document.
@@ -87,7 +88,9 @@ class UrlMappingsOpenApiCustomizer implements OpenApiCustomizer {
 
     @Override
     void customise(OpenAPI openApi) {
-        Map<String, PersistentEntity> entitiesByController = registerSchemas(openApi)
+        Map<String, PersistentEntity> entitiesByController = indexEntitiesByController()
+        Map<String, PersistentEntity> responseEntities = [:]
+        Map<String, PersistentEntity> requestEntities = [:]
         Paths paths = openApi.paths ?: new Paths()
 
         for (UrlMapping mapping : urlMappingsHolder.urlMappings) {
@@ -108,36 +111,82 @@ class UrlMappingsOpenApiCustomizer implements OpenApiCustomizer {
                 continue
             }
 
-            pathItem.operation(method, buildOperation(mapping, controllerName, method, pathNames,
-                    entitiesByController[controllerName]))
+            PersistentEntity entity = entitiesByController[controllerName]
+            if (entity) {
+                responseEntities[PersistentEntitySchemaBuilder.schemaName(entity)] = entity
+                if (method.name() in BODY_METHODS) {
+                    requestEntities[PersistentEntitySchemaBuilder.requestSchemaName(entity)] = entity
+                }
+            }
+
+            pathItem.operation(method, buildOperation(mapping, controllerName, method, pathNames, entity))
             paths.addPathItem(path, pathItem)
         }
 
         openApi.setPaths(paths)
+        registerSchemas(openApi, responseEntities, requestEntities)
     }
 
     /**
      * Registers a schema for every mapped domain class and indexes them by the controller name that
      * conventionally serves them, so operations can reference the right schema.
      */
-    private Map<String, PersistentEntity> registerSchemas(OpenAPI openApi) {
+    private Map<String, PersistentEntity> indexEntitiesByController() {
         if (mappingContext == null) {
             return Collections.<String, PersistentEntity> emptyMap()
         }
-
-        Components components = openApi.components ?: new Components()
         Map<String, PersistentEntity> byController = [:]
-
         for (PersistentEntity entity : mappingContext.persistentEntities) {
-            components.addSchemas(PersistentEntitySchemaBuilder.schemaName(entity),
-                    schemaBuilder.build(entity, mappingContext))
-            components.addSchemas(PersistentEntitySchemaBuilder.requestSchemaName(entity),
-                    schemaBuilder.buildRequest(entity, mappingContext))
             byController[entity.decapitalizedName] = entity
         }
-
-        openApi.setComponents(components)
         byController
+    }
+
+    /**
+     * Registers only the schemas the document actually references, so a domain class with no
+     * documented operation does not appear as an orphan. Associations are followed so that a
+     * referenced schema never points at one that was left out.
+     */
+    private void registerSchemas(OpenAPI openApi, Map<String, PersistentEntity> responseEntities,
+                                 Map<String, PersistentEntity> requestEntities) {
+        if (mappingContext == null || (!responseEntities && !requestEntities)) {
+            return
+        }
+
+        Map<String, PersistentEntity> reachable = [:]
+        reachable.putAll(responseEntities)
+        addAssociated(responseEntities.values(), reachable)
+        addAssociated(requestEntities.values(), reachable)
+
+        Components components = openApi.components ?: new Components()
+        reachable.each { String name, PersistentEntity entity ->
+            components.addSchemas(name, schemaBuilder.build(entity, mappingContext))
+        }
+        requestEntities.each { String name, PersistentEntity entity ->
+            components.addSchemas(name, schemaBuilder.buildRequest(entity, mappingContext))
+        }
+        openApi.setComponents(components)
+    }
+
+    /**
+     * Walks associations so a schema referenced only as another schema's property is still defined.
+     */
+    private static void addAssociated(Collection<PersistentEntity> entities, Map<String, PersistentEntity> reachable) {
+        Deque<PersistentEntity> pending = new ArrayDeque<>(entities)
+        while (!pending.isEmpty()) {
+            PersistentEntity entity = pending.poll()
+            for (Association association : entity.associations) {
+                PersistentEntity associated = association.associatedEntity
+                if (associated == null) {
+                    continue
+                }
+                String name = PersistentEntitySchemaBuilder.schemaName(associated)
+                if (!reachable.containsKey(name)) {
+                    reachable[name] = associated
+                    pending.add(associated)
+                }
+            }
+        }
     }
 
     /**

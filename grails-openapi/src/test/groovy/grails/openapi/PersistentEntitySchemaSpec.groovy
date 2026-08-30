@@ -40,16 +40,46 @@ class PersistentEntitySchemaSpec extends Specification {
         WebUtils.clearGrailsWebRequest()
     }
 
-    void 'registers a schema for every mapped domain class'() {
+    void 'registers a schema for the documented resource and its request body'() {
         given:
         def openApi = new OpenAPI()
-        def customizer = customizer()
 
         when:
-        customizer.customise(openApi)
+        customizer().customise(openApi)
 
         then:
-        openApi.components.schemas.keySet() == ['Widget', 'WidgetRequest', 'Crate', 'CrateRequest'] as Set
+        openApi.components.schemas.keySet().containsAll(['Widget', 'WidgetRequest'])
+    }
+
+    void 'omits a domain class that has no documented operation'() {
+        given:
+        def openApi = new OpenAPI()
+
+        when: 'only widgets are mapped, and Crate is reached from Widget'
+        customizer().customise(openApi)
+
+        then: 'Crate is defined because a Widget property references it'
+        openApi.components.schemas.containsKey('Crate')
+
+        and: 'but it gets no request schema, having no operation that accepts a body'
+        !openApi.components.schemas.containsKey('CrateRequest')
+    }
+
+    void 'omits an unreferenced domain class entirely'() {
+        given:
+        def openApi = new OpenAPI()
+        MappingContext context = new KeyValueMappingContext('test')
+        context.addPersistentEntity(Widget)
+        context.addPersistentEntity(Crate)
+        context.addPersistentEntity(Orphan)
+        context.setValidatorRegistry(new DefaultValidatorRegistry(context, new ConnectionSourceSettings()))
+
+        when: 'Orphan has no mapping and nothing references it'
+        new UrlMappingsOpenApiCustomizer(holder()).tap { mappingContext = context }.customise(openApi)
+
+        then:
+        !openApi.components.schemas.containsKey('Orphan')
+        !openApi.components.schemas.containsKey('OrphanRequest')
     }
 
     void 'maps domain property types onto OpenAPI schema types'() {
@@ -244,4 +274,9 @@ class Widget {
 class Crate {
     String label
     static hasMany = [widgets: Widget]
+}
+
+@Entity
+class Orphan {
+    String note
 }
