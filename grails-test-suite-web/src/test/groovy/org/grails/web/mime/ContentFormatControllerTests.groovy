@@ -25,6 +25,8 @@ import grails.persistence.Entity
 import grails.testing.gorm.DomainUnitTest
 import grails.testing.web.controllers.ControllerUnitTest
 import grails.web.Controller
+import org.grails.web.converters.configuration.XmlConvertersConfigurationInitializer
+
 import spock.lang.Specification
 
 /**
@@ -32,6 +34,13 @@ import spock.lang.Specification
  * @since 1.0
  */
 class ContentFormatControllerTests extends Specification implements ControllerUnitTest<ContentController>, DomainUnitTest<Gizmo> {
+
+    void setup() {
+        // XML conversion moved to the optional grails-xml module, whose plugin registers this
+        // initializer. A unit test slice does not load that plugin, so configure it directly.
+        new XmlConvertersConfigurationInitializer(grailsApplication: grailsApplication).initialize()
+    }
+
 
     Closure doWithConfig() {{ c ->
         c['grails.mime.use.accept.header'] = true
