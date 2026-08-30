@@ -41,6 +41,7 @@ dependencies {
 
     api project(':grails-core')
     api project(':grails-url-mappings')
+    api project(':grails-rest-transforms')
     api 'org.apache.groovy:groovy'
 
     // Exposes the OpenAPI model and the /v3/api-docs endpoint. Applications add

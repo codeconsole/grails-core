@@ -39,8 +39,12 @@ import org.springframework.beans.factory.annotation.Autowired
 
 import grails.gorm.validation.Constrained
 import grails.gorm.validation.ConstrainedProperty
+import grails.core.GrailsApplication
+import grails.core.GrailsClass
+import grails.rest.RestfulController
 import grails.web.mapping.UrlMapping
 import grails.web.mapping.UrlMappingsHolder
+import org.grails.core.artefact.ControllerArtefactHandler
 import org.grails.datastore.mapping.model.MappingContext
 import org.grails.datastore.mapping.model.PersistentEntity
 import org.grails.datastore.mapping.model.types.Association
@@ -81,6 +85,13 @@ class UrlMappingsOpenApiCustomizer implements OpenApiCustomizer {
      */
     @Autowired(required = false)
     MappingContext mappingContext
+
+    /**
+     * The application's artefacts, used to describe a RestfulController that no URL mapping names.
+     * Without it only the declared URL mappings are documented.
+     */
+    @Autowired(required = false)
+    GrailsApplication grailsApplication
 
     UrlMappingsOpenApiCustomizer(UrlMappingsHolder urlMappingsHolder) {
         this.urlMappingsHolder = urlMappingsHolder
@@ -123,8 +134,97 @@ class UrlMappingsOpenApiCustomizer implements OpenApiCustomizer {
             paths.addPathItem(path, pathItem)
         }
 
+        addRestfulControllerPaths(paths, entitiesByController, responseEntities, requestEntities)
+
         openApi.setPaths(paths)
         registerSchemas(openApi, responseEntities, requestEntities)
+    }
+
+    /**
+     * Describes every {@link RestfulController} at the URLs the default
+     * {@code "/$controller/$action?/$id?"} mapping serves. A controller that a declared mapping also
+     * names is reachable both ways, and both are documented: an endpoint that answers but is absent
+     * from the document is worse than one described twice.
+     */
+    private void addRestfulControllerPaths(Paths paths, Map<String, PersistentEntity> entitiesByController,
+                                           Map<String, PersistentEntity> responseEntities,
+                                           Map<String, PersistentEntity> requestEntities) {
+        if (grailsApplication == null) {
+            return
+        }
+
+        for (GrailsClass controllerClass : grailsApplication.getArtefacts(ControllerArtefactHandler.TYPE)) {
+            if (!RestfulController.isAssignableFrom(controllerClass.clazz)) {
+                continue
+            }
+
+            String controllerName = controllerClass.logicalPropertyName
+            PersistentEntity entity = entitiesByController[controllerName]
+            Object allowedMethods = controllerClass.getPropertyValue('allowedMethods')
+
+            for (String actionName : actionNames(controllerClass)) {
+                boolean takesId = RestfulControllerActions.takesId(actionName)
+                String path = takesId
+                        ? "/${controllerName}/${actionName}/{id}".toString()
+                        : "/${controllerName}/${actionName}".toString()
+
+                PathItem pathItem = paths.get(path) ?: new PathItem()
+                PathItem.HttpMethod method = toHttpMethod(
+                        RestfulControllerActions.httpMethod(actionName, allowedMethods))
+                if (pathItem.readOperationsMap().containsKey(method)) {
+                    continue
+                }
+
+                if (entity) {
+                    responseEntities[PersistentEntitySchemaBuilder.schemaName(entity)] = entity
+                    if (method.name() in BODY_METHODS) {
+                        requestEntities[PersistentEntitySchemaBuilder.requestSchemaName(entity)] = entity
+                    }
+                }
+
+                pathItem.operation(method, buildAction(controllerName, actionName, method, takesId, entity))
+                paths.addPathItem(path, pathItem)
+            }
+        }
+    }
+
+    private static Collection<String> actionNames(GrailsClass controllerClass) {
+        controllerClass instanceof grails.core.GrailsControllerClass
+                ? ((grails.core.GrailsControllerClass) controllerClass).actions
+                : Collections.<String> emptySet()
+    }
+
+    private static Operation buildAction(String controllerName, String actionName, PathItem.HttpMethod method,
+                                         boolean takesId, PersistentEntity entity) {
+        Operation operation = new Operation()
+        operation.addTagsItem(controllerName)
+        operation.setOperationId("${controllerName}_${actionName}_${method.name().toLowerCase(Locale.ENGLISH)}".toString())
+
+        if (takesId) {
+            operation.addParametersItem(new Parameter()
+                    .name('id')
+                    .in('path')
+                    .required(true)
+                    .schema(new StringSchema()))
+        }
+
+        Schema<?> responseSchema = responseSchema(entity, actionName)
+        MediaType mediaType = responseSchema ? new MediaType().schema(responseSchema) : new MediaType()
+        operation.setResponses(new ApiResponses().addApiResponse(DEFAULT_RESPONSE_CODE,
+                new ApiResponse().description('Success')
+                        .content(new Content().addMediaType(DEFAULT_MEDIA_TYPE, mediaType))))
+
+        if (takesId) {
+            operation.responses.addApiResponse(NOT_FOUND_RESPONSE_CODE, new ApiResponse().description('Not Found'))
+        }
+
+        if (entity && method.name() in BODY_METHODS) {
+            operation.setRequestBody(new RequestBody().content(
+                    new Content().addMediaType(DEFAULT_MEDIA_TYPE,
+                            new MediaType().schema(requestReference(entity)))))
+        }
+
+        operation
     }
 
     /**
