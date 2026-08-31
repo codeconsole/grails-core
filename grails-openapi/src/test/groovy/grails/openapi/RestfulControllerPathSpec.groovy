@@ -110,7 +110,7 @@ class RestfulControllerPathSpec extends Specification {
 
         and: 'save accepts the request schema'
         openApi.paths['/memo/save'].post.requestBody
-                .content['application/json'].schema.$ref == '#/components/schemas/MemoRequest'
+                .content['application/json'].schema.$ref == '#/components/schemas/Memo'
 
         and: 'an instance action can miss'
         openApi.paths['/memo/show/{id}'].get.responses['404']

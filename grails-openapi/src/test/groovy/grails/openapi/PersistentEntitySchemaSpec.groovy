@@ -48,21 +48,18 @@ class PersistentEntitySchemaSpec extends Specification {
         customizer().customise(openApi)
 
         then:
-        openApi.components.schemas.keySet().containsAll(['Widget', 'WidgetRequest'])
+        openApi.components.schemas.containsKey('Widget')
     }
 
-    void 'omits a domain class that has no documented operation'() {
+    void 'defines a domain class reached only through an association'() {
         given:
         def openApi = new OpenAPI()
 
         when: 'only widgets are mapped, and Crate is reached from Widget'
         customizer().customise(openApi)
 
-        then: 'Crate is defined because a Widget property references it'
+        then:
         openApi.components.schemas.containsKey('Crate')
-
-        and: 'but it gets no request schema, having no operation that accepts a body'
-        !openApi.components.schemas.containsKey('CrateRequest')
     }
 
     void 'omits an unreferenced domain class entirely'() {
@@ -79,7 +76,6 @@ class PersistentEntitySchemaSpec extends Specification {
 
         then:
         !openApi.components.schemas.containsKey('Orphan')
-        !openApi.components.schemas.containsKey('OrphanRequest')
     }
 
     void 'maps domain property types onto OpenAPI schema types'() {
@@ -149,22 +145,24 @@ class PersistentEntitySchemaSpec extends Specification {
         }
     }
 
-    void 'omits the identifier and version from the request schema'() {
+    void 'marks the server assigned properties readOnly rather than defining a second schema'() {
         given:
         def openApi = new OpenAPI()
 
         when:
         customizer().customise(openApi)
 
-        then: 'the response schema carries both'
-        openApi.components.schemas['Widget'].properties.keySet().containsAll(['id', 'version'])
+        then: 'the identifier and version are present but not for a client to send'
+        with(openApi.components.schemas['Widget'].properties) {
+            id.readOnly
+            version.readOnly
 
-        and: 'the request schema carries neither, because a client does not supply them'
-        !openApi.components.schemas['WidgetRequest'].properties.containsKey('id')
-        !openApi.components.schemas['WidgetRequest'].properties.containsKey('version')
+            and: 'an editable property is not marked'
+            !name.readOnly
+        }
 
-        and: 'while the editable properties remain'
-        openApi.components.schemas['WidgetRequest'].properties.containsKey('name')
+        and: 'no second schema is defined for request bodies'
+        openApi.components.schemas.keySet().every { !it.endsWith('Request') }
     }
 
     void 'documents a 404 on operations addressed by identifier'() {
@@ -208,7 +206,7 @@ class PersistentEntitySchemaSpec extends Specification {
 
         then:
         openApi.paths['/widgets'].post.requestBody
-                .content['application/json'].schema.$ref == '#/components/schemas/WidgetRequest'
+                .content['application/json'].schema.$ref == '#/components/schemas/Widget'
 
         and: 'a read-only method carries no request body'
         openApi.paths['/widgets'].get.requestBody == null

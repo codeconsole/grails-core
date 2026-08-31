@@ -80,9 +80,9 @@ mapping model. Associations are referenced rather than inlined, so a `Book` with
 refers to the `User` schema, and an associated class is defined even when it has no documented path
 of its own. A domain class that nothing documented refers to is left out.
 
-Each domain class produces two schemas. The response schema carries every persistent property. The
-request schema, named with a `Request` suffix, omits the identifier and the version, because a
-client does not supply either. Operations that accept a body reference the request schema.
+The identifier and the version are marked `readOnly`, because the server assigns them. Tools that
+understand OpenAPI leave a read-only property out of a request body, so one schema describes both
+directions.
 
 Declared constraints are carried across:
 

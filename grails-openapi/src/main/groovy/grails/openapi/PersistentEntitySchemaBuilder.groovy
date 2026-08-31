@@ -45,9 +45,8 @@ import org.grails.datastore.mapping.model.types.ToMany
  * Builds OpenAPI schemas from the GORM mapping model, so that a Grails domain class is described in
  * the generated document the way an annotated Java type would be.
  *
- * <p>Two schemas are produced per domain class: a response schema carrying every persistent
- * property, and a request schema that omits the identifier and version, which a client does not
- * supply.</p>
+ * <p>The identifier and version are marked {@code readOnly}, so a client is told the server assigns
+ * them rather than being asked to send them in a request body.</p>
  *
  * <p>Where the domain class declares constraints they are carried across - {@code maxSize} becomes
  * {@code maxLength}, {@code inList} becomes an enumeration, {@code matches} becomes a pattern, and a
@@ -59,8 +58,6 @@ import org.grails.datastore.mapping.model.types.ToMany
 @CompileStatic
 class PersistentEntitySchemaBuilder {
 
-    static final String REQUEST_SCHEMA_SUFFIX = 'Request'
-
     private static final String EMAIL_FORMAT = 'email'
     private static final String URI_FORMAT = 'uri'
 
@@ -70,38 +67,26 @@ class PersistentEntitySchemaBuilder {
      * @return an object schema whose properties mirror the entity's persistent properties
      */
     Schema<?> build(PersistentEntity entity, MappingContext mappingContext = null) {
-        buildSchema(entity, constraintsFor(entity, mappingContext), true)
-    }
-
-    /**
-     * @return a schema for request payloads, omitting the identifier and version
-     */
-    Schema<?> buildRequest(PersistentEntity entity, MappingContext mappingContext = null) {
-        buildSchema(entity, constraintsFor(entity, mappingContext), false)
-    }
-
-    private Schema<?> buildSchema(PersistentEntity entity, Map<String, ConstrainedProperty> constraints,
-                                  boolean includeGeneratedProperties) {
+        Map<String, ConstrainedProperty> constraints = constraintsFor(entity, mappingContext)
         ObjectSchema schema = new ObjectSchema()
 
         PersistentProperty identity = entity.identity
-        if (includeGeneratedProperties && identity) {
-            schema.addProperty(identity.name, schemaFor(identity, null))
+        if (identity) {
+            schema.addProperty(identity.name, schemaFor(identity, null).readOnly(true))
         }
 
-        PersistentProperty version = entity.version
-        String versionName = entity.versioned ? version?.name : null
+        String versionName = entity.versioned ? entity.version?.name : null
 
         for (PersistentProperty property : entity.persistentProperties) {
-            if (!includeGeneratedProperties && property.name == versionName) {
-                continue
-            }
-
+            boolean assignedByServer = property.name == versionName
             Constrained constrained = constraints[property.name]
-            schema.addProperty(property.name, schemaFor(property, constrained))
+            Schema<?> propertySchema = schemaFor(property, constrained)
+            if (assignedByServer) {
+                propertySchema.setReadOnly(true)
+            }
+            schema.addProperty(property.name, propertySchema)
 
-            boolean generated = property.name == versionName
-            if (constrained != null && !constrained.nullable && !generated) {
+            if (constrained != null && !constrained.nullable && !assignedByServer) {
                 schema.addRequiredItem(property.name)
             }
         }
@@ -128,10 +113,6 @@ class PersistentEntitySchemaBuilder {
      */
     static String schemaName(PersistentEntity entity) {
         entity.javaClass.simpleName
-    }
-
-    static String requestSchemaName(PersistentEntity entity) {
-        schemaName(entity) + REQUEST_SCHEMA_SUFFIX
     }
 
     static String referencePath(String schemaName) {

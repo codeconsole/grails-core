@@ -100,8 +100,7 @@ class UrlMappingsOpenApiCustomizer implements OpenApiCustomizer {
     @Override
     void customise(OpenAPI openApi) {
         Map<String, PersistentEntity> entitiesByController = indexEntitiesByController()
-        Map<String, PersistentEntity> responseEntities = [:]
-        Map<String, PersistentEntity> requestEntities = [:]
+        Map<String, PersistentEntity> documentedEntities = [:]
         Paths paths = openApi.paths ?: new Paths()
 
         for (UrlMapping mapping : urlMappingsHolder.urlMappings) {
@@ -123,21 +122,16 @@ class UrlMappingsOpenApiCustomizer implements OpenApiCustomizer {
             }
 
             PersistentEntity entity = entitiesByController[controllerName]
-            if (entity) {
-                responseEntities[PersistentEntitySchemaBuilder.schemaName(entity)] = entity
-                if (method.name() in BODY_METHODS) {
-                    requestEntities[PersistentEntitySchemaBuilder.requestSchemaName(entity)] = entity
-                }
-            }
+            record(entity, documentedEntities)
 
             pathItem.operation(method, buildOperation(mapping, controllerName, method, pathNames, entity))
             paths.addPathItem(path, pathItem)
         }
 
-        addRestfulControllerPaths(paths, entitiesByController, responseEntities, requestEntities)
+        addRestfulControllerPaths(paths, entitiesByController, documentedEntities)
 
         openApi.setPaths(paths)
-        registerSchemas(openApi, responseEntities, requestEntities)
+        registerSchemas(openApi, documentedEntities)
     }
 
     /**
@@ -147,8 +141,7 @@ class UrlMappingsOpenApiCustomizer implements OpenApiCustomizer {
      * from the document is worse than one described twice.
      */
     private void addRestfulControllerPaths(Paths paths, Map<String, PersistentEntity> entitiesByController,
-                                           Map<String, PersistentEntity> responseEntities,
-                                           Map<String, PersistentEntity> requestEntities) {
+                                           Map<String, PersistentEntity> documentedEntities) {
         if (grailsApplication == null) {
             return
         }
@@ -175,16 +168,20 @@ class UrlMappingsOpenApiCustomizer implements OpenApiCustomizer {
                     continue
                 }
 
-                if (entity) {
-                    responseEntities[PersistentEntitySchemaBuilder.schemaName(entity)] = entity
-                    if (method.name() in BODY_METHODS) {
-                        requestEntities[PersistentEntitySchemaBuilder.requestSchemaName(entity)] = entity
-                    }
-                }
+                record(entity, documentedEntities)
 
                 pathItem.operation(method, buildAction(controllerName, actionName, method, takesId, entity))
                 paths.addPathItem(path, pathItem)
             }
+        }
+    }
+
+    /**
+     * Notes the resource a documented operation serves, so its schema is registered.
+     */
+    private static void record(PersistentEntity entity, Map<String, PersistentEntity> documentedEntities) {
+        if (entity) {
+            documentedEntities[PersistentEntitySchemaBuilder.schemaName(entity)] = entity
         }
     }
 
@@ -221,7 +218,7 @@ class UrlMappingsOpenApiCustomizer implements OpenApiCustomizer {
         if (entity && method.name() in BODY_METHODS) {
             operation.setRequestBody(new RequestBody().content(
                     new Content().addMediaType(DEFAULT_MEDIA_TYPE,
-                            new MediaType().schema(requestReference(entity)))))
+                            new MediaType().schema(entityReference(entity)))))
         }
 
         operation
@@ -247,23 +244,18 @@ class UrlMappingsOpenApiCustomizer implements OpenApiCustomizer {
      * documented operation does not appear as an orphan. Associations are followed so that a
      * referenced schema never points at one that was left out.
      */
-    private void registerSchemas(OpenAPI openApi, Map<String, PersistentEntity> responseEntities,
-                                 Map<String, PersistentEntity> requestEntities) {
-        if (mappingContext == null || (!responseEntities && !requestEntities)) {
+    private void registerSchemas(OpenAPI openApi, Map<String, PersistentEntity> documentedEntities) {
+        if (mappingContext == null || !documentedEntities) {
             return
         }
 
         Map<String, PersistentEntity> reachable = [:]
-        reachable.putAll(responseEntities)
-        addAssociated(responseEntities.values(), reachable)
-        addAssociated(requestEntities.values(), reachable)
+        reachable.putAll(documentedEntities)
+        addAssociated(documentedEntities.values(), reachable)
 
         Components components = openApi.components ?: new Components()
         reachable.each { String name, PersistentEntity entity ->
             components.addSchemas(name, schemaBuilder.build(entity, mappingContext))
-        }
-        requestEntities.each { String name, PersistentEntity entity ->
-            components.addSchemas(name, schemaBuilder.buildRequest(entity, mappingContext))
         }
         openApi.setComponents(components)
     }
@@ -410,7 +402,7 @@ class UrlMappingsOpenApiCustomizer implements OpenApiCustomizer {
         if (entity && method.name() in BODY_METHODS) {
             operation.setRequestBody(new RequestBody().content(
                     new Content().addMediaType(DEFAULT_MEDIA_TYPE,
-                            new MediaType().schema(requestReference(entity)))))
+                            new MediaType().schema(entityReference(entity)))))
         }
 
         operation
@@ -432,11 +424,6 @@ class UrlMappingsOpenApiCustomizer implements OpenApiCustomizer {
     private static Schema<?> entityReference(PersistentEntity entity) {
         new Schema<>().$ref(PersistentEntitySchemaBuilder.referencePath(
                 PersistentEntitySchemaBuilder.schemaName(entity)))
-    }
-
-    private static Schema<?> requestReference(PersistentEntity entity) {
-        new Schema<>().$ref(PersistentEntitySchemaBuilder.referencePath(
-                PersistentEntitySchemaBuilder.requestSchemaName(entity)))
     }
 
     private static String operationId(String controllerName, String actionName, PathItem.HttpMethod method) {
