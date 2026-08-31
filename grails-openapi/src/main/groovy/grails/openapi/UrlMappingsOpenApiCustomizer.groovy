@@ -68,11 +68,11 @@ class UrlMappingsOpenApiCustomizer implements OpenApiCustomizer {
     private static final String DEFAULT_MEDIA_TYPE = 'application/json'
     private static final String DEFAULT_RESPONSE_CODE = '200'
     private static final String NOT_FOUND_RESPONSE_CODE = '404'
+    private static final String UNPROCESSABLE_RESPONSE_CODE = '422'
     private static final String GREEDY_PARAMETER_NAME = 'path'
     private static final String FORMAT_PARAMETER_NAME = 'format'
     private static final String OPTIONAL_EXTENSION_SUFFIX = UrlMapping.OPTIONAL_EXTENSION_WILDCARD + '?'
 
-    private static final List<String> COLLECTION_ACTIONS = ['index'].asImmutable()
     private static final List<String> BODY_METHODS = ['POST', 'PUT', 'PATCH'].asImmutable()
 
     private final UrlMappingsHolder urlMappingsHolder
@@ -133,7 +133,9 @@ class UrlMappingsOpenApiCustomizer implements OpenApiCustomizer {
             record(entity, documentedEntities)
 
             Class<?> commandType = requestBodyType(controllerType, mappedAction, method, documentedCommands)
-            Operation operation = buildOperation(mapping, controllerName, method, pathNames, entity, commandType)
+            recordDeclaredResponseTypes(controllerType, mappedAction, documentedCommands)
+            Operation operation = buildOperation(mapping, controllerName, method, pathNames, entity, commandType,
+                    controllerType != null && RestfulController.isAssignableFrom(controllerType))
             ActionAnnotations.apply(operation, controllerType, mappedAction)
             pathItem.operation(method, operation)
             paths.addPathItem(path, pathItem)
@@ -188,6 +190,7 @@ class UrlMappingsOpenApiCustomizer implements OpenApiCustomizer {
                 record(entity, documentedEntities)
 
                 Class<?> commandType = requestBodyType(controllerClass.clazz, actionName, method, documentedCommands)
+                recordDeclaredResponseTypes(controllerClass.clazz, actionName, documentedCommands)
                 Operation operation = buildAction(controllerName, actionName, method, takesId, entity, commandType)
                 ActionAnnotations.apply(operation, controllerClass.clazz, actionName)
                 pathItem.operation(method, operation)
@@ -225,15 +228,7 @@ class UrlMappingsOpenApiCustomizer implements OpenApiCustomizer {
                     .schema(new StringSchema()))
         }
 
-        Schema<?> responseSchema = responseSchema(entity, actionName)
-        MediaType mediaType = responseSchema ? new MediaType().schema(responseSchema) : new MediaType()
-        operation.setResponses(new ApiResponses().addApiResponse(DEFAULT_RESPONSE_CODE,
-                new ApiResponse().description('Success')
-                        .content(new Content().addMediaType(DEFAULT_MEDIA_TYPE, mediaType))))
-
-        if (takesId) {
-            operation.responses.addApiResponse(NOT_FOUND_RESPONSE_CODE, new ApiResponse().description('Not Found'))
-        }
+        operation.setResponses(restfulResponses(entity, actionName, takesId))
 
         Schema<?> bodySchema = requestBodySchema(entity, commandType, method)
         if (bodySchema) {
@@ -392,7 +387,8 @@ class UrlMappingsOpenApiCustomizer implements OpenApiCustomizer {
     }
 
     private static Operation buildOperation(UrlMapping mapping, String controllerName, PathItem.HttpMethod method,
-                                            List<String> pathNames, PersistentEntity entity, Class<?> commandType) {
+                                            List<String> pathNames, PersistentEntity entity, Class<?> commandType,
+                                            boolean restfulController) {
         String actionName = asStaticName(mapping.actionName)
 
         Operation operation = new Operation()
@@ -408,16 +404,23 @@ class UrlMappingsOpenApiCustomizer implements OpenApiCustomizer {
                             .schema(new StringSchema()))
         }
 
-        Schema<?> responseSchema = responseSchema(entity, actionName)
-        MediaType mediaType = responseSchema ? new MediaType().schema(responseSchema) : new MediaType()
-        ApiResponse response = new ApiResponse()
-                .description('Success')
-                .content(new Content().addMediaType(DEFAULT_MEDIA_TYPE, mediaType))
-        operation.setResponses(new ApiResponses().addApiResponse(DEFAULT_RESPONSE_CODE, response))
+        // A RestfulController's responses are known from what it does, whether it was reached
+        // through a mapping that names it or through the default one.
+        if (restfulController && actionName) {
+            operation.setResponses(restfulResponses(entity, actionName, pathNames as boolean))
+        }
+        else {
+            Schema<?> responseSchema = responseSchema(entity, actionName)
+            MediaType mediaType = responseSchema ? new MediaType().schema(responseSchema) : new MediaType()
+            ApiResponse response = new ApiResponse()
+                    .description('Success')
+                    .content(new Content().addMediaType(DEFAULT_MEDIA_TYPE, mediaType))
+            operation.setResponses(new ApiResponses().addApiResponse(DEFAULT_RESPONSE_CODE, response))
 
-        if (pathNames) {
-            operation.responses.addApiResponse(NOT_FOUND_RESPONSE_CODE,
-                    new ApiResponse().description('Not Found'))
+            if (pathNames) {
+                operation.responses.addApiResponse(NOT_FOUND_RESPONSE_CODE,
+                        new ApiResponse().description('Not Found'))
+            }
         }
 
         Schema<?> bodySchema = requestBodySchema(entity, commandType, method)
@@ -430,6 +433,32 @@ class UrlMappingsOpenApiCustomizer implements OpenApiCustomizer {
     }
 
     /**
+     * The responses a RestfulController action gives, read from what the controller does rather
+     * than assumed: save answers CREATED, delete answers NO_CONTENT with no body, an action
+     * addressed by an identifier can miss, and an action that validates what it binds can answer
+     * with the validation errors.
+     */
+    private static ApiResponses restfulResponses(PersistentEntity entity, String actionName, boolean takesId) {
+        ApiResponses responses = new ApiResponses()
+
+        ApiResponse success = new ApiResponse().description('Success')
+        if (RestfulControllerActions.hasResponseBody(actionName)) {
+            Schema<?> schema = responseSchema(entity, actionName)
+            MediaType mediaType = schema ? new MediaType().schema(schema) : new MediaType()
+            success.setContent(new Content().addMediaType(DEFAULT_MEDIA_TYPE, mediaType))
+        }
+        responses.addApiResponse(RestfulControllerActions.successCode(actionName), success)
+
+        if (takesId) {
+            responses.addApiResponse(NOT_FOUND_RESPONSE_CODE, new ApiResponse().description('Not Found'))
+        }
+        if (RestfulControllerActions.validates(actionName)) {
+            responses.addApiResponse(UNPROCESSABLE_RESPONSE_CODE, new ApiResponse().description('Validation failed'))
+        }
+        responses
+    }
+
+    /**
      * The index action responds with a collection; the remaining REST actions respond with a single
      * resource.
      */
@@ -437,7 +466,7 @@ class UrlMappingsOpenApiCustomizer implements OpenApiCustomizer {
         if (entity == null) {
             return null
         }
-        actionName in COLLECTION_ACTIONS
+        RestfulControllerActions.isCollection(actionName)
                 ? new ArraySchema().items(entityReference(entity))
                 : entityReference(entity)
     }
@@ -456,6 +485,17 @@ class UrlMappingsOpenApiCustomizer implements OpenApiCustomizer {
             documentedCommands[commandType.simpleName] = commandType
         }
         commandType
+    }
+
+    /**
+     * A type an application named as a response schema is described the same way a command object
+     * is, so the reference the annotation produces resolves.
+     */
+    private static void recordDeclaredResponseTypes(Class<?> controllerClass, String actionName,
+                                                    Map<String, Class<?>> documented) {
+        for (Class<?> type : ActionAnnotations.declaredResponseTypes(controllerClass, actionName)) {
+            documented[type.simpleName] = type
+        }
     }
 
     private static Schema<?> requestBodySchema(PersistentEntity entity, Class<?> commandType, PathItem.HttpMethod method) {

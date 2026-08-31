@@ -25,6 +25,10 @@ import groovy.transform.CompileStatic
 import io.swagger.v3.oas.annotations.Hidden
 import io.swagger.v3.oas.annotations.responses.ApiResponses
 import io.swagger.v3.oas.models.Operation
+import io.swagger.v3.oas.models.media.ArraySchema
+import io.swagger.v3.oas.models.media.Content
+import io.swagger.v3.oas.models.media.MediaType
+import io.swagger.v3.oas.models.media.Schema
 import io.swagger.v3.oas.models.responses.ApiResponse
 import io.swagger.v3.oas.models.responses.ApiResponses as ApiResponsesModel
 
@@ -38,6 +42,8 @@ import io.swagger.v3.oas.models.responses.ApiResponses as ApiResponsesModel
  */
 @CompileStatic
 class ActionAnnotations {
+
+    private static final String DEFAULT_MEDIA_TYPE = 'application/json'
 
     /**
      * @return whether the controller as a whole is withheld from the document
@@ -113,8 +119,75 @@ class ActionAnnotations {
         if (declared.description()) {
             response.setDescription(declared.description())
         }
+
+        // An action's return type is not declared, so a response schema can only come from the
+        // annotation. Where one is given it replaces what the resource convention supplied.
+        Content content = declaredContent(declared.content())
+        if (content != null) {
+            response.setContent(content)
+        }
+
         responses.addApiResponse(declared.responseCode(), response)
         operation.setResponses(responses)
+    }
+
+    /**
+     * Resolves the schema an application declares for a response. Only the implementation type is
+     * read; anything else the annotation can express is left to springdoc.
+     */
+    private static Content declaredContent(io.swagger.v3.oas.annotations.media.Content[] declared) {
+        if (!declared) {
+            return null
+        }
+        Content content = new Content()
+        boolean described = false
+
+        for (io.swagger.v3.oas.annotations.media.Content each : declared) {
+            Class<?> implementation = each.schema()?.implementation()
+            if (implementation == null || implementation == Void) {
+                continue
+            }
+
+            Schema<?> schema = new Schema<>().$ref(
+                    PersistentEntitySchemaBuilder.referencePath(implementation.simpleName))
+            if (each.array()?.schema()?.implementation() != null
+                    && each.array().schema().implementation() != Void) {
+                schema = new ArraySchema().items(schema)
+            }
+
+            String mediaType = each.mediaType() ?: DEFAULT_MEDIA_TYPE
+            content.addMediaType(mediaType, new MediaType().schema(schema))
+            described = true
+        }
+        described ? content : null
+    }
+
+    /**
+     * The types an application declared a response schema for, so their schemas are registered.
+     */
+    static List<Class<?>> declaredResponseTypes(Class<?> controllerClass, String actionName) {
+        List<Class<?>> types = []
+        for (Method method : actionMethods(controllerClass, actionName)) {
+            collectResponseTypes(method.getAnnotation(ApiResponses)?.value(), types)
+            io.swagger.v3.oas.annotations.responses.ApiResponse single =
+                    method.getAnnotation(io.swagger.v3.oas.annotations.responses.ApiResponse)
+            if (single != null) {
+                collectResponseTypes([single] as io.swagger.v3.oas.annotations.responses.ApiResponse[], types)
+            }
+        }
+        types
+    }
+
+    private static void collectResponseTypes(io.swagger.v3.oas.annotations.responses.ApiResponse[] declared,
+                                             List<Class<?>> types) {
+        declared?.each { io.swagger.v3.oas.annotations.responses.ApiResponse response ->
+            response.content()?.each { io.swagger.v3.oas.annotations.media.Content each ->
+                Class<?> implementation = each.schema()?.implementation()
+                if (implementation != null && implementation != Void) {
+                    types << implementation
+                }
+            }
+        }
     }
 
     /**

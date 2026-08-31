@@ -162,6 +162,39 @@ declares are described.
 Where an action takes no command object, as on a `RestfulController`, the body is the domain class
 the controller serves.
 
+==== Responses
+
+A `RestfulController` action is described from what the controller does, so the statuses are the ones
+it answers with rather than a uniform `200`:
+
+[cols="1,1,2"]
+|===
+| Action | Status | Body
+
+| `index` | 200 | a collection of the resource
+| `show`, `edit` | 200, 404 | the resource
+| `create` | 200 | the resource
+| `save` | 201, 422 | the resource
+| `update`, `patch` | 200, 404, 422 | the resource
+| `delete` | 204, 404 | none
+|===
+
+`422` appears on the actions that validate what they bind, and `delete` carries no response body
+because the controller renders none.
+
+Any other controller is described as responding with the resource it is named for, which is a
+convention rather than something the framework can determine: an action's return type is not
+declared. Where an action responds with something else, name it:
+
+[source,groovy]
+----
+@ApiResponse(responseCode = '200',
+        content = @Content(schema = @Schema(implementation = BookSummary)))
+def summary() { }
+----
+
+The declared type replaces the convention and its schema is described alongside the others.
+
 ==== Correcting What Is Derived
 
 What this module derives from the URL mappings can be corrected or enriched with the standard

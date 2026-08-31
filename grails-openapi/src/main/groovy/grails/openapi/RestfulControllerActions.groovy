@@ -41,12 +41,53 @@ class RestfulControllerActions {
      * {@code allowedMethods} RestfulController declares; a subclass that overrides it is read
      * directly instead.
      */
+    private static final String DEFAULT_SUCCESS_CODE = '200'
+
+    private static final Set<String> COLLECTION_ACTIONS = ['index'].toSet().asImmutable()
+
+    private static final Set<String> VALIDATING_ACTIONS = ['save', 'update', 'patch'].toSet().asImmutable()
+
+    private static final Map<String, String> SUCCESS_CODES = [
+            save: '201',
+            delete: '204',
+    ].asImmutable()
+
     private static final Map<String, String> DEFAULT_METHODS = [
             save: 'POST',
             update: 'PUT',
             patch: 'PATCH',
             delete: 'DELETE',
     ].asImmutable()
+
+    /**
+     * The status a successful action responds with. RestfulController answers CREATED from save
+     * and NO_CONTENT from delete rather than OK.
+     */
+    static String successCode(String actionName) {
+        SUCCESS_CODES.getOrDefault(actionName, DEFAULT_SUCCESS_CODE)
+    }
+
+    /**
+     * Whether the successful response carries the resource. Delete renders no content.
+     */
+    static boolean hasResponseBody(String actionName) {
+        actionName != 'delete'
+    }
+
+    /**
+     * Whether the action responds with a collection of the resource rather than one of them.
+     */
+    static boolean isCollection(String actionName) {
+        actionName in COLLECTION_ACTIONS
+    }
+
+    /**
+     * Whether the action validates what it binds, and so can answer with the validation errors.
+     * Patch delegates to update, so all three do.
+     */
+    static boolean validates(String actionName) {
+        actionName in VALIDATING_ACTIONS
+    }
 
     static boolean takesId(String actionName) {
         actionName in ID_ACTIONS
