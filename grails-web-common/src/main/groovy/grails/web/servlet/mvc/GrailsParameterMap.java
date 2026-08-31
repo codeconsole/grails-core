@@ -92,21 +92,17 @@ public class GrailsParameterMap extends TypeConvertingMap implements Cloneable {
         this.request = request;
         // Request parameters (including form-encoded PUT/PATCH/DELETE bodies parsed at the servlet
         // layer by Spring's FormContentFilter) are read straight from the request parameter map.
-        // updateNestedKeys only reads this map - everything it builds goes into wrappedMap - so the
-        // servlet's own map is used directly, and copied only when uploaded files have to be merged in.
-        // A multipart body the container refuses to parse leaves every parameter read on the request
-        // failing, so the map is read tolerantly - see WebUtils.readParameterMap.
+        // updateNestedKeys only reads this map, so the servlet's own is used directly and copied only when
+        // there is something to merge into it. Read tolerantly because a multipart body the container
+        // refuses to parse fails every parameter read - see WebUtils.readParameterMap.
         Map requestMap = WebUtils.readParameterMap(request);
 
-        // The request is the outermost request, so the multipart request is discovered from its wrapper
-        // chain rather than being the request itself.
+        // This is the outermost request, so the multipart request is found through its wrapper chain.
         MultipartHttpServletRequest multipartRequest = WebUtils.resolveMultipartRequest(request);
         if (multipartRequest != null) {
-            // A servlet container is not obliged to publish the text fields of a multipart body through the
-            // request's own parameter map - which is why Spring's multipart wrapper merges them into its.
-            // The request read above is the outermost one and need not be that wrapper, so the same merge
-            // happens here. Where the container did publish them the merge finds nothing to add, and the
-            // wrapper's values never displace the request's own, which is the precedence Spring applies.
+            // A container need not publish a multipart body's text fields through the request's own
+            // parameter map, which is why Spring's wrapper merges them into its. This request need not be
+            // that wrapper, so the same merge happens here, without displacing the request's own values.
             Map<String, String[]> multipartParameters = WebUtils.readParameterMap(multipartRequest);
             boolean mergeParameters = !multipartParameters.isEmpty() &&
                     !requestMap.keySet().containsAll(multipartParameters.keySet());

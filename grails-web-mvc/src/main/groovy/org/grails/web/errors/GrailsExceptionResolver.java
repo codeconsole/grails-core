@@ -247,18 +247,15 @@ public class GrailsExceptionResolver extends SimpleMappingExceptionResolver impl
     /**
      * Whether a forward to a status-code controller mapping is already running for this request.
      * <p>
-     * The forward re-enters the {@code DispatcherServlet}, and the forwarded dispatch resolves the same
-     * status-code mapping again, because {@link WebUtils#ERROR_STATUS_CODE_ATTRIBUTE} is set on the
-     * request. An error handler that fails for a reason that is a property of the request rather than of
-     * the moment - an unparseable multipart body, a missing collaborator - therefore fails again inside
-     * that forward, and the failure resolves back into this method. Without this guard that is an
-     * unbounded recursion which ends in {@code StackOverflowError} after tens of thousands of nested
-     * dispatches.
+     * The forward re-enters the {@code DispatcherServlet} and resolves the same status-code mapping again,
+     * since {@link WebUtils#ERROR_STATUS_CODE_ATTRIBUTE} is set. An error handler failing for a reason that
+     * belongs to the request rather than the moment - an unparseable multipart body, a missing collaborator
+     * - therefore fails again inside that forward and resolves back into this method, recursing until
+     * {@code StackOverflowError}.
      * <p>
-     * The error handler is not forwarded to from inside itself: a second attempt would produce the same
-     * failure. The exception is returned to the {@code DispatcherServlet} instead, which reports it once
-     * through the container. The flag is cleared when the forward returns, so an error handler that runs
-     * successfully leaves a later, unrelated error on the same request free to use it again.
+     * So the handler is not forwarded to from inside itself; the exception goes back to the
+     * {@code DispatcherServlet}, which reports it once through the container. The flag is cleared when the
+     * forward returns, leaving a later error on the same request free to use the handler again.
      *
      * @param request The request
      * @return True when this request is inside an error handler forward

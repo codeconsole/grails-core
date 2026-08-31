@@ -50,8 +50,7 @@ public final class HiddenHttpMethod {
 
     /**
      * Request attribute carrying the method a request asked to be treated as, published by the dispatcher
-     * when it resolves an override. The request Grails exposes is always the outermost one, so the override
-     * travels as an attribute rather than by substituting a wrapper for it.
+     * when it resolves an override.
      */
     public static final String OVERRIDDEN_METHOD_ATTRIBUTE = HiddenHttpMethod.class.getName() + ".METHOD";
 
@@ -69,10 +68,8 @@ public final class HiddenHttpMethod {
      * Whether a servlet filter rewrites the request method, rather than it being resolved inside the
      * dispatcher. True when either this application or Spring Boot has asked for a filter.
      * <p>
-     * Whenever this returns true a filter really is on the chain: Grails contributes its own whenever Boot's
-     * is absent, which is the case for an application declaring {@code @EnableWebMvc}, since that backs off
-     * {@code WebMvcAutoConfiguration} and with it the filter it would have registered. Callers can therefore
-     * rely on this without inspecting the context for a filter bean.
+     * Whenever this returns true a filter really is on the chain, so callers need not check the context for
+     * one - see {@code GrailsHiddenHttpMethodFilterAutoConfiguration}, which holds that invariant up.
      *
      * @param properties the environment or configuration to read
      * @return true when a servlet filter performs the override

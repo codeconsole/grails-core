@@ -65,12 +65,8 @@ class UrlMappingsHandlerMapping extends AbstractHandlerMapping {
 
     /**
      * Whether to resolve a "_method" parameter on a POST into the overridden request method while matching
-     * URL mappings. Set when the hidden HTTP method filter is disabled, so browser forms keep reaching the
-     * PUT, PATCH and DELETE routes without the request method being rewritten ahead of the dispatcher.
-     *
-     * GrailsDispatcherServlet wraps the request with the same override before this runs, so ordinarily the
-     * request already reports the overridden method; this is the fallback for a dispatcher that does not,
-     * and keeps mapping resolution correct on its own terms.
+     * URL mappings. Set when the hidden HTTP method filter is disabled. The dispatcher normally wraps the
+     * request with the override before this runs, so this is the fallback for one that does not.
      */
     boolean resolveHiddenHttpMethod = false
 
@@ -82,16 +78,12 @@ class UrlMappingsHandlerMapping extends AbstractHandlerMapping {
     protected HandlerInterceptor[] webRequestHandlerInterceptors
 
     /**
-     * The HTTP method to match URL mappings against: the request's own method, unless a POST carries a
-     * "_method" parameter naming one of the methods a browser form cannot submit and this mapping has been
-     * asked to resolve it.
+     * The HTTP method to match URL mappings against: the request's own, unless a POST carries a "_method"
+     * parameter naming one a browser form cannot submit and this mapping has been asked to resolve it.
+     * Skipped for a forward or include, as in the dispatcher: those inherit the parameters of the request
+     * that started them, so a "_method" meant for it would go on selecting an action for every one after.
      */
     protected String resolveHttpMethod(HttpServletRequest request) {
-        // The same guard the dispatcher applies before it resolves the override. A forward or an include
-        // inherits the parameters of the request that started it, so without this a "_method" meant for the
-        // original dispatch would go on selecting an action for every internal one after it - for a dispatch
-        // the dispatcher deliberately left alone. An error dispatch never arrives here; it is matched by
-        // status code above.
         if (!resolveHiddenHttpMethod || WebUtils.isForwardOrInclude(request)) {
             return request.getMethod()
         }

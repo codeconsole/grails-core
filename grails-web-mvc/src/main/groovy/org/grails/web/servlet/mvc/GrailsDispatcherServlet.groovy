@@ -82,8 +82,7 @@ class GrailsDispatcherServlet extends DispatcherServlet implements ServletContex
 
     /**
      * Whether a POST carrying a "_method" parameter should be treated as the method it names. Set when the
-     * hidden HTTP method filter is disabled, so browser forms keep working while the override moves inside
-     * the dispatcher.
+     * hidden HTTP method filter is disabled.
      */
     boolean resolveHiddenHttpMethod = false
 
@@ -94,31 +93,24 @@ class GrailsDispatcherServlet extends DispatcherServlet implements ServletContex
         if (shouldProcessMultiPart) {
             HttpServletRequest processedRequest = super.checkMultipart(request)
             if (!processedRequest.is(request)) {
-                // The GrailsWebRequest was bound by GrailsWebRequestFilter, so the request it holds sits
-                // below this wrapper and cannot reach it by unwrapping. Publish it so params and
-                // request.getFile(..) can find it, then hand it to the dispatch like Spring MVC expects.
+                // GrailsWebRequestFilter bound the request below this wrapper, so it cannot reach the
+                // wrapper by unwrapping. Publish it for params and request.getFile(..) to find.
                 currentRequest = processedRequest
                 request.setAttribute(WebUtils.MULTIPART_HTTP_SERVLET_REQUEST_ATTRIBUTE, processedRequest)
                 GrailsWebRequest.lookup(request)?.multipartRequestResolved()
             }
         }
 
-        // Resolve the hidden method override here rather than in a servlet filter. Running after multipart
-        // resolution means a multipart body is parsed once, by the dispatcher, instead of being forced open
-        // by a getParameter() call ahead of it; running after the filter chain means Spring Security and any
-        // other filter still see the request's real POST method.
-        //
-        // The override is recorded as a request attribute and the wrapper handed to the dispatch. What
-        // routes on it reads the attribute -- URL mapping resolution and allowedMethods, through
-        // HiddenHttpMethod.effectiveMethod. The request an application holds keeps reporting POST, which is
-        // the method on the wire, the method Spring Security saw and the method the access log records.
-        // Requests without an override are returned untouched, leaving multipart handling exactly as it was.
+        // Resolved here rather than in a servlet filter: after multipart resolution, so the body is parsed
+        // once by the dispatcher instead of being forced open by a getParameter() ahead of it, and after the
+        // filter chain, so Spring Security still sees the request's real POST method.
         if (resolveHiddenHttpMethod && shouldProcessMultiPart) {
             String override = HiddenHttpMethod.resolveOverride(currentRequest)
             if (override != null) {
-                // The request Grails exposes is always the outermost one, so the override is published as
-                // an attribute rather than by substituting a wrapper for it. HiddenHttpMethod.effectiveMethod
-                // reads it, which is how allowedMethods sees the same method the URL mappings matched on.
+                // Recorded as an attribute rather than by substituting the wrapper, because the request
+                // Grails exposes is the outermost one. HiddenHttpMethod.effectiveMethod reads it, which is
+                // how mapping resolution and allowedMethods see the override; request.method still reports
+                // the POST that arrived.
                 request.setAttribute(HiddenHttpMethod.OVERRIDDEN_METHOD_ATTRIBUTE, override)
                 return HiddenHttpMethod.wrap(override, currentRequest)
             }

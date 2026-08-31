@@ -70,11 +70,9 @@ class ParamsAwareLocaleChangeInterceptor extends LocaleChangeInterceptor {
 
         def localeParam = params?.get(paramName)
         if (!localeParam) {
-            // LocaleChangeInterceptor reads the parameter straight off the request, and this interceptor
-            // runs on the error dispatch too - where the body may be a multipart the container refuses to
-            // parse, so that read throws and replaces the error being rendered with a secondary failure.
-            // Probe it tolerantly first and only delegate when there is something to act on; the container
-            // caches the parsed parameters, so the read super repeats is a map lookup.
+            // super reads the parameter straight off the request. This also runs on the error dispatch,
+            // where an unparseable multipart body would make that read throw and replace the error being
+            // rendered. Probe tolerantly first; the container caches parameters, so super's read is a lookup.
             if (WebUtils.readParameter(request, paramName) == null) {
                 return true
             }

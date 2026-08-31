@@ -630,17 +630,12 @@ public class WebUtils extends org.springframework.web.util.WebUtils {
      * Perform a request parameter read that must not fail the request when the container cannot parse a
      * multipart body.
      * <p>
-     * A {@code multipart/form-data} request breaching the configured upload limits fails the container's
-     * part parsing, and from then on every parameter read on that request fails with it. Grails reads
-     * request parameters on paths that run before, alongside and after the handler - the {@code _method}
-     * override in the filter chain, {@code params}, the locale-change interceptor, the exception
-     * resolver's request log - and throwing from any of them replaces the failure the application should
-     * see with a secondary one raised somewhere the application cannot handle it. The read yields
-     * {@code fallback} instead; the request cannot reach a controller either way, because
-     * {@code DispatcherServlet.checkMultipart} raises the multipart failure during dispatch.
-     * <p>
-     * The tolerance is confined to multipart requests: an unreadable parameter on any other request still
-     * propagates.
+     * A {@code multipart/form-data} request breaching the upload limits fails the container's part parsing,
+     * and every parameter read on it fails from then on. Grails reads parameters before, alongside and after
+     * the handler, so throwing from any of them would replace the failure the application should see with a
+     * secondary one raised where it cannot be handled. The read yields {@code fallback} instead; the request
+     * still cannot reach a controller, because {@code DispatcherServlet.checkMultipart} raises the multipart
+     * failure during dispatch. An unreadable parameter on a non-multipart request still propagates.
      *
      * @param request The request
      * @param read The read to perform

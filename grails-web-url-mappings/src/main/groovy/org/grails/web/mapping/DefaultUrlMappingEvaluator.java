@@ -139,17 +139,13 @@ public class DefaultUrlMappingEvaluator implements UrlMappingEvaluator, ClassLoa
     /**
      * Whether a "resources" mapping should also route a POST to the member URL at the update action.
      *
-     * RestfulController has permitted POST for update since #9926, which was raised because AngularJS
-     * $resource — and the client libraries modelled on it — POST to the member URL to save an existing
-     * object rather than sending a PUT. No mapping was ever generated for it, so that permission has been
-     * unreachable through a "resources" block.
+     * RestfulController has permitted POST for update since #9926 — raised because AngularJS $resource, and
+     * the clients modelled on it, POST to the member URL to save an existing object rather than sending a
+     * PUT — but no mapping was ever generated for it, leaving that permission unreachable.
      *
-     * The route is generated only while the hidden HTTP method filter is disabled. In that mode a form POST
-     * carrying "_method=PUT" already reaches update and the filter chain already sees it as a bare POST to
-     * the member URL, so accepting the same request without the parameter widens nothing: an authorization
-     * rule cannot distinguish the two cases either way. Adding it unconditionally would be a different
-     * proposition, because with the filter on every path to update is rewritten to PUT before Spring
-     * Security sees it.
+     * Generated only while the hidden HTTP method filter is disabled. In that mode the filter chain already
+     * sees a form's PUT as a bare POST to this URL, so the route adds no request shape security had been
+     * able to distinguish; it does add a member URL that answers POST, which the upgrade notes call out.
      */
     private boolean isPostUpdateVariantEnabled() {
         return grailsApplication != null && !HiddenHttpMethod.isServletFilterMode(grailsApplication.getConfig());

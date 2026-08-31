@@ -89,17 +89,13 @@ public class DataBindingUtils {
     }
 
     /**
-     * The beans used by data binding for the most recently seen {@link ApplicationContext}. Data binding happens on
-     * every request and each bind previously repeated the same {@code containsBean}/{@code getBean} lookups for
-     * singletons which never change for the life of a context.
+     * The beans used by data binding for the most recently seen {@link ApplicationContext}, so that a bind does not
+     * repeat the same lookups for singletons which never change for the life of a context.
      * <p>
-     * The cache holds a single entry on purpose. An application has one main context, so a single entry is enough to
-     * remove the repeated lookups, while a map keyed by context would retain every context ever seen - which would
-     * leak whole bean factories in test runs and in development where contexts are replaced. Whenever the context
-     * differs from the cached one, the entry is replaced and the previous context becomes eligible for collection.
-     * <p>
-     * The field is volatile so that request threads see a consistent, fully constructed entry. A race merely results
-     * in two threads resolving the same singletons, which is harmless.
+     * One entry on purpose: an application has one main context, while a map keyed by context would retain every
+     * context ever seen and leak bean factories wherever contexts are replaced, as in tests and development. A
+     * different context replaces the entry, leaving the previous one collectable. Volatile so that a thread seeing
+     * an entry sees it fully constructed; a race merely resolves the same singletons twice.
      */
     private static volatile ContextBoundBeans contextBoundBeans;
 
@@ -833,15 +829,11 @@ public class DataBindingUtils {
     }
 
     /**
-     * A singleton bean looked up at most once per {@link ApplicationContext} once it is found. Each bean is
-     * resolved lazily so that asking for one of them never triggers the creation of another.
+     * A singleton bean looked up at most once per {@link ApplicationContext} once it is found, resolved lazily so
+     * that asking for one bean never triggers the creation of another.
      * <p>
-     * A context that does not hold the bean is not remembered as a miss: the lookup is repeated until the bean
-     * is found, so one registered after the first attempt is still picked up. That matters for a context which
-     * is still being populated, and costs nothing once the bean is there.
-     * <p>
-     * The field is volatile, so a thread which sees a non-null bean also sees it fully constructed. Two threads
-     * racing simply look the same singleton up twice.
+     * A miss is not remembered: the lookup repeats until the bean is found, so one registered after the first
+     * attempt - into a context still being populated - is still picked up, and costs nothing once it is there.
      *
      * @param <T> the type of the bean
      */
