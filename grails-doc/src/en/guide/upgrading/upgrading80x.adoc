@@ -1183,12 +1183,15 @@ class BootStrap {
 }
 ----
 
-Select the configuration per response with `respond`:
+Select the configuration per response with `respond`, or with the `json` render argument:
 
 [source,groovy]
 ----
 respond book, jsonConfiguration: 'deep'
+render json: book, jsonConfiguration: 'deep'
 ----
+
+Both accept `includes` and `excludes`, which apply on top of the named configuration.
 
 For direct serialization, inject the same registry and use
 `namedJsonConfigurationRegistry.writeValueAsString('deep', book)` or
