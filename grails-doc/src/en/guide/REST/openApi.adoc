@@ -273,6 +273,9 @@ Some mappings are not documented in full:
 * A `RestfulController` constructed read only answers `405` from its write actions. That is decided
   when the controller is constructed rather than declared on the class, so those actions are still
   described; annotate them with `@Hidden` to withhold them.
+* A class that cannot be introspected is left out of the document and logged, rather than failing
+  the document. Two controllers sharing a name across namespaces, or two domain classes sharing a
+  simple name across packages, resolve to one schema.
 
 ==== Customizing the Document
 

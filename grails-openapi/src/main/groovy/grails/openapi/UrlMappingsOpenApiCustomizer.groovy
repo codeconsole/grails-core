@@ -122,40 +122,10 @@ class UrlMappingsOpenApiCustomizer implements OpenApiCustomizer {
         Paths paths = openApi.paths ?: new Paths()
 
         for (UrlMapping mapping : urlMappingsHolder.urlMappings) {
-            String controllerName = asStaticName(mapping.controllerName)
-            if (!controllerName || isResponseCode(mapping)) {
-                continue
+            describe("URL mapping [${mapping.urlData?.urlPattern}]".toString()) {
+                addMappedOperation(paths, mapping, controllerClasses, entitiesByController,
+                        documentedEntities, documentedCommands)
             }
-
-            String mappedAction = asStaticName(mapping.actionName)
-            Class<?> controllerType = controllerClasses[controllerName]
-            if (ActionAnnotations.isHidden(controllerType)
-                    || (mappedAction && ActionAnnotations.isHidden(controllerType, mappedAction))) {
-                continue
-            }
-
-            List<String> pathNames = pathParameterNames(mapping)
-            String path = toOpenApiPath(mapping, pathNames)
-            if (!path) {
-                continue
-            }
-
-            PathItem pathItem = paths.get(path) ?: new PathItem()
-            PathItem.HttpMethod method = toHttpMethod(mapping.httpMethod)
-            if (method == null || pathItem.readOperationsMap().containsKey(method)) {
-                continue
-            }
-
-            PersistentEntity entity = entitiesByController[controllerName]
-            record(entity, documentedEntities)
-
-            Class<?> commandType = requestBodyType(controllerType, mappedAction, method, documentedCommands)
-            recordDeclaredResponseTypes(controllerType, mappedAction, documentedCommands)
-            Operation operation = buildOperation(mapping, controllerName, method, pathNames, entity, commandType,
-                    controllerType != null && RestfulController.isAssignableFrom(controllerType))
-            ActionAnnotations.apply(operation, controllerType, mappedAction)
-            pathItem.operation(method, operation)
-            paths.addPathItem(path, pathItem)
         }
 
         addExpandedMappings(paths, entitiesByController, documentedEntities, documentedCommands)
@@ -170,6 +140,49 @@ class UrlMappingsOpenApiCustomizer implements OpenApiCustomizer {
      * names is reachable both ways, and both are documented: an endpoint that answers but is absent
      * from the document is worse than one described twice.
      */
+    /**
+     * Describes one operation from a mapping that names its controller.
+     */
+    private void addMappedOperation(Paths paths, UrlMapping mapping, Map<String, Class<?>> controllerClasses,
+                                    Map<String, PersistentEntity> entitiesByController,
+                                    Map<String, PersistentEntity> documentedEntities,
+                                    Map<String, Class<?>> documentedCommands) {
+        String controllerName = asStaticName(mapping.controllerName)
+        if (!controllerName || isResponseCode(mapping)) {
+            return
+        }
+
+        String mappedAction = asStaticName(mapping.actionName)
+        Class<?> controllerType = controllerClasses[controllerName]
+        if (ActionAnnotations.isHidden(controllerType)
+                || (mappedAction && ActionAnnotations.isHidden(controllerType, mappedAction))) {
+            return
+        }
+
+        List<String> pathNames = pathParameterNames(mapping)
+        String path = toOpenApiPath(mapping, pathNames)
+        if (!path) {
+            return
+        }
+
+        PathItem pathItem = paths.get(path) ?: new PathItem()
+        PathItem.HttpMethod method = toHttpMethod(mapping.httpMethod)
+        if (method == null || pathItem.readOperationsMap().containsKey(method)) {
+            return
+        }
+
+        PersistentEntity entity = entitiesByController[controllerName]
+        record(entity, documentedEntities)
+
+        Class<?> commandType = requestBodyType(controllerType, mappedAction, method, documentedCommands)
+        recordDeclaredResponseTypes(controllerType, mappedAction, documentedCommands)
+        Operation operation = buildOperation(mapping, controllerName, method, pathNames, entity, commandType,
+                controllerType != null && RestfulController.isAssignableFrom(controllerType))
+        ActionAnnotations.apply(operation, controllerType, mappedAction)
+        pathItem.operation(method, operation)
+        paths.addPathItem(path, pathItem)
+    }
+
     /**
      * Describes the RestfulControllers a mapping reaches without naming, which is how a REST
      * application is mapped: {@code get "/$controller"(action: 'index')} names the action but leaves
@@ -212,8 +225,10 @@ class UrlMappingsOpenApiCustomizer implements OpenApiCustomizer {
                         ? actionNames(controllerClass)
                         : Collections.singletonList(mappedAction)
                 for (String actionName : actions) {
-                    addExpandedOperation(paths, mapping, names, controllerClass, actionName, expandsAction,
-                            entitiesByController, documentedEntities, documentedCommands)
+                    describe("action [${controllerClass.logicalPropertyName}.${actionName}]".toString()) {
+                        addExpandedOperation(paths, mapping, names, controllerClass, actionName, expandsAction,
+                                entitiesByController, documentedEntities, documentedCommands)
+                    }
                 }
             }
         }
@@ -401,8 +416,10 @@ class UrlMappingsOpenApiCustomizer implements OpenApiCustomizer {
 
         Components components = openApi.components ?: new Components()
         for (Class<?> commandType : documentedCommands.values()) {
-            schemaBuilder.buildCommand(commandType, openApi.specVersion).each { String name, Schema<?> schema ->
-                components.addSchemas(name, schema)
+            describe("command [${commandType.name}]".toString()) {
+                schemaBuilder.buildCommand(commandType, openApi.specVersion).each { String name, Schema<?> schema ->
+                    components.addSchemas(name, schema)
+                }
             }
         }
         if (mappingContext == null) {
@@ -413,8 +430,10 @@ class UrlMappingsOpenApiCustomizer implements OpenApiCustomizer {
         for (PersistentEntity entity : documentedEntities.values()) {
             // swagger-core resolves the classes an entity is associated with, so each documented
             // resource contributes its own schema and everything it refers to.
-            schemaBuilder.build(entity, mappingContext, openApi.specVersion).each { String name, Schema<?> schema ->
-                components.addSchemas(name, schema)
+            describe("domain class [${entity.javaClass.name}]".toString()) {
+                schemaBuilder.build(entity, mappingContext, openApi.specVersion).each { String name, Schema<?> schema ->
+                    components.addSchemas(name, schema)
+                }
             }
         }
         openApi.setComponents(components)
@@ -424,6 +443,20 @@ class UrlMappingsOpenApiCustomizer implements OpenApiCustomizer {
      * Grails exposes controller and action names as {@code Object} because a mapping may define
      * them dynamically. Only statically declared names can be documented.
      */
+    /**
+     * Describes one part of the document, leaving the rest intact if it cannot be described. An
+     * application should not lose its whole API description because one class cannot be introspected.
+     */
+    private static void describe(String what, Closure<?> work) {
+        try {
+            work.call()
+        }
+        catch (Exception e) {
+            LOG.warn('Skipping {} in the OpenAPI document: {}', what, e.message)
+            LOG.debug('Could not describe {}', what, e)
+        }
+    }
+
     /**
      * A mapping declared for a status code rather than a URL, whose pattern is the code itself.
      */
