@@ -26,12 +26,16 @@ own URL mappings instead, so springdoc on its own produces a document with no pa
 
 ==== Getting Started
 
-Add the module, and add the springdoc Swagger UI starter if the browsable UI is also wanted:
+The module produces the document. Swagger UI is a separate choice, because the document is equally
+useful to a code generator or a contract test, and because it is not the only viewer that reads it:
 
 [source,groovy]
 ----
 dependencies {
+    // the OpenAPI document, served at /v3/api-docs
     implementation 'org.apache.grails:grails-openapi'
+
+    // optional: Swagger UI, served at /swagger-ui/index.html
     implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui'
 }
 ----
