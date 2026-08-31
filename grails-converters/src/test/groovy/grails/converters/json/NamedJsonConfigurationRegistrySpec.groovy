@@ -24,6 +24,10 @@ import tools.jackson.databind.SerializationContext
 import tools.jackson.databind.ValueSerializer
 import tools.jackson.databind.json.JsonMapper
 
+import grails.core.DefaultGrailsApplication
+import grails.core.support.proxy.DefaultProxyHandler
+import org.grails.datastore.mapping.keyvalue.mapping.config.KeyValueMappingContext
+import org.grails.web.converters.jackson.GrailsJsonMapperCustomizer
 import spock.lang.Specification
 
 class NamedJsonConfigurationRegistrySpec extends Specification {
@@ -83,6 +87,27 @@ class NamedJsonConfigurationRegistrySpec extends Specification {
         !registry.writer('deep').is(first)
     }
 
+
+    void 'a projection applies on top of the named configuration'() {
+        given: "a domain-style value written through a named configuration"
+        def mappingContext = new KeyValueMappingContext('named')
+        mappingContext.addPersistentEntities(NamedJsonBook)
+        def application = new DefaultGrailsApplication(NamedJsonBook)
+        application.mappingContext = mappingContext
+        def builder = JsonMapper.builder()
+        new GrailsJsonMapperCustomizer(application, new DefaultProxyHandler()).customize(builder)
+        def registry = new NamedJsonConfigurationRegistry(builder.build())
+        registry.register('deep') { it.attribute('depth', 'deep') }
+        def book = new NamedJsonBook(title: 'Projected').tap { id = 4 }
+
+        when: "the response also asks for a projection"
+        def writer = new StringWriter()
+        registry.writeValue('deep', writer, book, ['title'], null)
+
+        then: "selecting a configuration does not discard it"
+        writer.toString() == '{"title":"Projected"}'
+    }
+
 }
 
 class NamedJsonValue {
@@ -97,4 +122,9 @@ class NamedJsonValueSerializer extends ValueSerializer<NamedJsonValue> {
         generator.writeStringProperty('configured', value.name.toUpperCase(Locale.ROOT))
         generator.writeEndObject()
     }
+}
+
+class NamedJsonBook {
+    Long id
+    String title
 }

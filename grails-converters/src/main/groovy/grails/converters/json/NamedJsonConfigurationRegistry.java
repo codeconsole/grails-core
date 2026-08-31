@@ -20,6 +20,7 @@ package grails.converters.json;
 
 import java.io.IOException;
 import java.io.Writer;
+import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -28,6 +29,8 @@ import java.util.function.Supplier;
 
 import tools.jackson.databind.ObjectWriter;
 import tools.jackson.databind.json.JsonMapper;
+
+import org.grails.web.converters.jackson.GrailsJsonMapperCustomizer;
 
 /**
  * Registry for request-safe named Jackson response configurations.
@@ -87,5 +90,28 @@ public final class NamedJsonConfigurationRegistry {
 
     public void writeValue(String name, Writer output, Object value) throws IOException {
         writer(name).writeValue(output, value);
+    }
+
+    /**
+     * Writes with a per-response include/exclude projection applied on top of the named
+     * configuration, so that selecting a configuration does not discard the projection.
+     *
+     * @param name the registered configuration
+     * @param output the response writer
+     * @param value the value to write
+     * @param includes property names to include, or null for all
+     * @param excludes property names to exclude, or null for none
+     * @throws IOException if writing fails
+     */
+    public void writeValue(String name, Writer output, Object value,
+            List<String> includes, List<String> excludes) throws IOException {
+        ObjectWriter writer = writer(name);
+        if (includes != null && !includes.isEmpty()) {
+            writer = writer.withAttribute(GrailsJsonMapperCustomizer.INCLUDES_ATTRIBUTE, includes);
+        }
+        if (excludes != null && !excludes.isEmpty()) {
+            writer = writer.withAttribute(GrailsJsonMapperCustomizer.EXCLUDES_ATTRIBUTE, excludes);
+        }
+        writer.writeValue(output, value);
     }
 }

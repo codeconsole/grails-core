@@ -121,7 +121,7 @@ class DefaultJsonRendererSpec extends Specification {
 
         then:
         1 * namedRenderer.contains('deep') >> true
-        1 * namedRenderer.render('deep', [title: 'Named'], _) >> { arguments ->
+        1 * namedRenderer.render('deep', [title: 'Named'], _, null, null) >> { arguments ->
             arguments[2].write('{"configured":true}')
         }
         webRequest.response.contentAsString == '{"configured":true}'
@@ -201,6 +201,24 @@ class DefaultJsonRendererSpec extends Specification {
 
         and: "the legacy converter path reports ordinary JSON, not problem JSON"
         webRequest.response.contentType == 'application/json;charset=UTF-8'
+    }
+
+    void 'a projection reaches the named configuration rather than being dropped'() {
+        given:
+        def namedRenderer = Mock(NamedJsonRenderer)
+        def renderer = new DefaultJsonRenderer<Map>(Map)
+        renderer.namedJsonRenderer = namedRenderer
+        def webRequest = GrailsWebMockUtil.bindMockWebRequest()
+
+        when: "a response asks for both a named configuration and a projection"
+        renderer.render([title: 'Named'], new ServletRenderContext(webRequest,
+                [jsonConfiguration: 'deep', includes: ['title'], excludes: ['hidden']]))
+
+        then: "the projection is passed on, not discarded"
+        1 * namedRenderer.contains('deep') >> true
+        1 * namedRenderer.render('deep', [title: 'Named'], _, ['title'], ['hidden']) >> { arguments ->
+            arguments[2].write('{"title":"Named"}')
+        }
     }
 
     void 'a non UTF-8 encoding round-trips through the Spring converter'() {

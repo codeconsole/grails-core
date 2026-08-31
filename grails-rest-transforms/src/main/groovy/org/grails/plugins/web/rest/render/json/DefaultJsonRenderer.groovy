@@ -132,7 +132,8 @@ class DefaultJsonRenderer<T> implements Renderer<T> {
     protected void renderJson(T object, RenderContext context) {
         String selectedConfiguration = context.arguments?.get('jsonConfiguration')?.toString()
         if (selectedConfiguration && namedJsonRenderer?.contains(selectedConfiguration)) {
-            namedJsonRenderer.render(selectedConfiguration, object, context.writer)
+            namedJsonRenderer.render(selectedConfiguration, object, context.writer,
+                    context.includes, context.excludes)
             return
         }
         if (!selectedConfiguration && canUseSpringConverter(context)) {

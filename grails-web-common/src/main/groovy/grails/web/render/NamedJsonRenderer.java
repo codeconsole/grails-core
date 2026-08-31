@@ -20,6 +20,7 @@ package grails.web.render;
 
 import java.io.IOException;
 import java.io.Writer;
+import java.util.List;
 
 /**
  * Renders a value with a registered named JSON configuration.
@@ -31,4 +32,19 @@ public interface NamedJsonRenderer {
     boolean contains(String name);
 
     void render(String name, Object value, Writer writer) throws IOException;
+
+    /**
+     * Renders with a per-response projection applied.
+     *
+     * @param name the registered configuration
+     * @param value the value to write
+     * @param writer the response writer
+     * @param includes property names to include, or null for all
+     * @param excludes property names to exclude, or null for none
+     * @throws IOException if writing fails
+     */
+    default void render(String name, Object value, Writer writer,
+            List<String> includes, List<String> excludes) throws IOException {
+        render(name, value, writer);
+    }
 }

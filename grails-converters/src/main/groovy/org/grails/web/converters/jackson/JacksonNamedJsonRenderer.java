@@ -20,6 +20,7 @@ package org.grails.web.converters.jackson;
 
 import java.io.IOException;
 import java.io.Writer;
+import java.util.List;
 
 import grails.converters.json.NamedJsonConfigurationRegistry;
 import grails.web.render.NamedJsonRenderer;
@@ -45,5 +46,11 @@ public final class JacksonNamedJsonRenderer implements NamedJsonRenderer {
     @Override
     public void render(String name, Object value, Writer writer) throws IOException {
         registry.writeValue(name, writer, value);
+    }
+
+    @Override
+    public void render(String name, Object value, Writer writer,
+            List<String> includes, List<String> excludes) throws IOException {
+        registry.writeValue(name, writer, value, includes, excludes);
     }
 }
