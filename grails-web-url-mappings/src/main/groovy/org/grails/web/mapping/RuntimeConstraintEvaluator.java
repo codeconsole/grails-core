@@ -59,8 +59,13 @@ class RuntimeConstraintEvaluator extends Closure<Object> {
         return constraintName;
     }
 
-    @Override
-    public Object call(Object... args) {
+    /**
+     * Resolves the token from the current request's parameters. {@link Closure#call()} lands here
+     * through the closure metaclass, which resolves {@code doCall} by name; the method is deliberately
+     * not a {@code call(Object...)} override so that a statically-typed override returning request
+     * parameters does not exist on the {@code Closure} type surface.
+     */
+    public Object doCall(Object... args) {
         GrailsWebRequest webRequest = (GrailsWebRequest) RequestContextHolder.currentRequestAttributes();
         return webRequest.getParams().get(constraintName);
     }
