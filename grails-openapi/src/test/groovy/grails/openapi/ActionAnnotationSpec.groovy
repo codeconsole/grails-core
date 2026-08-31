@@ -128,6 +128,54 @@ class ActionAnnotationSpec extends Specification {
         }
     }
 
+    void 'applies the annotations to a route a mapping names'() {
+        given: 'a mapping that names the controller, rather than the default mapping'
+        def openApi = new OpenAPI()
+
+        when:
+        mappedCustomizer().customise(openApi)
+
+        then: 'the summary and tags come from the annotation'
+        with(openApi.paths['/catalogue'].get) {
+            summary == 'List the widgets'
+            operationId == 'listWidgets'
+            tags == ['Catalogue']
+        }
+    }
+
+    void 'withholds a Hidden action from a route a mapping names'() {
+        given:
+        def openApi = new OpenAPI()
+
+        when:
+        mappedCustomizer().customise(openApi)
+
+        then:
+        !openApi.paths.containsKey('/catalogue/{id}')
+
+        and:
+        openApi.paths['/catalogue']
+    }
+
+    private static UrlMappingsOpenApiCustomizer mappedCustomizer() {
+        def application = new DefaultGrailsApplication(AnnotatedController).tap { it.initialise() }
+        def ctx = new MockApplicationContext()
+        ctx.registerMockBean(GrailsApplication.APPLICATION_ID, application)
+        def holder = new DefaultUrlMappingsHolder(new DefaultUrlMappingEvaluator(ctx).evaluateMappings {
+            get '/catalogue'(controller: 'annotated', action: 'index')
+            delete '/catalogue/$id'(controller: 'annotated', action: 'delete')
+        })
+
+        MappingContext context = new KeyValueMappingContext('test')
+        context.addPersistentEntity(AnnotatedWidget)
+        context.setValidatorRegistry(new DefaultValidatorRegistry(context, new ConnectionSourceSettings()))
+
+        new UrlMappingsOpenApiCustomizer(holder).tap {
+            grailsApplication = application
+            mappingContext = context
+        }
+    }
+
     private static UrlMappingsOpenApiCustomizer customizer() {
         def application = new DefaultGrailsApplication(AnnotatedController, InternalController).tap {
             it.initialise()
