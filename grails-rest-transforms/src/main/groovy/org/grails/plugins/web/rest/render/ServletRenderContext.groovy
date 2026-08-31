@@ -30,6 +30,7 @@ import grails.web.mime.MimeType
 import org.grails.core.util.IncludeExcludeSupport
 import org.grails.web.servlet.mvc.GrailsWebRequest
 import org.grails.web.util.GrailsApplicationAttributes
+import org.grails.web.util.HiddenHttpMethod
 import org.grails.web.util.WebUtils
 
 /**
@@ -105,7 +106,7 @@ class ServletRenderContext extends AbstractRenderContext {
 
     @Override
     HttpMethod getHttpMethod() {
-        HttpMethod.valueOf(webRequest.request.method)
+        HttpMethod.valueOf(HiddenHttpMethod.effectiveMethod(webRequest.request))
     }
 
     @Override

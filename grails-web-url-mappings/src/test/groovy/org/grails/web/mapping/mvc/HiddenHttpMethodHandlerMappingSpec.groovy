@@ -34,6 +34,7 @@ import org.grails.config.PropertySourcesConfig
 import org.grails.support.MockApplicationContext
 import org.grails.web.mapping.DefaultUrlMappingEvaluator
 import org.grails.web.mapping.DefaultUrlMappingsHolder
+import org.grails.web.util.HiddenHttpMethod
 
 /**
  * With the hidden HTTP method filter disabled, the handler mapping resolves the '_method' parameter itself
@@ -90,6 +91,28 @@ class HiddenHttpMethodHandlerMappingSpec extends AbstractUrlMappingsSpec {
         attribute                             | value
         RequestDispatcher.FORWARD_REQUEST_URI | '/books/1'
         RequestDispatcher.INCLUDE_REQUEST_URI | '/books/1'
+    }
+
+    void 'a method-keyed action name is selected by the overridden method'() {
+        given: 'a mapping naming a different action per HTTP method'
+        def handler = methodKeyedHandlerMapping()
+
+        when: 'a form POST names PUT and the dispatcher has resolved the override'
+        UrlMappingInfo info = matchWithResolvedOverride(handler, '/books', 'PUT')
+
+        then: 'the name is the one the overridden method keys, as it is under the servlet filter'
+        info.actionName == 'save'
+    }
+
+    void 'a method-keyed action name falls back to the method the request arrived as'() {
+        given: 'nothing asked for an override'
+        def handler = methodKeyedHandlerMapping()
+
+        when:
+        UrlMappingInfo info = match(handler, 'POST', '/books', null)
+
+        then:
+        info.actionName == 'update'
     }
 
     void 'the parameter is ignored while the filter is doing the rewriting'() {
@@ -178,6 +201,45 @@ class HiddenHttpMethodHandlerMappingSpec extends AbstractUrlMappingsSpec {
 
         def handler = new UrlMappingsHandlerMapping(new GrailsControllerUrlMappings(grailsApplication, holder))
         handler.resolveHiddenHttpMethod = filterDisabled
+        handler
+    }
+
+    /**
+     * Matches with the override already published, which is the state the dispatcher leaves behind before
+     * the handler mapping runs. Under the servlet filter the request itself reports the overridden method
+     * and the attribute is absent, so both modes reach the same answer through
+     * {@link HiddenHttpMethod#effectiveMethod}.
+     */
+    private static UrlMappingInfo matchWithResolvedOverride(UrlMappingsHandlerMapping handler, String uri,
+                                                            String override) {
+        def webRequest = GrailsWebMockUtil.bindMockWebRequest()
+        def request = webRequest.request
+        request.method = 'POST'
+        request.requestURI = uri
+        request.addParameter('_method', override)
+        request.setAttribute(HiddenHttpMethod.OVERRIDDEN_METHOD_ATTRIBUTE, override)
+        handler.getHandler(request)?.handler as UrlMappingInfo
+    }
+
+    private UrlMappingsHandlerMapping methodKeyedHandlerMapping() {
+        def config = new PropertySourcesConfig()
+        config.merge([(Settings.WEB_HIDDEN_METHOD_FILTER_ENABLED): false])
+
+        def grailsApplication = new DefaultGrailsApplication(BookController)
+        grailsApplication.config = config
+        grailsApplication.initialise()
+
+        def ctx = new MockApplicationContext()
+        ctx.registerMockBean(GrailsApplication.APPLICATION_ID, grailsApplication)
+        def holder = new DefaultUrlMappingsHolder(new DefaultUrlMappingEvaluator(ctx).evaluateMappings {
+            '/books' {
+                controller = 'book'
+                action = [GET: 'index', POST: 'update', PUT: 'save']
+            }
+        })
+
+        def handler = new UrlMappingsHandlerMapping(new GrailsControllerUrlMappings(grailsApplication, holder))
+        handler.resolveHiddenHttpMethod = true
         handler
     }
 

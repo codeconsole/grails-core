@@ -2833,14 +2833,34 @@ form submit**, and since the URL is unchanged, `update` and `delete` cannot be t
 * **`X-HTTP-Method-Override` is no longer honoured**, and a `_method` value other than `PUT`, `PATCH` or
 `DELETE` is ignored rather than applied.
 
-* **A controller's `request.method` reports `POST`.** What routes on the override agrees with it -- URL
-mapping resolution picks the action the overridden method names, and `allowedMethods` accepts it -- but the
-request object itself keeps reporting the method the request arrived as. That is the same method Spring
-Security saw and the access log recorded, and it is deliberate: with the rewrite moved out of the filter
-chain, a request that reported anything else would put back the divergence between what an application sees
-and what the infrastructure saw. Anything branching on `request.method` for a `PUT`, `PATCH` or `DELETE` form
-submit needs `allowedMethods`, separate actions, or its own read of the parameter. Enabling the filter
-restores the old reading, as described below.
+* **A controller's `request.method` reports `POST`.** The servlet request reports the method the request
+arrived as -- the one Spring Security saw and the access log recorded. That is deliberate: with the rewrite
+moved out of the filter chain, a request object that reported anything else would put back the divergence
+between what an application sees and what the infrastructure saw.
++
+Everything Grails resolves *from* the request answers with the overridden method instead, so that an
+application behaves the same whichever mode is in force:
++
+[cols="1,1"]
+|===
+|Reports the overridden method |Reports the method on the wire
+
+|URL mapping resolution, including a method-keyed `controller`/`action` name
+|`request.method`, and the servlet request generally
+
+|`allowedMethods`
+|Spring Security and every other servlet filter
+
+|Link generation, when no `method` attribute is given
+|The container's access log
+
+|`RenderContext.getHttpMethod()`
+|
+|===
++
+Anything branching on `request.method` itself for a `PUT`, `PATCH` or `DELETE` form submit needs
+`allowedMethods`, separate actions, or its own read of the parameter. Enabling the filter restores the old
+reading, as described below.
 
 ===== 50.3 Restoring the previous behaviour
 
