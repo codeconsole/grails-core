@@ -132,6 +132,39 @@ validation facets.
 
 Operations addressed by an identifier also document a `404` response.
 
+==== Correcting What Is Derived
+
+What this module derives from the URL mappings can be corrected or enriched with the standard
+OpenAPI annotations on a controller action:
+
+[source,groovy]
+----
+import io.swagger.v3.oas.annotations.Hidden
+import io.swagger.v3.oas.annotations.Operation
+import io.swagger.v3.oas.annotations.responses.ApiResponse
+
+class BookController extends RestfulController<Book> {
+
+    @Operation(summary = 'List the catalogue', tags = ['Catalogue'])
+    def index() { }
+
+    @ApiResponse(responseCode = '403', description = 'Not your book')
+    def show() { }
+
+    @Hidden
+    def delete() { }
+}
+----
+
+`@Operation` supplies the summary, description, operation id, tags, and whether the operation is
+deprecated. A value the annotation does not set is left as derived, so an action can be given a
+summary without restating anything else. `@ApiResponse` adds a response alongside the derived ones
+rather than replacing them.
+
+`@Hidden` withholds an action from the document, and on the controller withholds all of it, which is
+how an endpoint that is reachable but not part of the published API is kept out. `@Operation(hidden
+= true)` does the same.
+
 ==== Controllers Reached Through the Default Mapping
 
 A `RestfulController` is also served by the default `"/$controller/$action?/$id?"` mapping, at URLs

@@ -1,0 +1,130 @@
+/*
+ *  Licensed to the Apache Software Foundation (ASF) under one
+ *  or more contributor license agreements.  See the NOTICE file
+ *  distributed with this work for additional information
+ *  regarding copyright ownership.  The ASF licenses this file
+ *  to you under the Apache License, Version 2.0 (the
+ *  "License"); you may not use this file except in compliance
+ *  with the License.  You may obtain a copy of the License at
+ *
+ *    https://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing,
+ *  software distributed under the License is distributed on an
+ *  "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ *  KIND, either express or implied.  See the License for the
+ *  specific language governing permissions and limitations
+ *  under the License.
+ */
+package grails.openapi
+
+import java.lang.reflect.Method
+
+import groovy.transform.CompileStatic
+
+import io.swagger.v3.oas.annotations.Hidden
+import io.swagger.v3.oas.annotations.responses.ApiResponses
+import io.swagger.v3.oas.models.Operation
+import io.swagger.v3.oas.models.responses.ApiResponse
+import io.swagger.v3.oas.models.responses.ApiResponses as ApiResponsesModel
+
+/**
+ * Reads the OpenAPI annotations an application declares on a controller action, so that what this
+ * module derives from the URL mappings can be corrected or enriched without writing a controller
+ * springdoc can scan.
+ *
+ * @author Scott Murphy Heiberg
+ * @since 8.0
+ */
+@CompileStatic
+class ActionAnnotations {
+
+    /**
+     * @return whether the controller as a whole is withheld from the document
+     */
+    static boolean isHidden(Class<?> controllerClass) {
+        controllerClass != null && controllerClass.isAnnotationPresent(Hidden)
+    }
+
+    /**
+     * @return whether the action is withheld from the document, either through {@code @Hidden} or
+     * through {@code @Operation(hidden = true)}
+     */
+    static boolean isHidden(Class<?> controllerClass, String actionName) {
+        for (Method method : actionMethods(controllerClass, actionName)) {
+            if (method.isAnnotationPresent(Hidden)) {
+                return true
+            }
+            io.swagger.v3.oas.annotations.Operation declared =
+                    method.getAnnotation(io.swagger.v3.oas.annotations.Operation)
+            if (declared != null && declared.hidden()) {
+                return true
+            }
+        }
+        false
+    }
+
+    /**
+     * Applies the declared annotations over the operation this module built. A value the
+     * application did not set is left as derived.
+     */
+    static void apply(Operation operation, Class<?> controllerClass, String actionName) {
+        for (Method method : actionMethods(controllerClass, actionName)) {
+            applyOperation(operation, method.getAnnotation(io.swagger.v3.oas.annotations.Operation))
+            applyResponses(operation, method.getAnnotation(ApiResponses))
+            applyResponse(operation, method.getAnnotation(io.swagger.v3.oas.annotations.responses.ApiResponse))
+        }
+    }
+
+    private static void applyOperation(Operation operation, io.swagger.v3.oas.annotations.Operation declared) {
+        if (declared == null) {
+            return
+        }
+        if (declared.summary()) {
+            operation.setSummary(declared.summary())
+        }
+        if (declared.description()) {
+            operation.setDescription(declared.description())
+        }
+        if (declared.operationId()) {
+            operation.setOperationId(declared.operationId())
+        }
+        if (declared.tags()) {
+            operation.setTags(declared.tags().toList())
+        }
+        if (declared.deprecated()) {
+            operation.setDeprecated(true)
+        }
+    }
+
+    private static void applyResponses(Operation operation, ApiResponses declared) {
+        if (declared == null) {
+            return
+        }
+        declared.value().each { applyResponse(operation, it) }
+    }
+
+    private static void applyResponse(Operation operation, io.swagger.v3.oas.annotations.responses.ApiResponse declared) {
+        if (declared == null || !declared.responseCode()) {
+            return
+        }
+        ApiResponsesModel responses = operation.responses ?: new ApiResponsesModel()
+        ApiResponse response = responses.get(declared.responseCode()) ?: new ApiResponse()
+        if (declared.description()) {
+            response.setDescription(declared.description())
+        }
+        responses.addApiResponse(declared.responseCode(), response)
+        operation.setResponses(responses)
+    }
+
+    /**
+     * Grails compiles an action into more than one method where it takes a command object, so every
+     * method of that name is consulted rather than only the first found.
+     */
+    private static List<Method> actionMethods(Class<?> controllerClass, String actionName) {
+        if (controllerClass == null || !actionName) {
+            return Collections.<Method> emptyList()
+        }
+        controllerClass.methods.findAll { Method it -> it.name == actionName }.toList()
+    }
+}

@@ -99,12 +99,20 @@ class UrlMappingsOpenApiCustomizer implements OpenApiCustomizer {
     @Override
     void customise(OpenAPI openApi) {
         Map<String, PersistentEntity> entitiesByController = indexEntitiesByController()
+        Map<String, Class<?>> controllerClasses = indexControllerClasses()
         Map<String, PersistentEntity> documentedEntities = [:]
         Paths paths = openApi.paths ?: new Paths()
 
         for (UrlMapping mapping : urlMappingsHolder.urlMappings) {
             String controllerName = asStaticName(mapping.controllerName)
             if (!controllerName) {
+                continue
+            }
+
+            String mappedAction = asStaticName(mapping.actionName)
+            Class<?> controllerType = controllerClasses[controllerName]
+            if (ActionAnnotations.isHidden(controllerType)
+                    || (mappedAction && ActionAnnotations.isHidden(controllerType, mappedAction))) {
                 continue
             }
 
@@ -123,7 +131,9 @@ class UrlMappingsOpenApiCustomizer implements OpenApiCustomizer {
             PersistentEntity entity = entitiesByController[controllerName]
             record(entity, documentedEntities)
 
-            pathItem.operation(method, buildOperation(mapping, controllerName, method, pathNames, entity))
+            Operation operation = buildOperation(mapping, controllerName, method, pathNames, entity)
+            ActionAnnotations.apply(operation, controllerType, mappedAction)
+            pathItem.operation(method, operation)
             paths.addPathItem(path, pathItem)
         }
 
@@ -146,7 +156,8 @@ class UrlMappingsOpenApiCustomizer implements OpenApiCustomizer {
         }
 
         for (GrailsClass controllerClass : grailsApplication.getArtefacts(ControllerArtefactHandler.TYPE)) {
-            if (!RestfulController.isAssignableFrom(controllerClass.clazz)) {
+            if (!RestfulController.isAssignableFrom(controllerClass.clazz)
+                    || ActionAnnotations.isHidden(controllerClass.clazz)) {
                 continue
             }
 
@@ -155,6 +166,10 @@ class UrlMappingsOpenApiCustomizer implements OpenApiCustomizer {
             Object allowedMethods = controllerClass.getPropertyValue('allowedMethods')
 
             for (String actionName : actionNames(controllerClass)) {
+                if (ActionAnnotations.isHidden(controllerClass.clazz, actionName)) {
+                    continue
+                }
+
                 boolean takesId = RestfulControllerActions.takesId(actionName)
                 String path = takesId
                         ? "/${controllerName}/${actionName}/{id}".toString()
@@ -169,7 +184,9 @@ class UrlMappingsOpenApiCustomizer implements OpenApiCustomizer {
 
                 record(entity, documentedEntities)
 
-                pathItem.operation(method, buildAction(controllerName, actionName, method, takesId, entity))
+                Operation operation = buildAction(controllerName, actionName, method, takesId, entity)
+                ActionAnnotations.apply(operation, controllerClass.clazz, actionName)
+                pathItem.operation(method, operation)
                 paths.addPathItem(path, pathItem)
             }
         }
@@ -227,6 +244,17 @@ class UrlMappingsOpenApiCustomizer implements OpenApiCustomizer {
      * Registers a schema for every mapped domain class and indexes them by the controller name that
      * conventionally serves them, so operations can reference the right schema.
      */
+    private Map<String, Class<?>> indexControllerClasses() {
+        if (grailsApplication == null) {
+            return Collections.<String, Class<?>> emptyMap()
+        }
+        Map<String, Class<?>> byName = [:]
+        for (GrailsClass controllerClass : grailsApplication.getArtefacts(ControllerArtefactHandler.TYPE)) {
+            byName[controllerClass.logicalPropertyName] = controllerClass.clazz
+        }
+        byName
+    }
+
     private Map<String, PersistentEntity> indexEntitiesByController() {
         if (mappingContext == null) {
             return Collections.<String, PersistentEntity> emptyMap()
