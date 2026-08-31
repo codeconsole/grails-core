@@ -18,6 +18,8 @@
  */
 package org.grails.web.mapping.mvc
 
+import jakarta.servlet.RequestDispatcher
+
 import grails.artefact.Artefact
 import grails.config.Settings
 import grails.core.DefaultGrailsApplication
@@ -72,6 +74,22 @@ class HiddenHttpMethodHandlerMappingSpec extends AbstractUrlMappingsSpec {
 
         then:
         info.actionName == 'patch'
+    }
+
+    void 'the parameter does not select a route for an internal dispatch'() {
+        given: 'the filter is off, so the override would be resolved for a request arriving from outside'
+        def handler = bookHandlerMapping(true)
+
+        when: 'the dispatch is one the dispatcher leaves the override alone for, inheriting the parameter'
+        UrlMappingInfo info = matchInternalDispatch(handler, '/books/1', 'DELETE', attribute, value)
+
+        then: 'it routes as the POST it is, rather than as the method the original request asked for'
+        info.actionName == 'update'
+
+        where: 'an error dispatch is not among them - it is matched by status code and never gets this far'
+        attribute                             | value
+        RequestDispatcher.FORWARD_REQUEST_URI | '/books/1'
+        RequestDispatcher.INCLUDE_REQUEST_URI | '/books/1'
     }
 
     void 'the parameter is ignored while the filter is doing the rewriting'() {
@@ -161,6 +179,17 @@ class HiddenHttpMethodHandlerMappingSpec extends AbstractUrlMappingsSpec {
         def handler = new UrlMappingsHandlerMapping(new GrailsControllerUrlMappings(grailsApplication, holder))
         handler.resolveHiddenHttpMethod = filterDisabled
         handler
+    }
+
+    private static UrlMappingInfo matchInternalDispatch(UrlMappingsHandlerMapping handler, String uri,
+                                                        String override, String attribute, Object value) {
+        def webRequest = GrailsWebMockUtil.bindMockWebRequest()
+        def request = webRequest.request
+        request.method = 'POST'
+        request.requestURI = uri
+        request.addParameter('_method', override)
+        request.setAttribute(attribute, value)
+        handler.getHandler(request)?.handler as UrlMappingInfo
     }
 
     private static UrlMappingInfo match(UrlMappingsHandlerMapping handler, String method, String uri, String override) {

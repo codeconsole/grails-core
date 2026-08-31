@@ -108,10 +108,11 @@ class GrailsDispatcherServlet extends DispatcherServlet implements ServletContex
         // by a getParameter() call ahead of it; running after the filter chain means Spring Security and any
         // other filter still see the request's real POST method.
         //
-        // The wrapper is published through GrailsWebRequest so that everything reading the request through
-        // the Grails API -- controller "request", allowedMethods, interceptors -- agrees with the method the
-        // URL mappings matched on. Requests without an override are returned untouched, leaving multipart
-        // handling exactly as it was.
+        // The override is recorded as a request attribute and the wrapper handed to the dispatch. What
+        // routes on it reads the attribute -- URL mapping resolution and allowedMethods, through
+        // HiddenHttpMethod.effectiveMethod. The request an application holds keeps reporting POST, which is
+        // the method on the wire, the method Spring Security saw and the method the access log records.
+        // Requests without an override are returned untouched, leaving multipart handling exactly as it was.
         if (resolveHiddenHttpMethod && shouldProcessMultiPart) {
             String override = HiddenHttpMethod.resolveOverride(currentRequest)
             if (override != null) {

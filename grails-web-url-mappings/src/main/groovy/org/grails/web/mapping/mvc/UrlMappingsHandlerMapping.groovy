@@ -87,7 +87,12 @@ class UrlMappingsHandlerMapping extends AbstractHandlerMapping {
      * asked to resolve it.
      */
     protected String resolveHttpMethod(HttpServletRequest request) {
-        if (!resolveHiddenHttpMethod) {
+        // The same guard the dispatcher applies before it resolves the override. A forward or an include
+        // inherits the parameters of the request that started it, so without this a "_method" meant for the
+        // original dispatch would go on selecting an action for every internal one after it - for a dispatch
+        // the dispatcher deliberately left alone. An error dispatch never arrives here; it is matched by
+        // status code above.
+        if (!resolveHiddenHttpMethod || WebUtils.isForwardOrInclude(request)) {
             return request.getMethod()
         }
         HiddenHttpMethod.resolveOverride(request) ?: request.getMethod()

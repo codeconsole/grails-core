@@ -2814,7 +2814,12 @@ in-dispatcher resolution that replaces it accepts the parameter only, and only t
 * **`POST` to a member URL now reaches `update`.** A `resources` mapping generates `POST /books/$id` alongside
 `PUT /books/$id`. `RestfulController` has permitted `POST` for `update` since Grails 3 (issue #9926, raised
 because AngularJS `$resource` and the clients modelled on it POST to save an existing object) but no mapping
-was ever generated for it. That is now fixed, and it is what lets a form submit without a `_method` parameter.
+was ever generated for it. That is now fixed, and it is what lets a client submit without a `_method` parameter.
++
+This is a route that did not exist before, so a `POST` an application previously rejected at the member URL now
+reaches `update`. An authorization rule written to permit `POST` to the collection -- `POST /books` to create --
+will permit `POST /books/1` too wherever it is expressed as a prefix. **Review any rule that grants `POST` on a
+`resources` path before upgrading**, or keep the route out entirely by enabling the filter as described below.
 * **`<g:form>` is unchanged.** A form asking for `PUT`, `PATCH` or `DELETE` still submits a `POST` carrying a
 `_method` field, and the dispatcher resolves it. The route above is a fallback for a request that arrives
 without the parameter — an AngularJS-style client, or a hand-written form — rather than a replacement for it:
@@ -2828,8 +2833,14 @@ form submit**, and since the URL is unchanged, `update` and `delete` cannot be t
 * **`X-HTTP-Method-Override` is no longer honoured**, and a `_method` value other than `PUT`, `PATCH` or
 `DELETE` is ignored rather than applied.
 
-Everything reading the request through the Grails API is unaffected: a controller's `request`, `allowedMethods`,
-interceptors and URL mapping resolution all agree on the overridden method.
+* **A controller's `request.method` reports `POST`.** What routes on the override agrees with it -- URL
+mapping resolution picks the action the overridden method names, and `allowedMethods` accepts it -- but the
+request object itself keeps reporting the method the request arrived as. That is the same method Spring
+Security saw and the access log recorded, and it is deliberate: with the rewrite moved out of the filter
+chain, a request that reported anything else would put back the divergence between what an application sees
+and what the infrastructure saw. Anything branching on `request.method` for a `PUT`, `PATCH` or `DELETE` form
+submit needs `allowedMethods`, separate actions, or its own read of the parameter. Enabling the filter
+restores the old reading, as described below.
 
 ===== 50.3 Restoring the previous behaviour
 

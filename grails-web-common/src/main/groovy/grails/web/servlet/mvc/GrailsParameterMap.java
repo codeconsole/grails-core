@@ -102,17 +102,31 @@ public class GrailsParameterMap extends TypeConvertingMap implements Cloneable {
         // chain rather than being the request itself.
         MultipartHttpServletRequest multipartRequest = WebUtils.resolveMultipartRequest(request);
         if (multipartRequest != null) {
+            // A servlet container is not obliged to publish the text fields of a multipart body through the
+            // request's own parameter map - which is why Spring's multipart wrapper merges them into its.
+            // The request read above is the outermost one and need not be that wrapper, so the same merge
+            // happens here. Where the container did publish them the merge finds nothing to add, and the
+            // wrapper's values never displace the request's own, which is the precedence Spring applies.
+            Map<String, String[]> multipartParameters = WebUtils.readParameterMap(multipartRequest);
+            boolean mergeParameters = !multipartParameters.isEmpty() &&
+                    !requestMap.keySet().containsAll(multipartParameters.keySet());
+
             MultiValueMap<String, MultipartFile> fileMap = multipartRequest.getMultiFileMap();
-            if (!fileMap.isEmpty()) {
+            if (mergeParameters || !fileMap.isEmpty()) {
                 requestMap = new LinkedHashMap(requestMap);
-                for (Entry<String, List<MultipartFile>> entry : fileMap.entrySet()) {
-                    List<MultipartFile> value = entry.getValue();
-                    if (value.size() == 1) {
-                        requestMap.put(entry.getKey(), value.get(0));
-                    }
-                    else {
-                        requestMap.put(entry.getKey(), value);
-                    }
+            }
+            if (mergeParameters) {
+                for (Entry<String, String[]> entry : multipartParameters.entrySet()) {
+                    requestMap.putIfAbsent(entry.getKey(), entry.getValue());
+                }
+            }
+            for (Entry<String, List<MultipartFile>> entry : fileMap.entrySet()) {
+                List<MultipartFile> value = entry.getValue();
+                if (value.size() == 1) {
+                    requestMap.put(entry.getKey(), value.get(0));
+                }
+                else {
+                    requestMap.put(entry.getKey(), value);
                 }
             }
         }

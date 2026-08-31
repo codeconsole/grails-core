@@ -301,7 +301,10 @@ final class SpringSecurityUtils {
         }
 
         // look for an ajax=true parameter
-        if ('true' == request.getParameter('ajax')) {
+        // Read tolerantly: this runs inside the security filter chain, ahead of the dispatcher, so a
+        // multipart body the container refuses to parse would otherwise fail here rather than reaching
+        // the application's error handling.
+        if ('true' == WebUtils.readParameter(request, 'ajax')) {
             return true
         }
 

@@ -78,6 +78,36 @@ class GrailsParameterMapTests {
     }
 
     @Test
+    void testMultipartTextFieldsArePopulatedWhenTheRequestItselfDoesNotExposeThem() {
+        // A servlet container is not obliged to publish a multipart body's text fields through the request's
+        // own parameter map. Spring's wrapper merges them into its; here the outermost request is not that
+        // wrapper, so the fields are reachable only through the wrapper it published.
+        def multipart = multipartRequest()
+        multipart.addParameter('description', 'a file about nothing')
+        def request = new MockHttpServletRequest()
+        request.setAttribute(WebUtils.MULTIPART_HTTP_SERVLET_REQUEST_ATTRIBUTE, multipart)
+
+        theMap = new GrailsParameterMap(request)
+
+        assertEquals 'a file about nothing', theMap.description
+        assertEquals 'test.txt', theMap.file.originalFilename
+    }
+
+    @Test
+    void testTheRequestsOwnParametersWinOverTheMultipartWrappers() {
+        // The precedence Spring's own wrapper applies: what the request already answers with is not displaced.
+        def multipart = multipartRequest()
+        multipart.addParameter('name', 'from the multipart body')
+        def request = new MockHttpServletRequest()
+        request.addParameter('name', 'from the query string')
+        request.setAttribute(WebUtils.MULTIPART_HTTP_SERVLET_REQUEST_ATTRIBUTE, multipart)
+
+        theMap = new GrailsParameterMap(request)
+
+        assertEquals 'from the query string', theMap.name
+    }
+
+    @Test
     void testMultipleFilesUnderOneNameArePopulatedAsAList() {
         def request = new MockMultipartHttpServletRequest()
         request.contentType = 'multipart/form-data; boundary=test'
