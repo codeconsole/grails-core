@@ -18,62 +18,192 @@
  */
 package org.grails.doc.gradle
 
-import java.nio.file.Files
+import java.net.URLDecoder
 import java.nio.file.Path
 import java.util.regex.Matcher
 import java.util.regex.Pattern
 
 /**
- * Scans generated Groovydoc HTML for malformed inner-class links, where a
- * slash-separated path segment (produced for an inner class, e.g.
- * {@code Outer/Inner.html}) should have been the dotted Groovydoc naming
- * convention ({@code Outer.Inner.html}). Kept free of the Gradle API so it
- * can be unit tested directly - {@code build-logic/docs-core} deliberately
- * keeps Gradle classes off the test compile classpath.
+ * Scans generated Groovydoc for relative links that resolve to a page which was never
+ * generated, and sorts them by cause.
  *
- * <p>This intentionally does not audit the navigation links (deprecated-list.html,
- * help-doc.html, etc.): the bottom nav bar that {@code groovy-groovydoc} emits on
- * package-summary pages omits the relative-root prefix that every other occurrence
- * carries, which is a pre-existing quirk of that template rather than a content
- * issue this repository can fix - checking for it would flag hundreds of instances
- * of the same known, low-impact tool behavior on every doc build.</p>
+ * <p>The actionable cause is {@link Category#UNMAPPED_TYPE}: Groovydoc could not load a
+ * fully qualified type and no external javadoc was mapped for its package, so it emitted a
+ * link to a {@code fully.qualified.Name.html} page that does not exist. Either the type
+ * belongs on the Groovydoc classpath or its package needs an entry in the {@code links}
+ * configuration.</p>
+ *
+ * <p>The remaining causes are defects in Groovydoc's own templates and type resolution that
+ * nothing in this repository can influence, so they are reported without failing the build.
+ * See {@link Category} for the individual cases.</p>
+ *
+ * <p>Kept free of the Gradle API so it can be unit tested directly -
+ * {@code build-logic/docs-core} deliberately keeps Gradle classes off the test compile
+ * classpath.</p>
  */
 class GroovydocLinkAuditor {
 
-    // Inner class path issues like Query/Order.Direction.html -> Query.Order.Direction.html.
-    private static final Pattern INNER_CLASS_LINK_PATTERN =
-            Pattern.compile(/href='([^']+?)\/([A-Z][A-Za-z0-9_]*?)\/([A-Z][A-Za-z0-9_.]*?\.html)'/)
+    /**
+     * Pages Groovydoc's templates link to but never generate.
+     */
+    static final List<String> UNGENERATED_PAGES = [
+            'allclasses-noframe.html',
+            'constant-values.html',
+            'overview-tree.html'
+    ].asImmutable()
 
-    static List<String> findViolations(File apiDir) {
-        List<String> violations = []
+    enum Category {
 
-        apiDir.eachFileRecurse { File file ->
-            if (file.name.endsWith('.html')) {
-                violations.addAll(findViolationsInFile(file))
-            }
+        /** The type was never loaded and its package has no external javadoc mapping. */
+        UNMAPPED_TYPE('unresolved type with no external javadoc mapping', true),
+
+        /** The target exists, but the link was written relative to the wrong directory. */
+        WRONG_RELATIVE_PATH('link written relative to the wrong directory', false),
+
+        /** Groovydoc emitted a link to one of its own pages that it never generates. */
+        UNGENERATED_PAGE('link to a page Groovydoc never generates', false),
+
+        /** Groovydoc could not work out the package of a type it referenced by simple name. */
+        UNQUALIFIED_TYPE('type referenced by simple name that Groovydoc could not qualify', false)
+
+        final String description
+        final boolean actionable
+
+        private Category(String description, boolean actionable) {
+            this.description = description
+            this.actionable = actionable
         }
-
-        violations
     }
 
-    private static List<String> findViolationsInFile(File file) {
-        List<String> violations = []
-        String content = file.text
-        Path currentPath = file.toPath().parent
+    private static final Pattern HREF_PATTERN = Pattern.compile(/(?i)href\s*=\s*(['"])(.*?)\1/)
 
-        Matcher innerMatcher = INNER_CLASS_LINK_PATTERN.matcher(content)
-        while (innerMatcher.find()) {
-            String relPath = innerMatcher.group(1)
-            String outer = innerMatcher.group(2)
-            String inner = innerMatcher.group(3)
+    /** Markup inside an HTML comment is never rendered, so its hrefs are not real links. */
+    private static final Pattern HTML_COMMENT_PATTERN = Pattern.compile(/(?s)<!--.*?-->/)
 
-            Path targetPath = currentPath.resolve(relPath).resolve("${outer}.${inner}").normalize()
+    /** A '%' that does not start a well-formed escape marks an href that was never percent-encoded. */
+    private static final Pattern MALFORMED_ESCAPE_PATTERN = Pattern.compile(/(?i)%(?![0-9A-F]{2})/)
 
-            if (Files.exists(targetPath)) {
-                violations << "Malformed inner class link in ${file.name}: ${innerMatcher.group(0)}".toString()
+    /** A dotted file name whose leading segments are a package, e.g. {@code org.gradle.api.Project.html}. */
+    private static final Pattern QUALIFIED_TYPE_PAGE =
+            Pattern.compile(/^[a-z][A-Za-z0-9_]*(\.[a-z][A-Za-z0-9_]*)*\.[A-Z][A-Za-z0-9_.$]*\.html$/)
+
+    private static final List<String> ABSOLUTE_PREFIXES =
+            ['http://', 'https://', '//', 'mailto:', 'javascript:', 'data:'].asImmutable()
+
+    static Result audit(File apiDir, Collection<String> unmappedPackages = []) {
+        Result result = new Result()
+        Path apiPath = apiDir.toPath().toAbsolutePath().normalize()
+
+        apiDir.eachFileRecurse { File file ->
+            if (file.file && file.name.endsWith('.html')) {
+                auditFile(file, apiPath, unmappedPackages, result)
             }
         }
 
-        violations
+        result
+    }
+
+    static List<String> findViolations(File apiDir, Collection<String> unmappedPackages = []) {
+        audit(apiDir, unmappedPackages).violations
+    }
+
+    private static void auditFile(File file, Path apiPath, Collection<String> unmappedPackages, Result result) {
+        Path filePath = file.toPath().toAbsolutePath().normalize()
+        Path currentPath = filePath.parent
+        String page = apiPath.relativize(filePath).toString()
+
+        // Groovydoc repeats the same link on a page - the nav bar at the top and bottom, a
+        // type in both the summary and detail sections - so each href is audited only once.
+        Set<String> seen = []
+        Matcher matcher = HREF_PATTERN.matcher(HTML_COMMENT_PATTERN.matcher(file.text).replaceAll(''))
+        while (matcher.find()) {
+            String href = matcher.group(2).trim()
+            if (!seen.add(href)) {
+                continue
+            }
+            String target = targetOf(href)
+            if (!target) {
+                continue
+            }
+
+            Path resolved = currentPath.resolve(target).normalize()
+            if (resolved.toFile().exists()) {
+                continue
+            }
+
+            Category category = categorize(target, resolved, apiPath)
+            if (category == Category.UNMAPPED_TYPE && isIgnored(resolved.fileName.toString(), unmappedPackages)) {
+                continue
+            }
+            result.add(category, "${page} -> ${href}".toString())
+        }
+    }
+
+    private static Category categorize(String target, Path resolved, Path apiPath) {
+        String name = resolved.fileName.toString()
+        if (apiPath.resolve(stripParentSegments(target)).normalize().toFile().exists()) {
+            return Category.WRONG_RELATIVE_PATH
+        }
+        if (name in UNGENERATED_PAGES) {
+            return Category.UNGENERATED_PAGE
+        }
+        if (QUALIFIED_TYPE_PAGE.matcher(name).matches()) {
+            return Category.UNMAPPED_TYPE
+        }
+        Category.UNQUALIFIED_TYPE
+    }
+
+    private static String stripParentSegments(String target) {
+        String stripped = target
+        while (stripped.startsWith('./') || stripped.startsWith('../')) {
+            stripped = stripped.substring(stripped.indexOf('/') + 1)
+        }
+        stripped
+    }
+
+    private static boolean isIgnored(String name, Collection<String> unmappedPackages) {
+        unmappedPackages.any { name.startsWith(it) }
+    }
+
+    private static String targetOf(String href) {
+        // Doc comments carrying GSP or GString markup end up here as an href that was never a link.
+        if (!href || href.contains('${') || href.startsWith('#')) {
+            return null
+        }
+        String lower = href.toLowerCase()
+        if (ABSOLUTE_PREFIXES.any { lower.startsWith(it) }) {
+            return null
+        }
+        String target = href.split('#')[0].split(/\?/)[0]
+        target ? percentDecode(target) : null
+    }
+
+    /**
+     * Decodes percent escapes in a path. Unlike a plain {@link URLDecoder} call, a '+' stays a
+     * literal '+' - that decoding belongs to query strings, not paths - and an href with a
+     * stray '%' is taken literally instead of raising an error.
+     */
+    private static String percentDecode(String target) {
+        if (!target.contains('%') || MALFORMED_ESCAPE_PATTERN.matcher(target).find()) {
+            return target
+        }
+        URLDecoder.decode(target.replace('+', '%2B'), 'UTF-8')
+    }
+
+    static class Result {
+
+        final Map<Category, List<String>> byCategory = new TreeMap<Category, List<String>>()
+
+        void add(Category category, String message) {
+            byCategory.computeIfAbsent(category) { [] } << message
+        }
+
+        List<String> getViolations() {
+            byCategory.findAll { it.key.actionable }.collectMany { it.value }
+        }
+
+        Map<Category, List<String>> getWarnings() {
+            byCategory.findAll { !it.key.actionable }
+        }
     }
 }
