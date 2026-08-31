@@ -50,7 +50,6 @@ import org.grails.encoder.Encoder
 import org.grails.plugins.web.GrailsTagDateHelper
 import org.grails.taglib.TagOutput
 import org.grails.web.servlet.mvc.SynchronizerTokensHolder
-import org.grails.web.util.HiddenHttpMethod
 
 /**
  * Tags for working with form controls.
@@ -90,10 +89,6 @@ class FormTagLib implements ApplicationContextAware, InitializingBean, TagLibrar
 
     // Set if Spring Security is being used and the CsrfFilter is in the Filter Chain
     Class<?> springSecurityCsrfTokenClass
-
-    // Whether a servlet filter rewrites the request method. No filter is registered by default as of
-    // Grails 8, so the field defaults to false.
-    private boolean hiddenHttpMethodFilterEnabled = false
 
     void afterPropertiesSet() {
         if (applicationContext.containsBean('requestDataValueProcessor')) {
@@ -516,12 +511,13 @@ class FormTagLib implements ApplicationContextAware, InitializingBean, TagLibrar
             hiddenFieldImpl(writer, [name: 'execution', value: request['flowExecutionKey']])
         }
 
-        // Emitted only where something still reads it. With the hidden method filter registered that is any
-        // method a browser cannot submit; without it only DELETE, because a POST to the member URL already
-        // reaches update -- PUT and PATCH resolve to the same action and need no parameter to distinguish
-        // them, while delete and update share a URL and do.
-        if (notGet && httpMethod != HttpMethod.POST &&
-                (hiddenHttpMethodFilterEnabled || httpMethod == HttpMethod.DELETE)) {
+        // A browser can only submit GET or POST, so any other method the form asks for travels as this
+        // parameter. It is emitted whichever mode is in force: the servlet filter reads it, and with the
+        // filter off the dispatcher does. The POST route generated for a resources member URL is a fallback
+        // for requests that arrive without the parameter, not a replacement for it - it reaches update
+        // alone, so it speaks for neither a patch nor a delete form, and it is not generated at all for a
+        // singular resource or for whatever URL an application has mapped to PUT itself.
+        if (notGet && httpMethod != HttpMethod.POST) {
             hiddenFieldImpl(writer, [name: '_method', value: httpMethod.toString()])
         }
         if (notGet && springSecurityCsrfTokenClass) {
@@ -1591,6 +1587,5 @@ class FormTagLib implements ApplicationContextAware, InitializingBean, TagLibrar
         // Some attributes can be treated as boolean, but must be converted to the
         // expected value.
         booleanAttributes = co.getProperty('grails.tags.booleanToAttributes', List, DEFAULT_BOOLEAN_ATTRIBUTES)
-        hiddenHttpMethodFilterEnabled = HiddenHttpMethod.isServletFilterMode(co)
     }
 }

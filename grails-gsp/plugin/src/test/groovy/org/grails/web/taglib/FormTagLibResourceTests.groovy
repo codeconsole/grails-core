@@ -39,7 +39,7 @@ class FormTagLibResourceTests extends Specification implements UrlMappingsUnitTe
         String output = applyTemplate(template)
 
         then:
-        output == '<form action="/books/1" method="post" ></form>'
+        output == '<form action="/books/1" method="post" ><input type="hidden" name="_method" value="PUT" id="_method" /></form>'
     }
 
     def testResourceUpdateIdInParams() {
@@ -48,7 +48,7 @@ class FormTagLibResourceTests extends Specification implements UrlMappingsUnitTe
         String output = applyTemplate(template)
 
         then:
-        output == '<form action="/books/1" method="post" ></form>'
+        output == '<form action="/books/1" method="post" ><input type="hidden" name="_method" value="PUT" id="_method" /></form>'
     }
 
     def testResourcePatch() {
@@ -57,7 +57,7 @@ class FormTagLibResourceTests extends Specification implements UrlMappingsUnitTe
         String output = applyTemplate(template)
 
         then:
-        output == '<form action="/books/1" method="post" ></form>'
+        output == '<form action="/books/1" method="post" ><input type="hidden" name="_method" value="PATCH" id="_method" /></form>'
     }
 
     def testResourcePatchIdInParams() {
@@ -66,11 +66,12 @@ class FormTagLibResourceTests extends Specification implements UrlMappingsUnitTe
         String output = applyTemplate(template)
 
         then:
-        output == '<form action="/books/1" method="post" ></form>'
+        output == '<form action="/books/1" method="post" ><input type="hidden" name="_method" value="PATCH" id="_method" /></form>'
     }
 
-    // delete and update share the member URL, so the parameter is what distinguishes them and is still
-    // emitted. update and patch need none: a POST to that URL already reaches update.
+    // The POST route generated for a member URL when the hidden method filter is off reaches update, so it
+    // covers neither of these: the parameter is what says the form meant delete rather than update, and
+    // patch rather than update, and it is emitted for both whichever mode is in force.
     def testResourceDelete() {
         when:
         def template = '<g:form resource="book" action="delete" id="1"/>'
@@ -107,7 +108,7 @@ class FormTagLibResourceTests extends Specification implements UrlMappingsUnitTe
         String output = applyTemplate(template)
 
         then:
-        output =='<form action="/books/1/authors/2" method="post" ></form>'
+        output =='<form action="/books/1/authors/2" method="post" ><input type="hidden" name="_method" value="PUT" id="_method" /></form>'
     }
 
     def testResourceNestedUpdateIdInParams() {
@@ -116,7 +117,7 @@ class FormTagLibResourceTests extends Specification implements UrlMappingsUnitTe
         String output = applyTemplate(template)
 
         then:
-        output == '<form action="/books/1/authors/2" method="post" ></form>'
+        output == '<form action="/books/1/authors/2" method="post" ><input type="hidden" name="_method" value="PUT" id="_method" /></form>'
     }
 
     def testResourceNestedPatch() {
@@ -125,7 +126,7 @@ class FormTagLibResourceTests extends Specification implements UrlMappingsUnitTe
         String output = applyTemplate(template)
 
         then:
-        output == '<form action="/books/1/authors/2" method="post" ></form>'
+        output == '<form action="/books/1/authors/2" method="post" ><input type="hidden" name="_method" value="PATCH" id="_method" /></form>'
     }
 
     void testResourceNestedPatchIdInParams() {
@@ -134,7 +135,7 @@ class FormTagLibResourceTests extends Specification implements UrlMappingsUnitTe
         String output = applyTemplate(template)
 
         then:
-        output == '<form action="/books/1/authors/2" method="post" ></form>'
+        output == '<form action="/books/1/authors/2" method="post" ><input type="hidden" name="_method" value="PATCH" id="_method" /></form>'
     }
 
 

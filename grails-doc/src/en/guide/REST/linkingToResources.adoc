@@ -42,9 +42,9 @@ The same override can be requested with an `X-HTTP-Method-Override` header only 
 filter is enabled; it is disabled by default as of Grails 8.
 
 By default the `_method` parameter is resolved inside the dispatcher, after multipart handling and after the
-servlet filter chain. A `resources` mapping also routes a `POST` to the member URL at the `update` action, so
-`<g:form method="PUT">` submits a plain `POST` and needs no parameter at all. Only `method="DELETE"` still emits
-one, because `delete` and `update` share a URL.
+servlet filter chain. `<g:form>` emits the parameter as it always has. A `resources` mapping additionally routes
+a `POST` to the member URL at the `update` action, so a client that cannot send the parameter -- an AngularJS
+`$resource` and the clients modelled on it POST to save an existing object -- reaches `update` without it.
 
 The previous behaviour -- a servlet filter rewriting the request method ahead of the dispatcher -- can be
 restored:
