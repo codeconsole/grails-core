@@ -133,11 +133,13 @@ import org.springframework.context.annotation.Scope;
  * {@code beans} property itself is removed so no closure survives into the compiled class.
  *
  * <p>When the annotated class extends {@code grails.plugins.Plugin}, the generated members land
- * on a new sibling class in the same package instead of on the plugin class itself - named by
- * swapping a {@code *GrailsPlugin} suffix for {@code AutoConfiguration}, or appending
- * {@code AutoConfiguration} otherwise. A {@code Plugin} subclass is instantiated by
- * {@code DefaultGrailsPlugin} via plain reflection, never as a Spring bean, so it cannot carry
- * {@code @Bean} methods or a meaningful {@code @AutoConfiguration} annotation of its own.
+ * on a new sibling class instead of on the plugin class itself - named by swapping a
+ * {@code *GrailsPlugin} suffix for {@code AutoConfiguration}, or appending
+ * {@code AutoConfiguration} otherwise, and placed in the plugin's own package unless
+ * {@code @GrailsBeans(autoConfigurationName = ...)} names another. A {@code Plugin} subclass is
+ * instantiated by {@code DefaultGrailsPlugin} via plain reflection, never as a Spring bean, so
+ * it cannot carry {@code @Bean} methods or a meaningful {@code @AutoConfiguration} annotation
+ * of its own.
  * {@code @AutoConfiguration} and every annotation that gates or configures it - the
  * {@code @Conditional*} family, {@code @Import}/{@code @ImportAutoConfiguration}/
  * {@code @ImportResource}, {@code @ComponentScan}, {@code @EnableConfigurationProperties},
