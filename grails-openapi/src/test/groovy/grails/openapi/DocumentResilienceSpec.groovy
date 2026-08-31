@@ -53,6 +53,25 @@ class DocumentResilienceSpec extends Specification {
 
         and: 'and the class that could be described still is'
         openApi.components.schemas.containsKey('SoundCommand')
+
+        and: 'the operation that referred to the undescribable class refers to nothing instead'
+        openApi.paths['/exploding'].post.requestBody == null ||
+                openApi.paths['/exploding'].post.requestBody
+                        .content['application/json'].schema == null
+    }
+
+    void 'no reference anywhere in the document is left unresolved'() {
+        given:
+        def openApi = new OpenAPI()
+
+        when:
+        customizer().customise(openApi)
+
+        then: 'across the paths as well as the schemas, which is where a dropped type shows'
+        Set defined = openApi.components?.schemas?.keySet() ?: [] as Set
+        Set referenced = (groovy.json.JsonOutput.toJson([openApi.paths, openApi.components?.schemas]) =~
+                /#\/components\/schemas\/(\w+)/).collect { it[1] } as Set
+        (referenced - defined).isEmpty()
     }
 
     void 'describes the element type of a map and a nested collection'() {

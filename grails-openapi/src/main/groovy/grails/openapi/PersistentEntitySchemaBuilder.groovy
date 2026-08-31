@@ -144,6 +144,24 @@ class PersistentEntitySchemaBuilder {
      * The types the command's described fields refer to, including the element type of a
      * collection, so a nested command is described rather than referred to and left undefined.
      */
+    /**
+     * Collects the classes a generic signature names, at any depth: a
+     * {@code List<List<Command>>} names its element type two levels in.
+     */
+    private static void collectTypeArguments(Type type, Set<Class<?>> types) {
+        if (!(type instanceof ParameterizedType)) {
+            return
+        }
+        ((ParameterizedType) type).actualTypeArguments.each { Type argument ->
+            if (argument instanceof Class) {
+                types << (Class<?>) argument
+            }
+            else {
+                collectTypeArguments(argument, types)
+            }
+        }
+    }
+
     private static Set<Class<?>> declaredPropertyTypes(Class<?> commandType, Set<String> described) {
         Set<Class<?>> types = [] as Set
         for (Class<?> type = commandType; type != null && type != Object; type = type.superclass) {
@@ -155,14 +173,7 @@ class PersistentEntitySchemaBuilder {
                     return
                 }
                 types << field.type
-                Type generic = field.genericType
-                if (generic instanceof ParameterizedType) {
-                    ((ParameterizedType) generic).actualTypeArguments.each { Type argument ->
-                        if (argument instanceof Class) {
-                            types << (Class<?>) argument
-                        }
-                    }
-                }
+                collectTypeArguments(field.genericType, types)
             }
         }
         types
@@ -364,19 +375,33 @@ class PersistentEntitySchemaBuilder {
         }
 
         // The String-only constraints throw rather than return null when read from a property of
-        // another type, so they are only consulted for a string schema. The check is on the
-        // declared type rather than the class, because 3.1 resolves to JsonSchema carrying a list
-        // of types where 3.0 resolves to StringSchema.
-        if (isString(schema)) {
+        // another type, so they are consulted only where the constrained property is a string. The
+        // test is the one the constraint itself applies - the property type, not the schema, which
+        // describes a date, a UUID and a byte array as a string too.
+        if (isStringProperty(constrained)) {
             applyStringConstraints(schema, constrained)
         }
-        else {
+        else if (isNumericProperty(constrained)) {
             applyNumericConstraints(schema, constrained)
         }
     }
 
-    private static boolean isString(Schema schema) {
-        schema.type == 'string' || schema.types?.contains('string')
+    /**
+     * Mirrors {@code DefaultConstrainedProperty.isNotValidStringType}, which is what decides whether
+     * reading a string constraint throws.
+     */
+    private static boolean isStringProperty(Constrained constrained) {
+        Class<?> type = propertyType(constrained)
+        type != null && CharSequence.isAssignableFrom(type)
+    }
+
+    private static boolean isNumericProperty(Constrained constrained) {
+        Class<?> type = propertyType(constrained)
+        type != null && (Number.isAssignableFrom(type) || type.primitive)
+    }
+
+    private static Class<?> propertyType(Constrained constrained) {
+        constrained instanceof ConstrainedProperty ? ((ConstrainedProperty) constrained).propertyType : null
     }
 
     private static void applyStringConstraints(Schema schema, Constrained constrained) {

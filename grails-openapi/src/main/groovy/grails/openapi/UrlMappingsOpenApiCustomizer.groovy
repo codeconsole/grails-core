@@ -79,6 +79,8 @@ class UrlMappingsOpenApiCustomizer implements OpenApiCustomizer {
     private static final String UNPROCESSABLE_RESPONSE_CODE = '422'
     private static final String CONTROLLER_TOKEN = 'controller'
     private static final String ACTION_TOKEN = 'action'
+    private static final String ID_TOKEN = 'id'
+    private static final java.util.regex.Pattern TEMPLATE_VARIABLE = ~/\{([^}]+)\}/
     private static final String GREEDY_PARAMETER_NAME = 'path'
     private static final String FORMAT_PARAMETER_NAME = 'format'
     private static final String OPTIONAL_EXTENSION_SUFFIX = UrlMapping.OPTIONAL_EXTENSION_WILDCARD + '?'
@@ -132,9 +134,12 @@ class UrlMappingsOpenApiCustomizer implements OpenApiCustomizer {
 
         addExpandedMappings(paths, entitiesByController, documentedEntities, documentedCommands)
 
+        disambiguateOperationIds(paths)
+
         openApi.setPaths(paths)
         registerSchemas(openApi, documentedEntities, documentedCommands)
         registerTags(openApi, controllerClasses)
+        dropUnresolvedReferences(openApi)
     }
 
     /**
@@ -180,7 +185,8 @@ class UrlMappingsOpenApiCustomizer implements OpenApiCustomizer {
         Class<?> commandType = requestBodyType(controllerType, mappedAction, method, documentedCommands)
         recordDeclaredResponseTypes(controllerType, mappedAction, documentedCommands)
         Operation operation = buildOperation(mapping, controllerName, method, pathNames, entity, commandType,
-                controllerType != null && RestfulController.isAssignableFrom(controllerType))
+                controllerType != null && RestfulController.isAssignableFrom(controllerType),
+                tagName(controllerType, controllerName))
         ActionAnnotations.apply(operation, controllerType, mappedAction)
         pathItem.operation(method, operation)
         paths.addPathItem(path, pathItem)
@@ -252,21 +258,20 @@ class UrlMappingsOpenApiCustomizer implements OpenApiCustomizer {
         }
 
         String controllerName = controllerClass.logicalPropertyName
-        boolean takesId
-        String path
+        Map<String, String> substitutions = [(CONTROLLER_TOKEN): controllerName]
+        Set<String> omitted = [] as Set
         if (expandsAction) {
-            takesId = RestfulControllerActions.takesId(actionName)
-            path = takesId
-                    ? "/${controllerName}/${actionName}/{id}".toString()
-                    : "/${controllerName}/${actionName}".toString()
+            substitutions[ACTION_TOKEN] = actionName
+            if (!RestfulControllerActions.takesId(actionName)) {
+                omitted << ID_TOKEN
+            }
         }
-        else {
-            path = expandPath(mapping, names, controllerName)
-            takesId = path?.contains('{')
-        }
+
+        String path = expandPath(mapping, names, substitutions, omitted)
         if (!path) {
             return
         }
+        List<String> pathNames = templateVariables(path)
 
         PathItem.HttpMethod method = expandsAction
                 ? toHttpMethod(RestfulControllerActions.httpMethod(actionName,
@@ -283,8 +288,9 @@ class UrlMappingsOpenApiCustomizer implements OpenApiCustomizer {
 
         Class<?> commandType = requestBodyType(controllerClass.clazz, actionName, method, documentedCommands)
         recordDeclaredResponseTypes(controllerClass.clazz, actionName, documentedCommands)
-        Operation operation = buildAction(controllerName, actionName, method, takesId, entity, commandType,
-                expandedOperationId(controllerName, actionName, method, expandsAction))
+        Operation operation = buildAction(controllerName, actionName, method, pathNames, entity, commandType,
+                expandedOperationId(controllerName, actionName, method, expandsAction),
+                tagName(controllerClass.clazz, controllerName))
         ActionAnnotations.apply(operation, controllerClass.clazz, actionName)
         pathItem.operation(method, operation)
         paths.addPathItem(path, pathItem)
@@ -294,7 +300,8 @@ class UrlMappingsOpenApiCustomizer implements OpenApiCustomizer {
      * The mapping's own pattern with the controller substituted, so the described path is the one
      * the mapping serves rather than one assembled from a convention.
      */
-    private static String expandPath(UrlMapping mapping, List<String> names, String controllerName) {
+    private static String expandPath(UrlMapping mapping, List<String> names,
+                                     Map<String, String> substitutions, Set<String> omitted) {
         String pattern = stripOptionalExtension(mapping.urlData?.urlPattern)
         if (pattern == null) {
             return null
@@ -304,13 +311,24 @@ class UrlMappingsOpenApiCustomizer implements OpenApiCustomizer {
         int index = 0
         int nameIndex = 0
         while (index < pattern.length()) {
-            if (pattern.startsWith(UrlMapping.CAPTURED_WILDCARD, index)) {
+            boolean greedy = pattern.startsWith(UrlMapping.CAPTURED_DOUBLE_WILDCARD, index)
+            if (greedy || pattern.startsWith(UrlMapping.CAPTURED_WILDCARD, index)) {
                 String name = nameIndex < names.size() ? names[nameIndex] : "param${nameIndex}".toString()
-                result.append(name == CONTROLLER_TOKEN ? controllerName : "{${name}}".toString())
-                index += UrlMapping.CAPTURED_WILDCARD.length()
+                index += (greedy ? UrlMapping.CAPTURED_DOUBLE_WILDCARD : UrlMapping.CAPTURED_WILDCARD).length()
                 nameIndex++
                 if (index < pattern.length() && pattern.charAt(index) == ('?' as char)) {
                     index++
+                }
+
+                if (omitted.contains(name)) {
+                    // The action does not address this token, so the segment it sits in goes too.
+                    int slash = result.lastIndexOf(UrlMapping.SLASH)
+                    if (slash >= 0) {
+                        result.setLength(slash)
+                    }
+                }
+                else {
+                    result.append(substitutions.containsKey(name) ? substitutions[name] : "{${name}}".toString())
                 }
             }
             else {
@@ -320,7 +338,23 @@ class UrlMappingsOpenApiCustomizer implements OpenApiCustomizer {
         }
 
         String path = result.toString()
+        if (!path) {
+            return UrlMapping.SLASH
+        }
         path.startsWith(UrlMapping.SLASH) ? path : UrlMapping.SLASH + path
+    }
+
+    /**
+     * The template variables an expanded path declares, so every one of them is described and none
+     * that is absent is.
+     */
+    private static List<String> templateVariables(String path) {
+        List<String> names = []
+        java.util.regex.Matcher matcher = TEMPLATE_VARIABLE.matcher(path)
+        while (matcher.find()) {
+            names << matcher.group(1)
+        }
+        names
     }
 
     /**
@@ -355,19 +389,21 @@ class UrlMappingsOpenApiCustomizer implements OpenApiCustomizer {
     }
 
     private static Operation buildAction(String controllerName, String actionName, PathItem.HttpMethod method,
-                                         boolean takesId, PersistentEntity entity, Class<?> commandType,
-                                         String operationId) {
+                                         List<String> pathNames, PersistentEntity entity, Class<?> commandType,
+                                         String operationId, String tagName) {
         Operation operation = new Operation()
-        operation.addTagsItem(controllerName)
+        operation.addTagsItem(tagName)
         operation.setOperationId(operationId)
 
-        if (takesId) {
+        // Every template variable the path declares needs a parameter, and nothing else does.
+        for (String name : pathNames) {
             operation.addParametersItem(new Parameter()
-                    .name('id')
+                    .name(name)
                     .in('path')
                     .required(true)
                     .schema(new StringSchema()))
         }
+        boolean takesId = !pathNames.isEmpty()
 
         if (RestfulControllerActions.paginates(actionName)) {
             addPagingParameters(operation)
@@ -392,8 +428,88 @@ class UrlMappingsOpenApiCustomizer implements OpenApiCustomizer {
      * Describes a tag a controller declares, so the grouping carries its description rather than
      * only its name.
      */
+    /**
+     * An identifier must be unique across the document. The same action reached through more than
+     * one mapping derives the same identifier, so the later one is qualified by the path it is
+     * reached at, which depends on the path rather than on the order the mappings were read in.
+     */
+    private static void disambiguateOperationIds(Paths paths) {
+        Set<String> used = [] as Set
+        paths.each { String path, PathItem item ->
+            item.readOperationsMap().each { PathItem.HttpMethod method, Operation operation ->
+                String id = operation.operationId
+                if (id == null || used.add(id)) {
+                    return
+                }
+                String qualified = "${id}_${pathDiscriminator(path)}".toString()
+                int suffix = 2
+                while (!used.add(qualified)) {
+                    qualified = "${id}_${pathDiscriminator(path)}_${suffix++}".toString()
+                }
+                operation.setOperationId(qualified)
+            }
+        }
+    }
+
+    /**
+     * Removes a reference whose schema is not in the document. A class that could not be described
+     * leaves the operations that referred to it pointing at nothing, and a reference that does not
+     * resolve is worse for a code generator than an operation described without a shape.
+     */
+    private static void dropUnresolvedReferences(OpenAPI openApi) {
+        Set<String> defined = openApi.components?.schemas?.keySet() ?: [] as Set
+        openApi.paths?.each { String path, PathItem item ->
+            item.readOperationsMap().values().each { Operation operation ->
+                operation.responses?.values()?.each { ApiResponse response ->
+                    dropUnresolved(response.content, defined, path)
+                }
+                if (dropUnresolved(operation.requestBody?.content, defined, path)) {
+                    operation.setRequestBody(null)
+                }
+            }
+        }
+    }
+
+    private static boolean dropUnresolved(Content content, Set<String> defined, String path) {
+        if (content == null) {
+            return false
+        }
+        boolean emptied = false
+        content.each { String mediaTypeName, MediaType mediaType ->
+            if (!resolves(mediaType.schema, defined)) {
+                LOG.warn('Describing {} without a schema: the type it referred to could not be described', path)
+                mediaType.setSchema(null)
+                emptied = true
+            }
+        }
+        emptied
+    }
+
+    private static boolean resolves(Schema<?> schema, Set<String> defined) {
+        if (schema == null) {
+            return true
+        }
+        String ref = schema.$ref ?: schema.items?.$ref
+        ref == null || defined.contains(ref.substring(ref.lastIndexOf('/') + 1))
+    }
+
+    private static String pathDiscriminator(String path) {
+        String cleaned = path.replaceAll(/[^A-Za-z0-9]+/, '_')
+        cleaned.startsWith('_') ? cleaned.substring(1) : cleaned
+    }
+
+    /**
+     * The group a controller's operations appear under: the name it declares, or the controller name.
+     */
+    private static String tagName(Class<?> controllerClass, String controllerName) {
+        ActionAnnotations.declaredTag(controllerClass)?.name() ?: controllerName
+    }
+
     private static void registerTags(OpenAPI openApi, Map<String, Class<?>> controllerClasses) {
         controllerClasses.each { String controllerName, Class<?> controllerClass ->
+            if (ActionAnnotations.isHidden(controllerClass)) {
+                return
+            }
             io.swagger.v3.oas.annotations.tags.Tag declared = ActionAnnotations.declaredTag(controllerClass)
             if (declared == null || !declared.name()) {
                 return
@@ -524,6 +640,9 @@ class UrlMappingsOpenApiCustomizer implements OpenApiCustomizer {
                 result.append('{').append(name).append('}')
                 index += UrlMapping.CAPTURED_WILDCARD.length()
                 nameIndex++
+                if (index < pattern.length() && pattern.charAt(index) == ('?' as char)) {
+                    index++
+                }
             }
             else {
                 result.append(pattern.charAt(index))
@@ -590,11 +709,11 @@ class UrlMappingsOpenApiCustomizer implements OpenApiCustomizer {
 
     private static Operation buildOperation(UrlMapping mapping, String controllerName, PathItem.HttpMethod method,
                                             List<String> pathNames, PersistentEntity entity, Class<?> commandType,
-                                            boolean restfulController) {
+                                            boolean restfulController, String tagName) {
         String actionName = asStaticName(mapping.actionName)
 
         Operation operation = new Operation()
-        operation.addTagsItem(controllerName)
+        operation.addTagsItem(tagName)
         operation.setOperationId(operationId(controllerName, actionName, method))
 
         for (String name : pathNames) {
@@ -741,7 +860,8 @@ class UrlMappingsOpenApiCustomizer implements OpenApiCustomizer {
             return null
         }
         if (commandType != null) {
-            return new Schema<>().$ref(PersistentEntitySchemaBuilder.referencePath(commandType.simpleName))
+            return new Schema<>().$ref(PersistentEntitySchemaBuilder.referencePath(
+                    PersistentEntitySchemaBuilder.schemaName(commandType)))
         }
         entity ? entityReference(entity) : null
     }

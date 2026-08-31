@@ -126,7 +126,7 @@ class ActionAnnotationSpec extends Specification {
         with(openApi.paths['/annotated/create'].get) {
             summary == null
             operationId == 'annotated_create_get_byAction'
-            tags == ['annotated']
+            tags == ['Widgets']
         }
     }
 
@@ -190,6 +190,9 @@ class ActionAnnotationSpec extends Specification {
             it
             description == 'Everything in the catalogue'
         }
+
+        and: 'and the operations appear under it, rather than under the controller name'
+        openApi.paths['/annotated/create'].get.tags == ['Widgets']
     }
 
     void 'describes a path parameter an action declares'() {

@@ -212,6 +212,21 @@ class UrlMappingsOpenApiCustomizerSpec extends Specification {
         openApi.paths['/books'].get
     }
 
+    void 'describes an optional token without leaving the optional marker in the path'() {
+        given:
+        def openApi = new OpenAPI()
+        def customizer = new UrlMappingsOpenApiCustomizer(holderFor {
+            "/books/$id?"(controller: 'book', action: 'show', method: 'GET')
+        })
+
+        when:
+        customizer.customise(openApi)
+
+        then: 'a question mark begins a query string, so it cannot appear in a path template'
+        openApi.paths.keySet().every { !it.contains('?') }
+        openApi.paths.containsKey('/books/{id}')
+    }
+
     private static UrlMappingsHolder holderFor(Closure mappings) {
         def ctx = new MockApplicationContext()
         ctx.registerMockBean(GrailsApplication.APPLICATION_ID, new DefaultGrailsApplication())

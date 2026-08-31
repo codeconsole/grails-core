@@ -120,6 +120,56 @@ class RestApiMappingSpec extends Specification {
         ids.size() == ids.toSet().size()
     }
 
+    void 'honors a prefix the mapping is grouped under'() {
+        given:
+        def openApi = new OpenAPI()
+
+        when:
+        customizerFor {
+            group('/api/v1') {
+                "/$controller/$action?/$id?(.$format)?"()
+            }
+        }.customise(openApi)
+
+        then: 'the paths are the ones the group serves, not the ones the convention would build'
+        openApi.paths.keySet().every { it.startsWith('/api/v1/gadget') }
+        openApi.paths.containsKey('/api/v1/gadget/show/{id}')
+        openApi.paths.containsKey('/api/v1/gadget/index')
+    }
+
+    void 'declares a parameter for every template variable and no other'() {
+        given:
+        def openApi = new OpenAPI()
+
+        when: 'a mapping carrying a variable other than the identifier'
+        customizerFor {
+            get "/api/$apiVersion/$controller"(action: 'index')
+        }.customise(openApi)
+
+        then:
+        openApi.paths.containsKey('/api/{apiVersion}/gadget')
+
+        and: 'the variable the path declares is described, and no identifier is invented'
+        def names = openApi.paths['/api/{apiVersion}/gadget'].get.parameters
+                .findAll { it.in == 'path' }*.name
+        names == ['apiVersion']
+    }
+
+    void 'gives every operation a distinct identifier however it is reached'() {
+        given:
+        def openApi = new OpenAPI()
+
+        when: 'a resources mapping and a mapping that names the action reach the same controller'
+        customizerFor {
+            '/gadgets'(resources: 'gadget')
+            get "/$controller(.$format)?"(action: 'index')
+        }.customise(openApi)
+
+        then:
+        def ids = openApi.paths.values().collectMany { it.readOperationsMap().values() }*.operationId
+        ids.size() == ids.toSet().size()
+    }
+
     private static UrlMappingsOpenApiCustomizer restApiCustomizer() {
         customizerFor {
             delete "/$controller/$id(.$format)?"(action: 'delete')
