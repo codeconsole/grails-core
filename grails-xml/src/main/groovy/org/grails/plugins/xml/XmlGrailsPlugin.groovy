@@ -29,7 +29,9 @@ import grails.plugins.Plugin
 import grails.util.GrailsUtil
 import org.grails.plugins.codecs.XMLCodec
 import org.grails.web.converters.configuration.ObjectMarshallerRegisterer
+import org.grails.plugins.web.rest.render.SpringMessageConverters
 import org.grails.plugins.web.rest.render.xml.DefaultXmlRenderer
+import org.grails.web.gsp.io.GrailsConventionGroovyPageLocator
 import org.grails.web.converters.configuration.XmlConvertersConfigurationInitializer
 import org.grails.web.converters.marshaller.xml.ValidationErrorsMarshaller
 import org.grails.web.databinding.bindingsource.HalXmlDataBindingSourceCreator
@@ -47,6 +49,15 @@ class XmlGrailsPlugin extends Plugin {
     def dependsOn = [converters: version, dataBinding: version, restResponder: version]
     def providedArtefacts = [XMLCodec]
 
+    private static <T extends DefaultXmlRenderer> T configure(T renderer, Environment environment,
+            SpringMessageConverters converters) {
+        renderer.encoding = environment.getProperty('grails.converters.encoding', 'UTF-8')
+        if (converters != null) {
+            renderer.springHttpMessageConvertersSupplier = converters::getConverters
+        }
+        return renderer
+    }
+
     @Override
     BeanRegistrar beanRegistrar() {
         return { BeanRegistry registry, Environment environment ->
@@ -54,16 +65,23 @@ class XmlGrailsPlugin extends Plugin {
             registry.registerBean('xmlConvertersConfigurationInitializer', XmlConvertersConfigurationInitializer)
             registry.registerBean('xmlDataBindingSourceCreator', XmlDataBindingSourceCreator)
             registry.registerBean('halXmlDataBindingSourceCreator', HalXmlDataBindingSourceCreator)
-            registry.registerBean('xmlRendererRegistrar', XmlRendererRegistrar)
-            // Registered as a Renderer bean as well: DefaultRendererRegistry autowires every
-            // Renderer, so whichever registry instance Spring creates picks this up, whereas a
-            // registrar holding a reference can end up writing into an instance nothing reads.
+            // Contributed as Renderer beans, which DefaultRendererRegistry autowires: registering
+            // them from a bean that holds a registry reference can write into an instance nothing
+            // reads, because the harness rebuilds that singleton.
             registry.registerBean('xmlRenderer', DefaultXmlRenderer) {
                 it.supplier {
-                    new DefaultXmlRenderer<Object>(Object)
+                    configure(new DefaultXmlRenderer<Object>(
+                            Object,
+                            it.beanProvider(GrailsConventionGroovyPageLocator).getIfAvailable(),
+                            null), environment, it.beanProvider(SpringMessageConverters).getIfAvailable())
                 }
             }
-            registry.registerBean('xmlErrorsRenderer', XmlErrorsRenderer)
+            registry.registerBean('xmlErrorsRenderer', XmlErrorsRenderer) {
+                it.supplier {
+                    configure(new XmlErrorsRenderer(), environment,
+                            it.beanProvider(SpringMessageConverters).getIfAvailable())
+                }
+            }
             registry.registerBean('errorsXmlMarshallerRegisterer', ObjectMarshallerRegisterer) {
                 it.supplier {
                     new ObjectMarshallerRegisterer(

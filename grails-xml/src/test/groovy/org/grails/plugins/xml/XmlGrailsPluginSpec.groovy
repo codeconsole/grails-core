@@ -20,15 +20,18 @@ package org.grails.plugins.xml
 
 import org.springframework.beans.factory.support.BeanRegistryAdapter
 import org.springframework.beans.factory.support.DefaultListableBeanFactory
+import org.springframework.core.env.MapPropertySource
 import org.springframework.core.env.StandardEnvironment
 import org.springframework.validation.BeanPropertyBindingResult
 import org.springframework.validation.Errors
 import org.springframework.http.converter.HttpMessageConverter
 
 import grails.converters.XML
+import grails.rest.render.Renderer
 import grails.web.mime.MimeType
 import org.grails.plugins.web.rest.render.DefaultRendererRegistry
 import org.grails.plugins.web.rest.render.SpringMessageConverters
+import org.grails.plugins.web.rest.render.xml.DefaultXmlRenderer
 import org.grails.web.converters.configuration.ObjectMarshallerRegisterer
 import org.grails.web.converters.configuration.XmlConvertersConfigurationInitializer
 import org.grails.web.converters.marshaller.xml.ValidationErrorsMarshaller
@@ -55,7 +58,8 @@ class XmlGrailsPluginSpec extends Specification {
             getBeanDefinition('xmlDataBindingSourceCreator').beanClassName == XmlDataBindingSourceCreator.name
             getBeanDefinition('halXmlDataBindingSourceCreator').beanClassName ==
                     HalXmlDataBindingSourceCreator.name
-            getBeanDefinition('xmlRendererRegistrar').beanClassName == XmlRendererRegistrar.name
+            getBeanDefinition('xmlRenderer').beanClassName == DefaultXmlRenderer.name
+            getBeanDefinition('xmlErrorsRenderer').beanClassName == XmlErrorsRenderer.name
             containsBeanDefinition('errorsXmlMarshallerRegisterer')
             !containsBeanDefinition('grailsJacksonXmlHttpMessageConverter')
         }
@@ -70,48 +74,63 @@ class XmlGrailsPluginSpec extends Specification {
         registerer.converterClass == XML
     }
 
-    void 'the renderer registrar adds XML defaults to the core registry'() {
-        given:
+    void 'the XML renderers are contributed as beans the registry autowires'() {
+        given: "the renderer beans this plugin registers"
         def first = Stub(HttpMessageConverter)
         def second = Stub(HttpMessageConverter)
         def holder = new SpringMessageConverters()
         holder.extendMessageConverters([first, second])
+        def environment = new StandardEnvironment()
+        environment.propertySources.addFirst(
+                new MapPropertySource('test', ['grails.converters.encoding': 'ISO-8859-1']))
+        def beanFactory = new DefaultListableBeanFactory()
+        beanFactory.registerSingleton('springMessageConverters', holder)
+        def registrar = new XmlGrailsPlugin().beanRegistrar()
+        new BeanRegistryAdapter(beanFactory, environment, registrar.getClass()).register(registrar)
+
+        when: "the registry collects every Renderer bean, as Spring wires it to do"
         def rendererRegistry = new DefaultRendererRegistry()
         rendererRegistry.initialize()
-        def registrar = new XmlRendererRegistrar(
-                rendererRegistry: rendererRegistry,
-                springMessageConverters: holder,
-                encoding: 'ISO-8859-1'
-        )
+        rendererRegistry.setRenderers([
+                beanFactory.getBean('xmlRenderer', DefaultXmlRenderer),
+                beanFactory.getBean('xmlErrorsRenderer', XmlErrorsRenderer),
+        ] as Renderer[])
 
-        when:
-        registrar.afterPropertiesSet()
-
-        then:
+        then: "both are reachable, configured from the environment and the converter holder"
         with(rendererRegistry.findRenderer(MimeType.XML, new URL('https://grails.apache.org'))) {
             encoding == 'ISO-8859-1'
             springHttpMessageConvertersSupplier.get() == [first, second]
         }
         with(rendererRegistry.findContainerRenderer(
-                MimeType.XML,
-                Errors,
-                new BeanPropertyBindingResult('value', 'target')
-        )) {
+                MimeType.XML, Errors, new BeanPropertyBindingResult('value', 'target'))) {
             encoding == 'ISO-8859-1'
             springHttpMessageConvertersSupplier.get() == [first, second]
         }
+    }
+
+    void 'nothing registers XML renderers other than those beans'() {
+        given: "a registry that never sees the renderer beans"
+        def rendererRegistry = new DefaultRendererRegistry()
+        rendererRegistry.initialize()
+        def registrar = new XmlGrailsPlugin().beanRegistrar()
+        new BeanRegistryAdapter(beanFactory, new StandardEnvironment(), registrar.getClass()).register(registrar)
+
+        when: "every bean the plugin registers is created"
+        beanFactory.beanDefinitionNames.each { beanFactory.getBean(it) }
+
+        then: "no bean has registered a renderer behind the registry's back"
+        rendererRegistry.findRenderer(MimeType.XML, new URL('https://grails.apache.org')) == null
     }
 
     void 'Atom feed rendering remains opt-in'() {
         given:
         def rendererRegistry = new DefaultRendererRegistry()
         rendererRegistry.initialize()
-        def registrar = new XmlRendererRegistrar(rendererRegistry: rendererRegistry, encoding: 'UTF-8')
 
-        when:
-        registrar.afterPropertiesSet()
+        when: "the plugin's renderer beans are registered"
+        rendererRegistry.setRenderers([new DefaultXmlRenderer<Object>(Object)] as Renderer[])
 
-        then:
+        then: "no Atom renderer comes with them"
         rendererRegistry.findRenderer(MimeType.ATOM_XML, new URL('https://grails.apache.org')) == null
     }
 }
