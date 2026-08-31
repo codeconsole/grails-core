@@ -25,7 +25,7 @@ import org.springframework.validation.Errors;
 import grails.core.GrailsApplication;
 import grails.core.support.proxy.DefaultProxyHandler;
 import grails.core.support.proxy.ProxyHandler;
-import org.grails.datastore.mapping.model.PersistentEntity;
+import org.grails.datastore.mapping.model.MappingContext;
 
 /**
  * Adds Grails-specific serializers to Spring Boot's configured JSON mapper.
@@ -56,27 +56,37 @@ public final class GrailsJsonMapperCustomizer implements JsonMapperBuilderCustom
         this.proxyHandler = proxyHandler;
     }
 
+    private MappingContext mappingContext() {
+        return this.grailsApplication == null ? null : this.grailsApplication.getMappingContext();
+    }
+
+    private boolean booleanProperty(String key, String fallbackKey) {
+        if (this.grailsApplication == null) {
+            return false;
+        }
+        boolean fallback = this.grailsApplication.getConfig().getProperty(fallbackKey, Boolean.class, false);
+        return this.grailsApplication.getConfig().getProperty(key, Boolean.class, fallback);
+    }
+
     @Override
     public void customize(JsonMapper.Builder builder) {
-        SimpleModule module = new SimpleModule("grails-json");
+        GrailsDomainSerializers domainSerializers = new GrailsDomainSerializers(
+                this::mappingContext, this.proxyHandler,
+                () -> booleanProperty("grails.converters.json.domain.include.version",
+                        "grails.converters.domain.include.version"),
+                () -> booleanProperty("grails.converters.json.domain.include.class",
+                        "grails.converters.domain.include.class"));
+        SimpleModule module = new SimpleModule("grails-json") {
+            @Override
+            public void setupModule(SetupContext context) {
+                super.setupModule(context);
+                context.addSerializers(domainSerializers);
+            }
+        };
         // Resolved per write rather than captured here: the mapper is built once, but the
         // application context that resolves messages is not necessarily available at that point.
         module.addSerializer(Errors.class, new SpringErrorsJsonSerializer(
                 () -> this.grailsApplication == null ? null : this.grailsApplication.getMainContext()));
-        if (grailsApplication != null && grailsApplication.getMappingContext() != null) {
-            boolean defaultIncludeVersion = grailsApplication.getConfig()
-                    .getProperty("grails.converters.domain.include.version", Boolean.class, false);
-            boolean includeVersion = grailsApplication.getConfig()
-                    .getProperty("grails.converters.json.domain.include.version", Boolean.class, defaultIncludeVersion);
-            boolean defaultIncludeClass = grailsApplication.getConfig()
-                    .getProperty("grails.converters.domain.include.class", Boolean.class, false);
-            boolean includeClass = grailsApplication.getConfig()
-                    .getProperty("grails.converters.json.domain.include.class", Boolean.class, defaultIncludeClass);
-            for (PersistentEntity entity : grailsApplication.getMappingContext().getPersistentEntities()) {
-                module.addSerializer(entity.getJavaClass(),
-                        new GrailsDomainJsonSerializer(entity, proxyHandler, includeVersion, includeClass));
-            }
-        }
         builder.addModule(module);
     }
 }

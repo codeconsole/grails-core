@@ -29,9 +29,14 @@ import org.springframework.validation.BeanPropertyBindingResult
 
 import tools.jackson.databind.json.JsonMapper
 
+import org.grails.core.exceptions.GrailsConfigurationException
+import org.grails.datastore.mapping.model.MappingContext
+
 import spock.lang.Specification
 
 class GrailsJsonMapperCustomizerSpec extends Specification {
+
+    boolean gormReady = false
 
     void 'Boot JsonMapper receives the Grails validation errors serializer'() {
         given:
@@ -109,6 +114,37 @@ class GrailsJsonMapperCustomizerSpec extends Specification {
         mapper.readValue(mapper.writeValueAsString(book), Map) == [
                 id: 1, title: 'Filtered', authors: null, authorsByName: null,
         ]
+    }
+
+    void 'the mapper builds before GORM is initialized and picks up entities afterwards'() {
+        given: "an application whose mapping context is not readable yet, as when Jackson's"
+        def mappingContext = new KeyValueMappingContext('jackson')
+        def application = new DefaultGrailsApplication(JacksonBook) {
+            @Override
+            MappingContext getMappingContext() {
+                if (!gormReady) {
+                    throw new GrailsConfigurationException('cannot be accessed before GORM has initialized')
+                }
+                return mappingContext
+            }
+        }
+
+        when: "auto-configuration builds the mapper ahead of GORM"
+        def builder = JsonMapper.builder()
+        new GrailsJsonMapperCustomizer(application, new DefaultProxyHandler()).customize(builder)
+        def mapper = builder.build()
+
+        then: "building does not fail"
+        noExceptionThrown()
+
+        when: "GORM finishes and a domain object is written"
+        gormReady = true
+        mappingContext.addPersistentEntities(JacksonBook)
+        def written = mapper.readValue(mapper.writeValueAsString(new JacksonBook(title: 'Later').tap { id = 7 }), Map)
+
+        then: "the persistent metadata is used, resolved on first write rather than at build time"
+        written.id == 7
+        written.title == 'Later'
     }
 
     private JsonMapper domainMapper(boolean includeVersion, boolean includeClass, ProxyHandler proxyHandler = null) {
