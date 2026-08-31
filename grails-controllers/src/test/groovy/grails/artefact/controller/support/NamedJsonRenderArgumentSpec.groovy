@@ -60,6 +60,72 @@ class NamedJsonRenderArgumentSpec extends Specification {
         }
     }
 
+    void 'render json: applies status and defaults the content type to JSON'() {
+        given:
+        def renderer = Mock(NamedJsonRenderer)
+        def controller = new NamedJsonArgumentController(namedJsonRenderer: renderer)
+
+        when:
+        controller.render(json: [title: 'Grails'], jsonConfiguration: 'deep', status: 201)
+
+        then:
+        1 * renderer.contains('deep') >> true
+        1 * renderer.render('deep', [title: 'Grails'], _, null, null) >> { arguments ->
+            arguments[2].write('{"title":"Grails"}')
+        }
+        webRequest.response.status == 201
+        webRequest.response.contentType.equalsIgnoreCase('application/json;charset=UTF-8')
+    }
+
+    void 'render json: honours an explicit content type'() {
+        given:
+        def renderer = Mock(NamedJsonRenderer)
+        def controller = new NamedJsonArgumentController(namedJsonRenderer: renderer)
+
+        when:
+        controller.render(json: [title: 'Grails'], jsonConfiguration: 'deep',
+                contentType: 'application/vnd.grails+json')
+
+        then:
+        1 * renderer.contains('deep') >> true
+        1 * renderer.render('deep', [title: 'Grails'], _, null, null) >> { arguments ->
+            arguments[2].write('{"title":"Grails"}')
+        }
+        webRequest.response.contentType.startsWith('application/vnd.grails+json')
+    }
+
+    void 'render json: passes excludes to the renderer'() {
+        given:
+        def renderer = Mock(NamedJsonRenderer)
+        def controller = new NamedJsonArgumentController(namedJsonRenderer: renderer)
+
+        when:
+        controller.render(json: [title: 'Grails'], jsonConfiguration: 'deep', excludes: ['hidden'])
+
+        then:
+        1 * renderer.contains('deep') >> true
+        1 * renderer.render('deep', [title: 'Grails'], _, null, ['hidden']) >> { arguments ->
+            arguments[2].write('{"title":"Grails"}')
+        }
+    }
+
+    void 'render json: leaves view rendering enabled when writing fails'() {
+        given:
+        def renderer = Mock(NamedJsonRenderer)
+        def controller = new NamedJsonArgumentController(namedJsonRenderer: renderer)
+
+        when:
+        controller.render(json: [title: 'Grails'], jsonConfiguration: 'deep')
+
+        then:
+        1 * renderer.contains('deep') >> true
+        1 * renderer.render('deep', [title: 'Grails'], _, null, null) >> { throw new IOException('broken pipe') }
+
+        and: "the failure surfaces and the response is not marked as written"
+        thrown(Exception)
+        webRequest.renderView
+    }
+
     void 'render json: without a configuration says which argument is missing'() {
         when:
         new NamedJsonArgumentController().render(json: [title: 'Grails'])
