@@ -36,6 +36,9 @@ public interface NamedJsonRenderer {
     /**
      * Renders with a per-response projection applied.
      *
+     * <p>Deliberately not a default method: an implementation that quietly ignored the projection
+     * would drop it from the response with nothing to indicate it had been requested.</p>
+     *
      * @param name the registered configuration
      * @param value the value to write
      * @param writer the response writer
@@ -43,8 +46,6 @@ public interface NamedJsonRenderer {
      * @param excludes property names to exclude, or null for none
      * @throws IOException if writing fails
      */
-    default void render(String name, Object value, Writer writer,
-            List<String> includes, List<String> excludes) throws IOException {
-        render(name, value, writer);
-    }
+    void render(String name, Object value, Writer writer,
+            List<String> includes, List<String> excludes) throws IOException;
 }

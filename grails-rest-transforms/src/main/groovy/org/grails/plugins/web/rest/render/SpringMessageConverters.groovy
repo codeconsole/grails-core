@@ -45,7 +45,9 @@ class SpringMessageConverters implements WebMvcConfigurer {
         // and installs this same instance on the handler adapter, so a configurer ordered after
         // this one can still add, remove or reorder converters. Copying here would freeze a list
         // that is not yet final, leaving Grails rendering with a different set from Spring MVC.
-        this.converters = converters
+        // Wrapped, not copied: the wrapper still sees whatever later configurers do to the
+        // underlying list, while stopping a caller mutating Spring MVC's converters through here.
+        this.converters = Collections.unmodifiableList(converters)
     }
 
     /**
