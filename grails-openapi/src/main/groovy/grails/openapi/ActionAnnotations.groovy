@@ -118,6 +118,34 @@ class ActionAnnotations {
     }
 
     /**
+     * The command object an action binds, if it takes one.
+     *
+     * <p>Mirrors the rule the controller transform applies: a parameter is data bound as a command
+     * object unless its declared type is a primitive, a primitive wrapper, {@code String},
+     * {@code Serializable} - the type a domain identifier is declared as - or {@code Object}.</p>
+     *
+     * @return the command object type, or {@code null} when the action takes none
+     */
+    static Class<?> commandObjectType(Class<?> controllerClass, String actionName) {
+        for (Method method : actionMethods(controllerClass, actionName)) {
+            for (Class<?> parameterType : method.parameterTypes) {
+                if (isCommandObject(parameterType)) {
+                    return parameterType
+                }
+            }
+        }
+        null
+    }
+
+    private static boolean isCommandObject(Class<?> type) {
+        if (type == null || type.primitive || type.array) {
+            return false
+        }
+        !(type in [Integer, Float, Long, Double, Short, Boolean, Byte, Character,
+                   String, Serializable, Object])
+    }
+
+    /**
      * Grails compiles an action into more than one method where it takes a command object, so every
      * method of that name is consulted rather than only the first found.
      */

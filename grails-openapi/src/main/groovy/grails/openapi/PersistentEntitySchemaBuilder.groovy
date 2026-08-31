@@ -18,6 +18,8 @@
  */
 package grails.openapi
 
+import java.lang.reflect.Modifier
+
 import groovy.transform.CompileStatic
 
 import io.swagger.v3.core.converter.ModelConverters
@@ -25,11 +27,13 @@ import io.swagger.v3.core.converter.ResolvedSchema
 import io.swagger.v3.oas.models.media.IntegerSchema
 import io.swagger.v3.oas.models.media.Schema
 import io.swagger.v3.oas.models.media.StringSchema
+import org.codehaus.groovy.runtime.InvokerHelper
 import org.springframework.validation.Validator
 
 import grails.gorm.validation.Constrained
 import grails.gorm.validation.ConstrainedEntity
 import grails.gorm.validation.ConstrainedProperty
+import grails.validation.Validateable
 import org.grails.datastore.mapping.model.MappingContext
 import org.grails.datastore.mapping.model.PersistentEntity
 import org.grails.datastore.mapping.model.PersistentProperty
@@ -80,6 +84,127 @@ class PersistentEntitySchemaBuilder {
             }
         }
         schemas
+    }
+
+    /**
+     * Describes a command object, which is not a persistent entity but declares constraints the
+     * same way, so a request body is described by what the action actually binds.
+     *
+     * @param commandType the command object an action takes
+     * @return every schema the command resolves to, keyed by schema name
+     */
+    Map<String, Schema> buildCommand(Class<?> commandType) {
+        ResolvedSchema resolved = ModelConverters.instance.readAllAsResolvedSchema(commandType)
+        Map<String, Schema> resolvedSchemas = [:]
+        if (resolved?.referencedSchemas) {
+            resolvedSchemas.putAll(resolved.referencedSchemas)
+        }
+        else if (resolved?.schema) {
+            resolvedSchemas[commandType.simpleName] = resolved.schema
+        }
+
+        Schema schema = resolvedSchemas[commandType.simpleName]
+        if (schema == null) {
+            return Collections.<String, Schema> emptyMap()
+        }
+
+        // Validateable contributes errors, and every Groovy object contributes metaClass. Left in,
+        // each drags its whole object graph into the document, so the schema is reduced to what the
+        // command itself declares.
+        retainDeclaredProperties(schema, commandType)
+        applyDeclaredConstraints(schema, constraintsFor(commandType))
+
+        Map<String, Schema> schemas = [:]
+        schemas[commandType.simpleName] = schema
+        retainReferenced(schemas, resolvedSchemas)
+        schemas
+    }
+
+    private static void retainDeclaredProperties(Schema schema, Class<?> commandType) {
+        Map<String, Schema> properties = schema.properties
+        if (properties == null) {
+            return
+        }
+        Set<String> declared = declaredPropertyNames(commandType)
+        properties.keySet().retainAll(declared)
+        schema.required?.retainAll(declared)
+    }
+
+    private static Set<String> declaredPropertyNames(Class<?> commandType) {
+        Set<String> names = [] as Set
+        for (Class<?> type = commandType; type != null && type != Object; type = type.superclass) {
+            type.declaredFields.each { java.lang.reflect.Field field ->
+                if (!field.synthetic && !Modifier.isStatic(field.modifiers) && !field.name.startsWith('$')) {
+                    names << field.name
+                }
+            }
+        }
+        names
+    }
+
+    /**
+     * Keeps only the schemas the retained properties still refer to, so pruning a property also
+     * removes what it alone pulled in.
+     */
+    private static void retainReferenced(Map<String, Schema> keep, Map<String, Schema> available) {
+        Deque<Schema> pending = new ArrayDeque<>(keep.values())
+        while (!pending.isEmpty()) {
+            Schema current = pending.poll()
+            for (String name : referencedNames(current)) {
+                if (!keep.containsKey(name) && available.containsKey(name)) {
+                    Schema referenced = available[name]
+                    keep[name] = referenced
+                    pending.add(referenced)
+                }
+            }
+        }
+    }
+
+    private static List<String> referencedNames(Schema schema) {
+        List<String> names = []
+        collectReference(schema.$ref, names)
+        collectReference(schema.items?.$ref, names)
+        schema.properties?.values()?.each { Schema property ->
+            collectReference(property.$ref, names)
+            collectReference(property.items?.$ref, names)
+        }
+        names
+    }
+
+    private static void collectReference(String ref, List<String> names) {
+        if (ref) {
+            names << ref.substring(ref.lastIndexOf('/') + 1)
+        }
+    }
+
+    /**
+     * A Validateable command object exposes its constraints statically. A command object that is
+     * not Validateable simply carries none.
+     */
+    private static Map<String, Constrained> constraintsFor(Class<?> commandType) {
+        if (!Validateable.isAssignableFrom(commandType)) {
+            return Collections.<String, Constrained> emptyMap()
+        }
+        Map<String, Constrained> declared = (Map<String, Constrained>) InvokerHelper.invokeStaticMethod(
+                commandType, 'getConstraintsMap', null)
+        declared ?: Collections.<String, Constrained> emptyMap()
+    }
+
+    private static void applyDeclaredConstraints(Schema schema, Map<String, Constrained> constraints) {
+        Map<String, Schema> properties = schema.properties
+        if (properties == null) {
+            return
+        }
+        constraints.each { String name, Constrained constrained ->
+            Schema propertySchema = properties[name]
+            if (propertySchema == null) {
+                return
+            }
+            applyConstraints(propertySchema, constrained)
+            if (!constrained.nullable && !isRequired(schema, name)) {
+                schema.addRequiredItem(name)
+            }
+        }
     }
 
     /**

@@ -132,6 +132,36 @@ validation facets.
 
 Operations addressed by an identifier also document a `404` response.
 
+==== Request Bodies
+
+An operation that accepts a body describes the type the action binds. Where the action takes a
+command object that is the command, in preference to the resource the controller is named for:
+
+[source,groovy]
+----
+class OrdersController {
+
+    def submit(OrderCommand cmd) { }
+}
+
+class OrderCommand implements Validateable {
+    String customerEmail
+    Integer quantity
+
+    static constraints = {
+        customerEmail email: true, nullable: false
+        quantity min: 1, nullable: true
+    }
+}
+----
+
+`POST /orders/submit` is described as accepting an `OrderCommand`, and the constraints the command
+declares are carried across the same way a domain class's are. Only the properties the command
+declares are described.
+
+Where an action takes no command object, as on a `RestfulController`, the body is the domain class
+the controller serves.
+
 ==== Correcting What Is Derived
 
 What this module derives from the URL mappings can be corrected or enriched with the standard

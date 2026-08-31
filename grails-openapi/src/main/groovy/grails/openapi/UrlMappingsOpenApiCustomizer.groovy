@@ -101,6 +101,7 @@ class UrlMappingsOpenApiCustomizer implements OpenApiCustomizer {
         Map<String, PersistentEntity> entitiesByController = indexEntitiesByController()
         Map<String, Class<?>> controllerClasses = indexControllerClasses()
         Map<String, PersistentEntity> documentedEntities = [:]
+        Map<String, Class<?>> documentedCommands = [:]
         Paths paths = openApi.paths ?: new Paths()
 
         for (UrlMapping mapping : urlMappingsHolder.urlMappings) {
@@ -131,16 +132,17 @@ class UrlMappingsOpenApiCustomizer implements OpenApiCustomizer {
             PersistentEntity entity = entitiesByController[controllerName]
             record(entity, documentedEntities)
 
-            Operation operation = buildOperation(mapping, controllerName, method, pathNames, entity)
+            Class<?> commandType = requestBodyType(controllerType, mappedAction, method, documentedCommands)
+            Operation operation = buildOperation(mapping, controllerName, method, pathNames, entity, commandType)
             ActionAnnotations.apply(operation, controllerType, mappedAction)
             pathItem.operation(method, operation)
             paths.addPathItem(path, pathItem)
         }
 
-        addRestfulControllerPaths(paths, entitiesByController, documentedEntities)
+        addRestfulControllerPaths(paths, entitiesByController, documentedEntities, documentedCommands)
 
         openApi.setPaths(paths)
-        registerSchemas(openApi, documentedEntities)
+        registerSchemas(openApi, documentedEntities, documentedCommands)
     }
 
     /**
@@ -150,7 +152,8 @@ class UrlMappingsOpenApiCustomizer implements OpenApiCustomizer {
      * from the document is worse than one described twice.
      */
     private void addRestfulControllerPaths(Paths paths, Map<String, PersistentEntity> entitiesByController,
-                                           Map<String, PersistentEntity> documentedEntities) {
+                                           Map<String, PersistentEntity> documentedEntities,
+                                           Map<String, Class<?>> documentedCommands) {
         if (grailsApplication == null) {
             return
         }
@@ -184,7 +187,8 @@ class UrlMappingsOpenApiCustomizer implements OpenApiCustomizer {
 
                 record(entity, documentedEntities)
 
-                Operation operation = buildAction(controllerName, actionName, method, takesId, entity)
+                Class<?> commandType = requestBodyType(controllerClass.clazz, actionName, method, documentedCommands)
+                Operation operation = buildAction(controllerName, actionName, method, takesId, entity, commandType)
                 ActionAnnotations.apply(operation, controllerClass.clazz, actionName)
                 pathItem.operation(method, operation)
                 paths.addPathItem(path, pathItem)
@@ -208,7 +212,7 @@ class UrlMappingsOpenApiCustomizer implements OpenApiCustomizer {
     }
 
     private static Operation buildAction(String controllerName, String actionName, PathItem.HttpMethod method,
-                                         boolean takesId, PersistentEntity entity) {
+                                         boolean takesId, PersistentEntity entity, Class<?> commandType) {
         Operation operation = new Operation()
         operation.addTagsItem(controllerName)
         operation.setOperationId("${controllerName}_${actionName}_${method.name().toLowerCase(Locale.ENGLISH)}".toString())
@@ -231,10 +235,10 @@ class UrlMappingsOpenApiCustomizer implements OpenApiCustomizer {
             operation.responses.addApiResponse(NOT_FOUND_RESPONSE_CODE, new ApiResponse().description('Not Found'))
         }
 
-        if (entity && method.name() in BODY_METHODS) {
+        Schema<?> bodySchema = requestBodySchema(entity, commandType, method)
+        if (bodySchema) {
             operation.setRequestBody(new RequestBody().content(
-                    new Content().addMediaType(DEFAULT_MEDIA_TYPE,
-                            new MediaType().schema(entityReference(entity)))))
+                    new Content().addMediaType(DEFAULT_MEDIA_TYPE, new MediaType().schema(bodySchema))))
         }
 
         operation
@@ -271,12 +275,23 @@ class UrlMappingsOpenApiCustomizer implements OpenApiCustomizer {
      * documented operation does not appear as an orphan. Associations are followed so that a
      * referenced schema never points at one that was left out.
      */
-    private void registerSchemas(OpenAPI openApi, Map<String, PersistentEntity> documentedEntities) {
-        if (mappingContext == null || !documentedEntities) {
+    private void registerSchemas(OpenAPI openApi, Map<String, PersistentEntity> documentedEntities,
+                                 Map<String, Class<?>> documentedCommands) {
+        if (!documentedEntities && !documentedCommands) {
             return
         }
 
         Components components = openApi.components ?: new Components()
+        for (Class<?> commandType : documentedCommands.values()) {
+            schemaBuilder.buildCommand(commandType).each { String name, Schema<?> schema ->
+                components.addSchemas(name, schema)
+            }
+        }
+        if (mappingContext == null) {
+            openApi.setComponents(components)
+            return
+        }
+
         for (PersistentEntity entity : documentedEntities.values()) {
             // swagger-core resolves the classes an entity is associated with, so each documented
             // resource contributes its own schema and everything it refers to.
@@ -377,7 +392,7 @@ class UrlMappingsOpenApiCustomizer implements OpenApiCustomizer {
     }
 
     private static Operation buildOperation(UrlMapping mapping, String controllerName, PathItem.HttpMethod method,
-                                            List<String> pathNames, PersistentEntity entity) {
+                                            List<String> pathNames, PersistentEntity entity, Class<?> commandType) {
         String actionName = asStaticName(mapping.actionName)
 
         Operation operation = new Operation()
@@ -405,10 +420,10 @@ class UrlMappingsOpenApiCustomizer implements OpenApiCustomizer {
                     new ApiResponse().description('Not Found'))
         }
 
-        if (entity && method.name() in BODY_METHODS) {
+        Schema<?> bodySchema = requestBodySchema(entity, commandType, method)
+        if (bodySchema) {
             operation.setRequestBody(new RequestBody().content(
-                    new Content().addMediaType(DEFAULT_MEDIA_TYPE,
-                            new MediaType().schema(entityReference(entity)))))
+                    new Content().addMediaType(DEFAULT_MEDIA_TYPE, new MediaType().schema(bodySchema))))
         }
 
         operation
@@ -425,6 +440,32 @@ class UrlMappingsOpenApiCustomizer implements OpenApiCustomizer {
         actionName in COLLECTION_ACTIONS
                 ? new ArraySchema().items(entityReference(entity))
                 : entityReference(entity)
+    }
+
+    /**
+     * The type an action binds. A command object is what the action actually receives, so it
+     * describes the body in preference to the resource the controller is named for.
+     */
+    private static Class<?> requestBodyType(Class<?> controllerClass, String actionName, PathItem.HttpMethod method,
+                                            Map<String, Class<?>> documentedCommands) {
+        if (!(method.name() in BODY_METHODS)) {
+            return null
+        }
+        Class<?> commandType = ActionAnnotations.commandObjectType(controllerClass, actionName)
+        if (commandType != null) {
+            documentedCommands[commandType.simpleName] = commandType
+        }
+        commandType
+    }
+
+    private static Schema<?> requestBodySchema(PersistentEntity entity, Class<?> commandType, PathItem.HttpMethod method) {
+        if (!(method.name() in BODY_METHODS)) {
+            return null
+        }
+        if (commandType != null) {
+            return new Schema<>().$ref(PersistentEntitySchemaBuilder.referencePath(commandType.simpleName))
+        }
+        entity ? entityReference(entity) : null
     }
 
     private static Schema<?> entityReference(PersistentEntity entity) {
