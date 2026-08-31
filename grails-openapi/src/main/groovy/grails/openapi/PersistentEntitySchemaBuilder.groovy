@@ -18,16 +18,11 @@
  */
 package grails.openapi
 
-import java.time.temporal.Temporal
-
 import groovy.transform.CompileStatic
 
-import io.swagger.v3.oas.models.media.ArraySchema
-import io.swagger.v3.oas.models.media.BooleanSchema
-import io.swagger.v3.oas.models.media.DateTimeSchema
+import io.swagger.v3.core.converter.ModelConverters
+import io.swagger.v3.core.converter.ResolvedSchema
 import io.swagger.v3.oas.models.media.IntegerSchema
-import io.swagger.v3.oas.models.media.NumberSchema
-import io.swagger.v3.oas.models.media.ObjectSchema
 import io.swagger.v3.oas.models.media.Schema
 import io.swagger.v3.oas.models.media.StringSchema
 import org.springframework.validation.Validator
@@ -39,18 +34,18 @@ import org.grails.datastore.mapping.model.MappingContext
 import org.grails.datastore.mapping.model.PersistentEntity
 import org.grails.datastore.mapping.model.PersistentProperty
 import org.grails.datastore.mapping.model.types.Association
-import org.grails.datastore.mapping.model.types.ToMany
 
 /**
- * Builds OpenAPI schemas from the GORM mapping model, so that a Grails domain class is described in
- * the generated document the way an annotated Java type would be.
+ * Builds OpenAPI schemas for Grails domain classes.
  *
- * <p>The identifier and version are marked {@code readOnly}, so a client is told the server assigns
- * them rather than being asked to send them in a request body.</p>
+ * <p>The type is resolved through swagger-core, so a {@code @Schema} annotation on a domain class or
+ * one of its properties is honored and associated classes are resolved without this class walking
+ * them. The declared GORM constraints are then applied over that result, which swagger-core cannot
+ * see: {@code nullable: false} becomes a required member, {@code maxSize} becomes {@code maxLength},
+ * {@code inList} becomes an enumeration, {@code matches} becomes a pattern, and {@code email} or
+ * {@code url} becomes a format.</p>
  *
- * <p>Where the domain class declares constraints they are carried across - {@code maxSize} becomes
- * {@code maxLength}, {@code inList} becomes an enumeration, {@code matches} becomes a pattern, and a
- * property that is not nullable is reported as required.</p>
+ * <p>The identifier and version are marked {@code readOnly}, because the server assigns them.</p>
  *
  * @author Scott Murphy Heiberg
  * @since 8.0
@@ -60,52 +55,31 @@ class PersistentEntitySchemaBuilder {
 
     private static final String EMAIL_FORMAT = 'email'
     private static final String URI_FORMAT = 'uri'
+    private static final String INT64_FORMAT = 'int64'
 
     /**
      * @param entity the GORM entity to describe
      * @param mappingContext supplies the entity validator that carries the declared constraints
-     * @return an object schema whose properties mirror the entity's persistent properties
+     * @return every schema the entity resolves to, keyed by schema name, including the classes it
+     * is associated with
      */
-    Schema<?> build(PersistentEntity entity, MappingContext mappingContext = null) {
-        Map<String, ConstrainedProperty> constraints = constraintsFor(entity, mappingContext)
-        ObjectSchema schema = new ObjectSchema()
-
-        PersistentProperty identity = entity.identity
-        if (identity) {
-            schema.addProperty(identity.name, schemaFor(identity, null).readOnly(true))
+    Map<String, Schema> build(PersistentEntity entity, MappingContext mappingContext = null) {
+        ResolvedSchema resolved = ModelConverters.instance.readAllAsResolvedSchema(entity.javaClass)
+        Map<String, Schema> schemas = [:]
+        if (resolved?.referencedSchemas) {
+            schemas.putAll(resolved.referencedSchemas)
+        }
+        else if (resolved?.schema) {
+            schemas[schemaName(entity)] = resolved.schema
         }
 
-        String versionName = entity.versioned ? entity.version?.name : null
-
-        for (PersistentProperty property : entity.persistentProperties) {
-            boolean assignedByServer = property.name == versionName
-            Constrained constrained = constraints[property.name]
-            Schema<?> propertySchema = schemaFor(property, constrained)
-            if (assignedByServer) {
-                propertySchema.setReadOnly(true)
-            }
-            schema.addProperty(property.name, propertySchema)
-
-            if (constrained != null && !constrained.nullable && !assignedByServer) {
-                schema.addRequiredItem(property.name)
+        schemas.each { String name, Schema schema ->
+            PersistentEntity described = entityNamed(name, mappingContext)
+            if (described != null) {
+                applyGormMetadata(schema, described, mappingContext)
             }
         }
-
-        schema
-    }
-
-    /**
-     * The declared constraints, when the entity has a validator that exposes them. An entity mapped
-     * without constraint evaluation yields an empty map rather than a misleading default.
-     */
-    private static Map<String, ConstrainedProperty> constraintsFor(PersistentEntity entity, MappingContext mappingContext) {
-        if (mappingContext == null) {
-            return Collections.<String, ConstrainedProperty> emptyMap()
-        }
-        Validator validator = mappingContext.getEntityValidator(entity)
-        validator instanceof ConstrainedEntity
-                ? ((ConstrainedEntity) validator).constrainedProperties ?: Collections.<String, ConstrainedProperty> emptyMap()
-                : Collections.<String, ConstrainedProperty> emptyMap()
+        schemas
     }
 
     /**
@@ -119,24 +93,79 @@ class PersistentEntitySchemaBuilder {
         "#/components/schemas/${schemaName}".toString()
     }
 
-    private static Schema<?> schemaFor(PersistentProperty property, Constrained constrained) {
-        if (property instanceof Association) {
-            Association association = (Association) property
-            PersistentEntity associated = association.associatedEntity
-            if (associated == null) {
-                return new ObjectSchema()
-            }
-            Schema<?> reference = new Schema<>().$ref(referencePath(schemaName(associated)))
-            return association instanceof ToMany ? new ArraySchema().items(reference) : reference
-        }
-        applyConstraints(schemaForType(property.type), constrained)
+    private static PersistentEntity entityNamed(String name, MappingContext mappingContext) {
+        mappingContext?.persistentEntities?.find { PersistentEntity candidate -> schemaName(candidate) == name }
     }
 
-    private static Schema<?> applyConstraints(Schema<?> schema, Constrained constrained) {
-        if (constrained == null) {
-            return schema
+    /**
+     * Applies what GORM knows and swagger-core does not.
+     */
+    private static void applyGormMetadata(Schema schema, PersistentEntity entity, MappingContext mappingContext) {
+        Map<String, Schema> properties = schema.properties
+        if (properties == null) {
+            return
         }
 
+        // swagger-core surfaces the foreign key accessor GORM adds alongside a to-one association;
+        // the association itself already describes the relationship.
+        for (Association association : entity.associations) {
+            properties.remove("${association.name}Id".toString())
+        }
+
+        markReadOnly(properties, entity.identity?.name, schema)
+        if (entity.versioned) {
+            markReadOnly(properties, entity.version?.name, schema)
+        }
+
+        Map<String, ConstrainedProperty> constraints = constraintsFor(entity, mappingContext)
+        String versionName = entity.versioned ? entity.version?.name : null
+
+        for (PersistentProperty property : entity.persistentProperties) {
+            Constrained constrained = constraints[property.name]
+            Schema propertySchema = properties[property.name]
+            if (constrained == null || propertySchema == null) {
+                continue
+            }
+
+            applyConstraints(propertySchema, constrained)
+
+            if (!constrained.nullable && property.name != versionName && !isRequired(schema, property.name)) {
+                schema.addRequiredItem(property.name)
+            }
+        }
+    }
+
+    /**
+     * A property the server assigns. GORM adds the version through a transform that swagger-core
+     * does not see, so it is described here rather than only flagged.
+     */
+    private static void markReadOnly(Map<String, Schema> properties, String propertyName, Schema owner) {
+        if (!propertyName) {
+            return
+        }
+        Schema property = properties[propertyName]
+        if (property == null) {
+            property = new IntegerSchema().format(INT64_FORMAT)
+            owner.addProperty(propertyName, property)
+        }
+        property.setReadOnly(true)
+    }
+
+    private static boolean isRequired(Schema schema, String propertyName) {
+        schema.required?.contains(propertyName)
+    }
+
+    private static Map<String, ConstrainedProperty> constraintsFor(PersistentEntity entity, MappingContext mappingContext) {
+        if (mappingContext == null) {
+            return Collections.<String, ConstrainedProperty> emptyMap()
+        }
+        Validator validator = mappingContext.getEntityValidator(entity)
+        validator instanceof ConstrainedEntity
+                ? ((ConstrainedEntity) validator).constrainedProperties ?: Collections.<String, ConstrainedProperty> emptyMap()
+                : Collections.<String, ConstrainedProperty> emptyMap()
+    }
+
+    private static void applyConstraints(Schema schema, Constrained constrained) {
         if (constrained.inList) {
             Schema<Object> enumTarget = (Schema<Object>) schema
             constrained.inList.each { enumTarget.addEnumItemObject(it) }
@@ -150,11 +179,9 @@ class PersistentEntitySchemaBuilder {
         else {
             applyNumericConstraints(schema, constrained)
         }
-
-        schema
     }
 
-    private static void applyStringConstraints(Schema<?> schema, Constrained constrained) {
+    private static void applyStringConstraints(Schema schema, Constrained constrained) {
         if (constrained.matches) {
             schema.setPattern(constrained.matches)
         }
@@ -175,7 +202,7 @@ class PersistentEntitySchemaBuilder {
         }
     }
 
-    private static void applyNumericConstraints(Schema<?> schema, Constrained constrained) {
+    private static void applyNumericConstraints(Schema schema, Constrained constrained) {
         Comparable min = constrained.min ?: (constrained.range ? (Comparable) constrained.range.from : null)
         Comparable max = constrained.max ?: (constrained.range ? (Comparable) constrained.range.to : null)
         if (min instanceof Number) {
@@ -188,30 +215,5 @@ class PersistentEntitySchemaBuilder {
 
     private static BigDecimal toBigDecimal(Number value) {
         value instanceof BigDecimal ? (BigDecimal) value : new BigDecimal(value.toString())
-    }
-
-    private static Schema<?> schemaForType(Class<?> type) {
-        if (type == null) {
-            return new ObjectSchema()
-        }
-        if (CharSequence.isAssignableFrom(type) || type.enum) {
-            return new StringSchema()
-        }
-        if (type in [boolean, Boolean]) {
-            return new BooleanSchema()
-        }
-        if (type in [long, Long, int, Integer, short, Short, byte, Byte] || BigInteger.isAssignableFrom(type)) {
-            return new IntegerSchema().format(type in [long, Long] ? 'int64' : 'int32')
-        }
-        if (type in [double, Double, float, Float] || Number.isAssignableFrom(type)) {
-            return new NumberSchema()
-        }
-        if (Date.isAssignableFrom(type) || Temporal.isAssignableFrom(type) || Calendar.isAssignableFrom(type)) {
-            return new DateTimeSchema()
-        }
-        if (Collection.isAssignableFrom(type)) {
-            return new ArraySchema().items(new ObjectSchema())
-        }
-        new ObjectSchema()
     }
 }

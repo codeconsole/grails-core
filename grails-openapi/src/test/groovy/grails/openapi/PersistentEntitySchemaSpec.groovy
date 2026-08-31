@@ -19,6 +19,7 @@
 package grails.openapi
 
 import io.swagger.v3.oas.models.OpenAPI
+import io.swagger.v3.oas.annotations.media.Schema as SchemaAnnotation
 
 import grails.core.DefaultGrailsApplication
 import grails.core.GrailsApplication
@@ -139,7 +140,7 @@ class PersistentEntitySchemaSpec extends Specification {
         then:
         with(openApi.components.schemas['Widget'].properties) {
             name.maxLength == 40
-            colour.enum == ['red', 'green']
+            color.enum == ['red', 'green']
             code.pattern == '[A-Z]{3}'
             contact.format == 'email'
         }
@@ -228,6 +229,92 @@ class PersistentEntitySchemaSpec extends Specification {
         openApi.paths['/widgets'].get.responses['200'].content['application/json'].schema == null
     }
 
+    void 'honors a Schema annotation on the domain class'() {
+        given:
+        def openApi = new OpenAPI()
+
+        when:
+        customizer().customise(openApi)
+
+        then:
+        openApi.components.schemas['Widget'].description == 'A widget in the catalogue'
+    }
+
+    void 'honors a Schema annotation on a property'() {
+        given:
+        def openApi = new OpenAPI()
+
+        when:
+        customizer().customise(openApi)
+
+        then:
+        with(openApi.components.schemas['Widget'].properties.name) {
+            description == 'The name shown to a customer'
+            example == 'Sprocket'
+        }
+    }
+
+    void 'applies the GORM constraints over the annotated schema'() {
+        given:
+        def openApi = new OpenAPI()
+
+        when:
+        customizer().customise(openApi)
+
+        then: 'the annotation supplies the prose'
+        openApi.components.schemas['Widget'].properties.name.description == 'The name shown to a customer'
+
+        and: 'while the constraints block still supplies the validation, which swagger-core cannot see'
+        openApi.components.schemas['Widget'].properties.name.maxLength == 40
+        'name' in openApi.components.schemas['Widget'].required
+    }
+
+    void 'omits the foreign key accessor GORM adds beside an association'() {
+        given:
+        def openApi = new OpenAPI()
+
+        when:
+        customizer().customise(openApi)
+
+        then: 'the association describes the relationship'
+        openApi.components.schemas['Widget'].properties.containsKey('crate')
+
+        and: 'so the generated identifier accessor is redundant'
+        !openApi.components.schemas['Widget'].properties.containsKey('crateId')
+    }
+
+    void 'describes the version even though swagger-core does not surface it'() {
+        given:
+        def openApi = new OpenAPI()
+
+        when:
+        customizer().customise(openApi)
+
+        then:
+        with(openApi.components.schemas['Widget'].properties.version) {
+            it
+            readOnly
+        }
+    }
+
+    void 'produces the same schema when the document is customised twice'() {
+        given:
+        def openApi = new OpenAPI()
+        def customizer = customizer()
+
+        when: 'a second pass runs over a document that already has the schemas'
+        customizer.customise(openApi)
+        def first = openApi.components.schemas['Widget'].properties.color.enum.toList()
+        customizer.customise(openApi)
+
+        then: 'the constraints are not applied twice'
+        openApi.components.schemas['Widget'].properties.color.enum.toList() == first
+        first == ['red', 'green']
+
+        and: 'nor is a required member repeated'
+        openApi.components.schemas['Widget'].required.count { it == 'name' } == 1
+    }
+
     private static UrlMappingsOpenApiCustomizer customizer() {
         MappingContext context = new KeyValueMappingContext('test')
         context.addPersistentEntity(Widget)
@@ -247,12 +334,14 @@ class PersistentEntitySchemaSpec extends Specification {
     }
 }
 
+@SchemaAnnotation(description = 'A widget in the catalogue')
 @Entity
 class Widget {
+    @SchemaAnnotation(description = 'The name shown to a customer', example = 'Sprocket')
     String name
     Double weight
     Boolean active
-    String colour
+    String color
     String code
     String contact
     Crate crate
@@ -261,7 +350,7 @@ class Widget {
         name blank: false, nullable: false, maxSize: 40
         weight nullable: true
         active nullable: true
-        colour nullable: true, inList: ['red', 'green']
+        color nullable: true, inList: ['red', 'green']
         code nullable: true, matches: '[A-Z]{3}'
         contact nullable: true, email: true
         crate nullable: true

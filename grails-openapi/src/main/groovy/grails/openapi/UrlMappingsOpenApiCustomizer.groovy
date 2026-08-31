@@ -47,7 +47,6 @@ import grails.web.mapping.UrlMappingsHolder
 import org.grails.core.artefact.ControllerArtefactHandler
 import org.grails.datastore.mapping.model.MappingContext
 import org.grails.datastore.mapping.model.PersistentEntity
-import org.grails.datastore.mapping.model.types.Association
 
 /**
  * Contributes the application's Grails URL mappings to the springdoc generated OpenAPI document.
@@ -249,36 +248,15 @@ class UrlMappingsOpenApiCustomizer implements OpenApiCustomizer {
             return
         }
 
-        Map<String, PersistentEntity> reachable = [:]
-        reachable.putAll(documentedEntities)
-        addAssociated(documentedEntities.values(), reachable)
-
         Components components = openApi.components ?: new Components()
-        reachable.each { String name, PersistentEntity entity ->
-            components.addSchemas(name, schemaBuilder.build(entity, mappingContext))
-        }
-        openApi.setComponents(components)
-    }
-
-    /**
-     * Walks associations so a schema referenced only as another schema's property is still defined.
-     */
-    private static void addAssociated(Collection<PersistentEntity> entities, Map<String, PersistentEntity> reachable) {
-        Deque<PersistentEntity> pending = new ArrayDeque<>(entities)
-        while (!pending.isEmpty()) {
-            PersistentEntity entity = pending.poll()
-            for (Association association : entity.associations) {
-                PersistentEntity associated = association.associatedEntity
-                if (associated == null) {
-                    continue
-                }
-                String name = PersistentEntitySchemaBuilder.schemaName(associated)
-                if (!reachable.containsKey(name)) {
-                    reachable[name] = associated
-                    pending.add(associated)
-                }
+        for (PersistentEntity entity : documentedEntities.values()) {
+            // swagger-core resolves the classes an entity is associated with, so each documented
+            // resource contributes its own schema and everything it refers to.
+            schemaBuilder.build(entity, mappingContext).each { String name, Schema<?> schema ->
+                components.addSchemas(name, schema)
             }
         }
+        openApi.setComponents(components)
     }
 
     /**

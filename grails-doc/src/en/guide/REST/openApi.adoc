@@ -75,16 +75,45 @@ response formats through content types rather than the path.
 
 ==== Domain Schemas
 
-A domain class served by a documented path is described in `components/schemas`, built from the GORM
-mapping model. Associations are referenced rather than inlined, so a `Book` with `hasMany` readers
-refers to the `User` schema, and an associated class is defined even when it has no documented path
-of its own. A domain class that nothing documented refers to is left out.
+A domain class served by a documented path is described in `components/schemas`. The type is
+resolved through swagger-core, so the classes it is associated with are described too, and a
+`@Schema` annotation on the class or on one of its properties is honored:
+
+[source,groovy]
+----
+import io.swagger.v3.oas.annotations.media.Schema
+
+@Schema(description = 'A book in the catalogue')
+class Book {
+
+    @Schema(description = 'Full title as printed', example = 'Dune')
+    String title
+
+    static constraints = {
+        title blank: false, nullable: false, maxSize: 255
+    }
+}
+----
+
+The declared GORM constraints are then applied over that result, because swagger-core cannot see
+them. The two combine, so the annotation above supplies the prose and the constraints block the
+validation:
+
+[source,json]
+----
+"title": {
+  "type": "string",
+  "description": "Full title as printed",
+  "example": "Dune",
+  "maxLength": 255
+}
+----
 
 The identifier and the version are marked `readOnly`, because the server assigns them. Tools that
 understand OpenAPI leave a read-only property out of a request body, so one schema describes both
 directions.
 
-Declared constraints are carried across:
+The constraints are carried across as follows:
 
 [cols="1,1"]
 |===
