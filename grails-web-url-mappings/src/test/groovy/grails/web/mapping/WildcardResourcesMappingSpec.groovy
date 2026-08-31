@@ -152,6 +152,36 @@ class WildcardResourcesMappingSpec extends Specification {
         !holder.matchAll('/books', 'GET')
     }
 
+    void "a wildcard resources mapping captures a namespace alongside the controller"() {
+        given: 'the URL captures the namespace as well as the controller'
+        def holder = getUrlMappingsHolder {
+            "/$namespace/$controller"(resources: '*')
+        }
+
+        expect: 'the eight mappings are still generated once'
+        holder.urlMappings.size() == 8
+
+        and: 'the namespace and controller are both bound from the URL'
+        holder.matchAll('/v1/books', 'GET')[0].actionName == 'index'
+        holder.matchAll('/v1/books', 'GET')[0].parameters.namespace == 'v1'
+        holder.matchAll('/v1/books', 'GET')[0].parameters.controller == 'books'
+
+        and: 'the id and format still bind in the right positions'
+        holder.matchAll('/v1/books/1', 'GET')[0].actionName == 'show'
+        holder.matchAll('/v1/books/1', 'GET')[0].parameters.id == '1'
+        holder.matchAll('/v1/books/1.json', 'PUT')[0].actionName == 'update'
+        holder.matchAll('/v1/books/1.json', 'PUT')[0].parameters.format == 'json'
+        holder.matchAll('/v1/books/1.json', 'PUT')[0].parameters.namespace == 'v1'
+
+        and: 'the literal segments still take precedence over the id'
+        holder.matchAll('/v1/books/create', 'GET')[0].actionName == 'create'
+        holder.matchAll('/v1/books/1/edit', 'GET')[0].actionName == 'edit'
+
+        and: 'a different namespace uses the same eight mappings'
+        holder.matchAll('/v2/authors/2', 'DELETE')[0].actionName == 'delete'
+        holder.matchAll('/v2/authors/2', 'DELETE')[0].parameters.namespace == 'v2'
+    }
+
     void "a named resources mapping is unaffected"() {
         given: 'an ordinary named resources mapping'
         def holder = getUrlMappingsHolder {

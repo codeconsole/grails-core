@@ -131,6 +131,22 @@ group "/api/v1", {
 }
 ----
 
+A namespace can be captured from the URL in the same way, which maps every namespaced controller
+without naming the namespaces:
+
+[source,groovy]
+----
+"/$namespace/$controller"(resources: '*')
+----
+
+[format="csv", options="header"]
+|===
+
+HTTP Method,URI,Grails Action
+GET,/${namespace}/${controller},index
+GET,/${namespace}/${controller}/${id},show
+|===
+
 NOTE: The URL must capture the controller, and child resources cannot be nested within a wildcard
 `resources` mapping, because the controller is not known until a request is matched. Both are
 rejected when the mappings are evaluated.
