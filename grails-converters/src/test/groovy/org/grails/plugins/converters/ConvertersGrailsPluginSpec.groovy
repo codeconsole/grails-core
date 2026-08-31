@@ -24,6 +24,7 @@ import org.springframework.core.env.StandardEnvironment
 
 import grails.converters.JSON
 import grails.converters.json.NamedJsonConfigurationRegistry
+import tools.jackson.databind.json.JsonMapper
 import org.grails.web.converters.configuration.ConvertersConfigurationInitializer
 import org.grails.web.converters.configuration.ObjectMarshallerRegisterer
 import org.grails.web.converters.jackson.JacksonNamedJsonRenderer
@@ -55,12 +56,37 @@ class ConvertersGrailsPluginSpec extends Specification {
         when: "the bean is instantiated in a context that has no JsonMapper, such as a unit test slice"
         def configurationRegistry = beanFactory.getBean('namedJsonConfigurationRegistry', NamedJsonConfigurationRegistry)
 
-        then: "it falls back to a plain mapper instead of failing the application context"
+        then: "creating it does not fail the application context"
         configurationRegistry != null
 
-        and: "named configurations still register and serialize"
+        and: "configurations still register, since that needs no mapper"
         configurationRegistry.register('deep') { it.attribute('depth', 'deep') }
         configurationRegistry.contains('deep')
+    }
+
+    void "using a named configuration without a JsonMapper says so rather than substituting one"() {
+        given:
+        def configurationRegistry = beanFactory.getBean('namedJsonConfigurationRegistry', NamedJsonConfigurationRegistry)
+        configurationRegistry.register('deep') { it.attribute('depth', 'deep') }
+
+        when: "a writer is needed but Jackson auto-configuration never ran"
+        configurationRegistry.writeValueAsString('deep', [title: 'Grails'])
+
+        then: "the failure names the cause instead of silently using a differently configured mapper"
+        IllegalStateException e = thrown()
+        e.message.contains('no JsonMapper is available')
+    }
+
+    void "a registered JsonMapper is the one configurations derive from"() {
+        given: "a mapper registered after the registry bean definition, as Boot's is"
+        def mapper = JsonMapper.builder().build()
+        beanFactory.registerSingleton('jacksonJsonMapper', mapper)
+        def configurationRegistry = beanFactory.getBean('namedJsonConfigurationRegistry', NamedJsonConfigurationRegistry)
+
+        when:
+        configurationRegistry.register('deep') { it.attribute('depth', 'deep') }
+
+        then:
         configurationRegistry.writeValueAsString('deep', [title: 'Grails']) == '{"title":"Grails"}'
     }
 

@@ -71,11 +71,12 @@ class ConvertersGrailsPlugin extends Plugin {
                 }
             }
             registry.registerBean('namedJsonConfigurationRegistry', NamedJsonConfigurationRegistry) {
-                it.supplier {
-                    // Boot's JsonMapper is absent outside a Jackson auto-configured context, such as a
-                    // unit test slice, so fall back to a plain mapper rather than failing the context.
-                    JsonMapper jsonMapper = it.beanProvider(JsonMapper).getIfAvailable() ?: JsonMapper.builder().build()
-                    new NamedJsonConfigurationRegistry(jsonMapper)
+                it.supplier { context ->
+                    // Resolved when a configuration is first written, not here: the registry can be
+                    // created before Jackson auto-configuration has produced Boot's mapper, and
+                    // substituting a separately built one would silently drop spring.jackson.*,
+                    // the application's builder customizers and the Grails serializers.
+                    new NamedJsonConfigurationRegistry(context.beanProvider(JsonMapper)::getIfAvailable)
                 }
             }
             registry.registerBean('namedJsonRenderer', JacksonNamedJsonRenderer) {

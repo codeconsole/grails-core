@@ -24,6 +24,7 @@ import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.function.Consumer;
+import java.util.function.Supplier;
 
 import tools.jackson.databind.ObjectWriter;
 import tools.jackson.databind.json.JsonMapper;
@@ -35,10 +36,20 @@ import tools.jackson.databind.json.JsonMapper;
  */
 public final class NamedJsonConfigurationRegistry {
 
-    private final JsonMapper jsonMapper;
+    private final Supplier<JsonMapper> jsonMapper;
     private final ConcurrentMap<String, NamedJsonConfiguration> configurations = new ConcurrentHashMap<>();
 
     public NamedJsonConfigurationRegistry(JsonMapper jsonMapper) {
+        this(() -> Objects.requireNonNull(jsonMapper, "jsonMapper"));
+    }
+
+    /**
+     * @param jsonMapper supplies the mapper each configuration derives from, resolved when a writer
+     * is first needed. Deferring it means the registry can be created before Jackson
+     * auto-configuration has produced Spring Boot's mapper, and still derive from that mapper
+     * rather than from a separately configured one.
+     */
+    public NamedJsonConfigurationRegistry(Supplier<JsonMapper> jsonMapper) {
         this.jsonMapper = Objects.requireNonNull(jsonMapper, "jsonMapper");
     }
 
@@ -61,7 +72,13 @@ public final class NamedJsonConfigurationRegistry {
         if (configuration == null) {
             throw new IllegalArgumentException("Named JSON configuration [" + name + "] is not registered.");
         }
-        return configuration.writer(jsonMapper);
+        JsonMapper mapper = this.jsonMapper.get();
+        if (mapper == null) {
+            throw new IllegalStateException("Named JSON configuration [" + name +
+                    "] cannot be used: no JsonMapper is available. Spring Boot's Jackson " +
+                    "auto-configuration normally provides one.");
+        }
+        return configuration.writer(mapper);
     }
 
     public String writeValueAsString(String name, Object value) {
