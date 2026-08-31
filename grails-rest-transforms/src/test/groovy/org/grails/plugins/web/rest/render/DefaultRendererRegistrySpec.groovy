@@ -130,6 +130,21 @@ class DefaultRendererRegistrySpec extends Specification {
         renderer.springHttpMessageConvertersSupplier.get() == [converter]
     }
 
+    void 'a converter added by a later configurer is still seen'() {
+        given: "the list Spring will install, handed to this holder mid-way through configuration"
+        def early = Stub(HttpMessageConverter)
+        def late = Stub(HttpMessageConverter)
+        def installed = [early]
+        def holder = new SpringMessageConverters()
+        holder.extendMessageConverters(installed)
+
+        when: "a WebMvcConfigurer ordered after this one contributes another converter"
+        installed << late
+
+        then: "rendering sees the final list, not a snapshot taken too early"
+        holder.converters == [early, late]
+    }
+
     void 'Spring JSON rendering can be disabled during migration'() {
         given:
         def context = new AnnotationConfigApplicationContext()

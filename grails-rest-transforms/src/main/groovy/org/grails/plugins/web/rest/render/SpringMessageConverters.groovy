@@ -41,11 +41,16 @@ class SpringMessageConverters implements WebMvcConfigurer {
 
     @Override
     void extendMessageConverters(List<HttpMessageConverter<?>> converters) {
-        this.converters = List.copyOf(converters)
+        // Keeps the list itself rather than a copy. Spring invokes each WebMvcConfigurer in turn
+        // and installs this same instance on the handler adapter, so a configurer ordered after
+        // this one can still add, remove or reorder converters. Copying here would freeze a list
+        // that is not yet final, leaving Grails rendering with a different set from Spring MVC.
+        this.converters = converters
     }
 
     /**
-     * @return the configured converters, or an empty list before MVC initialization has run
+     * @return the converters MVC is configured with, or an empty list before initialization; read
+     * when a response is written so that every configurer's contribution is included
      */
     List<HttpMessageConverter<?>> getConverters() {
         return converters
