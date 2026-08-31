@@ -123,6 +123,7 @@ class RestfulResponseSpec extends Specification {
         ctx.registerMockBean(GrailsApplication.APPLICATION_ID, application)
         def holder = new DefaultUrlMappingsHolder(new DefaultUrlMappingEvaluator(ctx).evaluateMappings {
             '/notes'(resources: 'note')
+            "/$controller/$action?/$id?(.$format)?" {}
         })
 
         MappingContext context = new KeyValueMappingContext('test')

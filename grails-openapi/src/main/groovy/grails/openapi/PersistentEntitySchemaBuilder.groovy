@@ -18,15 +18,19 @@
  */
 package grails.openapi
 
+import java.lang.reflect.Field
 import java.lang.reflect.Modifier
+import java.lang.reflect.ParameterizedType
+import java.lang.reflect.Type
 
 import groovy.transform.CompileStatic
 
 import io.swagger.v3.core.converter.ModelConverters
 import io.swagger.v3.core.converter.ResolvedSchema
+import io.swagger.v3.oas.annotations.media.Schema as SchemaAnnotation
+import io.swagger.v3.oas.models.SpecVersion
 import io.swagger.v3.oas.models.media.IntegerSchema
 import io.swagger.v3.oas.models.media.Schema
-import io.swagger.v3.oas.models.media.StringSchema
 import org.codehaus.groovy.runtime.InvokerHelper
 import org.springframework.validation.Validator
 
@@ -67,8 +71,9 @@ class PersistentEntitySchemaBuilder {
      * @return every schema the entity resolves to, keyed by schema name, including the classes it
      * is associated with
      */
-    Map<String, Schema> build(PersistentEntity entity, MappingContext mappingContext = null) {
-        ResolvedSchema resolved = ModelConverters.instance.readAllAsResolvedSchema(entity.javaClass)
+    Map<String, Schema> build(PersistentEntity entity, MappingContext mappingContext = null,
+                              SpecVersion specVersion = SpecVersion.V30) {
+        ResolvedSchema resolved = converters(specVersion).readAllAsResolvedSchema(entity.javaClass)
         Map<String, Schema> schemas = [:]
         if (resolved?.referencedSchemas) {
             schemas.putAll(resolved.referencedSchemas)
@@ -93,31 +98,74 @@ class PersistentEntitySchemaBuilder {
      * @param commandType the command object an action takes
      * @return every schema the command resolves to, keyed by schema name
      */
-    Map<String, Schema> buildCommand(Class<?> commandType) {
-        ResolvedSchema resolved = ModelConverters.instance.readAllAsResolvedSchema(commandType)
+    Map<String, Schema> buildCommand(Class<?> commandType, SpecVersion specVersion = SpecVersion.V30) {
+        ResolvedSchema resolved = converters(specVersion).readAllAsResolvedSchema(commandType)
         Map<String, Schema> resolvedSchemas = [:]
         if (resolved?.referencedSchemas) {
             resolvedSchemas.putAll(resolved.referencedSchemas)
         }
         else if (resolved?.schema) {
-            resolvedSchemas[commandType.simpleName] = resolved.schema
-        }
-
-        Schema schema = resolvedSchemas[commandType.simpleName]
-        if (schema == null) {
-            return Collections.<String, Schema> emptyMap()
+            resolvedSchemas[schemaName(commandType)] = resolved.schema
         }
 
         // Validateable contributes errors, and every Groovy object contributes metaClass. Left in,
-        // each drags its whole object graph into the document, so the schema is reduced to what the
-        // command itself declares.
-        retainDeclaredProperties(schema, commandType)
-        applyDeclaredConstraints(schema, constraintsFor(commandType))
-
+        // each drags its whole object graph into the document, so the walk follows the fields the
+        // commands declare rather than everything swagger-core resolved. A nested command is
+        // pruned and constrained the same way the outer one is.
         Map<String, Schema> schemas = [:]
-        schemas[commandType.simpleName] = schema
-        retainReferenced(schemas, resolvedSchemas)
+        Set<Class<?>> visited = []
+        Deque<Class<?>> pending = new ArrayDeque<>([commandType])
+
+        while (!pending.isEmpty()) {
+            Class<?> type = pending.poll()
+            if (!visited.add(type)) {
+                continue
+            }
+
+            Schema schema = resolvedSchemas[schemaName(type)]
+            if (schema == null) {
+                continue
+            }
+
+            retainDeclaredProperties(schema, type)
+            applyDeclaredConstraints(schema, constraintsFor(type))
+            schemas[schemaName(type)] = schema
+
+            declaredPropertyTypes(type, schema.properties?.keySet() ?: [] as Set).each { Class<?> nested ->
+                if (resolvedSchemas.containsKey(schemaName(nested))) {
+                    pending.add(nested)
+                }
+            }
+        }
         schemas
+    }
+
+    /**
+     * The types the command's described fields refer to, including the element type of a
+     * collection, so a nested command is described rather than referred to and left undefined.
+     */
+    private static Set<Class<?>> declaredPropertyTypes(Class<?> commandType, Set<String> described) {
+        Set<Class<?>> types = [] as Set
+        for (Class<?> type = commandType; type != null && type != Object; type = type.superclass) {
+            type.declaredFields.each { Field field ->
+                // Only a field the schema still describes is followed. A trait contributes fields
+                // under a mangled name, which pruning already dropped, and following those would
+                // reintroduce exactly what pruning removed.
+                if (field.synthetic || Modifier.isStatic(field.modifiers) || !described.contains(field.name)) {
+                    return
+                }
+                types << field.type
+                Type generic = field.genericType
+                if (generic instanceof ParameterizedType) {
+                    ((ParameterizedType) generic).actualTypeArguments.each { Type argument ->
+                        if (argument instanceof Class) {
+                            types << (Class<?>) argument
+                        }
+                    }
+                }
+            }
+        }
+        types
     }
 
     private static void retainDeclaredProperties(Schema schema, Class<?> commandType) {
@@ -133,7 +181,7 @@ class PersistentEntitySchemaBuilder {
     private static Set<String> declaredPropertyNames(Class<?> commandType) {
         Set<String> names = [] as Set
         for (Class<?> type = commandType; type != null && type != Object; type = type.superclass) {
-            type.declaredFields.each { java.lang.reflect.Field field ->
+            type.declaredFields.each { Field field ->
                 if (!field.synthetic && !Modifier.isStatic(field.modifiers) && !field.name.startsWith('$')) {
                     names << field.name
                 }
@@ -208,10 +256,29 @@ class PersistentEntitySchemaBuilder {
     }
 
     /**
+     * swagger-core keeps a separate converter list per specification version, so the schemas are
+     * resolved with the one that matches the document being described. Resolving 3.0 shapes into a
+     * 3.1 document would emit the wrong form for nullability, bounds and examples.
+     */
+    private static ModelConverters converters(SpecVersion specVersion) {
+        ModelConverters.getInstance(specVersion == SpecVersion.V31)
+    }
+
+    /**
      * The schema name a domain class is registered and referenced under.
      */
     static String schemaName(PersistentEntity entity) {
-        entity.javaClass.simpleName
+        schemaName(entity.javaClass)
+    }
+
+    /**
+     * swagger-core registers a type under the name its {@code @Schema} declares, so the name is
+     * read the same way here. Otherwise the schema would be registered under one name and referred
+     * to by another, and the GORM overlay would never find it.
+     */
+    static String schemaName(Class<?> type) {
+        SchemaAnnotation declared = type.getAnnotation(SchemaAnnotation)
+        declared?.name() ?: type.simpleName
     }
 
     static String referencePath(String schemaName) {
@@ -297,13 +364,19 @@ class PersistentEntitySchemaBuilder {
         }
 
         // The String-only constraints throw rather than return null when read from a property of
-        // another type, so they are only consulted for a string schema.
-        if (schema instanceof StringSchema) {
+        // another type, so they are only consulted for a string schema. The check is on the
+        // declared type rather than the class, because 3.1 resolves to JsonSchema carrying a list
+        // of types where 3.0 resolves to StringSchema.
+        if (isString(schema)) {
             applyStringConstraints(schema, constrained)
         }
         else {
             applyNumericConstraints(schema, constrained)
         }
+    }
+
+    private static boolean isString(Schema schema) {
+        schema.type == 'string' || schema.types?.contains('string')
     }
 
     private static void applyStringConstraints(Schema schema, Constrained constrained) {
@@ -317,8 +390,12 @@ class PersistentEntitySchemaBuilder {
             schema.setFormat(URI_FORMAT)
         }
 
-        Integer maxSize = constrained.maxSize ?: (constrained.size ? (Integer) constrained.size.to : null)
-        Integer minSize = constrained.minSize ?: (constrained.size ? (Integer) constrained.size.from : null)
+        // A zero bound is falsy in Groovy, so the presence of each value is tested rather than
+        // its truth: maxSize: 0 and min: 0 are real constraints.
+        Integer maxSize = constrained.maxSize != null ? constrained.maxSize
+                : (constrained.size != null ? (Integer) constrained.size.to : null)
+        Integer minSize = constrained.minSize != null ? constrained.minSize
+                : (constrained.size != null ? (Integer) constrained.size.from : null)
         if (maxSize != null) {
             schema.setMaxLength(maxSize)
         }
@@ -328,8 +405,10 @@ class PersistentEntitySchemaBuilder {
     }
 
     private static void applyNumericConstraints(Schema schema, Constrained constrained) {
-        Comparable min = constrained.min ?: (constrained.range ? (Comparable) constrained.range.from : null)
-        Comparable max = constrained.max ?: (constrained.range ? (Comparable) constrained.range.to : null)
+        Comparable min = constrained.min != null ? constrained.min
+                : (constrained.range != null ? (Comparable) constrained.range.from : null)
+        Comparable max = constrained.max != null ? constrained.max
+                : (constrained.range != null ? (Comparable) constrained.range.to : null)
         if (min instanceof Number) {
             schema.setMinimum(toBigDecimal((Number) min))
         }

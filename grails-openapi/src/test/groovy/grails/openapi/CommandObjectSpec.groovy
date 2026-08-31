@@ -111,6 +111,47 @@ class CommandObjectSpec extends Specification {
                 .content['application/json'].schema.$ref == '#/components/schemas/Order'
     }
 
+    void 'describes a nested command object and its constraints'() {
+        given:
+        def openApi = new OpenAPI()
+
+        when:
+        nestedCustomizer().customise(openApi)
+
+        then: 'the nested command is described'
+        openApi.components.schemas.containsKey('AddressCommand')
+
+        and: 'with its own constraints, not only the outer command'
+        'street' in openApi.components.schemas['AddressCommand'].required
+        openApi.components.schemas['AddressCommand'].properties.street.maxLength == 12
+
+        and: 'and only the commands, not what pruning removes from them'
+        openApi.components.schemas.keySet() == ['NestedOrderCommand', 'AddressCommand', 'LineCommand'] as Set
+    }
+
+    void 'describes the element type of a collection property'() {
+        given:
+        def openApi = new OpenAPI()
+
+        when:
+        nestedCustomizer().customise(openApi)
+
+        then:
+        openApi.components.schemas['NestedOrderCommand'].properties.lines.items.$ref ==
+                '#/components/schemas/LineCommand'
+        openApi.components.schemas.containsKey('LineCommand')
+    }
+
+    private static UrlMappingsOpenApiCustomizer nestedCustomizer() {
+        def application = new DefaultGrailsApplication(NestedOrdersController).tap { it.initialise() }
+        def ctx = new MockApplicationContext()
+        ctx.registerMockBean(GrailsApplication.APPLICATION_ID, application)
+        def holder = new DefaultUrlMappingsHolder(new DefaultUrlMappingEvaluator(ctx).evaluateMappings {
+            post '/nested/submit'(controller: 'nestedOrders', action: 'submit')
+        })
+        new UrlMappingsOpenApiCustomizer(holder).tap { grailsApplication = application }
+    }
+
     private static UrlMappingsOpenApiCustomizer customizer() {
         def application = new DefaultGrailsApplication(OrdersController, OrderController).tap {
             it.initialise()
@@ -119,6 +160,7 @@ class CommandObjectSpec extends Specification {
         ctx.registerMockBean(GrailsApplication.APPLICATION_ID, application)
         def holder = new DefaultUrlMappingsHolder(new DefaultUrlMappingEvaluator(ctx).evaluateMappings {
             post '/orders/submit'(controller: 'orders', action: 'submit')
+            "/$controller/$action?/$id?(.$format)?" {}
         })
 
         MappingContext context = new KeyValueMappingContext('test')
@@ -145,6 +187,28 @@ class OrderCommand implements Validateable {
         customerEmail email: true, nullable: false
         quantity min: 1, nullable: true
     }
+}
+
+class AddressCommand implements Validateable {
+    String street
+
+    static constraints = {
+        street nullable: false, maxSize: 12
+    }
+}
+
+class LineCommand implements Validateable {
+    String sku
+}
+
+class NestedOrderCommand implements Validateable {
+    AddressCommand shipping
+    List<LineCommand> lines
+}
+
+@Artefact('Controller')
+class NestedOrdersController {
+    def submit(NestedOrderCommand cmd) { }
 }
 
 @Artefact('Controller')

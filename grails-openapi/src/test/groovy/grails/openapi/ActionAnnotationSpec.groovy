@@ -123,7 +123,7 @@ class ActionAnnotationSpec extends Specification {
         then:
         with(openApi.paths['/annotated/create'].get) {
             summary == null
-            operationId == 'annotated_create_get'
+            operationId == 'annotated_create_get_byAction'
             tags == ['annotated']
         }
     }
@@ -134,7 +134,9 @@ class ActionAnnotationSpec extends Specification {
         }
         def ctx = new MockApplicationContext()
         ctx.registerMockBean(GrailsApplication.APPLICATION_ID, application)
-        def holder = new DefaultUrlMappingsHolder(new DefaultUrlMappingEvaluator(ctx).evaluateMappings {})
+        def holder = new DefaultUrlMappingsHolder(new DefaultUrlMappingEvaluator(ctx).evaluateMappings {
+            "/$controller/$action?/$id?(.$format)?" {}
+        })
 
         MappingContext context = new KeyValueMappingContext('test')
         context.addPersistentEntity(AnnotatedWidget)

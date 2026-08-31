@@ -143,16 +143,20 @@ class ActionAnnotations {
         boolean described = false
 
         for (io.swagger.v3.oas.annotations.media.Content each : declared) {
-            Class<?> implementation = each.schema()?.implementation()
-            if (implementation == null || implementation == Void) {
-                continue
-            }
+            // A collection response is declared through array = @ArraySchema(schema = ...), which
+            // carries the element type; a single one through schema = @Schema(...).
+            Class<?> itemType = declaredType(each.array()?.schema())
+            Class<?> implementation = declaredType(each.schema())
 
-            Schema<?> schema = new Schema<>().$ref(
-                    PersistentEntitySchemaBuilder.referencePath(implementation.simpleName))
-            if (each.array()?.schema()?.implementation() != null
-                    && each.array().schema().implementation() != Void) {
-                schema = new ArraySchema().items(schema)
+            Schema<?> schema
+            if (itemType != null) {
+                schema = new ArraySchema().items(reference(itemType))
+            }
+            else if (implementation != null) {
+                schema = reference(implementation)
+            }
+            else {
+                continue
             }
 
             String mediaType = each.mediaType() ?: DEFAULT_MEDIA_TYPE
@@ -160,6 +164,15 @@ class ActionAnnotations {
             described = true
         }
         described ? content : null
+    }
+
+    private static Class<?> declaredType(io.swagger.v3.oas.annotations.media.Schema declared) {
+        Class<?> implementation = declared?.implementation()
+        implementation == null || implementation == Void ? null : implementation
+    }
+
+    private static Schema<?> reference(Class<?> type) {
+        new Schema<>().$ref(PersistentEntitySchemaBuilder.referencePath(PersistentEntitySchemaBuilder.schemaName(type)))
     }
 
     /**
@@ -182,9 +195,13 @@ class ActionAnnotations {
                                              List<Class<?>> types) {
         declared?.each { io.swagger.v3.oas.annotations.responses.ApiResponse response ->
             response.content()?.each { io.swagger.v3.oas.annotations.media.Content each ->
-                Class<?> implementation = each.schema()?.implementation()
-                if (implementation != null && implementation != Void) {
+                Class<?> implementation = declaredType(each.schema())
+                if (implementation != null) {
                     types << implementation
+                }
+                Class<?> itemType = declaredType(each.array()?.schema())
+                if (itemType != null) {
+                    types << itemType
                 }
             }
         }

@@ -19,6 +19,7 @@
 package grails.openapi
 
 import io.swagger.v3.oas.models.OpenAPI
+import io.swagger.v3.oas.models.SpecVersion
 import io.swagger.v3.oas.annotations.media.Schema as SchemaAnnotation
 
 import grails.core.DefaultGrailsApplication
@@ -297,22 +298,50 @@ class PersistentEntitySchemaSpec extends Specification {
         }
     }
 
-    void 'produces the same schema when the document is customised twice'() {
+    void 'produces the same schema for a second document'() {
+        given: 'one customizer used for two documents, as a singleton bean is'
+        def customizer = customizer()
+        def first = new OpenAPI()
+        def second = new OpenAPI()
+
+        when:
+        customizer.customise(first)
+        customizer.customise(second)
+
+        then: 'the constraints are applied once, not accumulated on a shared schema object'
+        second.components.schemas['Widget'].properties.color.enum.toList() == ['red', 'green']
+        second.components.schemas['Widget'].required.count { it == 'name' } == 1
+
+        and: 'the two documents agree'
+        second.components.schemas['Widget'].properties.color.enum.toList() ==
+                first.components.schemas['Widget'].properties.color.enum.toList()
+    }
+
+    void 'keeps a zero bound, which Groovy treats as falsy'() {
         given:
         def openApi = new OpenAPI()
-        def customizer = customizer()
 
-        when: 'a second pass runs over a document that already has the schemas'
-        customizer.customise(openApi)
-        def first = openApi.components.schemas['Widget'].properties.color.enum.toList()
-        customizer.customise(openApi)
+        when:
+        customizer().customise(openApi)
 
-        then: 'the constraints are not applied twice'
-        openApi.components.schemas['Widget'].properties.color.enum.toList() == first
-        first == ['red', 'green']
+        then: 'a min of zero is a real lower bound rather than an absent one'
+        openApi.components.schemas['Widget'].properties.weight.minimum == 0G
 
-        and: 'nor is a required member repeated'
-        openApi.components.schemas['Widget'].required.count { it == 'name' } == 1
+        and: 'as is a maxSize of zero'
+        openApi.components.schemas['Widget'].properties.note.maxLength == 0
+    }
+
+    void 'resolves schemas with the converter that matches the document version'() {
+        given: 'a 3.1 document, which is what springdoc serves by default'
+        def openApi = new OpenAPI(SpecVersion.V31)
+
+        when:
+        customizer().customise(openApi)
+
+        then: 'the schemas are still described, through the 3.1 converter'
+        openApi.specVersion == SpecVersion.V31
+        openApi.components.schemas['Widget'].properties.name.maxLength == 40
+        'name' in openApi.components.schemas['Widget'].required
     }
 
     private static UrlMappingsOpenApiCustomizer customizer() {
@@ -343,15 +372,17 @@ class Widget {
     Boolean active
     String color
     String code
+    String note
     String contact
     Crate crate
 
     static constraints = {
         name blank: false, nullable: false, maxSize: 40
-        weight nullable: true
+        weight nullable: true, min: 0.0d
         active nullable: true
         color nullable: true, inList: ['red', 'green']
         code nullable: true, matches: '[A-Z]{3}'
+        note nullable: true, maxSize: 0
         contact nullable: true, email: true
         crate nullable: true
     }

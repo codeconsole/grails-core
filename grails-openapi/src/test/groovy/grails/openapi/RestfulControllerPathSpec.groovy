@@ -85,6 +85,7 @@ class RestfulControllerPathSpec extends Specification {
         when:
         customizer {
             '/memos'(resources: 'memo')
+            "/$controller/$action?/$id?(.$format)?" {}
         }.customise(openApi)
 
         then: 'the declared mapping is documented'
@@ -127,7 +128,9 @@ class RestfulControllerPathSpec extends Specification {
         openApi.paths.keySet().every { !it.startsWith('/plain') }
     }
 
-    private static UrlMappingsOpenApiCustomizer customizer(Closure mappings = {}) {
+    private static UrlMappingsOpenApiCustomizer customizer(Closure mappings = {
+        "/$controller/$action?/$id?(.$format)?" {}
+    }) {
         def application = new DefaultGrailsApplication(MemoController, PlainController, Memo).tap {
             it.initialise()
         }

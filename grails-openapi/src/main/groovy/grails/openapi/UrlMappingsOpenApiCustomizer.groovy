@@ -34,7 +34,10 @@ import io.swagger.v3.oas.models.parameters.RequestBody
 import io.swagger.v3.oas.models.parameters.Parameter
 import io.swagger.v3.oas.models.responses.ApiResponse
 import io.swagger.v3.oas.models.responses.ApiResponses
+import org.slf4j.Logger
+import org.slf4j.LoggerFactory
 import org.springdoc.core.customizers.OpenApiCustomizer
+import org.springframework.beans.factory.ObjectProvider
 import org.springframework.beans.factory.annotation.Autowired
 
 import grails.gorm.validation.Constrained
@@ -45,6 +48,7 @@ import grails.rest.RestfulController
 import grails.web.mapping.UrlMapping
 import grails.web.mapping.UrlMappingsHolder
 import org.grails.core.artefact.ControllerArtefactHandler
+import org.grails.web.mapping.ResponseCodeMappingData
 import org.grails.datastore.mapping.model.MappingContext
 import org.grails.datastore.mapping.model.PersistentEntity
 
@@ -65,10 +69,14 @@ import org.grails.datastore.mapping.model.PersistentEntity
 @CompileStatic
 class UrlMappingsOpenApiCustomizer implements OpenApiCustomizer {
 
+    private static final Logger LOG = LoggerFactory.getLogger(UrlMappingsOpenApiCustomizer)
+
     private static final String DEFAULT_MEDIA_TYPE = 'application/json'
     private static final String DEFAULT_RESPONSE_CODE = '200'
     private static final String NOT_FOUND_RESPONSE_CODE = '404'
     private static final String UNPROCESSABLE_RESPONSE_CODE = '422'
+    private static final String CONTROLLER_TOKEN = 'controller'
+    private static final String ACTION_TOKEN = 'action'
     private static final String GREEDY_PARAMETER_NAME = 'path'
     private static final String FORMAT_PARAMETER_NAME = 'format'
     private static final String OPTIONAL_EXTENSION_SUFFIX = UrlMapping.OPTIONAL_EXTENSION_WILDCARD + '?'
@@ -79,11 +87,20 @@ class UrlMappingsOpenApiCustomizer implements OpenApiCustomizer {
     private final PersistentEntitySchemaBuilder schemaBuilder = new PersistentEntitySchemaBuilder()
 
     /**
-     * The GORM mapping context, when the application has one. Without it the document still
+     * The GORM mapping context, when the application has exactly one. Without it the document still
      * describes paths, but carries no domain schemas.
      */
-    @Autowired(required = false)
     MappingContext mappingContext
+
+    /**
+     * Resolved through a provider rather than injected directly: an application with more than one
+     * datastore has more than one mapping context, and {@code required = false} covers the absent
+     * case but not the ambiguous one, which would fail the context rather than the document.
+     */
+    @Autowired(required = false)
+    void setMappingContextProvider(ObjectProvider<MappingContext> provider) {
+        this.mappingContext = provider?.getIfUnique()
+    }
 
     /**
      * The application's artefacts, used to describe a RestfulController that no URL mapping names.
@@ -106,7 +123,7 @@ class UrlMappingsOpenApiCustomizer implements OpenApiCustomizer {
 
         for (UrlMapping mapping : urlMappingsHolder.urlMappings) {
             String controllerName = asStaticName(mapping.controllerName)
-            if (!controllerName) {
+            if (!controllerName || isResponseCode(mapping)) {
                 continue
             }
 
@@ -125,7 +142,7 @@ class UrlMappingsOpenApiCustomizer implements OpenApiCustomizer {
 
             PathItem pathItem = paths.get(path) ?: new PathItem()
             PathItem.HttpMethod method = toHttpMethod(mapping.httpMethod)
-            if (pathItem.readOperationsMap().containsKey(method)) {
+            if (method == null || pathItem.readOperationsMap().containsKey(method)) {
                 continue
             }
 
@@ -141,7 +158,7 @@ class UrlMappingsOpenApiCustomizer implements OpenApiCustomizer {
             paths.addPathItem(path, pathItem)
         }
 
-        addRestfulControllerPaths(paths, entitiesByController, documentedEntities, documentedCommands)
+        addExpandedMappings(paths, entitiesByController, documentedEntities, documentedCommands)
 
         openApi.setPaths(paths)
         registerSchemas(openApi, documentedEntities, documentedCommands)
@@ -153,50 +170,155 @@ class UrlMappingsOpenApiCustomizer implements OpenApiCustomizer {
      * names is reachable both ways, and both are documented: an endpoint that answers but is absent
      * from the document is worse than one described twice.
      */
-    private void addRestfulControllerPaths(Paths paths, Map<String, PersistentEntity> entitiesByController,
-                                           Map<String, PersistentEntity> documentedEntities,
-                                           Map<String, Class<?>> documentedCommands) {
+    /**
+     * Describes the RestfulControllers a mapping reaches without naming, which is how a REST
+     * application is mapped: {@code get "/$controller"(action: 'index')} names the action but leaves
+     * the controller to the request, and the default {@code "/$controller/$action?/$id?"} mapping
+     * leaves both.
+     *
+     * <p>Expansion follows the mapping rather than the controllers, so only routes the application
+     * actually serves are described. An application without such a mapping gets none of them.</p>
+     */
+    private void addExpandedMappings(Paths paths, Map<String, PersistentEntity> entitiesByController,
+                                     Map<String, PersistentEntity> documentedEntities,
+                                     Map<String, Class<?>> documentedCommands) {
         if (grailsApplication == null) {
             return
         }
 
-        for (GrailsClass controllerClass : grailsApplication.getArtefacts(ControllerArtefactHandler.TYPE)) {
-            if (!RestfulController.isAssignableFrom(controllerClass.clazz)
-                    || ActionAnnotations.isHidden(controllerClass.clazz)) {
+        List<GrailsClass> controllers = restfulControllers()
+        if (!controllers) {
+            return
+        }
+
+        for (UrlMapping mapping : urlMappingsHolder.urlMappings) {
+            if (asStaticName(mapping.controllerName) || mapping.viewName || isResponseCode(mapping)) {
                 continue
             }
 
-            String controllerName = controllerClass.logicalPropertyName
-            PersistentEntity entity = entitiesByController[controllerName]
-            Object allowedMethods = controllerClass.getPropertyValue('allowedMethods')
+            List<String> names = pathParameterNames(mapping)
+            if (!names.contains(CONTROLLER_TOKEN)) {
+                continue
+            }
 
-            for (String actionName : actionNames(controllerClass)) {
-                if (ActionAnnotations.isHidden(controllerClass.clazz, actionName)) {
-                    continue
+            String mappedAction = asStaticName(mapping.actionName)
+            boolean expandsAction = mappedAction == null && names.contains(ACTION_TOKEN)
+            if (mappedAction == null && !expandsAction) {
+                continue
+            }
+
+            for (GrailsClass controllerClass : controllers) {
+                Collection<String> actions = expandsAction
+                        ? actionNames(controllerClass)
+                        : Collections.singletonList(mappedAction)
+                for (String actionName : actions) {
+                    addExpandedOperation(paths, mapping, names, controllerClass, actionName, expandsAction,
+                            entitiesByController, documentedEntities, documentedCommands)
                 }
-
-                boolean takesId = RestfulControllerActions.takesId(actionName)
-                String path = takesId
-                        ? "/${controllerName}/${actionName}/{id}".toString()
-                        : "/${controllerName}/${actionName}".toString()
-
-                PathItem pathItem = paths.get(path) ?: new PathItem()
-                PathItem.HttpMethod method = toHttpMethod(
-                        RestfulControllerActions.httpMethod(actionName, allowedMethods))
-                if (pathItem.readOperationsMap().containsKey(method)) {
-                    continue
-                }
-
-                record(entity, documentedEntities)
-
-                Class<?> commandType = requestBodyType(controllerClass.clazz, actionName, method, documentedCommands)
-                recordDeclaredResponseTypes(controllerClass.clazz, actionName, documentedCommands)
-                Operation operation = buildAction(controllerName, actionName, method, takesId, entity, commandType)
-                ActionAnnotations.apply(operation, controllerClass.clazz, actionName)
-                pathItem.operation(method, operation)
-                paths.addPathItem(path, pathItem)
             }
         }
+    }
+
+    private void addExpandedOperation(Paths paths, UrlMapping mapping, List<String> names,
+                                      GrailsClass controllerClass, String actionName, boolean expandsAction,
+                                      Map<String, PersistentEntity> entitiesByController,
+                                      Map<String, PersistentEntity> documentedEntities,
+                                      Map<String, Class<?>> documentedCommands) {
+        if (!actionName || ActionAnnotations.isHidden(controllerClass.clazz, actionName)) {
+            return
+        }
+        // A mapping that names the action reaches every controller; one that leaves the action to
+        // the request only reaches the actions that controller declares.
+        if (!expandsAction && !actionNames(controllerClass).contains(actionName)) {
+            return
+        }
+
+        String controllerName = controllerClass.logicalPropertyName
+        boolean takesId
+        String path
+        if (expandsAction) {
+            takesId = RestfulControllerActions.takesId(actionName)
+            path = takesId
+                    ? "/${controllerName}/${actionName}/{id}".toString()
+                    : "/${controllerName}/${actionName}".toString()
+        }
+        else {
+            path = expandPath(mapping, names, controllerName)
+            takesId = path?.contains('{')
+        }
+        if (!path) {
+            return
+        }
+
+        PathItem.HttpMethod method = expandsAction
+                ? toHttpMethod(RestfulControllerActions.httpMethod(actionName,
+                        controllerClass.getPropertyValue('allowedMethods')))
+                : toHttpMethod(mapping.httpMethod)
+
+        PathItem pathItem = paths.get(path) ?: new PathItem()
+        if (method == null || pathItem.readOperationsMap().containsKey(method)) {
+            return
+        }
+
+        PersistentEntity entity = entitiesByController[controllerName]
+        record(entity, documentedEntities)
+
+        Class<?> commandType = requestBodyType(controllerClass.clazz, actionName, method, documentedCommands)
+        recordDeclaredResponseTypes(controllerClass.clazz, actionName, documentedCommands)
+        Operation operation = buildAction(controllerName, actionName, method, takesId, entity, commandType,
+                expandedOperationId(controllerName, actionName, method, expandsAction))
+        ActionAnnotations.apply(operation, controllerClass.clazz, actionName)
+        pathItem.operation(method, operation)
+        paths.addPathItem(path, pathItem)
+    }
+
+    /**
+     * The mapping's own pattern with the controller substituted, so the described path is the one
+     * the mapping serves rather than one assembled from a convention.
+     */
+    private static String expandPath(UrlMapping mapping, List<String> names, String controllerName) {
+        String pattern = stripOptionalExtension(mapping.urlData?.urlPattern)
+        if (pattern == null) {
+            return null
+        }
+
+        StringBuilder result = new StringBuilder()
+        int index = 0
+        int nameIndex = 0
+        while (index < pattern.length()) {
+            if (pattern.startsWith(UrlMapping.CAPTURED_WILDCARD, index)) {
+                String name = nameIndex < names.size() ? names[nameIndex] : "param${nameIndex}".toString()
+                result.append(name == CONTROLLER_TOKEN ? controllerName : "{${name}}".toString())
+                index += UrlMapping.CAPTURED_WILDCARD.length()
+                nameIndex++
+                if (index < pattern.length() && pattern.charAt(index) == ('?' as char)) {
+                    index++
+                }
+            }
+            else {
+                result.append(pattern.charAt(index))
+                index++
+            }
+        }
+
+        String path = result.toString()
+        path.startsWith(UrlMapping.SLASH) ? path : UrlMapping.SLASH + path
+    }
+
+    /**
+     * Distinguishes an operation reached through the default mapping from the same action reached
+     * through a mapping that names it, so the document does not carry two of the same identifier.
+     */
+    private static String expandedOperationId(String controllerName, String actionName,
+                                              PathItem.HttpMethod method, boolean expandsAction) {
+        String derived = "${controllerName}_${actionName}_${method.name().toLowerCase(Locale.ENGLISH)}".toString()
+        expandsAction ? derived + '_byAction' : derived
+    }
+
+    private List<GrailsClass> restfulControllers() {
+        grailsApplication.getArtefacts(ControllerArtefactHandler.TYPE).findAll { GrailsClass it ->
+            RestfulController.isAssignableFrom(it.clazz) && !ActionAnnotations.isHidden(it.clazz)
+        }.toList()
     }
 
     /**
@@ -215,10 +337,11 @@ class UrlMappingsOpenApiCustomizer implements OpenApiCustomizer {
     }
 
     private static Operation buildAction(String controllerName, String actionName, PathItem.HttpMethod method,
-                                         boolean takesId, PersistentEntity entity, Class<?> commandType) {
+                                         boolean takesId, PersistentEntity entity, Class<?> commandType,
+                                         String operationId) {
         Operation operation = new Operation()
         operation.addTagsItem(controllerName)
-        operation.setOperationId("${controllerName}_${actionName}_${method.name().toLowerCase(Locale.ENGLISH)}".toString())
+        operation.setOperationId(operationId)
 
         if (takesId) {
             operation.addParametersItem(new Parameter()
@@ -278,7 +401,7 @@ class UrlMappingsOpenApiCustomizer implements OpenApiCustomizer {
 
         Components components = openApi.components ?: new Components()
         for (Class<?> commandType : documentedCommands.values()) {
-            schemaBuilder.buildCommand(commandType).each { String name, Schema<?> schema ->
+            schemaBuilder.buildCommand(commandType, openApi.specVersion).each { String name, Schema<?> schema ->
                 components.addSchemas(name, schema)
             }
         }
@@ -290,7 +413,7 @@ class UrlMappingsOpenApiCustomizer implements OpenApiCustomizer {
         for (PersistentEntity entity : documentedEntities.values()) {
             // swagger-core resolves the classes an entity is associated with, so each documented
             // resource contributes its own schema and everything it refers to.
-            schemaBuilder.build(entity, mappingContext).each { String name, Schema<?> schema ->
+            schemaBuilder.build(entity, mappingContext, openApi.specVersion).each { String name, Schema<?> schema ->
                 components.addSchemas(name, schema)
             }
         }
@@ -301,6 +424,13 @@ class UrlMappingsOpenApiCustomizer implements OpenApiCustomizer {
      * Grails exposes controller and action names as {@code Object} because a mapping may define
      * them dynamically. Only statically declared names can be documented.
      */
+    /**
+     * A mapping declared for a status code rather than a URL, whose pattern is the code itself.
+     */
+    private static boolean isResponseCode(UrlMapping mapping) {
+        mapping.urlData instanceof ResponseCodeMappingData
+    }
+
     private static String asStaticName(Object name) {
         name instanceof String && name ? (String) name : null
     }
@@ -321,7 +451,10 @@ class UrlMappingsOpenApiCustomizer implements OpenApiCustomizer {
 
         while (index < pattern.length()) {
             if (pattern.startsWith(UrlMapping.CAPTURED_DOUBLE_WILDCARD, index)) {
-                result.append('{').append(GREEDY_PARAMETER_NAME).append('}')
+                // The greedy token binds a constraint like any other, so it is named for it rather
+                // than generically: the template variable and the declared parameter must agree.
+                String name = nameIndex < names.size() ? names[nameIndex] : GREEDY_PARAMETER_NAME
+                result.append('{').append(name).append('}')
                 index += UrlMapping.CAPTURED_DOUBLE_WILDCARD.length()
                 nameIndex++
             }
@@ -383,7 +516,15 @@ class UrlMappingsOpenApiCustomizer implements OpenApiCustomizer {
         if (!httpMethod || httpMethod == UrlMapping.ANY_HTTP_METHOD) {
             return PathItem.HttpMethod.GET
         }
-        PathItem.HttpMethod.valueOf(httpMethod.toUpperCase(Locale.ENGLISH))
+        try {
+            return PathItem.HttpMethod.valueOf(httpMethod.toUpperCase(Locale.ENGLISH))
+        }
+        catch (IllegalArgumentException ignored) {
+            // A mapping can name a method OpenAPI has no operation for. The mapping is skipped
+            // rather than failing the whole document.
+            LOG.warn('Skipping a URL mapping declared for the unsupported HTTP method [{}]', httpMethod)
+            return null
+        }
     }
 
     private static Operation buildOperation(UrlMapping mapping, String controllerName, PathItem.HttpMethod method,

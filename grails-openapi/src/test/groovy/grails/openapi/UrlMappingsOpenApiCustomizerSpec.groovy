@@ -115,20 +115,6 @@ class UrlMappingsOpenApiCustomizerSpec extends Specification {
         openApi.paths['/books/{id}'].get.parameters*.name == ['id']
     }
 
-    void 'documents a greedy mapping as a single path parameter'() {
-        given:
-        def openApi = new OpenAPI()
-        def customizer = new UrlMappingsOpenApiCustomizer(holderFor {
-            "/files/$path**"(controller: 'file', action: 'serve', method: 'GET')
-        })
-
-        when:
-        customizer.customise(openApi)
-
-        then:
-        openApi.paths.keySet().every { it.startsWith('/files/{') }
-    }
-
     void 'skips mappings whose controller is only known per request'() {
         given:
         def openApi = new OpenAPI()
@@ -171,6 +157,59 @@ class UrlMappingsOpenApiCustomizerSpec extends Specification {
 
         then: 'the document is unchanged rather than duplicated'
         openApi.paths.size() == existing
+    }
+
+    void 'skips a mapping declared for a method OpenAPI has no operation for'() {
+        given:
+        def openApi = new OpenAPI()
+        def customizer = new UrlMappingsOpenApiCustomizer(holderFor {
+            '/books'(controller: 'book', action: 'index', method: 'GET')
+            '/books/report'(controller: 'book', action: 'report', method: 'REPORT')
+        })
+
+        when:
+        customizer.customise(openApi)
+
+        then: 'the unsupported mapping does not take the document down with it'
+        openApi.paths['/books'].get
+
+        and:
+        !openApi.paths.containsKey('/books/report')
+    }
+
+    void 'names a greedy parameter for the constraint that binds it'() {
+        given:
+        def openApi = new OpenAPI()
+        def customizer = new UrlMappingsOpenApiCustomizer(holderFor {
+            "/files/$dir**"(controller: 'file', action: 'serve', method: 'GET')
+        })
+
+        when:
+        customizer.customise(openApi)
+
+        then: 'the template variable and the declared parameter agree'
+        openApi.paths.containsKey('/files/{dir}')
+        openApi.paths['/files/{dir}'].get.parameters*.name == ['dir']
+    }
+
+    void 'does not describe a response code mapping as a path'() {
+        given:
+        def openApi = new OpenAPI()
+        def customizer = new UrlMappingsOpenApiCustomizer(holderFor {
+            '/books'(controller: 'book', action: 'index', method: 'GET')
+            '404'(controller: 'errors', action: 'notFound')
+            '500'(view: '/error')
+        })
+
+        when:
+        customizer.customise(openApi)
+
+        then: 'a status code is not a URL'
+        !openApi.paths.containsKey('/404')
+        !openApi.paths.containsKey('/500')
+
+        and:
+        openApi.paths['/books'].get
     }
 
     private static UrlMappingsHolder holderFor(Closure mappings) {

@@ -42,6 +42,9 @@ dependencies {
     api project(':grails-core')
     api project(':grails-url-mappings')
     api project(':grails-rest-transforms')
+    // Constrained/ConstrainedEntity and Validateable are used from src/main, not only from tests.
+    api project(':grails-datamapping-validation')
+    api project(':grails-validation')
     api 'org.apache.groovy:groovy'
 
     // Exposes the OpenAPI model and the /v3/api-docs endpoint. Applications add
@@ -54,7 +57,6 @@ dependencies {
 
     testImplementation project(':grails-web-url-mappings')
     testImplementation project(':grails-test-suite-base')
-    testImplementation project(':grails-datamapping-validation')
     testImplementation 'org.apache.groovy:groovy-test-junit5'
     testImplementation 'org.junit.jupiter:junit-jupiter-api'
     testImplementation 'org.spockframework:spock-core'
