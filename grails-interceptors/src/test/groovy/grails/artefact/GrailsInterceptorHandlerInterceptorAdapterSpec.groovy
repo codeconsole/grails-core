@@ -84,6 +84,29 @@ class GrailsInterceptorHandlerInterceptorAdapterSpec extends Specification{
         modelAndView.viewName == null
     }
 
+    void "Test the execution order of a repeated postHandle"() {
+        given: "a matched pair of interceptors and a completed preHandle"
+            def adapter = new GrailsInterceptorHandlerInterceptorAdapter()
+            adapter.setInterceptors([new HighestInterceptor(), new LowestInterceptor()] as Interceptor[])
+            def webRequest = GrailsWebMockUtil.bindMockWebRequest()
+            def modelAndView = new ModelAndView()
+            adapter.preHandle(webRequest.request, webRequest.response, this)
+
+        when: "postHandle runs for the dispatch"
+            webRequest.request.setAttribute('executed', null)
+            adapter.postHandle(webRequest.request, webRequest.response, this, modelAndView)
+
+        then: "the after callbacks run in reverse order"
+            webRequest.request.getAttribute('executed') == ['lowest after', 'highest after']
+
+        when: "a second dispatch on the same request calls postHandle again"
+            webRequest.request.setAttribute('executed', null)
+            adapter.postHandle(webRequest.request, webRequest.response, this, modelAndView)
+
+        then: "the list held for the request is reversed again"
+            webRequest.request.getAttribute('executed') == ['highest after', 'lowest after']
+    }
+
     void "Test an execution order of interceptors"() {
         given: "An interceptor"
             def adapter = new GrailsInterceptorHandlerInterceptorAdapter()
