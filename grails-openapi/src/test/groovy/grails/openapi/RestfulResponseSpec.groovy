@@ -117,6 +117,37 @@ class RestfulResponseSpec extends Specification {
         openApi.components.schemas.containsKey('NoteSummary')
     }
 
+    void 'documents the paging and sorting a listing accepts'() {
+        given:
+        def openApi = new OpenAPI()
+
+        when:
+        customizer().customise(openApi)
+
+        then: 'a client can page, which it could not learn from the path alone'
+        openApi.paths['/notes'].get.parameters*.name as Set == ['max', 'offset', 'sort', 'order'] as Set
+
+        and: 'with the ceiling the controller enforces'
+        with(openApi.paths['/notes'].get.parameters.find { it.name == 'max' }.schema) {
+            maximum == 100G
+            it.default == 10
+        }
+
+        and: 'and the directions it accepts'
+        openApi.paths['/notes'].get.parameters.find { it.name == 'order' }.schema.enum == ['asc', 'desc']
+    }
+
+    void 'does not offer paging on an action that addresses one resource'() {
+        given:
+        def openApi = new OpenAPI()
+
+        when:
+        customizer().customise(openApi)
+
+        then:
+        openApi.paths['/notes/{id}'].get.parameters*.name == ['id']
+    }
+
     private static UrlMappingsOpenApiCustomizer customizer() {
         def application = new DefaultGrailsApplication(NoteController).tap { it.initialise() }
         def ctx = new MockApplicationContext()

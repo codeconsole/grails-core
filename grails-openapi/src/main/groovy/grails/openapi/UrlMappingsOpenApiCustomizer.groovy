@@ -25,8 +25,10 @@ import io.swagger.v3.oas.models.OpenAPI
 import io.swagger.v3.oas.models.Operation
 import io.swagger.v3.oas.models.PathItem
 import io.swagger.v3.oas.models.Paths
+import io.swagger.v3.oas.models.tags.Tag
 import io.swagger.v3.oas.models.media.Content
 import io.swagger.v3.oas.models.media.ArraySchema
+import io.swagger.v3.oas.models.media.IntegerSchema
 import io.swagger.v3.oas.models.media.MediaType
 import io.swagger.v3.oas.models.media.Schema
 import io.swagger.v3.oas.models.media.StringSchema
@@ -132,6 +134,7 @@ class UrlMappingsOpenApiCustomizer implements OpenApiCustomizer {
 
         openApi.setPaths(paths)
         registerSchemas(openApi, documentedEntities, documentedCommands)
+        registerTags(openApi, controllerClasses)
     }
 
     /**
@@ -366,6 +369,10 @@ class UrlMappingsOpenApiCustomizer implements OpenApiCustomizer {
                     .schema(new StringSchema()))
         }
 
+        if (RestfulControllerActions.paginates(actionName)) {
+            addPagingParameters(operation)
+        }
+
         operation.setResponses(restfulResponses(entity, actionName, takesId))
 
         Schema<?> bodySchema = requestBodySchema(entity, commandType, method)
@@ -381,6 +388,27 @@ class UrlMappingsOpenApiCustomizer implements OpenApiCustomizer {
      * Registers a schema for every mapped domain class and indexes them by the controller name that
      * conventionally serves them, so operations can reference the right schema.
      */
+    /**
+     * Describes a tag a controller declares, so the grouping carries its description rather than
+     * only its name.
+     */
+    private static void registerTags(OpenAPI openApi, Map<String, Class<?>> controllerClasses) {
+        controllerClasses.each { String controllerName, Class<?> controllerClass ->
+            io.swagger.v3.oas.annotations.tags.Tag declared = ActionAnnotations.declaredTag(controllerClass)
+            if (declared == null || !declared.name()) {
+                return
+            }
+            Tag tag = new Tag()
+            tag.setName(declared.name())
+            if (declared.description()) {
+                tag.setDescription(declared.description())
+            }
+            if (!openApi.tags?.any { it.name == tag.name }) {
+                openApi.addTagsItem(tag)
+            }
+        }
+    }
+
     private Map<String, Class<?>> indexControllerClasses() {
         if (grailsApplication == null) {
             return Collections.<String, Class<?>> emptyMap()
@@ -581,6 +609,9 @@ class UrlMappingsOpenApiCustomizer implements OpenApiCustomizer {
         // A RestfulController's responses are known from what it does, whether it was reached
         // through a mapping that names it or through the default one.
         if (restfulController && actionName) {
+            if (RestfulControllerActions.paginates(actionName)) {
+                addPagingParameters(operation)
+            }
             operation.setResponses(restfulResponses(entity, actionName, pathNames as boolean))
         }
         else {
@@ -604,6 +635,39 @@ class UrlMappingsOpenApiCustomizer implements OpenApiCustomizer {
         }
 
         operation
+    }
+
+    /**
+     * The paging and sorting a listing accepts. RestfulController passes the request parameters to
+     * GORM, so a listing answers to them whether or not a mapping mentions them, and a client has
+     * no way to page unless the document says so.
+     */
+    private static void addPagingParameters(Operation operation) {
+        IntegerSchema max = new IntegerSchema()
+        max.setMinimum(BigDecimal.ZERO)
+        max.setMaximum(BigDecimal.valueOf(RestfulControllerActions.MAX_RESULTS))
+        max.setDefault(RestfulControllerActions.DEFAULT_MAX)
+        operation.addParametersItem(queryParameter('max',
+                "The most results to return, at most ${RestfulControllerActions.MAX_RESULTS}".toString(), max))
+
+        IntegerSchema offset = new IntegerSchema()
+        offset.setMinimum(BigDecimal.ZERO)
+        operation.addParametersItem(queryParameter('offset', 'The result to start from', offset))
+
+        operation.addParametersItem(queryParameter('sort', 'The property to sort by', new StringSchema()))
+
+        StringSchema order = new StringSchema()
+        order.setEnum(['asc', 'desc'])
+        operation.addParametersItem(queryParameter('order', 'The direction to sort in', order))
+    }
+
+    private static Parameter queryParameter(String name, String description, Schema<?> schema) {
+        Parameter parameter = new Parameter()
+        parameter.setName(name)
+        parameter.setIn('query')
+        parameter.setDescription(description)
+        parameter.setSchema(schema)
+        parameter
     }
 
     /**

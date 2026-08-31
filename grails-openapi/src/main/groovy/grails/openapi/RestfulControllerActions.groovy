@@ -89,6 +89,24 @@ class RestfulControllerActions {
         actionName in VALIDATING_ACTIONS
     }
 
+    /**
+     * The maximum a listing returns, whatever a larger {@code max} asks for.
+     */
+    static final int MAX_RESULTS = 100
+
+    /**
+     * The default page size when none is asked for.
+     */
+    static final int DEFAULT_MAX = 10
+
+    /**
+     * Whether the action reads the paging and sorting parameters GORM binds from the query string.
+     * Only the listing does; the remaining actions address one resource.
+     */
+    static boolean paginates(String actionName) {
+        actionName in COLLECTION_ACTIONS
+    }
+
     static boolean takesId(String actionName) {
         actionName in ID_ACTIONS
     }

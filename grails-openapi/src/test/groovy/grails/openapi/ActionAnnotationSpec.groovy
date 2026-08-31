@@ -19,6 +19,8 @@
 package grails.openapi
 
 import io.swagger.v3.oas.annotations.Hidden
+import io.swagger.v3.oas.annotations.Parameter as ParameterAnnotation
+import io.swagger.v3.oas.annotations.tags.Tag as TagAnnotation
 import io.swagger.v3.oas.annotations.Operation as OperationAnnotation
 import io.swagger.v3.oas.annotations.responses.ApiResponse as ApiResponseAnnotation
 import io.swagger.v3.oas.models.OpenAPI
@@ -176,6 +178,34 @@ class ActionAnnotationSpec extends Specification {
         }
     }
 
+    void 'describes a tag a controller declares'() {
+        given:
+        def openApi = new OpenAPI()
+
+        when:
+        customizer().customise(openApi)
+
+        then: 'the grouping carries its description, not only its name'
+        with(openApi.tags.find { it.name == 'Widgets' }) {
+            it
+            description == 'Everything in the catalogue'
+        }
+    }
+
+    void 'describes a path parameter an action declares'() {
+        given:
+        def openApi = new OpenAPI()
+
+        when:
+        customizer().customise(openApi)
+
+        then:
+        with(openApi.paths['/annotated/show/{id}'].get.parameters.find { it.name == 'id' }) {
+            description == 'The identifier of the widget'
+            example == '42'
+        }
+    }
+
     private static UrlMappingsOpenApiCustomizer customizer() {
         def application = new DefaultGrailsApplication(AnnotatedController, InternalController).tap {
             it.initialise()
@@ -202,6 +232,7 @@ class AnnotatedWidget {
     String name
 }
 
+@TagAnnotation(name = 'Widgets', description = 'Everything in the catalogue')
 @Artefact('Controller')
 class AnnotatedController extends RestfulController<AnnotatedWidget> {
 
@@ -215,6 +246,7 @@ class AnnotatedController extends RestfulController<AnnotatedWidget> {
     def index() { }
 
     @ApiResponseAnnotation(responseCode = '403', description = 'Not your widget')
+    @ParameterAnnotation(name = 'id', description = 'The identifier of the widget', example = '42')
     @Override
     def show() { }
 

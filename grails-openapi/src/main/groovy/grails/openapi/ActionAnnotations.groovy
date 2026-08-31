@@ -25,6 +25,7 @@ import groovy.transform.CompileStatic
 import io.swagger.v3.oas.annotations.Hidden
 import io.swagger.v3.oas.annotations.responses.ApiResponses
 import io.swagger.v3.oas.models.Operation
+import io.swagger.v3.oas.models.parameters.Parameter as ParameterModel
 import io.swagger.v3.oas.models.media.ArraySchema
 import io.swagger.v3.oas.models.media.Content
 import io.swagger.v3.oas.models.media.MediaType
@@ -75,6 +76,7 @@ class ActionAnnotations {
      * application did not set is left as derived.
      */
     static void apply(Operation operation, Class<?> controllerClass, String actionName) {
+        applyParameters(operation, controllerClass, actionName)
         for (Method method : actionMethods(controllerClass, actionName)) {
             applyOperation(operation, method.getAnnotation(io.swagger.v3.oas.annotations.Operation))
             applyResponses(operation, method.getAnnotation(ApiResponses))
@@ -129,6 +131,38 @@ class ActionAnnotations {
 
         responses.addApiResponse(declared.responseCode(), response)
         operation.setResponses(responses)
+    }
+
+    /**
+     * The tag a controller declares, which groups its operations and can describe the group. An
+     * application that declares none is tagged with the controller name.
+     */
+    static io.swagger.v3.oas.annotations.tags.Tag declaredTag(Class<?> controllerClass) {
+        controllerClass?.getAnnotation(io.swagger.v3.oas.annotations.tags.Tag)
+    }
+
+    /**
+     * Applies the descriptions an application declares for the parameters of an action. A Grails
+     * action does not declare its parameters, so they are declared on the method itself.
+     */
+    static void applyParameters(Operation operation, Class<?> controllerClass, String actionName) {
+        if (!operation.parameters) {
+            return
+        }
+        for (Method method : actionMethods(controllerClass, actionName)) {
+            method.getAnnotationsByType(io.swagger.v3.oas.annotations.Parameter).each { declared ->
+                ParameterModel described = operation.parameters.find { it.name == declared.name() }
+                if (described == null) {
+                    return
+                }
+                if (declared.description()) {
+                    described.setDescription(declared.description())
+                }
+                if (declared.example()) {
+                    described.setExample(declared.example())
+                }
+            }
+        }
     }
 
     /**
