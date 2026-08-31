@@ -25,6 +25,7 @@ import org.springframework.validation.Errors;
 import grails.core.GrailsApplication;
 import grails.core.support.proxy.DefaultProxyHandler;
 import grails.core.support.proxy.ProxyHandler;
+import org.grails.core.artefact.DomainClassArtefactHandler;
 import org.grails.datastore.mapping.model.MappingContext;
 
 /**
@@ -56,6 +57,13 @@ public final class GrailsJsonMapperCustomizer implements JsonMapperBuilderCustom
         this.proxyHandler = proxyHandler;
     }
 
+    private boolean domainArtefact(Class<?> type) {
+        // Known from the artefact registry, which does not depend on GORM having initialized, so a
+        // domain class is still recognisable while its mapping is not yet readable.
+        return this.grailsApplication != null &&
+                this.grailsApplication.isArtefactOfType(DomainClassArtefactHandler.TYPE, type);
+    }
+
     private MappingContext mappingContext() {
         return this.grailsApplication == null ? null : this.grailsApplication.getMappingContext();
     }
@@ -71,7 +79,7 @@ public final class GrailsJsonMapperCustomizer implements JsonMapperBuilderCustom
     @Override
     public void customize(JsonMapper.Builder builder) {
         GrailsDomainSerializers domainSerializers = new GrailsDomainSerializers(
-                this::mappingContext, this.proxyHandler,
+                this::mappingContext, this::domainArtefact, this.proxyHandler,
                 () -> booleanProperty("grails.converters.json.domain.include.version",
                         "grails.converters.domain.include.version"),
                 () -> booleanProperty("grails.converters.json.domain.include.class",

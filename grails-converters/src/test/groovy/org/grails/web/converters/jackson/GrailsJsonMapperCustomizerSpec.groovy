@@ -147,6 +147,41 @@ class GrailsJsonMapperCustomizerSpec extends Specification {
         written.title == 'Later'
     }
 
+    void 'a type written before GORM is ready still uses the domain serializer afterwards'() {
+        given: "the mapper is built while GORM's metadata cannot be read"
+        def mappingContext = new KeyValueMappingContext('jackson')
+        def application = new DefaultGrailsApplication(JacksonBook, JacksonAuthor) {
+            @Override
+            MappingContext getMappingContext() {
+                if (!gormReady) {
+                    throw new GrailsConfigurationException('cannot be accessed before GORM has initialized')
+                }
+                return mappingContext
+            }
+        }
+        application.config.setAt('grails.converters.domain.include.class', true)
+        def builder = JsonMapper.builder()
+        new GrailsJsonMapperCustomizer(application, new DefaultProxyHandler()).customize(builder)
+        def mapper = builder.build()
+        def book = new JacksonBook(title: 'Cached').tap { id = 9 }
+
+        when: "the type is written once while GORM is unavailable, so Jackson caches a serializer"
+        mapper.writeValueAsString(book)
+
+        then: "writing it then is refused rather than silently producing a bean-shaped document"
+        thrown(Exception)
+
+        when: "GORM initializes and the same class is written again"
+        gormReady = true
+        mappingContext.addPersistentEntities(JacksonBook, JacksonAuthor)
+        def after = mapper.readValue(mapper.writeValueAsString(book), Map)
+
+        then: "the Grails domain serializer is used, not the serializer cached earlier"
+        after.class == JacksonBook.name
+        after.id == 9
+        after.title == 'Cached'
+    }
+
     void 'a mapping defect surfaces instead of falling back to bean serialization'() {
         given: "a mapping context that fails for a reason other than GORM not being ready"
         def application = new DefaultGrailsApplication(JacksonBook) {
