@@ -347,6 +347,27 @@ class GrailsInterceptorHandlerInterceptorAdapterSpec extends Specification{
         secondRequest.request.getAttribute('executed') == ['lowest after', 'highest after', 'lowest afterView', 'highest afterView']
     }
 
+    void "repeated postHandle calls preserve reverse callback order"() {
+        given: 'a request with two matched interceptors'
+            def adapter = new GrailsInterceptorHandlerInterceptorAdapter(
+                    interceptors: [new HighestInterceptor(), new LowestInterceptor()] as Interceptor[]
+            )
+            def webRequest = GrailsWebMockUtil.bindMockWebRequest()
+            def modelAndView = new ModelAndView()
+            adapter.preHandle(webRequest.request, webRequest.response, this)
+
+        when: 'postHandle is invoked more than once for the same request'
+            webRequest.request.setAttribute('executed', null)
+            adapter.postHandle(webRequest.request, webRequest.response, this, modelAndView)
+            def firstOrder = webRequest.request.getAttribute('executed')
+            webRequest.request.setAttribute('executed', null)
+            adapter.postHandle(webRequest.request, webRequest.response, this, modelAndView)
+
+        then: 'each invocation calls interceptors in the same reverse order'
+            firstOrder == ['lowest after', 'highest after']
+            webRequest.request.getAttribute('executed') == ['lowest after', 'highest after']
+    }
+
     private static GrailsInterceptorHandlerInterceptorAdapter observingAdapter(RecordingObservationHandler handler,
                                                                               Interceptor... interceptors) {
         def registry = ObservationRegistry.create()

@@ -26,6 +26,7 @@ import org.springframework.security.core.GrantedAuthority
 import org.springframework.security.core.authority.SimpleGrantedAuthority
 import org.springframework.security.web.FilterChainProxy
 import org.springframework.security.web.savedrequest.DefaultSavedRequest
+import org.springframework.mock.web.MockHttpServletRequest
 import org.springframework.web.filter.GenericFilterBean
 import spock.lang.Unroll
 
@@ -192,6 +193,20 @@ class SpringSecurityUtilsSpec extends AbstractUnitSpec {
 
         then:
         SpringSecurityUtils.isAjax request
+    }
+
+    void 'isAjax tolerates an unreadable multipart parameter read'() {
+        given: 'a multipart request that throws an exception when getParameter is called'
+            def multipartRequest = new MockHttpServletRequest() {
+                @Override
+                String getParameter(String name) {
+                    throw new IllegalStateException('parameters are unreadable')
+                }
+            }
+            multipartRequest.contentType = 'multipart/form-data; boundary=test'
+
+        expect: 'isAjax returns false even if getParameter throws an exception'
+            !SpringSecurityUtils.isAjax(multipartRequest)
     }
 
     void 'isAjax using header, false'() {

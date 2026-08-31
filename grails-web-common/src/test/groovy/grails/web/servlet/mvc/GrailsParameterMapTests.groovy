@@ -78,6 +78,31 @@ class GrailsParameterMapTests {
     }
 
     @Test
+    void testMultipartParametersArePopulatedFromThePublishedAttribute() {
+        // A servlet container may leave multipart text parts out of the native request parameter map.
+        // The resolved multipart request is the authoritative source for those fields.
+        def outerRequest = new MockHttpServletRequest() {
+            @Override
+            Map<String, String[]> getParameterMap() {
+                [:]
+            }
+        }
+        def multipartRequest = new MockMultipartHttpServletRequest() {
+            @Override
+            Map<String, String[]> getParameterMap() {
+                [description: ['metadata'] as String[]]
+            }
+        }
+        multipartRequest.addFile(new MockMultipartFile('file', 'test.txt', 'text/plain', 'content'.bytes))
+        outerRequest.setAttribute(WebUtils.MULTIPART_HTTP_SERVLET_REQUEST_ATTRIBUTE, multipartRequest)
+
+        theMap = new GrailsParameterMap(outerRequest)
+
+        assertEquals 'metadata', theMap.description
+        assertEquals 'test.txt', theMap.file.originalFilename
+    }
+
+    @Test
     void testMultipleFilesUnderOneNameArePopulatedAsAList() {
         def request = new MockMultipartHttpServletRequest()
         request.contentType = 'multipart/form-data; boundary=test'

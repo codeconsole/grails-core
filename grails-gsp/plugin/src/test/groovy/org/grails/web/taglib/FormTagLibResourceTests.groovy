@@ -137,6 +137,21 @@ class FormTagLibResourceTests extends Specification implements UrlMappingsUnitTe
         output == '<form action="/books/1/authors/2" method="post" ></form>'
     }
 
+    def 'a generic PUT form retains its hidden method parameter'() {
+        when: 'a generic PUT form is rendered'
+            def output = applyTemplate('<g:form uri="/admin/update" method="PUT"/>')
+
+        then: 'the output contains the hidden method parameter'
+            output.contains('<input type="hidden" name="_method" value="PUT"')
+    }
+
+    def 'a generic PATCH form retains its hidden method parameter'() {
+        when: 'a generic PATCH form is rendered'
+            def output = applyTemplate('<g:form uri="/admin/update" method="PATCH"/>')
+
+        then: 'the output contains the hidden method parameter'
+            output.contains('<input type="hidden" name="_method" value="PATCH"')
+    }
 
 }
 
@@ -150,4 +165,3 @@ class TestFormTagUrlMappings {
     }
 
 }
-
