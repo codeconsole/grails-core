@@ -18,6 +18,10 @@
  */
 package org.grails.web.mapping.mvc
 
+import jakarta.servlet.http.HttpServletRequest
+
+import org.springframework.mock.web.MockHttpServletRequest
+
 import grails.artefact.Artefact
 import grails.config.Settings
 import grails.core.DefaultGrailsApplication
@@ -27,11 +31,12 @@ import grails.util.Holders
 import grails.web.Action
 import grails.web.mapping.AbstractUrlMappingsSpec
 import grails.web.mapping.UrlMappingInfo
-
+import grails.web.mapping.UrlMappingsHolder
 import org.grails.config.PropertySourcesConfig
 import org.grails.support.MockApplicationContext
 import org.grails.web.mapping.DefaultUrlMappingEvaluator
 import org.grails.web.mapping.DefaultUrlMappingsHolder
+import org.grails.web.util.WebUtils
 
 /**
  * With the hidden HTTP method filter disabled, the handler mapping resolves the '_method' parameter itself
@@ -110,6 +115,48 @@ class HiddenHttpMethodHandlerMappingSpec extends AbstractUrlMappingsSpec {
         info.id == '1'
     }
 
+    void 'a forwarded POST does not resolve a hidden method parameter'() {
+        given: 'a mapping that only accepts DELETE and a forwarded POST carrying _method=DELETE'
+            def handler = deleteHandlerMapping()
+            def request = request(
+                    'POST',
+                    '/books/1',
+                    'DELETE',
+                    WebUtils.FORWARD_REQUEST_URI_ATTRIBUTE
+            )
+
+        when: 'the handler mapping resolves the method for the forwarded request'
+            def method = handler.callResolveHttpMethod(request)
+
+        then: 'the forward remains a POST dispatch instead of selecting the DELETE route'
+            method == 'POST'
+    }
+
+    void 'an included POST does not resolve a hidden method parameter'() {
+        given: 'a mapping that only accepts DELETE and an included POST carrying _method=DELETE'
+            def handler = deleteHandlerMapping()
+            def request = request(
+                    'POST',
+                    '/books/1',
+                    'DELETE',
+                    WebUtils.INCLUDE_REQUEST_URI_ATTRIBUTE
+            )
+
+        when: 'the handler mapping resolves the method for the included request'
+            def method = handler.callResolveHttpMethod(request)
+
+        then: 'the include remains a POST dispatch instead of selecting the DELETE route'
+            method == 'POST'
+    }
+
+    void 'a bare member POST does not introduce a new mutation route'() {
+        given: 'an application with hidden method resolution moved into the dispatcher'
+            def handler = bookHandlerMapping(true)
+
+        expect: 'the generated resource mapping does not expose a new POST mutation route for members'
+            match(handler, 'POST', '/books/1', null) == null
+    }
+
     void 'the collection URL still routes a POST to save'() {
         given:
         def handler = bookHandlerMapping(true)
@@ -158,20 +205,59 @@ class HiddenHttpMethodHandlerMappingSpec extends AbstractUrlMappingsSpec {
             "/books"(resources: 'book')
         })
 
-        def handler = new UrlMappingsHandlerMapping(new GrailsControllerUrlMappings(grailsApplication, holder))
+        def handler = new TestUrlMappingsHandlerMapping(new GrailsControllerUrlMappings(grailsApplication, holder))
         handler.resolveHiddenHttpMethod = filterDisabled
         handler
     }
 
-    private static UrlMappingInfo match(UrlMappingsHandlerMapping handler, String method, String uri, String override) {
+    private TestUrlMappingsHandlerMapping deleteHandlerMapping() {
+        def grailsApplication = new DefaultGrailsApplication(BookController).tap { initialise() }
+        def holder = getUrlMappingsHolder {
+            '/books/$id' {
+                controller = 'book'
+                action = 'delete'
+                method = 'DELETE'
+            }
+        }
+        def handler = new TestUrlMappingsHandlerMapping(new GrailsControllerUrlMappings(grailsApplication, holder))
+        handler.resolveHiddenHttpMethod = true
+        handler
+    }
+
+    private static HttpServletRequest request(String method, String uri, String override, String dispatchAttribute) {
         def webRequest = GrailsWebMockUtil.bindMockWebRequest()
-        def request = webRequest.request
+        def request = webRequest.request as MockHttpServletRequest
+        request.method = method
+        request.requestURI = uri
+        request.addParameter('_method', override)
+        request.setAttribute(dispatchAttribute, uri)
+        request
+    }
+
+    private static UrlMappingInfo match(UrlMappingsHandlerMapping handler, String method, String uri, String override,
+                                        String dispatchAttribute = null) {
+        def webRequest = GrailsWebMockUtil.bindMockWebRequest()
+        def request = webRequest.request as MockHttpServletRequest
         request.method = method
         request.requestURI = uri
         if (override) {
             request.addParameter('_method', override)
         }
+        if (dispatchAttribute) {
+            request.setAttribute(dispatchAttribute, uri)
+        }
         handler.getHandler(request)?.handler as UrlMappingInfo
+    }
+}
+
+class TestUrlMappingsHandlerMapping extends UrlMappingsHandlerMapping {
+
+    TestUrlMappingsHandlerMapping(UrlMappingsHolder urlMappingsHolder) {
+        super(urlMappingsHolder)
+    }
+
+    String callResolveHttpMethod(HttpServletRequest request) {
+        resolveHttpMethod(request)
     }
 }
 

@@ -20,6 +20,7 @@
 package grails.plugin.springsecurity.web.filter
 
 import org.springframework.http.HttpMethod
+import org.springframework.mock.web.MockHttpServletRequest
 
 import grails.plugin.springsecurity.AbstractUnitSpec
 
@@ -81,5 +82,22 @@ class HttpMethodOverrideDetectorSpec extends AbstractUnitSpec {
 
         then: "the method override included in the request params is returned"
         httpMethodOverride == HttpMethod.DELETE.name()
+    }
+
+    void 'getHttpMethodOverride tolerates an unreadable multipart parameter read'() {
+        given: 'a multipart request that throws an exception when getParameter is called'
+            def multipartRequest = new MockHttpServletRequest() {
+                @Override
+                String getParameter(String name) {
+                    throw new IllegalStateException('parameters are unreadable')
+                }
+            }
+            multipartRequest.contentType = 'multipart/form-data; boundary=test'
+
+        and: 'the method override header is set to DELETE'
+            multipartRequest.addHeader(detector.HEADER_X_HTTP_METHOD_OVERRIDE, HttpMethod.DELETE.name())
+
+        expect: 'getHttpMethodOverride returns the method from the header even if getParameter throws an exception'
+            detector.getHttpMethodOverride(multipartRequest) == HttpMethod.DELETE.name()
     }
 }

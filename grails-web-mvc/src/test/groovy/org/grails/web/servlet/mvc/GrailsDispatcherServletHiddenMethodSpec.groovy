@@ -58,6 +58,10 @@ class GrailsDispatcherServletHiddenMethodSpec extends Specification {
         then: 'the request the dispatcher hands downstream reports the overridden method'
         dispatched.method == 'DELETE'
 
+        and: 'the bound GrailsWebRequest exposes the overridden method too'
+        webRequest.request.method == 'DELETE'
+        webRequest.currentRequest.method == 'DELETE'
+
         and: 'the override is published, so allowedMethods resolves the same method the mappings matched on'
         HiddenHttpMethod.effectiveMethod(request) == 'DELETE'
     }
