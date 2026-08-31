@@ -293,9 +293,10 @@ public class EmbeddedMongoInitializer implements ApplicationContextInitializer<C
 
     /**
      * A server is reused only when it is the server this application is asking for. A restart that
-     * switched transactions on, named a different version, or moved the database directory wants
-     * something the running server is not, and being handed it anyway would fail later and further
-     * away - a transaction refused by a standalone server, say.
+     * chose another backend, switched transactions on, named a different version, or moved the
+     * database directory wants something the running server is not, and being handed it anyway
+     * would fail later and further away - a transaction refused by a standalone server, say, or a
+     * {@code $text} query refused by the in-memory backend.
      */
     private StartedServer discard(StartedServer started, EmbeddedMongoSettings settings, String backend) {
         if (started == null || (started.settings().equals(settings) && started.backend().equals(backend))) {
@@ -439,8 +440,11 @@ public class EmbeddedMongoInitializer implements ApplicationContextInitializer<C
     }
 
     /**
-     * A server this JVM started, and what it was asked for. The settings are what a later context
-     * compares against to decide whether the server it finds is the one it wants.
+     * A server this JVM started, and what it was asked for. The settings and the backend together
+     * are what a later context compares against to decide whether the server it finds is the one it
+     * wants. The backend is held beside the settings rather than within them because it selects the
+     * server rather than configures it, and {@link EmbeddedMongoSettings} is public API whose
+     * constructor should not change to carry it.
      */
     private record StartedServer(RunningEmbeddedMongo running, EmbeddedMongoSettings settings, String backend) {
     }
