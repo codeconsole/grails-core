@@ -269,7 +269,7 @@ class ExampleGrailsPlugin extends Plugin {
 }
 ----
 
-Each part of the name must be a valid Java identifier and none may be a keyword; anything else is a compile-time error. Name one of the plugin's own packages: generating into a package the plugin does not otherwise own splits that package across two jars, which a modular or native-image consumer pays for.
+Each part of the name must be a valid Java identifier and none may be a keyword; anything else is a compile-time error. A name containing a dot is taken as written — it is never resolved relative to the plugin's package. Name one of the plugin's own packages: generating into a package the plugin does not otherwise own splits that package across two jars, which a modular or native-image consumer pays for.
 
 `@GrailsBeans` compiles cleanly alongside `@CompileStatic`/`@GrailsCompileStatic` on the same class. The `beans` closure is rewritten into real `@Bean` methods during `CompilePhase.CANONICALIZATION`, which runs before static type checking (`CompilePhase.INSTRUCTION_SELECTION`) ever examines the class, so the type checker only ever sees the generated, concretely-typed methods — never the `bean(...)` DSL calls themselves.
 

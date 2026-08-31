@@ -125,9 +125,10 @@ public @interface GrailsBeans {
      * classes sit beneath rather than alongside them, so the class being replaced is often in
      * another package: give the qualified name and the sibling is generated there instead, e.g.
      * {@code @GrailsBeans(autoConfigurationName = "com.example.web.ExampleAutoConfiguration")} on
-     * {@code com.example.ExampleGrailsPlugin}. Generating into a package the plugin does not
-     * otherwise own splits that package across two jars, which a modular or native-image consumer
-     * pays for, so name one of the plugin's own.
+     * {@code com.example.ExampleGrailsPlugin}. A name containing a dot is taken as written - it is
+     * never resolved relative to the plugin's package. Generating into a package the plugin does
+     * not otherwise own splits that package across two jars, which a modular or native-image
+     * consumer pays for, so name one of the plugin's own.
      */
     String autoConfigurationName() default "";
 
