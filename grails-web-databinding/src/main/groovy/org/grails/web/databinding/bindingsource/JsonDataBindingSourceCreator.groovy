@@ -27,6 +27,7 @@ import tools.jackson.databind.DeserializationFeature
 import tools.jackson.databind.ObjectReader
 import tools.jackson.databind.json.JsonMapper
 
+import org.springframework.beans.factory.ObjectProvider
 import org.springframework.beans.factory.annotation.Autowired
 
 import grails.databinding.CollectionDataBindingSource
@@ -51,8 +52,26 @@ class JsonDataBindingSourceCreator extends AbstractRequestBodyDataBindingSourceC
 
     private static final Pattern INDEX_PATTERN = ~/^(\S+)\[(\d+)\]$/
 
+    // Resolved when a request body is first parsed rather than injected. Injecting it pulls
+    // Jackson's auto-configuration into this bean's graph, and MimeTypesConfiguration depends on
+    // this creator, so Boot's mapper would be built before GORM has initialized.
     @Autowired(required = false)
-    JsonMapper jsonMapper = JsonMapper.builder().build()
+    ObjectProvider<JsonMapper> jsonMapperProvider
+
+    private volatile JsonMapper resolvedJsonMapper
+
+    JsonMapper getJsonMapper() {
+        JsonMapper mapper = this.resolvedJsonMapper
+        if (mapper == null) {
+            mapper = jsonMapperProvider?.getIfAvailable() ?: JsonMapper.builder().build()
+            this.resolvedJsonMapper = mapper
+        }
+        return mapper
+    }
+
+    void setJsonMapper(JsonMapper jsonMapper) {
+        this.resolvedJsonMapper = jsonMapper
+    }
 
     /**
      * Reads untyped JSON values. Decimals are read as {@link BigDecimal} so that binding a
@@ -60,7 +79,7 @@ class JsonDataBindingSourceCreator extends AbstractRequestBodyDataBindingSourceC
      * as doubles first would round them before the binder ever saw them.
      */
     protected ObjectReader untypedReader() {
-        return jsonMapper.reader().forType(Object).with(DeserializationFeature.USE_BIG_DECIMAL_FOR_FLOATS)
+        return getJsonMapper().reader().forType(Object).with(DeserializationFeature.USE_BIG_DECIMAL_FOR_FLOATS)
     }
 
     @Override

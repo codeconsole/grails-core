@@ -28,6 +28,7 @@ import tools.jackson.databind.ValueSerializer;
 import tools.jackson.databind.ser.Serializers;
 
 import grails.core.support.proxy.ProxyHandler;
+import org.grails.core.exceptions.GrailsConfigurationException;
 import org.grails.datastore.mapping.model.MappingContext;
 import org.grails.datastore.mapping.model.PersistentEntity;
 
@@ -94,8 +95,10 @@ final class GrailsDomainSerializers implements Serializers {
             }
             return null;
         }
-        catch (RuntimeException ignored) {
-            // GORM raises when its metadata is read too early; treat the type as unmapped.
+        catch (GrailsConfigurationException ignored) {
+            // Raised only when GORM's metadata is read before it has initialized. Any other
+            // failure is a real mapping defect and must surface rather than quietly falling back
+            // to ordinary bean serialization, which could expose unmapped properties.
             return null;
         }
     }

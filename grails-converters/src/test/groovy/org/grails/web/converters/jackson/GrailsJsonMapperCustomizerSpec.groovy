@@ -147,6 +147,26 @@ class GrailsJsonMapperCustomizerSpec extends Specification {
         written.title == 'Later'
     }
 
+    void 'a mapping defect surfaces instead of falling back to bean serialization'() {
+        given: "a mapping context that fails for a reason other than GORM not being ready"
+        def application = new DefaultGrailsApplication(JacksonBook) {
+            @Override
+            MappingContext getMappingContext() {
+                throw new IllegalStateException('broken mapping')
+            }
+        }
+        def builder = JsonMapper.builder()
+        new GrailsJsonMapperCustomizer(application, new DefaultProxyHandler()).customize(builder)
+        def mapper = builder.build()
+
+        when:
+        mapper.writeValueAsString(new JacksonBook(title: 'Broken').tap { id = 3 })
+
+        then: "the defect is not swallowed into ordinary bean serialization"
+        def e = thrown(Exception)
+        (e.message ?: e.cause?.message).contains('broken mapping')
+    }
+
     private JsonMapper domainMapper(boolean includeVersion, boolean includeClass, ProxyHandler proxyHandler = null) {
         def mappingContext = new KeyValueMappingContext('jackson')
         mappingContext.addPersistentEntities(JacksonBook, JacksonAuthor)
