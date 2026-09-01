@@ -168,6 +168,21 @@ class AutoConfigurationImportsWriterSpec extends Specification {
         !new File(targetDir, IMPORTS).exists()
     }
 
+    void 'a call that only drops a stale entry still writes'() {
+        given: 'a generated file holding one class that is still generated and one that is not'
+        compile(plugin('Greeting'))
+        new File(targetDir, IMPORTS).text =
+                'com.example.GreetingAutoConfiguration\ncom.example.StaleAutoConfiguration\n'
+        new File(targetDir, 'com/example/GreetingAutoConfiguration.class').delete()
+
+        when: 'the surviving class registers again, which adds nothing that was not already listed'
+        AutoConfigurationImportsWriter.register(
+                'com.example.GreetingAutoConfiguration', targetDir, null, null)
+
+        then: 'the entry naming a class that is gone does not survive the write it triggered'
+        importsEntries() == ['com.example.GreetingAutoConfiguration']
+    }
+
     void 'a module that keeps the file by hand keeps it'() {
         given: 'a hand-authored file, which may hold entries no compilation can discover'
         File handAuthored = new File(projectDir, "src/main/resources/${IMPORTS}")

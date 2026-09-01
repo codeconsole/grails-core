@@ -111,7 +111,10 @@ public final class AutoConfigurationImportsWriter {
         if (handAuthored != null && handAuthored.isFile()) {
             Set<String> handAuthoredEntries = new TreeSet<>();
             readEntries(handAuthored, handAuthoredEntries);
-            if (!handAuthoredEntries.contains(className)) {
+            // A standard compilation registers the same descriptor twice - once from the local
+            // transform and once from the global one, off the node metadata - and the same missing
+            // entry reported twice reads as two problems rather than one.
+            if (registeredBy(compilation).add(className) && !handAuthoredEntries.contains(className)) {
                 warn(source, className + " is generated from a beans closure but is not listed in " +
                         SOURCE_IMPORTS_LOCATION + ", so Spring Boot will not read it. Add it there, or delete " +
                         "that file once it holds nothing that is not generated and it will be written for you.");
@@ -124,21 +127,22 @@ public final class AutoConfigurationImportsWriter {
         registeredHere.add(className);
 
         File importsFile = new File(targetDirectory, IMPORTS_LOCATION);
-        Set<String> entries = new TreeSet<>();
-        readEntries(importsFile, entries);
+        Set<String> onDisk = new TreeSet<>();
+        readEntries(importsFile, onDisk);
 
         // A descriptor that was renamed, deleted, or given a different autoConfigurationName leaves
         // an entry naming a class that is no longer generated, and Spring Boot fails to start on an
         // auto-configuration it cannot load. Anything this compilation registered is kept regardless:
         // its class file is written in a later phase than this one runs in.
+        Set<String> entries = new TreeSet<>(onDisk);
         entries.removeIf(entry -> !registeredHere.contains(entry) && !isGeneratedHere(targetDirectory, entry));
+        entries.addAll(registeredHere);
 
-        Set<String> written = new TreeSet<>(entries);
-        written.addAll(registeredHere);
-        if (written.equals(entries) && importsFile.isFile() && entries.contains(className)) {
+        // Against what is on disk rather than against the pruned set: a call that only drops a stale
+        // entry adds nothing, and comparing the two would leave the entry it just decided to drop.
+        if (entries.equals(onDisk) && importsFile.isFile()) {
             return false;
         }
-        entries = written;
 
         return write(importsFile, entries, source);
     }
