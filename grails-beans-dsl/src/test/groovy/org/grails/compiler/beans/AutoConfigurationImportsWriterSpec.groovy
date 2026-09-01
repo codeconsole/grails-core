@@ -18,9 +18,12 @@
  */
 package org.grails.compiler.beans
 
+import org.codehaus.groovy.ast.ClassNode
+import org.codehaus.groovy.classgen.GeneratorContext
 import org.codehaus.groovy.control.CompilationUnit
 import org.codehaus.groovy.control.CompilerConfiguration
 import org.codehaus.groovy.control.Phases
+import org.codehaus.groovy.control.SourceUnit
 import org.codehaus.groovy.control.SourceUnit
 import spock.lang.Specification
 import spock.lang.TempDir
@@ -183,6 +186,21 @@ class AutoConfigurationImportsWriterSpec extends Specification {
         importsEntries() == ['com.example.GreetingAutoConfiguration']
     }
 
+    void 'the directory the global transform resolved is preferred over the compiler configuration'() {
+        given: "a compilation whose configured output is not where the class files go - Groovy-Eclipse's shape"
+        File resolved = new File(projectDir, 'build/eclipse-output')
+        resolved.mkdirs()
+
+        when: 'the descriptor compiles with that directory seeded on the class, as the global transform seeds it'
+        compileWithResolvedTargetDirectory(plugin('Greeting'), resolved)
+
+        then: 'the entry is written where the class files actually are'
+        new File(resolved, IMPORTS).readLines().findAll { it.trim() } == ['com.example.GreetingAutoConfiguration']
+
+        and: 'and not where the compiler configuration pointed'
+        !new File(targetDir, IMPORTS).exists()
+    }
+
     void 'a module that keeps the file by hand keeps it'() {
         given: 'a hand-authored file, which may hold entries no compilation can discover'
         File handAuthored = new File(projectDir, "src/main/resources/${IMPORTS}")
@@ -302,6 +320,16 @@ class AutoConfigurationImportsWriterSpec extends Specification {
     private CompilerConfiguration compile(String source) {
         CompilationUnit unit = newUnit()
         unit.addSource("Source${System.identityHashCode(source)}.groovy", source)
+        run(unit)
+    }
+
+    /** Compiles with the resolved-directory metadata the global Grails transform seeds. */
+    private void compileWithResolvedTargetDirectory(String source, File resolved) {
+        CompilationUnit unit = newUnit()
+        unit.addSource("Resolved${System.identityHashCode(source)}.groovy", source)
+        unit.addPhaseOperation({ SourceUnit su, GeneratorContext ctx, ClassNode cn ->
+            cn.putNodeMetaData(GrailsBeansASTTransformation.RESOLVED_TARGET_DIRECTORY_METADATA, resolved)
+        } as CompilationUnit.IPrimaryClassNodeOperation, Phases.CONVERSION)
         run(unit)
     }
 

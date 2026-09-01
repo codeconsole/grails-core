@@ -164,6 +164,15 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
     public static final String GENERATED_AUTO_CONFIGURATION_NAME_METADATA =
             GrailsBeansASTTransformation.class.getName() + ".generatedAutoConfigurationName";
 
+    /**
+     * Class-node metadata carrying the compilation's output directory, seeded by the global Grails
+     * transform. It resolves the directory for Groovy-Eclipse, where the compiler configuration
+     * either has none or has one relative to the Eclipse project, and that resolution lives in
+     * grails-core - which this module cannot depend on.
+     */
+    public static final String RESOLVED_TARGET_DIRECTORY_METADATA =
+            GrailsBeansASTTransformation.class.getName() + ".resolvedTargetDirectory";
+
     private static final String BEANS_PROPERTY = "beans";
     private static final String BEAN_CALL = "bean";
     private static final String FIELD_CALL = "field";
@@ -330,22 +339,23 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
         sibling.addAnnotations(siblingAnnotations);
         pluginClass.getAnnotations().removeAll(siblingAnnotations);
 
-        // The name is settled here and nowhere else. The global transform consumes this metadata
-        // and registers it using its Eclipse-aware compilation target resolution.
+        // The name is settled here and nowhere else.
         pluginClass.putNodeMetaData(GENERATED_AUTO_CONFIGURATION_NAME_METADATA, siblingName);
-        if (!isEclipseSourceUnit(source)) {
-            AutoConfigurationImportsWriter.register(siblingName, targetDirectory(source), source, compilationUnit);
-        }
+        AutoConfigurationImportsWriter.register(
+                siblingName, targetDirectory(pluginClass, source), source, compilationUnit);
 
         return sibling;
     }
 
-    private static boolean isEclipseSourceUnit(SourceUnit source) {
-        return source != null && "org.codehaus.jdt.groovy.control.EclipseSourceUnit".equals(source.getClass().getName());
-    }
-
-    /** The standard compiler's output directory; Eclipse is resolved by the global transform. */
-    private static File targetDirectory(SourceUnit source) {
+    /**
+     * The compilation's output directory: the one the global transform resolved if it ran, which is
+     * the only one that is right under Groovy-Eclipse, and the compiler's own otherwise.
+     */
+    private static File targetDirectory(ClassNode classNode, SourceUnit source) {
+        Object resolved = classNode == null ? null : classNode.getNodeMetaData(RESOLVED_TARGET_DIRECTORY_METADATA);
+        if (resolved instanceof File) {
+            return (File) resolved;
+        }
         CompilerConfiguration configuration = source == null ? null : source.getConfiguration();
         return configuration == null ? null : configuration.getTargetDirectory();
     }

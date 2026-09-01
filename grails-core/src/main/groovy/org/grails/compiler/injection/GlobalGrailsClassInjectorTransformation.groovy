@@ -142,6 +142,14 @@ class GlobalGrailsClassInjectorTransformation implements ASTTransformation, Comp
             )
         }
 
+        // Seeded before anything is transformed: an explicitly annotated descriptor is compiled by
+        // the local transform after this runs, and the directory resolved here is the only one that
+        // is right under Groovy-Eclipse.
+        for (def classNode : source.AST.classes) {
+            classNode.putNodeMetaData(
+                    GrailsBeansASTTransformation.RESOLVED_TARGET_DIRECTORY_METADATA, compilationTargetDirectory)
+        }
+
         for (def classNode : source.AST.classes.toList()) { // toList() to avoid concurrent modification exception
             def projectName = resolveProjectName(classNode)
             def projectVersion = resolveProjectVersion(classNode)
