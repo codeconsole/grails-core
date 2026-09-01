@@ -124,6 +124,239 @@ class GrailsBeansASTTransformationSpec extends Specification {
         }
     '''
 
+    def "rejects a call to a sibling bean method when the host's bean methods are not proxied"() {
+        given: "@AutoConfiguration is @Configuration(proxyBeanMethods = false), so the call builds a second Greeter"
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @GrailsBeans
+            @AutoConfiguration
+            class UnproxiedSiblingBeans {
+                def beans = {
+                    bean('greeter', String) {
+                        'hello'
+                    }
+
+                    bean('shout', String) {
+                        greeter().toUpperCase()
+                    }
+                }
+            }
+        '''
+
+        when:
+        compile(source)
+
+        then:
+        MultipleCompilationErrorsException e = thrown(MultipleCompilationErrorsException)
+        e.message.contains('is another bean declared in this block')
+        e.message.contains('constructs a second instance')
+    }
+
+    def "rejects a sibling bean call from a method(...) helper too"() {
+        given:
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @GrailsBeans
+            @AutoConfiguration
+            class HelperSiblingBeans {
+                def beans = {
+                    bean('greeter', String) {
+                        'hello'
+                    }
+
+                    method('shouted', String) {
+                        greeter().toUpperCase()
+                    }
+                }
+            }
+        '''
+
+        when:
+        compile(source)
+
+        then:
+        MultipleCompilationErrorsException e = thrown(MultipleCompilationErrorsException)
+        e.message.contains('is another bean declared in this block')
+    }
+
+    def "allows a sibling bean call on a full @Configuration class, where Spring does return the singleton"() {
+        given:
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.context.annotation.Configuration
+
+            @GrailsBeans
+            @Configuration
+            class ProxiedSiblingBeans {
+                def beans = {
+                    bean('greeter', StringBuilder) {
+                        new StringBuilder('hello')
+                    }
+
+                    bean('shout', String) {
+                        greeter().toString().toUpperCase()
+                    }
+                }
+            }
+        '''
+
+        when:
+        Class<?> compiled = compile(source)
+
+        then:
+        noExceptionThrown()
+        compiled.getDeclaredMethod('shout') != null
+    }
+
+    def "rejects a sibling bean call on a @Configuration class that has switched proxying off"() {
+        given:
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.context.annotation.Configuration
+
+            @GrailsBeans
+            @Configuration(proxyBeanMethods = false)
+            class LiteConfigurationBeans {
+                def beans = {
+                    bean('greeter', StringBuilder) {
+                        new StringBuilder('hello')
+                    }
+
+                    bean('shout', String) {
+                        greeter().toString().toUpperCase()
+                    }
+                }
+            }
+        '''
+
+        when:
+        compile(source)
+
+        then:
+        MultipleCompilationErrorsException e = thrown(MultipleCompilationErrorsException)
+        e.message.contains('is not a proxied @Configuration class')
+    }
+
+    def "rejects a sibling bean call on a class carrying no Spring configuration annotation, as a Grails Application does"() {
+        given: "the shape a Grails Application class has - a configuration source Spring never proxies"
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+
+            @GrailsBeans
+            class UnannotatedHostBeans {
+                def beans = {
+                    bean('greeter', String) {
+                        'hello'
+                    }
+
+                    bean('shout', String) {
+                        greeter().toUpperCase()
+                    }
+                }
+            }
+        '''
+
+        when:
+        compile(source)
+
+        then:
+        MultipleCompilationErrorsException e = thrown(MultipleCompilationErrorsException)
+        e.message.contains('is another bean declared in this block')
+    }
+
+    def "rejects a sibling bean call on a plugin descriptor's generated sibling, which is always @AutoConfiguration"() {
+        given: "the check runs on the sibling, so the annotations moved onto it must already be there"
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import grails.plugins.Plugin
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @GrailsBeans
+            @AutoConfiguration
+            class SiblingCallGrailsPlugin extends Plugin {
+                def beans = {
+                    bean('greeter', String) {
+                        'hello'
+                    }
+
+                    bean('shout', String) {
+                        greeter().toUpperCase()
+                    }
+                }
+            }
+        '''
+
+        when:
+        compile(source)
+
+        then:
+        MultipleCompilationErrorsException e = thrown(MultipleCompilationErrorsException)
+        e.message.contains('is another bean declared in this block')
+        e.message.contains('SiblingCallAutoConfiguration is not a proxied @Configuration class')
+    }
+
+    def "leaves a call to a method(...) helper alone - only bean methods are singletons to miss"() {
+        given:
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @GrailsBeans
+            @AutoConfiguration
+            class HelperCallBeans {
+                def beans = {
+                    method('salutation', String) {
+                        'hello'
+                    }
+
+                    bean('greeter', String) {
+                        salutation()
+                    }
+                }
+            }
+        '''
+
+        when:
+        Class<?> compiled = compile(source)
+
+        then:
+        noExceptionThrown()
+        compiled.getDeclaredConstructor().newInstance().greeter() == 'hello'
+    }
+
+    def "leaves a same-named call on another receiver alone"() {
+        given: "a call with a real receiver is somebody else's method that happens to share the name"
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @GrailsBeans
+            @AutoConfiguration
+            class OtherReceiverBeans {
+                def beans = {
+                    bean('trim', String) {
+                        'hello'
+                    }
+
+                    bean('padded', String) { StringBuilder source ->
+                        source.toString().trim()
+                    }
+                }
+            }
+        '''
+
+        when:
+        Class<?> compiled = compile(source)
+
+        then:
+        noExceptionThrown()
+        compiled.getDeclaredMethod('padded', StringBuilder) != null
+    }
+
     private Class<?> compile() {
         compile(FIXTURE)
     }

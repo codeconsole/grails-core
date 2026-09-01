@@ -39,6 +39,7 @@ import org.codehaus.groovy.ast.AnnotatedNode;
 import org.codehaus.groovy.ast.AnnotationNode;
 import org.codehaus.groovy.ast.ClassHelper;
 import org.codehaus.groovy.ast.ClassNode;
+import org.codehaus.groovy.ast.CodeVisitorSupport;
 import org.codehaus.groovy.ast.FieldNode;
 import org.codehaus.groovy.ast.MethodNode;
 import org.codehaus.groovy.ast.Parameter;
@@ -82,6 +83,7 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.ComponentScans;
+import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Conditional;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.ImportResource;
@@ -188,6 +190,7 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
     private static final String AUTO_CONFIGURATION_SUFFIX = "AutoConfiguration";
     private static final String AUTO_CONFIGURATION_NAME_MEMBER = "autoConfigurationName";
     private static final String MOVE_ANNOTATIONS_MEMBER = "moveAnnotations";
+    private static final String PROXY_BEAN_METHODS_MEMBER = "proxyBeanMethods";
 
     private CompilationUnit compilationUnit;
 
@@ -244,6 +247,7 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
         // once) and bean(...) statements second. A bean's derived method name then adapts to every
         // explicitly-named member wherever it appears in the block - reordering equivalent DSL
         // statements must never change validity.
+        List<MethodNode> preExisting = new ArrayList<>(beanMethodHost.getMethods());
         for (Statement statement : statements) {
             if (!isBeanRootedStatement(statement)) {
                 processStatement(beanMethodHost, statement, source, usedNames);
@@ -254,6 +258,7 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
                 processStatement(beanMethodHost, statement, source, usedNames);
             }
         }
+        rejectUnproxiedSiblingBeanCalls(beanMethodHost, generatedMembers(beanMethodHost, preExisting), source);
 
         if (beanMethodHost != classNode) {
             applyStaticCompilation(classNode, beanMethodHost, source);
@@ -848,6 +853,109 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
         }
 
         classNode.addMethod(beanMethod);
+    }
+
+    // The methods this block just generated, in declaration order: everything on the host that was
+    // not there before the two processing loops ran. MethodNode does not override equals, so the
+    // removal is by identity and cannot drop a same-signature method the user wrote.
+    private List<MethodNode> generatedMembers(ClassNode host, List<MethodNode> preExisting) {
+        List<MethodNode> generated = new ArrayList<>(host.getMethods());
+        generated.removeAll(preExisting);
+        return generated;
+    }
+
+    /**
+     * Rejects a call from one generated method to another generated {@code @Bean} method, on a host
+     * whose bean methods Spring does not proxy.
+     *
+     * <p>Calling a sibling {@code @Bean} method and getting the singleton back is a CGLIB trick, and
+     * Spring only plays it for a full {@code @Configuration} class. On a <i>lite</i> configuration
+     * source the same call is a plain Java call that constructs a second instance - and lite is the
+     * common case for this DSL: {@code @AutoConfiguration} is
+     * {@code @Configuration(proxyBeanMethods = false)}, the sibling generated for a plugin descriptor
+     * carries exactly that, and a Grails {@code Application} class is a configuration source without
+     * being annotated {@code @Configuration} at all.</p>
+     *
+     * <p>Nothing about that failure is visible at runtime. The context starts, every bean exists, and
+     * two objects live where the author meant one - so a listener registers on the wrong instance, or
+     * configuration applied to one is missing from the other. It is also the exact mistake a
+     * migration invites, since moving bean methods off a real {@code @Configuration} class into this
+     * DSL silently changes what those calls mean.</p>
+     */
+    private void rejectUnproxiedSiblingBeanCalls(ClassNode host, List<MethodNode> generated, SourceUnit source) {
+        Map<String, MethodNode> beanMethodsByName = new LinkedHashMap<>();
+        for (MethodNode method : generated) {
+            if (!method.getAnnotations(ClassHelper.make(Bean.class)).isEmpty()) {
+                beanMethodsByName.put(method.getName(), method);
+            }
+        }
+        if (beanMethodsByName.isEmpty() || beanMethodsAreProxied(host)) {
+            return;
+        }
+        for (MethodNode method : generated) {
+            if (method.getCode() == null) {
+                continue;
+            }
+            MethodNode caller = method;
+            method.getCode().visit(new CodeVisitorSupport() {
+                @Override
+                public void visitMethodCallExpression(MethodCallExpression call) {
+                    super.visitMethodCallExpression(call);
+                    if (!isSelfCall(call)) {
+                        return;
+                    }
+                    MethodNode target = beanMethodsByName.get(call.getMethodAsString());
+                    if (target == null || target == caller) {
+                        return;
+                    }
+                    addError(call, source, "\"" + call.getMethodAsString() + "(...)\" is another bean declared " +
+                            "in this block, and " + host.getNameWithoutPackage() + " is not a proxied " +
+                            "@Configuration class, so this call does not return the bean Spring registered - it " +
+                            "constructs a second instance. Inject it instead, by declaring it as a parameter of " +
+                            "this closure; if what you want is shared logic rather than the bean, move it into a " +
+                            "method(...) declaration.");
+                }
+            });
+        }
+    }
+
+    // An unqualified call, or one written against this. Anything with a real receiver is somebody
+    // else's method that happens to share the name.
+    private boolean isSelfCall(MethodCallExpression call) {
+        return call.isImplicitThis() ||
+                (call.getObjectExpression() instanceof VariableExpression &&
+                        ((VariableExpression) call.getObjectExpression()).isThisExpression());
+    }
+
+    // Whether Spring will CGLIB-proxy this host's @Bean methods: true only when @Configuration is
+    // reachable from the class's own annotations without passing through one that sets
+    // proxyBeanMethods = false. @AutoConfiguration answers false through that second clause - its
+    // meta-annotation is @Configuration(proxyBeanMethods = false) - and a Grails Application class
+    // answers false by carrying no @Configuration at all.
+    private boolean beanMethodsAreProxied(ClassNode host) {
+        return proxiesBeanMethods(host.getAnnotations(), new HashSet<>());
+    }
+
+    private boolean proxiesBeanMethods(List<AnnotationNode> annotations, Set<String> visited) {
+        for (AnnotationNode annotation : annotations) {
+            ClassNode type = annotation.getClassNode();
+            if (type.getName().startsWith("java.lang.annotation.") || !visited.add(type.getName())) {
+                continue;
+            }
+            if (isFalseConstant(annotation.getMember(PROXY_BEAN_METHODS_MEMBER))) {
+                continue;
+            }
+            if (Configuration.class.getName().equals(type.getName()) ||
+                    proxiesBeanMethods(type.getAnnotations(), visited)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean isFalseConstant(Expression expression) {
+        return expression instanceof ConstantExpression &&
+                Boolean.FALSE.equals(((ConstantExpression) expression).getValue());
     }
 
     private boolean isEmpty(Statement code) {
