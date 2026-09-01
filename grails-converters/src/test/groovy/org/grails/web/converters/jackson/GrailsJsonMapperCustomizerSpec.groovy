@@ -36,8 +36,6 @@ import spock.lang.Specification
 
 class GrailsJsonMapperCustomizerSpec extends Specification {
 
-    boolean gormReady = false
-
     void 'Boot JsonMapper receives the Grails validation errors serializer'() {
         given:
         def errors = new BeanPropertyBindingResult(new JsonCommand(), 'command')
@@ -117,17 +115,8 @@ class GrailsJsonMapperCustomizerSpec extends Specification {
     }
 
     void 'the mapper builds before GORM is initialized and picks up entities afterwards'() {
-        given: "an application whose mapping context is not readable yet, as when Jackson's"
-        def mappingContext = new KeyValueMappingContext('jackson')
-        def application = new DefaultGrailsApplication(JacksonBook) {
-            @Override
-            MappingContext getMappingContext() {
-                if (!gormReady) {
-                    throw new GrailsConfigurationException('cannot be accessed before GORM has initialized')
-                }
-                return mappingContext
-            }
-        }
+        given: "a real application, whose mapping context proxy fails on any lookup until GORM runs"
+        def application = new DefaultGrailsApplication(JacksonBook)
 
         when: "auto-configuration builds the mapper ahead of GORM"
         def builder = JsonMapper.builder()
@@ -138,8 +127,9 @@ class GrailsJsonMapperCustomizerSpec extends Specification {
         noExceptionThrown()
 
         when: "GORM finishes and a domain object is written"
-        gormReady = true
+        def mappingContext = new KeyValueMappingContext('jackson')
         mappingContext.addPersistentEntities(JacksonBook)
+        application.mappingContext = mappingContext
         def written = mapper.readValue(mapper.writeValueAsString(new JacksonBook(title: 'Later').tap { id = 7 }), Map)
 
         then: "the persistent metadata is used, resolved on first write rather than at build time"
