@@ -384,25 +384,12 @@ class GlobalGrailsClassInjectorTransformation implements ASTTransformation, Comp
             return
         }
 
-        ASTTransformation transformation
-        try {
-            transformation = (ASTTransformation) getClass().classLoader
-                    .loadClass('org.grails.compiler.beans.GrailsBeansASTTransformation')
-                    .getDeclaredConstructor()
-                    .newInstance()
-        }
-        catch (ClassNotFoundException ignored) {
-            // grails-beans-dsl is off the compile classpath, so the beans property is left alone -
-            // silently, which is only acceptable because it cannot happen: grails-core declares the
-            // module api (see grails-core/build.gradle), so it reaches every project that has
-            // grails-core at all. Narrowing that scope would turn this branch into a live path where
-            // a DSL-shaped beans block registers nothing and says nothing about it.
-            return
-        }
-
-        if (transformation instanceof CompilationUnitAware) {
-            ((CompilationUnitAware) transformation).compilationUnit = compilationUnit
-        }
+        // Referenced directly, as the registering below already does. grails-core declares
+        // grails-beans-dsl api (see grails-core/build.gradle), so it reaches every project that has
+        // grails-core at all; loading it reflectively described a class path this cannot be compiled
+        // against, and guarded against something that would now fail on the next line regardless.
+        GrailsBeansASTTransformation transformation = new GrailsBeansASTTransformation()
+        transformation.compilationUnit = compilationUnit
         transformation.visit([new AnnotationNode(GRAILS_BEANS_ANNOTATION), classNode] as ASTNode[], source)
     }
 
