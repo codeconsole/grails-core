@@ -96,8 +96,15 @@ final class GrailsDomainSerializers implements Serializers {
     }
 
     /**
-     * @return a serializer bound to the type's persistent metadata, or null if the metadata is not
-     * available -- either because the type is not mapped or because GORM has not initialized
+     * Binds a serializer to the type's persistent metadata.
+     *
+     * <p>The two ways this does not produce one are deliberately distinguishable, because the
+     * caller has to react differently: an unmapped type is Jackson's to serialize, whereas a
+     * domain type whose metadata is merely not readable yet must not be handed to Jackson.</p>
+     *
+     * @param type the candidate type
+     * @return the serializer, or null if the type is not mapped
+     * @throws GrailsConfigurationException if GORM has not made its mapping metadata readable
      */
     ValueSerializer<?> domainSerializer(Class<?> type) {
         PersistentEntity entity = persistentEntity(type);
