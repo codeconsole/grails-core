@@ -122,7 +122,7 @@ trait ResponseRedirector implements WebAttributes {
             throw new IllegalArgumentException("Invalid arguments for method 'redirect': $argMap")
         }
 
-        grails.web.mapping.ResponseRedirector redirector = new grails.web.mapping.ResponseRedirector(getGrailsLinkGenerator())
+        grails.web.mapping.ResponseRedirector redirector = new grails.web.mapping.ResponseRedirector(grailsLinkGenerator)
         redirector.setRedirectListeners(redirectListeners)
         redirector.setRequestDataValueProcessor(requestDataValueProcessor)
         redirector.setUseJessionId(useJsessionId)
