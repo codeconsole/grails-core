@@ -148,35 +148,30 @@ class GrailsJsonMapperCustomizerSpec extends Specification {
     }
 
     void 'a type written before GORM is ready still uses the domain serializer afterwards'() {
-        given: "the mapper is built while GORM's metadata cannot be read"
-        def mappingContext = new KeyValueMappingContext('jackson')
-        def application = new DefaultGrailsApplication(JacksonBook, JacksonAuthor) {
-            @Override
-            MappingContext getMappingContext() {
-                if (!gormReady) {
-                    throw new GrailsConfigurationException('cannot be accessed before GORM has initialized')
-                }
-                return mappingContext
-            }
-        }
+        given: "a real application, whose getMappingContext hands out a proxy that fails on use"
+        def application = new DefaultGrailsApplication(JacksonBook, JacksonAuthor)
         application.config.setAt('grails.converters.domain.include.class', true)
         def builder = JsonMapper.builder()
         new GrailsJsonMapperCustomizer(application, new DefaultProxyHandler()).customize(builder)
         def mapper = builder.build()
         def book = new JacksonBook(title: 'Cached').tap { id = 9 }
 
-        when: "the type is written once while GORM is unavailable, so Jackson caches a serializer"
+        when: "the type is written once before GORM has initialized"
         mapper.writeValueAsString(book)
 
-        then: "writing it then is refused rather than silently producing a bean-shaped document"
+        then: "writing is refused rather than silently producing a bean-shaped document"
         thrown(Exception)
 
+        and: "a null check could not have detected this, since the proxy is not null"
+        application.mappingContext != null
+
         when: "GORM initializes and the same class is written again"
-        gormReady = true
+        def mappingContext = new KeyValueMappingContext('jackson')
         mappingContext.addPersistentEntities(JacksonBook, JacksonAuthor)
+        application.mappingContext = mappingContext
         def after = mapper.readValue(mapper.writeValueAsString(book), Map)
 
-        then: "the Grails domain serializer is used, not the serializer cached earlier"
+        then: "the Grails domain serializer is used, not a bean serializer cached on the first write"
         after.class == JacksonBook.name
         after.id == 9
         after.title == 'Cached'

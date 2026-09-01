@@ -71,20 +71,25 @@ final class GrailsDomainSerializers implements Serializers {
         if (serializer != null) {
             return serializer;
         }
-        serializer = domainSerializer(rawType);
-        if (serializer == null) {
-            if (!mappingContextReady() && this.domainArtefact.test(rawType)) {
-                // A domain class asked for before GORM is ready. Returning null here would let
-                // Jackson select and cache its ordinary bean serializer for this type, and that
-                // choice would survive GORM starting, so the class would serialize with the wrong
-                // shape for the life of the mapper. Hand back a serializer of our own instead and
-                // resolve the metadata when it is actually written.
-                serializer = new DeferredDomainSerializer(this);
-            }
-            else {
-                // Genuinely not a mapped type; Jackson's own choice is correct and may be cached.
+        try {
+            serializer = domainSerializer(rawType);
+        }
+        catch (GrailsConfigurationException ignored) {
+            // GORM's metadata is not readable yet. Note that GrailsApplication hands out a proxy
+            // that only fails when a method is called, so this exception -- not a null context --
+            // is what distinguishes "not initialized" from "not a mapped type".
+            if (!this.domainArtefact.test(rawType)) {
                 return null;
             }
+            // Returning null for a domain class here would let Jackson select and cache its
+            // ordinary bean serializer, and that choice would survive GORM starting, so the class
+            // would serialize with the wrong shape for the life of the mapper. Hand back a
+            // serializer of ours instead and resolve the metadata when it is actually written.
+            serializer = new DeferredDomainSerializer(this);
+        }
+        if (serializer == null) {
+            // Metadata was readable and this type is not mapped; Jackson's choice is correct.
+            return null;
         }
         this.resolved.put(rawType, serializer);
         return serializer;
@@ -103,38 +108,26 @@ final class GrailsDomainSerializers implements Serializers {
                 Boolean.TRUE.equals(this.includeVersion.get()), Boolean.TRUE.equals(this.includeClass.get()));
     }
 
-    private boolean mappingContextReady() {
-        try {
-            return this.mappingContext.get() != null;
-        }
-        catch (GrailsConfigurationException ignored) {
-            return false;
-        }
-    }
-
+    /**
+     * @throws GrailsConfigurationException if GORM has not made its metadata readable. Deliberately
+     * not caught here: the caller needs to tell that apart from this type simply not being mapped,
+     * and GrailsApplication signals it by failing a lookup rather than by a null context.
+     */
     private PersistentEntity persistentEntity(Class<?> type) {
-        try {
-            MappingContext context = this.mappingContext.get();
-            if (context == null) {
-                return null;
-            }
-            // Walks superclasses so that a proxy, which subclasses its domain class, is serialized
-            // with that class's metadata rather than falling through to bean serialization.
-            for (Class<?> candidate = type; candidate != null && candidate != Object.class;
-                    candidate = candidate.getSuperclass()) {
-                PersistentEntity entity = context.getPersistentEntity(candidate.getName());
-                if (entity != null) {
-                    return entity;
-                }
-            }
+        MappingContext context = this.mappingContext.get();
+        if (context == null) {
             return null;
         }
-        catch (GrailsConfigurationException ignored) {
-            // Raised only when GORM's metadata is read before it has initialized. Any other
-            // failure is a real mapping defect and must surface rather than quietly falling back
-            // to ordinary bean serialization, which could expose unmapped properties.
-            return null;
+        // Walks superclasses so that a proxy, which subclasses its domain class, is serialized
+        // with that class's metadata rather than falling through to bean serialization.
+        for (Class<?> candidate = type; candidate != null && candidate != Object.class;
+                candidate = candidate.getSuperclass()) {
+            PersistentEntity entity = context.getPersistentEntity(candidate.getName());
+            if (entity != null) {
+                return entity;
+            }
         }
+        return null;
     }
 
     /**
@@ -156,7 +149,12 @@ final class GrailsDomainSerializers implements Serializers {
         public void serialize(Object value, JsonGenerator generator, SerializationContext context) {
             ValueSerializer<Object> bound = this.delegate;
             if (bound == null) {
-                bound = (ValueSerializer<Object>) this.serializers.domainSerializer(value.getClass());
+                try {
+                    bound = (ValueSerializer<Object>) this.serializers.domainSerializer(value.getClass());
+                }
+                catch (GrailsConfigurationException ignored) {
+                    bound = null;
+                }
                 if (bound == null) {
                     throw new IllegalStateException("Cannot serialize [" + value.getClass().getName() +
                             "]: it is a domain class, but GORM has not made its mapping available. " +

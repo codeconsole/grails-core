@@ -58,10 +58,11 @@ public final class GrailsJsonMapperCustomizer implements JsonMapperBuilderCustom
     }
 
     private boolean domainArtefact(Class<?> type) {
-        // Known from the artefact registry, which does not depend on GORM having initialized, so a
-        // domain class is still recognisable while its mapping is not yet readable.
-        return this.grailsApplication != null &&
-                this.grailsApplication.isArtefactOfType(DomainClassArtefactHandler.TYPE, type);
+        // Decided from the class itself rather than the artefact registry: registry lookups need
+        // the Domain handler to have been registered and raise when it has not, whereas this holds
+        // as soon as the class is loaded -- which is the point, since GORM is not up yet. The flag
+        // lets a proxy be recognised through its domain superclass.
+        return DomainClassArtefactHandler.isDomainClass(type, true);
     }
 
     private MappingContext mappingContext() {
