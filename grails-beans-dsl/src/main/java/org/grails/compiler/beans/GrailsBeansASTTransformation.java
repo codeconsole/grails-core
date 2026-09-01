@@ -43,6 +43,7 @@ import org.codehaus.groovy.ast.CodeVisitorSupport;
 import org.codehaus.groovy.ast.FieldNode;
 import org.codehaus.groovy.ast.MethodNode;
 import org.codehaus.groovy.ast.Parameter;
+import org.codehaus.groovy.ast.GenericsType;
 import org.codehaus.groovy.ast.PropertyNode;
 import org.codehaus.groovy.ast.expr.ArgumentListExpression;
 import org.codehaus.groovy.ast.expr.BinaryExpression;
@@ -62,6 +63,7 @@ import org.codehaus.groovy.ast.stmt.EmptyStatement;
 import org.codehaus.groovy.ast.stmt.ExpressionStatement;
 import org.codehaus.groovy.ast.stmt.ReturnStatement;
 import org.codehaus.groovy.ast.stmt.Statement;
+import org.codehaus.groovy.ast.tools.GenericsUtils;
 import org.codehaus.groovy.control.CompilationUnit;
 import org.codehaus.groovy.control.CompilePhase;
 import org.codehaus.groovy.control.SourceUnit;
@@ -175,16 +177,18 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
     private static final String STATIC_METHOD_CALL = "staticMethod";
     private static final String ANNOTATE_CALL = "annotate";
     private static final String VALUE_CALL = "value";
+    private static final String TYPE_ARGUMENTS_CALL = "typeArguments";
     private static final Set<String> BEAN_QUALIFIER_CALL_NAMES = Set.of(
             CONDITIONAL_ON_MISSING_BEAN_CALL, CONDITIONAL_ON_MISSING_BEAN_NAME_CALL,
-            PRIMARY_CALL, LAZY_CALL, SCOPE_CALL, STATIC_METHOD_CALL, ANNOTATE_CALL);
+            PRIMARY_CALL, LAZY_CALL, SCOPE_CALL, STATIC_METHOD_CALL, ANNOTATE_CALL, TYPE_ARGUMENTS_CALL);
     // field(...) and method(...) declare plain class members, not beans - bean-specific
     // qualifiers don't apply; .value(...) (@Value config injection) is field-only.
-    private static final Set<String> FIELD_QUALIFIER_CALL_NAMES = Set.of(ANNOTATE_CALL, VALUE_CALL);
-    private static final Set<String> METHOD_QUALIFIER_CALL_NAMES = Set.of(ANNOTATE_CALL);
+    private static final Set<String> FIELD_QUALIFIER_CALL_NAMES = Set.of(ANNOTATE_CALL, VALUE_CALL, TYPE_ARGUMENTS_CALL);
+    private static final Set<String> METHOD_QUALIFIER_CALL_NAMES = Set.of(ANNOTATE_CALL, TYPE_ARGUMENTS_CALL);
     private static final Set<String> ALL_QUALIFIER_CALL_NAMES = Set.of(
             CONDITIONAL_ON_MISSING_BEAN_CALL, CONDITIONAL_ON_MISSING_BEAN_NAME_CALL,
-            PRIMARY_CALL, LAZY_CALL, SCOPE_CALL, STATIC_METHOD_CALL, ANNOTATE_CALL, VALUE_CALL);
+            PRIMARY_CALL, LAZY_CALL, SCOPE_CALL, STATIC_METHOD_CALL, ANNOTATE_CALL, VALUE_CALL,
+            TYPE_ARGUMENTS_CALL);
     private static final String PLUGIN_SUPERCLASS_NAME = "grails.plugins.Plugin";
     private static final String GRAILS_PLUGIN_SUFFIX = "GrailsPlugin";
     private static final String AUTO_CONFIGURATION_SUFFIX = "AutoConfiguration";
@@ -804,7 +808,10 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
             return;
         }
 
-        ClassNode beanType = typeAndName.type.getType();
+        ClassNode beanType = declaredType(typeAndName, qualifierCalls, outerCall, factory != null, source, BEAN_CALL);
+        if (beanType == null) {
+            return;
+        }
         // A closure whose body is empty declares construction too, from its own parameters: the
         // parameters say what is injected, and the generated body is the constructor call the author
         // would otherwise have written out. bean(Type) { } with no parameters is bean(Type).
@@ -1018,10 +1025,18 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
             return;
         }
 
-        FieldNode field = classNode.addField(typeAndName.name, Modifier.PRIVATE, typeAndName.type.getType(), null);
+        ClassNode fieldType = declaredType(typeAndName, qualifierCalls, null, false, source, FIELD_CALL);
+        if (fieldType == null) {
+            return;
+        }
+
+        FieldNode field = classNode.addField(typeAndName.name, Modifier.PRIVATE, fieldType, null);
         field.setSourcePosition(baseCall);
 
         for (MethodCallExpression qualifierCall : qualifierCalls) {
+            if (TYPE_ARGUMENTS_CALL.equals(qualifierCall.getMethodAsString())) {
+                continue;
+            }
             List<Expression> qualifierArgs = flatten(qualifierCall.getArguments());
             if (VALUE_CALL.equals(qualifierCall.getMethodAsString())) {
                 AnnotationNode valueAnnotation = valueAnnotation(qualifierArgs, qualifierCall, source);
@@ -1186,16 +1201,24 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
             return;
         }
 
+        ClassNode returnType = declaredType(typeAndName, qualifierCalls, outerCall, true, source, METHOD_CALL);
+        if (returnType == null) {
+            return;
+        }
+
         MethodNode helperMethod = new MethodNode(
                 typeAndName.name,
                 Modifier.PRIVATE,
-                typeAndName.type.getType(),
+                returnType,
                 body.getParameters() == null ? Parameter.EMPTY_ARRAY : body.getParameters(),
                 ClassNode.EMPTY_ARRAY,
                 body.getCode());
         helperMethod.setSourcePosition(baseCall);
 
         for (MethodCallExpression qualifierCall : qualifierCalls) {
+            if (TYPE_ARGUMENTS_CALL.equals(qualifierCall.getMethodAsString())) {
+                continue;
+            }
             List<Expression> qualifierArgs = flatten(qualifierCall.getArguments());
             if (qualifierCall == outerCall) {
                 qualifierArgs = qualifierArgs.subList(0, qualifierArgs.size() - 1);
@@ -1206,6 +1229,68 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
         }
 
         classNode.addMethod(helperMethod);
+    }
+
+    /**
+     * The declared type of a bean, field or helper method, with any {@code .typeArguments(...)}
+     * applied - {@code bean("auditorAware", AuditorAware).typeArguments(String)} declares
+     * {@code AuditorAware<String>}.
+     *
+     * <p>A type argument is not decoration. Spring resolves an injection point by its full generic
+     * type, so a bean declared raw where a consumer asks for {@code Repository<User>} may not match,
+     * and {@code ObjectProvider<Handler<Order>>} or an injected {@code List<Handler<Order>>} cannot
+     * select it at all. The type in {@code bean(...)} is a class literal and Groovy has no syntax
+     * for writing type arguments on one, so without this the only way to declare a parameterized
+     * bean type was to declare the implementation class instead and let Spring read the arguments
+     * off its hierarchy - which is not always the type the author wants the bean known by.
+     *
+     * @return the type to declare, or {@code null} when the qualifier is present but malformed
+     * (the error is already reported)
+     */
+    private ClassNode declaredType(TypeAndName typeAndName, List<MethodCallExpression> qualifierCalls,
+            MethodCallExpression outerCall, boolean outerCallCarriesClosure, SourceUnit source, String callName) {
+        ClassNode raw = typeAndName.type.getType();
+        for (MethodCallExpression qualifierCall : qualifierCalls) {
+            if (!TYPE_ARGUMENTS_CALL.equals(qualifierCall.getMethodAsString())) {
+                continue;
+            }
+            List<Expression> args = flatten(qualifierCall.getArguments());
+            if (outerCallCarriesClosure && qualifierCall == outerCall && !args.isEmpty()) {
+                args = args.subList(0, args.size() - 1);
+            }
+            String rawName = raw.getNameWithoutPackage();
+            if (args.isEmpty()) {
+                addError(qualifierCall, source, ".typeArguments(...) requires at least one type, e.g. " +
+                        callName + "(..., " + rawName + ").typeArguments(String)");
+                return null;
+            }
+            GenericsType[] typeArguments = new GenericsType[args.size()];
+            for (int i = 0; i < args.size(); i++) {
+                if (!(args.get(i) instanceof ClassExpression)) {
+                    addError(args.get(i), source, ".typeArguments(...) takes types, e.g. " +
+                            ".typeArguments(String) or .typeArguments(String, Integer)");
+                    return null;
+                }
+                typeArguments[i] = new GenericsType(((ClassExpression) args.get(i)).getType());
+            }
+            // The type parameters the declared type actually has. Checking the count here turns a
+            // mismatch into a located error naming both numbers, rather than an unchecked generic
+            // signature that only misleads whoever reads the bean's type later.
+            GenericsType[] declared = raw.redirect().getGenericsTypes();
+            if (declared == null || declared.length == 0) {
+                addError(qualifierCall, source, rawName + " is not a generic type, so it has no type " +
+                        "arguments to give");
+                return null;
+            }
+            if (declared.length != typeArguments.length) {
+                addError(qualifierCall, source, rawName + " declares " + declared.length +
+                        " type parameter" + (declared.length == 1 ? "" : "s") + ", so .typeArguments(...) takes " +
+                        declared.length + ", not " + typeArguments.length);
+                return null;
+            }
+            return GenericsUtils.makeClassSafeWithGenerics(raw, typeArguments);
+        }
+        return raw;
     }
 
     private static final class TypeAndName {
@@ -1276,6 +1361,11 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
     private boolean applyQualifier(MethodNode beanMethod, String beanName, MethodCallExpression qualifierCall,
             List<Expression> args, SourceUnit source) {
         String name = qualifierCall.getMethodAsString();
+        // Consumed by declaredType(...) before the method node existed - it shapes the declared type
+        // rather than attaching anything to the member.
+        if (TYPE_ARGUMENTS_CALL.equals(name)) {
+            return true;
+        }
         if (CONDITIONAL_ON_MISSING_BEAN_CALL.equals(name)) {
             AnnotationNode annotation = conditionalOnMissingBeanAnnotation(args, qualifierCall, source);
             return annotation != null && addAnnotationIfAbsent(beanMethod, qualifierCall, annotation, source);

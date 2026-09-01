@@ -358,6 +358,175 @@ class GrailsBeansASTTransformationSpec extends Specification {
         compiled.getDeclaredMethod('padded', StringBuilder) != null
     }
 
+    def "typeArguments declares a parameterized bean type, which is what Spring resolves an injection point against"() {
+        given: "two handlers differing only in their type argument - raw beans could not tell them apart"
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            interface Handler<T> { }
+            class Order { }
+            class Refund { }
+            class OrderHandler implements Handler<Order> { }
+            class RefundHandler implements Handler<Refund> { }
+
+            class Dispatcher {
+                Handler<Order> handler
+
+                Dispatcher(Handler<Order> handler) {
+                    this.handler = handler
+                }
+            }
+
+            @GrailsBeans
+            @AutoConfiguration
+            class GenericBeansFixture {
+                def beans = {
+                    bean('orderHandler', Handler).typeArguments(Order) { new OrderHandler() }
+                    bean('refundHandler', Handler).typeArguments(Refund) { new RefundHandler() }
+
+                    bean('dispatcher', Dispatcher) { Handler<Order> handler ->
+                        new Dispatcher(handler)
+                    }
+                }
+            }
+        '''
+
+        and:
+        GroovyClassLoader loader = new GroovyClassLoader(getClass().classLoader)
+        loader.parseClass(source)
+        def context = new AnnotationConfigApplicationContext()
+        context.classLoader = loader
+        context.register(loader.loadClass('GenericBeansFixture'))
+
+        when:
+        context.refresh()
+
+        then: "both are Handler beans, so the type argument is the only thing that can discriminate"
+        context.getBeanNamesForType(loader.loadClass('Handler')).length == 2
+
+        and: "and Spring picked the one whose declared type argument matches the injection point"
+        loader.loadClass('OrderHandler').isInstance(context.getBean('dispatcher').handler)
+
+        cleanup:
+        context.close()
+    }
+
+    def "typeArguments reaches the generated method's signature, not just its erasure"() {
+        given:
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @GrailsBeans
+            @AutoConfiguration
+            class GenericSignatureFixture {
+                def beans = {
+                    bean('names', ArrayList).typeArguments(String) {
+                        new ArrayList<String>()
+                    }
+                }
+            }
+        '''
+
+        when:
+        Class<?> compiled = compile(source)
+        def method = compiled.getDeclaredMethod('names')
+
+        then:
+        method.returnType == ArrayList
+        method.genericReturnType.typeName == 'java.util.ArrayList<java.lang.String>'
+    }
+
+    def "typeArguments works on a bodyless bean, where the synthesized construction carries them too"() {
+        given:
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @GrailsBeans
+            @AutoConfiguration
+            class BodylessGenericFixture {
+                def beans = {
+                    bean('names', ArrayList).typeArguments(String)
+                }
+            }
+        '''
+
+        when:
+        Class<?> compiled = compile(source)
+        def method = compiled.getDeclaredMethod('names')
+
+        then:
+        method.genericReturnType.typeName == 'java.util.ArrayList<java.lang.String>'
+        compiled.getDeclaredConstructor().newInstance().names() == []
+    }
+
+    def "typeArguments applies to field(...) and method(...) as well as bean(...)"() {
+        given:
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @GrailsBeans
+            @AutoConfiguration
+            class GenericMemberFixture {
+                def beans = {
+                    field('cache', Map).typeArguments(String, Integer)
+
+                    method('names', ArrayList).typeArguments(String) {
+                        new ArrayList<String>()
+                    }
+
+                    bean('greeting', String) {
+                        'hello'
+                    }
+                }
+            }
+        '''
+
+        when:
+        Class<?> compiled = compile(source)
+
+        then:
+        compiled.getDeclaredField('cache').genericType.typeName == 'java.util.Map<java.lang.String, java.lang.Integer>'
+        compiled.getDeclaredMethod('names').genericReturnType.typeName == 'java.util.ArrayList<java.lang.String>'
+    }
+
+    @Unroll
+    def "typeArguments rejects #description"() {
+        given:
+        String source = """
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @GrailsBeans
+            @AutoConfiguration
+            class BadGenericsFixture${fixture} {
+                def beans = {
+                    bean('value', ${type}).typeArguments(${arguments}) {
+                        ${body}
+                    }
+                }
+            }
+        """
+
+        when:
+        compile(source)
+
+        then:
+        MultipleCompilationErrorsException e = thrown(MultipleCompilationErrorsException)
+        e.message.contains(expected)
+
+        where:
+        description                          | fixture   | type        | arguments         | body                       | expected
+        'too few type arguments'             | 'Few'     | 'Map'       | 'String'          | 'new HashMap<>()'          | 'declares 2 type parameters'
+        'too many type arguments'            | 'Many'    | 'ArrayList' | 'String, Integer' | 'new ArrayList<>()'        | 'declares 1 type parameter,'
+        'a type that is not generic'         | 'Plain'   | 'String'    | 'Integer'         | "'hello'"                  | 'is not a generic type'
+        'something that is not a type'       | 'NotType' | 'ArrayList' | "'String'"        | 'new ArrayList<>()'        | '.typeArguments(...) takes types'
+        'no type arguments at all'           | 'Empty'   | 'ArrayList' | ''                | 'new ArrayList<>()'        | 'requires at least one type'
+    }
+
     private Class<?> compile() {
         compile(FIXTURE)
     }

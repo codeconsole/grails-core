@@ -49,9 +49,14 @@ import org.codehaus.groovy.transform.GroovyASTTransformationClass;
  * attributes but rejecting {@code name:} and types), {@code .primary()}, {@code .lazy()},
  * {@code .scope("name")}, {@code .staticMethod()} (a {@code static} factory method - Spring's
  * recommended shape for {@code BeanFactoryPostProcessor}/{@code BeanPostProcessor} beans, which
- * must be creatable without instantiating their declaring configuration class), and (repeatably)
+ * must be creatable without instantiating their declaring configuration class),
+ * {@code .typeArguments(Type, ...)} (type arguments for the declared type -
+ * {@code bean("auditorAware", AuditorAware).typeArguments(String)} declares
+ * {@code AuditorAware<String>}, which matters because Spring resolves an injection point by its
+ * full generic type and the type in {@code bean(...)} is a class literal, on which Groovy has no
+ * syntax for writing them), and (repeatably)
  * {@code .annotate(AnnotationType[, attr: value, ...])} - the last a generic escape hatch
- * attaching any other single-valued annotation. The closure body becomes the generated method's
+ * attaching any other annotation. The closure body becomes the generated method's
  * body verbatim, and closure parameters become the generated method's parameters (for
  * constructor-style bean injection) - annotations and all, so anything Spring reads off an
  * injection point can be written on the parameter that receives it: {@code @Qualifier} to pick
@@ -67,7 +72,8 @@ import org.codehaus.groovy.transform.GroovyASTTransformationClass;
  * of one bean - provided every declaration with the name carries its own discriminating
  * condition (e.g. {@code .annotate(ConditionalOnProperty, ...)}) so that at most one of them
  * registers at runtime.</li>
- * <li>{@code field(["name", ] Type)}, optionally chained with {@code .value(...)} and/or
+ * <li>{@code field(["name", ] Type)}, optionally chained with {@code .value(...)},
+ * {@code .typeArguments(Type, ...)} and/or
  * (repeatably) {@code .annotate(AnnotationType[, attr: value, ...])}. Declares a private field on
  * the generated class, for state shared across bean methods. The usual case is injected
  * configuration: {@code field("encoding", String).value(Settings.GSP_VIEW_ENCODING, "UTF-8")}
@@ -76,8 +82,8 @@ import org.codehaus.groovy.transform.GroovyASTTransformationClass;
  * takes a bare config key with no default ({@code .value("app.encoding")} compiles to
  * {@code @Value("${app.encoding}")}), while a string already containing a {@code ${...}}
  * placeholder or {@code #{...}} SpEL expression passes through verbatim.</li>
- * <li>{@code method(["name", ] Type) { ... }}, chainable with {@code .annotate(...)} only
- * ({@code .value(...)} is field-specific).
+ * <li>{@code method(["name", ] Type) { ... }}, chainable with {@code .annotate(...)} and
+ * {@code .typeArguments(...)} only ({@code .value(...)} is field-specific).
  * Declares a private helper method on the generated class, for logic shared across bean methods,
  * lifted from the closure the same way {@code bean(...)} is.</li>
  * </ul>
