@@ -53,7 +53,13 @@ import org.codehaus.groovy.transform.GroovyASTTransformationClass;
  * {@code .annotate(AnnotationType[, attr: value, ...])} - the last a generic escape hatch
  * attaching any other single-valued annotation. The closure body becomes the generated method's
  * body verbatim, and closure parameters become the generated method's parameters (for
- * constructor-style bean injection). The generated method's name is an implementation detail:
+ * constructor-style bean injection) - annotations and all, so anything Spring reads off an
+ * injection point can be written on the parameter that receives it: {@code @Qualifier} to pick
+ * between candidates, {@code @Value} for a config property, and
+ * {@code @Autowired(required = false)} for a dependency that may not be there, which is the
+ * only way to say "inject this if some other module supplied it" - e.g.
+ * {@code bean('smsSender', SmsSender) { @Autowired(required = false) SmsTransport t -> ... }}.
+ * The generated method's name is an implementation detail:
  * Spring resolves the bean by its {@code @Bean("name")} value, so a bean name that isn't a valid
  * Java identifier (e.g. {@code "my-service"}) simply gets a synthesized {@code <type>$N} method
  * name behind the scenes. The same bean name may even be declared by more than one

@@ -25,6 +25,7 @@ import org.codehaus.groovy.control.CompilationUnit
 import org.codehaus.groovy.control.CompilerConfiguration
 import org.codehaus.groovy.control.MultipleCompilationErrorsException
 import org.codehaus.groovy.control.Phases
+import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.boot.autoconfigure.AutoConfiguration
@@ -1576,6 +1577,124 @@ class GrailsBeansASTTransformationSpec extends Specification {
 
         then:
         paramAnnotations.any { it instanceof Qualifier && it.value() == 'special' }
+    }
+
+    def "an @Autowired(required = false) closure parameter lets the context start when nothing supplies the dependency"() {
+        given: "a bean depending on a type no one wires - the shape of an integration another module may or may not provide"
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.beans.factory.annotation.Autowired
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            interface Transport { }
+
+            class Sender {
+                Transport transport
+
+                Sender(Transport transport) {
+                    this.transport = transport
+                }
+            }
+
+            @GrailsBeans
+            @AutoConfiguration
+            class OptionalDependencyFixture {
+                def beans = {
+                    bean('sender', Sender) { @Autowired(required = false) Transport transport ->
+                        new Sender(transport)
+                    }
+                }
+            }
+        '''
+
+        and:
+        GroovyClassLoader loader = new GroovyClassLoader(getClass().classLoader)
+        loader.parseClass(source)
+        def context = new AnnotationConfigApplicationContext()
+        context.classLoader = loader
+        context.register(loader.loadClass('OptionalDependencyFixture'))
+
+        when:
+        context.refresh()
+
+        then: "Spring passes null rather than refusing to build the bean"
+        noExceptionThrown()
+        context.getBean('sender').transport == null
+
+        cleanup:
+        context.close()
+    }
+
+    def "the same parameter without it is required, which is what makes the annotation load-bearing rather than decorative"() {
+        given: "identical to the fixture above but for the missing annotation"
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            interface RequiredTransport { }
+
+            class RequiredSender {
+                RequiredTransport transport
+
+                RequiredSender(RequiredTransport transport) {
+                    this.transport = transport
+                }
+            }
+
+            @GrailsBeans
+            @AutoConfiguration
+            class RequiredDependencyFixture {
+                def beans = {
+                    bean('sender', RequiredSender) { RequiredTransport transport ->
+                        new RequiredSender(transport)
+                    }
+                }
+            }
+        '''
+
+        and:
+        GroovyClassLoader loader = new GroovyClassLoader(getClass().classLoader)
+        loader.parseClass(source)
+        def context = new AnnotationConfigApplicationContext()
+        context.classLoader = loader
+        context.register(loader.loadClass('RequiredDependencyFixture'))
+
+        when:
+        context.refresh()
+
+        then:
+        thrown(Exception)
+
+        cleanup:
+        context.close()
+    }
+
+    def "an annotation on a closure parameter reaches the generated method as a real parameter annotation"() {
+        given:
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.beans.factory.annotation.Autowired
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @GrailsBeans
+            @AutoConfiguration
+            class OptionalParameterAnnotationFixture {
+                def beans = {
+                    bean('greeting', String) { @Autowired(required = false) StringBuilder input ->
+                        input?.toString() ?: 'none'
+                    }
+                }
+            }
+        '''
+
+        when:
+        Class<?> compiled = compile(source)
+        def method = compiled.getDeclaredMethod('greeting', StringBuilder)
+
+        then: "not merely present, but carrying the attribute that makes the dependency optional"
+        Autowired autowired = method.parameterAnnotations[0].find { it instanceof Autowired } as Autowired
+        autowired != null
+        !autowired.required()
     }
 
     def "a @Qualifier on a closure parameter selects the intended candidate when Spring injects it"() {
