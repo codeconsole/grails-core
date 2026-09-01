@@ -24,7 +24,10 @@ import org.grails.forge.application.ApplicationType
 import org.grails.forge.feature.Category
 import org.grails.forge.fixture.CommandOutputFixture
 import org.grails.forge.options.DevelopmentReloading
+import org.grails.forge.options.GormImpl
+import org.grails.forge.options.JdkVersion
 import org.grails.forge.options.Options
+import org.grails.forge.options.ServletImpl
 import spock.lang.Unroll
 
 class SpringBootStarterSecuritySpec extends ApplicationContextSpec implements CommandOutputFixture {
@@ -45,6 +48,11 @@ class SpringBootStarterSecuritySpec extends ApplicationContextSpec implements Co
 
         and: 'the credentials are required, so an account cannot be saved without them'
         user.contains('username nullable: false, blank: false, unique: true')
+
+        and: 'the default Hibernate app maps to a table, since user is a reserved word in several databases'
+        user.contains('''    static mapping = {
+        table 'users'
+    }''')
 
         and: 'the password field is marked as a password so scaffolding masks it'
         user.contains('password nullable: false, blank: false, password: true')
@@ -98,6 +106,40 @@ class SpringBootStarterSecuritySpec extends ApplicationContextSpec implements Co
         userSpec.contains("getFieldError('username').code == 'blank'")
         userSpec.contains("getFieldError('password').code == 'nullable'")
         userSpec.contains("getFieldError('password').code == 'blank'")
+    }
+
+    @Unroll
+    void 'the User domain maps through the #gorm mapping directive'() {
+        when:
+        def options = new Options(DevelopmentReloading.DEVTOOLS, gorm, ServletImpl.DEFAULT_OPTION, JdkVersion.DEFAULT_OPTION)
+        def user = generate(ApplicationType.WEB, options, ['spring-boot-starter-security'])['grails-app/domain/example/grails/User.groovy']
+
+        then: 'the directive matches the data implementation'
+        user.contains(directive)
+
+        and: 'no directive from another data implementation leaks in'
+        !user.contains(foreign)
+
+        where:
+        gorm                | directive             | foreign
+        GormImpl.HIBERNATE5 | "table 'users'"       | "collection 'users'"
+        GormImpl.HIBERNATE7 | "table 'users'"       | "collection 'users'"
+        GormImpl.MONGODB    | "collection 'users'"  | "table 'users'"
+    }
+
+    void 'the User domain carries no mapping block when neither Hibernate nor MongoDB is used'() {
+        when:
+        def options = new Options(DevelopmentReloading.DEVTOOLS, GormImpl.NEO4J, ServletImpl.DEFAULT_OPTION, JdkVersion.DEFAULT_OPTION)
+        def user = generate(ApplicationType.WEB, options, ['spring-boot-starter-security'])['grails-app/domain/example/grails/User.groovy']
+
+        then: 'no persistence-unit directive is emitted for a store that uses neither'
+        !user.contains('static mapping')
+        !user.contains("table 'users'")
+        !user.contains("collection 'users'")
+
+        and: 'the rest of the domain is still generated'
+        user.contains('class User implements UserDetails')
+        user.contains('username nullable: false, blank: false, unique: true')
     }
 
     void 'the feature appears in its own Spring Security category with the agreed title'() {
