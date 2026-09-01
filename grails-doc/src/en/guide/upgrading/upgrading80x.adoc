@@ -3000,3 +3000,28 @@ job is disabled with `jobEnabled = false`, or the class is not a job artefact of
 
 An application that caught `NullPointerException` around these calls has to catch those instead. See
 <<quartzDynamicScheduling,Dynamic Job Scheduling>>.
+
+==== 52. Coordinate Changes
+
+`grails-datamapping-async` provides the asynchronous programming model for Grails Data — the
+`AsyncEntity` trait and the `async` namespace — and is meant to be depended on directly by
+applications and libraries. Groups nested below `org.apache.grails` are reserved for implementation
+details of Grails, so the artifact moved from the `org.apache.grails.data` group to
+`org.apache.grails`. The artifact id is unchanged:
+
+[source,groovy]
+.build.gradle
+----
+implementation "org.apache.grails:grails-datamapping-async"
+----
+
+The https://github.com/apache/grails-core/blob/8.0.x/RENAME.md[RENAME.md] reference table in the
+grails-core repository maps previous coordinate names to new names. The `rename_gradle_artifacts.sh`
+script in the https://github.com/apache/grails-core/tree/8.0.x/etc/bin[etc/bin] directory of the
+grails-core repository rewrites both the Grails 6 (`org.grails:grails-datastore-gorm-async`) and the
+Grails 7 (`org.apache.grails.data:grails-datamapping-async`) coordinates in a project's Gradle files:
+
+[source,console]
+----
+./rename_gradle_artifacts.sh -l my/project/location
+----
