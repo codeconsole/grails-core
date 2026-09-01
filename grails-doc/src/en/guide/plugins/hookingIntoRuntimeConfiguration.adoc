@@ -248,13 +248,28 @@ class I18nGrailsPlugin extends Plugin {
 }
 ----
 
-A `Plugin` subclass is instantiated by `DefaultGrailsPlugin` via plain reflection, never as a Spring bean, so it cannot itself carry `@Bean` methods or a meaningful `@AutoConfiguration`/`@Conditional*` annotation. When `@GrailsBeans` is applied to a `Plugin` subclass, the compiled `@Bean` methods land on a generated sibling class in the same package instead. Its name follows the Grails plugin-descriptor convention: a class named `*GrailsPlugin` swaps that suffix for `AutoConfiguration` — the example above produces both `I18nGrailsPlugin` (with `beans` stripped, `doWithApplicationContext` untouched) and a separate `I18nAutoConfiguration` class carrying the three `@Bean` methods, exactly the name the hand-written class it replaces would have had. Any other class name appends `AutoConfiguration` (`FooPlugin` → `FooPluginAutoConfiguration`). Everything else about the plugin class — `version`, `watchedResources`, `doWithApplicationContext`, `onChange`, and so on — works exactly as it does without `@GrailsBeans`.
+A `Plugin` subclass is instantiated by `DefaultGrailsPlugin` via plain reflection, never as a Spring bean, so it cannot itself carry `@Bean` methods or a meaningful `@AutoConfiguration`/`@Conditional*` annotation. When `@GrailsBeans` is applied to a `Plugin` subclass, the compiled `@Bean` methods land on a generated sibling class instead, in the plugin's own package by default. Its name follows the Grails plugin-descriptor convention: a class named `*GrailsPlugin` swaps that suffix for `AutoConfiguration` — the example above produces both `I18nGrailsPlugin` (with `beans` stripped, `doWithApplicationContext` untouched) and a separate `I18nAutoConfiguration` class carrying the three `@Bean` methods, exactly the name the hand-written class it replaces would have had. Any other class name appends `AutoConfiguration` (`FooPlugin` → `FooPluginAutoConfiguration`). Everything else about the plugin class — `version`, `watchedResources`, `doWithApplicationContext`, `onChange`, and so on — works exactly as it does without `@GrailsBeans`.
 
 Every annotation on the plugin class that only makes sense on whatever Spring Boot actually evaluates moves onto that sibling too, since none of them has any effect on a class Spring never processes as a bean: `@AutoConfiguration`, the whole `@Conditional*` family, `@Import`/`@ImportAutoConfiguration`/`@ImportResource`, `@ComponentScan`, `@EnableConfigurationProperties`, `@PropertySource`/`@PropertySources`, and `@AutoConfigureOrder`/`Before`/`After`. This also recognises a *composed* annotation built on top of any of these — for example a project-specific `@ConditionalOnFeature` that is itself meta-annotated with Spring Boot's `@ConditionalOnProperty` (rather than `@Conditional` directly), or a custom `@EnableSomething` meta-annotated with `@Import` — so it isn't limited to Spring's own built-in annotation types. An annotation *outside* that set (one neither listed nor meta-annotated with anything listed) stays on the plugin class, where Spring never sees it — for those, name them explicitly with `@GrailsBeans(moveAnnotations = [SomeVendorAnnotation])` and they move like the recognised ones do.
 
 The `@AutoConfiguration` annotation is required whenever `@GrailsBeans` is applied to a `Plugin` subclass, even with no `before=`/`after=`: without it, the generated sibling would carry no annotation telling Spring Boot to process it, and its beans would silently never be registered. Omitting it is a compile-time error rather than a silent runtime gap.
 
-Set `@GrailsBeans(autoConfigurationName = "...")` to override the derived name (still generated in the plugin's own package) — useful when converting an existing, already-public `@AutoConfiguration` class whose name doesn't follow the convention, since other modules may reference it by name (`exclude =`, `before=`/`after=` ordering, `AutoConfiguration.imports`) or import it directly in tests.
+Set `@GrailsBeans(autoConfigurationName = "...")` to override the derived name — useful when converting an existing, already-public `@AutoConfiguration` class whose name doesn't follow the convention, since other modules may reference it by name (`exclude =`, `before=`/`after=` ordering, `AutoConfiguration.imports`) or import it directly in tests.
+
+A bare identifier renames the sibling within the plugin's own package. What those references actually name is the qualified name, though, and a plugin descriptor conventionally sits in the package its implementation classes sit *beneath* rather than alongside them — so the class being replaced is frequently in another package. Give a qualified name and the sibling is generated there instead:
+
+[source,groovy]
+----
+package com.example
+
+@GrailsBeans(autoConfigurationName = 'com.example.web.ExampleAutoConfiguration')
+@AutoConfiguration
+class ExampleGrailsPlugin extends Plugin {
+    def beans = { /* ... */ }
+}
+----
+
+Each part of the name must be a valid Java identifier and none may be a keyword; anything else is a compile-time error. A name containing a dot is taken as written — it is never resolved relative to the plugin's package. Name one of the plugin's own packages: generating into a package the plugin does not otherwise own splits that package across two jars, which a modular or native-image consumer pays for.
 
 `@GrailsBeans` compiles cleanly alongside `@CompileStatic`/`@GrailsCompileStatic` on the same class. The `beans` closure is rewritten into real `@Bean` methods during `CompilePhase.CANONICALIZATION`, which runs before static type checking (`CompilePhase.INSTRUCTION_SELECTION`) ever examines the class, so the type checker only ever sees the generated, concretely-typed methods — never the `bean(...)` DSL calls themselves.
 
