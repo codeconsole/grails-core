@@ -20,6 +20,7 @@ package org.grails.datastore.gorm.dirty.checking
 
 import org.grails.datastore.mapping.dirty.checking.DirtyCheckableCollection
 import org.grails.datastore.mapping.dirty.checking.DirtyCheckable
+import org.grails.datastore.mapping.dirty.checking.DirtyCheckingCollection
 import org.grails.datastore.mapping.dirty.checking.DirtyCheckingMap
 import org.grails.datastore.mapping.dirty.checking.DirtyCheckingSupport
 
@@ -153,6 +154,43 @@ class ScheduleLike {
         then: 'the raw value is stored as-is (Hibernate and transient behaviour unchanged)'
         !(entity.shares instanceof DirtyCheckableCollection)
         entity.hasChanged('shares')
+    }
+
+    def 'assigning an already-tracked wrapper over a tracked value passes it through unchanged'() {
+        given:
+        def entity = entityClass.newInstance()
+        entity.shares = DirtyCheckingSupport.wrap([], (DirtyCheckable) entity, 'shares')
+        entity.trackChanges()
+
+        when: 'a decode-style wrapper is assigned, as a datastore decoder does'
+        def decoded = DirtyCheckingSupport.wrap(['x'], (DirtyCheckable) entity, 'shares')
+        entity.shares = decoded
+
+        then: 'it is stored as-is and NOT re-flagged as an assignment'
+        entity.shares.is(decoded)
+        !((DirtyCheckableCollection) entity.shares).isAssigned()
+    }
+
+    def 'rewrap wraps a plain non-List non-Set collection replacing a tracked value'() {
+        given:
+        def entity = entityClass.newInstance()
+        def tracked = DirtyCheckingSupport.wrap([], (DirtyCheckable) entity, 'shares')
+
+        when:
+        def result = DirtyCheckingSupport.rewrap((DirtyCheckable) entity, 'shares', tracked, new ArrayDeque<String>(['q']))
+
+        then:
+        result instanceof DirtyCheckingCollection
+        ((DirtyCheckableCollection) result).isAssigned()
+    }
+
+    def 'rewrap leaves a non-collection value untouched'() {
+        given:
+        def entity = entityClass.newInstance()
+        def tracked = DirtyCheckingSupport.wrap([], (DirtyCheckable) entity, 'shares')
+
+        expect: 'defensive tail — a value that is neither Collection nor Map is returned as-is'
+        DirtyCheckingSupport.rewrap((DirtyCheckable) entity, 'shares', tracked, 'not-a-collection') == 'not-a-collection'
     }
 
     def 'assigning null over a tracked collection stores null'() {

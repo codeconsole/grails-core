@@ -209,6 +209,56 @@ class DirtyCheckingCollectionSpec extends Specification {
         owner.hasChanged('items')
     }
 
+    def 'listIterator navigation methods delegate without marking the parent dirty'() {
+        given:
+        def owner = new CollectionOwner()
+        def list = new DirtyCheckingList(['a', 'b'], owner, 'items')
+        owner.trackChanges()
+
+        when:
+        ListIterator li = list.listIterator()
+        li.next()
+
+        then:
+        li.hasPrevious()
+        li.nextIndex() == 1
+        li.previousIndex() == 0
+        li.previous() == 'a'
+        !owner.hasChanged()
+    }
+
+    def 'a wrapped SortedSet tracks iterator removal and carries the assigned flag'() {
+        given:
+        def owner = new CollectionOwner()
+        def sorted = new DirtyCheckingSortedSet(new TreeSet(['a', 'b', 'c']), owner, 'sorted')
+        owner.trackChanges()
+
+        expect:
+        !sorted.isAssigned()
+        new DirtyCheckingSortedSet(new TreeSet(), owner, 'sorted', true).isAssigned()
+
+        when:
+        sorted.removeAll { it == 'b' }
+
+        then:
+        sorted.size() == 2
+        owner.hasChanged('sorted')
+    }
+
+    def 'a wrapped Map carries the assigned flag'() {
+        given:
+        def owner = new CollectionOwner()
+
+        expect:
+        !new DirtyCheckingMap([:], owner, 'attrs').isAssigned()
+        new DirtyCheckingMap([:], owner, 'attrs', true).isAssigned()
+    }
+
+    def 'isAssigned defaults to false for implementations that do not override it'() {
+        expect: 'the interface default keeps pre-existing implementations (PersistentCollection) unflagged'
+        !new MinimalDirtyCheckableCollection().isAssigned()
+    }
+
     def 'iteration without mutation does not mark the parent dirty'() {
         given:
         def owner = new CollectionOwner()
@@ -230,4 +280,13 @@ class DirtyCheckingCollectionSpec extends Specification {
 class CollectionOwner implements DirtyCheckable {
     List<String> items
     Set<String> tags
+    SortedSet<String> sorted
+}
+
+class MinimalDirtyCheckableCollection implements DirtyCheckableCollection {
+    boolean hasChanged() { false }
+    int getOriginalSize() { 0 }
+    boolean hasGrown() { false }
+    boolean hasShrunk() { false }
+    boolean hasChangedSize() { false }
 }
