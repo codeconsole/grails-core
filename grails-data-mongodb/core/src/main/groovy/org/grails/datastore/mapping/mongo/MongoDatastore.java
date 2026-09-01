@@ -612,8 +612,10 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
                 // Nothing is waiting on this thread, so an error that would have failed startup has to be
                 // reported here or it is lost entirely.
                 if (indexBuildExecutor.isShutdown() || Thread.currentThread().isInterrupted()) {
+                    // toString rather than the message: an interrupted driver call can arrive wrapped in
+                    // an exception that carries no message of its own.
                     LOG.debug("The background index build was abandoned because the datastore is shutting down: {}",
-                            e.getMessage(), e);
+                            e.toString(), e);
                 }
                 else {
                     LOG.error("The background index build failed: {}. The application is running without the " +
