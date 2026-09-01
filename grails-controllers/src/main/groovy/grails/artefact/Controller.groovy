@@ -65,6 +65,7 @@ import org.grails.web.servlet.mvc.GrailsWebRequest
 import org.grails.web.servlet.mvc.SynchronizerTokensHolder
 import org.grails.web.servlet.mvc.TokenResponseHandler
 import org.grails.web.util.GrailsApplicationAttributes
+import org.grails.web.util.HiddenHttpMethod
 
 /**
  * Classes that implement the {@link Controller} trait are automatically treated as web controllers in a Grails application
@@ -412,7 +413,7 @@ trait Controller implements ResponseRenderer, ResponseRedirector, RequestForward
                 }
             }
 
-            final HttpMethod requestMethod = HttpMethod.valueOf(request.getMethod())
+            final HttpMethod requestMethod = HttpMethod.valueOf(HiddenHttpMethod.effectiveMethod(request))
 
             if (entityIdentifierValue != null) {
                 try {

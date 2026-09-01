@@ -78,16 +78,25 @@ class UrlMappingsHandlerMapping extends AbstractHandlerMapping {
     protected HandlerInterceptor[] webRequestHandlerInterceptors
 
     /**
-     * The HTTP method to match URL mappings against: the request's own, unless a POST carries a "_method"
-     * parameter naming one a browser form cannot submit and this mapping has been asked to resolve it.
-     * Skipped for a forward or include, as in the dispatcher: those inherit the parameters of the request
-     * that started them, so a "_method" meant for it would go on selecting an action for every one after.
+     * The HTTP method to match URL mappings against.
+     *
+     * <p>An override the dispatcher already resolved is honoured wherever it applies, forwards and includes
+     * included - the servlet filter's wrapper reports the overridden method for the whole of a request, and
+     * an application is entitled to the same answer in either mode.</p>
+     *
+     * <p>Deriving a fresh override from the parameters is what an internal dispatch must not do: it inherits
+     * the parameters of the request that started it, so a "_method" the dispatcher never acted on would go
+     * on selecting an action for every forward after it.</p>
      */
     protected String resolveHttpMethod(HttpServletRequest request) {
-        if (!resolveHiddenHttpMethod || WebUtils.isForwardOrInclude(request)) {
+        if (!resolveHiddenHttpMethod) {
             return request.getMethod()
         }
-        HiddenHttpMethod.resolveOverride(request) ?: request.getMethod()
+        String resolved = HiddenHttpMethod.effectiveMethod(request)
+        if (resolved != request.getMethod() || WebUtils.isForwardOrInclude(request)) {
+            return resolved
+        }
+        HiddenHttpMethod.resolveOverride(request) ?: resolved
     }
 
     UrlMappingsHandlerMapping(UrlMappingsHolder urlMappingsHolder) {

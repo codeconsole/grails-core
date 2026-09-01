@@ -34,6 +34,7 @@ import org.grails.config.PropertySourcesConfig
 import org.grails.support.MockApplicationContext
 import org.grails.web.mapping.DefaultUrlMappingEvaluator
 import org.grails.web.mapping.DefaultUrlMappingsHolder
+import org.grails.web.servlet.mvc.GrailsWebRequest
 import org.grails.web.util.HiddenHttpMethod
 
 /**
@@ -88,6 +89,25 @@ class HiddenHttpMethodHandlerMappingSpec extends AbstractUrlMappingsSpec {
         info.actionName == 'update'
 
         where: 'an error dispatch is not among them - it is matched by status code and never gets this far'
+        attribute                             | value
+        RequestDispatcher.FORWARD_REQUEST_URI | '/books/1'
+        RequestDispatcher.INCLUDE_REQUEST_URI | '/books/1'
+    }
+
+    void 'an override the dispatcher resolved survives an internal dispatch'() {
+        given: 'the state after a form POST naming PUT was routed and the action forwarded'
+        def handler = bookHandlerMapping(true)
+
+        when:
+        UrlMappingInfo info = matchInternalDispatch(handler, '/books/1', 'PUT', attribute, value, true)
+
+        then: 'the forward routes as PUT, the same answer the servlet filter wrapper gives for the whole request'
+        info.actionName == 'update'
+
+        and: 'and matches the method-keyed reader, so nothing disagrees within one dispatch'
+        HiddenHttpMethod.effectiveMethod(GrailsWebRequest.lookup().request) == 'PUT'
+
+        where:
         attribute                             | value
         RequestDispatcher.FORWARD_REQUEST_URI | '/books/1'
         RequestDispatcher.INCLUDE_REQUEST_URI | '/books/1'
@@ -244,12 +264,16 @@ class HiddenHttpMethodHandlerMappingSpec extends AbstractUrlMappingsSpec {
     }
 
     private static UrlMappingInfo matchInternalDispatch(UrlMappingsHandlerMapping handler, String uri,
-                                                        String override, String attribute, Object value) {
+                                                        String override, String attribute, Object value,
+                                                        boolean dispatcherResolved = false) {
         def webRequest = GrailsWebMockUtil.bindMockWebRequest()
         def request = webRequest.request
         request.method = 'POST'
         request.requestURI = uri
         request.addParameter('_method', override)
+        if (dispatcherResolved) {
+            request.setAttribute(HiddenHttpMethod.OVERRIDDEN_METHOD_ATTRIBUTE, override)
+        }
         request.setAttribute(attribute, value)
         handler.getHandler(request)?.handler as UrlMappingInfo
     }

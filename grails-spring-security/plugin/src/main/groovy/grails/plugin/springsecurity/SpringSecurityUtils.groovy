@@ -310,7 +310,7 @@ final class SpringSecurityUtils {
 
         // process multipart requests
         MultipartHttpServletRequest multipart = WebUtils.resolveMultipartRequest(request)
-        if ('true' == multipart?.getParameter('ajax')) {
+        if (multipart != null && 'true' == WebUtils.readParameter(multipart, 'ajax')) {
             return true
         }
 

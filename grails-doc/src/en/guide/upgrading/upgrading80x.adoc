@@ -2856,6 +2856,9 @@ application behaves the same whichever mode is in force:
 
 |`RenderContext.getHttpMethod()`
 |
+
+|Command object initialization, and whether a request body is bound
+|
 |===
 +
 Anything branching on `request.method` itself for a `PUT`, `PATCH` or `DELETE` form submit needs
