@@ -330,6 +330,49 @@ class GrailsBeansASTTransformationSpec extends Specification {
         compiled.getDeclaredConstructor().newInstance().greeter() == 'hello'
     }
 
+    def "leaves an unqualified call inside a nested closure alone, where a delegate may be answering it"() {
+        given: "the shape DataBindingGrailsPlugin uses - tap { initialize() } calls the registry, not this"
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            class Registry {
+                boolean ready
+
+                void initialize() {
+                    ready = true
+                }
+            }
+
+            @GrailsBeans
+            @AutoConfiguration
+            class DelegateCallBeans {
+                def beans = {
+                    bean('initialize', String) {
+                        'a bean that happens to share the name'
+                    }
+
+                    bean('registry', Registry) {
+                        new Registry().tap {
+                            initialize()
+                        }
+                    }
+                }
+            }
+        '''
+
+        and: "loaded by name - compile() hands back the first class in the source, which is Registry"
+        GroovyClassLoader loader = new GroovyClassLoader(getClass().classLoader)
+        loader.parseClass(source)
+
+        when:
+        def fixture = loader.loadClass('DelegateCallBeans').getDeclaredConstructor().newInstance()
+
+        then: "no error: tap resolves delegate-first, so the call reaches Registry, not this class"
+        noExceptionThrown()
+        fixture.registry().ready
+    }
+
     def "leaves a same-named call on another receiver alone"() {
         given: "a call with a real receiver is somebody else's method that happens to share the name"
         String source = '''

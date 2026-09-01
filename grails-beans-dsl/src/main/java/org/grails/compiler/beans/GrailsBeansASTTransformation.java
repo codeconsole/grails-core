@@ -905,6 +905,15 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
             }
             MethodNode caller = method;
             method.getCode().visit(new CodeVisitorSupport() {
+                // Deliberately not descending. Inside a closure an unqualified call is resolved
+                // against the delegate first, so `new Registry().tap { initialize() }` calls the
+                // registry - not this class - even though the AST records implicit-this either way.
+                // Reading that as a sibling bean call would reject working code, which is a far
+                // worse trade than missing the rare bean call written inside a nested closure.
+                @Override
+                public void visitClosureExpression(ClosureExpression expression) {
+                }
+
                 @Override
                 public void visitMethodCallExpression(MethodCallExpression call) {
                     super.visitMethodCallExpression(call);
