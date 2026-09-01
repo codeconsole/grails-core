@@ -356,6 +356,36 @@ class GlobalGrailsClassInjectorTransformationSpec extends Specification {
                     'DslBeansAutoConfiguration'
     }
 
+    void "an explicitly annotated descriptor registers its sibling too"() {
+        given: "the entry path the convention does not take: the local transform runs after this one"
+            def sourceFile = new File(tempDir, 'AnnotatedBeansGrailsPlugin.groovy')
+            def targetDir = new File(tempDir, 'build/classes/groovy/main')
+
+        when:
+            def classNode = compileToFile(
+                    sourceFile,
+                    '''
+                        @grails.compiler.beans.GrailsBeans
+                        @org.springframework.boot.autoconfigure.AutoConfiguration
+                        class AnnotatedBeansGrailsPlugin extends grails.plugins.Plugin {
+                            def version = '1.0'
+                            def beans = {
+                                bean('greeting', String) { 'hello' }
+                            }
+                        }
+                    ''',
+                    targetDir
+            )
+
+        then: "the annotation's own transform consumed the closure"
+            classNode.getProperty('beans') == null
+
+        and: "and registered the sibling, which is what silently did not happen before"
+            new File(targetDir,
+                    'META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports').text.trim() ==
+                    'AnnotatedBeansAutoConfiguration'
+    }
+
     void "the implicit beans convention claims the closure of a descriptor that is not a Plugin"() {
         given: "the descriptor names itself *GrailsPlugin but does not extend Plugin, so nothing is generated"
             def sourceFile = new File(tempDir, 'PlainDslBeansGrailsPlugin.groovy')

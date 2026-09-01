@@ -24,7 +24,6 @@ import org.codehaus.groovy.control.CompilationUnit
 import org.codehaus.groovy.control.CompilerConfiguration
 import org.codehaus.groovy.control.Phases
 import org.codehaus.groovy.control.SourceUnit
-import org.codehaus.groovy.control.SourceUnit
 import spock.lang.Specification
 import spock.lang.TempDir
 

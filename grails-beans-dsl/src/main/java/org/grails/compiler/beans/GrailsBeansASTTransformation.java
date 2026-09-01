@@ -160,10 +160,6 @@ import org.springframework.context.annotation.Scope;
 @GroovyASTTransformation(phase = CompilePhase.CANONICALIZATION)
 public class GrailsBeansASTTransformation implements ASTTransformation, CompilationUnitAware {
 
-    /** Class-node metadata carrying the generated sibling's binary name to the global transform. */
-    public static final String GENERATED_AUTO_CONFIGURATION_NAME_METADATA =
-            GrailsBeansASTTransformation.class.getName() + ".generatedAutoConfigurationName";
-
     /**
      * Class-node metadata carrying the compilation's output directory, seeded by the global Grails
      * transform. It resolves the directory for Groovy-Eclipse, where the compiler configuration
@@ -339,8 +335,7 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
         sibling.addAnnotations(siblingAnnotations);
         pluginClass.getAnnotations().removeAll(siblingAnnotations);
 
-        // The name is settled here and nowhere else.
-        pluginClass.putNodeMetaData(GENERATED_AUTO_CONFIGURATION_NAME_METADATA, siblingName);
+        // The name is settled here and nowhere else, so this is where it is registered.
         AutoConfigurationImportsWriter.register(
                 siblingName, targetDirectory(pluginClass, source), source, compilationUnit);
 
