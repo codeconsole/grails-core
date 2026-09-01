@@ -158,10 +158,6 @@ class GlobalGrailsClassInjectorTransformation implements ASTTransformation, Comp
                 pluginVersion = resolvePluginVersion(classNode, projectVersion?.toString())
                 addPluginVersionProperty(classNode, pluginVersion)
                 compileBeansDsl(classNode, source)
-                String generatedAutoConfigurationName = classNode.getNodeMetaData(
-                        GrailsBeansASTTransformation.GENERATED_AUTO_CONFIGURATION_NAME_METADATA)
-                AutoConfigurationImportsWriter.register(
-                        generatedAutoConfigurationName, compilationTargetDirectory, source, compilationUnit)
                 continue
             }
             if (GrailsASTUtils.isSubclassOfOrImplementsInterface(classNode, GRAILS_AUTO_CONFIGURATION_CLASS_NAME)) {
