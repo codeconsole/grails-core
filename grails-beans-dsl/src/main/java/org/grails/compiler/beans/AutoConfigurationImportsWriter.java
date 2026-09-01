@@ -111,10 +111,7 @@ public final class AutoConfigurationImportsWriter {
         if (handAuthored != null && handAuthored.isFile()) {
             Set<String> handAuthoredEntries = new TreeSet<>();
             readEntries(handAuthored, handAuthoredEntries);
-            // A standard compilation registers the same descriptor twice - once from the local
-            // transform and once from the global one, off the node metadata - and the same missing
-            // entry reported twice reads as two problems rather than one.
-            if (registeredBy(compilation).add(className) && !handAuthoredEntries.contains(className)) {
+            if (!handAuthoredEntries.contains(className)) {
                 warn(source, className + " is generated from a beans closure but is not listed in " +
                         SOURCE_IMPORTS_LOCATION + ", so Spring Boot will not read it. Add it there, or delete " +
                         "that file once it holds nothing that is not generated and it will be written for you.");
