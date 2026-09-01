@@ -147,11 +147,11 @@ class GlobalGrailsClassInjectorTransformation implements ASTTransformation, Comp
                 pluginClassNode = classNode
                 pluginVersion = resolvePluginVersion(classNode, projectVersion?.toString())
                 addPluginVersionProperty(classNode, pluginVersion)
-                compileBeansDsl(classNode, source, true)
+                compileBeansDsl(classNode, source)
                 continue
             }
             if (GrailsASTUtils.isSubclassOfOrImplementsInterface(classNode, GRAILS_AUTO_CONFIGURATION_CLASS_NAME)) {
-                compileBeansDsl(classNode, source, false)
+                compileBeansDsl(classNode, source)
             }
             if (updateGrailsFactoriesWithTypes(classNode, [ARTEFACT_HANDLER_CLASS, TRAIT_INJECTOR_CLASS], compilationTargetDirectory)) {
                 continue
@@ -365,10 +365,8 @@ class GlobalGrailsClassInjectorTransformation implements ASTTransformation, Comp
      *
      * <p>A block that is <i>partly</i> DSL-shaped is neither, and is reported rather than dropped -
      * see {@link #reportStrayBeansStatement}.</p>
-     *
-     * @param pluginDescriptor whether the class is a plugin descriptor rather than an application class
      */
-    private void compileBeansDsl(ClassNode classNode, SourceUnit source, boolean pluginDescriptor) {
+    private void compileBeansDsl(ClassNode classNode, SourceUnit source) {
         PropertyNode beansProperty = classNode.getProperty(BEANS_PROPERTY)
         if (beansProperty == null || !classNode.getAnnotations(GRAILS_BEANS_ANNOTATION).isEmpty()) {
             return
@@ -379,7 +377,7 @@ class GlobalGrailsClassInjectorTransformation implements ASTTransformation, Comp
         }
         Statement stray = statements.find { Statement statement -> !isBeansDslStatement(statement) }
         if (stray != null) {
-            reportStrayBeansStatement(statements, stray, source, pluginDescriptor)
+            reportStrayBeansStatement(statements, stray, source)
             return
         }
 
@@ -440,8 +438,8 @@ class GlobalGrailsClassInjectorTransformation implements ASTTransformation, Comp
     }
 
     /**
-     * Reports a top-level statement that is not a {@code bean}/{@code field}/{@code method}
-     * declaration when others in the same block are.
+     * Fails a top-level statement that is not a {@code bean}/{@code field}/{@code method} declaration
+     * when others in the same block are.
      *
      * <p>Silence is the wrong answer here. The all-or-nothing claim above exists to leave an
      * unrelated {@code beans} property alone, and a block with no declarations in it at all is
@@ -451,31 +449,28 @@ class GlobalGrailsClassInjectorTransformation implements ASTTransformation, Comp
      * qualifier instead. Dropping the whole block for that registers <i>nothing</i>, and the failure
      * surfaces far away, as beans that are simply absent at runtime.</p>
      *
-     * <p>An application class fails outright: {@code beans} means this DSL there and has never meant
-     * anything else, so there is no source compatibility to protect. A plugin descriptor only warns,
-     * because its {@code beans} property may predate the DSL - the same reasoning that makes the
-     * claim conservative in the first place.</p>
+     * <p>The rule is the same wherever the block is written: a {@code beans} closure containing any
+     * top-level {@code bean}/{@code field}/{@code method} call is the DSL and must be entirely the
+     * DSL; one containing none is not the DSL and is left alone. A plugin descriptor is not treated
+     * more leniently than an application class, for two reasons. No Grails version has ever read a
+     * {@code beans} <i>property</i> off a descriptor - the properties plugin loading reads are
+     * {@code doWithSpring}, {@code watchedResources}, {@code onChange} and friends - so the
+     * pre-8.0 descriptor this would protect has to be dead code that also happens to contain a
+     * top-level {@code bean(...)} call. And a descriptor is compiled by the plugin's author but its
+     * beans are missed by every downstream application, whose developers never see the plugin's
+     * build output - so loudness matters more there, not less. The way out for a {@code beans}
+     * property that genuinely is not the DSL is to rename it, which the message says.</p>
      */
-    private static void reportStrayBeansStatement(List<Statement> statements, Statement stray, SourceUnit source,
-                                                  boolean pluginDescriptor) {
-        int declarations = statements.count { Statement statement -> isBeansDslStatement(statement) } as int
-        if (declarations == 0) {
+    private static void reportStrayBeansStatement(List<Statement> statements, Statement stray, SourceUnit source) {
+        if (!statements.any { Statement statement -> isBeansDslStatement(statement) }) {
             return
         }
-        String message = "this statement is not a bean(...), field(...) or method(...) declaration. " +
-                "Every top-level statement in a 'beans' block must be one of those three, so this block " +
-                "is not read as the beans DSL and its $declarations declaration(s) register nothing. " +
-                "To declare a bean conditionally put the condition on the bean itself, e.g. " +
-                '.annotate(ConditionalOnProperty, ...) or .conditionalOnMissingBean(), rather than ' +
-                'wrapping it in an if; for logic shared between beans use method(...).'
-        if (pluginDescriptor) {
-            GrailsASTUtils.warning(source, stray,
-                    message + " Left alone rather than failed, because a plugin descriptor's 'beans' " +
-                    'property may predate this DSL.')
-        }
-        else {
-            GrailsASTUtils.error(source, stray, message)
-        }
+        GrailsASTUtils.error(source, stray, "this statement is not a bean(...), field(...) or method(...) " +
+                "declaration, and every top-level statement in a 'beans' block must be one of those three. " +
+                'To declare a bean conditionally, put the condition on the bean itself - ' +
+                '.annotate(ConditionalOnProperty, ...) or .conditionalOnMissingBean() - rather than wrapping ' +
+                'it in an if; for state or logic shared between beans, use field(...) or method(...). ' +
+                "If this 'beans' property is not the beans DSL at all, rename it.")
     }
 
     /**

@@ -396,7 +396,7 @@ class GlobalGrailsClassInjectorTransformationSpec extends Specification {
         then: "the build fails, naming what to do, instead of dropping all three declarations"
             MultipleCompilationErrorsException e = thrown(MultipleCompilationErrorsException)
             e.message.contains('not a bean(...), field(...) or method(...) declaration')
-            e.message.contains('register nothing')
+            e.message.contains('must be one of those three')
     }
 
     void "an if wrapped around beans is reported, since the beans inside it would register nothing"() {
@@ -425,13 +425,13 @@ class GlobalGrailsClassInjectorTransformationSpec extends Specification {
             e.message.contains('ConditionalOnProperty')
     }
 
-    void "a plugin descriptor with a stray statement is warned about, not failed"() {
-        given: "a descriptor whose beans property may predate the DSL, so source compatibility is kept"
+    void "a plugin descriptor with a stray statement fails the same way an application class does"() {
+        given: "a descriptor is compiled by the plugin author, but its missing beans are felt downstream"
             def sourceFile = new File(tempDir, 'StrayBeansGrailsPlugin.groovy')
             def targetDir = new File(tempDir, 'build/classes/groovy/main')
 
         when:
-            def classNode = compileToFile(
+            compileToFile(
                     sourceFile,
                     """
                         class StrayBeansGrailsPlugin {
@@ -445,9 +445,12 @@ class GlobalGrailsClassInjectorTransformationSpec extends Specification {
                     targetDir
             )
 
-        then: "it compiles, and the property is left alone exactly as before"
-            noExceptionThrown()
-            classNode.getProperty('beans') != null
+        then: "no leniency for being a descriptor - the severity must not depend on the class name"
+            MultipleCompilationErrorsException e = thrown(MultipleCompilationErrorsException)
+            e.message.contains('not a bean(...), field(...) or method(...) declaration')
+
+        and: "and the message names the way out for a beans property that genuinely is not the DSL"
+            e.message.contains('rename it')
     }
 
     void "a beans closure with no declarations at all stays silent, being an unrelated property"() {
