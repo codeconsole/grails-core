@@ -42,6 +42,7 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.AnnotationConfigApplicationContext
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.ComponentScan
+import org.springframework.context.annotation.DependsOn
 import org.springframework.context.annotation.ImportResource
 import org.springframework.context.annotation.Lazy
 import org.springframework.context.annotation.Primary
@@ -525,6 +526,47 @@ class GrailsBeansASTTransformationSpec extends Specification {
         'a type that is not generic'         | 'Plain'   | 'String'    | 'Integer'         | "'hello'"                  | 'is not a generic type'
         'something that is not a type'       | 'NotType' | 'ArrayList' | "'String'"        | 'new ArrayList<>()'        | '.typeArguments(...) takes types'
         'no type arguments at all'           | 'Empty'   | 'ArrayList' | ''                | 'new ArrayList<>()'        | 'requires at least one type'
+    }
+
+    @Unroll
+    def "annotate carries an array-valued attribute written as #description"() {
+        given: "@DependsOn.value() is a String[], the shape a single value has to widen into"
+        String source = """
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+            import org.springframework.context.annotation.DependsOn
+
+            @GrailsBeans
+            @AutoConfiguration
+            class ArrayAttributeFixture${fixture} {
+                def beans = {
+                    bean('first', String) {
+                        'first'
+                    }
+
+                    bean('second', String) {
+                        'second'
+                    }
+
+                    bean('third', String).annotate(DependsOn, value: ${written}) {
+                        'third'
+                    }
+                }
+            }
+        """
+
+        when:
+        Class<?> compiled = compile(source)
+        def method = compiled.getDeclaredMethod('third')
+
+        then: "the transform builds the annotation after Groovy's own verifier has run, so this is\
+               worth pinning rather than assuming"
+        method.getAnnotation(DependsOn).value() == expected as String[]
+
+        where:
+        description        | fixture  | written               | expected
+        'a single value'   | 'Scalar' | "'first'"             | ['first']
+        'a list'           | 'List'   | "['first', 'second']" | ['first', 'second']
     }
 
     private Class<?> compile() {

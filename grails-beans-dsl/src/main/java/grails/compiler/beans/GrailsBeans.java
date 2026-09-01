@@ -56,7 +56,9 @@ import org.codehaus.groovy.transform.GroovyASTTransformationClass;
  * full generic type and the type in {@code bean(...)} is a class literal, on which Groovy has no
  * syntax for writing them), and (repeatably)
  * {@code .annotate(AnnotationType[, attr: value, ...])} - the last a generic escape hatch
- * attaching any other annotation. The closure body becomes the generated method's
+ * attaching any other annotation, with as many attributes as it declares; an array-valued one
+ * takes either a list or a single value that widens into a one-element array, exactly as it would
+ * written out ({@code .annotate(DependsOn, value: "other")}). The closure body becomes the generated method's
  * body verbatim, and closure parameters become the generated method's parameters (for
  * constructor-style bean injection) - annotations and all, so anything Spring reads off an
  * injection point can be written on the parameter that receives it: {@code @Qualifier} to pick
