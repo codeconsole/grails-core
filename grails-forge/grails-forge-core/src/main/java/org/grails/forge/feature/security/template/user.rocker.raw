@@ -43,8 +43,8 @@ class User implements UserDetails {
     }
 
     static constraints = {
-        username blank: false, unique: true
-        password blank: false, password: true
+        username nullable: false, blank: false, unique: true
+        password nullable: false, blank: false, password: true
     }
 
     @@Override

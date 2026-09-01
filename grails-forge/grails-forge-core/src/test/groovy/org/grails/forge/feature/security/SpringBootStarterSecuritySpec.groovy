@@ -43,8 +43,11 @@ class SpringBootStarterSecuritySpec extends ApplicationContextSpec implements Co
         user.contains('static hasMany = [roles: String]')
         user.contains('new SimpleGrantedAuthority(it)')
 
+        and: 'the credentials are required, so an account cannot be saved without them'
+        user.contains('username nullable: false, blank: false, unique: true')
+
         and: 'the password field is marked as a password so scaffolding masks it'
-        user.contains('password blank: false, password: true')
+        user.contains('password nullable: false, blank: false, password: true')
 
         and: 'the scaffolded controller and UserDetailsService-backed service are generated'
         output['grails-app/controllers/example/grails/UserController.groovy'].contains('@Scaffold(RestfulServiceController<User>)')
@@ -89,6 +92,12 @@ class SpringBootStarterSecuritySpec extends ApplicationContextSpec implements Co
         def userSpec = output['src/test/groovy/example/grails/UserSpec.groovy']
         userSpec.contains('DomainUnitTest<User>')
         userSpec.contains("authorities*.authority == ['ROLE_ADMIN']")
+
+        and: 'that spec asserts the nullable and blank constraints separately'
+        userSpec.contains("getFieldError('username').code == 'nullable'")
+        userSpec.contains("getFieldError('username').code == 'blank'")
+        userSpec.contains("getFieldError('password').code == 'nullable'")
+        userSpec.contains("getFieldError('password').code == 'blank'")
     }
 
     void 'the feature appears in its own Spring Security category with the agreed title'() {
