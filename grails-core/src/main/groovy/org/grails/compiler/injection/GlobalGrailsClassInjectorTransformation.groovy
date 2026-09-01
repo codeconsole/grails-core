@@ -465,7 +465,7 @@ class GlobalGrailsClassInjectorTransformation implements ASTTransformation, Comp
         if (!statements.any { Statement statement -> isBeansDslStatement(statement) }) {
             return
         }
-        GrailsASTUtils.error(source, stray, "this statement is not a bean(...), field(...) or method(...) " +
+        GrailsASTUtils.error(source, stray, 'this statement is not a bean(...), field(...) or method(...) ' +
                 "declaration, and every top-level statement in a 'beans' block must be one of those three. " +
                 'To declare a bean conditionally, put the condition on the bean itself - ' +
                 '.annotate(ConditionalOnProperty, ...) or .conditionalOnMissingBean() - rather than wrapping ' +
