@@ -33,7 +33,7 @@ Run everything from the repository root:
 
 [source,bash]
 ----
-JAVA_HOME=/path/to/jdk-21 ./gradlew --no-daemon :grails-benchmarks:jmh
+JAVA_HOME=/path/to/jdk-21 ./gradlew --no-daemon :grails-test-examples-benchmarks:jmh
 ----
 
 A full run at default settings takes several minutes. While iterating, narrow it to one class
@@ -41,7 +41,7 @@ and cut the iteration counts:
 
 [source,bash]
 ----
-JAVA_HOME=/path/to/jdk-21 ./gradlew --no-daemon :grails-benchmarks:jmh \
+JAVA_HOME=/path/to/jdk-21 ./gradlew --no-daemon :grails-test-examples-benchmarks:jmh \
   -Pjmh.include=UrlMappingsBenchmark \
   -Pjmh.forks=1 -Pjmh.warmupIterations=1 -Pjmh.iterations=1
 ----
@@ -55,7 +55,7 @@ Render a report from a JMH JSON result file with the Gradle comparison task:
 
 [source,bash]
 ----
-./gradlew -q :grails-benchmarks:jmhCompare --args="--head build/results/jmh/results.json"
+./gradlew -q :grails-test-examples-benchmarks:jmhCompare --args="--head build/results/jmh/results.json"
 ----
 
 Add `--base <path>` to compare paired base and HEAD results. Add `--output <file>` to write the
@@ -158,6 +158,6 @@ the JIT can eliminate the work being measured.
 
 `.github/workflows/benchmark.yml` runs this suite on pull requests labelled `performance`,
 measuring the merge commit against the pull request's base commit on a single runner, and posts
-the comparison produced by `:grails-benchmarks:jmhCompare`. The Groovy tool lives in
-`grails-benchmarks/src/report/groovy`, uses the `report` source set, and is covered by
-`./gradlew :grails-benchmarks:test`. The check is advisory and never fails a build.
+the comparison produced by `:grails-test-examples-benchmarks:jmhCompare`. The Groovy tool lives in
+`grails-test-examples/benchmarks/src/report/groovy`, uses the `report` source set, and is covered by
+`./gradlew :grails-test-examples-benchmarks:test`. The check is advisory and never fails a build.
