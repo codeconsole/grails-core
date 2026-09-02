@@ -402,7 +402,7 @@ trait Controller implements ResponseRenderer, ResponseRedirector, RequestForward
                 if (entityIdentifierValue == null) {
                     final GrailsWebRequest webRequest = GrailsWebRequest
                             .lookup(request)
-                    entityIdentifierValue = webRequest?.getParams().getIdentifier()
+                    entityIdentifierValue = webRequest?.getParams()?.get(GormProperties.IDENTITY)
                 }
             }
             if (entityIdentifierValue instanceof String) {
