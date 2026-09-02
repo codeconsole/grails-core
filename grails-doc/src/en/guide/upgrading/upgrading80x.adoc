@@ -2864,7 +2864,16 @@ happens inside the dispatcher. A security rule matching `DELETE /books/**` **wil
 form submit**, and since the URL is unchanged, `update` and `delete` cannot be told apart by path either.
 **Review any authorization rule keyed on the HTTP method before upgrading.**
 * **`X-HTTP-Method-Override` is no longer honoured**, and a `_method` value other than `PUT`, `PATCH` or
-`DELETE` is ignored rather than applied.
+`DELETE` is ignored rather than applied. This one fails silently for a non-browser client: a proxy or SDK
+that rewrites `DELETE` into `POST` plus the header now has its `POST /books/1` answered by `update` with a
+`200`, while the caller believes it issued a `DELETE`. **Enable the filter for an application any such client
+talks to**, which restores both the header and the unrestricted method names.
+
+* **A filter registered by the application does not by itself select filter mode.** The mode is read from
+`grails.web.hiddenmethod.filter.enabled` and `spring.mvc.hiddenmethod.filter.enabled` only. An application
+that registers its own `HiddenHttpMethodFilter` bean without setting either property gets that filter *and*
+the dispatcher-mode behaviour described here, including the generated `POST` member route. Set the property
+alongside the bean.
 
 * **A controller's `request.method` reports `POST`.** The servlet request reports the method the request
 arrived as -- the one Spring Security saw and the access log recorded. That is deliberate: with the rewrite
@@ -3273,7 +3282,24 @@ rebuilt automatically if the `ApplicationContext` is replaced.
 Applications that implemented `GrailsApplicationAttributes` themselves must ensure their
 implementation holds no request-scoped state and is safe to use from multiple request threads.
 
-===== 54.4 `GrailsWebRequest.getCurrentRequest()` is deprecated
+===== 54.4 `GrailsWebRequest.setMultipartRequest(..)` is deprecated
+
+`setMultipartRequest(HttpServletRequest)` installed the resolved multipart request on the web request. With
+the substitution gone the resolver publishes it as a request attribute instead, and Grails finds it there or
+by unwrapping. The method still works -- it publishes its argument and discards the cached params -- but a
+caller that has one should move to letting the resolver publish it, or set the attribute directly:
+
+[source,groovy]
+----
+// Before
+webRequest.setMultipartRequest(resolved)
+
+// After
+request.setAttribute(WebUtils.MULTIPART_HTTP_SERVLET_REQUEST_ATTRIBUTE, resolved)
+webRequest.multipartRequestResolved()
+----
+
+===== 54.5 `GrailsWebRequest.getCurrentRequest()` is deprecated
 
 `getCurrentRequest()` existed to hand back the resolved multipart request in place of the request Grails
 was bound to. That substitution is gone (see _52. `request` Is No Longer a `MultipartHttpServletRequest`_),

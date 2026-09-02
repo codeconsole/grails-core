@@ -61,6 +61,7 @@ import org.grails.web.beans.PropertyEditorRegistryUtils;
 import org.grails.web.pages.FilteringCodecsByContentTypeSettings;
 import org.grails.web.servlet.mvc.exceptions.ControllerExecutionException;
 import org.grails.web.util.GrailsApplicationAttributes;
+import org.grails.web.util.WebUtils;
 
 /**
  * Encapsulates a Grails request. An instance of this class is bound to the current thread using
@@ -171,6 +172,23 @@ public class GrailsWebRequest extends DispatcherServletWebRequest {
     public void multipartRequestResolved() {
         this.originalParams = null;
         this.params = null;
+    }
+
+    /**
+     * @param multipartRequest the resolved multipart request
+     *
+     * @deprecated as of 8.0, use {@link #multipartRequestResolved()} instead. Grails no longer holds the
+     *             resolved multipart request in place of the request it was bound to; the resolver publishes
+     *             it as {@link org.grails.web.util.WebUtils#MULTIPART_HTTP_SERVLET_REQUEST_ATTRIBUTE} and it
+     *             is found from there or by unwrapping. This publishes the argument on the current request
+     *             and discards the cached params, so an existing caller keeps working.
+     */
+    @Deprecated(since = "8.0")
+    public void setMultipartRequest(HttpServletRequest multipartRequest) {
+        if (multipartRequest != null) {
+            getRequest().setAttribute(WebUtils.MULTIPART_HTTP_SERVLET_REQUEST_ATTRIBUTE, multipartRequest);
+        }
+        multipartRequestResolved();
     }
 
     private void inheritEncodingStateRegistry() {

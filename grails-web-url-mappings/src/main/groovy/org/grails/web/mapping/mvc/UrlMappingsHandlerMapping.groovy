@@ -96,7 +96,16 @@ class UrlMappingsHandlerMapping extends AbstractHandlerMapping {
         if (resolved != request.getMethod() || WebUtils.isForwardOrInclude(request)) {
             return resolved
         }
-        HiddenHttpMethod.resolveOverride(request) ?: resolved
+        String override = HiddenHttpMethod.resolveOverride(request)
+        if (override == null) {
+            return resolved
+        }
+        // Published as well as returned. Routing on an override that allowedMethods cannot see would send
+        // the request to the action the override names and then refuse it with a 405 for the method it
+        // arrived as. The dispatcher normally publishes this before the mapping runs; this is the path
+        // where it did not - a stock DispatcherServlet, or this mapping driven on its own.
+        request.setAttribute(HiddenHttpMethod.OVERRIDDEN_METHOD_ATTRIBUTE, override)
+        override
     }
 
     UrlMappingsHandlerMapping(UrlMappingsHolder urlMappingsHolder) {

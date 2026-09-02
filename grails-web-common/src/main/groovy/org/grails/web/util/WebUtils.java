@@ -50,6 +50,7 @@ import org.springframework.web.context.request.RequestAttributes;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.WebRequestInterceptor;
 import org.springframework.web.context.support.WebApplicationContextUtils;
+import org.springframework.web.multipart.MultipartException;
 import org.springframework.web.multipart.MultipartHttpServletRequest;
 import org.springframework.web.servlet.HandlerInterceptor;
 import org.springframework.web.servlet.View;
@@ -650,7 +651,16 @@ public class WebUtils extends org.springframework.web.util.WebUtils {
             if (!isMultipartContentType(request)) {
                 throw e;
             }
-            LOG.debug("Multipart request parameters could not be parsed; deferring to multipart resolution", e);
+            // A rejected body is the expected case and is left to multipart resolution to report. Anything
+            // else on a multipart request is tolerated for the same reason - the read must not fail the
+            // request here - but is not expected, so it is logged where it will be seen rather than at debug.
+            if (e instanceof MultipartException) {
+                LOG.debug("Multipart request parameters could not be parsed; deferring to multipart resolution", e);
+            }
+            else {
+                LOG.warn("Reading parameters of a multipart request failed for an unexpected reason; " +
+                        "continuing without them. The request is expected to fail during multipart resolution.", e);
+            }
             return fallback;
         }
     }

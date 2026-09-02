@@ -113,6 +113,20 @@ class HiddenHttpMethodHandlerMappingSpec extends AbstractUrlMappingsSpec {
         RequestDispatcher.INCLUDE_REQUEST_URI | '/books/1'
     }
 
+    void 'an override the mapping resolved itself is published for allowedMethods to read'() {
+        given: 'no dispatcher resolved it first - a stock DispatcherServlet, or this mapping on its own'
+        def handler = bookHandlerMapping(true)
+
+        when:
+        UrlMappingInfo info = match(handler, 'POST', '/books/1', 'DELETE')
+
+        then: 'it routes as DELETE'
+        info.actionName == 'delete'
+
+        and: 'and everything reading the effective method agrees, so the action is not then refused a 405'
+        HiddenHttpMethod.effectiveMethod(GrailsWebRequest.lookup().request) == 'DELETE'
+    }
+
     void 'a method-keyed action name is selected by the overridden method'() {
         given: 'a mapping naming a different action per HTTP method'
         def handler = methodKeyedHandlerMapping()

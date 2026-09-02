@@ -532,20 +532,17 @@ public class ControllerActionTransformer implements GrailsArtefactClassInjector,
 
         final BlockStatement code = new BlockStatement();
 
-        // The ALLOWED_METHODS_HANDLED request attribute records that an action of this controller has already
-        // begun handling the request, so that an action invoked programmatically from another action does not
-        // repeat the check.  A controller which restricts no action at all never reads the attribute, so neither
-        // it nor the code which cleans it up is worth generating.
+        // The ALLOWED_METHODS_HANDLED request attribute records that an action has begun handling the request,
+        // so that an action invoked programmatically from another one does not check the original request
+        // method against its own allowedMethods. Every action writes it, restricted or not: the action that
+        // reads it is in whichever controller is entered second, which is not knowable from this one.
         final MapExpression allowedMethodsMapExpression = getAllowedMethodsMapExpression(controllerClass);
-        if (allowedMethodsMapExpression == null) {
-            return code;
-        }
 
         final BlockStatement checkAllowedMethodsBlock = new BlockStatement();
 
         final PropertyExpression requestPropertyExpression = new PropertyExpression(new VariableExpression("this"), "request");
 
-        if (isActionRestricted(allowedMethodsMapExpression, methodName)) {
+        if (allowedMethodsMapExpression != null && isActionRestricted(allowedMethodsMapExpression, methodName)) {
             final PropertyExpression responsePropertyExpression = new PropertyExpression(new VariableExpression("this"), "response");
 
             final ArgumentListExpression isAllowedArgumentList = new ArgumentListExpression();
@@ -668,19 +665,11 @@ public class ControllerActionTransformer implements GrailsArtefactClassInjector,
         final BlockStatement codeToHandleAllowedMethods = getCodeToHandleAllowedMethods(controllerClassNode, methodNode.getName());
 
         BlockStatement tryBlock = new BlockStatement();
-        if (!codeToHandleAllowedMethods.isEmpty()) {
-            tryBlock.addStatement(codeToHandleAllowedMethods);
-        }
+        tryBlock.addStatement(codeToHandleAllowedMethods);
         tryBlock.addStatement(methodBody);
 
         final TryCatchStatement tryCatchStatement = new TryCatchStatement(tryBlock, new EmptyStatement());
         tryCatchStatement.addCatch(catchStatement);
-
-        if (codeToHandleAllowedMethods.isEmpty()) {
-            // Nothing wrote the ALLOWED_METHODS_HANDLED request attribute, so there is nothing to clean up.
-            methodNode.setCode(tryCatchStatement);
-            return;
-        }
 
         final ArgumentListExpression argumentListExpression = new ArgumentListExpression();
         argumentListExpression.addExpression(new ConstantExpression(ALLOWED_METHODS_HANDLED_ATTRIBUTE_NAME));
