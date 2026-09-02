@@ -387,6 +387,15 @@ class StringIdWithObjectIdStorageSpec extends GrailsDataTckSpec<GrailsDataMongoT
 class LegacyVideo {
     String id
     String title
+
+    // Pinned to the pre-8.0.0 default. Since 8.0.0 a bare `String id` stores _id as an
+    // ObjectId, which is exactly what the cases below are demonstrating the absence of --
+    // they document what an application that opts out (globally via
+    // grails.mongodb.stringIds.defaultStoredAs: string, or per domain like this) still
+    // hits when its stored data holds ObjectId _id values.
+    static mapping = {
+        id storedAs: String
+    }
 }
 
 @Entity

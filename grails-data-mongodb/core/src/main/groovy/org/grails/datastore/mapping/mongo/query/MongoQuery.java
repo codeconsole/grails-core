@@ -734,6 +734,29 @@ public class MongoQuery extends BsonQuery implements QueryArgumentsAware {
                 if (criterion instanceof PropertyCriterion && !(criterion instanceof GeoCriterion)) {
                     PropertyCriterion pc = (PropertyCriterion) criterion;
                     PersistentProperty property = entity.getPropertyByName(pc.getProperty());
+                    // A filter on a to-one association carries the *associated* entity's
+                    // identifier, so it has to be sent in that entity's stored type -- exactly
+                    // as IdEquals does for _id. Without this a bidirectional one-to-many or
+                    // hasOne lookup sends a hex String against an ObjectId foreign key and
+                    // silently resolves to an empty collection / null.
+                    if (!(criterion instanceof SubqueryCriterion)) {
+                        PersistentEntity idTarget = null;
+                        if (property instanceof ToOne) {
+                            idTarget = ((ToOne) property).getAssociatedEntity();
+                        }
+                        else if (entity.getIdentity() != null
+                                && entity.getIdentity().getName().equals(pc.getProperty())) {
+                            // A dynamic finder such as findAllById(hex) builds Equals('id', ..),
+                            // not IdEquals, so it never reached the identity handler above.
+                            idTarget = entity;
+                        }
+                        if (idTarget != null && MongoIdCoercion.resolveStoredAs(idTarget) != null) {
+                            Object raw = pc.getValue();
+                            if (raw != null) {
+                                pc.setValue(MongoIdCoercion.coerceIdToStoredType(raw, idTarget));
+                            }
+                        }
+                    }
                     if (property instanceof Custom) {
                         CustomTypeMarshaller customTypeMarshaller = ((Custom) property).getCustomTypeMarshaller();
                         if (!(customTypeMarshaller instanceof CodecCustomTypeMarshaller)) {
