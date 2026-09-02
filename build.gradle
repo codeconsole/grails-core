@@ -59,10 +59,7 @@ ext {
 
     testProjectsStartWith = [
             'grails-test-suite',
-            'grails-test-examples',
-            // Not a test suite, but treated as one here: a build-time JMH harness that is never published,
-            // so neither the BOM nor the functional-test substitution has anything to take from it.
-            'grails-benchmarks'
+            'grails-test-examples'
     ]
     testProjects = [ /* Will be populated by subprojects loop below */]
     docProjects = [ /* Will be populated by subprojects loop below */]
