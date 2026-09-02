@@ -67,10 +67,6 @@ public class MongoTransaction implements Transaction<ClientSession> {
     private final boolean readOnly;
     private boolean active = true;
 
-    public MongoTransaction(AbstractMongoSession session, ClientSession clientSession) {
-        this(session, clientSession, false);
-    }
-
     public MongoTransaction(AbstractMongoSession session, ClientSession clientSession, boolean readOnly) {
         this.session = session;
         this.clientSession = clientSession;
