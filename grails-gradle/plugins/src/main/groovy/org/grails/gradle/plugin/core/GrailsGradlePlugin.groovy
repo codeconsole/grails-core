@@ -223,6 +223,12 @@ class GrailsGradlePlugin implements Plugin<Project> {
 
     private void configureGroovyCompiler(Project project) {
         project.tasks.withType(GroovyCompile).configureEach { GroovyCompile c ->
+            if (c.name == 'compileGroovy') {
+                // Resource-only changes do not ordinarily invalidate compilation. This file changes
+                // whether the compiler owns the generated imports resource, so adding or deleting it
+                // must run the transform even when no Groovy source changed.
+                AutoConfigurationImportsCompileInput.register(project, c)
+            }
             // Use a task-specific config file to avoid overlapping outputs when multiple
             // GroovyCompile tasks exist in the same project (e.g. compileGroovy, compileTestGroovy).
             Provider<RegularFile> groovyCompilerConfigFile = project.layout.buildDirectory.file("grailsGroovyCompilerConfig-${c.name}.groovy")
