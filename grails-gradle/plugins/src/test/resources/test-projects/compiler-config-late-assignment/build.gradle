@@ -9,7 +9,7 @@ gradle.projectsEvaluated {
 }
 
 tasks.register('inspectAssign') {
-    dependsOn 'generateCompileGroovyGrailsCompilerConfig'
+    dependsOn 'compileGroovy'
     doLast {
         def c = tasks.named('compileGroovy', GroovyCompile).get()
         println "FINAL_CONFIG_SCRIPT=${c.groovyOptions.configurationScript?.name}"

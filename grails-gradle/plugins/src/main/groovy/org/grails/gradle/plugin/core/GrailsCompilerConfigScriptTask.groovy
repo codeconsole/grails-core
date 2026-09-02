@@ -23,7 +23,11 @@ import org.gradle.api.DefaultTask
 import org.gradle.api.file.RegularFileProperty
 import org.gradle.api.provider.Property
 import org.gradle.api.tasks.Input
+import org.gradle.api.tasks.InputFile
+import org.gradle.api.tasks.Optional
 import org.gradle.api.tasks.OutputFile
+import org.gradle.api.tasks.PathSensitive
+import org.gradle.api.tasks.PathSensitivity
 import org.gradle.api.tasks.TaskAction
 import org.gradle.work.DisableCachingByDefault
 
@@ -37,8 +41,10 @@ import org.gradle.work.DisableCachingByDefault
  * configuration then makes it an input file that must exist before compilation starts, which is what
  * this task guarantees.</p>
  *
- * <p>The script is a plain {@link Input}, built entirely from configuration state, so this task is
- * up-to-date checked like any other rather than opting out of state tracking.</p>
+ * <p>The Grails half of the script is a plain {@link Input}, built entirely from configuration
+ * state, so this task is up-to-date checked like any other rather than opting out of state
+ * tracking. The build's own script, when it has one, is an {@link InputFile}: Gradle then fails
+ * the build when the file is missing, the way it would have for the compile task itself.</p>
  *
  * @since 8.0
  */
@@ -47,19 +53,35 @@ import org.gradle.work.DisableCachingByDefault
 abstract class GrailsCompilerConfigScriptTask extends DefaultTask {
 
     /**
-     * The complete script: the Grails compiler configuration combined with any
-     * {@code configurationScript} the build configured for the compile task.
+     * The Grails compiler configuration: the star imports, and for a plugin the metadata it
+     * stamps on compiled classes. Absent when there is nothing to add.
      */
     @Input
-    abstract Property<String> getScript()
+    @Optional
+    abstract Property<String> getGrailsScript()
+
+    /**
+     * The {@code configurationScript} the build configured on the compile task, if any. Its
+     * content follows the Grails configuration in the combined script.
+     */
+    @InputFile
+    @Optional
+    @PathSensitive(PathSensitivity.NONE)
+    abstract RegularFileProperty getConfigurationScript()
 
     @OutputFile
     abstract RegularFileProperty getOutputFile()
 
     @TaskAction
     void writeScript() {
-        File target = outputFile.get().asFile
+        def target = outputFile.get().asFile
         target.parentFile.mkdirs()
-        target.text = script.get()
+        target.text = """
+            // Grails groovy compilation configuration to ensure ASTs are applied correctly
+
+            ${grailsScript.orNull?.trim() ?: ''}
+
+            ${configurationScript.asFile.orNull?.text?.trim() ?: ''}
+        """
     }
 }

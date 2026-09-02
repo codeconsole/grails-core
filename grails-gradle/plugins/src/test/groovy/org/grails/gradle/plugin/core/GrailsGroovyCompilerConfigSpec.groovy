@@ -72,6 +72,40 @@ class GrailsGroovyCompilerConfigSpec extends GradleSpecification {
         result.output.contains('COMBINED_CONTAINS_USER_IMPORT=true')
     }
 
+    def "a GroovyCompile that no source set owns is wired like the source set ones"() {
+        given: 'a GroovyCompile registered directly, with a configurationScript of its own'
+        setupTestResourceProject('compiler-config-standalone-task')
+
+        when:
+        def result = executeTask('inspectStandalone')
+
+        then: 'it compiles with the combined script, which carries the Grails imports and its own'
+        result.output.contains('FINAL_CONFIG_SCRIPT=grailsGroovyCompilerConfig-compileCustomGroovy.groovy')
+        result.output.contains('COMBINED_CONTAINS_GRAILS_IMPORT=true')
+        result.output.contains('COMBINED_CONTAINS_USER_IMPORT=true')
+
+        when: 'the compile task is scheduled with the configuration cache'
+        def stored = executeTask('compileCustomGroovy', ['--configuration-cache'])
+        def reused = executeTask('compileCustomGroovy', ['--configuration-cache'])
+
+        then: 'its generator, registered while the graph is built, is part of the cached graph'
+        stored.output.contains('Configuration cache entry stored')
+        reused.output.contains('Configuration cache entry reused')
+        reused.task(':generateCompileCustomGroovyGrailsCompilerConfig')?.outcome == TaskOutcome.UP_TO_DATE
+    }
+
+    def "a configurationScript that does not exist fails the build instead of being dropped"() {
+        given: 'a build whose configurationScript points at a file that is not there'
+        def runner = setupTestResourceProject('compiler-config-missing-user-script')
+
+        when:
+        def result = runner.withArguments('compileGroovy', '--stacktrace').buildAndFail()
+
+        then: 'the failure names the missing file rather than compiling without it'
+        result.output.contains("property 'configurationScript' specifies file")
+        result.output.contains("missing-config.groovy' which doesn't exist")
+    }
+
     def "a plugin project declares the version and name it bakes into compiled classes as inputs"() {
         given: 'a Grails plugin project, whose script stamps projectVersion/projectName AST metadata'
         setupTestResourceProject('compiler-config-plugin-inputs')

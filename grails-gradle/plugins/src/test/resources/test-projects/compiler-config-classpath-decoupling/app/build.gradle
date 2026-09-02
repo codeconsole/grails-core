@@ -15,6 +15,6 @@ tasks.register('inspectDecoupling') {
         println "GENERATOR_DEPENDS_ON_COMPILE_CLASSPATH=${deps.any { it == ':producer:jar' }}"
         println "GENERATOR_DEPENDS_ON_RUNTIME_CLASSPATH=${deps.any { it == ':runtime-only-producer:jar' }}"
         println "GENERATOR_DECLARED_INPUT_FILES=${gen.inputs.files.files.size()}"
-        println "GENERATOR_HAS_CONTENT_INPUT=${gen.inputs.properties.containsKey('script')}"
+        println "GENERATOR_HAS_CONTENT_INPUT=${gen.inputs.properties.containsKey('grailsScript')}"
     }
 }
