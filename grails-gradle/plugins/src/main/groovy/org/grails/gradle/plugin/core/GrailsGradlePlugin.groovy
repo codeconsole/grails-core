@@ -223,6 +223,12 @@ class GrailsGradlePlugin implements Plugin<Project> {
 
     private void configureGroovyCompiler(Project project) {
         project.tasks.withType(GroovyCompile).configureEach { GroovyCompile c ->
+            if (c.name == 'compileGroovy') {
+                // Resource-only changes do not ordinarily invalidate compilation. This file changes
+                // whether the compiler owns the generated imports resource, so adding or deleting it
+                // must run the transform even when no Groovy source changed.
+                AutoConfigurationImportsCompileInput.register(project, c)
+            }
             // Use a task-specific config file to avoid overlapping outputs when multiple
             // GroovyCompile tasks exist in the same project (e.g. compileGroovy, compileTestGroovy).
             Provider<RegularFile> groovyCompilerConfigFile = project.layout.buildDirectory.file("grailsGroovyCompilerConfig-${c.name}.groovy")
@@ -242,6 +248,10 @@ class GrailsGradlePlugin implements Plugin<Project> {
             GrailsExtension grailsExtension = project.extensions.findByType(GrailsExtension)
             if (grailsExtension != null) {
                 c.groovyOptions.forkOptions.jvmArgumentProviders.add(new GrailsCompileStaticArtefactsProvider(grailsExtension.compileStatic))
+
+                // Publish grails { gorm { defaultIdType } } the same way, so GORM's entity
+                // transformation knows what type of id to add to a domain class that declares none.
+                c.groovyOptions.forkOptions.jvmArgumentProviders.add(new GrailsGormIdTypeProvider(grailsExtension.gorm))
             }
             Closure<String> userScriptGenerator = getGroovyCompilerScript(c, project)
             c.doFirst {
@@ -592,6 +602,7 @@ ${importStatements}
             'grails-base-bom',
             'grails-hibernate5-bom',
             'grails-hibernate7-bom',
+            'grails-neo4j-bom',
             'grails-micronaut-bom',
             'grails-hibernate5-micronaut-bom',
             'grails-hibernate7-micronaut-bom',
@@ -672,6 +683,7 @@ ${importStatements}
 
             Map<String, Object> buildPropertiesContents = [
                     'grails.env': Environment.isSystemSet() ? Environment.getCurrent().getName() : Environment.PRODUCTION.getName(),
+                    (BuildSettings.GORM_DEFAULT_ID_TYPE): project.extensions.getByType(GrailsExtension).gorm.defaultIdType.get(),
                     'info.app.name': project.name,
                     'info.app.version': project.version instanceof Serializable ? project.version : project.version.toString(),
                     'info.app.grailsVersion': project.findProperty('grailsVersion')
@@ -938,6 +950,10 @@ ${importStatements}
             // Use a CommandLineArgumentProvider so that the absolute project directory path
             // is normalized for build cache relocatability (PathSensitivity.RELATIVE).
             task.jvmArgumentProviders.add(new GrailsAppBaseDirProvider(project.projectDir))
+            // The application compiles a page again when it changes, so the page opt-in has to reach
+            // the JVM running it as well as the one the build compiles pages in.
+            task.jvmArgumentProviders.add(new GrailsGspCompileStaticProvider(
+                    project.extensions.getByType(GrailsExtension).compileStatic))
             task.systemProperty(BuildSettings.PROJECT_TARGET_DIR, project.layout.buildDirectory.get().asFile.name)
             task.systemProperty(Environment.KEY, defaultGrailsEnv)
             task.systemProperty(Environment.FULL_STACKTRACE, System.getProperty(Environment.FULL_STACKTRACE) ?: '')
