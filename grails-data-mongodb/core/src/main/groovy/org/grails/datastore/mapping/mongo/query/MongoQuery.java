@@ -744,8 +744,8 @@ public class MongoQuery extends BsonQuery implements QueryArgumentsAware {
                         if (property instanceof ToOne) {
                             idTarget = ((ToOne) property).getAssociatedEntity();
                         }
-                        else if (entity.getIdentity() != null
-                                && entity.getIdentity().getName().equals(pc.getProperty())) {
+                        else if (entity.getIdentity() != null &&
+                                entity.getIdentity().getName().equals(pc.getProperty())) {
                             // A dynamic finder such as findAllById(hex) builds Equals('id', ..),
                             // not IdEquals, so it never reached the identity handler above.
                             idTarget = entity;
