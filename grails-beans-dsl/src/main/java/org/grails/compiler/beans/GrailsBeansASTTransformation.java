@@ -975,17 +975,24 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
         return proxiesBeanMethods(host.getAnnotations(), new HashSet<>());
     }
 
+    // `visited` guards descent, and only descent. Recording a type when the branch is pruned - by
+    // the meta-annotation filter, by proxyBeanMethods = false, or by being @Configuration itself -
+    // would memoize an answer that was never computed: @Configuration reached through
+    // @AutoConfiguration is pruned, and a real proxying @Configuration written alongside it would
+    // then be skipped as already-seen, answering false for a class Spring does proxy.
     private boolean proxiesBeanMethods(List<AnnotationNode> annotations, Set<String> visited) {
         for (AnnotationNode annotation : annotations) {
             ClassNode type = annotation.getClassNode();
-            if (type.getName().startsWith("java.lang.annotation.") || !visited.add(type.getName())) {
+            if (type.getName().startsWith("java.lang.annotation.")) {
                 continue;
             }
             if (isFalseConstant(annotation.getMember(PROXY_BEAN_METHODS_MEMBER))) {
                 continue;
             }
-            if (Configuration.class.getName().equals(type.getName()) ||
-                    proxiesBeanMethods(type.getAnnotations(), visited)) {
+            if (Configuration.class.getName().equals(type.getName())) {
+                return true;
+            }
+            if (visited.add(type.getName()) && proxiesBeanMethods(type.getAnnotations(), visited)) {
                 return true;
             }
         }

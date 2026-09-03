@@ -378,6 +378,38 @@ class GrailsBeansASTTransformationSpec extends Specification {
         e.message.contains('never intercepted by the container')
     }
 
+    def "a proxying @Configuration written alongside a non-proxying composed annotation still counts as proxied"() {
+        given: "@AutoConfiguration prunes @Configuration(proxyBeanMethods = false) on the way past it;\
+               the author's own @Configuration must not then be skipped as already-seen"
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+            import org.springframework.context.annotation.Configuration
+
+            @GrailsBeans
+            @AutoConfiguration
+            @Configuration
+            class DoublyAnnotatedBeans {
+                def beans = {
+                    bean('greeter', StringBuilder) {
+                        new StringBuilder('hello')
+                    }
+
+                    bean('shout', String) {
+                        greeter().toString().toUpperCase()
+                    }
+                }
+            }
+        '''
+
+        when:
+        Class<?> compiled = compile(source)
+
+        then: "Spring reads the directly-declared @Configuration, so the sibling call is legitimate"
+        noExceptionThrown()
+        compiled.getDeclaredMethod('shout') != null
+    }
+
     def "still allows a non-static sibling bean call on a proxied @Configuration class"() {
         given: "the narrowing must not have swallowed the exemption the proxied case earns"
         String source = '''
