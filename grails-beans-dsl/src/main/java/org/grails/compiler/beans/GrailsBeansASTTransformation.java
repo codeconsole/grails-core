@@ -865,6 +865,17 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
         // What the generated body actually calls new on: the implementation when one was named,
         // the declared type otherwise.
         ClassNode constructedType = implementationType != null ? implementationType : beanType;
+        // The construction can already prove the declared type's type arguments - a bean declared as
+        // AuditorAware and built from a SpringSecurityAuditorAware is an AuditorAware<Long>, and
+        // Spring matches injection points against exactly that. Restating it in .typeArguments(...)
+        // is then only an opportunity to state it differently from the truth.
+        if (!hasExplicitTypeArguments(qualifierCalls)) {
+            ClassNode evidence = implementationType != null ? implementationType : constructedTypeFromBody(factory);
+            ClassNode inferred = inferTypeArguments(typeAndName.type.getType(), evidence);
+            if (inferred != null) {
+                beanType = inferred;
+            }
+        }
         if (constructsBean && (constructedType.isInterface() || Modifier.isAbstract(constructedType.getModifiers()))) {
             if (implementationType != null) {
                 addError(baseCall, source, constructedType.getNameWithoutPackage() + " is an interface or abstract " +
@@ -1106,6 +1117,87 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
         ClassNode target = declared.redirect();
         return implementation.redirect().equals(target) || implementation.isDerivedFrom(target) ||
                 implementation.implementsInterface(target);
+    }
+
+    private boolean hasExplicitTypeArguments(List<MethodCallExpression> qualifierCalls) {
+        for (MethodCallExpression qualifierCall : qualifierCalls) {
+            if (TYPE_ARGUMENTS_CALL.equals(qualifierCall.getMethodAsString())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * The type a factory closure constructs, when its body is exactly that and nothing else: a last
+     * statement that is a {@code new ...} expression, which in Groovy is the closure's return value.
+     * Anything else - a local, a method call, a conditional - is not evidence of anything, and this
+     * returns null rather than guess.
+     */
+    private ClassNode constructedTypeFromBody(ClosureExpression factory) {
+        if (factory == null || !(factory.getCode() instanceof BlockStatement)) {
+            return null;
+        }
+        List<Statement> statements = ((BlockStatement) factory.getCode()).getStatements();
+        if (statements.isEmpty()) {
+            return null;
+        }
+        Statement last = statements.get(statements.size() - 1);
+        Expression expression = null;
+        if (last instanceof ReturnStatement) {
+            expression = ((ReturnStatement) last).getExpression();
+        }
+        else if (last instanceof ExpressionStatement) {
+            expression = ((ExpressionStatement) last).getExpression();
+        }
+        return expression instanceof ConstructorCallExpression ? expression.getType() : null;
+    }
+
+    /**
+     * The declared type parameterized by what {@code evidence} binds it to, or null when that cannot
+     * be answered concretely - {@code evidence} is unrelated, the declared type is not generic, or
+     * the binding is itself a type variable ({@code class Box<T> implements Holder<T>} proves
+     * nothing about a {@code Holder} bean). Inference only ever adds information the compiler could
+     * already see; where it cannot, the raw type stands exactly as before and
+     * {@code .typeArguments(...)} remains the way to say it.
+     */
+    private ClassNode inferTypeArguments(ClassNode declaredRaw, ClassNode evidence) {
+        GenericsType[] declared = declaredRaw.redirect().getGenericsTypes();
+        if (evidence == null || declared == null || declared.length == 0) {
+            return null;
+        }
+        if (!isConstructibleAs(evidence, declaredRaw)) {
+            return null;
+        }
+        // A raw construction of a generic type proves nothing: Groovy resolves its parameters to
+        // their bounds, so new GenericBox() would infer Holder<Object> - not merely uninformative
+        // but wrong, since a bean typed Holder<Object> no longer matches a Holder<String> injection
+        // point it previously did as a raw Holder.
+        GenericsType[] evidenceParameters = evidence.redirect().getGenericsTypes();
+        if (evidenceParameters != null && evidenceParameters.length > 0 &&
+                (evidence.getGenericsTypes() == null || evidence.getGenericsTypes().length == 0)) {
+            return null;
+        }
+        ClassNode parameterized;
+        try {
+            parameterized = GenericsUtils.parameterizeType(evidence, declaredRaw.redirect());
+        }
+        catch (RuntimeException ignored) {
+            // parameterizeType is best-effort on partially resolved hierarchies; an unusable answer
+            // is the same as no answer.
+            return null;
+        }
+        GenericsType[] resolved = parameterized == null ? null : parameterized.getGenericsTypes();
+        if (resolved == null || resolved.length != declared.length) {
+            return null;
+        }
+        for (GenericsType candidate : resolved) {
+            if (candidate.isPlaceholder() || candidate.isWildcard() || candidate.getType() == null ||
+                    candidate.getType().isGenericsPlaceHolder()) {
+                return null;
+            }
+        }
+        return GenericsUtils.makeClassSafeWithGenerics(declaredRaw, resolved);
     }
 
     private String syntheticBeanMethodName(ClassNode beanType, Set<String> usedNames) {

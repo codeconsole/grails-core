@@ -4248,6 +4248,157 @@ class GrailsBeansASTTransformationSpec extends Specification {
         e.message.contains('field(...) requires a type, optionally preceded by a name')
     }
 
+    def "the implementation type settles the declared type's type arguments without restating them"() {
+        given:
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @GrailsBeans
+            @AutoConfiguration
+            class InferredFromImplementationBeans {
+                def beans = {
+                    bean('auditor', Auditor, LongAuditor)
+                }
+            }
+
+            interface Auditor<T> { T current() }
+            class LongAuditor implements Auditor<Long> { Long current() { 1L } }
+        '''
+
+        when:
+        def method = compile(source).getDeclaredMethod('auditor')
+
+        then: "the generic signature Spring resolves against is there, unstated"
+        method.genericReturnType.toString().contains('Auditor<java.lang.Long>')
+    }
+
+    def "a factory body that is just a construction settles them too"() {
+        given:
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @GrailsBeans
+            @AutoConfiguration
+            class InferredFromBodyBeans {
+                def beans = {
+                    bean('auditor', Auditor) { new LongAuditor() }
+                }
+            }
+
+            interface Auditor<T> { T current() }
+            class LongAuditor implements Auditor<Long> { Long current() { 1L } }
+        '''
+
+        when:
+        def method = compile(source).getDeclaredMethod('auditor')
+
+        then:
+        method.genericReturnType.toString().contains('Auditor<java.lang.Long>')
+    }
+
+    def "an explicit typeArguments still wins over what the construction would prove"() {
+        given:
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @GrailsBeans
+            @AutoConfiguration
+            class ExplicitOverInferredBeans {
+                def beans = {
+                    bean('numbers', List).typeArguments(Number) { new ArrayList<Number>() }
+                }
+            }
+        '''
+
+        when:
+        def method = compile(source).getDeclaredMethod('numbers')
+
+        then:
+        method.genericReturnType.toString().contains('List<java.lang.Number>')
+    }
+
+    def "infers nothing when the construction proves nothing: #description"() {
+        given:
+        String source = """
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @GrailsBeans
+            @AutoConfiguration
+            class NotInferredBeans {
+                def beans = {
+                    bean('holder', Holder) { $body }
+                }
+            }
+
+            interface Holder<T> { T get() }
+            class GenericBox<T> implements Holder<T> { T value; T get() { value } }
+            class StringBox implements Holder<String> { String get() { 'x' } }
+        """
+
+        when:
+        def method = compile(source).getDeclaredMethod('holder')
+
+        then: "the raw type stands, exactly as it did before inference existed"
+        method.genericReturnType.toString() == 'interface Holder'
+
+        where:
+        description                           | body
+        'the construction is raw'             | 'new GenericBox()'
+        'the body is not a bare construction' | 'def b = new StringBox(); b'
+    }
+
+    def "a parameterized construction proves the declared type's arguments as well as a bound implementation does"() {
+        given:
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @GrailsBeans
+            @AutoConfiguration
+            class InferredFromParameterizedConstructionBeans {
+                def beans = {
+                    bean('holder', Holder) { new GenericBox<String>() }
+                }
+            }
+
+            interface Holder<T> { T get() }
+            class GenericBox<T> implements Holder<T> { T value; T get() { value } }
+        '''
+
+        when:
+        def method = compile(source).getDeclaredMethod('holder')
+
+        then:
+        method.genericReturnType.toString().contains('Holder<java.lang.String>')
+    }
+
+    def "a bodyless bean on a generic type is left raw, since it proves only its own placeholders"() {
+        given:
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @GrailsBeans
+            @AutoConfiguration
+            class BodylessGenericBeans {
+                def beans = {
+                    bean('names', ArrayList)
+                }
+            }
+        '''
+
+        when:
+        def method = compile(source).getDeclaredMethod('names')
+
+        then:
+        method.returnType == ArrayList
+        method.genericReturnType.toString() == 'class java.util.ArrayList'
+    }
+
     def "an empty beans block on a plain configuration class is a no-op"() {
         given:
         String source = '''

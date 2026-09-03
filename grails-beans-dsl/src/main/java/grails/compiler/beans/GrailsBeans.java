@@ -44,7 +44,12 @@ import org.codehaus.groovy.transform.GroovyASTTransformationClass;
  * whose body is {@code new Implementation()}, taking its constructor arguments from the closure
  * parameters exactly as the bodyless form does. Naming an implementation is itself the
  * construction, so that form takes no body; an interface with neither an implementation nor a body
- * is an error. It chains with the qualifiers below exactly as the
+ * is an error. Whatever is constructed - a named implementation, or a body that is just a
+ * {@code new ...} expression - also settles the declared type's type arguments where it binds them
+ * concretely, so {@code bean("auditorAware", AuditorAware, SpringSecurityAuditorAware)} declares an
+ * {@code AuditorAware<Long>} without repeating {@code Long}. Where it does not - the evidence is
+ * generic itself, or the body is anything else - the raw type stands and
+ * {@code .typeArguments(...)} says it explicitly. It chains with the qualifiers below exactly as the
  * closure form does ({@code bean(Foo).lazy().conditionalOnMissingBean()}). The closure form may be
  * chained with any combination of
  * {@code .conditionalOnMissingBean(...)} (positional types, the annotation's own named
