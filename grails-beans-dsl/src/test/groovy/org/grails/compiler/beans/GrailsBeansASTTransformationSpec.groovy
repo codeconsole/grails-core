@@ -4529,6 +4529,97 @@ class GrailsBeansASTTransformationSpec extends Specification {
         e.message.contains('applies to bean(...) declarations')
     }
 
+    def "rejects a #description bean declared without staticMethod()"() {
+        given:
+        String source = """
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+            import $type
+
+            @GrailsBeans
+            @AutoConfiguration
+            class NonStaticPostProcessorBeans {
+                def beans = {
+                    bean('postProcessor', ${type.tokenize('.').last()}) { $body }
+                }
+            }
+        """
+
+        when:
+        compile(source)
+
+        then:
+        MultipleCompilationErrorsException e = thrown(MultipleCompilationErrorsException)
+        e.message.contains("a $description bean must be declared .staticMethod()")
+
+        where:
+        description                | type                                                             | body
+        'BeanFactoryPostProcessor' | 'org.springframework.beans.factory.config.BeanFactoryPostProcessor' | '{ factory -> } as BeanFactoryPostProcessor'
+        'BeanPostProcessor'        | 'org.springframework.beans.factory.config.BeanPostProcessor'        | 'new BeanPostProcessor() { }'
+    }
+
+    def "accepts a post-processor bean declared staticMethod()"() {
+        given:
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+            import org.springframework.beans.factory.config.BeanFactoryPostProcessor
+
+            @GrailsBeans
+            @AutoConfiguration
+            class StaticPostProcessorBeans {
+                def beans = {
+                    bean('postProcessor', BeanFactoryPostProcessor).staticMethod() {
+                        { factory -> } as BeanFactoryPostProcessor
+                    }
+                }
+            }
+        '''
+
+        when:
+        def method = compile(source).getDeclaredMethod('postProcessor')
+
+        then:
+        Modifier.isStatic(method.modifiers)
+    }
+
+    def "rejects a subtype of a post-processor too, not just the interface itself"() {
+        given:
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+            import org.springframework.beans.factory.config.BeanFactoryPostProcessor
+            import org.springframework.beans.factory.config.ConfigurableListableBeanFactory
+
+            @GrailsBeans
+            @AutoConfiguration
+            class SubtypePostProcessorBeans {
+                def beans = {
+                    bean('postProcessor', MarkPrimary)
+                }
+            }
+
+            class MarkPrimary implements BeanFactoryPostProcessor {
+                void postProcessBeanFactory(ConfigurableListableBeanFactory factory) { }
+            }
+        '''
+
+        when:
+        compile(source)
+
+        then:
+        MultipleCompilationErrorsException e = thrown(MultipleCompilationErrorsException)
+        e.message.contains('must be declared .staticMethod()')
+    }
+
+    def "leaves an ordinary bean alone"() {
+        given:
+        Class<?> beans = compile()
+
+        expect: "nothing in the standard fixture is a post-processor, so nothing is forced static"
+        !Modifier.isStatic(beans.getDeclaredMethod('greeting').modifiers)
+    }
+
     def "an empty beans block on a plain configuration class is a no-op"() {
         given:
         String source = '''

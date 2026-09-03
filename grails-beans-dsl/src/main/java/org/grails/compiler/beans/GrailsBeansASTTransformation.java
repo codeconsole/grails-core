@@ -856,7 +856,7 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
                         "drop " + implementationName + " and construct it there");
                 return;
             }
-            if (!isConstructibleAs(implementationType, typeAndName.type.getType())) {
+            if (!isSubtypeOf(implementationType, typeAndName.type.getType())) {
                 addError(baseCall, source, implementationName + " is not a " + declaredName + ", so it cannot " +
                         "be the implementation of a bean declared as " + declaredName);
                 return;
@@ -927,7 +927,49 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
             }
         }
 
+        if (!rejectNonStaticPostProcessor(beanMethod, beanType, baseCall, source)) {
+            return;
+        }
+
         classNode.addMethod(beanMethod);
+    }
+
+    private static final String BEAN_FACTORY_POST_PROCESSOR = "org.springframework.beans.factory.config.BeanFactoryPostProcessor";
+    private static final String BEAN_POST_PROCESSOR = "org.springframework.beans.factory.config.BeanPostProcessor";
+
+    /**
+     * A {@code BeanFactoryPostProcessor}/{@code BeanPostProcessor} bean must be creatable without
+     * instantiating its declaring class, because Spring has to obtain it before the ordinary bean
+     * lifecycle it participates in has started. Declared as an instance method it still "works",
+     * which is the problem: the configuration class is instantiated far too early, taking every bean
+     * its methods depend on with it, out of order and past the post-processors that would have
+     * configured them - a class of startup bug that shows up as an unrelated bean being unconfigured
+     * rather than as anything pointing here.
+     *
+     * <p>{@code .staticMethod()} is the fix and is already in the DSL; this only stops the mistake
+     * being silent. An instance-bound post-processor, if one is genuinely wanted, is still writable
+     * as an ordinary {@code @Bean} method on the same class - the block does not claim them.</p>
+     */
+    private boolean rejectNonStaticPostProcessor(MethodNode beanMethod, ClassNode beanType,
+            ASTNode location, SourceUnit source) {
+        if (Modifier.isStatic(beanMethod.getModifiers())) {
+            return true;
+        }
+        String postProcessorType = null;
+        if (isSubtypeOf(beanType, ClassHelper.make(BEAN_FACTORY_POST_PROCESSOR))) {
+            postProcessorType = "BeanFactoryPostProcessor";
+        }
+        else if (isSubtypeOf(beanType, ClassHelper.make(BEAN_POST_PROCESSOR))) {
+            postProcessorType = "BeanPostProcessor";
+        }
+        if (postProcessorType == null) {
+            return true;
+        }
+        addError(location, source, "a " + postProcessorType + " bean must be declared " +
+                ".staticMethod(), so Spring can obtain it without instantiating this class - as an " +
+                "instance method it forces that instantiation before the beans it post-processes " +
+                "are configured");
+        return false;
     }
 
     // The methods this block just generated, in declaration order: everything on the host that was
@@ -1108,15 +1150,15 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
     }
 
     /**
-     * Whether {@code implementation} can stand in for a bean declared as {@code declared}. Checked
-     * here rather than left to the generated {@code return new Impl()} so the failure names both
-     * types and points at the {@code bean(...)} statement, instead of surfacing as an assignment
-     * type error inside a body the author never wrote.
+     * Whether {@code candidate} is a {@code target}. Used for the implementation type, where
+     * checking it here rather than leaving it to the generated {@code return new Impl()} means the
+     * failure names both types and points at the {@code bean(...)} statement instead of surfacing as
+     * an assignment error inside a body the author never wrote.
      */
-    private boolean isConstructibleAs(ClassNode implementation, ClassNode declared) {
-        ClassNode target = declared.redirect();
-        return implementation.redirect().equals(target) || implementation.isDerivedFrom(target) ||
-                implementation.implementsInterface(target);
+    private boolean isSubtypeOf(ClassNode candidate, ClassNode target) {
+        ClassNode resolved = target.redirect();
+        return candidate.redirect().equals(resolved) || candidate.isDerivedFrom(resolved) ||
+                candidate.implementsInterface(resolved);
     }
 
     private boolean hasExplicitTypeArguments(List<MethodCallExpression> qualifierCalls) {
@@ -1166,7 +1208,7 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
         if (evidence == null || declared == null || declared.length == 0) {
             return null;
         }
-        if (!isConstructibleAs(evidence, declaredRaw)) {
+        if (!isSubtypeOf(evidence, declaredRaw)) {
             return null;
         }
         // A raw construction of a generic type proves nothing: Groovy resolves its parameters to
