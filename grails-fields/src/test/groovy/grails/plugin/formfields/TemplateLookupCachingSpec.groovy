@@ -122,4 +122,38 @@ class TemplateLookupCachingSpec extends BuildsAccessorFactory implements Service
 		1 * mockGroovyPageLocator.findTemplateByPath(_) >> templateResource
 	}
 
+	@Issue('https://github.com/apache/grails-core/issues/16162')
+	void 'distinct accessors for the same property shape share the cache'() {
+		given:
+		def templateResource = new GroovyPageResourceScriptSource('/_fields/testBean/stringProperty/_widget.gsp', new ByteArrayResource('BEAN PROPERTY TEMPLATE'.getBytes('UTF-8')))
+
+		and:
+		def bean1 = new TestBean(stringProperty: 'Bart Simpson')
+		def bean2 = new TestBean(stringProperty: 'Lisa Simpson')
+		def property1 = beanPropertyAccessorFactory.accessorFor(bean1, 'stringProperty')
+		def property2 = beanPropertyAccessorFactory.accessorFor(bean2, 'stringProperty')
+
+		and: 'accessors retain distinct request beans, so accessor-keyed memoization would miss'
+		assert !property1.is(property2)
+		assert property1 != property2
+
+		when: 'calling it the first time'
+		def template = service.findTemplate(property1, 'input', null, null)
+
+		then: 'the template path is correct'
+		template.path == '/_fields/testBean/stringProperty/input'
+
+		and: 'the template was found by the service'
+		1 * mockGroovyPageLocator.findTemplateByPath(_) >> templateResource
+
+		when: 'calling it with a different accessor for the same lookup shape'
+		template = service.findTemplate(property2, 'input', null, null)
+
+		then: 'the template path is still correct'
+		template.path == '/_fields/testBean/stringProperty/input'
+
+		and: 'the locator is only called for the first accessor'
+		0 * mockGroovyPageLocator.findTemplateByPath(_)
+	}
+
 }
