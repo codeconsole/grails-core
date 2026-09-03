@@ -125,11 +125,11 @@ class TemplateLookupCachingSpec extends BuildsAccessorFactory implements Service
 	@Issue('https://github.com/apache/grails-core/issues/16162')
 	void 'distinct accessors for the same property shape share the cache'() {
 		given:
-		def templateResource = new GroovyPageResourceScriptSource('/_fields/testBean/stringProperty/_widget.gsp', new ByteArrayResource('BEAN PROPERTY TEMPLATE'.getBytes('UTF-8')))
+		def templateResource = new GroovyPageResourceScriptSource('/_fields/templateLookupCachingCommand/stringProperty/_widget.gsp', new ByteArrayResource('BEAN PROPERTY TEMPLATE'.getBytes('UTF-8')))
 
 		and:
-		def bean1 = new TestBean(stringProperty: 'Bart Simpson')
-		def bean2 = new TestBean(stringProperty: 'Lisa Simpson')
+		def bean1 = new TemplateLookupCachingCommand(stringProperty: 'Bart Simpson')
+		def bean2 = new TemplateLookupCachingCommand(stringProperty: 'Lisa Simpson')
 		def property1 = beanPropertyAccessorFactory.accessorFor(bean1, 'stringProperty')
 		def property2 = beanPropertyAccessorFactory.accessorFor(bean2, 'stringProperty')
 
@@ -141,7 +141,7 @@ class TemplateLookupCachingSpec extends BuildsAccessorFactory implements Service
 		def template = service.findTemplate(property1, 'input', null, null)
 
 		then: 'the template path is correct'
-		template.path == '/_fields/testBean/stringProperty/input'
+		template.path == '/_fields/templateLookupCachingCommand/stringProperty/input'
 
 		and: 'the template was found by the service'
 		1 * mockGroovyPageLocator.findTemplateByPath(_) >> templateResource
@@ -150,10 +150,14 @@ class TemplateLookupCachingSpec extends BuildsAccessorFactory implements Service
 		template = service.findTemplate(property2, 'input', null, null)
 
 		then: 'the template path is still correct'
-		template.path == '/_fields/testBean/stringProperty/input'
+		template.path == '/_fields/templateLookupCachingCommand/stringProperty/input'
 
 		and: 'the locator is only called for the first accessor'
 		0 * mockGroovyPageLocator.findTemplateByPath(_)
 	}
 
+}
+
+class TemplateLookupCachingCommand {
+	String stringProperty
 }
