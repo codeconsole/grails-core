@@ -731,32 +731,11 @@ public class MongoQuery extends BsonQuery implements QueryArgumentsAware {
                     subList.add(dbo);
                 }
 
+                coerceIdCriterion(criterion, entity);
+
                 if (criterion instanceof PropertyCriterion && !(criterion instanceof GeoCriterion)) {
                     PropertyCriterion pc = (PropertyCriterion) criterion;
                     PersistentProperty property = entity.getPropertyByName(pc.getProperty());
-                    // A filter on a to-one association carries the *associated* entity's
-                    // identifier, so it has to be sent in that entity's stored type -- exactly
-                    // as IdEquals does for _id. Without this a bidirectional one-to-many or
-                    // hasOne lookup sends a hex String against an ObjectId foreign key and
-                    // silently resolves to an empty collection / null.
-                    if (!(criterion instanceof SubqueryCriterion)) {
-                        PersistentEntity idTarget = null;
-                        if (property instanceof ToOne) {
-                            idTarget = ((ToOne) property).getAssociatedEntity();
-                        }
-                        else if (entity.getIdentity() != null &&
-                                entity.getIdentity().getName().equals(pc.getProperty())) {
-                            // A dynamic finder such as findAllById(hex) builds Equals('id', ..),
-                            // not IdEquals, so it never reached the identity handler above.
-                            idTarget = entity;
-                        }
-                        if (idTarget != null && MongoIdCoercion.resolveStoredAs(idTarget) != null) {
-                            Object raw = pc.getValue();
-                            if (raw != null) {
-                                pc.setValue(MongoIdCoercion.coerceIdToStoredType(raw, idTarget));
-                            }
-                        }
-                    }
                     if (property instanceof Custom) {
                         CustomTypeMarshaller customTypeMarshaller = ((Custom) property).getCustomTypeMarshaller();
                         if (!(customTypeMarshaller instanceof CodecCustomTypeMarshaller)) {
@@ -770,6 +749,61 @@ public class MongoQuery extends BsonQuery implements QueryArgumentsAware {
                 throw new InvalidDataAccessResourceUsageException("Queries of type " + criterion.getClass().getSimpleName() + " are not supported by this implementation");
             }
         }
+    }
+
+    /**
+     * Sends identifier-bearing criteria in the type the target's {@code _id} is actually stored
+     * as, the same way the {@code IdEquals} handler does for {@code _id} itself.
+     *
+     * <p>Two kinds of criterion carry an identifier without being routed through that handler:
+     * a filter on a to-one association (the associated entity's id, as used by bidirectional
+     * one-to-many and {@code hasOne} lookups) and a dynamic finder such as
+     * {@code findAllById(hex)}, which builds {@code Equals('id', ..)} rather than
+     * {@code IdEquals}. Left uncoerced they send a hex String against an ObjectId and silently
+     * match nothing.
+     *
+     * <p>Recurses through junctions so criteria nested inside {@code not { }},
+     * {@code and { }} and {@code or { }} are covered as well -- the inherited negation handler
+     * dispatches nested criteria itself, so they never reach this preprocessing otherwise, and
+     * an uncoerced negated id predicate fails to exclude the document it names.
+     */
+    private static void coerceIdCriterion(Criterion criterion, PersistentEntity entity) {
+        if (criterion instanceof Junction) {
+            for (Criterion nested : ((Junction) criterion).getCriteria()) {
+                coerceIdCriterion(nested, entity);
+            }
+            return;
+        }
+        if (!(criterion instanceof PropertyCriterion)
+                || criterion instanceof GeoCriterion
+                || criterion instanceof SubqueryCriterion) {
+            return;
+        }
+        PropertyCriterion pc = (PropertyCriterion) criterion;
+        PersistentEntity idTarget = resolveIdCriterionTarget(entity, pc.getProperty());
+        if (idTarget == null || MongoIdCoercion.resolveStoredAs(idTarget) == null) {
+            return;
+        }
+        Object raw = pc.getValue();
+        if (raw != null) {
+            pc.setValue(MongoIdCoercion.coerceIdToStoredType(raw, idTarget));
+        }
+    }
+
+    /**
+     * The entity whose identifier mapping governs a criterion on {@code propertyName}: the
+     * associated entity for a to-one association, the queried entity for its own identity,
+     * otherwise {@code null}.
+     */
+    private static PersistentEntity resolveIdCriterionTarget(PersistentEntity entity, String propertyName) {
+        PersistentProperty property = entity.getPropertyByName(propertyName);
+        if (property instanceof ToOne) {
+            return ((ToOne) property).getAssociatedEntity();
+        }
+        if (entity.getIdentity() != null && entity.getIdentity().getName().equals(propertyName)) {
+            return entity;
+        }
+        return null;
     }
 
     /**

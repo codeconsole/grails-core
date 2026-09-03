@@ -188,6 +188,49 @@ class StringIdAssociationStorageSpec extends GrailsDataTckSpec<GrailsDataMongoTc
         RefTicket.get(ticket.id).project.name == 'New owner'
     }
 
+    void "an id criterion nested in a not block is coerced"() {
+        given: 'the inherited negation handler dispatches nested criteria itself, bypassing preprocessing'
+        String keepId = new RefProject(name: 'Keep').save(flush: true).id
+        String dropId = new RefProject(name: 'Drop').save(flush: true).id
+
+        when:
+        manager.session.clear()
+        List<RefProject> found = RefProject.where { not { eq 'id', dropId } }.list()
+
+        then: 'uncoerced, the nested String predicate excludes nothing and Drop comes back'
+        found*.id.contains(keepId)
+        !found*.id.contains(dropId)
+    }
+
+    void "findAllByIdNot excludes the document it names"() {
+        given:
+        String keepId = new RefProject(name: 'Retained').save(flush: true).id
+        String dropId = new RefProject(name: 'Excluded').save(flush: true).id
+
+        when:
+        manager.session.clear()
+        List<RefProject> found = RefProject.findAllByIdNot(dropId)
+
+        then:
+        found*.id.contains(keepId)
+        !found*.id.contains(dropId)
+    }
+
+    void "a to-one association criterion nested in a not block is coerced"() {
+        given:
+        RefProject a = new RefProject(name: 'Alpha').save(flush: true)
+        RefProject b = new RefProject(name: 'Beta').save(flush: true)
+        new RefTicket(title: 'in alpha', project: a).save(flush: true)
+        new RefTicket(title: 'in beta', project: b).save(flush: true)
+
+        when:
+        manager.session.clear()
+        List<RefTicket> found = RefTicket.where { not { eq 'project', RefProject.get(a.id) } }.list()
+
+        then:
+        found*.title == ['in beta']
+    }
+
     private MongoCollection<Document> rawTickets() {
         manager.mongoClient.getDatabase('test').getCollection('refTicket')
     }
