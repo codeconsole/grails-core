@@ -51,11 +51,16 @@ import org.springframework.context.annotation.PropertySources
 import org.springframework.context.annotation.Scope
 import org.springframework.core.annotation.Order
 import org.springframework.core.env.MapPropertySource
+import org.springframework.context.annotation.Conditional
+import org.springframework.core.type.AnnotatedTypeMetadata
+import org.springframework.context.annotation.ConditionContext
 import spock.lang.Specification
 import spock.lang.TempDir
 import spock.lang.Unroll
 
+import grails.compiler.beans.ConditionalOnGrailsEnv
 import grails.plugins.Plugin
+import grails.util.Environment
 
 class GrailsBeansASTTransformationSpec extends Specification {
 
@@ -4618,6 +4623,110 @@ class GrailsBeansASTTransformationSpec extends Specification {
 
         expect: "nothing in the standard fixture is a post-processor, so nothing is forced static"
         !Modifier.isStatic(beans.getDeclaredMethod('greeting').modifiers)
+    }
+
+    def "grailsEnv(...) compiles to @ConditionalOnGrailsEnv, not a grails.env property condition"() {
+        given:
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @GrailsBeans
+            @AutoConfiguration
+            class EnvironmentBeans {
+                def beans = {
+                    bean('devOnly', String).grailsEnv('development') { 'dev' }
+                    bean('nonProduction', String).grailsEnv('development', 'test') { 'not prod' }
+                }
+            }
+        '''
+
+        when:
+        Class<?> beans = compile(source)
+
+        then:
+        beans.getDeclaredMethod('devOnly').getAnnotation(ConditionalOnGrailsEnv).value() == ['development'] as String[]
+        beans.getDeclaredMethod('nonProduction').getAnnotation(ConditionalOnGrailsEnv).value() == ['development', 'test'] as String[]
+
+        and: "it is a real Spring condition, so Spring evaluates it like any other"
+        ConditionalOnGrailsEnv.isAnnotationPresent(Conditional)
+        ConditionalOnGrailsEnv.getAnnotation(Conditional).value() == [OnGrailsEnvCondition] as Class[]
+    }
+
+    def "the condition matches the environment Grails reports, including one nobody set as a property"() {
+        given: "an environment inferred by Grails, with no grails.env property anywhere"
+        def context = new AnnotationConfigApplicationContext()
+        context.environment.propertySources.addFirst(new MapPropertySource('empty', [:]))
+        def condition = new OnGrailsEnvCondition()
+        def metadata = Mock(AnnotatedTypeMetadata)
+        metadata.getAnnotationAttributes(ConditionalOnGrailsEnv.name) >> [value: names as String[]]
+        def conditionContext = Mock(ConditionContext)
+        conditionContext.getClassLoader() >> getClass().classLoader
+        conditionContext.getEnvironment() >> context.environment
+
+        expect:
+        condition.matches(conditionContext, metadata) == matches
+
+        cleanup:
+        context.close()
+
+        where:
+        names                       | matches
+        [Environment.current.name]  | true
+        ['no-such-environment']     | false
+        ['no-such-environment', Environment.current.name] | true
+    }
+
+    def "rejects grailsEnv(...) #description"() {
+        given:
+        String source = """
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @GrailsBeans
+            @AutoConfiguration
+            class BadEnvironmentBeans {
+                def beans = {
+                    bean('greeting', String).grailsEnv($arguments) { 'hello' }
+                }
+            }
+        """
+
+        when:
+        compile(source)
+
+        then:
+        MultipleCompilationErrorsException e = thrown(MultipleCompilationErrorsException)
+        e.message.contains(message)
+
+        where:
+        description                  | arguments   | message
+        'with no environment'        | ''          | 'requires at least one environment name'
+        'with a blank environment'   | "'  '"      | 'non-blank environment names'
+        'with something not a String'| 'String'    | 'non-blank environment names'
+    }
+
+    def "grailsEnv(...) tells two same-named beans apart, as any other condition does"() {
+        given:
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @GrailsBeans
+            @AutoConfiguration
+            class PerEnvironmentBeans {
+                def beans = {
+                    bean('store', String).grailsEnv('development') { 'in-memory' }
+                    bean('store', String).grailsEnv('production') { 'redis' }
+                }
+            }
+        '''
+
+        when: "both declare the same bean name under mutually exclusive conditions"
+        Class<?> beans = compile(source)
+
+        then: "the shared-name check accepts them, and both methods carry their own condition"
+        beans.declaredMethods.count { it.isAnnotationPresent(ConditionalOnGrailsEnv) } == 2
     }
 
     def "an empty beans block on a plain configuration class is a no-op"() {

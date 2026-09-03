@@ -57,7 +57,9 @@ import org.codehaus.groovy.transform.GroovyASTTransformationClass;
  * the back-off type from the return type), {@code .conditionalOnMissingBeanName(...)} (backs off
  * by this bean's own name - set automatically, stated once - accepting the annotation's other
  * attributes but rejecting {@code name:} and types), {@code .primary()}, {@code .lazy()},
- * {@code .scope("name")}, {@code .staticMethod()} (a {@code static} factory method - required
+ * {@code .scope("name")}, {@code .grailsEnv("development"[, ...])} (registers the bean only in
+ * those Grails environments - see {@link ConditionalOnGrailsEnv} for why this is not
+ * {@code @ConditionalOnProperty} on {@code grails.env}), {@code .staticMethod()} (a {@code static} factory method - required
  * for {@code BeanFactoryPostProcessor}/{@code BeanPostProcessor} beans, which must be creatable
  * without instantiating their declaring configuration class, and rejected at compile time when
  * such a bean is declared without it),

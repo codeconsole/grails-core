@@ -97,6 +97,8 @@ import org.springframework.context.annotation.PropertySource;
 import org.springframework.context.annotation.PropertySources;
 import org.springframework.context.annotation.Scope;
 
+import grails.compiler.beans.ConditionalOnGrailsEnv;
+
 /**
  * Rewrites the {@code beans} closure DSL on a {@link grails.compiler.beans.GrailsBeans}-annotated
  * class into real {@code @Bean} factory methods, at compile time.
@@ -189,9 +191,11 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
     private static final String ANNOTATE_CALL = "annotate";
     private static final String VALUE_CALL = "value";
     private static final String TYPE_ARGUMENTS_CALL = "typeArguments";
+    private static final String GRAILS_ENV_CALL = "grailsEnv";
     private static final Set<String> BEAN_QUALIFIER_CALL_NAMES = Set.of(
             CONDITIONAL_ON_MISSING_BEAN_CALL, CONDITIONAL_ON_MISSING_BEAN_NAME_CALL,
-            PRIMARY_CALL, LAZY_CALL, SCOPE_CALL, STATIC_METHOD_CALL, ANNOTATE_CALL, TYPE_ARGUMENTS_CALL);
+            PRIMARY_CALL, LAZY_CALL, SCOPE_CALL, STATIC_METHOD_CALL, ANNOTATE_CALL, TYPE_ARGUMENTS_CALL,
+            GRAILS_ENV_CALL);
     // field(...) and method(...) declare plain class members, not beans - bean-specific
     // qualifiers don't apply; .value(...) (@Value config injection) is field-only.
     private static final Set<String> FIELD_QUALIFIER_CALL_NAMES = Set.of(ANNOTATE_CALL, VALUE_CALL, TYPE_ARGUMENTS_CALL);
@@ -199,7 +203,7 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
     private static final Set<String> ALL_QUALIFIER_CALL_NAMES = Set.of(
             CONDITIONAL_ON_MISSING_BEAN_CALL, CONDITIONAL_ON_MISSING_BEAN_NAME_CALL,
             PRIMARY_CALL, LAZY_CALL, SCOPE_CALL, STATIC_METHOD_CALL, ANNOTATE_CALL, VALUE_CALL,
-            TYPE_ARGUMENTS_CALL);
+            TYPE_ARGUMENTS_CALL, GRAILS_ENV_CALL);
     private static final String PLUGIN_SUPERCLASS_NAME = "grails.plugins.Plugin";
     private static final String GRAILS_PLUGIN_SUFFIX = "GrailsPlugin";
     private static final String AUTO_CONFIGURATION_SUFFIX = "AutoConfiguration";
@@ -652,6 +656,9 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
             String qualifierName = qualifierCall.getMethodAsString();
             List<Expression> args = withoutTrailingClosure(flatten(qualifierCall.getArguments()), qualifierCall, outerCall);
             if (CONDITIONAL_ON_MISSING_BEAN_CALL.equals(qualifierName) && discriminatesByType(args)) {
+                return true;
+            }
+            if (GRAILS_ENV_CALL.equals(qualifierName) && !args.isEmpty()) {
                 return true;
             }
             if (ANNOTATE_CALL.equals(qualifierName)) {
@@ -1667,6 +1674,9 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
         if (SCOPE_CALL.equals(name)) {
             return applyScopeQualifier(beanMethod, qualifierCall, args, source);
         }
+        if (GRAILS_ENV_CALL.equals(name)) {
+            return applyGrailsEnvQualifier(beanMethod, qualifierCall, args, source);
+        }
         return applyGenericAnnotation(beanMethod, qualifierCall, args, source);
     }
 
@@ -1682,6 +1692,37 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
         AnnotationNode scopeAnnotation = new AnnotationNode(ClassHelper.make(Scope.class));
         scopeAnnotation.setMember("value", scopeArg);
         return addAnnotationIfAbsent(beanMethod, qualifierCall, scopeAnnotation, source);
+    }
+
+    /**
+     * Compiles {@code .grailsEnv("development"[, ...])} into {@code @ConditionalOnGrailsEnv}.
+     *
+     * <p>Not {@code @ConditionalOnProperty(name = "grails.env", ...)}, which is what this would
+     * otherwise be written as and is wrong: Grails infers an environment when none was set, so the
+     * property is absent on exactly the runs the condition is meant to describe, and the bean goes
+     * missing with nothing to show for it.</p>
+     */
+    private boolean applyGrailsEnvQualifier(MethodNode beanMethod, MethodCallExpression qualifierCall,
+            List<Expression> args, SourceUnit source) {
+        if (args.isEmpty()) {
+            addError(qualifierCall, source, ".grailsEnv(...) requires at least one environment name, " +
+                    "e.g. .grailsEnv(\"development\")");
+            return false;
+        }
+        ListExpression names = new ListExpression();
+        for (Expression arg : args) {
+            Expression folded = foldStringValue(arg);
+            Object value = folded instanceof ConstantExpression ? ((ConstantExpression) folded).getValue() : null;
+            if (!(value instanceof String) || ((String) value).isBlank()) {
+                addError(arg, source, ".grailsEnv(...) takes non-blank environment names as Strings, " +
+                        "e.g. .grailsEnv(\"development\", \"test\")");
+                return false;
+            }
+            names.addExpression(folded);
+        }
+        AnnotationNode annotation = new AnnotationNode(ClassHelper.make(ConditionalOnGrailsEnv.class));
+        annotation.setMember("value", names);
+        return addAnnotationIfAbsent(beanMethod, qualifierCall, annotation, source);
     }
 
     private boolean applyGenericAnnotation(AnnotatedNode target, MethodCallExpression qualifierCall,
