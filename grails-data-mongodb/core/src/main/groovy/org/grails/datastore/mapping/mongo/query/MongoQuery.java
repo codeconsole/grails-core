@@ -778,9 +778,9 @@ public class MongoQuery extends BsonQuery implements QueryArgumentsAware {
             }
             return;
         }
-        if (!(criterion instanceof PropertyCriterion)
-                || criterion instanceof GeoCriterion
-                || criterion instanceof SubqueryCriterion) {
+        if (!(criterion instanceof PropertyCriterion) ||
+                criterion instanceof GeoCriterion ||
+                criterion instanceof SubqueryCriterion) {
             return;
         }
         PropertyCriterion pc = (PropertyCriterion) criterion;
