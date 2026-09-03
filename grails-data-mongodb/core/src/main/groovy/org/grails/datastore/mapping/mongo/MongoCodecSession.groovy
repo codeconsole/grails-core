@@ -200,7 +200,9 @@ class MongoCodecSession extends AbstractMongoSession {
                         if (delete.vetoed) continue
 
                         final Object k = coerceIdToStoredType(delete.nativeKey, persistentEntity)
-                        if (k) {
+                        // Groovy truthiness would skip an empty assigned String id, which is a
+                        // valid BSON _id -- the document would silently survive the delete.
+                        if (k != null) {
                             nativeKeys << k
                             final List cascadeOperations = delete.cascadeOperations
                             addPostFlushOperations(cascadeOperations)

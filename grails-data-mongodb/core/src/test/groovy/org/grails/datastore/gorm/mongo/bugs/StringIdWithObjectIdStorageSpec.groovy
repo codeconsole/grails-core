@@ -370,6 +370,28 @@ class StringIdWithObjectIdStorageSpec extends GrailsDataTckSpec<GrailsDataMongoT
         raw.getString('title') == 'Updated'
     }
 
+    void "an empty assigned String id can be deleted"() {
+        given: 'an empty String is a valid BSON _id; Groovy truthiness used to skip it'
+        AssignedNonHexVideo v = new AssignedNonHexVideo(id: '', title: 'Empty key')
+        v.save(flush: true)
+
+        expect:
+        assignedRawCollection().find(new Document('_id', '')).first() != null
+
+        when:
+        manager.session.clear()
+        AssignedNonHexVideo.get('').delete(flush: true)
+
+        then: 'the document is actually removed'
+        assignedRawCollection().find(new Document('_id', '')).first() == null
+    }
+
+    private com.mongodb.client.MongoCollection<Document> assignedRawCollection() {
+        manager.mongoClient
+                .getDatabase('test')
+                .getCollection('assignedNonHexVideo')
+    }
+
     private com.mongodb.client.MongoCollection<Document> rawCollection() {
         manager.mongoClient
                 .getDatabase('test')
