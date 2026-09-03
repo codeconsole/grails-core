@@ -301,6 +301,112 @@ class GrailsBeansASTTransformationSpec extends Specification {
         e.message.contains('SiblingCallAutoConfiguration is not a proxied @Configuration class')
     }
 
+    def "a static @Bean method really is uninterceptable on a proxied @Configuration class"() {
+        given: "hand-written, not the DSL - this pins Spring's behaviour, which is the reason for the rule"
+        String source = '''
+            import org.springframework.context.annotation.Bean
+            import org.springframework.context.annotation.Configuration
+
+            class Leaf { }
+
+            class Holder {
+                Leaf leaf
+
+                Holder(Leaf leaf) {
+                    this.leaf = leaf
+                }
+            }
+
+            @Configuration
+            class HandWrittenStaticConfig {
+                @Bean
+                static Leaf leaf() {
+                    new Leaf()
+                }
+
+                @Bean
+                Holder holder() {
+                    new Holder(leaf())
+                }
+            }
+        '''
+
+        and:
+        GroovyClassLoader loader = new GroovyClassLoader(getClass().classLoader)
+        loader.parseClass(source)
+        def context = new AnnotationConfigApplicationContext()
+        context.classLoader = loader
+        context.register(loader.loadClass('HandWrittenStaticConfig'))
+
+        when:
+        context.refresh()
+
+        then: "CGLIB cannot override a static method, so the call was not intercepted"
+        !context.getBean('holder').leaf.is(context.getBean('leaf'))
+
+        cleanup:
+        context.close()
+    }
+
+    def "rejects a call to a static sibling bean even on a proxied @Configuration class"() {
+        given: "the DSL spelling of the shape above"
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.context.annotation.Configuration
+
+            @GrailsBeans
+            @Configuration
+            class ProxiedStaticSiblingBeans {
+                def beans = {
+                    bean('greeter', StringBuilder).staticMethod() {
+                        new StringBuilder('hello')
+                    }
+
+                    bean('shout', String) {
+                        greeter().toString().toUpperCase()
+                    }
+                }
+            }
+        '''
+
+        when:
+        compile(source)
+
+        then:
+        MultipleCompilationErrorsException e = thrown(MultipleCompilationErrorsException)
+        e.message.contains('is declared .staticMethod()')
+        e.message.contains('never intercepted by the container')
+    }
+
+    def "still allows a non-static sibling bean call on a proxied @Configuration class"() {
+        given: "the narrowing must not have swallowed the exemption the proxied case earns"
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.context.annotation.Configuration
+
+            @GrailsBeans
+            @Configuration
+            class ProxiedInstanceSiblingBeans {
+                def beans = {
+                    bean('greeter', StringBuilder) {
+                        new StringBuilder('hello')
+                    }
+
+                    bean('shout', String) {
+                        greeter().toString().toUpperCase()
+                    }
+                }
+            }
+        '''
+
+        when:
+        Class<?> compiled = compile(source)
+
+        then:
+        noExceptionThrown()
+        compiled.getDeclaredMethod('shout') != null
+    }
+
     def "leaves a call to a method(...) helper alone - only bean methods are singletons to miss"() {
         given:
         String source = '''

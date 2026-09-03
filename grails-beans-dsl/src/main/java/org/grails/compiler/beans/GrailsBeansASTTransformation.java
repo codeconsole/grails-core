@@ -883,6 +883,11 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
      * carries exactly that, and a Grails {@code Application} class is a configuration source without
      * being annotated {@code @Configuration} at all.</p>
      *
+     * <p>A full {@code @Configuration} class is not wholly exempt: the interception is CGLIB
+     * subclassing, so it cannot override a {@code static} method, and Spring documents that calls to
+     * a static {@code @Bean} method are never intercepted - not even there. A {@code .staticMethod()}
+     * bean is therefore checked on every host, and is the only thing checked on a proxied one.</p>
+     *
      * <p>Nothing about that failure is visible at runtime. The context starts, every bean exists, and
      * two objects live where the author meant one - so a listener registers on the wrong instance, or
      * configuration applied to one is missing from the other. It is also the exact mistake a
@@ -890,13 +895,20 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
      * DSL silently changes what those calls mean.</p>
      */
     private void rejectUnproxiedSiblingBeanCalls(ClassNode host, List<MethodNode> generated, SourceUnit source) {
+        boolean proxied = beanMethodsAreProxied(host);
         Map<String, MethodNode> beanMethodsByName = new LinkedHashMap<>();
         for (MethodNode method : generated) {
-            if (!method.getAnnotations(ClassHelper.make(Bean.class)).isEmpty()) {
+            if (method.getAnnotations(ClassHelper.make(Bean.class)).isEmpty()) {
+                continue;
+            }
+            // A proxied host still cannot intercept a .staticMethod() bean: the interception is
+            // CGLIB subclassing, and a static method cannot be overridden. So on a full
+            // @Configuration class those are the only sibling calls still worth rejecting.
+            if (!proxied || method.isStatic()) {
                 beanMethodsByName.put(method.getName(), method);
             }
         }
-        if (beanMethodsByName.isEmpty() || beanMethodsAreProxied(host)) {
+        if (beanMethodsByName.isEmpty()) {
             return;
         }
         for (MethodNode method : generated) {
@@ -924,15 +936,26 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
                     if (target == null || target == caller) {
                         return;
                     }
-                    addError(call, source, "\"" + call.getMethodAsString() + "(...)\" is another bean declared " +
-                            "in this block, and " + host.getNameWithoutPackage() + " is not a proxied " +
-                            "@Configuration class, so this call does not return the bean Spring registered - it " +
-                            "constructs a second instance. Inject it instead, by declaring it as a parameter of " +
-                            "this closure; if what you want is shared logic rather than the bean, move it into a " +
-                            "method(...) declaration.");
+                    addError(call, source, siblingCallCause(host, call.getMethodAsString(), proxied) +
+                            ", so this call does not return the bean Spring registered - it constructs a second " +
+                            "instance. Inject it instead, by declaring it as a parameter of this closure; if what " +
+                            "you want is shared logic rather than the bean, move it into a method(...) declaration.");
                 }
             });
         }
+    }
+
+    // Why this particular call misses the singleton. On a proxied host the map holds only static
+    // bean methods, so reaching here means the target is one.
+    private String siblingCallCause(ClassNode host, String name, boolean proxied) {
+        if (proxied) {
+            return "\"" + name + "(...)\" is another bean declared in this block, and is declared " +
+                    ".staticMethod(). A static @Bean method is never intercepted by the container - not even " +
+                    "on a proxied @Configuration class like " + host.getNameWithoutPackage() + " - because " +
+                    "that interception is CGLIB subclassing, which cannot override a static method";
+        }
+        return "\"" + name + "(...)\" is another bean declared in this block, and " +
+                host.getNameWithoutPackage() + " is not a proxied @Configuration class";
     }
 
     // An unqualified call, or one written against this. Anything with a real receiver is somebody
