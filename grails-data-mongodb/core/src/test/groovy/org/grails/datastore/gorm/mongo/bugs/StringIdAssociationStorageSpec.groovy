@@ -168,6 +168,26 @@ class StringIdAssociationStorageSpec extends GrailsDataTckSpec<GrailsDataMongoTc
         loaded.project.name == 'Apollo 13'
     }
 
+    void "updateAll writes a to-one reference in the target's stored _id type"() {
+        given: 'the bulk update path builds its own $set document rather than going through the codec'
+        RefProject from = new RefProject(name: 'Old owner').save(flush: true)
+        RefProject to = new RefProject(name: 'New owner').save(flush: true)
+        RefTicket ticket = new RefTicket(title: 'Reassign me', project: from).save(flush: true)
+
+        when:
+        manager.session.clear()
+        RefTicket.where { title == 'Reassign me' }.updateAll(project: RefProject.get(to.id))
+        Document raw = rawTickets().find(new Document('_id', new ObjectId(ticket.id))).first()
+
+        then: 'the same representation normal persistence writes, not the declared String'
+        raw.get('project') instanceof ObjectId
+        raw.get('project') == new ObjectId(to.id)
+
+        and: 'so the relationship is still queryable afterwards'
+        manager.session.clear()
+        RefTicket.get(ticket.id).project.name == 'New owner'
+    }
+
     private MongoCollection<Document> rawTickets() {
         manager.mongoClient.getDatabase('test').getCollection('refTicket')
     }

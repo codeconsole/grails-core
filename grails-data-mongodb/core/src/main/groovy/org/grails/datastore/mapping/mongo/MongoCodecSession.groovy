@@ -24,6 +24,7 @@ import groovy.transform.CompileStatic
 
 import jakarta.persistence.FlushModeType
 
+import com.mongodb.DBRef
 import com.mongodb.WriteConcern
 import com.mongodb.bulk.BulkWriteResult
 import com.mongodb.client.FindIterable
@@ -62,6 +63,7 @@ import org.grails.datastore.mapping.model.types.Association
 import org.grails.datastore.mapping.model.types.ToOne
 import org.grails.datastore.mapping.mongo.engine.MongoCodecEntityPersister
 import org.grails.datastore.mapping.mongo.engine.MongoEntityPersister
+import org.grails.datastore.mapping.mongo.config.MongoAttribute
 import org.grails.datastore.mapping.mongo.engine.MongoIdCoercion
 import org.grails.datastore.mapping.mongo.engine.codecs.PersistentEntityCodec
 import org.grails.datastore.mapping.mongo.query.MongoQuery
@@ -351,7 +353,21 @@ class MongoCodecSession extends AbstractMongoSession {
             if (association instanceof ToOne && properties.containsKey(associationName)) {
                 def value = properties.get(associationName)
                 if (value != null) {
-                    properties.put(associationName, association.associatedEntity.reflector.getIdentifier(value))
+                    // Write the reference exactly as ToOneEncoder does on the normal
+                    // persistence path: in the target's stored _id type, as a DBRef where the
+                    // mapping asks for one. Otherwise a bulk update leaves a reference that
+                    // association queries and external clients cannot match.
+                    def associatedEntity = association.associatedEntity
+                    def associationId = MongoIdCoercion.coerceIdToStoredType(
+                            associatedEntity.reflector.getIdentifier(value), associatedEntity)
+                    MongoAttribute attr = (MongoAttribute) association.mapping.mappedForm
+                    if (attr?.isReference()) {
+                        properties.put(associationName,
+                                new DBRef(getCollectionName(associatedEntity), associationId))
+                    }
+                    else {
+                        properties.put(associationName, associationId)
+                    }
                 }
             }
         }
