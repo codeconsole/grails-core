@@ -126,9 +126,9 @@ p.save()
 
 ==== Decoupling the Declared Type from the Storage Type
 
-When a domain declares `String id`, GORM by default writes `_id` as a BSON `String`. This is convenient in application code — HTTP controllers return clean JSON, URLs embed ids directly, and you never need `new ObjectId(...)` at call sites — but it gives up the native `ObjectId` benefits at the storage layer (12-byte index entries vs. 24-byte hex strings, embedded creation timestamp, etc.).
+A domain that declares `String id` is convenient in application code — HTTP controllers return clean JSON, URLs embed ids directly, and you never need `new ObjectId(...)` at call sites. Writing `_id` as a BSON `String` to match would give up the native `ObjectId` benefits at the storage layer (12-byte index entries vs. 24-byte hex strings, embedded creation timestamp, etc.).
 
-You can get both using the `storedAs` mapping option. The domain sees a `String id` (hex form), but `_id` on disk is a BSON `ObjectId`:
+The `storedAs` mapping option decouples the two, so you get both: the domain sees a `String id` (hex form), while `_id` on disk is a BSON `ObjectId`. As of Grails 8.0.0 this is the default for any `String id` that declares no `storedAs` of its own — the mapping below is what that default applies for you, and is only needed to be explicit or to override a global `defaultStoredAs: string`:
 
 [source,groovy]
 ----
