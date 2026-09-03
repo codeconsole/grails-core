@@ -231,6 +231,40 @@ class StringIdAssociationStorageSpec extends GrailsDataTckSpec<GrailsDataMongoTc
         found*.title == ['in beta']
     }
 
+    void "an IN criterion on a to-one association coerces each unwrapped id"() {
+        given: 'getInListQueryValues unwraps instances to their declared id'
+        RefProject a = new RefProject(name: 'In-A').save(flush: true)
+        RefProject b = new RefProject(name: 'In-B').save(flush: true)
+        RefProject c = new RefProject(name: 'In-C').save(flush: true)
+        new RefTicket(title: 'ta', project: a).save(flush: true)
+        new RefTicket(title: 'tb', project: b).save(flush: true)
+        new RefTicket(title: 'tc', project: c).save(flush: true)
+
+        when:
+        manager.session.clear()
+        List<RefTicket> found = RefTicket.where {
+            project in [RefProject.get(a.id), RefProject.get(b.id)]
+        }.list()
+
+        then: 'without coercion these went as hex Strings against ObjectId foreign keys'
+        found*.title as Set == ['ta', 'tb'] as Set
+    }
+
+    void "findAllByProjectInList resolves association ids"() {
+        given:
+        RefProject a = new RefProject(name: 'List-A').save(flush: true)
+        RefProject b = new RefProject(name: 'List-B').save(flush: true)
+        new RefTicket(title: 'la', project: a).save(flush: true)
+        new RefTicket(title: 'lb', project: b).save(flush: true)
+
+        when:
+        manager.session.clear()
+        List<RefTicket> found = RefTicket.findAllByProjectInList([RefProject.get(a.id)])
+
+        then:
+        found*.title == ['la']
+    }
+
     private MongoCollection<Document> rawTickets() {
         manager.mongoClient.getDatabase('test').getCollection('refTicket')
     }

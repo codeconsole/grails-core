@@ -173,12 +173,16 @@ public class MongoQuery extends BsonQuery implements QueryArgumentsAware {
                 Document inQuery = new Document();
                 List<Object> values = getInListQueryValues(entity, in);
 
-                PersistentProperty identityProp = entity.getIdentity();
-                boolean isIdInList = identityProp != null && identityProp.getName().equals(in.getProperty());
-                if (isIdInList && MongoIdCoercion.resolveStoredAs(entity) != null) {
+                // getInListQueryValues unwraps association instances to their *declared*
+                // identifier, so the storage type has to be applied afterwards -- for the
+                // entity's own identity (findAllByIdInList) and equally for a to-one
+                // association (`child in [childInstance]`, findAllByChildInList(..)), whose
+                // ids are governed by the associated entity's mapping, not this one's.
+                PersistentEntity idTarget = resolveIdCriterionTarget(entity, in.getProperty());
+                if (idTarget != null && MongoIdCoercion.resolveStoredAs(idTarget) != null) {
                     List<Object> coerced = new ArrayList<>(values.size());
                     for (Object v : values) {
-                        coerced.add(MongoIdCoercion.coerceIdToStoredType(v, entity));
+                        coerced.add(MongoIdCoercion.coerceIdToStoredType(v, idTarget));
                     }
                     values = coerced;
                 }
