@@ -38,8 +38,13 @@ import org.codehaus.groovy.transform.GroovyASTTransformationClass;
  * parameters but an empty body means the same for a bean with dependencies: the parameters say what
  * is injected and the constructor call is generated from them, in the order written, leaving the
  * compiler to select the constructor from their types just as it would for a hand-written body. Both
- * forms require a concrete type; an interface or abstract type needs a body naming the
- * implementation. It chains with the qualifiers below exactly as the
+ * forms construct the declared type, so both require it to be concrete. To declare a bean as the
+ * interface its consumers inject and still have it constructed, name the implementation after the
+ * type - {@code bean(["name", ] Type, Implementation)} compiles to a method returning {@code Type}
+ * whose body is {@code new Implementation()}, taking its constructor arguments from the closure
+ * parameters exactly as the bodyless form does. Naming an implementation is itself the
+ * construction, so that form takes no body; an interface with neither an implementation nor a body
+ * is an error. It chains with the qualifiers below exactly as the
  * closure form does ({@code bean(Foo).lazy().conditionalOnMissingBean()}). The closure form may be
  * chained with any combination of
  * {@code .conditionalOnMissingBean(...)} (positional types, the annotation's own named

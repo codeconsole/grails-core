@@ -831,7 +831,7 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
             baseArgs = baseArgs.subList(0, baseArgs.size() - 1);
         }
 
-        TypeAndName typeAndName = parseNameAndType(baseArgs, baseCall, source, BEAN_CALL, false);
+        TypeAndName typeAndName = parseNameAndType(baseArgs, baseCall, source, BEAN_CALL, false, true);
         if (typeAndName == null) {
             return;
         }
@@ -840,14 +840,43 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
         if (beanType == null) {
             return;
         }
+        ClassNode implementationType = typeAndName.implementation == null ? null : typeAndName.implementation.getType();
+        String declaredName = typeAndName.type.getType().getNameWithoutPackage();
         // A closure whose body is empty declares construction too, from its own parameters: the
         // parameters say what is injected, and the generated body is the constructor call the author
         // would otherwise have written out. bean(Type) { } with no parameters is bean(Type).
-        boolean constructsDeclaredType = factory == null || isEmpty(factory.getCode());
-        if (constructsDeclaredType && (beanType.isInterface() || Modifier.isAbstract(beanType.getModifiers()))) {
-            addError(baseCall, source, "bean(" + beanType.getNameWithoutPackage() + ") with no factory closure body " +
-                    "constructs the declared type, which cannot be done for an interface or abstract class - " +
-                    "give it a body: bean(" + beanType.getNameWithoutPackage() + ") { new SomeImplementation() }");
+        boolean constructsBean = factory == null || isEmpty(factory.getCode());
+        if (implementationType != null) {
+            String implementationName = implementationType.getNameWithoutPackage();
+            // Naming the implementation IS the construction, so a body answering the same question
+            // again can only disagree with it.
+            if (!constructsBean) {
+                addError(baseCall, source, "bean(" + declaredName + ", " + implementationName + ") already " +
+                        "declares what to construct, so it takes no factory closure body - drop the body, or " +
+                        "drop " + implementationName + " and construct it there");
+                return;
+            }
+            if (!isConstructibleAs(implementationType, typeAndName.type.getType())) {
+                addError(baseCall, source, implementationName + " is not a " + declaredName + ", so it cannot " +
+                        "be the implementation of a bean declared as " + declaredName);
+                return;
+            }
+        }
+        // What the generated body actually calls new on: the implementation when one was named,
+        // the declared type otherwise.
+        ClassNode constructedType = implementationType != null ? implementationType : beanType;
+        if (constructsBean && (constructedType.isInterface() || Modifier.isAbstract(constructedType.getModifiers()))) {
+            if (implementationType != null) {
+                addError(baseCall, source, constructedType.getNameWithoutPackage() + " is an interface or abstract " +
+                        "class, so it cannot be the implementation - name a concrete type: bean(" + declaredName +
+                        ", SomeImplementation)");
+            }
+            else {
+                addError(baseCall, source, "bean(" + declaredName + ") with no factory closure body " +
+                        "constructs the declared type, which cannot be done for an interface or abstract class - " +
+                        "name the implementation: bean(" + declaredName + ", SomeImplementation), or give it a " +
+                        "body: bean(" + declaredName + ") { new SomeImplementation() }");
+            }
             return;
         }
 
@@ -862,8 +891,8 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
 
         Parameter[] beanParameters = factory == null || factory.getParameters() == null ?
                 Parameter.EMPTY_ARRAY : factory.getParameters();
-        Statement beanBody = constructsDeclaredType ?
-                synthesizedConstruction(beanType, beanParameters, baseCall) :
+        Statement beanBody = constructsBean ?
+                synthesizedConstruction(constructedType, beanParameters, baseCall) :
                 factory.getCode();
 
         MethodNode beanMethod = new MethodNode(
@@ -1065,6 +1094,18 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
         ReturnStatement returnStatement = new ReturnStatement(construction);
         returnStatement.setSourcePosition(origin);
         return returnStatement;
+    }
+
+    /**
+     * Whether {@code implementation} can stand in for a bean declared as {@code declared}. Checked
+     * here rather than left to the generated {@code return new Impl()} so the failure names both
+     * types and points at the {@code bean(...)} statement, instead of surfacing as an assignment
+     * type error inside a body the author never wrote.
+     */
+    private boolean isConstructibleAs(ClassNode implementation, ClassNode declared) {
+        ClassNode target = declared.redirect();
+        return implementation.redirect().equals(target) || implementation.isDerivedFrom(target) ||
+                implementation.implementsInterface(target);
     }
 
     private String syntheticBeanMethodName(ClassNode beanType, Set<String> usedNames) {
@@ -1363,16 +1404,43 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
     private static final class TypeAndName {
         private final ClassExpression type;
         private final String name;
+        /** The type actually constructed, when stated separately from the declared type; else null. */
+        private final ClassExpression implementation;
 
-        TypeAndName(ClassExpression type, String name) {
+        TypeAndName(ClassExpression type, String name, ClassExpression implementation) {
             this.type = type;
             this.name = name;
+            this.implementation = implementation;
         }
     }
 
     private TypeAndName parseNameAndType(List<Expression> args, MethodCallExpression call, SourceUnit source,
             String callName, boolean requireValidIdentifier) {
-        if (args.isEmpty() || args.size() > 2 || !(args.get(args.size() - 1) instanceof ClassExpression)) {
+        return parseNameAndType(args, call, source, callName, requireValidIdentifier, false);
+    }
+
+    /**
+     * Reads the {@code [name, ] Type [, Implementation]} head of a DSL statement.
+     *
+     * <p>The implementation type is what separates the declared type from the constructed one, so
+     * that a bean can be declared as the interface its consumers inject while still being built
+     * without a factory closure. It is recognised only by two adjacent type literals - the trailing
+     * one is the implementation - which cannot collide with the {@code (name, Type)} shape, since a
+     * name is a String literal.</p>
+     */
+    private TypeAndName parseNameAndType(List<Expression> args, MethodCallExpression call, SourceUnit source,
+            String callName, boolean requireValidIdentifier, boolean allowImplementation) {
+        // Two trailing type literals mean the second is the implementation. Split it off first so
+        // everything below reads the same [name, ] Type head it always did.
+        ClassExpression implementation = null;
+        if (allowImplementation && args.size() >= 2 &&
+                args.get(args.size() - 1) instanceof ClassExpression &&
+                args.get(args.size() - 2) instanceof ClassExpression) {
+            implementation = (ClassExpression) args.get(args.size() - 1);
+            args = args.subList(0, args.size() - 1);
+        }
+        int maxArgs = 2;
+        if (args.isEmpty() || args.size() > maxArgs || !(args.get(args.size() - 1) instanceof ClassExpression)) {
             if (args.size() == 2 && args.get(0) instanceof ClassExpression) {
                 addError(call, source, callName + "(...) takes the name before the type: " +
                         callName + "(\"myGreeter\", Greeter), not " + callName + "(Greeter, \"myGreeter\")");
@@ -1422,7 +1490,7 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
                 return null;
             }
         }
-        return new TypeAndName(type, name);
+        return new TypeAndName(type, name, implementation);
     }
 
     private boolean applyQualifier(MethodNode beanMethod, String beanName, MethodCallExpression qualifierCall,

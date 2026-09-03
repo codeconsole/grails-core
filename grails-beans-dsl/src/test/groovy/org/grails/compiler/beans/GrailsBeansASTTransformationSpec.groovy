@@ -4003,6 +4003,251 @@ class GrailsBeansASTTransformationSpec extends Specification {
         thrown(ClassNotFoundException)
     }
 
+    def "bean(name, Type, Implementation) declares the interface and constructs the implementation"() {
+        given:
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @GrailsBeans
+            @AutoConfiguration
+            class ImplementationBeans {
+                def beans = {
+                    bean('greeter', Greeter, EnglishGreeter)
+                }
+            }
+
+            interface Greeter { String greet() }
+            class EnglishGreeter implements Greeter { String greet() { 'hello' } }
+        '''
+
+        when:
+        Class<?> beans = compile(source)
+        def method = beans.getDeclaredMethod('greeter')
+
+        then: "the declared type is what consumers inject"
+        method.returnType.simpleName == 'Greeter'
+        method.getAnnotation(Bean).value() == ['greeter'] as String[]
+
+        and: "the body constructs the implementation"
+        method.invoke(beans.getDeclaredConstructor().newInstance()).greet() == 'hello'
+    }
+
+    def "bean(Type, Implementation) with no name derives the name from the declared type, not the implementation"() {
+        given:
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @GrailsBeans
+            @AutoConfiguration
+            class DerivedNameImplementationBeans {
+                def beans = {
+                    bean(Greeter, EnglishGreeter)
+                }
+            }
+
+            interface Greeter { String greet() }
+            class EnglishGreeter implements Greeter { String greet() { 'hello' } }
+        '''
+
+        when:
+        Class<?> beans = compile(source)
+
+        then: "the bean is named after the contract it satisfies"
+        beans.getDeclaredMethod('greeter').getAnnotation(Bean).value() == ['greeter'] as String[]
+    }
+
+    def "bean(name, Type, Implementation) takes its constructor arguments from the closure parameters"() {
+        given:
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @GrailsBeans
+            @AutoConfiguration
+            class InjectedImplementationBeans {
+                def beans = {
+                    bean('suffix', String) { '!' }
+                    bean('greeter', Greeter, EnglishGreeter) { String suffix -> }
+                }
+            }
+
+            interface Greeter { String greet() }
+            class EnglishGreeter implements Greeter {
+                private final String suffix
+                EnglishGreeter(String suffix) { this.suffix = suffix }
+                String greet() { 'hello' + suffix }
+            }
+        '''
+
+        when:
+        Class<?> beans = compile(source)
+        def method = beans.getDeclaredMethod('greeter', String)
+
+        then: "the parameter is the injection point and the constructor argument"
+        method.returnType.simpleName == 'Greeter'
+        method.invoke(beans.getDeclaredConstructor().newInstance(), '!').greet() == 'hello!'
+    }
+
+    def "bean(name, Type, Implementation) chains with the qualifiers"() {
+        given:
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+            import org.springframework.core.annotation.Order
+
+            @GrailsBeans
+            @AutoConfiguration
+            class QualifiedImplementationBeans {
+                def beans = {
+                    bean('greeter', Greeter, EnglishGreeter).primary().lazy().annotate(Order, value: 3)
+                }
+            }
+
+            interface Greeter { String greet() }
+            class EnglishGreeter implements Greeter { String greet() { 'hello' } }
+        '''
+
+        when:
+        def method = compile(source).getDeclaredMethod('greeter')
+
+        then:
+        method.isAnnotationPresent(Primary)
+        method.isAnnotationPresent(Lazy)
+        method.getAnnotation(Order).value() == 3
+    }
+
+    def "rejects a factory closure body alongside an implementation type, which would answer the same question twice"() {
+        given:
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @GrailsBeans
+            @AutoConfiguration
+            class ContradictoryImplementationBeans {
+                def beans = {
+                    bean('greeter', Greeter, EnglishGreeter) { new FrenchGreeter() }
+                }
+            }
+
+            interface Greeter { String greet() }
+            class EnglishGreeter implements Greeter { String greet() { 'hello' } }
+            class FrenchGreeter implements Greeter { String greet() { 'bonjour' } }
+        '''
+
+        when:
+        compile(source)
+
+        then:
+        MultipleCompilationErrorsException e = thrown(MultipleCompilationErrorsException)
+        e.message.contains('already declares what to construct')
+    }
+
+    def "rejects an implementation that is not a subtype of the declared type"() {
+        given:
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @GrailsBeans
+            @AutoConfiguration
+            class UnrelatedImplementationBeans {
+                def beans = {
+                    bean('greeter', Greeter, Stranger)
+                }
+            }
+
+            interface Greeter { String greet() }
+            class Stranger { }
+        '''
+
+        when:
+        compile(source)
+
+        then:
+        MultipleCompilationErrorsException e = thrown(MultipleCompilationErrorsException)
+        e.message.contains('Stranger is not a Greeter')
+    }
+
+    def "rejects an abstract implementation type"() {
+        given:
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @GrailsBeans
+            @AutoConfiguration
+            class AbstractImplementationBeans {
+                def beans = {
+                    bean('greeter', Greeter, AbstractGreeter)
+                }
+            }
+
+            interface Greeter { String greet() }
+            abstract class AbstractGreeter implements Greeter { }
+        '''
+
+        when:
+        compile(source)
+
+        then:
+        MultipleCompilationErrorsException e = thrown(MultipleCompilationErrorsException)
+        e.message.contains('cannot be the implementation')
+    }
+
+    def "the bodyless-interface error points at the implementation form"() {
+        given:
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @GrailsBeans
+            @AutoConfiguration
+            class BodylessInterfaceBeans {
+                def beans = {
+                    bean('greeter', Greeter)
+                }
+            }
+
+            interface Greeter { String greet() }
+        '''
+
+        when:
+        compile(source)
+
+        then:
+        MultipleCompilationErrorsException e = thrown(MultipleCompilationErrorsException)
+        e.message.contains('name the implementation: bean(Greeter, SomeImplementation)')
+    }
+
+    def "field(...) and method(...) do not take an implementation type"() {
+        given:
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @GrailsBeans
+            @AutoConfiguration
+            class FieldImplementationBeans {
+                def beans = {
+                    field('greeter', Greeter, EnglishGreeter)
+                }
+            }
+
+            interface Greeter { String greet() }
+            class EnglishGreeter implements Greeter { String greet() { 'hello' } }
+        '''
+
+        when:
+        compile(source)
+
+        then:
+        MultipleCompilationErrorsException e = thrown(MultipleCompilationErrorsException)
+        e.message.contains('field(...) requires a type, optionally preceded by a name')
+    }
+
     def "an empty beans block on a plain configuration class is a no-op"() {
         given:
         String source = '''
