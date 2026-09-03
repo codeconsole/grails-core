@@ -167,21 +167,30 @@ curl --fail --show-error --silent \
   "https://${SLOT_HOSTNAME}/versions"
 ```
 
-Repeat for all seven hostnames. Success proves certificate selection, SNI, the host rule, and target reachability. Public DNS already CNAME's these hostnames to the ALB, so the same check works without `--connect-to`.
+Repeat for all seven hostnames. Success proves certificate selection, SNI, the host rule, and target reachability. Public DNS already CNAMEs these hostnames to the ALB, so the same check works without `--connect-to`.
 
 ## Cloudflare DNS
 
-Cloudflare is authoritative for the seven API hostnames. Configure each as a DNS-only (grey-cloud, not proxied) CNAME targeting the shared ALB DNS name:
+Cloudflare is authoritative for the seven API hostnames. Configure each as a DNS-only (grey-cloud, not proxied) CNAME targeting the shared stack `SharedLoadBalancerDnsName` output. Resolve that value with:
+
+```bash
+aws cloudformation list-exports \
+  --region us-east-1 \
+  --query "Exports[?Name=='grails-forge-shared:SharedLoadBalancerDnsName'].Value" \
+  --output text
+```
+
+Use that export as every CNAME target. Do not copy a historic ALB DNS name from this document; replacing the shared load balancer changes the hostname.
 
 | Hostname | Record type | Target | Proxy status |
 | --- | --- | --- | --- |
-| `latest.grails.org` | CNAME | `grails-Share-VlKo5OeswX04-1769683670.us-east-1.elb.amazonaws.com` | DNS only |
-| `snapshot.grails.org` | CNAME | `grails-Share-VlKo5OeswX04-1769683670.us-east-1.elb.amazonaws.com` | DNS only |
-| `next.grails.org` | CNAME | `grails-Share-VlKo5OeswX04-1769683670.us-east-1.elb.amazonaws.com` | DNS only |
-| `next-snapshot.grails.org` | CNAME | `grails-Share-VlKo5OeswX04-1769683670.us-east-1.elb.amazonaws.com` | DNS only |
-| `prev.grails.org` | CNAME | `grails-Share-VlKo5OeswX04-1769683670.us-east-1.elb.amazonaws.com` | DNS only |
-| `prev-snapshot.grails.org` | CNAME | `grails-Share-VlKo5OeswX04-1769683670.us-east-1.elb.amazonaws.com` | DNS only |
-| `older.grails.org` | CNAME | `grails-Share-VlKo5OeswX04-1769683670.us-east-1.elb.amazonaws.com` | DNS only |
+| `latest.grails.org` | CNAME | `<SHARED_LOAD_BALANCER_DNS_NAME>` | DNS only |
+| `snapshot.grails.org` | CNAME | `<SHARED_LOAD_BALANCER_DNS_NAME>` | DNS only |
+| `next.grails.org` | CNAME | `<SHARED_LOAD_BALANCER_DNS_NAME>` | DNS only |
+| `next-snapshot.grails.org` | CNAME | `<SHARED_LOAD_BALANCER_DNS_NAME>` | DNS only |
+| `prev.grails.org` | CNAME | `<SHARED_LOAD_BALANCER_DNS_NAME>` | DNS only |
+| `prev-snapshot.grails.org` | CNAME | `<SHARED_LOAD_BALANCER_DNS_NAME>` | DNS only |
+| `older.grails.org` | CNAME | `<SHARED_LOAD_BALANCER_DNS_NAME>` | DNS only |
 
 Do not proxy these records. `next-snapshot.grails.org` and `older.grails.org` are the two new records that must be added in Cloudflare in the same way as the existing five. Do not create or modify `start.grails.org`. Keep the ACM wildcard certificate for `*.grails.org`; it covers both new hostnames. To reverse traffic, restore the previous CNAME targets. Keep GCP available through the observation window so that reversal remains possible.
 
