@@ -4399,6 +4399,136 @@ class GrailsBeansASTTransformationSpec extends Specification {
         method.genericReturnType.toString() == 'class java.util.ArrayList'
     }
 
+    def "annotate(Bean, ...) merges into the synthesized @Bean, reaching its own attributes"() {
+        given:
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+            import org.springframework.context.annotation.Bean
+
+            @GrailsBeans
+            @AutoConfiguration
+            class BeanAttributeBeans {
+                def beans = {
+                    bean('sharedClient', String).annotate(Bean, destroyMethod: '') { 'client' }
+                    bean('managed', String).annotate(Bean, initMethod: 'trim', autowireCandidate: false) { 'managed' }
+                }
+            }
+        '''
+
+        when:
+        Class<?> beans = compile(source)
+
+        then: "the name bean(...) states survives the merge"
+        beans.getDeclaredMethod('sharedClient').getAnnotation(Bean).value() == ['sharedClient'] as String[]
+
+        and: "and the attribute that was previously unreachable is set"
+        beans.getDeclaredMethod('sharedClient').getAnnotation(Bean).destroyMethod() == ''
+
+        and:
+        beans.getDeclaredMethod('managed').getAnnotation(Bean).initMethod() == 'trim'
+        !beans.getDeclaredMethod('managed').getAnnotation(Bean).autowireCandidate()
+    }
+
+    def "rejects setting the bean's name through annotate(Bean, #attribute:), which bean(...) already states"() {
+        given:
+        String source = """
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+            import org.springframework.context.annotation.Bean
+
+            @GrailsBeans
+            @AutoConfiguration
+            class RenamedBeans {
+                def beans = {
+                    bean('greeting', String).annotate(Bean, $attribute: 'other') { 'hello' }
+                }
+            }
+        """
+
+        when:
+        compile(source)
+
+        then:
+        MultipleCompilationErrorsException e = thrown(MultipleCompilationErrorsException)
+        e.message.contains('would state it twice')
+
+        where:
+        attribute << ['value', 'name']
+    }
+
+    def "rejects a bare annotate(Bean), which adds nothing"() {
+        given:
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+            import org.springframework.context.annotation.Bean
+
+            @GrailsBeans
+            @AutoConfiguration
+            class BareBeanAnnotationBeans {
+                def beans = {
+                    bean('greeting', String).annotate(Bean) { 'hello' }
+                }
+            }
+        '''
+
+        when:
+        compile(source)
+
+        then:
+        MultipleCompilationErrorsException e = thrown(MultipleCompilationErrorsException)
+        e.message.contains('adds nothing')
+    }
+
+    def "rejects setting the same @Bean attribute twice"() {
+        given:
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+            import org.springframework.context.annotation.Bean
+
+            @GrailsBeans
+            @AutoConfiguration
+            class DuplicateBeanAttributeBeans {
+                def beans = {
+                    bean('greeting', String).annotate(Bean, initMethod: 'a').annotate(Bean, initMethod: 'b') { 'hello' }
+                }
+            }
+        '''
+
+        when:
+        compile(source)
+
+        then:
+        MultipleCompilationErrorsException e = thrown(MultipleCompilationErrorsException)
+        e.message.contains('is already set here')
+    }
+
+    def "rejects annotate(Bean, ...) on a method(...) helper, which Spring never reads as a bean"() {
+        given:
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+            import org.springframework.context.annotation.Bean
+
+            @GrailsBeans
+            @AutoConfiguration
+            class BeanOnHelperBeans {
+                def beans = {
+                    method('helper', String).annotate(Bean, initMethod: 'start') { 'hello' }
+                }
+            }
+        '''
+
+        when:
+        compile(source)
+
+        then:
+        MultipleCompilationErrorsException e = thrown(MultipleCompilationErrorsException)
+        e.message.contains('applies to bean(...) declarations')
+    }
+
     def "an empty beans block on a plain configuration class is a no-op"() {
         given:
         String source = '''

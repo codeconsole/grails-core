@@ -1658,11 +1658,66 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
             return false;
         }
 
+        // @Bean is the one annotation already attached before any qualifier runs - bean(...)
+        // synthesized it to carry the name. Colliding with it would leave @Bean's own attributes
+        // unreachable, so the author's are merged into it instead.
+        if (annotationType.getName().equals(Bean.class.getName())) {
+            return mergeBeanAnnotation(target, qualifierCall, members, source);
+        }
+
         AnnotationNode annotation = new AnnotationNode(annotationType);
         if (members != null && !addMembersFromMap(annotation, members, qualifierCall, source)) {
             return false;
         }
         return addAnnotationIfAbsent(target, qualifierCall, annotation, source);
+    }
+
+    /**
+     * Folds {@code .annotate(Bean, ...)} attributes into the {@code @Bean} that {@code bean(...)}
+     * already attached, which is the only way to reach {@code initMethod}, {@code destroyMethod},
+     * {@code autowireCandidate} and friends. {@code destroyMethod} is the one that matters in
+     * practice: Spring infers a {@code close()}/{@code shutdown()} method and calls it on shutdown,
+     * and {@code destroyMethod: ""} is how a bean wrapping a client it does not own opts out.
+     *
+     * <p>The bean's name is not among them. It comes from {@code bean("name", Type)}, and a second
+     * spelling here could only disagree with the name the rest of the block was validated against.</p>
+     */
+    private boolean mergeBeanAnnotation(AnnotatedNode target, MethodCallExpression qualifierCall,
+            MapExpression members, SourceUnit source) {
+        List<AnnotationNode> existing = target.getAnnotations(ClassHelper.make(Bean.class));
+        if (existing.isEmpty()) {
+            addError(qualifierCall, source, ".annotate(Bean, ...) applies to bean(...) declarations - " +
+                    "field(...) and method(...) declare plain members, which Spring never reads as beans");
+            return false;
+        }
+        if (members == null || members.getMapEntryExpressions().isEmpty()) {
+            addError(qualifierCall, source, ".annotate(Bean) adds nothing, since bean(...) already " +
+                    "carries @Bean - give the attributes to set, e.g. .annotate(Bean, destroyMethod: \"\")");
+            return false;
+        }
+        AnnotationNode beanAnnotation = existing.get(0);
+        for (MapEntryExpression entry : members.getMapEntryExpressions()) {
+            Object keyValue = entry.getKeyExpression() instanceof ConstantExpression ?
+                    ((ConstantExpression) entry.getKeyExpression()).getValue() : null;
+            if (!(keyValue instanceof String)) {
+                addError(qualifierCall, source, ".annotate(...) attribute names must be simple " +
+                        "identifiers, e.g. .annotate(Bean, destroyMethod: \"\")");
+                return false;
+            }
+            String key = (String) keyValue;
+            if ("value".equals(key) || "name".equals(key)) {
+                addError(qualifierCall, source, "a bean's name comes from bean(\"name\", Type), so " +
+                        ".annotate(Bean, " + key + ": ...) would state it twice - rename it there instead");
+                return false;
+            }
+            if (beanAnnotation.getMember(key) != null) {
+                addError(qualifierCall, source, "@Bean's \"" + key + "\" is already set here, " +
+                        "via an earlier .annotate(Bean, ...)");
+                return false;
+            }
+            beanAnnotation.setMember(key, foldStringValue(entry.getValueExpression()));
+        }
+        return true;
     }
 
     private boolean addMembersFromMap(AnnotationNode annotation, MapExpression members,
