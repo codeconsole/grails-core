@@ -348,10 +348,14 @@ class MongoCodecSession extends AbstractMongoSession {
         final MongoCollection collection = getCollection(entity)
         final updateOptions = new UpdateOptions()
         updateOptions.upsert(false)
+        // Normalise into a copy: the caller's map is theirs, and may be immutable. Writing the
+        // encoded reference back into it replaced their domain object with an ObjectId or
+        // DBRef, and threw UnsupportedOperationException for a Map.of/singletonMap argument.
+        Map<String, Object> updateProperties = new LinkedHashMap<String, Object>(properties)
         for (Association association in entity.associations) {
             String associationName = association.name
-            if (association instanceof ToOne && properties.containsKey(associationName)) {
-                def value = properties.get(associationName)
+            if (association instanceof ToOne && updateProperties.containsKey(associationName)) {
+                def value = updateProperties.get(associationName)
                 if (value != null) {
                     // Write the reference exactly as ToOneEncoder does on the normal
                     // persistence path: in the target's stored _id type, as a DBRef where the
@@ -362,16 +366,16 @@ class MongoCodecSession extends AbstractMongoSession {
                             associatedEntity.reflector.getIdentifier(value), associatedEntity)
                     MongoAttribute attr = (MongoAttribute) association.mapping.mappedForm
                     if (attr?.isReference()) {
-                        properties.put(associationName,
+                        updateProperties.put(associationName,
                                 new DBRef(getCollectionName(associatedEntity), associationId))
                     }
                     else {
-                        properties.put(associationName, associationId)
+                        updateProperties.put(associationName, associationId)
                     }
                 }
             }
         }
-        final UpdateResult updateResult = updateMany(collection, nativeQuery, new Document(MONGO_SET_OPERATOR, properties), updateOptions)
+        final UpdateResult updateResult = updateMany(collection, nativeQuery, new Document(MONGO_SET_OPERATOR, updateProperties), updateOptions)
         if (updateResult.wasAcknowledged()) {
             try {
                 return updateResult.modifiedCount

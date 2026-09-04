@@ -265,6 +265,35 @@ class StringIdAssociationStorageSpec extends GrailsDataTckSpec<GrailsDataMongoTc
         found*.title == ['la']
     }
 
+    void "updateAll does not mutate the caller's property map"() {
+        given:
+        RefProject to = new RefProject(name: 'Target').save(flush: true)
+        RefTicket ticket = new RefTicket(title: 'Keep my map', project: to).save(flush: true)
+        RefProject arg = RefProject.get(to.id)
+        Map<String, Object> updates = [project: arg]
+
+        when:
+        manager.session.clear()
+        RefTicket.where { title == 'Keep my map' }.updateAll(updates)
+
+        then: 'the caller still holds their domain object, not an ObjectId or DBRef'
+        updates.project.is(arg)
+    }
+
+    void "updateAll accepts an immutable property map"() {
+        given:
+        RefProject to = new RefProject(name: 'Immutable target').save(flush: true)
+        new RefTicket(title: 'Immutable arg', project: to).save(flush: true)
+
+        when:
+        manager.session.clear()
+        RefTicket.where { title == 'Immutable arg' }
+                .updateAll(Collections.singletonMap('project', RefProject.get(to.id)))
+
+        then: 'normalising into a copy means an unmodifiable argument is fine'
+        noExceptionThrown()
+    }
+
     private MongoCollection<Document> rawTickets() {
         manager.mongoClient.getDatabase('test').getCollection('refTicket')
     }
