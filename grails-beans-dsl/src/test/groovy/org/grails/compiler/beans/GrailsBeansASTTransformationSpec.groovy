@@ -33,6 +33,7 @@ import org.springframework.boot.autoconfigure.AutoConfigureAfter
 import org.springframework.boot.autoconfigure.AutoConfigureBefore
 import org.springframework.boot.autoconfigure.AutoConfigureOrder
 import org.springframework.boot.autoconfigure.ImportAutoConfiguration
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication
@@ -933,6 +934,100 @@ class GrailsBeansASTTransformationSpec extends Specification {
 
         and: "and it really does configure the instance"
         fixture.getDeclaredConstructor().newInstance().holder('hi').label == 'hi'
+    }
+
+    def "conditionalOnBean registers a bean only when the bean it names is there"() {
+        given: "the shape an optional integration takes - wire the adapter only if the transport exists"
+        String source = """
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            class Transport { }
+            class Adapter { }
+
+            @GrailsBeans
+            @AutoConfiguration
+            class ConditionalOnBeanFixture${suffix} {
+                def beans = {
+                    ${transport}
+                    bean('adapter', Adapter).conditionalOnBean(Transport) {
+                        new Adapter()
+                    }
+                }
+            }
+        """
+
+        and:
+        GroovyClassLoader loader = new GroovyClassLoader(getClass().classLoader)
+        loader.parseClass(source)
+        def context = new AnnotationConfigApplicationContext()
+        context.classLoader = loader
+        context.register(loader.loadClass("ConditionalOnBeanFixture${suffix}"))
+
+        when:
+        context.refresh()
+
+        then:
+        context.containsBean('adapter') == registered
+
+        cleanup:
+        context.close()
+
+        where:
+        description                  | suffix     | transport                                                     | registered
+        'the transport is present'   | 'Present'  | "bean('transport', Transport)"                                | true
+        'the transport is absent'    | 'Absent'   | ''                                                            | false
+    }
+
+    def "conditionalOnBean rejects the zero-argument form, which would condition a bean on its own type"() {
+        given:
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @GrailsBeans
+            @AutoConfiguration
+            class BareConditionalOnBeanFixture {
+                def beans = {
+                    bean('greeting', String).conditionalOnBean() {
+                        'hello'
+                    }
+                }
+            }
+        '''
+
+        when:
+        compile(source)
+
+        then:
+        MultipleCompilationErrorsException e = thrown(MultipleCompilationErrorsException)
+        e.message.contains('needs at least one type or attribute')
+    }
+
+    def "conditionalOnBean takes the annotation's named attributes, like its opposite"() {
+        given:
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+            import org.springframework.boot.autoconfigure.condition.ConditionalOnBean
+
+            @GrailsBeans
+            @AutoConfiguration
+            class NamedConditionalOnBeanFixture {
+                def beans = {
+                    bean('greeting', String).conditionalOnBean(name: 'transport') {
+                        'hello'
+                    }
+                }
+            }
+        '''
+
+        when:
+        Class<?> compiled = compile(source)
+        def annotation = compiled.getDeclaredMethod('greeting').getAnnotation(ConditionalOnBean)
+
+        then:
+        annotation.name() == ['transport'] as String[]
     }
 
     private Class<?> compile() {

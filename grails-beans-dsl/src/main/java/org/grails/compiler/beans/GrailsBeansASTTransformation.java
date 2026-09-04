@@ -88,6 +88,7 @@ import org.springframework.boot.autoconfigure.AutoConfigureAfter;
 import org.springframework.boot.autoconfigure.AutoConfigureBefore;
 import org.springframework.boot.autoconfigure.AutoConfigureOrder;
 import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
@@ -188,6 +189,7 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
     private static final String FIELD_CALL = "field";
     private static final String METHOD_CALL = "method";
     private static final Set<String> ROOT_STATEMENT_CALL_NAMES = Set.of(BEAN_CALL, FIELD_CALL, METHOD_CALL);
+    private static final String CONDITIONAL_ON_BEAN_CALL = "conditionalOnBean";
     private static final String CONDITIONAL_ON_MISSING_BEAN_CALL = "conditionalOnMissingBean";
     private static final String CONDITIONAL_ON_MISSING_BEAN_NAME_CALL = "conditionalOnMissingBeanName";
     private static final String PRIMARY_CALL = "primary";
@@ -199,7 +201,7 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
     private static final String TYPE_ARGUMENTS_CALL = "typeArguments";
     private static final String GRAILS_ENV_CALL = "grailsEnv";
     private static final Set<String> BEAN_QUALIFIER_CALL_NAMES = Set.of(
-            CONDITIONAL_ON_MISSING_BEAN_CALL, CONDITIONAL_ON_MISSING_BEAN_NAME_CALL,
+            CONDITIONAL_ON_BEAN_CALL, CONDITIONAL_ON_MISSING_BEAN_CALL, CONDITIONAL_ON_MISSING_BEAN_NAME_CALL,
             PRIMARY_CALL, LAZY_CALL, SCOPE_CALL, STATIC_METHOD_CALL, ANNOTATE_CALL, TYPE_ARGUMENTS_CALL,
             GRAILS_ENV_CALL);
     // field(...) and method(...) declare plain class members, not beans - bean-specific
@@ -207,7 +209,7 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
     private static final Set<String> FIELD_QUALIFIER_CALL_NAMES = Set.of(ANNOTATE_CALL, VALUE_CALL, TYPE_ARGUMENTS_CALL);
     private static final Set<String> METHOD_QUALIFIER_CALL_NAMES = Set.of(ANNOTATE_CALL, TYPE_ARGUMENTS_CALL);
     private static final Set<String> ALL_QUALIFIER_CALL_NAMES = Set.of(
-            CONDITIONAL_ON_MISSING_BEAN_CALL, CONDITIONAL_ON_MISSING_BEAN_NAME_CALL,
+            CONDITIONAL_ON_BEAN_CALL, CONDITIONAL_ON_MISSING_BEAN_CALL, CONDITIONAL_ON_MISSING_BEAN_NAME_CALL,
             PRIMARY_CALL, LAZY_CALL, SCOPE_CALL, STATIC_METHOD_CALL, ANNOTATE_CALL, VALUE_CALL,
             TYPE_ARGUMENTS_CALL, GRAILS_ENV_CALL);
     private static final String PLUGIN_SUPERCLASS_NAME = "grails.plugins.Plugin";
@@ -1784,6 +1786,10 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
         if (TYPE_ARGUMENTS_CALL.equals(name)) {
             return true;
         }
+        if (CONDITIONAL_ON_BEAN_CALL.equals(name)) {
+            AnnotationNode annotation = conditionalOnBeanAnnotation(args, qualifierCall, source);
+            return annotation != null && addAnnotationIfAbsent(beanMethod, qualifierCall, annotation, source);
+        }
         if (CONDITIONAL_ON_MISSING_BEAN_CALL.equals(name)) {
             AnnotationNode annotation = conditionalOnMissingBeanAnnotation(args, qualifierCall, source);
             return annotation != null && addAnnotationIfAbsent(beanMethod, qualifierCall, annotation, source);
@@ -2015,7 +2021,38 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
     // generic .annotate(...) escape hatch.
     private AnnotationNode conditionalOnMissingBeanAnnotation(List<Expression> args,
             MethodCallExpression qualifierCall, SourceUnit source) {
-        AnnotationNode annotation = new AnnotationNode(ClassHelper.make(ConditionalOnMissingBean.class));
+        return beanConditionAnnotation(ConditionalOnMissingBean.class, CONDITIONAL_ON_MISSING_BEAN_CALL,
+                args, qualifierCall, source);
+    }
+
+    /**
+     * {@code @ConditionalOnBean}, the positive counterpart - "register this only when something else
+     * already supplied that".
+     *
+     * <p>Unlike its opposite it takes no zero-argument form. With nothing named, Spring deduces the
+     * type from the annotated method's own return type, which for
+     * {@code @ConditionalOnMissingBean} is the whole point - back off if someone else provided this
+     * - and for {@code @ConditionalOnBean} asks it to register a bean only when a bean of that same
+     * type already exists. That is answerable, and almost never what anybody means.</p>
+     */
+    private AnnotationNode conditionalOnBeanAnnotation(List<Expression> args,
+            MethodCallExpression qualifierCall, SourceUnit source) {
+        if (args.isEmpty()) {
+            addError(qualifierCall, source, ".conditionalOnBean() needs at least one type or attribute. With " +
+                    "none, Spring deduces the type from this bean's own return type, so the condition reads " +
+                    "\"register this bean only when a bean of its type already exists\" - name what it actually " +
+                    "depends on, e.g. .conditionalOnBean(SmsTransport)");
+            return null;
+        }
+        return beanConditionAnnotation(ConditionalOnBean.class, CONDITIONAL_ON_BEAN_CALL,
+                args, qualifierCall, source);
+    }
+
+    // Shared by both: positional types go to value, named arguments are the annotation's own
+    // attributes, and giving types both ways at once is rejected.
+    private AnnotationNode beanConditionAnnotation(Class<?> annotationType, String callName, List<Expression> args,
+            MethodCallExpression qualifierCall, SourceUnit source) {
+        AnnotationNode annotation = new AnnotationNode(ClassHelper.make(annotationType));
         MapExpression members = !args.isEmpty() && args.get(0) instanceof MapExpression ? (MapExpression) args.get(0) : null;
         List<Expression> types = members != null ? args.subList(1, args.size()) : args;
         if (members != null && !types.isEmpty()) {
@@ -2023,7 +2060,7 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
                 Object keyValue = entry.getKeyExpression() instanceof ConstantExpression ?
                         ((ConstantExpression) entry.getKeyExpression()).getValue() : null;
                 if ("value".equals(keyValue)) {
-                    addError(qualifierCall, source, "conditionalOnMissingBean(...) was given types both " +
+                    addError(qualifierCall, source, callName + "(...) was given types both " +
                             "positionally and via value: - use one or the other");
                     return null;
                 }
@@ -2036,9 +2073,9 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
             ListExpression typeList = new ListExpression();
             for (Expression type : types) {
                 if (!(type instanceof ClassExpression)) {
-                    addError(qualifierCall, source, "conditionalOnMissingBean(...) arguments must be types " +
-                            "and/or named attributes, e.g. conditionalOnMissingBean(Greeter) or " +
-                            "conditionalOnMissingBean(name: \"greeter\", search: SearchStrategy.CURRENT)");
+                    addError(qualifierCall, source, callName + "(...) arguments must be types " +
+                            "and/or named attributes, e.g. " + callName + "(Greeter) or " + callName +
+                            "(name: \"greeter\", search: SearchStrategy.CURRENT)");
                     continue;
                 }
                 typeList.addExpression(type);
