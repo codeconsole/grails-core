@@ -19,8 +19,13 @@
 package org.grails.compiler.beans;
 
 import java.beans.Introspector;
+import java.io.IOException;
 import java.io.File;
 import java.lang.reflect.Modifier;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -38,6 +43,7 @@ import org.codehaus.groovy.GroovyBugError;
 import org.codehaus.groovy.ast.ASTNode;
 import org.codehaus.groovy.ast.AnnotatedNode;
 import org.codehaus.groovy.ast.AnnotationNode;
+import org.codehaus.groovy.ast.AstToTextHelper;
 import org.codehaus.groovy.ast.ClassHelper;
 import org.codehaus.groovy.ast.ClassNode;
 import org.codehaus.groovy.ast.CodeVisitorSupport;
@@ -210,6 +216,7 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
     private static final String AUTO_CONFIGURATION_NAME_MEMBER = "autoConfigurationName";
     private static final String MOVE_ANNOTATIONS_MEMBER = "moveAnnotations";
     private static final String PROXY_BEAN_METHODS_MEMBER = "proxyBeanMethods";
+    private static final String DUMP_DIR_PROPERTY = "grails.beans.dsl.dumpdir";
 
     private CompilationUnit compilationUnit;
 
@@ -266,7 +273,8 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
         // once) and bean(...) statements second. A bean's derived method name then adapts to every
         // explicitly-named member wherever it appears in the block - reordering equivalent DSL
         // statements must never change validity.
-        List<MethodNode> preExisting = new ArrayList<>(beanMethodHost.getMethods());
+        List<MethodNode> preExistingMethods = new ArrayList<>(beanMethodHost.getMethods());
+        List<FieldNode> preExistingFields = new ArrayList<>(beanMethodHost.getFields());
         for (Statement statement : statements) {
             if (!isBeanRootedStatement(statement)) {
                 processStatement(beanMethodHost, statement, source, usedNames);
@@ -277,7 +285,11 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
                 processStatement(beanMethodHost, statement, source, usedNames);
             }
         }
-        rejectUnproxiedSiblingBeanCalls(beanMethodHost, generatedMembers(beanMethodHost, preExisting), source);
+        List<MethodNode> generatedMethods = generatedMembers(beanMethodHost, preExistingMethods);
+        List<FieldNode> generatedFields = new ArrayList<>(beanMethodHost.getFields());
+        generatedFields.removeAll(preExistingFields);
+        rejectUnproxiedSiblingBeanCalls(beanMethodHost, generatedMethods, source);
+        dumpGeneratedMembers(beanMethodHost, generatedMethods, generatedFields, source);
 
         if (beanMethodHost != classNode) {
             applyStaticCompilation(classNode, beanMethodHost, source);
@@ -977,6 +989,130 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
                 "instance method it forces that instantiation before the beans it post-processes " +
                 "are configured");
         return false;
+    }
+
+    /**
+     * Writes the members this block generated to {@code -Dgrails.beans.dsl.dumpdir=<dir>}, one file
+     * per host class.
+     *
+     * <p>Everything the DSL decides that the source does not say is a declaration, not a body: the
+     * bean name Spring will resolve by, the annotations the qualifiers became, the modifiers, the
+     * declared type and whether it ended up carrying type arguments, and the parameter annotations
+     * that make a dependency optional or qualified. Bodies are excluded on purpose - a bean body is
+     * the author's own closure body, lifted verbatim, so it is already readable where they wrote it.
+     *
+     * <p>Without this, the only way to see any of it is {@code javap} on the compiled class, which
+     * is a poor place to answer "did that qualifier attach anything" while writing the block.
+     * Grails already takes this shape for its other compile-time generator, where
+     * {@code grails.views.gsp.keepgenerateddir} keeps the Groovy a GSP compiles to.</p>
+     */
+    private void dumpGeneratedMembers(ClassNode host, List<MethodNode> methods, List<FieldNode> fields,
+            SourceUnit source) {
+        String dir = System.getProperty(DUMP_DIR_PROPERTY);
+        if (dir == null || dir.isBlank()) {
+            return;
+        }
+        StringBuilder text = new StringBuilder();
+        text.append("// Generated from the 'beans' DSL in ").append(host.getName()).append('\n');
+        text.append("// Bodies are omitted: each is the closure body from that source, lifted verbatim.\n");
+        for (FieldNode field : fields) {
+            text.append('\n');
+            for (AnnotationNode annotation : field.getAnnotations()) {
+                text.append(annotationText(annotation)).append('\n');
+            }
+            text.append(AstToTextHelper.getModifiersText(field.getModifiers())).append(' ')
+                    .append(typeText(field.getType())).append(' ').append(field.getName()).append('\n');
+        }
+        for (MethodNode method : methods) {
+            text.append('\n');
+            for (AnnotationNode annotation : method.getAnnotations()) {
+                text.append(annotationText(annotation)).append('\n');
+            }
+            text.append(AstToTextHelper.getModifiersText(method.getModifiers())).append(' ')
+                    .append(typeText(method.getReturnType())).append(' ').append(method.getName())
+                    .append('(').append(parametersText(method.getParameters())).append(")\n");
+        }
+        try {
+            Path target = Paths.get(dir);
+            Files.createDirectories(target);
+            Files.writeString(target.resolve(host.getName() + ".beans.txt"), text.toString(),
+                    StandardCharsets.UTF_8);
+        }
+        catch (IOException | RuntimeException e) {
+            // Opt-in by definition, so this can only fire for someone who asked for the dump and
+            // would otherwise be left looking for a file that was never written.
+            addError(host, source, "could not write the beans DSL dump for " + host.getName() + " to \"" +
+                    dir + "\" (" + DUMP_DIR_PROPERTY + "): " + e);
+        }
+    }
+
+    private String parametersText(Parameter[] parameters) {
+        StringBuilder text = new StringBuilder();
+        for (Parameter parameter : parameters) {
+            if (text.length() > 0) {
+                text.append(", ");
+            }
+            for (AnnotationNode annotation : parameter.getAnnotations()) {
+                text.append(annotationText(annotation)).append(' ');
+            }
+            text.append(typeText(parameter.getType())).append(' ').append(parameter.getName());
+        }
+        return text.toString();
+    }
+
+    // Type arguments are printed only when every one of them is concrete. A raw declared type
+    // resolved from a class still reports its own type PARAMETERS here, and printing those would
+    // read as <String> when nothing of the sort was declared.
+    private String typeText(ClassNode type) {
+        GenericsType[] generics = type.getGenericsTypes();
+        if (generics == null || generics.length == 0) {
+            return type.getName();
+        }
+        StringBuilder text = new StringBuilder(type.getName());
+        for (GenericsType generic : generics) {
+            if (generic.isPlaceholder() || generic.isWildcard()) {
+                return type.getName();
+            }
+        }
+        text.append('<');
+        for (int i = 0; i < generics.length; i++) {
+            text.append(i == 0 ? "" : ", ").append(generics[i].getType().getName());
+        }
+        return text.append('>').toString();
+    }
+
+    private String annotationText(AnnotationNode annotation) {
+        StringBuilder text = new StringBuilder("@").append(annotation.getClassNode().getNameWithoutPackage());
+        Map<String, Expression> members = annotation.getMembers();
+        if (members.isEmpty()) {
+            return text.toString();
+        }
+        text.append('(');
+        boolean first = true;
+        for (Map.Entry<String, Expression> member : members.entrySet()) {
+            text.append(first ? "" : ", ").append(member.getKey()).append(" = ")
+                    .append(memberValueText(member.getValue()));
+            first = false;
+        }
+        return text.append(')').toString();
+    }
+
+    // Expression.getText() renders a String constant bare, so @DependsOn("names") would print as
+    // value = names and read as an identifier. Quote them, and descend into a list so an
+    // array-valued attribute reads the way it was written.
+    private String memberValueText(Expression value) {
+        if (value instanceof ConstantExpression && ((ConstantExpression) value).getValue() instanceof String) {
+            return "\"" + ((ConstantExpression) value).getValue() + "\"";
+        }
+        if (value instanceof ListExpression) {
+            StringBuilder text = new StringBuilder("[");
+            List<Expression> entries = ((ListExpression) value).getExpressions();
+            for (int i = 0; i < entries.size(); i++) {
+                text.append(i == 0 ? "" : ", ").append(memberValueText(entries.get(i)));
+            }
+            return text.append(']').toString();
+        }
+        return value.getText();
     }
 
     // The methods this block just generated, in declaration order: everything on the host that was

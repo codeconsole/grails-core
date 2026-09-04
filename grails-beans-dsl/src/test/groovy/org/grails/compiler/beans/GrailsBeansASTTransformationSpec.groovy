@@ -755,6 +755,89 @@ class GrailsBeansASTTransformationSpec extends Specification {
         'a list'           | 'List'   | "['first', 'second']" | ['first', 'second']
     }
 
+    def "dumps the generated members when grails.beans.dsl.dumpdir is set"() {
+        given: "a block whose interesting parts are all declaration, not body"
+        File dumpDir = new File(tempDir, 'beans-dump')
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.beans.factory.annotation.Autowired
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+            import org.springframework.context.annotation.DependsOn
+
+            @GrailsBeans
+            @AutoConfiguration
+            class DumpedBeans {
+                def beans = {
+                    field('encoding', String).value('app.encoding', 'UTF-8')
+
+                    bean('names', ArrayList).typeArguments(String) {
+                        new ArrayList<String>()
+                    }
+
+                    bean('greeter', String).primary().annotate(DependsOn, value: 'names') {
+                        'hello'
+                    }
+
+                    bean('shout', String) { @Autowired(required = false) StringBuilder input ->
+                        input?.toString() ?: 'none'
+                    }
+                }
+            }
+        '''
+
+        when:
+        System.setProperty('grails.beans.dsl.dumpdir', dumpDir.absolutePath)
+        compile(source)
+        String dumped = new File(dumpDir, 'DumpedBeans.beans.txt').text
+
+        then: "the bean name Spring resolves by, and the annotations the qualifiers became"
+        dumped.contains('@Bean(value = ["greeter"])')
+        dumped.contains('@Primary')
+        dumped.contains('@DependsOn(value = "names")')
+
+        and: "the declared type, including type arguments it ended up carrying"
+        dumped.contains('java.util.ArrayList<java.lang.String> names()')
+
+        and: "a raw type is not dressed up in its own type parameters"
+        !dumped.contains('ArrayList<E>')
+
+        and: "parameter annotations, which is where optional and qualified live"
+        dumped.contains('@Autowired(required = false) java.lang.StringBuilder input')
+
+        and: "fields too, with the @Value the config key became"
+        dumped.contains('private java.lang.String encoding')
+        dumped.contains('@Value(value = "${app.encoding:UTF-8}")')
+
+        and: "bodies are deliberately absent - they are the author's own closure bodies"
+        !dumped.contains("'hello'")
+
+        cleanup:
+        System.clearProperty('grails.beans.dsl.dumpdir')
+    }
+
+    def "writes nothing when the dump directory is not set"() {
+        given:
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @GrailsBeans
+            @AutoConfiguration
+            class UndumpedBeans {
+                def beans = {
+                    bean('greeting', String) { 'hello' }
+                }
+            }
+        '''
+
+        when:
+        Class<?> compiled = compile(source)
+
+        then:
+        System.getProperty('grails.beans.dsl.dumpdir') == null
+        compiled.getDeclaredMethod('greeting') != null
+    }
+
     private Class<?> compile() {
         compile(FIXTURE)
     }

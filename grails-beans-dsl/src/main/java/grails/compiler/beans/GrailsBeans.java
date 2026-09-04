@@ -110,6 +110,12 @@ import org.codehaus.groovy.transform.GroovyASTTransformationClass;
  * When no name is given, one is derived from the type name following the JavaBeans convention
  * ({@link java.beans.Introspector#decapitalize(String)}).
  *
+ * <p>To see what a block compiled to, build with {@code -Dgrails.beans.dsl.dumpdir=<dir>}: each
+ * host class writes a {@code <qualified name>.beans.txt} there listing the generated members -
+ * bean names, the annotations the qualifiers became, modifiers, declared types with any type
+ * arguments they ended up carrying, and parameter annotations. Bodies are omitted, being the
+ * author's own closure bodies lifted verbatim. Nothing is written unless the property is set.</p>
+ *
  * <p>The generated methods work on any class Spring processes as a configuration source: a
  * registered {@code @AutoConfiguration} or {@code @Configuration} class, or the Spring Boot
  * application class itself (e.g. a Grails {@code Application} class) - Spring Boot reads
