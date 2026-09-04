@@ -295,12 +295,12 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
         List<FieldNode> preExistingFields = new ArrayList<>(beanMethodHost.getFields());
         for (Statement statement : statements) {
             if (!isBeanRootedStatement(statement)) {
-                processStatement(beanMethodHost, statement, source, usedNames);
+                processStatement(beanMethodHost, classNode, statement, source, usedNames);
             }
         }
         for (Statement statement : statements) {
             if (isBeanRootedStatement(statement)) {
-                processStatement(beanMethodHost, statement, source, usedNames);
+                processStatement(beanMethodHost, classNode, statement, source, usedNames);
             }
         }
         List<MethodNode> generatedMethods = generatedMembers(beanMethodHost, preExistingMethods);
@@ -777,7 +777,8 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
         return false;
     }
 
-    private void processStatement(ClassNode classNode, Statement statement, SourceUnit source, Set<String> usedNames) {
+    private void processStatement(ClassNode classNode, ClassNode declaringClass, Statement statement,
+            SourceUnit source, Set<String> usedNames) {
         if (!(statement instanceof ExpressionStatement) ||
                 !(((ExpressionStatement) statement).getExpression() instanceof MethodCallExpression)) {
             addError(statement, source, "Each 'beans' statement must be a bean(...), field(...), or method(...) call");
@@ -850,13 +851,13 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
         }
 
         if (isBean) {
-            processBeanStatement(classNode, outerCall, baseCall, qualifierCalls, source, usedNames);
+            processBeanStatement(classNode, declaringClass, outerCall, baseCall, qualifierCalls, source, usedNames);
         }
         else if (FIELD_CALL.equals(rootName)) {
-            processFieldStatement(classNode, baseCall, qualifierCalls, source, usedNames);
+            processFieldStatement(classNode, declaringClass, baseCall, qualifierCalls, source, usedNames);
         }
         else {
-            processMethodStatement(classNode, outerCall, baseCall, qualifierCalls, source, usedNames);
+            processMethodStatement(classNode, declaringClass, outerCall, baseCall, qualifierCalls, source, usedNames);
         }
     }
 
@@ -868,7 +869,8 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
         return true;
     }
 
-    private void processBeanStatement(ClassNode classNode, MethodCallExpression outerCall, MethodCallExpression baseCall,
+    private void processBeanStatement(ClassNode classNode, ClassNode declaringClass,
+            MethodCallExpression outerCall, MethodCallExpression baseCall,
             List<MethodCallExpression> qualifierCalls, SourceUnit source, Set<String> usedNames) {
         // The factory closure is optional: bean(Type) with no body declares a bean that is just its
         // own no-argument construction, which is by far the most common shape and reads as noise
@@ -886,7 +888,7 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
             baseArgs = baseArgs.subList(0, baseArgs.size() - 1);
         }
 
-        TypeAndName typeAndName = parseNameAndType(baseArgs, baseCall, source, BEAN_CALL, false, true);
+        TypeAndName typeAndName = parseNameAndType(baseArgs, baseCall, source, BEAN_CALL, false, true, declaringClass);
         if (typeAndName == null) {
             return;
         }
@@ -1509,10 +1511,10 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
         return candidate;
     }
 
-    private void processFieldStatement(ClassNode classNode, MethodCallExpression baseCall,
+    private void processFieldStatement(ClassNode classNode, ClassNode declaringClass, MethodCallExpression baseCall,
             List<MethodCallExpression> qualifierCalls, SourceUnit source, Set<String> usedNames) {
         List<Expression> baseArgs = flatten(baseCall.getArguments());
-        TypeAndName typeAndName = parseNameAndType(baseArgs, baseCall, source, FIELD_CALL, true);
+        TypeAndName typeAndName = parseNameAndType(baseArgs, baseCall, source, FIELD_CALL, true, declaringClass);
         if (typeAndName == null) {
             return;
         }
@@ -1608,7 +1610,28 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
     // constant reference either from its AST initial expression (a constant declared in the same
     // compilation unit) or reflectively from the already-compiled class on the classpath; and
     // concatenations of resolvable pieces recursively.
+    /**
+     * As {@link #resolveStringConstant(Expression)}, but also resolving a <i>bare</i> reference to a
+     * static final String field on {@code declaringClass} - the class the {@code beans} block was
+     * written on, which for a plugin descriptor is not the class the members land on.
+     *
+     * <p>Unqualified is how such a constant is written from inside the class that declares it, so it
+     * is the spelling that matters here; the qualified form already resolved.</p>
+     */
     private String resolveStringConstant(Expression expression) {
+        return resolveStringConstant(expression, null);
+    }
+
+    private String resolveStringConstant(Expression expression, ClassNode declaringClass) {
+        if (declaringClass != null && expression instanceof VariableExpression) {
+            FieldNode field = findStaticFinalField(declaringClass, ((VariableExpression) expression).getName(),
+                    new HashSet<>());
+            if (field != null && field.getInitialExpression() instanceof ConstantExpression) {
+                Object value = ((ConstantExpression) field.getInitialExpression()).getValue();
+                return value instanceof String ? (String) value : null;
+            }
+            return null;
+        }
         if (expression instanceof ConstantExpression) {
             Object value = ((ConstantExpression) expression).getValue();
             return value instanceof String ? (String) value : null;
@@ -1618,8 +1641,8 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
             if (binary.getOperation().getType() != Types.PLUS) {
                 return null;
             }
-            String left = resolveStringConstant(binary.getLeftExpression());
-            String right = resolveStringConstant(binary.getRightExpression());
+            String left = resolveStringConstant(binary.getLeftExpression(), declaringClass);
+            String right = resolveStringConstant(binary.getRightExpression(), declaringClass);
             return left != null && right != null ? left + right : null;
         }
         if (expression instanceof PropertyExpression) {
@@ -1674,7 +1697,8 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
         return null;
     }
 
-    private void processMethodStatement(ClassNode classNode, MethodCallExpression outerCall, MethodCallExpression baseCall,
+    private void processMethodStatement(ClassNode classNode, ClassNode declaringClass,
+            MethodCallExpression outerCall, MethodCallExpression baseCall,
             List<MethodCallExpression> qualifierCalls, SourceUnit source, Set<String> usedNames) {
         List<Expression> closureCallArgs = flatten(outerCall.getArguments());
         if (closureCallArgs.isEmpty() || !(closureCallArgs.get(closureCallArgs.size() - 1) instanceof ClosureExpression)) {
@@ -1688,7 +1712,7 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
             baseArgs = baseArgs.subList(0, baseArgs.size() - 1);
         }
 
-        TypeAndName typeAndName = parseNameAndType(baseArgs, baseCall, source, METHOD_CALL, true);
+        TypeAndName typeAndName = parseNameAndType(baseArgs, baseCall, source, METHOD_CALL, true, declaringClass);
         if (typeAndName == null) {
             return;
         }
@@ -1810,8 +1834,8 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
     }
 
     private TypeAndName parseNameAndType(List<Expression> args, MethodCallExpression call, SourceUnit source,
-            String callName, boolean requireValidIdentifier) {
-        return parseNameAndType(args, call, source, callName, requireValidIdentifier, false);
+            String callName, boolean requireValidIdentifier, ClassNode declaringClass) {
+        return parseNameAndType(args, call, source, callName, requireValidIdentifier, false, declaringClass);
     }
 
     /**
@@ -1824,7 +1848,8 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
      * name is a String literal.</p>
      */
     private TypeAndName parseNameAndType(List<Expression> args, MethodCallExpression call, SourceUnit source,
-            String callName, boolean requireValidIdentifier, boolean allowImplementation) {
+            String callName, boolean requireValidIdentifier, boolean allowImplementation,
+            ClassNode declaringClass) {
         // Two trailing type literals mean the second is the implementation. Split it off first so
         // everything below reads the same [name, ] Type head it always did.
         ClassExpression implementation = null;
@@ -1865,13 +1890,18 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
         }
         else {
             Expression nameArg = args.get(0);
-            Object nameValue = nameArg instanceof ConstantExpression ? ((ConstantExpression) nameArg).getValue() : null;
-            if (!(nameValue instanceof String)) {
-                addError(nameArg, source, callName + "(name, Type) requires the name to be a String literal, " +
-                        "e.g. " + callName + "(\"myGreeter\", Greeter)");
+            // A literal or any compile-time String constant - the same folding .value(...) does for a
+            // config key, and for the same reason. A bean name is often already a constant, because
+            // something else has to look the bean up by it; making the DSL the one place that cannot
+            // say the constant's name would mean writing the string twice and letting the two drift.
+            String nameValue = resolveStringConstant(nameArg, declaringClass);
+            if (nameValue == null) {
+                addError(nameArg, source, callName + "(name, Type) requires the name to be a String literal " +
+                        "or a compile-time String constant, e.g. " + callName + "(\"myGreeter\", Greeter) or " +
+                        callName + "(VIEW_LOADER_BEAN, GroovyPageResourceLoader)");
                 return null;
             }
-            name = (String) nameValue;
+            name = nameValue;
             if (requireValidIdentifier && !isValidJavaIdentifier(name)) {
                 addError(nameArg, source, "\"" + name + "\" is not a valid name: it becomes the generated " +
                         "member's name, so it must be a valid Java identifier");

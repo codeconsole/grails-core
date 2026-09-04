@@ -1132,6 +1132,67 @@ class GrailsBeansASTTransformationSpec extends Specification {
         'types given both ways'           | 'Both'   | "StringBuilder, value: [StringBuilder]"  | 'both positionally and via'
     }
 
+    def "a bean name may be a compile-time String constant, however it is written"() {
+        given: "the shape that motivated it - a name something else has to look the bean up by"
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            class BeanNames {
+                static final String QUALIFIED = 'qualifiedName'
+            }
+
+            @GrailsBeans
+            @AutoConfiguration
+            class ConstantNamedBeans {
+                static final String BARE = 'bareName'
+
+                def beans = {
+                    bean(BARE, String) { 'from a bare constant' }
+                    bean(BeanNames.QUALIFIED, String) { 'from a qualified constant' }
+                    bean('literal' + 'Name', String) { 'from a concatenation' }
+                    field(BARE + 'Field', String).value('app.thing', 'x')
+                }
+            }
+        '''
+
+        and:
+        GroovyClassLoader loader = new GroovyClassLoader(getClass().classLoader)
+        loader.parseClass(source)
+        Class<?> compiled = loader.loadClass('ConstantNamedBeans')
+
+        expect: "the @Bean value is the constant's value, not its identifier"
+        compiled.getDeclaredMethod('bareName').getAnnotation(Bean).value() == ['bareName'] as String[]
+        compiled.getDeclaredMethod('qualifiedName').getAnnotation(Bean).value() == ['qualifiedName'] as String[]
+        compiled.getDeclaredMethod('literalName').getAnnotation(Bean).value() == ['literalName'] as String[]
+
+        and: "field(...) takes one too, since its name is a member name like any other"
+        compiled.getDeclaredField('bareNameField') != null
+    }
+
+    def "a bean name that is not a compile-time constant is still rejected"() {
+        given:
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @GrailsBeans
+            @AutoConfiguration
+            class RuntimeNamedBeans {
+                def beans = {
+                    bean(System.getProperty('bean.name'), String) { 'nope' }
+                }
+            }
+        '''
+
+        when:
+        compile(source)
+
+        then:
+        MultipleCompilationErrorsException e = thrown(MultipleCompilationErrorsException)
+        e.message.contains('String literal or a compile-time String constant')
+    }
+
     private Class<?> compile() {
         compile(FIXTURE)
     }

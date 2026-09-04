@@ -70,7 +70,12 @@ import org.codehaus.groovy.transform.GroovyASTTransformationClass;
  * </dl>
  *
  * <p>When no name is given, one is derived from the type following the JavaBeans convention
- * ({@link java.beans.Introspector#decapitalize(String)}).</p>
+ * ({@link java.beans.Introspector#decapitalize(String)}). A name that is given may be a String
+ * literal or any compile-time String constant - a bare reference to one declared on this class, a
+ * qualified {@code Other.CONSTANT}, or a concatenation of those - folded the same way
+ * {@code .value(...)} folds a config key. Bean names are often already constants, because something
+ * else looks the bean up by one; the DSL being the single place that could not say the constant's
+ * name would mean writing the string twice and letting the two drift.</p>
  *
  * <h2>Construction settles type arguments</h2>
  *
