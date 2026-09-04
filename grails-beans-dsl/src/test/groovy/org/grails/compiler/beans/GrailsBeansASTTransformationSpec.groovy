@@ -898,6 +898,43 @@ class GrailsBeansASTTransformationSpec extends Specification {
         compiled.getDeclaredConstructor().newInstance().greeting() == 'hello'
     }
 
+    def "a map construction settles type arguments the same way a named implementation does"() {
+        given: "the one-expression form for an implementation configured by properties"
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            interface Holder<T> { }
+
+            class StringHolder implements Holder<String> {
+                String label
+            }
+
+            @GrailsBeans
+            @AutoConfiguration
+            class MapConstructionBeans {
+                def beans = {
+                    bean('label', String) { 'hello' }
+
+                    bean('holder', Holder) { String label ->
+                        new StringHolder(label: label)
+                    }
+                }
+            }
+        '''
+
+        and:
+        GroovyClassLoader loader = new GroovyClassLoader(getClass().classLoader)
+        loader.parseClass(source)
+        def fixture = loader.loadClass('MapConstructionBeans')
+
+        expect: "the construction is evidence, whether its arguments are positional or named"
+        fixture.getDeclaredMethod('holder', String).genericReturnType.typeName == 'Holder<java.lang.String>'
+
+        and: "and it really does configure the instance"
+        fixture.getDeclaredConstructor().newInstance().holder('hi').label == 'hi'
+    }
+
     private Class<?> compile() {
         compile(FIXTURE)
     }

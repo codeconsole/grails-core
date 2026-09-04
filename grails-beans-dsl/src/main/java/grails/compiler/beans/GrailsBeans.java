@@ -44,7 +44,11 @@ import org.codehaus.groovy.transform.GroovyASTTransformationClass;
  * whose body is {@code new Implementation()}, taking its constructor arguments from the closure
  * parameters exactly as the bodyless form does. Naming an implementation is itself the
  * construction, so that form takes no body; an interface with neither an implementation nor a body
- * is an error. Whatever is constructed - a named implementation, or a body that is just a
+ * is an error. That form injects through the constructor; an implementation configured by
+ * <i>properties</i> instead still needs a body, but only ever one expression - Groovy's map
+ * construction says the same thing in one line as declare-set-return does in four:
+ * {@code bean("panel", Panel) { PanelService service -> new PanelImpl(service: service) }}. It is a
+ * construction like any other, so it settles type arguments exactly as a named implementation does. Whatever is constructed - a named implementation, or a body that is just a
  * {@code new ...} expression - also settles the declared type's type arguments where it binds them
  * concretely, so {@code bean("auditorAware", AuditorAware, SpringSecurityAuditorAware)} declares an
  * {@code AuditorAware<Long>} without repeating {@code Long}. Where it does not - the evidence is
