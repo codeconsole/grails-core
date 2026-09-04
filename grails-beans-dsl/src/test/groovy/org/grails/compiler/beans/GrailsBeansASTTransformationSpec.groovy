@@ -5469,6 +5469,124 @@ class GrailsBeansASTTransformationSpec extends Specification {
         'with an empty scope name'        | "''"                                   | 'non-empty String scope name'
     }
 
+    def "a bean body may construct an anonymous inner class"() {
+        given:
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @GrailsBeans
+            @AutoConfiguration
+            class AnonymousInnerBeans {
+                def beans = {
+                    bean('greeter', Greeter) {
+                        new Greeter() {
+                            String greet() { 'hello' }
+                        }
+                    }
+                }
+            }
+
+            interface Greeter { String greet() }
+        '''
+
+        when:
+        Class<?> beans = compile(source)
+        def instance = beans.getDeclaredConstructor().newInstance()
+
+        then: "the lifted body still constructs it against the generated method, not the closure"
+        instance.greeter().greet() == 'hello'
+    }
+
+    def "an anonymous subclass in a bean body keeps working, overrides and all"() {
+        given:
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @GrailsBeans
+            @AutoConfiguration
+            class AnonymousSubclassBeans {
+                def beans = {
+                    bean('greeter', Greeter) {
+                        new Greeter() {
+                            @Override
+                            String greet() { 'overridden ' + super.greet() }
+                        }
+                    }
+                }
+            }
+
+            class Greeter { String greet() { 'base' } }
+        '''
+
+        when:
+        Class<?> beans = compile(source)
+        def instance = beans.getDeclaredConstructor().newInstance()
+
+        then:
+        instance.greeter().greet() == 'overridden base'
+    }
+
+    def "a method(...) helper body may construct an anonymous inner class too"() {
+        given:
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @GrailsBeans
+            @AutoConfiguration
+            class AnonymousInHelperBeans {
+                def beans = {
+                    method('build', Greeter) {
+                        new Greeter() {
+                            String greet() { 'from helper' }
+                        }
+                    }
+
+                    bean('greeting', String) { build().greet() }
+                }
+            }
+
+            interface Greeter { String greet() }
+        '''
+
+        when:
+        Class<?> beans = compile(source)
+
+        then:
+        beans.getDeclaredConstructor().newInstance().greeting() == 'from helper'
+    }
+
+    def "rejects an anonymous inner class in a staticMethod() bean, which has no enclosing instance"() {
+        given:
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+            import org.springframework.beans.factory.config.BeanFactoryPostProcessor
+            import org.springframework.beans.factory.config.ConfigurableListableBeanFactory
+
+            @GrailsBeans
+            @AutoConfiguration
+            class StaticAnonymousBeans {
+                def beans = {
+                    bean('pp', BeanFactoryPostProcessor).staticMethod() {
+                        new BeanFactoryPostProcessor() {
+                            void postProcessBeanFactory(ConfigurableListableBeanFactory f) { }
+                        }
+                    }
+                }
+            }
+        '''
+
+        when:
+        compile(source)
+
+        then:
+        MultipleCompilationErrorsException e = thrown(MultipleCompilationErrorsException)
+        e.message.contains('needs an enclosing instance the static method has not got')
+    }
+
     def "an empty beans block on a plain configuration class is a no-op"() {
         given:
         String source = '''

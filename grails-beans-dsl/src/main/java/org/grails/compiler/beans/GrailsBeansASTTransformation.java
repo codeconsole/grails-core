@@ -49,6 +49,7 @@ import org.codehaus.groovy.ast.AstToTextHelper;
 import org.codehaus.groovy.ast.ClassHelper;
 import org.codehaus.groovy.ast.ClassNode;
 import org.codehaus.groovy.ast.CodeVisitorSupport;
+import org.codehaus.groovy.ast.ConstructorNode;
 import org.codehaus.groovy.ast.FieldNode;
 import org.codehaus.groovy.ast.GenericsType;
 import org.codehaus.groovy.ast.MethodNode;
@@ -66,6 +67,7 @@ import org.codehaus.groovy.ast.expr.MapEntryExpression;
 import org.codehaus.groovy.ast.expr.MapExpression;
 import org.codehaus.groovy.ast.expr.MethodCallExpression;
 import org.codehaus.groovy.ast.expr.PropertyExpression;
+import org.codehaus.groovy.ast.expr.TupleExpression;
 import org.codehaus.groovy.ast.expr.VariableExpression;
 import org.codehaus.groovy.ast.stmt.BlockStatement;
 import org.codehaus.groovy.ast.stmt.EmptyStatement;
@@ -981,6 +983,11 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
             return;
         }
 
+        if (!rehomeAnonymousInnerClasses(beanBody, classNode, Modifier.isStatic(beanMethod.getModifiers()),
+                typeAndName.name, source)) {
+            return;
+        }
+
         classNode.addMethod(beanMethod);
     }
 
@@ -1422,6 +1429,66 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
         return GenericsUtils.makeClassSafeWithGenerics(declaredRaw, resolved);
     }
 
+    /**
+     * Re-homes anonymous inner classes in a body lifted out of the {@code beans} closure.
+     *
+     * <p>Groovy's {@code InnerClassVisitor} runs at SEMANTIC_ANALYSIS, before this transform, and
+     * gives an anonymous class its enclosing instance from wherever it was written: a class
+     * declared inside a closure gets {@code final Closure this$0} and a constructor taking a
+     * {@code Closure}, where one declared in a method gets the declaring class. Lifting the body
+     * into a method moves the code and not that decision, so the generated call passes {@code this}
+     * - the configuration class - to a constructor still expecting the closure. It compiles, and
+     * fails at runtime with a {@code GroovyCastException} naming neither the bean nor the DSL.</p>
+     *
+     * <p>So the three places that decision landed are corrected here: the {@code this$0} field, the
+     * synthetic constructor's first parameter, and the argument at the call site.</p>
+     */
+    private boolean rehomeAnonymousInnerClasses(Statement body, ClassNode host, boolean staticMethod,
+            String beanName, SourceUnit source) {
+        List<ConstructorCallExpression> anonymous = new ArrayList<>();
+        body.visit(new CodeVisitorSupport() {
+            @Override
+            public void visitConstructorCallExpression(ConstructorCallExpression call) {
+                if (call.isUsingAnonymousInnerClass()) {
+                    anonymous.add(call);
+                }
+                super.visitConstructorCallExpression(call);
+            }
+        });
+        for (ConstructorCallExpression call : anonymous) {
+            ClassNode inner = call.getType();
+            FieldNode outerField = inner.getDeclaredField("this$0");
+            if (outerField == null || !ClassHelper.CLOSURE_TYPE.equals(outerField.getType())) {
+                continue; // already homed somewhere real, or static - nothing the lift broke
+            }
+            // A static factory method has no enclosing instance to give it, and the field cannot be
+            // dropped here: InnerClassVisitor added it and the constructor body assigns it.
+            if (staticMethod) {
+                addError(call, source, "\"" + beanName + "\" is declared .staticMethod() and its body " +
+                        "constructs an anonymous inner class, which needs an enclosing instance the " +
+                        "static method has not got - give the anonymous class a name and declare it " +
+                        "as a static nested class, or drop .staticMethod()");
+                return false;
+            }
+            ClassNode enclosing = host.getPlainNodeReference();
+            outerField.setType(enclosing);
+            for (ConstructorNode constructor : inner.getDeclaredConstructors()) {
+                Parameter[] parameters = constructor.getParameters();
+                if (parameters.length > 0 && ClassHelper.CLOSURE_TYPE.equals(parameters[0].getType())) {
+                    parameters[0].setType(enclosing);
+                }
+            }
+            List<Expression> arguments = ((TupleExpression) call.getArguments()).getExpressions();
+            if (!arguments.isEmpty() && arguments.get(0) instanceof VariableExpression &&
+                    "this".equals(((VariableExpression) arguments.get(0)).getName())) {
+                VariableExpression thisExpression = new VariableExpression("this", enclosing);
+                thisExpression.setSourcePosition(arguments.get(0));
+                arguments.set(0, thisExpression);
+            }
+        }
+        return true;
+    }
+
     private String syntheticBeanMethodName(ClassNode beanType, Set<String> usedNames) {
         String base = decapitalize(beanType.getNameWithoutPackage());
         String candidate;
@@ -1648,6 +1715,12 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
             if (!applyGenericAnnotation(helperMethod, qualifierCall, qualifierArgs, source)) {
                 return;
             }
+        }
+
+        // A helper's body is lifted out of the closure exactly as a bean's is, so it needs the same
+        // correction - always non-static, there being no .staticMethod() for method(...).
+        if (!rehomeAnonymousInnerClasses(body.getCode(), classNode, false, typeAndName.name, source)) {
+            return;
         }
 
         classNode.addMethod(helperMethod);
