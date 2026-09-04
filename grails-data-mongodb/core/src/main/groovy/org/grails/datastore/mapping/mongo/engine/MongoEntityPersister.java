@@ -331,13 +331,8 @@ public class MongoEntityPersister extends AbstractMongoObectEntityPersister<Docu
     protected Object storeEntry(final PersistentEntity persistentEntity, final EntityAccess entityAccess,
                                 final Object storeId, final Document nativeEntry) {
 
-        // Honour the id mapping's storedAs, which the codec engine applies via IdentityEncoder.
-        // This is the single point where _id is written for this engine, so without it a
-        // String-id domain resolved to storedAs: ObjectId is saved with a BSON String _id
-        // while the shared MongoQuery looks it up as an ObjectId and never finds it again.
-        // The declared-type value is still returned, so the domain keeps its String id.
-        nativeEntry.put(MONGO_ID_FIELD, MongoIdCoercion.coerceIdToStoredType(storeId, persistentEntity));
-        return storeId;
+        nativeEntry.put(MONGO_ID_FIELD, storeId);
+        return nativeEntry.get(MONGO_ID_FIELD);
     }
 
     protected String getCollectionName(PersistentEntity persistentEntity, Document nativeEntry) {
@@ -415,9 +410,7 @@ public class MongoEntityPersister extends AbstractMongoObectEntityPersister<Docu
     protected Document createDBObjectWithKey(Object key) {
         Document dbo = new Document();
         if (hasNumericalIdentifier || hasStringIdentifier) {
-            // Match the type storeEntry wrote: a String-id domain resolved to
-            // storedAs: ObjectId is filtered by ObjectId, not by the hex String.
-            dbo.put(MONGO_ID_FIELD, MongoIdCoercion.coerceIdToStoredType(key, getPersistentEntity()));
+            dbo.put(MONGO_ID_FIELD, key);
         }
         else {
             if (key instanceof ObjectId) {
