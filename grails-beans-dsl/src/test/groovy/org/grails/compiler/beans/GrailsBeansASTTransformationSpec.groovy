@@ -5587,6 +5587,94 @@ class GrailsBeansASTTransformationSpec extends Specification {
         e.message.contains('needs an enclosing instance the static method has not got')
     }
 
+    def "a bean body may coerce a closure to a functional interface under @CompileStatic"() {
+        given:
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import groovy.transform.CompileStatic
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @GrailsBeans
+            @CompileStatic
+            @AutoConfiguration
+            class SamCoercionBeans {
+                def beans = {
+                    bean('greeter', Greeter).typeArguments(String) {
+                        BaseGreeter delegate = new BaseGreeter()
+                        return { String name -> delegate.greet(name).toUpperCase() } as Greeter<String>
+                    }
+                }
+            }
+
+            interface Greeter<T> { String greet(T name) }
+            class BaseGreeter { String greet(String name) { "hello $name" } }
+        '''
+
+        when:
+        Class<?> beans = compile(source)
+        def greeter = beans.getDeclaredConstructor().newInstance().greeter()
+
+        then: "no anonymous inner class is involved, so nothing needs re-homing"
+        greeter.greet('world') == 'HELLO WORLD'
+
+        and: "and the declared type still carries its type argument"
+        beans.getDeclaredMethod('greeter').genericReturnType.toString().contains('Greeter<java.lang.String>')
+    }
+
+    def "Groovy itself statically compiles an anonymous inner class in an ordinary method"() {
+        given: "no beans DSL anywhere - this is the control for the lifted-body case"
+        String source = '''
+            import groovy.transform.CompileStatic
+
+            @CompileStatic
+            class PlainStaticHost {
+                Greeter make() {
+                    new Greeter() {
+                        String greet() { 'hello' }
+                    }
+                }
+            }
+
+            interface Greeter { String greet() }
+        '''
+
+        when:
+        Class<?> host = compile(source)
+
+        then: "it compiles and runs, so @CompileStatic is not the limitation"
+        host.getDeclaredConstructor().newInstance().make().greet() == 'hello'
+    }
+
+    def "an anonymous inner class works under @CompileStatic too"() {
+        given:
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import groovy.transform.CompileStatic
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @GrailsBeans
+            @CompileStatic
+            @AutoConfiguration
+            class StaticAnonymousInnerBeans {
+                def beans = {
+                    bean('greeter', Greeter) {
+                        new Greeter() {
+                            String greet() { 'hello' }
+                        }
+                    }
+                }
+            }
+
+            interface Greeter { String greet() }
+        '''
+
+        when:
+        Class<?> beans = compile(source)
+
+        then:
+        beans.getDeclaredConstructor().newInstance().greeter().greet() == 'hello'
+    }
+
     def "an empty beans block on a plain configuration class is a no-op"() {
         given:
         String source = '''

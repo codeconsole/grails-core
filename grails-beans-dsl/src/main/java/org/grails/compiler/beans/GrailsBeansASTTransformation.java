@@ -1476,6 +1476,11 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
                 Parameter[] parameters = constructor.getParameters();
                 if (parameters.length > 0 && ClassHelper.CLOSURE_TYPE.equals(parameters[0].getType())) {
                     parameters[0].setType(enclosing);
+                    // Both, and originType is the one that matters: static type checking compares
+                    // arguments against Parameter.getOriginType() while the error it raises prints
+                    // getType(), so setting only the latter fails the call and reports the two
+                    // types as identical.
+                    parameters[0].setOriginType(enclosing);
                 }
             }
             List<Expression> arguments = ((TupleExpression) call.getArguments()).getExpressions();

@@ -170,6 +170,13 @@ import org.codehaus.groovy.transform.GroovyASTTransformationClass;
  * way to say "inject this if some other module supplied it":
  * {@code bean("smsSender", SmsSender) { @Autowired(required = false) SmsTransport t -> ... }}.
  *
+ * <p>A body may construct an anonymous inner class. Groovy fixes such a class's enclosing instance
+ * from where it was written - a class inside a closure gets a {@code Closure} - so lifting the body
+ * into a method corrects that; the alternative, coercing a closure to a single-abstract-method type
+ * ({@code { ... } as Handler<Order>}, parameterized under {@code @CompileStatic}), needs no inner
+ * class at all and delegates rather than subclasses. A {@code .staticMethod()} bean cannot carry
+ * one, having no enclosing instance to give it.</p>
+ *
  * <p>They are also the only correct way to reach a sibling bean. A host Spring does not proxy - an
  * {@code @AutoConfiguration}, a generated plugin sibling, a Grails {@code Application} class -
  * returns a second instance from a direct call rather than the registered singleton, so such calls
