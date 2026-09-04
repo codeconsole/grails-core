@@ -62,7 +62,10 @@ import org.codehaus.groovy.transform.GroovyASTTransformationClass;
  * counterpart, taking the same positional types and named attributes - "register this only when
  * something else supplied that". It has no zero-argument form: with nothing named Spring would
  * deduce the type from this bean's own return type, conditioning a bean on a bean of its own type
- * already existing), {@code .conditionalOnMissingBeanName(...)} (backs off
+ * already existing), {@code .conditionalOnProperty("app.offline"[, ...], havingValue: "false",
+ * matchIfMissing: true)} (property names positionally or as {@code name:}/{@code value:}, the
+ * annotation's other attributes by name),
+ * {@code .conditionalOnMissingBeanName(...)} (backs off
  * by this bean's own name - set automatically, stated once - accepting the annotation's other
  * attributes but rejecting {@code name:} and types), {@code .primary()}, {@code .lazy()},
  * {@code .scope("name")}, {@code .grailsEnv("development"[, ...])} (registers the bean only in

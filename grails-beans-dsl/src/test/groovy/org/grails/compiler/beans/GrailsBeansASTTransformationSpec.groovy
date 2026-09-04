@@ -5048,8 +5048,99 @@ class GrailsBeansASTTransformationSpec extends Specification {
 
         then:
         MultipleCompilationErrorsException e = thrown(MultipleCompilationErrorsException)
-        e.message.contains('.conditionalOnBean(...)')
+        e.message.contains(".conditionalOnProperty(...)")
         e.message.contains('.grailsEnv(...)')
+    }
+
+    def "conditionalOnProperty takes property names positionally and attributes by name"() {
+        given:
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @GrailsBeans
+            @AutoConfiguration
+            class PropertyConditionBeans {
+                def beans = {
+                    bean('offlineOnly', String).conditionalOnProperty('app.offline', havingValue: 'true') { 'offline' }
+                    bean('onlineOnly', String).conditionalOnProperty('app.offline', havingValue: 'false', matchIfMissing: true) { 'online' }
+                    bean('bothSet', String).conditionalOnProperty('a.one', 'a.two') { 'both' }
+                    bean('prefixed', String).conditionalOnProperty(prefix: 'app', name: 'offline', havingValue: 'false') { 'prefixed' }
+                }
+            }
+        '''
+
+        when:
+        Class<?> beans = compile(source)
+
+        then:
+        beans.getDeclaredMethod('offlineOnly').getAnnotation(ConditionalOnProperty).name() == ['app.offline'] as String[]
+        beans.getDeclaredMethod('offlineOnly').getAnnotation(ConditionalOnProperty).havingValue() == 'true'
+
+        and: "matchIfMissing rides along as an ordinary attribute"
+        beans.getDeclaredMethod('onlineOnly').getAnnotation(ConditionalOnProperty).matchIfMissing()
+
+        and: "several names are all required, as the annotation defines"
+        beans.getDeclaredMethod('bothSet').getAnnotation(ConditionalOnProperty).name() == ['a.one', 'a.two'] as String[]
+
+        and: "the fully-named form still works, prefix included"
+        beans.getDeclaredMethod('prefixed').getAnnotation(ConditionalOnProperty).prefix() == 'app'
+        beans.getDeclaredMethod('prefixed').getAnnotation(ConditionalOnProperty).name() == ['offline'] as String[]
+    }
+
+    def "rejects conditionalOnProperty #description"() {
+        given:
+        String source = """
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @GrailsBeans
+            @AutoConfiguration
+            class BadPropertyConditionBeans {
+                def beans = {
+                    bean('greeting', String).conditionalOnProperty($arguments) { 'hello' }
+                }
+            }
+        """
+
+        when:
+        compile(source)
+
+        then:
+        MultipleCompilationErrorsException e = thrown(MultipleCompilationErrorsException)
+        e.message.contains(message)
+
+        where:
+        description                              | arguments                 | message
+        'naming no property at all'              | ''                        | 'needs at least one property name'
+        'with only attributes, no name'          | "havingValue: 'true'"     | 'needs at least one property name'
+        'naming properties both ways'            | "'a.one', name: 'a.two'"  | 'both positionally and via'
+        'naming properties both ways via value:' | "'a.one', value: 'a.two'" | 'both positionally and via'
+        'with a blank name'                      | "'  '"                    | 'non-blank property names'
+        'with a name that is not a String'       | 'String'                  | 'non-blank property names'
+    }
+
+    def "conditionalOnProperty tells two same-named beans apart"() {
+        given:
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @GrailsBeans
+            @AutoConfiguration
+            class PerPropertyBeans {
+                def beans = {
+                    bean('store', String).conditionalOnProperty('app.offline', havingValue: 'true') { 'memory' }
+                    bean('store', String).conditionalOnProperty('app.offline', havingValue: 'false') { 'redis' }
+                }
+            }
+        '''
+
+        when:
+        Class<?> beans = compile(source)
+
+        then:
+        beans.declaredMethods.count { it.isAnnotationPresent(ConditionalOnProperty) } == 2
     }
 
     def "an empty beans block on a plain configuration class is a no-op"() {

@@ -92,6 +92,7 @@ import org.springframework.boot.autoconfigure.AutoConfigureOrder;
 import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.ComponentScan;
@@ -194,6 +195,7 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
     private static final String CONDITIONAL_ON_BEAN_CALL = "conditionalOnBean";
     private static final String CONDITIONAL_ON_MISSING_BEAN_CALL = "conditionalOnMissingBean";
     private static final String CONDITIONAL_ON_MISSING_BEAN_NAME_CALL = "conditionalOnMissingBeanName";
+    private static final String CONDITIONAL_ON_PROPERTY_CALL = "conditionalOnProperty";
     private static final String PRIMARY_CALL = "primary";
     private static final String LAZY_CALL = "lazy";
     private static final String SCOPE_CALL = "scope";
@@ -204,8 +206,8 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
     private static final String GRAILS_ENV_CALL = "grailsEnv";
     private static final Set<String> BEAN_QUALIFIER_CALL_NAMES = Set.of(
             CONDITIONAL_ON_BEAN_CALL, CONDITIONAL_ON_MISSING_BEAN_CALL, CONDITIONAL_ON_MISSING_BEAN_NAME_CALL,
-            PRIMARY_CALL, LAZY_CALL, SCOPE_CALL, STATIC_METHOD_CALL, ANNOTATE_CALL, TYPE_ARGUMENTS_CALL,
-            GRAILS_ENV_CALL);
+            CONDITIONAL_ON_PROPERTY_CALL, PRIMARY_CALL, LAZY_CALL, SCOPE_CALL, STATIC_METHOD_CALL,
+            ANNOTATE_CALL, TYPE_ARGUMENTS_CALL, GRAILS_ENV_CALL);
     // field(...) and method(...) declare plain class members, not beans - bean-specific
     // qualifiers don't apply; .value(...) (@Value config injection) is field-only.
     private static final Set<String> FIELD_QUALIFIER_CALL_NAMES = Set.of(ANNOTATE_CALL, VALUE_CALL, TYPE_ARGUMENTS_CALL);
@@ -615,9 +617,8 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
                     addError(use.baseCall, source, "\"" + use.beanName + "\" is already used as the Spring " +
                             "bean name of another bean(...) statement - declaring it more than once is only " +
                             "allowed when every declaration with the name carries its own discriminating " +
-                            "condition (e.g. .conditionalOnBean(...), .grailsEnv(...), or " +
-                            ".annotate(ConditionalOnProperty, ...)), so that at most one of them registers " +
-                            "at runtime");
+                            "condition (e.g. .conditionalOnProperty(...), .conditionalOnBean(...), or " +
+                            ".grailsEnv(...)), so that at most one of them registers at runtime");
                 }
             }
         }
@@ -687,7 +688,7 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
      * discriminates, for the same reason.</p>
      */
     private static final Set<String> DISCRIMINATING_QUALIFIER_CALL_NAMES =
-            Set.of(CONDITIONAL_ON_BEAN_CALL, GRAILS_ENV_CALL);
+            Set.of(CONDITIONAL_ON_BEAN_CALL, CONDITIONAL_ON_PROPERTY_CALL, GRAILS_ENV_CALL);
 
     private boolean hasDiscriminatingCondition(List<MethodCallExpression> qualifierCalls, MethodCallExpression outerCall) {
         for (MethodCallExpression qualifierCall : qualifierCalls) {
@@ -1818,6 +1819,10 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
             AnnotationNode annotation = conditionalOnMissingBeanAnnotation(args, qualifierCall, source);
             return annotation != null && addAnnotationIfAbsent(beanMethod, qualifierCall, annotation, source);
         }
+        if (CONDITIONAL_ON_PROPERTY_CALL.equals(name)) {
+            AnnotationNode annotation = conditionalOnPropertyAnnotation(args, qualifierCall, source);
+            return annotation != null && addAnnotationIfAbsent(beanMethod, qualifierCall, annotation, source);
+        }
         if (CONDITIONAL_ON_MISSING_BEAN_NAME_CALL.equals(name)) {
             AnnotationNode annotation = conditionalOnMissingBeanNameAnnotation(args, beanName, qualifierCall, source);
             return annotation != null && addAnnotationIfAbsent(beanMethod, qualifierCall, annotation, source);
@@ -2072,6 +2077,86 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
                 args, qualifierCall, source);
     }
 
+    /**
+     * {@code @ConditionalOnProperty} - "register this only when the configuration says so", and by
+     * some distance the most common condition in an application's own wiring. Positional arguments
+     * are property names; named ones are the annotation's remaining attributes.
+     *
+     * <pre>{@code
+     * .conditionalOnProperty('app.offline', havingValue: 'false', matchIfMissing: true)
+     * .conditionalOnProperty(prefix: 'app', name: 'offline', havingValue: 'false')
+     * }</pre>
+     *
+     * <p>A bare form would be an annotation naming no property, which Spring rejects at runtime, so
+     * it is rejected here where the line is written.</p>
+     */
+    private AnnotationNode conditionalOnPropertyAnnotation(List<Expression> args,
+            MethodCallExpression qualifierCall, SourceUnit source) {
+        MapExpression members = !args.isEmpty() && args.get(0) instanceof MapExpression ? (MapExpression) args.get(0) : null;
+        List<Expression> names = members != null ? args.subList(1, args.size()) : args;
+        if (names.isEmpty() && !namesAnyOf(members, PROPERTY_NAME_MEMBERS)) {
+            addError(qualifierCall, source, ".conditionalOnProperty(...) needs at least one property name, " +
+                    "positionally or as name:/value: - e.g. .conditionalOnProperty(\"app.offline\", " +
+                    "havingValue: \"false\")");
+            return null;
+        }
+        if (!names.isEmpty() && rejectPositionalAndNamed(members, PROPERTY_NAME_MEMBERS,
+                CONDITIONAL_ON_PROPERTY_CALL, "property names", qualifierCall, source)) {
+            return null;
+        }
+        AnnotationNode annotation = new AnnotationNode(ClassHelper.make(ConditionalOnProperty.class));
+        if (members != null && !addMembersFromMap(annotation, members, qualifierCall, source)) {
+            return null;
+        }
+        if (!names.isEmpty()) {
+            ListExpression nameList = new ListExpression();
+            for (Expression name : names) {
+                Expression folded = foldStringValue(name);
+                Object value = folded instanceof ConstantExpression ? ((ConstantExpression) folded).getValue() : null;
+                if (!(value instanceof String) || ((String) value).isBlank()) {
+                    addError(name, source, ".conditionalOnProperty(...) takes non-blank property names as " +
+                            "Strings, e.g. .conditionalOnProperty(\"app.offline\")");
+                    return null;
+                }
+                nameList.addExpression(folded);
+            }
+            annotation.setMember("name", nameList);
+        }
+        return annotation;
+    }
+
+    /** The attributes of {@code @ConditionalOnProperty} that name properties; aliases of each other. */
+    private static final Set<String> PROPERTY_NAME_MEMBERS = Set.of("name", "value");
+
+    private boolean namesAnyOf(MapExpression members, Set<String> keys) {
+        if (members == null) {
+            return false;
+        }
+        for (MapEntryExpression entry : members.getMapEntryExpressions()) {
+            Object keyValue = entry.getKeyExpression() instanceof ConstantExpression ?
+                    ((ConstantExpression) entry.getKeyExpression()).getValue() : null;
+            if (keys.contains(keyValue)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Rejects saying the same thing positionally and by name. Which member the positional arguments
+     * fill differs per condition - types go to {@code value}, property names to {@code name} - so
+     * the members that would collide are passed in rather than assumed.
+     */
+    private boolean rejectPositionalAndNamed(MapExpression members, Set<String> aliasMembers, String callName,
+            String what, MethodCallExpression qualifierCall, SourceUnit source) {
+        if (!namesAnyOf(members, aliasMembers)) {
+            return false;
+        }
+        addError(qualifierCall, source, callName + "(...) was given " + what + " both positionally and via " +
+                String.join(":/", aliasMembers.stream().sorted().toList()) + ": - use one or the other");
+        return true;
+    }
+
     // Shared by both: positional types go to value, named arguments are the annotation's own
     // attributes, and giving types both ways at once is rejected.
     private AnnotationNode beanConditionAnnotation(Class<?> annotationType, String callName, List<Expression> args,
@@ -2079,16 +2164,9 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
         AnnotationNode annotation = new AnnotationNode(ClassHelper.make(annotationType));
         MapExpression members = !args.isEmpty() && args.get(0) instanceof MapExpression ? (MapExpression) args.get(0) : null;
         List<Expression> types = members != null ? args.subList(1, args.size()) : args;
-        if (members != null && !types.isEmpty()) {
-            for (MapEntryExpression entry : members.getMapEntryExpressions()) {
-                Object keyValue = entry.getKeyExpression() instanceof ConstantExpression ?
-                        ((ConstantExpression) entry.getKeyExpression()).getValue() : null;
-                if ("value".equals(keyValue)) {
-                    addError(qualifierCall, source, callName + "(...) was given types both " +
-                            "positionally and via value: - use one or the other");
-                    return null;
-                }
-            }
+        if (!types.isEmpty() && rejectPositionalAndNamed(members, Set.of("value"), callName, "types",
+                qualifierCall, source)) {
+            return null;
         }
         if (members != null && !addMembersFromMap(annotation, members, qualifierCall, source)) {
             return null;
