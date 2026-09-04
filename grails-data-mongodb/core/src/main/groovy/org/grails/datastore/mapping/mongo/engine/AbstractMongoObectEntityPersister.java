@@ -198,10 +198,13 @@ public abstract class AbstractMongoObectEntityPersister<T> extends NativeEntryEn
         List dbRefs = new ArrayList();
         boolean reference = isReference(association);
         for (Object foreignKey : keys) {
+            // Same as formulateDatabaseReference: the embedded collection's references must
+            // carry the target's stored _id type.
+            Object coerced = MongoIdCoercion.coerceIdToStoredType(foreignKey, association.getAssociatedEntity());
             if (reference) {
-                dbRefs.add(new DBRef(getCollectionName(association.getAssociatedEntity()), foreignKey));
+                dbRefs.add(new DBRef(getCollectionName(association.getAssociatedEntity()), coerced));
             } else {
-                dbRefs.add(foreignKey);
+                dbRefs.add(coerced);
             }
         }
         getValueRetrievalStrategy().setValue(embeddedEntry, association.getName(), dbRefs);
@@ -327,10 +330,15 @@ public abstract class AbstractMongoObectEntityPersister<T> extends NativeEntryEn
     @Override
     protected Object formulateDatabaseReference(PersistentEntity persistentEntity, Association association, Serializable associationId) {
         boolean isReference = isReference(association);
+        // Write the reference in the type the TARGET's _id is stored as, so it matches the
+        // document it points at. The codec engine does this in ToOneEncoder; without it here
+        // a String-id target stored as ObjectId is pointed at by a BSON String, which no
+        // $lookup, raw driver query or coerced association criterion can match.
+        Object coerced = MongoIdCoercion.coerceIdToStoredType(associationId, association.getAssociatedEntity());
         if (isReference) {
-            return new DBRef(getCollectionName(association.getAssociatedEntity()), associationId);
+            return new DBRef(getCollectionName(association.getAssociatedEntity()), coerced);
         }
-        return associationId;
+        return coerced;
     }
 
     @Override
