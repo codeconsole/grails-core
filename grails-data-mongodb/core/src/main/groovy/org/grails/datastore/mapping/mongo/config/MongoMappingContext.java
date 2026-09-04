@@ -204,32 +204,10 @@ public class MongoMappingContext extends DocumentMappingContext {
         // Must run BEFORE initialize(classes) so that MongoDocumentMappingFactory.createIdentity
         // (invoked during entity registration) can read the global default.
         String storedAsDefault = configuration.getProperty(MongoSettings.SETTING_STRING_IDS_DEFAULT_STORED_AS, String.class, null);
-        this.stringIdDefaultStoredAs = resolveStringIdDefault(storedAsDefault,
-                configuration.getProperty(MongoSettings.SETTING_ENGINE, String.class, MongoConstants.CODEC_ENGINE));
+        this.stringIdDefaultStoredAs = parseStoredAs(storedAsDefault);
         this.portableIdentityType = resolvePortableIdentityType(
                 configuration.getProperty("grails.gorm.defaultIdType", String.class, "long"));
         initialize(classes);
-    }
-
-    /**
-     * Resolve the global {@code storedAs} default for {@code String id} domains, honouring the
-     * persistence engine in use.
-     *
-     * <p>The {@code objectid} default applies to the codec engine only. The non-codec
-     * ("mapping") engine writes association references and builds its flush-time update and
-     * delete filters from the declared identifier type, so a default it does not implement
-     * end to end would store documents it could not then update, delete or join. It keeps the
-     * pre-8.0.0 behaviour until those paths are coerced too.
-     *
-     * <p>An explicit value still applies to both engines: an application that asks for
-     * {@code objectid} on the mapping engine gets exactly what it asked for, with the same
-     * caveats it has today.
-     */
-    private static Class<?> resolveStringIdDefault(String configuredValue, String engine) {
-        if (configuredValue == null && !MongoConstants.CODEC_ENGINE.equals(engine)) {
-            return null;
-        }
-        return parseStoredAs(configuredValue);
     }
 
     private static Class<?> parseStoredAs(String value) {
@@ -259,7 +237,7 @@ public class MongoMappingContext extends DocumentMappingContext {
         // Must run BEFORE initialize(classes) so that MongoDocumentMappingFactory.createIdentity
         // (invoked during entity registration) can read the global default.
         String storedAsDefault = settings.getStringIds() != null ? settings.getStringIds().getDefaultStoredAs() : null;
-        this.stringIdDefaultStoredAs = resolveStringIdDefault(storedAsDefault, settings.getEngine());
+        this.stringIdDefaultStoredAs = parseStoredAs(storedAsDefault);
         this.portableIdentityType = resolvePortableIdentityType(settings.getDefaultIdType());
         initialize(classes);
     }

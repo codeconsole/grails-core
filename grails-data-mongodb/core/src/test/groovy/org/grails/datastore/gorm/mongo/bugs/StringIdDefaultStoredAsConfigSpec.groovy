@@ -120,16 +120,15 @@ class StringIdDefaultStoredAsConfigSpec extends Specification {
         ctx.getPersistentEntity(PlainStringIdDomain.name).mapping.identifier.storedAs == ObjectId
     }
 
-    void "the objectid default does NOT apply to the non-codec engine"() {
-        given: 'the mapping engine builds its update and delete filters, and writes association'
-        and: 'references, from the declared identifier type, so it keeps the pre-8.0.0 behaviour'
+    void "the objectid default applies to the non-codec engine too"() {
+        given: 'both engines coerce _id and association references through the id mapping'
         MongoMappingContext ctx = contextFor(
                 [(MongoSettings.SETTING_ENGINE): 'mapping'],
                 PlainStringIdDomain
         )
 
         expect:
-        ctx.getPersistentEntity(PlainStringIdDomain.name).mapping.identifier.storedAs == null
+        ctx.getPersistentEntity(PlainStringIdDomain.name).mapping.identifier.storedAs == ObjectId
     }
 
     void "an explicit value still applies to the non-codec engine"() {
