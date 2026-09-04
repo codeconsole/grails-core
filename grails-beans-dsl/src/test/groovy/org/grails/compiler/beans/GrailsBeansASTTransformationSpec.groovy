@@ -34,6 +34,7 @@ import org.springframework.boot.autoconfigure.AutoConfigureBefore
 import org.springframework.boot.autoconfigure.AutoConfigureOrder
 import org.springframework.boot.autoconfigure.ImportAutoConfiguration
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication
@@ -5141,6 +5142,83 @@ class GrailsBeansASTTransformationSpec extends Specification {
 
         then:
         beans.declaredMethods.count { it.isAnnotationPresent(ConditionalOnProperty) } == 2
+    }
+
+    def "conditionalOnExpression carries the expression through verbatim, placeholders and all"() {
+        given:
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @GrailsBeans
+            @AutoConfiguration
+            class ExpressionConditionBeans {
+                def beans = {
+                    bean('fallbackTransport', String)
+                            .conditionalOnExpression('!${aws.ses.enabled:false} or ${app.offline:false}') { 'logging' }
+                }
+            }
+        '''
+
+        when:
+        def method = compile(source).getDeclaredMethod('fallbackTransport')
+
+        then: "the placeholder syntax is Spring's, and must reach the annotation untouched"
+        method.getAnnotation(ConditionalOnExpression).value() ==
+                '!${aws.ses.enabled:false} or ${app.offline:false}'
+    }
+
+    def "rejects conditionalOnExpression #description"() {
+        given:
+        String source = """
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @GrailsBeans
+            @AutoConfiguration
+            class BadExpressionConditionBeans {
+                def beans = {
+                    bean('greeting', String).conditionalOnExpression($arguments) { 'hello' }
+                }
+            }
+        """
+
+        when:
+        compile(source)
+
+        then:
+        MultipleCompilationErrorsException e = thrown(MultipleCompilationErrorsException)
+        e.message.contains('exactly one non-blank String expression')
+
+        where:
+        description             | arguments
+        'with no expression'    | ''
+        'with a blank one'      | "'   '"
+        'with more than one'    | "'a', 'b'"
+        'with something else'   | 'String'
+    }
+
+    def "conditionalOnExpression tells two same-named beans apart"() {
+        given:
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @GrailsBeans
+            @AutoConfiguration
+            class PerExpressionBeans {
+                def beans = {
+                    bean('transport', String).conditionalOnExpression('${app.offline:false}') { 'logging' }
+                    bean('transport', String).conditionalOnExpression('!${app.offline:false}') { 'ses' }
+                }
+            }
+        '''
+
+        when:
+        Class<?> beans = compile(source)
+
+        then:
+        beans.declaredMethods.count { it.isAnnotationPresent(ConditionalOnExpression) } == 2
     }
 
     def "an empty beans block on a plain configuration class is a no-op"() {

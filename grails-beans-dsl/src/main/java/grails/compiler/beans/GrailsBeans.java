@@ -65,6 +65,8 @@ import org.codehaus.groovy.transform.GroovyASTTransformationClass;
  * already existing), {@code .conditionalOnProperty("app.offline"[, ...], havingValue: "false",
  * matchIfMissing: true)} (property names positionally or as {@code name:}/{@code value:}, the
  * annotation's other attributes by name),
+ * {@code .conditionalOnExpression("...")} (one SpEL string, for what the others cannot say -
+ * most often a disjunction, since {@code .conditionalOnProperty} only ever conjoins),
  * {@code .conditionalOnMissingBeanName(...)} (backs off
  * by this bean's own name - set automatically, stated once - accepting the annotation's other
  * attributes but rejecting {@code name:} and types), {@code .primary()}, {@code .lazy()},

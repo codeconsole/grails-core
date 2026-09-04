@@ -91,6 +91,7 @@ import org.springframework.boot.autoconfigure.AutoConfigureBefore;
 import org.springframework.boot.autoconfigure.AutoConfigureOrder;
 import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -196,6 +197,7 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
     private static final String CONDITIONAL_ON_MISSING_BEAN_CALL = "conditionalOnMissingBean";
     private static final String CONDITIONAL_ON_MISSING_BEAN_NAME_CALL = "conditionalOnMissingBeanName";
     private static final String CONDITIONAL_ON_PROPERTY_CALL = "conditionalOnProperty";
+    private static final String CONDITIONAL_ON_EXPRESSION_CALL = "conditionalOnExpression";
     private static final String PRIMARY_CALL = "primary";
     private static final String LAZY_CALL = "lazy";
     private static final String SCOPE_CALL = "scope";
@@ -206,7 +208,7 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
     private static final String CONDITIONAL_ON_GRAILS_ENV_CALL = "conditionalOnGrailsEnv";
     private static final Set<String> BEAN_QUALIFIER_CALL_NAMES = Set.of(
             CONDITIONAL_ON_BEAN_CALL, CONDITIONAL_ON_MISSING_BEAN_CALL, CONDITIONAL_ON_MISSING_BEAN_NAME_CALL,
-            CONDITIONAL_ON_PROPERTY_CALL, PRIMARY_CALL, LAZY_CALL, SCOPE_CALL, STATIC_METHOD_CALL,
+            CONDITIONAL_ON_PROPERTY_CALL, CONDITIONAL_ON_EXPRESSION_CALL, PRIMARY_CALL, LAZY_CALL, SCOPE_CALL, STATIC_METHOD_CALL,
             ANNOTATE_CALL, TYPE_ARGUMENTS_CALL, CONDITIONAL_ON_GRAILS_ENV_CALL);
     // field(...) and method(...) declare plain class members, not beans - bean-specific
     // qualifiers don't apply; .value(...) (@Value config injection) is field-only.
@@ -688,7 +690,8 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
      * discriminates, for the same reason.</p>
      */
     private static final Set<String> DISCRIMINATING_QUALIFIER_CALL_NAMES =
-            Set.of(CONDITIONAL_ON_BEAN_CALL, CONDITIONAL_ON_PROPERTY_CALL, CONDITIONAL_ON_GRAILS_ENV_CALL);
+            Set.of(CONDITIONAL_ON_BEAN_CALL, CONDITIONAL_ON_PROPERTY_CALL, CONDITIONAL_ON_EXPRESSION_CALL,
+                    CONDITIONAL_ON_GRAILS_ENV_CALL);
 
     private boolean hasDiscriminatingCondition(List<MethodCallExpression> qualifierCalls, MethodCallExpression outerCall) {
         for (MethodCallExpression qualifierCall : qualifierCalls) {
@@ -1823,6 +1826,10 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
             AnnotationNode annotation = conditionalOnPropertyAnnotation(args, qualifierCall, source);
             return annotation != null && addAnnotationIfAbsent(beanMethod, qualifierCall, annotation, source);
         }
+        if (CONDITIONAL_ON_EXPRESSION_CALL.equals(name)) {
+            AnnotationNode annotation = conditionalOnExpressionAnnotation(args, qualifierCall, source);
+            return annotation != null && addAnnotationIfAbsent(beanMethod, qualifierCall, annotation, source);
+        }
         if (CONDITIONAL_ON_MISSING_BEAN_NAME_CALL.equals(name)) {
             AnnotationNode annotation = conditionalOnMissingBeanNameAnnotation(args, beanName, qualifierCall, source);
             return annotation != null && addAnnotationIfAbsent(beanMethod, qualifierCall, annotation, source);
@@ -2122,6 +2129,32 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
             }
             annotation.setMember("name", nameList);
         }
+        return annotation;
+    }
+
+    /**
+     * {@code @ConditionalOnExpression} - the condition for what the others cannot say, most often
+     * because it is a disjunction and {@code @ConditionalOnProperty} only ever conjoins:
+     *
+     * <pre>{@code
+     * .conditionalOnExpression('!${aws.ses.enabled:false} or ${app.offline:false}')
+     * }</pre>
+     *
+     * <p>Write it single-quoted in Groovy: the {@code ${...}} placeholders are Spring's, resolved
+     * before the expression is evaluated, and a double-quoted string would have Groovy interpolate
+     * them away at compile time into whatever is in scope - usually nothing, silently.</p>
+     */
+    private AnnotationNode conditionalOnExpressionAnnotation(List<Expression> args,
+            MethodCallExpression qualifierCall, SourceUnit source) {
+        Expression folded = args.size() == 1 ? foldStringValue(args.get(0)) : null;
+        Object value = folded instanceof ConstantExpression ? ((ConstantExpression) folded).getValue() : null;
+        if (!(value instanceof String) || ((String) value).isBlank()) {
+            addError(qualifierCall, source, ".conditionalOnExpression(...) takes exactly one non-blank " +
+                    "String expression, e.g. .conditionalOnExpression('${app.offline:false}')");
+            return null;
+        }
+        AnnotationNode annotation = new AnnotationNode(ClassHelper.make(ConditionalOnExpression.class));
+        annotation.setMember("value", folded);
         return annotation;
     }
 
