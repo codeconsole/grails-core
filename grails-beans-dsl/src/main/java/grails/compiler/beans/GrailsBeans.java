@@ -136,11 +136,15 @@ import org.codehaus.groovy.transform.GroovyASTTransformationClass;
  * <dd>The escape hatch, attaching any other annotation with as many attributes as it declares; an
  * array-valued attribute takes either a list or a single value that widens into a one-element
  * array, exactly as it would written out ({@code .annotate(DependsOn, value: "other")}).
- * {@code .annotate(Bean, ...)} is not a collision with the {@code @Bean} this generates but a merge
- * into it, which is how {@code initMethod}, {@code destroyMethod} and {@code autowireCandidate} are
- * reached - {@code .annotate(Bean, destroyMethod: "")} being how a bean wrapping a client it does
- * not own stops Spring inferring and calling {@code close()} on it. The name is not settable there;
- * it comes from {@code bean("name", Type)}.</dd>
+ * Naming an annotation a <i>qualifier</i> already attached is not a collision but a merge into it,
+ * which is the only way to reach the attributes no qualifier sets:
+ * {@code .annotate(Bean, destroyMethod: "")} is how a bean wrapping a client it does not own stops
+ * Spring inferring and calling {@code close()} on it, and
+ * {@code .scope("session").annotate(Scope, proxyMode: ScopedProxyMode.TARGET_CLASS)} is how a
+ * scoped bean becomes injectable into a singleton without capturing one instance forever. What the
+ * qualifier itself set is not re-settable - a bean's name comes from {@code bean("name", Type)} -
+ * and naming the same annotation twice through {@code .annotate(...)} remains an error, since one
+ * call already takes every attribute.</dd>
  * </dl>
  *
  * <h2>Closure parameters are the injection points</h2>

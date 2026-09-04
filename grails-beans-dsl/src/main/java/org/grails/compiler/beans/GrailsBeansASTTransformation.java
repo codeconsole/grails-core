@@ -1925,44 +1925,71 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
             return false;
         }
 
-        // @Bean is the one annotation already attached before any qualifier runs - bean(...)
-        // synthesized it to carry the name. Colliding with it would leave @Bean's own attributes
-        // unreachable, so the author's are merged into it instead.
-        if (annotationType.getName().equals(Bean.class.getName())) {
-            return mergeBeanAnnotation(target, qualifierCall, members, source);
+        // Spring never reads a field(...) or method(...) member as a bean, so @Bean on one is a
+        // mistake rather than something to merge into a @Bean that was never attached.
+        if (annotationType.getName().equals(Bean.class.getName()) &&
+                target.getAnnotations(ClassHelper.make(Bean.class)).isEmpty()) {
+            addError(qualifierCall, source, ".annotate(Bean, ...) applies to bean(...) declarations - " +
+                    "field(...) and method(...) declare plain members, which Spring never reads as beans");
+            return false;
+        }
+
+        // An annotation a QUALIFIER attached is merged into, not collided with: a qualifier sets only
+        // the attribute it exists for - bean(...) the name, .scope(...) the scope - so without this
+        // the annotation's remaining attributes have no spelling in the DSL at all. One that an
+        // earlier .annotate(...) attached is a different matter: .annotate(...) already takes every
+        // attribute at once, so writing it twice for one type is a mistake, not an addition, and
+        // still reports as one.
+        List<AnnotationNode> existing = target.getAnnotations(annotationType);
+        if (!existing.isEmpty() && existing.get(0).getNodeMetaData(ANNOTATE_ATTACHED) == null) {
+            return mergeIntoAnnotation(existing.get(0), annotationType, members, qualifierCall, source);
         }
 
         AnnotationNode annotation = new AnnotationNode(annotationType);
+        annotation.putNodeMetaData(ANNOTATE_ATTACHED, Boolean.TRUE);
         if (members != null && !addMembersFromMap(annotation, members, qualifierCall, source)) {
             return false;
         }
         return addAnnotationIfAbsent(target, qualifierCall, annotation, source);
     }
 
+    /** Marks an annotation node as one {@code .annotate(...)} attached, rather than a qualifier. */
+    private static final String ANNOTATE_ATTACHED =
+            GrailsBeansASTTransformation.class.getName() + ".annotateAttached";
+
     /**
-     * Folds {@code .annotate(Bean, ...)} attributes into the {@code @Bean} that {@code bean(...)}
-     * already attached, which is the only way to reach {@code initMethod}, {@code destroyMethod},
-     * {@code autowireCandidate} and friends. {@code destroyMethod} is the one that matters in
-     * practice: Spring infers a {@code close()}/{@code shutdown()} method and calls it on shutdown,
-     * and {@code destroyMethod: ""} is how a bean wrapping a client it does not own opts out.
-     *
-     * <p>The bean's name is not among them. It comes from {@code bean("name", Type)}, and a second
-     * spelling here could only disagree with the name the rest of the block was validated against.</p>
+     * Attributes that alias one another, so setting one when the other is already set is the same
+     * contradiction as setting it twice - and reads as an addition rather than a conflict, which is
+     * why it is worth naming rather than leaving to Spring's runtime "different values" error.
      */
-    private boolean mergeBeanAnnotation(AnnotatedNode target, MethodCallExpression qualifierCall,
-            MapExpression members, SourceUnit source) {
-        List<AnnotationNode> existing = target.getAnnotations(ClassHelper.make(Bean.class));
-        if (existing.isEmpty()) {
-            addError(qualifierCall, source, ".annotate(Bean, ...) applies to bean(...) declarations - " +
-                    "field(...) and method(...) declare plain members, which Spring never reads as beans");
-            return false;
-        }
+    private static final Map<String, Set<String>> ALIASED_ANNOTATION_MEMBERS = Map.of(
+            Bean.class.getName(), Set.of("value", "name"),
+            ConditionalOnProperty.class.getName(), Set.of("value", "name"));
+
+    /**
+     * Folds {@code .annotate(X, ...)} attributes into an {@code @X} a qualifier already attached.
+     *
+     * <p>Without it those attributes are unreachable: a qualifier sets only what it exists for, so
+     * {@code bean(...)} leaves every other {@code @Bean} attribute unsettable - {@code destroyMethod}
+     * being the one that matters, since Spring otherwise infers {@code close()} and calls it on a
+     * client the application does not own - and {@code .scope("session")} leaves
+     * {@code proxyMode}, without which a scoped bean injected into a singleton silently captures one
+     * instance forever.</p>
+     *
+     * <p>What the qualifier itself set is not re-settable here. Restating it could only disagree
+     * with the value the rest of the block was built around, and for a name that value is what
+     * duplicate-name validation already ran against.</p>
+     */
+    private boolean mergeIntoAnnotation(AnnotationNode annotation, ClassNode annotationType,
+            MapExpression members, MethodCallExpression qualifierCall, SourceUnit source) {
+        String name = annotationType.getNameWithoutPackage();
         if (members == null || members.getMapEntryExpressions().isEmpty()) {
-            addError(qualifierCall, source, ".annotate(Bean) adds nothing, since bean(...) already " +
-                    "carries @Bean - give the attributes to set, e.g. .annotate(Bean, destroyMethod: \"\")");
+            addError(qualifierCall, source, ".annotate(" + name + ") adds nothing, since @" + name +
+                    " is already attached here - give the attributes to set, e.g. " +
+                    ".annotate(Bean, destroyMethod: \"\")");
             return false;
         }
-        AnnotationNode beanAnnotation = existing.get(0);
+        Set<String> aliases = ALIASED_ANNOTATION_MEMBERS.getOrDefault(annotationType.getName(), Set.of());
         for (MapEntryExpression entry : members.getMapEntryExpressions()) {
             Object keyValue = entry.getKeyExpression() instanceof ConstantExpression ?
                     ((ConstantExpression) entry.getKeyExpression()).getValue() : null;
@@ -1972,19 +1999,37 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
                 return false;
             }
             String key = (String) keyValue;
-            if ("value".equals(key) || "name".equals(key)) {
-                addError(qualifierCall, source, "a bean's name comes from bean(\"name\", Type), so " +
-                        ".annotate(Bean, " + key + ": ...) would state it twice - rename it there instead");
+            String taken = takenMember(annotation, key, aliases);
+            if (taken != null) {
+                if (annotationType.getName().equals(Bean.class.getName()) && aliases.contains(taken)) {
+                    addError(qualifierCall, source, "a bean's name comes from bean(\"name\", Type), so " +
+                            ".annotate(Bean, " + key + ": ...) would state it twice - rename it there instead");
+                }
+                else {
+                    addError(qualifierCall, source, "@" + name + "'s \"" + taken + "\" is already set here" +
+                            (taken.equals(key) ? "" : ", and \"" + key + "\" aliases it") +
+                            " - set it where it is stated, not a second time");
+                }
                 return false;
             }
-            if (beanAnnotation.getMember(key) != null) {
-                addError(qualifierCall, source, "@Bean's \"" + key + "\" is already set here, " +
-                        "via an earlier .annotate(Bean, ...)");
-                return false;
-            }
-            beanAnnotation.setMember(key, foldStringValue(entry.getValueExpression()));
+            annotation.setMember(key, foldStringValue(entry.getValueExpression()));
         }
         return true;
+    }
+
+    /** The member already carrying {@code key}'s value - {@code key} itself, or an alias of it. */
+    private String takenMember(AnnotationNode annotation, String key, Set<String> aliases) {
+        if (annotation.getMember(key) != null) {
+            return key;
+        }
+        if (aliases.contains(key)) {
+            for (String alias : aliases) {
+                if (annotation.getMember(alias) != null) {
+                    return alias;
+                }
+            }
+        }
+        return null;
     }
 
     private boolean addMembersFromMap(AnnotationNode annotation, MapExpression members,

@@ -51,6 +51,7 @@ import org.springframework.context.annotation.Primary
 import org.springframework.context.annotation.PropertySource
 import org.springframework.context.annotation.PropertySources
 import org.springframework.context.annotation.Scope
+import org.springframework.context.annotation.ScopedProxyMode
 import org.springframework.core.annotation.Order
 import org.springframework.core.env.MapPropertySource
 import org.springframework.context.annotation.Conditional
@@ -2558,7 +2559,7 @@ class GrailsBeansASTTransformationSpec extends Specification {
         '.value(key, default) with a blank key'              | "field('x', String).value('', 'fallback')"                      | 'requires a non-blank config key'
         '.value(key, default) with a whitespace-only key'    | "field('x', String).value('   ', 'fallback')"                   | 'requires a non-blank config key'
         '.value(...) chained twice'                          | "field('x', String).value('a', 'b').value('c', 'd')"            | 'may only be chained once'
-        '.value(...) combined with .annotate(Value, ...)'    | "field('x', String).value('k', 'd').annotate(Value, value: 'v')" | 'already attached'
+        '.value(...) combined with .annotate(Value, ...)'    | "field('x', String).value('k', 'd').annotate(Value, value: 'v')" | '"value" is already set here'
         'conditionalOnMissingBeanName(...) given a name: attribute' |
                 "bean('x', String).conditionalOnMissingBeanName(name: 'other') { 'y' }" | 'sets name automatically'
         'conditionalOnMissingBeanName(...) given a value: attribute' |
@@ -5219,6 +5220,82 @@ class GrailsBeansASTTransformationSpec extends Specification {
 
         then:
         beans.declaredMethods.count { it.isAnnotationPresent(ConditionalOnExpression) } == 2
+    }
+
+    def "annotate(Scope, ...) completes the @Scope that .scope(...) attached"() {
+        given:
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+            import org.springframework.context.annotation.Scope
+            import org.springframework.context.annotation.ScopedProxyMode
+
+            @GrailsBeans
+            @AutoConfiguration
+            class ScopedBeans {
+                def beans = {
+                    bean('cart', String).scope('session').annotate(Scope, proxyMode: ScopedProxyMode.TARGET_CLASS) { 'cart' }
+                }
+            }
+        '''
+
+        when:
+        def method = compile(source).getDeclaredMethod('cart')
+
+        then: "the scope the qualifier set survives"
+        method.getAnnotation(Scope).value() == 'session'
+
+        and: "and proxyMode, which no qualifier sets and a scoped bean needs, is reachable"
+        method.getAnnotation(Scope).proxyMode() == ScopedProxyMode.TARGET_CLASS
+    }
+
+    def "rejects restating through annotate(...) what the qualifier already set"() {
+        given:
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+            import org.springframework.context.annotation.Scope
+
+            @GrailsBeans
+            @AutoConfiguration
+            class RestatedScopeBeans {
+                def beans = {
+                    bean('cart', String).scope('session').annotate(Scope, value: 'request') { 'cart' }
+                }
+            }
+        '''
+
+        when:
+        compile(source)
+
+        then:
+        MultipleCompilationErrorsException e = thrown(MultipleCompilationErrorsException)
+        e.message.contains('@Scope\'s "value" is already set here')
+    }
+
+    def "annotate(...) is still once per annotation type when it attached the annotation itself"() {
+        given:
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+            import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
+
+            @GrailsBeans
+            @AutoConfiguration
+            class TwiceAnnotatedBeans {
+                def beans = {
+                    bean('x', String).annotate(ConditionalOnProperty, name: 'a')
+                            .annotate(ConditionalOnProperty, havingValue: 'b') { 'x' }
+                }
+            }
+        '''
+
+        when: "the two calls set different attributes, so a merge would have accepted them"
+        compile(source)
+
+        then: "but .annotate(...) already takes every attribute at once, so twice is a mistake"
+        MultipleCompilationErrorsException e = thrown(MultipleCompilationErrorsException)
+        e.message.contains('already attached')
     }
 
     def "an empty beans block on a plain configuration class is a no-op"() {
