@@ -1922,19 +1922,58 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
         return true;
     }
 
+    /**
+     * {@code @Scope} - the scope name positionally, the annotation's other attributes by name, as
+     * every other attribute-bearing qualifier takes them.
+     *
+     * <pre>{@code
+     * .scope('prototype')
+     * .scope('session', proxyMode: ScopedProxyMode.TARGET_CLASS)
+     * }</pre>
+     *
+     * <p>{@code proxyMode} is why this takes attributes at all. A session- or request-scoped bean
+     * injected into a singleton needs {@code TARGET_CLASS}, or the singleton captures one scope
+     * instance for the lifetime of the application and serves it to everyone - a wrong answer
+     * rather than an error. Leaving it to {@code .annotate(Scope, ...)} put the fix somewhere other
+     * than where the mistake is written.</p>
+     */
     private boolean applyScopeQualifier(MethodNode beanMethod, MethodCallExpression qualifierCall,
             List<Expression> args, SourceUnit source) {
-        Expression scopeArg = args.size() == 1 ? args.get(0) : null;
-        Object scopeValue = scopeArg instanceof ConstantExpression ? ((ConstantExpression) scopeArg).getValue() : null;
-        if (!(scopeValue instanceof String) || ((String) scopeValue).isEmpty()) {
-            addError(qualifierCall, source, ".scope(...) requires exactly one non-empty String argument, " +
-                    "e.g. .scope(\"prototype\")");
+        MapExpression members = !args.isEmpty() && args.get(0) instanceof MapExpression ? (MapExpression) args.get(0) : null;
+        List<Expression> positional = members != null ? args.subList(1, args.size()) : args;
+        if (positional.size() > 1) {
+            addError(qualifierCall, source, ".scope(...) takes one scope name, e.g. " +
+                    ".scope(\"session\", proxyMode: ScopedProxyMode.TARGET_CLASS)");
+            return false;
+        }
+        if (positional.isEmpty() && !namesAnyOf(members, SCOPE_NAME_MEMBERS)) {
+            addError(qualifierCall, source, ".scope(...) needs a scope name, positionally or as " +
+                    "value:/scopeName: - e.g. .scope(\"prototype\")");
+            return false;
+        }
+        if (!positional.isEmpty() && rejectPositionalAndNamed(members, SCOPE_NAME_MEMBERS, SCOPE_CALL,
+                "a scope name", qualifierCall, source)) {
             return false;
         }
         AnnotationNode scopeAnnotation = new AnnotationNode(ClassHelper.make(Scope.class));
-        scopeAnnotation.setMember("value", scopeArg);
+        if (members != null && !addMembersFromMap(scopeAnnotation, members, qualifierCall, source)) {
+            return false;
+        }
+        if (!positional.isEmpty()) {
+            Expression folded = foldStringValue(positional.get(0));
+            Object scopeValue = folded instanceof ConstantExpression ? ((ConstantExpression) folded).getValue() : null;
+            if (!(scopeValue instanceof String) || ((String) scopeValue).isEmpty()) {
+                addError(qualifierCall, source, ".scope(...) requires a non-empty String scope name, " +
+                        "e.g. .scope(\"prototype\")");
+                return false;
+            }
+            scopeAnnotation.setMember("value", folded);
+        }
         return addAnnotationIfAbsent(beanMethod, qualifierCall, scopeAnnotation, source);
     }
+
+    /** {@code @Scope}'s attributes that name the scope; aliases of each other. */
+    private static final Set<String> SCOPE_NAME_MEMBERS = Set.of("value", "scopeName");
 
     /**
      * Compiles {@code .conditionalOnGrailsEnv("development"[, ...])} into {@code @ConditionalOnGrailsEnv}.
@@ -2022,6 +2061,7 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
      */
     private static final Map<String, Set<String>> ALIASED_ANNOTATION_MEMBERS = Map.of(
             Bean.class.getName(), Set.of("value", "name"),
+            Scope.class.getName(), Set.of("value", "scopeName"),
             ConditionalOnProperty.class.getName(), Set.of("value", "name"));
 
     /**

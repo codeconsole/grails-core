@@ -127,8 +127,15 @@ import org.codehaus.groovy.transform.GroovyASTTransformationClass;
  * exist for is a migration: something reachable under an old name that must stay reachable while
  * its callers move.</dd>
  *
- * <dt>{@code .primary()}, {@code .lazy()}, {@code .scope("name")}</dt>
- * <dd>{@code @Primary}, {@code @Lazy}, {@code @Scope}.</dd>
+ * <dt>{@code .primary()}, {@code .lazy()}</dt>
+ * <dd>{@code @Primary}, {@code @Lazy}.</dd>
+ *
+ * <dt>{@code .scope("session"[, proxyMode: ScopedProxyMode.TARGET_CLASS])}</dt>
+ * <dd>The scope name positionally or as {@code value:}/{@code scopeName:}, the annotation's other
+ * attributes by name. {@code proxyMode} is the one to know about: a session- or request-scoped bean
+ * injected into a singleton needs {@code TARGET_CLASS}, or the singleton captures one scope
+ * instance for the lifetime of the application and serves it to everyone - a wrong answer rather
+ * than an error.</dd>
  *
  * <dt>{@code .staticMethod()}</dt>
  * <dd>A {@code static} factory method. Required for {@code BeanFactoryPostProcessor} and
@@ -148,8 +155,7 @@ import org.codehaus.groovy.transform.GroovyASTTransformationClass;
  * which is the only way to reach the attributes no qualifier sets:
  * {@code .annotate(Bean, destroyMethod: "")} is how a bean wrapping a client it does not own stops
  * Spring inferring and calling {@code close()} on it, and
- * {@code .scope("session").annotate(Scope, proxyMode: ScopedProxyMode.TARGET_CLASS)} is how a
- * scoped bean becomes injectable into a singleton without capturing one instance forever. What the
+ * and it is how any attribute a qualifier does not itself set is reached. What the
  * qualifier itself set is not re-settable - a bean's name comes from {@code bean("name", Type)} -
  * and naming the same annotation twice through {@code .annotate(...)} remains an error, since one
  * call already takes every attribute.</dd>

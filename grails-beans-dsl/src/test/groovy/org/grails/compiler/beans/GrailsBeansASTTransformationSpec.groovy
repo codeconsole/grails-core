@@ -2539,8 +2539,8 @@ class GrailsBeansASTTransformationSpec extends Specification {
         'staticMethod() chained twice'                  | "bean('x', String).staticMethod().staticMethod() { 'y' }"          | 'may only be chained once'
         'staticMethod() chained onto field(...)'         | "field('x', String).staticMethod()"                                | 'cannot be chained onto field(...)'
         'staticMethod() chained onto method(...)'        | "method('x', String).staticMethod() { 'y' }"                       | 'cannot be chained onto method(...)'
-        'scope(...) with no argument'                   | "bean('x', String).scope() { 'y' }"                                | '.scope(...) requires exactly one non-empty String argument'
-        'scope(...) with a non-String argument'         | "bean('x', String).scope(42) { 'y' }"                              | '.scope(...) requires exactly one non-empty String argument'
+        'scope(...) with no argument'                   | "bean('x', String).scope() { 'y' }"                                | 'needs a scope name'
+        'scope(...) with a non-String argument'         | "bean('x', String).scope(42) { 'y' }"                              | 'non-empty String scope name'
         'annotate(...) with no arguments'                | "bean('x', String).annotate() { 'y' }"                            | 'requires an annotation type'
         'annotate(...) with a non-type argument'         | "bean('x', String).annotate('NotAType') { 'y' }"                  | 'requires an annotation type'
         'annotate(...) with a non-annotation type'       | "bean('x', String).annotate(String) { 'y' }"                      | 'is not an annotation type'
@@ -5401,6 +5401,72 @@ class GrailsBeansASTTransformationSpec extends Specification {
 
         then:
         thrown(MultipleCompilationErrorsException)
+    }
+
+    def "scope(...) takes the annotation's other attributes by name"() {
+        given:
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+            import org.springframework.context.annotation.ScopedProxyMode
+
+            @GrailsBeans
+            @AutoConfiguration
+            class ScopeAttributeBeans {
+                def beans = {
+                    bean('cart', String).scope('session', proxyMode: ScopedProxyMode.TARGET_CLASS) { 'cart' }
+                    bean('plain', String).scope('prototype') { 'plain' }
+                    bean('named', String).scope(scopeName: 'request') { 'named' }
+                }
+            }
+        '''
+
+        when:
+        Class<?> beans = compile(source)
+
+        then: "one call now says what a scoped bean needs to work"
+        beans.getDeclaredMethod('cart').getAnnotation(Scope).value() == 'session'
+        beans.getDeclaredMethod('cart').getAnnotation(Scope).proxyMode() == ScopedProxyMode.TARGET_CLASS
+
+        and: "the bare positional form is unchanged"
+        beans.getDeclaredMethod('plain').getAnnotation(Scope).value() == 'prototype'
+        beans.getDeclaredMethod('plain').getAnnotation(Scope).proxyMode() == ScopedProxyMode.DEFAULT
+
+        and: "and the scope may be named instead, as the annotation allows"
+        beans.getDeclaredMethod('named').getAnnotation(Scope).scopeName() == 'request'
+    }
+
+    def "rejects scope(...) #description"() {
+        given:
+        String source = """
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+            import org.springframework.context.annotation.ScopedProxyMode
+
+            @GrailsBeans
+            @AutoConfiguration
+            class BadScopeBeans {
+                def beans = {
+                    bean('greeting', String).scope($arguments) { 'hello' }
+                }
+            }
+        """
+
+        when:
+        compile(source)
+
+        then:
+        MultipleCompilationErrorsException e = thrown(MultipleCompilationErrorsException)
+        e.message.contains(message)
+
+        where:
+        description                       | arguments                              | message
+        'naming no scope at all'          | ''                                     | 'needs a scope name'
+        'with only attributes, no scope'  | 'proxyMode: ScopedProxyMode.TARGET_CLASS' | 'needs a scope name'
+        'naming the scope both ways'      | "'session', value: 'request'"          | 'both positionally and via'
+        'naming the scope both ways via scopeName:' | "'session', scopeName: 'request'" | 'both positionally and via'
+        'with more than one scope name'   | "'session', 'request'"                 | 'takes one scope name'
+        'with an empty scope name'        | "''"                                   | 'non-empty String scope name'
     }
 
     def "an empty beans block on a plain configuration class is a no-op"() {
