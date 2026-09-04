@@ -615,8 +615,9 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
                     addError(use.baseCall, source, "\"" + use.beanName + "\" is already used as the Spring " +
                             "bean name of another bean(...) statement - declaring it more than once is only " +
                             "allowed when every declaration with the name carries its own discriminating " +
-                            "condition (e.g. .annotate(ConditionalOnProperty, ...)), so that at most one of " +
-                            "them registers at runtime");
+                            "condition (e.g. .conditionalOnBean(...), .grailsEnv(...), or " +
+                            ".annotate(ConditionalOnProperty, ...)), so that at most one of them registers " +
+                            "at runtime");
                 }
             }
         }
@@ -671,6 +672,23 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
         return new BeanNameUse(name, baseCall, hasDiscriminatingCondition(qualifierCalls, outerCall));
     }
 
+    /**
+     * The qualifiers that condition a bean on something outside itself, and so can tell two
+     * declarations of one name apart whenever they are given anything to compare.
+     *
+     * <p>Listed rather than tested one by one, because forgetting to add a new condition qualifier
+     * here does not fail any build: it rejects the author's block instead. They write the mutually
+     * exclusive pair Spring Boot documents and are told their two beans need "its own
+     * discriminating condition" while looking straight at the condition that discriminates them.</p>
+     *
+     * <p>{@code .conditionalOnMissingBean(...)} is deliberately absent, handled separately just
+     * below: it discriminates only when given a type, since two same-named beans backing off by
+     * that shared name carry an identical condition. {@code .conditionalOnMissingBeanName()} never
+     * discriminates, for the same reason.</p>
+     */
+    private static final Set<String> DISCRIMINATING_QUALIFIER_CALL_NAMES =
+            Set.of(CONDITIONAL_ON_BEAN_CALL, GRAILS_ENV_CALL);
+
     private boolean hasDiscriminatingCondition(List<MethodCallExpression> qualifierCalls, MethodCallExpression outerCall) {
         for (MethodCallExpression qualifierCall : qualifierCalls) {
             String qualifierName = qualifierCall.getMethodAsString();
@@ -678,7 +696,7 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
             if (CONDITIONAL_ON_MISSING_BEAN_CALL.equals(qualifierName) && discriminatesByType(args)) {
                 return true;
             }
-            if (GRAILS_ENV_CALL.equals(qualifierName) && !args.isEmpty()) {
+            if (DISCRIMINATING_QUALIFIER_CALL_NAMES.contains(qualifierName) && !args.isEmpty()) {
                 return true;
             }
             if (ANNOTATE_CALL.equals(qualifierName)) {

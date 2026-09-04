@@ -5004,6 +5004,54 @@ class GrailsBeansASTTransformationSpec extends Specification {
         beans.declaredMethods.count { it.isAnnotationPresent(ConditionalOnGrailsEnv) } == 2
     }
 
+    def "conditionalOnBean tells two same-named beans apart, as any other condition does"() {
+        given:
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @GrailsBeans
+            @AutoConfiguration
+            class PerBeanConditionBeans {
+                def beans = {
+                    bean('sender', String).conditionalOnBean(Integer) { 'with transport' }
+                    bean('sender', String).conditionalOnBean(Long) { 'with other transport' }
+                }
+            }
+        '''
+
+        when: "both declare one bean name under mutually exclusive conditions"
+        Class<?> beans = compile(source)
+
+        then: "the shared-name check accepts them"
+        beans.declaredMethods.count { it.isAnnotationPresent(ConditionalOnBean) } == 2
+    }
+
+    def "the shared-name error points at a first-class condition qualifier, not only the escape hatch"() {
+        given:
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @GrailsBeans
+            @AutoConfiguration
+            class UnconditionedDuplicateBeans {
+                def beans = {
+                    bean('store', String) { 'one' }
+                    bean('store', String) { 'two' }
+                }
+            }
+        '''
+
+        when:
+        compile(source)
+
+        then:
+        MultipleCompilationErrorsException e = thrown(MultipleCompilationErrorsException)
+        e.message.contains('.conditionalOnBean(...)')
+        e.message.contains('.grailsEnv(...)')
+    }
+
     def "an empty beans block on a plain configuration class is a no-op"() {
         given:
         String source = '''
