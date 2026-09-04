@@ -93,6 +93,14 @@ interface MongoSettings extends Settings {
 
     String SETTING_STATELESS = 'grails.mongodb.stateless'
 
+    /**
+     * Selects the persistence engine. The only supported value is {@code 'codec'}, which is
+     * also the default.
+     *
+     * @deprecated The non-codec ("mapping") engine this setting can select is deprecated and
+     * will be removed in a future release, at which point this setting becomes a no-op.
+     */
+    @Deprecated
     String SETTING_ENGINE = 'grails.mongodb.engine'
 
     /**

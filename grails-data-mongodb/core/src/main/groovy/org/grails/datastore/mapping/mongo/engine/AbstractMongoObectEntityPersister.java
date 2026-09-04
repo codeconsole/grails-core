@@ -62,7 +62,14 @@ import org.grails.datastore.mapping.query.Query;
  *
  * @author Graeme Rocher
  * @since 5.0
+ *
+ * @deprecated The non-codec ("mapping") persistence engine is deprecated and will be removed
+ * in a future release. Use the default codec engine, which is what
+ * {@code grails.mongodb.engine} selects when unset. This engine reaches MongoDB through a
+ * separate persister hierarchy that has to be kept in step with the codec one for every
+ * storage-layer change, and it carries no feature the codec engine lacks.
  */
+@Deprecated
 public abstract class AbstractMongoObectEntityPersister<T> extends NativeEntryEntityPersister<T, Object> {
     public static final String INSTANCE_PREFIX = "instance:";
     public static final String MONGO_ID_FIELD = "_id";

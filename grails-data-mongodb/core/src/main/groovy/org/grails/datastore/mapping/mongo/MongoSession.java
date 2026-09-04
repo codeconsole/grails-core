@@ -72,7 +72,14 @@ import org.grails.datastore.mapping.query.api.QueryableCriteria;
  *
  * @author Graeme Rocher
  * @since 1.0
+ *
+ * @deprecated The non-codec ("mapping") persistence engine is deprecated and will be removed
+ * in a future release. Use the default codec engine, which is what
+ * {@code grails.mongodb.engine} selects when unset. This engine reaches MongoDB through a
+ * separate persister hierarchy that has to be kept in step with the codec one for every
+ * storage-layer change, and it carries no feature the codec engine lacks.
  */
+@Deprecated
 public class MongoSession extends AbstractMongoSession {
 
     public MongoSession(MongoDatastore datastore, MappingContext mappingContext, ApplicationEventPublisher publisher) {
