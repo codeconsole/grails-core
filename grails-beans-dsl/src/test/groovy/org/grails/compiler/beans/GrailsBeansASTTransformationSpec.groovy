@@ -838,6 +838,66 @@ class GrailsBeansASTTransformationSpec extends Specification {
         compiled.getDeclaredMethod('greeting') != null
     }
 
+    def "rejects a generated bean calling a hand-written @Bean method on the same class"() {
+        given: "the mixed shape a migration passes through, where the call was correct before the move"
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+            import org.springframework.context.annotation.Bean
+
+            @GrailsBeans
+            @AutoConfiguration
+            class MixedHandWrittenBeans {
+                @Bean
+                StringBuilder greeter() {
+                    new StringBuilder('hello')
+                }
+
+                def beans = {
+                    bean('shout', String) {
+                        greeter().toString().toUpperCase()
+                    }
+                }
+            }
+        '''
+
+        when:
+        compile(source)
+
+        then:
+        MultipleCompilationErrorsException e = thrown(MultipleCompilationErrorsException)
+        e.message.contains('is another bean declared in this block')
+    }
+
+    def "leaves a call to a hand-written method that is not a bean alone"() {
+        given: "only @Bean methods have a singleton to miss"
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @GrailsBeans
+            @AutoConfiguration
+            class MixedPlainMethodBeans {
+                String salutation() {
+                    'hello'
+                }
+
+                def beans = {
+                    bean('greeting', String) {
+                        salutation()
+                    }
+                }
+            }
+        '''
+
+        when:
+        Class<?> compiled = compile(source)
+
+        then:
+        noExceptionThrown()
+        compiled.getDeclaredConstructor().newInstance().greeting() == 'hello'
+    }
+
     private Class<?> compile() {
         compile(FIXTURE)
     }

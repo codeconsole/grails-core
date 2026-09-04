@@ -1150,7 +1150,13 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
     private void rejectUnproxiedSiblingBeanCalls(ClassNode host, List<MethodNode> generated, SourceUnit source) {
         boolean proxied = beanMethodsAreProxied(host);
         Map<String, MethodNode> beanMethodsByName = new LinkedHashMap<>();
-        for (MethodNode method : generated) {
+        // Every @Bean method on the host, not only the ones this block generated. A class that
+        // mixes hand-written @Bean methods with the DSL is what a migration looks like midway
+        // through, and a call to one of those from a generated body misses the singleton in exactly
+        // the same way - more easily, in fact, since it was correct in the @Configuration class the
+        // beans are being moved out of. Only generated bodies are scanned: what a hand-written
+        // method does is its author's business, not this transform's.
+        for (MethodNode method : host.getMethods()) {
             if (method.getAnnotations(ClassHelper.make(Bean.class)).isEmpty()) {
                 continue;
             }
