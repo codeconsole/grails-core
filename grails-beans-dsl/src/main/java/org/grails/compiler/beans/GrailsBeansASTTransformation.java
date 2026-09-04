@@ -93,6 +93,7 @@ import org.springframework.boot.autoconfigure.AutoConfigureBefore;
 import org.springframework.boot.autoconfigure.AutoConfigureOrder;
 import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -200,6 +201,7 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
     private static final String CONDITIONAL_ON_MISSING_BEAN_NAME_CALL = "conditionalOnMissingBeanName";
     private static final String CONDITIONAL_ON_PROPERTY_CALL = "conditionalOnProperty";
     private static final String CONDITIONAL_ON_EXPRESSION_CALL = "conditionalOnExpression";
+    private static final String CONDITIONAL_ON_CLASS_CALL = "conditionalOnClass";
     private static final String PRIMARY_CALL = "primary";
     private static final String LAZY_CALL = "lazy";
     private static final String SCOPE_CALL = "scope";
@@ -211,7 +213,8 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
     private static final String CONDITIONAL_ON_GRAILS_ENV_CALL = "conditionalOnGrailsEnv";
     private static final Set<String> BEAN_QUALIFIER_CALL_NAMES = Set.of(
             CONDITIONAL_ON_BEAN_CALL, CONDITIONAL_ON_MISSING_BEAN_CALL, CONDITIONAL_ON_MISSING_BEAN_NAME_CALL,
-            CONDITIONAL_ON_PROPERTY_CALL, CONDITIONAL_ON_EXPRESSION_CALL, PRIMARY_CALL, LAZY_CALL, SCOPE_CALL, STATIC_METHOD_CALL,
+            CONDITIONAL_ON_PROPERTY_CALL, CONDITIONAL_ON_EXPRESSION_CALL, CONDITIONAL_ON_CLASS_CALL,
+            PRIMARY_CALL, LAZY_CALL, SCOPE_CALL, STATIC_METHOD_CALL,
             ANNOTATE_CALL, TYPE_ARGUMENTS_CALL, CONDITIONAL_ON_GRAILS_ENV_CALL, ALIASES_CALL);
     // field(...) and method(...) declare plain class members, not beans - bean-specific
     // qualifiers don't apply; .value(...) (@Value config injection) is field-only.
@@ -694,7 +697,7 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
      */
     private static final Set<String> DISCRIMINATING_QUALIFIER_CALL_NAMES =
             Set.of(CONDITIONAL_ON_BEAN_CALL, CONDITIONAL_ON_PROPERTY_CALL, CONDITIONAL_ON_EXPRESSION_CALL,
-                    CONDITIONAL_ON_GRAILS_ENV_CALL);
+                    CONDITIONAL_ON_CLASS_CALL, CONDITIONAL_ON_GRAILS_ENV_CALL);
 
     private boolean hasDiscriminatingCondition(List<MethodCallExpression> qualifierCalls, MethodCallExpression outerCall) {
         for (MethodCallExpression qualifierCall : qualifierCalls) {
@@ -1909,6 +1912,10 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
             AnnotationNode annotation = conditionalOnExpressionAnnotation(args, qualifierCall, source);
             return annotation != null && addAnnotationIfAbsent(beanMethod, qualifierCall, annotation, source);
         }
+        if (CONDITIONAL_ON_CLASS_CALL.equals(name)) {
+            AnnotationNode annotation = conditionalOnClassAnnotation(args, qualifierCall, source);
+            return annotation != null && addAnnotationIfAbsent(beanMethod, qualifierCall, annotation, source);
+        }
         if (CONDITIONAL_ON_MISSING_BEAN_NAME_CALL.equals(name)) {
             AnnotationNode annotation = conditionalOnMissingBeanNameAnnotation(args, beanName, qualifierCall, source);
             return annotation != null && addAnnotationIfAbsent(beanMethod, qualifierCall, annotation, source);
@@ -2380,6 +2387,76 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
     }
 
     /** The attributes of {@code @ConditionalOnProperty} that name properties; aliases of each other. */
+    private static final Set<String> CLASS_TYPE_MEMBERS = Set.of("value");
+    private static final Set<String> CLASS_NAME_MEMBERS = Set.of("name");
+
+    /**
+     * {@code @ConditionalOnClass} - "register this only when that class is on the classpath", the
+     * condition an optional integration is gated on.
+     *
+     * <p>Takes class literals and String names in the same positional list, because the two are not
+     * interchangeable and the choice is the whole point. A literal is the readable form and is
+     * checked by the compiler, but it can only be written for a class this module compiles against;
+     * naming a class that may be absent has to be a String, or the reference itself is the thing
+     * that fails. Spring's annotation carries both for that reason ({@code value} and {@code name}),
+     * and so does this.</p>
+     *
+     * <p>Note where the condition is written. Spring reads it from the bytecode before loading
+     * anything, but a {@code @Bean} method's parameter and return types are resolved when the
+     * configuration class is parsed - so guarding a method whose own signature names the absent
+     * class is not reliably safe. Gate at class level for that: a separate
+     * {@code @GrailsBeans @AutoConfiguration} class carrying {@code @ConditionalOnClass}, holding
+     * the beans that mention the optional type.</p>
+     */
+    private AnnotationNode conditionalOnClassAnnotation(List<Expression> args,
+            MethodCallExpression qualifierCall, SourceUnit source) {
+        MapExpression members = !args.isEmpty() && args.get(0) instanceof MapExpression ? (MapExpression) args.get(0) : null;
+        List<Expression> positional = members != null ? args.subList(1, args.size()) : args;
+        if (positional.isEmpty() && !namesAnyOf(members, CLASS_TYPE_MEMBERS) && !namesAnyOf(members, CLASS_NAME_MEMBERS)) {
+            addError(qualifierCall, source, ".conditionalOnClass(...) needs at least one class, as a type or " +
+                    "a String name - e.g. .conditionalOnClass(MongoLockProvider) for a class this module " +
+                    "compiles against, or .conditionalOnClass(name: \"net.javacrumbs.shedlock.provider.mongo." +
+                    "MongoLockProvider\") for one that may be absent");
+            return null;
+        }
+        ListExpression types = new ListExpression();
+        ListExpression names = new ListExpression();
+        for (Expression arg : positional) {
+            if (arg instanceof ClassExpression) {
+                types.addExpression(arg);
+                continue;
+            }
+            Expression folded = foldStringValue(arg);
+            Object value = folded instanceof ConstantExpression ? ((ConstantExpression) folded).getValue() : null;
+            if (!(value instanceof String) || ((String) value).isBlank()) {
+                addError(arg, source, ".conditionalOnClass(...) takes types or non-blank String class names, " +
+                        "e.g. .conditionalOnClass(MongoLockProvider) or " +
+                        ".conditionalOnClass(\"net.javacrumbs.shedlock.provider.mongo.MongoLockProvider\")");
+                return null;
+            }
+            names.addExpression(folded);
+        }
+        if (!types.getExpressions().isEmpty() && rejectPositionalAndNamed(members, CLASS_TYPE_MEMBERS,
+                CONDITIONAL_ON_CLASS_CALL, "types", qualifierCall, source)) {
+            return null;
+        }
+        if (!names.getExpressions().isEmpty() && rejectPositionalAndNamed(members, CLASS_NAME_MEMBERS,
+                CONDITIONAL_ON_CLASS_CALL, "class names", qualifierCall, source)) {
+            return null;
+        }
+        AnnotationNode annotation = new AnnotationNode(ClassHelper.make(ConditionalOnClass.class));
+        if (members != null && !addMembersFromMap(annotation, members, qualifierCall, source)) {
+            return null;
+        }
+        if (!types.getExpressions().isEmpty()) {
+            annotation.setMember("value", types);
+        }
+        if (!names.getExpressions().isEmpty()) {
+            annotation.setMember("name", names);
+        }
+        return annotation;
+    }
+
     private static final Set<String> PROPERTY_NAME_MEMBERS = Set.of("name", "value");
 
     private boolean namesAnyOf(MapExpression members, Set<String> keys) {

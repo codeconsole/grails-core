@@ -115,6 +115,19 @@ import org.codehaus.groovy.transform.GroovyASTTransformationClass;
  * {@code ${...}} placeholders are Spring's, and a double-quoted string would interpolate them away
  * at compile time.</dd>
  *
+ * <dt>{@code .conditionalOnClass(SomeType[, "com.example.Other", ...])}</dt>
+ * <dd>Types and String class names positionally, the annotation's other attributes by name. The
+ * two forms are not interchangeable and choosing between them is the point: a literal reads better
+ * and is checked by the compiler, but can only be written for a class this module compiles
+ * against, while a class that may be <i>absent</i> has to be named as a String or the reference is
+ * itself the thing that fails. Spring's annotation carries both ({@code value} and {@code name})
+ * for that reason.
+ * <p>Mind where the condition goes. Spring reads it from the bytecode before loading anything, but
+ * a {@code @Bean} method's parameter and return types are resolved when the configuration class is
+ * parsed - so guarding a method whose own signature names the absent class is not reliably safe.
+ * Gate at class level for that case: a separate {@code @GrailsBeans @AutoConfiguration} class
+ * carrying {@code @ConditionalOnClass}, holding the beans that mention the optional type.</p></dd>
+ *
  * <dt>{@code .conditionalOnGrailsEnv("development"[, ...])}</dt>
  * <dd>Registers the bean only in those Grails environments. See {@link ConditionalOnGrailsEnv} for
  * why this is not {@code @ConditionalOnProperty} on {@code grails.env}.</dd>

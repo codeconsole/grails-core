@@ -34,6 +34,7 @@ import org.springframework.boot.autoconfigure.AutoConfigureBefore
 import org.springframework.boot.autoconfigure.AutoConfigureOrder
 import org.springframework.boot.autoconfigure.ImportAutoConfiguration
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean
+import org.springframework.boot.autoconfigure.condition.ConditionalOnClass
 import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
@@ -1030,6 +1031,105 @@ class GrailsBeansASTTransformationSpec extends Specification {
 
         then:
         annotation.name() == ['transport'] as String[]
+    }
+
+    def "conditionalOnClass takes a type, and registers the bean only when it is present"() {
+        given:
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @GrailsBeans
+            @AutoConfiguration
+            class OnClassPresentBeans {
+                def beans = {
+                    bean('greeting', String).conditionalOnClass(StringBuilder) {
+                        'hello'
+                    }
+
+                    bean('absent', String).conditionalOnClass(name: 'com.example.NotOnTheClasspath') {
+                        'never'
+                    }
+                }
+            }
+        '''
+
+        and:
+        GroovyClassLoader loader = new GroovyClassLoader(getClass().classLoader)
+        loader.parseClass(source)
+        def context = new AnnotationConfigApplicationContext()
+        context.classLoader = loader
+        context.register(loader.loadClass('OnClassPresentBeans'))
+
+        when:
+        context.refresh()
+
+        then: 'the present type registers, the absent name does not'
+        context.containsBean('greeting')
+        !context.containsBean('absent')
+
+        cleanup:
+        context.close()
+    }
+
+    def "conditionalOnClass keeps types and String names in their own annotation members"() {
+        given: "a literal is compiler-checked; a name is the only form that survives the class being absent"
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+            import org.springframework.boot.autoconfigure.condition.ConditionalOnClass
+
+            @GrailsBeans
+            @AutoConfiguration
+            class OnClassMembersBeans {
+                def beans = {
+                    bean('greeting', String).conditionalOnClass(StringBuilder, 'java.lang.Integer') {
+                        'hello'
+                    }
+                }
+            }
+        '''
+
+        when:
+        Class<?> compiled = compile(source)
+        def annotation = compiled.getDeclaredMethod('greeting').getAnnotation(ConditionalOnClass)
+
+        then:
+        annotation.value() == [StringBuilder] as Class[]
+        annotation.name() == ['java.lang.Integer'] as String[]
+    }
+
+    @Unroll
+    def "conditionalOnClass rejects #description"() {
+        given:
+        String source = """
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @GrailsBeans
+            @AutoConfiguration
+            class BadOnClassFixture${fixture} {
+                def beans = {
+                    bean('greeting', String).conditionalOnClass(${arguments}) {
+                        'hello'
+                    }
+                }
+            }
+        """
+
+        when:
+        compile(source)
+
+        then:
+        MultipleCompilationErrorsException e = thrown(MultipleCompilationErrorsException)
+        e.message.contains(expected)
+
+        where:
+        description                       | fixture  | arguments                                | expected
+        'no class at all'                 | 'Empty'  | ''                                       | 'needs at least one class'
+        'a non-String, non-type argument' | 'Number' | '42'                                     | 'takes types or non-blank String class names'
+        'a blank name'                    | 'Blank'  | "'  '"                                   | 'takes types or non-blank String class names'
+        'types given both ways'           | 'Both'   | "StringBuilder, value: [StringBuilder]"  | 'both positionally and via'
     }
 
     private Class<?> compile() {
