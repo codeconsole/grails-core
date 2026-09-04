@@ -32,6 +32,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import javax.lang.model.SourceVersion;
 
@@ -208,10 +210,14 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
     // qualifiers don't apply; .value(...) (@Value config injection) is field-only.
     private static final Set<String> FIELD_QUALIFIER_CALL_NAMES = Set.of(ANNOTATE_CALL, VALUE_CALL, TYPE_ARGUMENTS_CALL);
     private static final Set<String> METHOD_QUALIFIER_CALL_NAMES = Set.of(ANNOTATE_CALL, TYPE_ARGUMENTS_CALL);
-    private static final Set<String> ALL_QUALIFIER_CALL_NAMES = Set.of(
-            CONDITIONAL_ON_BEAN_CALL, CONDITIONAL_ON_MISSING_BEAN_CALL, CONDITIONAL_ON_MISSING_BEAN_NAME_CALL,
-            PRIMARY_CALL, LAZY_CALL, SCOPE_CALL, STATIC_METHOD_CALL, ANNOTATE_CALL, VALUE_CALL,
-            TYPE_ARGUMENTS_CALL, GRAILS_ENV_CALL);
+    // Every qualifier any declaration accepts. Derived, not restated: this set decides whether a
+    // chained call is a qualifier at all, so a name present in one of the three sets above but
+    // missing here would be rejected by the chain walk as if the whole statement were malformed -
+    // "Expected bean([\"name\", ] Type)..." pointing at a qualifier that is in fact supported.
+    private static final Set<String> ALL_QUALIFIER_CALL_NAMES =
+            Stream.of(BEAN_QUALIFIER_CALL_NAMES, FIELD_QUALIFIER_CALL_NAMES, METHOD_QUALIFIER_CALL_NAMES)
+                    .flatMap(Set::stream)
+                    .collect(Collectors.toUnmodifiableSet());
     private static final String PLUGIN_SUPERCLASS_NAME = "grails.plugins.Plugin";
     private static final String GRAILS_PLUGIN_SUFFIX = "GrailsPlugin";
     private static final String AUTO_CONFIGURATION_SUFFIX = "AutoConfiguration";
