@@ -45,6 +45,7 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.AnnotationConfigApplicationContext
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.ComponentScan
+import org.springframework.context.annotation.Configuration
 import org.springframework.context.annotation.DependsOn
 import org.springframework.context.annotation.ImportResource
 import org.springframework.context.annotation.Lazy
@@ -1191,6 +1192,156 @@ class GrailsBeansASTTransformationSpec extends Specification {
         then:
         MultipleCompilationErrorsException e = thrown(MultipleCompilationErrorsException)
         e.message.contains('String literal or a compile-time String constant')
+    }
+
+    def "group declares a nested configuration class holding its beans"() {
+        given:
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @GrailsBeans
+            @AutoConfiguration
+            class GroupedBeans {
+                def beans = {
+                    bean('top', String) { 'top' }
+
+                    group('imageServing').conditionalOnClass(StringBuilder) {
+                        bean('inner', String) { 'inner' }
+                        bean('other', String) { 'other' }
+                    }
+                }
+            }
+        '''
+
+        and:
+        GroovyClassLoader loader = new GroovyClassLoader(getClass().classLoader)
+        loader.parseClass(source)
+        Class<?> nested = loader.loadClass('GroupedBeans$ImageServingConfiguration')
+
+        expect: "a nested static @Configuration(proxyBeanMethods = false) carrying the condition"
+        java.lang.reflect.Modifier.isStatic(nested.modifiers)
+        !nested.getAnnotation(Configuration).proxyBeanMethods()
+        nested.getAnnotation(ConditionalOnClass).value() == [StringBuilder] as Class[]
+
+        and: "the group's beans are its methods, and are not on the host"
+        nested.getDeclaredMethod('inner') != null
+        nested.getDeclaredMethod('other') != null
+        loader.loadClass('GroupedBeans').declaredMethods.every { it.name != 'inner' }
+    }
+
+    def "a group's condition gates its beans, and Spring finds the nested class unaided"() {
+        given: "no @Import anywhere - ConfigurationClassParser processes member classes"
+        String source = """
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @GrailsBeans
+            @AutoConfiguration
+            class GroupGatedBeans${fixture} {
+                def beans = {
+                    bean('always', String) { 'always' }
+
+                    group('optional').conditionalOnClass(name: '${gated}') {
+                        bean('sometimes', String) { 'sometimes' }
+                    }
+                }
+            }
+        """
+
+        and:
+        GroovyClassLoader loader = new GroovyClassLoader(getClass().classLoader)
+        loader.parseClass(source)
+        def context = new AnnotationConfigApplicationContext()
+        context.classLoader = loader
+        context.register(loader.loadClass("GroupGatedBeans${fixture}"))
+
+        when:
+        context.refresh()
+
+        then:
+        context.containsBean('always')
+        context.containsBean('sometimes') == registered
+
+        cleanup:
+        context.close()
+
+        where:
+        fixture   | gated                            | registered
+        'Present' | 'java.lang.StringBuilder'        | true
+        'Absent'  | 'com.example.NotOnTheClasspath'  | false
+    }
+
+    def "a group is how a bean whose own signature names an absent class stays declarable"() {
+        given: "the case that motivated it - guarding the method would not have been safe"
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @GrailsBeans
+            @AutoConfiguration
+            class SignatureGuardedBeans {
+                def beans = {
+                    bean('safe', String) { 'safe' }
+
+                    group('optional').conditionalOnClass(name: 'com.example.Missing') {
+                        bean('needsMissing', StringBuilder) { StringBuilder collaborator ->
+                            collaborator
+                        }
+                    }
+                }
+            }
+        '''
+
+        and:
+        GroovyClassLoader loader = new GroovyClassLoader(getClass().classLoader)
+        loader.parseClass(source)
+        def context = new AnnotationConfigApplicationContext()
+        context.classLoader = loader
+        context.register(loader.loadClass('SignatureGuardedBeans'))
+
+        when:
+        context.refresh()
+
+        then: "the nested class is never parsed, so nothing in its signatures is resolved"
+        noExceptionThrown()
+        context.containsBean('safe')
+        !context.containsBean('needsMissing')
+
+        cleanup:
+        context.close()
+    }
+
+    @Unroll
+    def "group rejects #description"() {
+        given:
+        String source = """
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @GrailsBeans
+            @AutoConfiguration
+            class BadGroupFixture${fixture} {
+                def beans = {
+                    ${declaration}
+                }
+            }
+        """
+
+        when:
+        compile(source)
+
+        then:
+        MultipleCompilationErrorsException e = thrown(MultipleCompilationErrorsException)
+        e.message.contains(expected)
+
+        where:
+        description                    | fixture   | declaration                                                              | expected
+        'an empty body'                | 'Empty'   | "group('a').conditionalOnClass(String) { }"                              | 'declares nothing'
+        'nesting'                      | 'Nested'  | "group('a') { group('b') { bean('x', String) { 'x' } } }"                | 'cannot be nested'
+        'closure parameters'           | 'Params'  | "group('a') { String s -> bean('x', String) { 'x' } }"                   | 'takes no closure parameters'
+        'a bean-shaped qualifier'      | 'Primary' | "group('a').primary() { bean('x', String) { 'x' } }"                     | 'cannot be chained onto group'
+        'a name that is not an ident'  | 'BadName' | "group('not an identifier') { bean('x', String) { 'x' } }"               | 'valid Java identifier'
     }
 
     private Class<?> compile() {

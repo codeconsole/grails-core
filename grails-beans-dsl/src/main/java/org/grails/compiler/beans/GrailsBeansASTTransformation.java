@@ -51,6 +51,7 @@ import org.codehaus.groovy.ast.ClassNode;
 import org.codehaus.groovy.ast.CodeVisitorSupport;
 import org.codehaus.groovy.ast.ConstructorNode;
 import org.codehaus.groovy.ast.FieldNode;
+import org.codehaus.groovy.ast.InnerClassNode;
 import org.codehaus.groovy.ast.GenericsType;
 import org.codehaus.groovy.ast.MethodNode;
 import org.codehaus.groovy.ast.Parameter;
@@ -195,7 +196,9 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
     private static final String BEAN_CALL = "bean";
     private static final String FIELD_CALL = "field";
     private static final String METHOD_CALL = "method";
-    private static final Set<String> ROOT_STATEMENT_CALL_NAMES = Set.of(BEAN_CALL, FIELD_CALL, METHOD_CALL);
+    private static final String GROUP_CALL = "group";
+    private static final Set<String> ROOT_STATEMENT_CALL_NAMES =
+            Set.of(BEAN_CALL, FIELD_CALL, METHOD_CALL, GROUP_CALL);
     private static final String CONDITIONAL_ON_BEAN_CALL = "conditionalOnBean";
     private static final String CONDITIONAL_ON_MISSING_BEAN_CALL = "conditionalOnMissingBean";
     private static final String CONDITIONAL_ON_MISSING_BEAN_NAME_CALL = "conditionalOnMissingBeanName";
@@ -220,6 +223,13 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
     // qualifiers don't apply; .value(...) (@Value config injection) is field-only.
     private static final Set<String> FIELD_QUALIFIER_CALL_NAMES = Set.of(ANNOTATE_CALL, VALUE_CALL, TYPE_ARGUMENTS_CALL);
     private static final Set<String> METHOD_QUALIFIER_CALL_NAMES = Set.of(ANNOTATE_CALL, TYPE_ARGUMENTS_CALL);
+    // A group declares a nested configuration class, so it takes what applies to a class: the
+    // conditions, and the escape hatch. Bean-shaped qualifiers (primary, scope, aliases, the
+    // type arguments of a declared type) have nothing to attach to here.
+    private static final Set<String> GROUP_QUALIFIER_CALL_NAMES = Set.of(
+            CONDITIONAL_ON_BEAN_CALL, CONDITIONAL_ON_MISSING_BEAN_CALL, CONDITIONAL_ON_PROPERTY_CALL,
+            CONDITIONAL_ON_EXPRESSION_CALL, CONDITIONAL_ON_CLASS_CALL, CONDITIONAL_ON_GRAILS_ENV_CALL,
+            ANNOTATE_CALL);
     // Every qualifier any declaration accepts. Derived, not restated: this set decides whether a
     // chained call is a qualifier at all, so a name present in one of the three sets above but
     // missing here would be rejected by the chain walk as if the whole statement were malformed -
@@ -829,7 +839,8 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
         }
         boolean isBean = BEAN_CALL.equals(rootName);
         Set<String> allowedQualifiers = isBean ? BEAN_QUALIFIER_CALL_NAMES :
-                FIELD_CALL.equals(rootName) ? FIELD_QUALIFIER_CALL_NAMES : METHOD_QUALIFIER_CALL_NAMES;
+                FIELD_CALL.equals(rootName) ? FIELD_QUALIFIER_CALL_NAMES :
+                        GROUP_CALL.equals(rootName) ? GROUP_QUALIFIER_CALL_NAMES : METHOD_QUALIFIER_CALL_NAMES;
         for (MethodCallExpression qualifierCall : qualifierCalls) {
             if (!allowedQualifiers.contains(qualifierCall.getMethodAsString())) {
                 addError(qualifierCall, source, "." + qualifierCall.getMethodAsString() + "(...) cannot be " +
@@ -853,12 +864,174 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
         if (isBean) {
             processBeanStatement(classNode, declaringClass, outerCall, baseCall, qualifierCalls, source, usedNames);
         }
+        else if (GROUP_CALL.equals(rootName)) {
+            processGroupStatement(classNode, declaringClass, outerCall, baseCall, qualifierCalls, source, usedNames);
+        }
         else if (FIELD_CALL.equals(rootName)) {
             processFieldStatement(classNode, declaringClass, baseCall, qualifierCalls, source, usedNames);
         }
         else {
             processMethodStatement(classNode, declaringClass, outerCall, baseCall, qualifierCalls, source, usedNames);
         }
+    }
+
+    /**
+     * Compiles {@code group("name").<conditions> { ... }} into a nested static
+     * {@code @Configuration(proxyBeanMethods = false)} class holding the declarations in its body,
+     * with the chained qualifiers attached to that class rather than to each bean.
+     *
+     * <p>This is the shape real auto-configurations take, and the one a condition on an optional
+     * type has to take. Spring reads a condition from the bytecode before loading anything, but a
+     * {@code @Bean} method's parameter and return types are resolved when its configuration class
+     * is parsed - so a bean whose own signature names a class that may be absent cannot be guarded
+     * on the method. Moving it into a nested class moves the guard with it, and the nested class is
+     * never parsed when the condition fails. Spring Boot writes exactly this: JacksonAutoConfiguration
+     * carries four nested {@code @ConditionalOnClass} configuration classes.</p>
+     *
+     * <p>Spring finds the nested class itself - {@code ConfigurationClassParser} processes the member
+     * classes of a configuration class - so nothing has to import or register it.</p>
+     */
+    private void processGroupStatement(ClassNode classNode, ClassNode declaringClass, MethodCallExpression outerCall,
+            MethodCallExpression baseCall, List<MethodCallExpression> qualifierCalls, SourceUnit source,
+            Set<String> usedNames) {
+        List<Expression> closureCallArgs = flatten(outerCall.getArguments());
+        if (closureCallArgs.isEmpty() || !(closureCallArgs.get(closureCallArgs.size() - 1) instanceof ClosureExpression)) {
+            addError(outerCall, source, "group(...) must end with a body closure: group(\"name\") { ... }");
+            return;
+        }
+        ClosureExpression body = (ClosureExpression) closureCallArgs.get(closureCallArgs.size() - 1);
+        if (body.getParameters() != null && body.getParameters().length > 0) {
+            addError(outerCall, source, "group(...) takes no closure parameters - a group declares a class, " +
+                    "not a bean, so there is nothing to inject into. Put the parameters on the bean(...) " +
+                    "declarations inside it");
+            return;
+        }
+
+        List<Expression> baseArgs = flatten(baseCall.getArguments());
+        if (baseCall == outerCall && !baseArgs.isEmpty()) {
+            baseArgs = baseArgs.subList(0, baseArgs.size() - 1);
+        }
+        if (baseArgs.size() != 1) {
+            addError(baseCall, source, "group(...) takes a name, e.g. group(\"imageServing\") { ... }");
+            return;
+        }
+        String name = resolveStringConstant(baseArgs.get(0), declaringClass);
+        if (name == null || !isValidJavaIdentifier(BeanUtils.capitalize(name))) {
+            addError(baseArgs.get(0), source, "group(name) requires the name to be a String literal or a " +
+                    "compile-time String constant that is a valid Java identifier - it becomes the nested " +
+                    "class's name, e.g. group(\"imageServing\")");
+            return;
+        }
+
+        // JacksonObjectMapperConfiguration rather than JacksonObjectMapper: the suffix is what says
+        // this is a configuration class when it turns up in a stack trace or /actuator/beans.
+        String simpleName = BeanUtils.capitalize(name);
+        if (!simpleName.endsWith("Configuration")) {
+            simpleName = simpleName + "Configuration";
+        }
+        if (!registerName(simpleName, baseCall, source, usedNames,
+                "is already used by another member of the class - generated member names must be unique")) {
+            return;
+        }
+
+        List<Statement> statements = beanStatements(body);
+        if (statements.isEmpty()) {
+            addError(outerCall, source, "group(\"" + name + "\") declares nothing - a group exists to put a " +
+                    "condition on the declarations inside it");
+            return;
+        }
+        for (Statement statement : statements) {
+            if (isGroupRootedStatement(statement)) {
+                addError(statement, source, "group(...) cannot be nested - flatten it, or give the inner " +
+                        "group its own conditions at the top level");
+                return;
+            }
+        }
+
+        InnerClassNode group = new InnerClassNode(classNode, classNode.getName() + "$" + simpleName,
+                Modifier.PUBLIC | Modifier.STATIC, ClassHelper.OBJECT_TYPE);
+        group.setSourcePosition(baseCall);
+        source.getAST().addClass(group);
+
+        // proxyBeanMethods = false, matching what Spring Boot's own nested configuration classes
+        // carry - and keeping the sibling-call check below meaningful inside the group.
+        AnnotationNode configuration = new AnnotationNode(ClassHelper.make(Configuration.class));
+        configuration.setMember(PROXY_BEAN_METHODS_MEMBER, new ConstantExpression(Boolean.FALSE));
+        group.addAnnotation(withPosition(configuration, baseCall));
+
+        for (MethodCallExpression qualifierCall : qualifierCalls) {
+            List<Expression> qualifierArgs = flatten(qualifierCall.getArguments());
+            if (qualifierCall == outerCall) {
+                qualifierArgs = qualifierArgs.subList(0, qualifierArgs.size() - 1);
+            }
+            if (!applyGroupQualifier(group, qualifierCall, qualifierArgs, source)) {
+                return;
+            }
+        }
+
+        Set<String> groupNames = existingMemberNames(group);
+        List<MethodNode> preExisting = new ArrayList<>(group.getMethods());
+        validateSharedBeanNames(statements, source);
+        for (Statement statement : statements) {
+            if (!isBeanRootedStatement(statement)) {
+                processStatement(group, declaringClass, statement, source, groupNames);
+            }
+        }
+        for (Statement statement : statements) {
+            if (isBeanRootedStatement(statement)) {
+                processStatement(group, declaringClass, statement, source, groupNames);
+            }
+        }
+        List<MethodNode> generated = generatedMembers(group, preExisting);
+        rejectUnproxiedSiblingBeanCalls(group, generated, source);
+        dumpGeneratedMembers(group, generated, new ArrayList<>(group.getFields()), source);
+
+        // The group is compiled as its own class, so it needs the host's static-compilation
+        // treatment in its own right - otherwise its bodies are dynamic inside a @CompileStatic file.
+        applyStaticCompilation(classNode, group, source);
+    }
+
+    // Same silent classification as isBeanRootedStatement, for the nesting check.
+    private boolean isGroupRootedStatement(Statement statement) {
+        if (!(statement instanceof ExpressionStatement) ||
+                !(((ExpressionStatement) statement).getExpression() instanceof MethodCallExpression)) {
+            return false;
+        }
+        MethodCallExpression call = (MethodCallExpression) ((ExpressionStatement) statement).getExpression();
+        while (!ROOT_STATEMENT_CALL_NAMES.contains(call.getMethodAsString()) &&
+                call.getObjectExpression() instanceof MethodCallExpression) {
+            call = (MethodCallExpression) call.getObjectExpression();
+        }
+        return GROUP_CALL.equals(call.getMethodAsString());
+    }
+
+    private boolean applyGroupQualifier(ClassNode group, MethodCallExpression qualifierCall,
+            List<Expression> args, SourceUnit source) {
+        String name = qualifierCall.getMethodAsString();
+        AnnotationNode annotation;
+        if (CONDITIONAL_ON_BEAN_CALL.equals(name)) {
+            annotation = conditionalOnBeanAnnotation(args, qualifierCall, source);
+        }
+        else if (CONDITIONAL_ON_MISSING_BEAN_CALL.equals(name)) {
+            annotation = conditionalOnMissingBeanAnnotation(args, qualifierCall, source);
+        }
+        else if (CONDITIONAL_ON_PROPERTY_CALL.equals(name)) {
+            annotation = conditionalOnPropertyAnnotation(args, qualifierCall, source);
+        }
+        else if (CONDITIONAL_ON_EXPRESSION_CALL.equals(name)) {
+            annotation = conditionalOnExpressionAnnotation(args, qualifierCall, source);
+        }
+        else if (CONDITIONAL_ON_CLASS_CALL.equals(name)) {
+            annotation = conditionalOnClassAnnotation(args, qualifierCall, source);
+        }
+        else if (CONDITIONAL_ON_GRAILS_ENV_CALL.equals(name)) {
+            // attaches directly rather than returning a node, like the qualifier path it shares
+            return applyConditionalOnGrailsEnvQualifier(group, qualifierCall, args, source);
+        }
+        else {
+            return applyGenericAnnotation(group, qualifierCall, args, source);
+        }
+        return annotation != null && addAnnotationIfAbsent(group, qualifierCall, annotation, source);
     }
 
     private boolean registerName(String name, ASTNode location, SourceUnit source, Set<String> usedNames, String errorSuffix) {
@@ -2098,7 +2271,8 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
      * property is absent on exactly the runs the condition is meant to describe, and the bean goes
      * missing with nothing to show for it.</p>
      */
-    private boolean applyConditionalOnGrailsEnvQualifier(MethodNode beanMethod, MethodCallExpression qualifierCall,
+    // AnnotatedNode, not MethodNode: the same qualifier attaches to a group's nested class.
+    private boolean applyConditionalOnGrailsEnvQualifier(AnnotatedNode beanMethod, MethodCallExpression qualifierCall,
             List<Expression> args, SourceUnit source) {
         if (args.isEmpty()) {
             addError(qualifierCall, source, ".conditionalOnGrailsEnv(...) requires at least one environment name, " +

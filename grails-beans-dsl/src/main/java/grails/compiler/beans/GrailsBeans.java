@@ -54,6 +54,23 @@ import org.codehaus.groovy.transform.GroovyASTTransformationClass;
  * itself the construction, so this form takes no body; an interface with neither an implementation
  * nor a body is an error.</dd>
  *
+ * <dt>{@code group("name").<conditions> { ... }}</dt>
+ * <dd>A nested static {@code @Configuration(proxyBeanMethods = false)} class holding the
+ * declarations in its body, with the chained conditions on the class rather than on each bean -
+ * {@code group("imageServing").conditionalOnClass(name: "com.example.Optional") { ... }} generates
+ * {@code Host$ImageServingConfiguration}. Spring finds it unaided, since
+ * {@code ConfigurationClassParser} processes a configuration class's member classes.
+ * <p>This is the shape real auto-configurations take - Spring Boot's own
+ * {@code JacksonAutoConfiguration} carries four nested {@code @ConditionalOnClass} classes - and it
+ * is the only shape that works for a bean whose <i>own signature</i> names a class that may be
+ * absent. Spring reads a condition from the bytecode before loading anything, but a {@code @Bean}
+ * method's parameter and return types are resolved when its configuration class is parsed, so
+ * guarding such a bean on the method is not reliably safe; moving it into a group moves the guard
+ * to a class that is never parsed when the condition fails.</p>
+ * <p>Takes the condition qualifiers and {@code .annotate(...)} - the bean-shaped ones have nothing
+ * to attach to. Groups do not nest, and a group's closure takes no parameters: it declares a class,
+ * not a bean, so there is nothing to inject into.</p></dd>
+ *
  * <dt>{@code field(["name", ] Type)}</dt>
  * <dd>A private field on the generated class, for state shared across bean methods. Chainable with
  * {@code .value(...)}, {@code .typeArguments(...)} and {@code .annotate(...)}. The usual case is

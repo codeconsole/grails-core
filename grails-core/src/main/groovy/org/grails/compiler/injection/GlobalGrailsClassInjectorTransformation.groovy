@@ -95,7 +95,7 @@ class GlobalGrailsClassInjectorTransformation implements ASTTransformation, Comp
     private static final String GRAILS_AUTO_CONFIGURATION_CLASS_NAME = 'grails.boot.config.GrailsAutoConfiguration'
     private static final String BEANS_PROPERTY = 'beans'
     private static final ClassNode GRAILS_BEANS_ANNOTATION = ClassHelper.make('grails.compiler.beans.GrailsBeans')
-    private static final Set<String> BEANS_DSL_ROOT_CALLS = ['bean', 'field', 'method'].toSet()
+    private static final Set<String> BEANS_DSL_ROOT_CALLS = ['bean', 'field', 'method', 'group'].toSet()
 
     private static final AntPathMatcher ANT_PATH_MATCHER = new AntPathMatcher()
 
