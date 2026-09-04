@@ -5298,6 +5298,111 @@ class GrailsBeansASTTransformationSpec extends Specification {
         e.message.contains('already attached')
     }
 
+    def "aliases(...) gives a bean additional names, the canonical one staying first"() {
+        given:
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+            import org.springframework.context.annotation.AnnotationConfigApplicationContext
+
+            @GrailsBeans
+            @AutoConfiguration
+            class AliasedBeans {
+                def beans = {
+                    bean('recipientResolver', String).aliases('legacyResolver', 'oldResolver') { 'resolver' }
+                }
+            }
+        '''
+
+        when:
+        Class<?> beans = compile(source)
+        def method = beans.getDeclaredMethod('recipientResolver')
+
+        then: "Spring reads the first as the bean name and the rest as aliases"
+        method.getAnnotation(Bean).value() == ['recipientResolver', 'legacyResolver', 'oldResolver'] as String[]
+    }
+
+    def "an aliased bean really is resolvable under every name"() {
+        given:
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.context.annotation.Configuration
+
+            @GrailsBeans
+            @Configuration
+            class AliasResolutionBeans {
+                def beans = {
+                    bean('canonical', String).aliases('legacy') { 'one instance' }
+                }
+            }
+        '''
+        Class<?> config = compile(source)
+        def context = new AnnotationConfigApplicationContext()
+        context.register(config)
+        context.refresh()
+
+        expect: "both names reach it, and reach the same singleton"
+        context.getBean('canonical') == 'one instance'
+        context.getBean('legacy') == 'one instance'
+        context.getBean('canonical').is(context.getBean('legacy'))
+
+        cleanup:
+        context.close()
+    }
+
+    def "rejects aliases(...) #description"() {
+        given:
+        String source = """
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @GrailsBeans
+            @AutoConfiguration
+            class BadAliasBeans {
+                def beans = {
+                    bean('greeting', String).aliases($arguments) { 'hello' }
+                }
+            }
+        """
+
+        when:
+        compile(source)
+
+        then:
+        MultipleCompilationErrorsException e = thrown(MultipleCompilationErrorsException)
+        e.message.contains(message)
+
+        where:
+        description                        | arguments               | message
+        'with no name'                     | ''                      | 'requires at least one additional name'
+        'with a blank name'                | "'  '"                  | 'non-blank names'
+        'with something that is not a name'| 'String'                | 'non-blank names'
+        "with the bean's own name"         | "'greeting'"            | 'own name, so it is not an alias'
+        'with the same alias twice'        | "'other', 'other'"      | 'given as an alias twice'
+    }
+
+    def "aliases(...) is not valid on a field(...) or method(...)"() {
+        given:
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @GrailsBeans
+            @AutoConfiguration
+            class AliasedHelperBeans {
+                def beans = {
+                    method('helper', String).aliases('other') { 'hello' }
+                }
+            }
+        '''
+
+        when:
+        compile(source)
+
+        then:
+        thrown(MultipleCompilationErrorsException)
+    }
+
     def "an empty beans block on a plain configuration class is a no-op"() {
         given:
         String source = '''

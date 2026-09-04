@@ -119,6 +119,14 @@ import org.codehaus.groovy.transform.GroovyASTTransformationClass;
  * <dd>Registers the bean only in those Grails environments. See {@link ConditionalOnGrailsEnv} for
  * why this is not {@code @ConditionalOnProperty} on {@code grails.env}.</dd>
  *
+ * <dt>{@code .aliases("legacyName"[, ...])}</dt>
+ * <dd>Additional names for the bean, which Spring resolves to the same singleton. The canonical
+ * name stays the one {@code bean(...)} states - it is what the generated method is named after,
+ * what duplicate-name validation runs against, and what {@code .conditionalOnMissingBeanName()}
+ * resolves to - so aliases are their own call rather than more arguments there. The case they
+ * exist for is a migration: something reachable under an old name that must stay reachable while
+ * its callers move.</dd>
+ *
  * <dt>{@code .primary()}, {@code .lazy()}, {@code .scope("name")}</dt>
  * <dd>{@code @Primary}, {@code @Lazy}, {@code @Scope}.</dd>
  *

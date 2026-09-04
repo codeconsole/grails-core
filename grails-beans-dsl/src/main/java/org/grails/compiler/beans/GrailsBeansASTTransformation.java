@@ -205,11 +205,12 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
     private static final String ANNOTATE_CALL = "annotate";
     private static final String VALUE_CALL = "value";
     private static final String TYPE_ARGUMENTS_CALL = "typeArguments";
+    private static final String ALIASES_CALL = "aliases";
     private static final String CONDITIONAL_ON_GRAILS_ENV_CALL = "conditionalOnGrailsEnv";
     private static final Set<String> BEAN_QUALIFIER_CALL_NAMES = Set.of(
             CONDITIONAL_ON_BEAN_CALL, CONDITIONAL_ON_MISSING_BEAN_CALL, CONDITIONAL_ON_MISSING_BEAN_NAME_CALL,
             CONDITIONAL_ON_PROPERTY_CALL, CONDITIONAL_ON_EXPRESSION_CALL, PRIMARY_CALL, LAZY_CALL, SCOPE_CALL, STATIC_METHOD_CALL,
-            ANNOTATE_CALL, TYPE_ARGUMENTS_CALL, CONDITIONAL_ON_GRAILS_ENV_CALL);
+            ANNOTATE_CALL, TYPE_ARGUMENTS_CALL, CONDITIONAL_ON_GRAILS_ENV_CALL, ALIASES_CALL);
     // field(...) and method(...) declare plain class members, not beans - bean-specific
     // qualifiers don't apply; .value(...) (@Value config injection) is field-only.
     private static final Set<String> FIELD_QUALIFIER_CALL_NAMES = Set.of(ANNOTATE_CALL, VALUE_CALL, TYPE_ARGUMENTS_CALL);
@@ -1858,10 +1859,67 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
         if (SCOPE_CALL.equals(name)) {
             return applyScopeQualifier(beanMethod, qualifierCall, args, source);
         }
+        if (ALIASES_CALL.equals(name)) {
+            return applyAliasesQualifier(beanMethod, beanName, qualifierCall, args, source);
+        }
         if (CONDITIONAL_ON_GRAILS_ENV_CALL.equals(name)) {
             return applyConditionalOnGrailsEnvQualifier(beanMethod, qualifierCall, args, source);
         }
         return applyGenericAnnotation(beanMethod, qualifierCall, args, source);
+    }
+
+    /**
+     * Additional names for the bean, appended to {@code @Bean}'s value - which Spring reads as the
+     * canonical name followed by aliases.
+     *
+     * <p>Separate from {@code bean("name", Type)} rather than more arguments to it, because the
+     * canonical name is not one of a list: it is what the generated method is named after, what
+     * duplicate-name validation runs against, and what {@code .conditionalOnMissingBeanName()}
+     * resolves to. Aliases are none of those things, and saying so in their own call keeps which
+     * name is which visible at the callsite.</p>
+     *
+     * <p>The case they exist for is a migration: something reachable under an old name that must
+     * stay reachable while its callers move to the new one.</p>
+     */
+    private boolean applyAliasesQualifier(MethodNode beanMethod, String beanName,
+            MethodCallExpression qualifierCall, List<Expression> args, SourceUnit source) {
+        if (args.isEmpty()) {
+            addError(qualifierCall, source, ".aliases(...) requires at least one additional name, " +
+                    "e.g. .aliases(\"legacyName\")");
+            return false;
+        }
+        List<AnnotationNode> existing = beanMethod.getAnnotations(ClassHelper.make(Bean.class));
+        if (existing.isEmpty()) {
+            addError(qualifierCall, source, ".aliases(...) applies to bean(...) declarations only");
+            return false;
+        }
+        Expression namesMember = existing.get(0).getMember("value");
+        if (!(namesMember instanceof ListExpression)) {
+            addError(qualifierCall, source, ".aliases(...) cannot be combined with a @Bean whose names " +
+                    "were set another way");
+            return false;
+        }
+        ListExpression names = (ListExpression) namesMember;
+        Set<String> seen = new HashSet<>();
+        seen.add(beanName);
+        for (Expression arg : args) {
+            Expression folded = foldStringValue(arg);
+            Object value = folded instanceof ConstantExpression ? ((ConstantExpression) folded).getValue() : null;
+            if (!(value instanceof String) || ((String) value).isBlank()) {
+                addError(arg, source, ".aliases(...) takes non-blank names as Strings, " +
+                        "e.g. .aliases(\"legacyName\")");
+                return false;
+            }
+            String alias = (String) value;
+            if (!seen.add(alias)) {
+                addError(arg, source, alias.equals(beanName) ?
+                        "\"" + alias + "\" is this bean's own name, so it is not an alias of anything" :
+                        "\"" + alias + "\" is given as an alias twice");
+                return false;
+            }
+            names.addExpression(folded);
+        }
+        return true;
     }
 
     private boolean applyScopeQualifier(MethodNode beanMethod, MethodCallExpression qualifierCall,
