@@ -31,7 +31,7 @@ import org.grails.compiler.beans.OnGrailsEnvCondition;
 /**
  * Registers the annotated bean or configuration only in the named Grails environments.
  *
- * <p>This is what the {@code beans} DSL's {@code .grailsEnv(...)} qualifier compiles to. It exists
+ * <p>This is what the {@code beans} DSL's {@code .conditionalOnGrailsEnv(...)} qualifier compiles to. It exists
  * because {@code @ConditionalOnProperty(name = "grails.env", ...)} - the obvious way to write this -
  * is only correct when the environment was set explicitly with {@code -Dgrails.env}. Grails
  * otherwise infers the current environment (development when running from a build, production from

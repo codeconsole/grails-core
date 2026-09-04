@@ -4900,7 +4900,7 @@ class GrailsBeansASTTransformationSpec extends Specification {
         !Modifier.isStatic(beans.getDeclaredMethod('greeting').modifiers)
     }
 
-    def "grailsEnv(...) compiles to @ConditionalOnGrailsEnv, not a grails.env property condition"() {
+    def "conditionalOnGrailsEnv(...) compiles to @ConditionalOnGrailsEnv, not a grails.env property condition"() {
         given:
         String source = '''
             import grails.compiler.beans.GrailsBeans
@@ -4910,8 +4910,8 @@ class GrailsBeansASTTransformationSpec extends Specification {
             @AutoConfiguration
             class EnvironmentBeans {
                 def beans = {
-                    bean('devOnly', String).grailsEnv('development') { 'dev' }
-                    bean('nonProduction', String).grailsEnv('development', 'test') { 'not prod' }
+                    bean('devOnly', String).conditionalOnGrailsEnv('development') { 'dev' }
+                    bean('nonProduction', String).conditionalOnGrailsEnv('development', 'test') { 'not prod' }
                 }
             }
         '''
@@ -4952,7 +4952,7 @@ class GrailsBeansASTTransformationSpec extends Specification {
         ['no-such-environment', Environment.current.name] | true
     }
 
-    def "rejects grailsEnv(...) #description"() {
+    def "rejects conditionalOnGrailsEnv(...) #description"() {
         given:
         String source = """
             import grails.compiler.beans.GrailsBeans
@@ -4962,7 +4962,7 @@ class GrailsBeansASTTransformationSpec extends Specification {
             @AutoConfiguration
             class BadEnvironmentBeans {
                 def beans = {
-                    bean('greeting', String).grailsEnv($arguments) { 'hello' }
+                    bean('greeting', String).conditionalOnGrailsEnv($arguments) { 'hello' }
                 }
             }
         """
@@ -4981,7 +4981,7 @@ class GrailsBeansASTTransformationSpec extends Specification {
         'with something not a String'| 'String'    | 'non-blank environment names'
     }
 
-    def "grailsEnv(...) tells two same-named beans apart, as any other condition does"() {
+    def "conditionalOnGrailsEnv(...) tells two same-named beans apart, as any other condition does"() {
         given:
         String source = '''
             import grails.compiler.beans.GrailsBeans
@@ -4991,8 +4991,8 @@ class GrailsBeansASTTransformationSpec extends Specification {
             @AutoConfiguration
             class PerEnvironmentBeans {
                 def beans = {
-                    bean('store', String).grailsEnv('development') { 'in-memory' }
-                    bean('store', String).grailsEnv('production') { 'redis' }
+                    bean('store', String).conditionalOnGrailsEnv('development') { 'in-memory' }
+                    bean('store', String).conditionalOnGrailsEnv('production') { 'redis' }
                 }
             }
         '''
@@ -5049,7 +5049,7 @@ class GrailsBeansASTTransformationSpec extends Specification {
         then:
         MultipleCompilationErrorsException e = thrown(MultipleCompilationErrorsException)
         e.message.contains(".conditionalOnProperty(...)")
-        e.message.contains('.grailsEnv(...)')
+        e.message.contains('.conditionalOnGrailsEnv(...)')
     }
 
     def "conditionalOnProperty takes property names positionally and attributes by name"() {

@@ -203,11 +203,11 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
     private static final String ANNOTATE_CALL = "annotate";
     private static final String VALUE_CALL = "value";
     private static final String TYPE_ARGUMENTS_CALL = "typeArguments";
-    private static final String GRAILS_ENV_CALL = "grailsEnv";
+    private static final String CONDITIONAL_ON_GRAILS_ENV_CALL = "conditionalOnGrailsEnv";
     private static final Set<String> BEAN_QUALIFIER_CALL_NAMES = Set.of(
             CONDITIONAL_ON_BEAN_CALL, CONDITIONAL_ON_MISSING_BEAN_CALL, CONDITIONAL_ON_MISSING_BEAN_NAME_CALL,
             CONDITIONAL_ON_PROPERTY_CALL, PRIMARY_CALL, LAZY_CALL, SCOPE_CALL, STATIC_METHOD_CALL,
-            ANNOTATE_CALL, TYPE_ARGUMENTS_CALL, GRAILS_ENV_CALL);
+            ANNOTATE_CALL, TYPE_ARGUMENTS_CALL, CONDITIONAL_ON_GRAILS_ENV_CALL);
     // field(...) and method(...) declare plain class members, not beans - bean-specific
     // qualifiers don't apply; .value(...) (@Value config injection) is field-only.
     private static final Set<String> FIELD_QUALIFIER_CALL_NAMES = Set.of(ANNOTATE_CALL, VALUE_CALL, TYPE_ARGUMENTS_CALL);
@@ -618,7 +618,7 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
                             "bean name of another bean(...) statement - declaring it more than once is only " +
                             "allowed when every declaration with the name carries its own discriminating " +
                             "condition (e.g. .conditionalOnProperty(...), .conditionalOnBean(...), or " +
-                            ".grailsEnv(...)), so that at most one of them registers at runtime");
+                            ".conditionalOnGrailsEnv(...)), so that at most one of them registers at runtime");
                 }
             }
         }
@@ -688,7 +688,7 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
      * discriminates, for the same reason.</p>
      */
     private static final Set<String> DISCRIMINATING_QUALIFIER_CALL_NAMES =
-            Set.of(CONDITIONAL_ON_BEAN_CALL, CONDITIONAL_ON_PROPERTY_CALL, GRAILS_ENV_CALL);
+            Set.of(CONDITIONAL_ON_BEAN_CALL, CONDITIONAL_ON_PROPERTY_CALL, CONDITIONAL_ON_GRAILS_ENV_CALL);
 
     private boolean hasDiscriminatingCondition(List<MethodCallExpression> qualifierCalls, MethodCallExpression outerCall) {
         for (MethodCallExpression qualifierCall : qualifierCalls) {
@@ -1851,8 +1851,8 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
         if (SCOPE_CALL.equals(name)) {
             return applyScopeQualifier(beanMethod, qualifierCall, args, source);
         }
-        if (GRAILS_ENV_CALL.equals(name)) {
-            return applyGrailsEnvQualifier(beanMethod, qualifierCall, args, source);
+        if (CONDITIONAL_ON_GRAILS_ENV_CALL.equals(name)) {
+            return applyConditionalOnGrailsEnvQualifier(beanMethod, qualifierCall, args, source);
         }
         return applyGenericAnnotation(beanMethod, qualifierCall, args, source);
     }
@@ -1872,18 +1872,18 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
     }
 
     /**
-     * Compiles {@code .grailsEnv("development"[, ...])} into {@code @ConditionalOnGrailsEnv}.
+     * Compiles {@code .conditionalOnGrailsEnv("development"[, ...])} into {@code @ConditionalOnGrailsEnv}.
      *
      * <p>Not {@code @ConditionalOnProperty(name = "grails.env", ...)}, which is what this would
      * otherwise be written as and is wrong: Grails infers an environment when none was set, so the
      * property is absent on exactly the runs the condition is meant to describe, and the bean goes
      * missing with nothing to show for it.</p>
      */
-    private boolean applyGrailsEnvQualifier(MethodNode beanMethod, MethodCallExpression qualifierCall,
+    private boolean applyConditionalOnGrailsEnvQualifier(MethodNode beanMethod, MethodCallExpression qualifierCall,
             List<Expression> args, SourceUnit source) {
         if (args.isEmpty()) {
-            addError(qualifierCall, source, ".grailsEnv(...) requires at least one environment name, " +
-                    "e.g. .grailsEnv(\"development\")");
+            addError(qualifierCall, source, ".conditionalOnGrailsEnv(...) requires at least one environment name, " +
+                    "e.g. .conditionalOnGrailsEnv(\"development\")");
             return false;
         }
         ListExpression names = new ListExpression();
@@ -1891,8 +1891,8 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
             Expression folded = foldStringValue(arg);
             Object value = folded instanceof ConstantExpression ? ((ConstantExpression) folded).getValue() : null;
             if (!(value instanceof String) || ((String) value).isBlank()) {
-                addError(arg, source, ".grailsEnv(...) takes non-blank environment names as Strings, " +
-                        "e.g. .grailsEnv(\"development\", \"test\")");
+                addError(arg, source, ".conditionalOnGrailsEnv(...) takes non-blank environment names as Strings, " +
+                        "e.g. .conditionalOnGrailsEnv(\"development\", \"test\")");
                 return false;
             }
             names.addExpression(folded);
