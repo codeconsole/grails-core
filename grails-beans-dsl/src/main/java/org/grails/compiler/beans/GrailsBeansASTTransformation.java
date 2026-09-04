@@ -19,8 +19,8 @@
 package org.grails.compiler.beans;
 
 import java.beans.Introspector;
-import java.io.IOException;
 import java.io.File;
+import java.io.IOException;
 import java.lang.reflect.Modifier;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
