@@ -29,6 +29,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -42,6 +43,7 @@ import javax.lang.model.SourceVersion;
 import groovy.transform.CompilationUnitAware;
 import groovy.transform.CompileStatic;
 import groovy.transform.TypeChecked;
+import groovy.transform.TypeCheckingMode;
 import org.apache.groovy.util.BeanUtils;
 import org.codehaus.groovy.GroovyBugError;
 import org.codehaus.groovy.ast.ASTNode;
@@ -1563,7 +1565,7 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
             return;
         }
         Set<String> own = existingMemberNames(inner);
-        own.addAll(EXTENSION_METHOD_NAMES);
+        addExtensionMethodNames(inner, own);
         own.addAll(enclosingReachable);
         Set<String> enclosingStatics = enclosingStaticNames(inner);
         boolean staticsInReach = inner.getOuterClass() != null && isStaticallyCompiled(inner.getOuterClass());
@@ -1686,25 +1688,50 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
                 "class is in reach";
     }
 
-    // Names an implicit-this call resolves against the instance itself, through the runtime rather
-    // than through a declared member - Groovy's extension methods. The metaclass finds these on the
-    // instance, so they never reach this$0 and are not out of reach; reporting one would reject
-    // working code. Taken from every DGM-like class rather than from the Object-receiver entries
-    // alone, or `join` on a List-typed anonymous class reads as unreachable. That over-approximates
-    // - an `each` written inside a Runnable is let through to the runtime error - which is the same
-    // trade the closure case above already makes, and it is the right direction for a diagnostic.
-    private static final Set<String> EXTENSION_METHOD_NAMES = extensionMethodNames();
+    // Groovy's extension methods, by name, each against the receiver types it is declared for. An
+    // implicit-this call that lands on one of these resolves against the instance itself, so it
+    // never reaches this$0 and is not out of reach; reporting one would reject working code.
+    //
+    // Keyed by receiver rather than collected into one flat set, because both directions of getting
+    // that wrong are real: the Object-receiver entries alone make `join` on a List-typed anonymous
+    // class read as unreachable, while every DGM name regardless of receiver lets a moved property
+    // named `text`, `first`, `last`, `count` or `lines` slip through on an unrelated class - those
+    // match DGM's getText/first/last/count/getLines, and relatedNames expands a property read to
+    // its accessor names. Extension modules contributed by the classpath (groovy-nio's
+    // NioExtensions, groovy-datetime) are not in DGM_LIKE_CLASSES; an anonymous class whose
+    // receiver is one of those would be reported and is unusual enough to leave.
+    private static final Map<String, Set<String>> EXTENSION_RECEIVERS = extensionReceivers();
 
-    private static Set<String> extensionMethodNames() {
-        Set<String> names = new HashSet<>();
+    private static Map<String, Set<String>> extensionReceivers() {
+        Map<String, Set<String>> receivers = new HashMap<>();
         for (Class<?> category : DefaultGroovyMethods.DGM_LIKE_CLASSES) {
             for (Method method : category.getMethods()) {
                 if (Modifier.isStatic(method.getModifiers()) && method.getParameterCount() > 0) {
-                    names.add(method.getName());
+                    receivers.computeIfAbsent(method.getName(), name -> new HashSet<>())
+                            .add(method.getParameterTypes()[0].getName());
                 }
             }
         }
-        return names;
+        return receivers;
+    }
+
+    private void addExtensionMethodNames(ClassNode inner, Set<String> own) {
+        Set<String> receiverTypes = new HashSet<>();
+        receiverTypes.add(ClassHelper.OBJECT_TYPE.getName());
+        // getAllInterfaces() is transitive over a class's OWN interfaces and does not climb the
+        // superclass chain, so it has to be asked of each superclass in turn - otherwise an
+        // anonymous class extending an ArrayList subclass shows no Iterable and loses `join`.
+        for (ClassNode current = inner; current != null; current = current.getSuperClass()) {
+            receiverTypes.add(current.getName());
+            for (ClassNode implemented : current.getAllInterfaces()) {
+                receiverTypes.add(implemented.getName());
+            }
+        }
+        for (Map.Entry<String, Set<String>> extension : EXTENSION_RECEIVERS.entrySet()) {
+            if (!Collections.disjoint(extension.getValue(), receiverTypes)) {
+                own.add(extension.getKey());
+            }
+        }
     }
 
     private static final ClassNode COMPILE_STATIC_TYPE = ClassHelper.make(CompileStatic.class);
@@ -1736,9 +1763,25 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
     // @AnnotationCollector has already expanded them by canonicalization.
     private boolean isStaticallyCompiled(ClassNode type) {
         for (ClassNode current = type; current != null; current = current.getOuterClass()) {
-            if (!current.getAnnotations(COMPILE_STATIC_TYPE).isEmpty()) {
-                return true;
+            List<AnnotationNode> annotations = current.getAnnotations(COMPILE_STATIC_TYPE);
+            if (!annotations.isEmpty()) {
+                // The innermost one decides, so stop here either way. @CompileDynamic is an
+                // @AnnotationCollector for @CompileStatic(TypeCheckingMode.SKIP) and is expanded
+                // before canonicalization, so it arrives looking identical to the real thing while
+                // its bytecode is dynamic - which is the only thing being asked about.
+                return !isTypeCheckingSkipped(annotations.get(0));
             }
+        }
+        return false;
+    }
+
+    private boolean isTypeCheckingSkipped(AnnotationNode annotation) {
+        Expression mode = annotation.getMember("value");
+        if (mode instanceof PropertyExpression) {
+            return TypeCheckingMode.SKIP.name().equals(((PropertyExpression) mode).getPropertyAsString());
+        }
+        if (mode instanceof ConstantExpression) {
+            return String.valueOf(((ConstantExpression) mode).getValue()).endsWith(TypeCheckingMode.SKIP.name());
         }
         return false;
     }

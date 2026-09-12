@@ -2176,6 +2176,169 @@ class GrailsBeansASTTransformationSpec extends Specification {
         e.message.contains('static member of an enclosing class')
     }
 
+    def "a precompiled superclass declaring getProperty does not exempt its subclass"() {
+        given: "invokeMethod/getProperty became GroovyObject defaults in Groovy 3, so a class from a\n                library built before that declares both on every type"
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import grails.plugins.Plugin
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            interface InheritedAnyGreeter { String greet() }
+            abstract class InheritedAnyBase extends Properties implements InheritedAnyGreeter {}
+
+            @GrailsBeans
+            @AutoConfiguration
+            class InheritedAnyGrailsPlugin extends Plugin {
+                def beans = {
+                    method('suffix', String) { '!' }
+
+                    bean('greeter', InheritedAnyGreeter) {
+                        new InheritedAnyBase() { String greet() { 'hello' + suffix() } }
+                    }
+                }
+            }
+        '''
+
+        when:
+        compile(source)
+
+        then:
+        MultipleCompilationErrorsException e = thrown(MultipleCompilationErrorsException)
+        e.message.contains('does not resolve on this anonymous')
+    }
+
+    @Unroll
+    def "a class that really does answer anything is exempt: #shape"() {
+        given:
+        String source = """
+            import grails.compiler.beans.GrailsBeans
+            import grails.plugins.Plugin
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            interface ${fixture}Greeter { String greet() }
+            ${extraTypes}
+
+            @GrailsBeans
+            @AutoConfiguration
+            class ${fixture}GrailsPlugin extends Plugin {
+                def beans = {
+                    method('suffix', String) { '!' }
+
+                    bean('greeter', ${fixture}Greeter) { ${construction} }
+                }
+            }
+        """
+
+        when:
+        compile(source)
+
+        then: "written here, in source this unit compiles - which is what getModule() tells apart"
+        noExceptionThrown()
+
+        where:
+        shape                                             | fixture | extraTypes | construction
+        'the anonymous class writes its own getProperty'  | 'AnyB'  | ''         | "new AnyBGreeter() { String greet() { 'hello' + suffix() }\n                            def getProperty(String n) { '' } }"
+        'a same-unit superclass writes invokeMethod'       | 'AnyC'  | "abstract class AnyCBase implements AnyCGreeter { Object invokeMethod(String n, Object a) { '' } }" | "new AnyCBase() { String greet() { 'hello' + suffix() } }"
+    }
+
+    def "a @CompileStatic host reaches its statics from inside a group too"() {
+        given: "a group's static compilation is deferred, so the two paths could drift"
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import groovy.transform.CompileStatic
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            interface GroupStaticGreeter { String greet() }
+
+            @GrailsBeans
+            @CompileStatic
+            @AutoConfiguration
+            class GroupStaticBeans {
+                static final String SUFFIX = ''
+                static String helper() { 'hello' }
+
+                def beans = {
+                    group('extras') {
+                        bean('greeter', GroupStaticGreeter) {
+                            new GroupStaticGreeter() { String greet() { helper() + SUFFIX } }
+                        }
+                    }
+                }
+            }
+        '''
+
+        and:
+        GroovyClassLoader loader = new GroovyClassLoader(getClass().classLoader)
+        loader.parseClass(source)
+
+        expect:
+        loader.loadClass('GroupStaticBeans$ExtrasConfiguration')
+                .getDeclaredConstructor().newInstance().greeter().greet() == 'hello'
+    }
+
+    def "@CompileStatic(TypeCheckingMode.SKIP) is a dynamic host, so its statics are out of reach"() {
+        given: "what @CompileDynamic expands to - identical annotation, dynamic bytecode"
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import grails.plugins.Plugin
+            import groovy.transform.CompileStatic
+            import groovy.transform.TypeCheckingMode
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            interface SkippedGreeter { String greet() }
+
+            @GrailsBeans
+            @CompileStatic(TypeCheckingMode.SKIP)
+            @AutoConfiguration
+            class SkippedGrailsPlugin extends Plugin {
+                static String helper() { 'hello' }
+
+                def beans = {
+                    bean('greeter', SkippedGreeter) {
+                        new SkippedGreeter() { String greet() { helper() } }
+                    }
+                }
+            }
+        '''
+
+        when:
+        compile(source)
+
+        then: "uncaught it is the NoSuchFieldError this check exists to turn into a compile error"
+        MultipleCompilationErrorsException e = thrown(MultipleCompilationErrorsException)
+        e.message.contains('static member of an enclosing class')
+    }
+
+    def "an extension method of a receiver the anonymous class is not is still out of reach"() {
+        given: "every DGM name regardless of receiver would let a moved getText through as text"
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import grails.plugins.Plugin
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            interface UnrelatedGreeter { String greet() }
+
+            @GrailsBeans
+            @AutoConfiguration
+            class UnrelatedGrailsPlugin extends Plugin {
+                def beans = {
+                    method('getText', String) { 'moved' }
+
+                    bean('greeter', UnrelatedGreeter) {
+                        new UnrelatedGreeter() { String greet() { text } }
+                    }
+                }
+            }
+        '''
+
+        when:
+        compile(source)
+
+        then: "DGM declares getText on File/URL/Reader, none of which this class is"
+        MultipleCompilationErrorsException e = thrown(MultipleCompilationErrorsException)
+        e.message.contains('"text"')
+    }
+
     def "an anonymous class in a group(...) body that reaches nothing outside itself is fine"() {
         given: "the shape that works, and must not be caught by the check above"
         String source = '''
