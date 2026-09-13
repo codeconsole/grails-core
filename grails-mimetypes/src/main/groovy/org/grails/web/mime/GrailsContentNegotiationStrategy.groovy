@@ -33,6 +33,7 @@ import grails.config.Settings
 import grails.web.http.HttpHeaders
 import grails.web.mime.MimeType
 import org.grails.web.util.GrailsApplicationAttributes
+import org.grails.web.util.WebUtils
 
 /**
  * Adapts Grails' configured format aliases and compatibility rules to Spring MVC content negotiation.
@@ -75,7 +76,10 @@ class GrailsContentNegotiationStrategy implements ContentNegotiationStrategy {
     }
 
     MimeType[] resolveMimeTypes(HttpServletRequest request) {
-        String formatOverride = request.getParameter('format')
+        String formatOverride
+        if (!WebUtils.isError(request)) {
+            formatOverride = request.getParameter('format')
+        }
         if (!formatOverride) {
             formatOverride = request.getAttribute(GrailsApplicationAttributes.RESPONSE_FORMAT) as String
         }

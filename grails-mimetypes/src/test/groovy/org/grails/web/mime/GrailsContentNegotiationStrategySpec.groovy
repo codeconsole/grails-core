@@ -22,6 +22,7 @@ import grails.web.mime.MimeType
 import grails.config.Config
 import org.grails.config.PropertySourcesConfig
 import org.grails.web.util.GrailsApplicationAttributes
+import org.grails.web.util.WebUtils
 import org.springframework.core.env.MapPropertySource
 import org.springframework.core.env.MutablePropertySources
 import org.springframework.http.MediaType
@@ -72,6 +73,22 @@ class GrailsContentNegotiationStrategySpec extends Specification {
 
         expect:
         strategy().resolveMimeTypes(request)*.extension == ['xml']
+    }
+
+    void "error dispatch resolves its format without reading rejected request parameters"() {
+        given:
+        def request = new MockHttpServletRequest() {
+            @Override
+            String getParameter(String name) {
+                throw new IllegalStateException('request parameters cannot be parsed')
+            }
+        }
+        request.setAttribute(WebUtils.ERROR_STATUS_CODE_ATTRIBUTE, 413)
+        request.setAttribute(GrailsApplicationAttributes.RESPONSE_FORMAT, 'json')
+        request.addHeader('Accept', 'application/xml')
+
+        expect:
+        strategy().resolveMimeTypes(request)*.extension == ['json']
     }
 
     void "missing accept header resolves to the configured all format"() {
