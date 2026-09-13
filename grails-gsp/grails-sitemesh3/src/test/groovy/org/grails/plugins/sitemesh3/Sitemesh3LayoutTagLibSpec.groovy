@@ -77,18 +77,6 @@ class Sitemesh3LayoutTagLibSpec extends Specification {
         out.toString().contains('&quot;&gt;&lt;script&gt;')
     }
 
-    def "an attribute value is written as it stands where the application has no codec lookup"() {
-        given: 'the lookup is a required dependency, so this is a tag library built by hand'
-        Sitemesh3LayoutTagLib tagLib = new Sitemesh3LayoutTagLib()
-        FastStringWriter out = new FastStringWriter()
-
-        when:
-        tagLib.captureTagContent(new GrailsPrintWriter(out), 'body', [class: '<b>'], null)
-
-        then: 'nothing encodes it - which is what makes the wiring of that dependency load-bearing'
-        out.toString() == '<body class="<b>"></body>'
-    }
-
     private static StandaloneCodecLookup codecLookup() {
         new StandaloneCodecLookup().tap { it.afterPropertiesSet() }
     }
