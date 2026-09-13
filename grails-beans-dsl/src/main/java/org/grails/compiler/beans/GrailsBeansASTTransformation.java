@@ -1564,41 +1564,67 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
         if (!visited.add(inner) || answersAnything(inner)) {
             return;
         }
-        Set<String> own = existingMemberNames(inner);
-        addExtensionMethodNames(inner, own);
-        own.addAll(enclosingReachable);
-        Set<String> enclosingStatics = enclosingStaticNames(inner);
-        boolean staticsInReach = inner.getOuterClass() != null && isStaticallyCompiled(inner.getOuterClass());
-        if (staticsInReach) {
-            own.addAll(enclosingStatics);
-        }
+        Set<String> baseOwn = existingMemberNames(inner);
+        addExtensionMethodNames(inner, baseOwn);
+        baseOwn.addAll(enclosingReachable);
         // existingMemberNames walks the supertypes for METHOD names and for the accessors a property
         // reserves, but ClassNode.getFields() is declared fields only. Without the inherited ones,
         // `this.tag` would be reported where the bare `tag` is not - the variable path resolves it to
         // a real FieldNode and declaredWithin lets it through, so the two spellings must agree.
         for (ClassNode current = inner; current != null; current = current.getSuperClass()) {
             for (FieldNode field : current.getFields()) {
-                own.add(field.getName());
+                baseOwn.add(field.getName());
             }
         }
-        // Not just the methods: a field initializer and an object initializer are the class's code
-        // too, and the Verifier only folds them into the constructor at class generation - long
-        // after this. A reference written there fails in exactly the same place.
-        List<ASTNode> bodies = new ArrayList<>();
+        Set<String> enclosingStatics = enclosingStaticNames(inner);
+        Set<String> ownWithStatics = new HashSet<>(baseOwn);
+        ownWithStatics.addAll(enclosingStatics);
+        boolean classStaticsInReach = inner.getOuterClass() != null &&
+                isStaticallyCompiled(inner.getOuterClass());
+        Set<String> classOwn = classStaticsInReach ? ownWithStatics : baseOwn;
+
+        List<ConstructorCallExpression> nested = new ArrayList<>();
+        // Per body, not per class: Groovy's type checker reads @CompileStatic/@CompileDynamic off
+        // the METHOD of an inner class whatever the enclosing classes say, so one method marked the
+        // other way reaches its enclosing statics - or stops reaching them - on its own.
         for (MethodNode method : inner.getMethods()) {
             if (method.getCode() != null) {
-                bodies.add(method.getCode());
+                walkBody(method.getCode(), inner, owner, isGroup, source, enclosingStatics, nested,
+                        staticsInReach(method, classStaticsInReach) ? ownWithStatics : baseOwn);
             }
         }
+        // A field initializer and an object initializer are the class's code too - the Verifier only
+        // folds them into the constructor at class generation, long after this - and there is
+        // nowhere to annotate them, so they keep the class's answer.
         for (FieldNode field : inner.getFields()) {
             if (field.getInitialExpression() != null) {
-                bodies.add(field.getInitialExpression());
+                walkBody(field.getInitialExpression(), inner, owner, isGroup, source, enclosingStatics,
+                        nested, classOwn);
             }
         }
-        bodies.addAll(inner.getObjectInitializerStatements());
-        List<ConstructorCallExpression> nested = new ArrayList<>();
-        for (ASTNode body : bodies) {
-            body.visit(new CodeVisitorSupport() {
+        for (Statement statement : inner.getObjectInitializerStatements()) {
+            walkBody(statement, inner, owner, isGroup, source, enclosingStatics, nested, classOwn);
+        }
+        for (ConstructorCallExpression call : nested) {
+            reportOutwardReferences(call.getType(), owner, isGroup, source, classOwn, visited);
+        }
+    }
+
+    // A method's own @CompileStatic decides for that method; @CompileDynamic arrives here as
+    // @CompileStatic(TypeCheckingMode.SKIP), which is why the value has to be read rather than the
+    // annotation merely counted.
+    private boolean staticsInReach(MethodNode method, boolean classAnswer) {
+        List<AnnotationNode> annotations = method.getAnnotations(COMPILE_STATIC_TYPE);
+        if (!annotations.isEmpty()) {
+            return !isTypeCheckingSkipped(annotations.get(0));
+        }
+        return classAnswer;
+    }
+
+    private void walkBody(ASTNode body, ClassNode inner, ClassNode owner, boolean isGroup,
+            SourceUnit source, Set<String> enclosingStatics,
+            List<ConstructorCallExpression> nested, Set<String> own) {
+        body.visit(new CodeVisitorSupport() {
                 // Deliberately not descending, the same reason rejectUnproxiedSiblingBeanCalls does
                 // not: a closure's resolve strategy and delegate are runtime facts, so an
                 // implicit-this call inside one may well be answered by a delegate rather than by
@@ -1669,11 +1695,7 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
                             "enclosing instance, so qualifying it with the declaring class name is " +
                             "enough."));
                 }
-            });
-        }
-        for (ConstructorCallExpression call : nested) {
-            reportOutwardReferences(call.getType(), owner, isGroup, source, own, visited);
-        }
+        });
     }
 
     private String reachDescription(ClassNode owner, boolean isGroup) {
@@ -1781,6 +1803,9 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
             return TypeCheckingMode.SKIP.name().equals(((PropertyExpression) mode).getPropertyAsString());
         }
         if (mode instanceof ConstantExpression) {
+            // endsWith rather than equals on purpose: a collector that folded the member to a
+            // constant yields the bare enum name, but a qualified spelling would still be this
+            // mode, and no other TypeCheckingMode constant ends this way.
             return String.valueOf(((ConstantExpression) mode).getValue()).endsWith(TypeCheckingMode.SKIP.name());
         }
         return false;

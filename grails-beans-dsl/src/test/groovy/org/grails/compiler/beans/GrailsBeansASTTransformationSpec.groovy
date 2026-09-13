@@ -2339,6 +2339,68 @@ class GrailsBeansASTTransformationSpec extends Specification {
         e.message.contains('"text"')
     }
 
+    @Unroll
+    def "the static-compilation mode is read per body, so #shape reaches the enclosing statics"() {
+        given: "Groovy reads @CompileStatic off the METHOD of an inner class whatever the class says"
+        String source = perBodySource(fixture, hostAnnotation, methodAnnotation)
+
+        and:
+        GroovyClassLoader loader = new GroovyClassLoader(getClass().classLoader)
+        loader.parseClass(source)
+
+        expect:
+        loader.loadClass("${fixture}AutoConfiguration")
+                .getDeclaredConstructor().newInstance().greeter().greet() == 'hello'
+
+        where:
+        shape                                     | fixture    | hostAnnotation   | methodAnnotation
+        'a @CompileStatic method of a dynamic host' | 'PerBodyB' | ''             | '@CompileStatic'
+        'an unannotated method of a static host'    | 'PerBodyC' | '@CompileStatic' | ''
+    }
+
+    @Unroll
+    def "the static-compilation mode is read per body, so #shape cannot reach them"() {
+        given:
+        String source = perBodySource(fixture, hostAnnotation, methodAnnotation)
+
+        when:
+        compile(source)
+
+        then:
+        MultipleCompilationErrorsException e = thrown(MultipleCompilationErrorsException)
+        e.message.contains('static member of an enclosing class')
+
+        where:
+        shape                                        | fixture    | hostAnnotation   | methodAnnotation
+        'a @CompileDynamic method of a static host'  | 'PerBodyA' | '@CompileStatic' | '@CompileDynamic'
+        'an unannotated method of a dynamic host'    | 'PerBodyD' | ''               | ''
+    }
+
+    private static String perBodySource(String fixture, String hostAnnotation, String methodAnnotation) {
+        """
+            import grails.compiler.beans.GrailsBeans
+            import grails.plugins.Plugin
+            import groovy.transform.CompileDynamic
+            import groovy.transform.CompileStatic
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            interface ${fixture}Greeter { String greet() }
+
+            @GrailsBeans
+            ${hostAnnotation}
+            @AutoConfiguration
+            class ${fixture}GrailsPlugin extends Plugin {
+                static String helper() { 'hello' }
+
+                def beans = {
+                    bean('greeter', ${fixture}Greeter) {
+                        new ${fixture}Greeter() { ${methodAnnotation} String greet() { helper() } }
+                    }
+                }
+            }
+        """
+    }
+
     def "an anonymous class in a group(...) body that reaches nothing outside itself is fine"() {
         given: "the shape that works, and must not be caught by the check above"
         String source = '''
