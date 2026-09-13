@@ -21,6 +21,9 @@ package org.grails.datastore.mapping.dirty.checking
 import groovy.transform.CompileStatic
 
 import org.grails.datastore.mapping.collection.PersistentCollection
+import org.grails.datastore.mapping.collection.PersistentList
+import org.grails.datastore.mapping.collection.PersistentSet
+import org.grails.datastore.mapping.collection.PersistentSortedSet
 import org.grails.datastore.mapping.model.MappingContext
 import org.grails.datastore.mapping.model.PersistentEntity
 import org.grails.datastore.mapping.model.types.Association
@@ -147,12 +150,13 @@ class DirtyCheckingSupport {
      * every load (an empty tracked collection is falsy in Groovy), and because the new empty
      * collection equals the old one the assignment itself was never flagged either.
      *
-     * <p>Tracking is only re-established, never introduced, and only for the plugin's own
-     * generic wrappers: when the value being replaced is not the exact class installed by a
-     * datastore decode or a previous rewrap — a transient instance, a store like Hibernate that
-     * performs its own snapshot-based dirty checking, a {@code PersistentCollection}, or a
-     * store-specific subclass such as the Neo4j collection types — the new value is returned
-     * untouched. Store-specific wrappers in particular must NOT be replaced by a generic one:
+     * <p>Tracking is only re-established, never introduced: the value being replaced must
+     * already be one of the exact classes a datastore decode installs — a generic wrapper, or
+     * the {@code PersistentList}/{@code PersistentSet}/{@code PersistentSortedSet} a to-many
+     * association decodes into. Anything else is returned untouched: a transient instance, a
+     * store like Hibernate that performs its own snapshot-based dirty checking, or a
+     * store-specific subclass such as the Neo4j collection types. Store-specific wrappers in
+     * particular must NOT be replaced by a generic one:
      * the store's persister recognises its own types (and treats anything already
      * dirty-checkable as such), so a generic replacement would permanently disable that store's
      * relationship handling for the property. Leaving the raw value lets the persister wrap it
@@ -189,7 +193,7 @@ class DirtyCheckingSupport {
             // underlying collection, as any plain assignment would.
             newValue = borrowed
         }
-        else if (!isGenericWrapper(oldValue)) {
+        else if (!wasTracked(oldValue)) {
             // A plain collection replacing a value this package was not already tracking.
             // Tracking is introduced by the datastore at decode, never here — a transient
             // instance, or a store like Hibernate that does its own snapshot-based dirty
@@ -258,6 +262,31 @@ class DirtyCheckingSupport {
                     : ((DirtyCheckingCollection) target).target
         }
         return target
+    }
+
+    /**
+     * True when the property was already held in a collection the datastore tracks changes
+     * through: one of this package's own generic wrappers, or the {@code PersistentCollection}
+     * a to-many association decodes into. Replacing either with a plain collection would drop
+     * that tracking, so the replacement is wrapped.
+     *
+     * <p>Deliberately does not read the value — a {@code PersistentCollection} may be an
+     * uninitialised lazy association, and touching it would issue a query.
+     */
+    private static boolean wasTracked(Object value) {
+        return isGenericWrapper(value) || isPersistentCollection(value)
+    }
+
+    /**
+     * True only for the datastore's own to-many collection classes, by exact class. A
+     * store-specific subclass (the Neo4j {@code Neo4jPersistentList} and friends) fails this
+     * check and stays with its store, exactly as {@link #isGenericWrapper} keeps the Neo4j
+     * wrapper subclasses out.
+     */
+    private static boolean isPersistentCollection(Object value) {
+        Class<?> valueClass = value?.getClass()
+        return valueClass == PersistentList || valueClass == PersistentSet ||
+                valueClass == PersistentSortedSet
     }
 
     /**

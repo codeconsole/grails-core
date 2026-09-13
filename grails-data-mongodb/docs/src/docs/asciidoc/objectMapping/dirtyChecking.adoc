@@ -38,11 +38,12 @@ collection type.
 
 Assigning a new collection over a tracked one keeps dirty checking active: the generated setter wraps the
 replacement in the same dirty checking aware type, so a pattern such as re-initialising an empty collection
-(`if (!book.authors) book.authors = []`) followed by in-place mutation is tracked and persisted. The wrappers
+(`if (!book.authors) book.authors = []`) followed by in-place mutation is tracked and persisted. This holds
+for basic collections and maps, embedded collections, and one-to-many and many-to-many associations alike. The wrappers
 also track iterator-based mutation — Groovy's `removeAll(Closure)` / `retainAll(Closure)`, `removeIf`,
-`ListIterator` operations, `sort` / `replaceAll`, and — on `List` and `SortedSet` properties — the
-`SequencedCollection` methods (`addFirst`, `addLast`, `removeFirst`, `removeLast`) and the `subList`,
-`reversed`, `headSet`, `tailSet` and `subSet` views — and for `Map` properties the default
+`ListIterator` operations, `sort` / `replaceAll`, `addFirst` / `addLast` on a `List` property,
+`removeFirst` / `removeLast` on a `List` or `SortedSet` property, and the `subList`, `reversed`,
+`headSet`, `tailSet` and `subSet` views — and for `Map` properties the default
 methods (`putIfAbsent`, `merge`, `compute*`, `replace*`) and removals through the `entrySet()` / `keySet()` /
 `values()` views.
 
