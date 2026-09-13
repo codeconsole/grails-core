@@ -33,12 +33,17 @@ class GroovyPageCompilerSpec extends Specification {
 
     private File viewsDir
     private File targetDir
+    private File generatedDir
 
     void setup() {
         viewsDir = new File(tempDir, 'views')
         viewsDir.mkdirs()
         targetDir = new File(tempDir, 'classes')
         targetDir.mkdirs()
+        // the compiler writes the Groovy it generates for each page under java.io.tmpdir when it is
+        // given nowhere else, which every parallel fork would share and none would clean up
+        generatedDir = new File(tempDir, 'generated')
+        generatedDir.mkdirs()
     }
 
     void 'the registry names every compiled page'() {
@@ -90,6 +95,7 @@ class GroovyPageCompilerSpec extends Specification {
         GroovyPageCompiler compiler = new GroovyPageCompiler()
         compiler.viewsDir = viewsDir
         compiler.targetDir = targetDir
+        compiler.generatedGroovyPagesDirectory = generatedDir
         compiler.viewPrefix = viewPrefix
         compiler.packagePrefix = 'probe'
         compiler.srcFiles = []

@@ -21,6 +21,8 @@ package org.grails.plugins
 
 import java.beans.PropertyEditor
 
+import java.lang.reflect.Field
+
 import org.springframework.aop.config.AopConfigUtils
 import org.springframework.beans.factory.BeanRegistrar
 import org.springframework.beans.factory.config.BeanDefinition
@@ -58,6 +60,14 @@ import spock.lang.Specification
  * and the {@code grails.spring.bean.packages} scan by {@link SpringBeanPackagesSpec}.
  */
 class CoreGrailsPluginRegistrarSpec extends Specification {
+
+    /** Undone after each feature, so nothing this specification changes outlives it. */
+    private final List<Closure<?>> cleanupActions = []
+
+    void cleanup() {
+        cleanupActions.reverseEach { it.call() }
+        cleanupActions.clear()
+    }
 
     void 'the auto proxy creator is the AspectJ aware variant when AspectJ is available'() {
         given:
@@ -101,8 +111,9 @@ class CoreGrailsPluginRegistrarSpec extends Specification {
     }
 
     void "Spring Boot's AOP auto-configuration starts on top of the registered auto proxy creator"() {
-        given: 'a plain Spring Boot context - nothing here loads GrailsAutoConfiguration'
+        given: 'a JVM where nothing has made the Grails creators known to Spring yet'
         GrailsApplication application = new DefaultGrailsApplication()
+        forgetGrailsAutoProxyCreators()
 
         expect: 'the auto-configuration accepts the registered creator instead of rejecting it as unknown'
         new ApplicationContextRunner()
@@ -195,6 +206,26 @@ class CoreGrailsPluginRegistrarSpec extends Specification {
 
         cleanup:
         context.close()
+    }
+
+    /**
+     * Removes the Grails auto-proxy creators from Spring's priority list, which is static and so
+     * shared by every specification in the fork: loading {@code GrailsAutoConfiguration} anywhere
+     * earlier adds them, and a specification that assumes they are absent would otherwise pass
+     * whether or not the code under test puts them there. The list is restored afterwards, so the
+     * fork is left as it was found.
+     */
+    private void forgetGrailsAutoProxyCreators() {
+        List<Class<?>> priorityList = autoProxyCreatorPriorityList()
+        List<Class<?>> removed = priorityList.findAll { it.name.startsWith('org.grails.') }
+        priorityList.removeAll(removed)
+        cleanupActions << { priorityList.addAll(removed) }
+    }
+
+    private static List<Class<?>> autoProxyCreatorPriorityList() {
+        Field field = AopConfigUtils.getDeclaredField('APC_PRIORITY_LIST')
+        field.accessible = true
+        (List<Class<?>>) field.get(null)
     }
 
     private static GenericApplicationContext buildContext(GrailsApplication application,

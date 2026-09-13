@@ -108,6 +108,10 @@ class GroovyPagePluginFunctionalSpec extends GradleSpecification {
         and: 'they are off the main runtime class path, which a boot archive would package a second time'
         result.output.contains('MAIN_RUNTIME_HAS_PAGES=false')
         result.output.contains('MAIN_RUNTIME_HAS_WEBAPP_PAGES=false')
+
+        and: 'running the tests compiles them first, rather than using whatever an earlier run left'
+        result.output.contains('TEST_WAITS_FOR_PAGE_COMPILATION=true')
+        result.output.contains('TEST_WAITS_FOR_WEBAPP_PAGE_COMPILATION=true')
     }
 
     def "a Grails project gets no compiled pages on its test runtime class path"() {
