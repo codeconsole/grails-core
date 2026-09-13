@@ -75,12 +75,16 @@ class DirtyCheckingCollection implements Collection, DirtyCheckableCollection {
     }
 
     // Content equality, like AbstractPersistentCollection: the wrapper is transparent, so it
-    // equals whatever its target equals. Without this, the tracking views handed out by
+    // equals whatever its target equals. Without that, the tracking views handed out by
     // DirtyCheckingMap (keySet/entrySet/values) broke Groovy's Map == Map, whose extension
-    // method compares self.keySet().equals(other.keySet()).
+    // method compares self.keySet().equals(other.keySet()). Identity comes first so the
+    // contract stays reflexive for a target that has no content equality of its own —
+    // values() wraps an AbstractCollection, which inherits Object.equals, and without the
+    // short-circuit the wrapper would not equal itself, breaking List.contains and HashSet
+    // membership.
     @Override
     boolean equals(Object other) {
-        target.equals(other)
+        other.is(this) || target.equals(other)
     }
 
     @Override

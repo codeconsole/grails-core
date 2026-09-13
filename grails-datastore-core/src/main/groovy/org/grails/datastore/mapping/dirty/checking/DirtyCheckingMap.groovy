@@ -76,9 +76,12 @@ class DirtyCheckingMap implements Map, DirtyCheckableCollection {
     }
 
     // Content equality, like AbstractPersistentCollection — see DirtyCheckingCollection.
+    // Identity first: a target with no content equality of its own (values() wraps an
+    // AbstractCollection, which inherits Object.equals) must still equal itself, or
+    // List.contains and HashSet membership break on the wrapper.
     @Override
     boolean equals(Object other) {
-        target.equals(other)
+        other.is(this) || target.equals(other)
     }
 
     @Override

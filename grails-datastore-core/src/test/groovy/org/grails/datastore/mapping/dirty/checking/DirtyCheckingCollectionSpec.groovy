@@ -434,6 +434,23 @@ class DirtyCheckingCollectionSpec extends Specification {
         ((DirtyCheckableCollection) map.values()).isAssigned()
     }
 
+    def 'a wrapper equals itself even when its target has only identity equality'() {
+        given: "values() wraps an AbstractCollection, which inherits Object.equals"
+        def owner = new CollectionOwner()
+        def values = new DirtyCheckingMap([a: 1], owner, 'attrs').values()
+        def overDeque = new DirtyCheckingCollection(new ArrayDeque(['x']), owner, 'items')
+
+        expect: 'reflexive, so List.contains and HashSet membership work on the wrapper'
+        values == values
+        values.equals(values)
+        [values].contains(values)
+        overDeque.equals(overDeque)
+        [overDeque].contains(overDeque)
+
+        and: 'content equality against the target is unaffected'
+        new DirtyCheckingList(['a'], owner, 'items') == ['a']
+    }
+
     private static boolean marksDirtyOn(CollectionOwner owner, String property, Closure mutation) {
         owner.trackChanges()
         mutation()
