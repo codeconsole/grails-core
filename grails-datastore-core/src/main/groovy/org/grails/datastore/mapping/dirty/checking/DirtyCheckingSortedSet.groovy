@@ -41,12 +41,6 @@ class DirtyCheckingSortedSet extends DirtyCheckingCollection implements SortedSe
         this.target = target
     }
 
-    @Override
-    Iterator iterator() {
-        // Route through the dirty-marking iterator (Groovy DGM removal methods iterate)
-        return super.iterator()
-    }
-
     // SequencedCollection (Java 21) removals; addFirst/addLast are not overridden because
     // SortedSet rejects them outright, so they never reach a mutation to track.
     @Override

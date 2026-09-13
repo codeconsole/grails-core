@@ -79,12 +79,6 @@ class DirtyCheckingList extends DirtyCheckingCollection implements List {
         target.replaceAll(operator)
     }
 
-    @Override
-    Iterator iterator() {
-        // Route through the dirty-marking iterator (Groovy DGM removal methods iterate)
-        return super.iterator()
-    }
-
     // SequencedCollection (Java 21) mutators. Without these the @Delegate-generated versions
     // call straight through to the target, bypassing change tracking entirely.
     @Override
