@@ -283,13 +283,7 @@ public class GspAutoConfiguration {
 
     @Configuration
     protected static class GspViewResolverConfiguration extends AbstractGspConfig {
-        /**
-         * Also answers to {@code jspViewResolver}, the name Grails gives an application's own view
-         * resolver: {@code RenderSitemeshTagLib} resolves the layout view of {@code <g:applyLayout>}
-         * through a resolver qualified by that name, and a standalone Spring Boot application has no
-         * bean of its own under it.
-         */
-        @Bean(name = { "gspViewResolver", "jspViewResolver" })
+        @Bean
         @ConditionalOnMissingBean(name = "gspViewResolver")
         public ViewResolver gspViewResolver(GroovyPagesTemplateEngine groovyPagesTemplateEngine, GrailsConventionGroovyPageLocator groovyPageLocator) {
             GroovyPageViewResolver groovyPageViewResolver = new GroovyPageViewResolver(groovyPagesTemplateEngine, groovyPageLocator);
@@ -412,6 +406,13 @@ public class GspAutoConfiguration {
      * not repeated here.
      *
      * <p>Controlled by the {@code spring.gsp.replaceViewResolverBean} configuration property.
+     *
+     * <p>Also makes it answer to {@code jspViewResolver}, the name Grails gives an application's own
+     * view resolver: {@code RenderSitemeshTagLib} resolves the layout view of
+     * {@code <g:applyLayout>} through a resolver qualified by that name. That one is an alias only
+     * where nothing is registered under the name already - an application serving JSP may well have
+     * a resolver of its own there, and an alias would answer in its place without saying so, since
+     * it is resolved ahead of a bean definition of the same name.
      */
     protected static class ReplaceViewResolverRegistrar implements ImportBeanDefinitionRegistrar, EnvironmentAware {
         boolean replaceViewResolverBean;
@@ -423,6 +424,9 @@ public class GspAutoConfiguration {
                     registry.removeBeanDefinition("viewResolver");
                 }
                 registry.registerAlias("gspViewResolver", "viewResolver");
+            }
+            if (!registry.containsBeanDefinition("jspViewResolver")) {
+                registry.registerAlias("gspViewResolver", "jspViewResolver");
             }
         }
 
