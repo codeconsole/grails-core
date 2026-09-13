@@ -18,6 +18,10 @@
  */
 package org.grails.datastore.gorm.dirty.checking
 
+import org.grails.datastore.mapping.collection.PersistentList
+import org.grails.datastore.mapping.collection.PersistentSet
+import org.grails.datastore.mapping.collection.PersistentSortedSet
+import org.grails.datastore.mapping.core.Session
 import org.grails.datastore.mapping.dirty.checking.DirtyCheckableCollection
 import org.grails.datastore.mapping.dirty.checking.DirtyCheckable
 import org.grails.datastore.mapping.dirty.checking.DirtyCheckingCollection
@@ -25,11 +29,6 @@ import org.grails.datastore.mapping.dirty.checking.DirtyCheckingList
 import org.grails.datastore.mapping.dirty.checking.DirtyCheckingMap
 import org.grails.datastore.mapping.dirty.checking.DirtyCheckingSortedSet
 import org.grails.datastore.mapping.dirty.checking.DirtyCheckingSupport
-
-import org.grails.datastore.mapping.collection.PersistentList
-import org.grails.datastore.mapping.collection.PersistentSet
-import org.grails.datastore.mapping.collection.PersistentSortedSet
-import org.grails.datastore.mapping.core.Session
 
 import spock.lang.Shared
 import spock.lang.Specification
@@ -376,6 +375,9 @@ class ScheduleLike {
 
         then: "the exact-class rule leaves it raw, so the store wraps it in its own type on save"
         !(entity.shares instanceof DirtyCheckableCollection)
+
+        and: "the assignment is still flagged, which the store persister relies on to re-wrap it"
+        entity.hasChanged('shares')
     }
 
     def 'a property that was never tracked is left untouched by the setter'() {
