@@ -18,12 +18,12 @@
  */
 package hello;
 
+import java.net.CookieManager;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -42,11 +42,11 @@ class JspViewTest {
     @Value("${local.server.port}")
     int port;
 
-    @AfterEach
-    void backToGsp() throws Exception {
-        // the selected rendering is application-wide state, so leave it as the other tests expect it
-        get("/gsp");
-    }
+    /** Keeps the cookies, so the requests of one test are one visit and share its selection. */
+    private final HttpClient client = HttpClient.newBuilder()
+            .followRedirects(HttpClient.Redirect.ALWAYS)
+            .cookieHandler(new CookieManager())
+            .build();
 
     @Test
     void theFormOffersItsJspRendering() throws Exception {
@@ -65,7 +65,6 @@ class JspViewTest {
     }
 
     private String get(String path) throws Exception {
-        HttpClient client = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.ALWAYS).build();
         HttpRequest request = HttpRequest.newBuilder(URI.create("http://localhost:" + port + path)).GET().build();
         HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
 

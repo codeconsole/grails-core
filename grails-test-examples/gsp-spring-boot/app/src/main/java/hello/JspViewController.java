@@ -19,6 +19,7 @@
 package hello;
 
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpSession;
 
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -32,8 +33,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 public class JspViewController {
 
     @RequestMapping("/jsp")
-    public String jsp(HttpServletRequest request) {
-        WebController.selectJsp(JspSupport.canServeJsp(request.getServletContext()));
+    public String jsp(HttpServletRequest request, HttpSession session) {
+        WebController.selectJsp(session, JspSupport.canServeJsp(request.getServletContext()));
         return "redirect:/";
     }
 }

@@ -73,31 +73,31 @@ public class WebController implements WebMvcConfigurer {
         });
     }
 
-    @RequestMapping("/gsp") public String gsp() {
-        selectJsp(false);
+    @RequestMapping("/gsp") public String gsp(HttpSession session) {
+        selectJsp(session, false);
         return "redirect:/";
     }
 
-    private static boolean jsp = false;
+    /** Which rendering of the form this visitor asked for, so one visitor's choice is their own. */
+    private static final String JSP_SELECTED = "jspSelected";
 
-    /** Called by {@link JspViewController}, which is mapped only where a JSP can be served. */
-    static void selectJsp(boolean selected) {
-        jsp = selected;
+    static void selectJsp(HttpSession session, boolean selected) {
+        session.setAttribute(JSP_SELECTED, selected);
     }
 
-    private String formView() {
-        return String.format("form%s", jsp ? ".jsp" : "");
+    private static String formView(HttpSession session) {
+        return Boolean.TRUE.equals(session.getAttribute(JSP_SELECTED)) ? "form.jsp" : "form";
     }
 
     @RequestMapping(value = "/", method = RequestMethod.GET)
-    public String showForm(Person person) {
-        return formView();
+    public String showForm(Person person, HttpSession session) {
+        return formView(session);
     }
 
     @RequestMapping(value = "/", method = RequestMethod.POST)
     public String checkPersonInfo(@Valid Person person, BindingResult result, HttpSession session) throws Exception {
         if (result.hasErrors()) {
-            return formView();
+            return formView(session);
         }
         session.setAttribute("person", person);
         return "redirect:results";
