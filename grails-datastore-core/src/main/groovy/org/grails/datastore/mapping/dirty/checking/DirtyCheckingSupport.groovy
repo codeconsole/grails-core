@@ -138,6 +138,22 @@ class DirtyCheckingSupport {
     }
 
     /**
+     * Wraps a map in dirty checking capability. Returns an already-wrapped map unchanged —
+     * without that guard an encoder that write-backs on every save nests one wrapper per save.
+     *
+     * @param map The map
+     * @param parent The parent
+     * @param property The property
+     * @return The wrapped map
+     */
+    static Map wrap(Map map, DirtyCheckable parent, String property) {
+        if (map instanceof DirtyCheckingMap) {
+            return map
+        }
+        return new DirtyCheckingMap(map, parent, property)
+    }
+
+    /**
      * Re-establishes change tracking when a tracked collection or map value is replaced
      * through a generated dirty-checking setter.
      *

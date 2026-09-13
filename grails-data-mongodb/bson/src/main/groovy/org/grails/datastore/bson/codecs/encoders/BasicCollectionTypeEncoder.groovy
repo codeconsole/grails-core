@@ -75,7 +75,7 @@ class BasicCollectionTypeEncoder implements PropertyEncoder<Basic> {
                     def propertyName = property.name
                     parentAccess.setPropertyNoConversion(
                             propertyName,
-                            new DirtyCheckingMap(value, parent, propertyName)
+                            DirtyCheckingSupport.wrap(value, parent, propertyName)
                     )
                 }
             }

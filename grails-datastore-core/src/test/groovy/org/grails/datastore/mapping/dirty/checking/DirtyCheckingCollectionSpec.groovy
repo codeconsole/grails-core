@@ -451,6 +451,16 @@ class DirtyCheckingCollectionSpec extends Specification {
         new DirtyCheckingList(['a'], owner, 'items') == ['a']
     }
 
+    def 'wrap returns an already-wrapped map unchanged'() {
+        given: "an encoder that write-backs on every save would otherwise nest one wrapper per save"
+        def owner = new CollectionOwner()
+        def wrapped = DirtyCheckingSupport.wrap([a: 1], owner, 'attrs')
+
+        expect:
+        wrapped instanceof DirtyCheckingMap
+        DirtyCheckingSupport.wrap(wrapped, owner, 'attrs').is(wrapped)
+    }
+
     private static boolean marksDirtyOn(CollectionOwner owner, String property, Closure mutation) {
         owner.trackChanges()
         mutation()
