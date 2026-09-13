@@ -190,10 +190,11 @@ class GrailsGroovyCompilerConfigSpec extends GradleSpecification {
         changed.output.contains('GRAILS_IMPORT=1')
 
         where:
-        wiring                 | scriptArgs
-        'provider'             | []
-        'plain'                | ['-PplainFile']
-        'plain, ad-hoc producer' | ['-PplainFile', '-PadHocProducer']
+        wiring                   | scriptArgs
+        'provider'               | []
+        'ad-hoc provider'         | ['-PadHocProducer']
+        'plain'                  | ['-PplainFile']
+        'plain, ad-hoc producer'  | ['-PplainFile', '-PadHocProducer']
     }
 
     def "a plain script file keeps its #producer producer ordered before script preparation"() {
