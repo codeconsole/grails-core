@@ -23,12 +23,12 @@ technology and nothing else of the Grails runtime.
 
 Add the dependency and the Gradle plugin that compiles the pages:
 
-[source,groovy]
+[source,groovy,subs="attributes+"]
 .build.gradle
 ----
 plugins {
     id 'org.springframework.boot'
-    id 'org.apache.grails.gradle.grails-gsp'  // <1>
+    id 'org.apache.grails.gradle.grails-gsp' version '{version}'  // <1>
 }
 
 dependencies {
@@ -68,22 +68,38 @@ templates themselves are there to be rendered, so the compiled pages are left un
 takes effect without a restart. Where every root is on the class path, as it is once the application is packaged,
 the compiled pages answer.
 
-==== Using a Grails Tag Library
+==== Using a Tag Library
 
-The tag libraries GSP contributes are available to every page. A tag library written for Grails — the asset
-pipeline's `<asset:...>` tags, say — is an artefact of a plugin, and this application has no plugins; declare it as
-a bean instead and its tags become usable in a page exactly as they are in a Grails application:
+The tag libraries GSP contributes are available to every page. A tag library of your own is a class annotated
+`@grails.gsp.TagLib`; declare it as a bean and its tags become usable in a page:
+
+[source,groovy]
+.GreetingTagLib.groovy
+----
+@TagLib
+class GreetingTagLib {
+
+    static String namespace = 'greet'
+
+    def hello(Map attrs) {
+        out << "Hello, ${attrs.name}"
+    }
+}
+----
 
 [source,java]
 ----
 @Bean
-public AssetsTagLib assetsTagLib(AssetProcessorService assetProcessorService) {
-    return new AssetsTagLib(assetProcessorService);
+public GreetingTagLib greetingTagLib() {
+    return new GreetingTagLib();
 }
 ----
 
+A page then calls it as `<greet:hello name="World"/>`.
+
 Both kinds are found: a class annotated `@grails.gsp.TagLib`, and one annotated `@Artefact("TagLib")` as a plugin's
-tag library is.
+tag library is. A tag library written for a plugin may expect collaborators the plugin would have contributed, and
+an application without the plugin has to declare those as beans too.
 
 ==== Generating Links
 
@@ -114,5 +130,6 @@ your own if you want a link to a controller to resolve.
 |The layout a page is decorated with when it names none.
 |===
 
-TIP: A complete application using all of this — precompiled views, the asset pipeline, SiteMesh layouts and a JSP
-alongside GSP — is in `grails-test-examples/gsp-spring-boot` in the Grails source tree.
+TIP: An application rendering precompiled views with SiteMesh layouts, serving stylesheets and scripts the asset
+pipeline compiled, and rendering a JSP alongside GSP is in `grails-test-examples/gsp-spring-boot` in the Grails
+source tree.
