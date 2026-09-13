@@ -26,6 +26,11 @@ import org.grails.datastore.mapping.dirty.checking.DirtyCheckingMap
 import org.grails.datastore.mapping.dirty.checking.DirtyCheckingSortedSet
 import org.grails.datastore.mapping.dirty.checking.DirtyCheckingSupport
 
+import org.grails.datastore.mapping.collection.PersistentList
+import org.grails.datastore.mapping.collection.PersistentSet
+import org.grails.datastore.mapping.collection.PersistentSortedSet
+import org.grails.datastore.mapping.core.Session
+
 import spock.lang.Shared
 import spock.lang.Specification
 
@@ -338,6 +343,41 @@ class ScheduleLike {
         !b.hasChanged('shares')
     }
 
+    def "a plain collection replacing a datastore #kind is re-wrapped"() {
+        given: "the class a stored to-many decodes into, rather than one of the generic wrappers"
+        def entity = entityClass.newInstance()
+        entity[property] = decoded(Mock(Session))
+        entity.trackChanges()
+
+        when: "the defensive re-init replaces it and the result is mutated in place"
+        entity[property] = replacement()
+        entity[property].add('a')
+
+        then:
+        entity[property] instanceof DirtyCheckableCollection
+        ((DirtyCheckableCollection) entity[property]).isAssigned()
+        entity.hasChanged(property)
+
+        where:
+        kind                  | property | decoded                                                  | replacement
+        'PersistentList'      | 'shares' | { Session s -> new PersistentList([], String, s) }       | { -> [] }
+        'PersistentSet'       | 'tags'   | { Session s -> new PersistentSet([], String, s) }        | { -> new HashSet() }
+        'PersistentSortedSet' | 'ranked' | { Session s -> new PersistentSortedSet([], String, s) }  | { -> new TreeSet() }
+    }
+
+    def "a store-specific PersistentCollection subclass is left to its store"() {
+        given: "the shape of the Neo4j and Rx to-many types, which subclass the datastore ones"
+        def entity = entityClass.newInstance()
+        entity.shares = new StoreSpecificPersistentList([], String, Mock(Session))
+        entity.trackChanges()
+
+        when:
+        entity.shares = ['a']
+
+        then: "the exact-class rule leaves it raw, so the store wraps it in its own type on save"
+        !(entity.shares instanceof DirtyCheckableCollection)
+    }
+
     def 'a property that was never tracked is left untouched by the setter'() {
         given: 'a transient instance whose initializer collections were never wrapped'
         def entity = entityClass.newInstance()
@@ -406,5 +446,11 @@ class ScheduleLike {
 class StoreSpecificList extends DirtyCheckingList {
     StoreSpecificList(List target, DirtyCheckable parent, String property) {
         super(target, parent, property)
+    }
+}
+
+class StoreSpecificPersistentList extends PersistentList {
+    StoreSpecificPersistentList(Collection keys, Class childType, Session session) {
+        super(keys, childType, session)
     }
 }

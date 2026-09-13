@@ -51,8 +51,10 @@ Assigning a collection that belongs to *another* entity re-binds it to the entit
 `bookA.tags = bookB.tags` followed by `bookA.tags.add('classic')` marks `bookA` dirty rather than `bookB`.
 The two properties go on sharing the same underlying collection afterwards, exactly as a plain Groovy
 assignment would. This applies to the properties GORM wraps in a dirty checking aware collection — basic
-collections and maps, and embedded collections. A one-to-many or many-to-many is held in a
-`PersistentCollection` instead and is left to the store, as with the store-specific types below.
+collections and maps, and embedded collections. When *borrowed from another entity* a one-to-many or
+many-to-many behaves differently: it is held in a `PersistentCollection`, which is stored as-is and left to
+the store, as with the store-specific types below. Re-initialising such a property on its own entity is
+still tracked, as described above.
 
 A few paths remain outside automatic dirty checking and still require an explicit `markDirty(propertyName)`:
 
