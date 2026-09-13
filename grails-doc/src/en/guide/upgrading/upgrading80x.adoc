@@ -3549,9 +3549,8 @@ The SiteMesh 3 integration resolved the default layout from `grails.sitemesh.def
 the legacy `grails.views.layout.default`. With neither set it used the implicit `application` layout.
 
 SiteMesh's own `sitemesh.decorator.default` is now consulted as a last fallback, after both Grails keys. It is
-the property a Spring Boot application rendering views with GSP configures, and the one
-`Sitemesh3EnvironmentPostProcessor` derives from the Grails keys, so it decides only where neither Grails key
-is set.
+the property a Spring Boot application rendering views with GSP configures, and a Grails application has it
+set from the Grails keys already, so it decides only where neither Grails key is set.
 
 This changes behaviour for a Grails application that set `sitemesh.decorator.default` and neither Grails key:
 it was decorated with the implicit `application` layout and is now decorated with the layout that property
