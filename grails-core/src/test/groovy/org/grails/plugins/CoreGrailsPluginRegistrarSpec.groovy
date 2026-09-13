@@ -219,7 +219,9 @@ class CoreGrailsPluginRegistrarSpec extends Specification {
         List<Class<?>> priorityList = autoProxyCreatorPriorityList()
         List<Class<?>> removed = priorityList.findAll { it.name.startsWith('org.grails.') }
         priorityList.removeAll(removed)
-        cleanupActions << { priorityList.addAll(removed) }
+        // the code under test puts them back, so restore only what it has not; adding them all again
+        // would leave a second copy of each behind
+        cleanupActions << { removed.each { if (!priorityList.contains(it)) { priorityList.add(it) } } }
     }
 
     private static List<Class<?>> autoProxyCreatorPriorityList() {
