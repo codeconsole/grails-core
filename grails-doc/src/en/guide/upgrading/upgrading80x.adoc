@@ -3523,7 +3523,7 @@ How wide the underlying value is depends on the datastore. Hibernate counts with
 with Cypher `count(*)`, both 64-bit. MongoDB aggregates with `{$sum: 1}`, which returns Int32 and promotes
 to Int64 once the total exceeds it, so the width depends on how many documents the collection holds. Only
 the in-memory datastore is fixed at 32 bits, and it returns a list size. `GormStaticApi.count()` narrowed the datastore
-result with `intValue()`, which truncates silently. That second step truncates silently, so
+result with `intValue()`, which truncates silently, so
 a table with more than `Integer.MAX_VALUE` rows reported a wrong and possibly negative count with no
 error. `Long` is the only type that holds every value a datastore can produce here, so it is what the API
 now declares.
@@ -3582,7 +3582,7 @@ model {
     Iterable<Book> bookList
     // Grails 7
     // Integer bookCount
-    Long bookCount     // or Number, to accept either controller
+    Long bookCount     // or Number, to accept either width
 }
 ----
 
