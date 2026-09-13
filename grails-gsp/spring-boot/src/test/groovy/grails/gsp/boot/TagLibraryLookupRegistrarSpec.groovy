@@ -21,6 +21,7 @@ package grails.gsp.boot
 import org.springframework.beans.factory.support.BeanDefinitionRegistry
 import org.springframework.beans.factory.support.DefaultListableBeanFactory
 import org.springframework.beans.factory.support.RootBeanDefinition
+import org.springframework.mock.env.MockEnvironment
 
 import org.grails.web.pages.StandaloneTagLibraryLookup
 
@@ -64,6 +65,34 @@ class TagLibraryLookupRegistrarSpec extends Specification {
 
         and: 'it answers to the name a tag library is autowired by as well'
         ((DefaultListableBeanFactory) registry).getAliases('gspTagLibraryLookup') == ['tagLibraryLookup'] as String[]
+    }
+
+    void 'the view resolver answers to the name a Grails application gives its own'() {
+        given: 'an application with no view resolver of its own under that name'
+        GspAutoConfiguration.ReplaceViewResolverRegistrar viewResolvers = viewResolverRegistrar()
+
+        when:
+        viewResolvers.registerBeanDefinitions(null, registry)
+
+        then: 'the layout view of <g:applyLayout>, resolved through a resolver qualified by it, is found'
+        ((DefaultListableBeanFactory) registry).canonicalName('jspViewResolver') == 'gspViewResolver'
+    }
+
+    void "an application's own jspViewResolver is left answering under its name"() {
+        given: 'an application that serves JSP and has a resolver of its own, as user configuration'
+        registry.registerBeanDefinition('jspViewResolver', new RootBeanDefinition(StandaloneTagLibraryLookup))
+
+        when:
+        viewResolverRegistrar().registerBeanDefinitions(null, registry)
+
+        then: 'no alias is registered over it - one would answer in its place without saying so'
+        ((DefaultListableBeanFactory) registry).canonicalName('jspViewResolver') == 'jspViewResolver'
+    }
+
+    private static GspAutoConfiguration.ReplaceViewResolverRegistrar viewResolverRegistrar() {
+        new GspAutoConfiguration.ReplaceViewResolverRegistrar().tap {
+            it.setEnvironment(new MockEnvironment())
+        }
     }
 
     void 'a tag library the application registers itself is left alone'() {
