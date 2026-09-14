@@ -1550,7 +1550,7 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
             }
             for (ConstructorCallExpression call : anonymous) {
                 reportOutwardReferences(call.getType(), owner, isGroup, source,
-                        new HashSet<>(), new HashSet<>());
+                        new HashSet<>(), new HashSet<>(), null);
             }
         }
     }
@@ -1560,7 +1560,8 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
     // anonymous class, exactly as written - so a name on that outer class does resolve from here,
     // and only what lies beyond the outermost one is out of reach.
     private void reportOutwardReferences(ClassNode inner, ClassNode owner, boolean isGroup,
-            SourceUnit source, Set<String> enclosingReachable, Set<ClassNode> visited) {
+            SourceUnit source, Set<String> enclosingReachable, Set<ClassNode> visited,
+            Boolean enclosingBodyStatic) {
         if (!visited.add(inner) || answersAnything(inner)) {
             return;
         }
@@ -1579,34 +1580,53 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
         Set<String> enclosingStatics = enclosingStaticNames(inner);
         Set<String> ownWithStatics = new HashSet<>(baseOwn);
         ownWithStatics.addAll(enclosingStatics);
-        boolean classStaticsInReach = inner.getOuterClass() != null &&
+        // The body a class was written in is a ceiling on it, not merely its default. Groovy visits
+        // an anonymous class from the constructor call inside that body, so a dynamic body takes
+        // every class created in it along - measured, including one whose own method is marked
+        // @CompileStatic, which does not rescue it. Null means nothing encloses this class but the
+        // lifted bean method, where the chain alone decides and a method may still raise it.
+        boolean ceiling = enclosingBodyStatic == null || enclosingBodyStatic;
+        boolean classStaticsInReach = ceiling && inner.getOuterClass() != null &&
                 isStaticallyCompiled(inner.getOuterClass());
         Set<String> classOwn = classStaticsInReach ? ownWithStatics : baseOwn;
 
-        List<ConstructorCallExpression> nested = new ArrayList<>();
         // Per body, not per class: Groovy's type checker reads @CompileStatic/@CompileDynamic off
         // the METHOD of an inner class whatever the enclosing classes say, so one method marked the
         // other way reaches its enclosing statics - or stops reaching them - on its own.
         for (MethodNode method : inner.getMethods()) {
-            if (method.getCode() != null) {
-                walkBody(method.getCode(), inner, owner, isGroup, source, enclosingStatics, nested,
-                        staticsInReach(method, classStaticsInReach) ? ownWithStatics : baseOwn);
+            if (method.getCode() == null) {
+                continue;
             }
+            boolean bodyStatic = ceiling && staticsInReach(method, classStaticsInReach);
+            // baseOwn, not the body's set, is what a class nested here inherits: the statics have to
+            // reach it through its own answer or not at all, or a static body would hand them over
+            // before that answer is ever consulted.
+            recurseIntoNested(walkBody(method.getCode(), inner, owner, isGroup, source,
+                    enclosingStatics, bodyStatic ? ownWithStatics : baseOwn),
+                    owner, isGroup, source, baseOwn, visited, bodyStatic);
         }
         // A field initializer and an object initializer are the class's code too - the Verifier only
         // folds them into the constructor at class generation, long after this - and there is
         // nowhere to annotate them, so they keep the class's answer.
         for (FieldNode field : inner.getFields()) {
             if (field.getInitialExpression() != null) {
-                walkBody(field.getInitialExpression(), inner, owner, isGroup, source, enclosingStatics,
-                        nested, classOwn);
+                recurseIntoNested(walkBody(field.getInitialExpression(), inner, owner, isGroup, source,
+                        enclosingStatics, classOwn),
+                        owner, isGroup, source, baseOwn, visited, classStaticsInReach);
             }
         }
         for (Statement statement : inner.getObjectInitializerStatements()) {
-            walkBody(statement, inner, owner, isGroup, source, enclosingStatics, nested, classOwn);
+            recurseIntoNested(walkBody(statement, inner, owner, isGroup, source, enclosingStatics,
+                    classOwn), owner, isGroup, source, baseOwn, visited, classStaticsInReach);
         }
+    }
+
+    private void recurseIntoNested(List<ConstructorCallExpression> nested, ClassNode owner,
+            boolean isGroup, SourceUnit source, Set<String> enclosingReachable,
+            Set<ClassNode> visited, boolean enclosingBodyStatic) {
         for (ConstructorCallExpression call : nested) {
-            reportOutwardReferences(call.getType(), owner, isGroup, source, classOwn, visited);
+            reportOutwardReferences(call.getType(), owner, isGroup, source, enclosingReachable,
+                    visited, enclosingBodyStatic);
         }
     }
 
@@ -1621,9 +1641,9 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
         return classAnswer;
     }
 
-    private void walkBody(ASTNode body, ClassNode inner, ClassNode owner, boolean isGroup,
-            SourceUnit source, Set<String> enclosingStatics,
-            List<ConstructorCallExpression> nested, Set<String> own) {
+    private List<ConstructorCallExpression> walkBody(ASTNode body, ClassNode inner, ClassNode owner,
+            boolean isGroup, SourceUnit source, Set<String> enclosingStatics, Set<String> own) {
+        List<ConstructorCallExpression> nested = new ArrayList<>();
         body.visit(new CodeVisitorSupport() {
                 // Deliberately not descending, the same reason rejectUnproxiedSiblingBeanCalls does
                 // not: a closure's resolve strategy and delegate are runtime facts, so an
@@ -1696,6 +1716,7 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
                             "enough."));
                 }
         });
+        return nested;
     }
 
     private String reachDescription(ClassNode owner, boolean isGroup) {

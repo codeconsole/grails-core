@@ -2401,6 +2401,73 @@ class GrailsBeansASTTransformationSpec extends Specification {
         """
     }
 
+    @Unroll
+    def "a nested anonymous class cannot exceed the body it was written in: #shape"() {
+        given: "Groovy visits it from the constructor call inside that body, so a dynamic body takes it"
+        String source = nestedPerBodySource(fixture, hostAnnotation, outerAnnotation, innerAnnotation,
+                open, close)
+
+        when:
+        compile(source)
+
+        then:
+        MultipleCompilationErrorsException e = thrown(MultipleCompilationErrorsException)
+        e.message.contains('static member of an enclosing class')
+
+        where:
+        shape                                            | fixture   | hostAnnotation   | outerAnnotation   | innerAnnotation  | open                | close
+        'a @CompileDynamic method of a static host'      | 'NestedA' | '@CompileStatic' | '@CompileDynamic' | ''               | ''                  | ''
+        'the same inside a group'                        | 'NestedB' | '@CompileStatic' | '@CompileDynamic' | ''               | "group('extras') {" | '}'
+        'its own @CompileStatic does not rescue it'      | 'NestedC' | '@CompileStatic' | '@CompileDynamic' | '@CompileStatic' | ''                  | ''
+    }
+
+    def "a nested anonymous class in a statically compiled body does reach the enclosing statics"() {
+        given: "the control - nothing in the chain or the bodies says otherwise"
+        String source = nestedPerBodySource('NestedOk', '@CompileStatic', '', '', '', '')
+
+        and:
+        GroovyClassLoader loader = new GroovyClassLoader(getClass().classLoader)
+        loader.parseClass(source)
+
+        expect:
+        loader.loadClass('NestedOkAutoConfiguration')
+                .getDeclaredConstructor().newInstance().greeter().greet() == 'hello'
+    }
+
+    private static String nestedPerBodySource(String fixture, String hostAnnotation,
+            String outerAnnotation, String innerAnnotation, String open, String close) {
+        """
+            import grails.compiler.beans.GrailsBeans
+            import grails.plugins.Plugin
+            import groovy.transform.CompileDynamic
+            import groovy.transform.CompileStatic
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            interface ${fixture}Greeter { String greet() }
+
+            @GrailsBeans
+            ${hostAnnotation}
+            @AutoConfiguration
+            class ${fixture}GrailsPlugin extends Plugin {
+                static String helper() { 'hello' }
+
+                def beans = {
+                    ${open}
+                    bean('greeter', ${fixture}Greeter) {
+                        new ${fixture}Greeter() {
+                            ${outerAnnotation} String greet() {
+                                new ${fixture}Greeter() {
+                                    ${innerAnnotation} String greet() { helper() }
+                                }.greet()
+                            }
+                        }
+                    }
+                    ${close}
+                }
+            }
+        """
+    }
+
     def "an anonymous class in a group(...) body that reaches nothing outside itself is fine"() {
         given: "the shape that works, and must not be caught by the check above"
         String source = '''
