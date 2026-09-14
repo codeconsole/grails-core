@@ -367,6 +367,25 @@ public class MongoSession extends AbstractMongoSession {
         }
     }
 
+    /**
+     * The identifier an updateAll association value stands for. A lazy proxy keeps its id in the
+     * proxy handler, so -- like ToOneEncoder -- the proxy factory is asked first. An instance of
+     * the associated class is reflected. Anything else is taken to be the identifier itself, so
+     * updateAll(project: project) and updateAll(project: project.id) write the same value.
+     * Before this normalization existed this engine sent the raw value through $set, so passing
+     * an identifier worked; reflecting it unconditionally would have broken that.
+     */
+    private Object identifierOf(Object value, PersistentEntity associatedEntity) {
+        final ProxyFactory proxyFactory = getMappingContext().getProxyFactory();
+        if (proxyFactory.isProxy(value)) {
+            return proxyFactory.getIdentifier(value);
+        }
+        if (associatedEntity.getJavaClass().isInstance(value)) {
+            return getMappingContext().getEntityReflector(associatedEntity).getIdentifier(value);
+        }
+        return value;
+    }
+
     @Override
     public long updateAll(QueryableCriteria criteria, Map<String, Object> properties) {
         final PersistentEntity entity = criteria.getPersistentEntity();
@@ -400,14 +419,8 @@ public class MongoSession extends AbstractMongoSession {
                 final Object value = updateProperties.get(associationName);
                 if (value != null) {
                     final PersistentEntity associatedEntity = association.getAssociatedEntity();
-                    // A lazy proxy keeps its id in the proxy handler, not in the reflected
-                    // field, so reflecting one yields null. ToOneEncoder asks the proxy
-                    // factory first for the same reason.
-                    final ProxyFactory proxyFactory = getMappingContext().getProxyFactory();
-                    final Object declaredId = proxyFactory.isProxy(value) ?
-                            proxyFactory.getIdentifier(value) :
-                            getMappingContext().getEntityReflector(associatedEntity).getIdentifier(value);
-                    final Object associationId = MongoIdCoercion.coerceIdToStoredType(declaredId, associatedEntity);
+                    final Object associationId = MongoIdCoercion.coerceIdToStoredType(
+                            identifierOf(value, associatedEntity), associatedEntity);
                     final MongoAttribute attr = (MongoAttribute) association.getMapping().getMappedForm();
                     if (attr != null && attr.isReference()) {
                         updateProperties.put(associationName,
@@ -441,7 +454,6 @@ public class MongoSession extends AbstractMongoSession {
                 final Object value = updateProperties.get(associationName);
                 if (value instanceof Collection) {
                     final PersistentEntity associatedEntity = association.getAssociatedEntity();
-                    final ProxyFactory proxyFactory = getMappingContext().getProxyFactory();
                     final MongoAttribute attr = (MongoAttribute) association.getMapping().getMappedForm();
                     final List<Object> ids = new ArrayList<Object>();
                     for (Object element : (Collection<?>) value) {
@@ -449,10 +461,8 @@ public class MongoSession extends AbstractMongoSession {
                             ids.add(null);
                             continue;
                         }
-                        final Object declaredId = proxyFactory.isProxy(element) ?
-                                proxyFactory.getIdentifier(element) :
-                                getMappingContext().getEntityReflector(associatedEntity).getIdentifier(element);
-                        ids.add(MongoIdCoercion.coerceIdToStoredType(declaredId, associatedEntity));
+                        ids.add(MongoIdCoercion.coerceIdToStoredType(
+                                identifierOf(element, associatedEntity), associatedEntity));
                     }
                     if (association instanceof ManyToMany) {
                         // setManyToMany stores plain identifiers under a suffixed key and

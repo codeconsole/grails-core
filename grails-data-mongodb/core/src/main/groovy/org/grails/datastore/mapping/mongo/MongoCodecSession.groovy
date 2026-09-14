@@ -344,6 +344,23 @@ class MongoCodecSession extends AbstractMongoSession {
         }
     }
 
+    /**
+     * The identifier an updateAll association value stands for. A lazy proxy keeps its id in the
+     * proxy handler, so -- like ToOneEncoder -- the proxy factory is asked first. An instance of
+     * the associated class is reflected. Anything else is taken to be the identifier itself, so
+     * updateAll(project: project) and updateAll(project: project.id) write the same value.
+     */
+    private Object identifierOf(Object value, PersistentEntity associatedEntity) {
+        def proxyFactory = mappingContext.proxyFactory
+        if (proxyFactory.isProxy(value)) {
+            return proxyFactory.getIdentifier(value)
+        }
+        if (associatedEntity.javaClass.isInstance(value)) {
+            return associatedEntity.reflector.getIdentifier(value)
+        }
+        return value
+    }
+
     @Override
     long updateAll(QueryableCriteria criteria, Map<String, Object> properties) {
         final PersistentEntity entity = criteria.persistentEntity
@@ -380,14 +397,8 @@ class MongoCodecSession extends AbstractMongoSession {
                     // mapping asks for one. Otherwise a bulk update leaves a reference that
                     // association queries and external clients cannot match.
                     def associatedEntity = association.associatedEntity
-                    // A lazy proxy keeps its id in the proxy handler, not in the reflected
-                    // field, so reflecting one yields null. ToOneEncoder asks the proxy
-                    // factory first for the same reason.
-                    def proxyFactory = mappingContext.proxyFactory
-                    def declaredId = proxyFactory.isProxy(value)
-                            ? proxyFactory.getIdentifier(value)
-                            : associatedEntity.reflector.getIdentifier(value)
-                    def associationId = MongoIdCoercion.coerceIdToStoredType(declaredId, associatedEntity)
+                    def associationId = MongoIdCoercion.coerceIdToStoredType(
+                            identifierOf(value, associatedEntity), associatedEntity)
                     MongoAttribute attr = (MongoAttribute) association.mapping.mappedForm
                     if (attr?.isReference()) {
                         updateProperties.put(associationName,
@@ -422,14 +433,10 @@ class MongoCodecSession extends AbstractMongoSession {
                 def value = updateProperties.get(associationName)
                 if (value instanceof Collection) {
                     def associatedEntity = association.associatedEntity
-                    def proxyFactory = mappingContext.proxyFactory
                     MongoAttribute attr = (MongoAttribute) association.mapping.mappedForm
                     def ids = value.collect { element ->
-                        if (element == null) return null
-                        def declaredId = proxyFactory.isProxy(element)
-                                ? proxyFactory.getIdentifier(element)
-                                : associatedEntity.reflector.getIdentifier(element)
-                        MongoIdCoercion.coerceIdToStoredType(declaredId, associatedEntity)
+                        element == null ? null :
+                                MongoIdCoercion.coerceIdToStoredType(identifierOf(element, associatedEntity), associatedEntity)
                     }
                     // Exactly OneToManyEncoder's shape: nulls are dropped before wrapping,
                     // never turned into DBRef(collection, null), and a non-reference list

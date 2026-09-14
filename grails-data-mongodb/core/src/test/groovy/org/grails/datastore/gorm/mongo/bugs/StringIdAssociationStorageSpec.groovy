@@ -409,6 +409,41 @@ class StringIdAssociationStorageSpec extends GrailsDataTckSpec<GrailsDataMongoTc
         raw.get('tags') == [new ObjectId(a.id), null]
     }
 
+    void "updateAll accepts an identifier in place of a to-one instance"() {
+        given:
+        RefProject from = new RefProject(name: 'Id from').save(flush: true)
+        RefProject to = new RefProject(name: 'Id to').save(flush: true)
+        RefTicket ticket = new RefTicket(title: 'Assign by id', project: from).save(flush: true)
+
+        when: 'a hex String is an identifier, not an instance to reflect'
+        manager.session.clear()
+        RefTicket.where { title == 'Assign by id' }.updateAll(project: to.id)
+
+        then: 'the same stored ObjectId an instance would have produced'
+        rawTickets().find(new Document('_id', new ObjectId(ticket.id))).first().get('project') == new ObjectId(to.id)
+
+        when: 'and so is an ObjectId'
+        RefTicket.where { title == 'Assign by id' }.updateAll(project: new ObjectId(from.id))
+
+        then:
+        rawTickets().find(new Document('_id', new ObjectId(ticket.id))).first().get('project') == new ObjectId(from.id)
+    }
+
+    void "updateAll accepts identifiers in place of to-many instances"() {
+        given:
+        RefTag a = new RefTag(label: 'id-a').save(flush: true)
+        RefTag b = new RefTag(label: 'id-b').save(flush: true)
+        RefProject project = new RefProject(name: 'Tags by id').save(flush: true)
+
+        when:
+        manager.session.clear()
+        RefProject.where { name == 'Tags by id' }.updateAll(tags: [a.id, b.id])
+
+        then:
+        rawProjects().find(new Document('_id', new ObjectId(project.id))).first().get('tags') ==
+                [new ObjectId(a.id), new ObjectId(b.id)]
+    }
+
     private MongoCollection<Document> rawFaces() {
         manager.mongoClient.getDatabase('test').getCollection('refFace')
     }

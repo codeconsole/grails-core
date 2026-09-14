@@ -304,6 +304,27 @@ class MappingEngineStringIdStorageSpec extends GrailsDataTckSpec<GrailsDataMongo
         raw('meBiParent').find(new Document('_id', new ObjectId(parentId))).first().get('children') == null
     }
 
+    void "updateAll accepts an identifier in place of a to-one instance"() {
+        given: 'this engine used to send the raw value through $set, so passing an id worked'
+        String fromId = persist { Session s -> new MeOwner(name: 'Id from') }
+        String toId = persist { Session s -> new MeOwner(name: 'Id to') }
+        String assetId = null
+        mappingEngineDatastore.withSession { Session s ->
+            MeAsset a = new MeAsset(label: 'Assign by id', owner: s.retrieve(MeOwner, fromId))
+            s.persist(a); s.flush(); assetId = a.id
+        }
+
+        when:
+        mappingEngineDatastore.withSession { Session s ->
+            s.clear()
+            DetachedCriteria criteria = new DetachedCriteria(MeAsset).build { eq 'label', 'Assign by id' }
+            ((MongoSession) s).updateAll(criteria, [owner: toId])
+        }
+
+        then:
+        raw('meAsset').find(new Document('_id', new ObjectId(assetId))).first().get('owner') == new ObjectId(toId)
+    }
+
     private String persist(Closure<?> make) {
         String id = null
         mappingEngineDatastore.withSession { Session s ->
