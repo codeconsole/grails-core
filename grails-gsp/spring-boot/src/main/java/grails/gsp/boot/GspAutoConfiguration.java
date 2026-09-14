@@ -286,7 +286,7 @@ public class GspAutoConfiguration {
         @Bean
         @ConditionalOnMissingBean(name = "gspViewResolver")
         public ViewResolver gspViewResolver(GroovyPagesTemplateEngine groovyPagesTemplateEngine, GrailsConventionGroovyPageLocator groovyPageLocator) {
-            GroovyPageViewResolver groovyPageViewResolver = new GroovyPageViewResolver(groovyPagesTemplateEngine, groovyPageLocator);
+            GroovyPageViewResolver groovyPageViewResolver = new StandaloneGroovyPageViewResolver(groovyPagesTemplateEngine, groovyPageLocator);
             groovyPageViewResolver.setResolveJspView(jspEnabled);
             groovyPageViewResolver.setAllowGrailsViewCaching(!gspReloadingEnabled || viewCacheTimeout != 0);
             groovyPageViewResolver.setCacheTimeout(gspReloadingEnabled ? viewCacheTimeout : -1);

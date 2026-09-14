@@ -121,6 +121,12 @@ your own if you want a link to a controller to resolve.
 |`true`
 |Whether a changed template is picked up without a restart.
 
+|`spring.gsp.jspEnabled`
+|`true`
+|Whether a view with no template of its name falls back to a JSP of that name. Only a JSP that exists in the
+servlet context answers, so a name nothing renders - `error`, for Spring Boot's error page - is left to the view
+resolvers after this one.
+
 |`spring.gsp.replaceViewResolverBean`
 |`true`
 |Whether the GSP view resolver becomes the application's `viewResolver`.
