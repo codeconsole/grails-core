@@ -41,7 +41,7 @@ import org.bson.types.ObjectId
 class StringIdAssociationStorageSpec extends GrailsDataTckSpec<GrailsDataMongoTckManager> {
 
     void setupSpec() {
-        manager.registerDomainClasses(RefProject, RefTicket, RefTag, RefPerson, RefNote, RefBiParent, RefBiChild, RefFace, RefNose, RefLinkedProject)
+        manager.registerDomainClasses(RefProject, RefTicket, RefTag, RefPerson, RefNote, RefBiParent, RefBiChild, RefFace, RefNose, RefLinkedProject, RefRole, RefRight)
     }
 
     void "a to-one reference is written as the target's stored _id type"() {
@@ -469,6 +469,30 @@ class StringIdAssociationStorageSpec extends GrailsDataTckSpec<GrailsDataMongoTc
         manager.mongoClient.getDatabase('test').getCollection('refLinkedProject')
     }
 
+    void "updateAll on a many-to-many writes the target stored ids"() {
+        given: 'this engine shares the unidirectional branch for it, but it is its own association kind'
+        RefRight one = new RefRight(label: 'right-one').save(flush: true)
+        RefRight two = new RefRight(label: 'right-two').save(flush: true)
+        RefRole role = new RefRole(label: 'role')
+        role.addToRights(one)
+        role.save(flush: true)
+
+        when:
+        manager.session.clear()
+        RefRole.where { label == 'role' }.updateAll(rights: [RefRight.get(two.id)])
+
+        then: 'an ObjectId array under the plain name, as OneToManyEncoder writes it'
+        rawRoles().find(new Document('_id', new ObjectId(role.id))).first().get('rights') == [new ObjectId(two.id)]
+
+        and: 'and it reads back'
+        manager.session.clear()
+        RefRole.get(role.id).rights*.label == ['right-two']
+    }
+
+    private MongoCollection<Document> rawRoles() {
+        manager.mongoClient.getDatabase('test').getCollection('refRole')
+    }
+
     private MongoCollection<Document> rawFaces() {
         manager.mongoClient.getDatabase('test').getCollection('refFace')
     }
@@ -593,4 +617,23 @@ class RefLinkedProject {
         version false
         tags reference: true
     }
+}
+
+@Entity
+class RefRole {
+    String id
+    String label
+    Set<RefRight> rights = []
+    static hasMany = [rights: RefRight]
+    static mapping = { version false }
+}
+
+@Entity
+class RefRight {
+    String id
+    String label
+    Set<RefRole> roles = []
+    static hasMany = [roles: RefRole]
+    static belongsTo = RefRole
+    static mapping = { version false }
 }
