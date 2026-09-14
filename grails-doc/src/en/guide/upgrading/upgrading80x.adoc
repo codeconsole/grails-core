@@ -3506,7 +3506,87 @@ declaration, so it is read strictly at compile time and at runtime alike.
 
 See <<upgrading>> for the full description of the XML parsing defaults.
 
-==== 62. `count()` Returns `Long`
+==== 62. Generated Groovy Compiler Configuration Scripts
+
+On Gradle 9.7+, configure `groovyOptions.configurationScriptFile` before task execution. Assigning
+`groovyOptions.configurationScript` from `compileGroovy.doFirst { ... }` fails because Gradle has
+already finalized the compiler options. Grails prepares the combined compiler script before compilation.
+
+If another task generates your compiler script, prefer passing that task's output provider to
+`configurationScriptFile`. The provider carries both the file location and its producing task, so
+Grails can prepare the combined script after your script is generated.
+
+Declare the generated script as an output and connect it through its provider:
+
+[source,groovy]
+.build.gradle
+----
+import org.gradle.api.DefaultTask
+import org.gradle.api.file.RegularFileProperty
+import org.gradle.api.tasks.OutputFile
+import org.gradle.api.tasks.TaskAction
+import org.gradle.api.tasks.compile.GroovyCompile
+import org.gradle.work.DisableCachingByDefault
+
+@DisableCachingByDefault(because = 'Writing a short compiler script is inexpensive')
+abstract class GenerateCompilerScript extends DefaultTask {
+    @OutputFile
+    abstract RegularFileProperty getOutputFile()
+
+    @TaskAction
+    void generate() {
+        def script = outputFile.get().asFile
+        script.parentFile.mkdirs()
+        script.text = "withConfig(configuration) { imports { star 'java.nio.file' } }"
+    }
+}
+
+def generateUserConfigScript = tasks.register('generateUserConfigScript', GenerateCompilerScript) {
+    outputFile.set(layout.buildDirectory.file('user-config.groovy'))
+}
+
+tasks.named('compileGroovy', GroovyCompile) {
+    groovyOptions.configurationScriptFile.set(generateUserConfigScript.flatMap { it.outputFile })
+}
+----
+
+No separate `dependsOn` is needed for this producer. If the script's content depends on task properties
+or other files, declare those as task inputs so changes regenerate the script.
+
+Existing builds can also keep the plain file assignment with an explicit compile dependency:
+
+[source,groovy]
+.build.gradle (alternative wiring for the producer above)
+----
+tasks.named('compileGroovy', GroovyCompile) {
+    dependsOn generateUserConfigScript
+    groovyOptions.configurationScript = file('build/user-config.groovy')
+}
+----
+
+Grails matches the configured file against the declared outputs of the compile task's direct
+dependencies and orders script preparation after the matching producer. This preserves the Grails 7
+pattern when the producer declares the exact script file as an output, whether through an `@OutputFile`
+property as `GenerateCompilerScript` does above or through `outputs.file(...)` on an ad-hoc task. A
+dependency that declares only a containing output directory, writes the file without declaring it as an
+output, or is reachable only through another task's `dependsOn` cannot be identified this way. Such a
+build fails from a clean checkout before compilation starts, with a validation error on the
+`generateCompileGroovyGrailsCompilerConfig` task that Grails registers:
+
+[source,text]
+----
+A problem was found with the configuration of task ':generateCompileGroovyGrailsCompilerConfig' (type 'GrailsCompilerConfigScriptTask').
+Input file does not exist
+  ... property 'configurationScript' specifies file '.../build/user-config.groovy' which doesn't exist
+----
+
+If you see this error, expose the script as an output file and use the provider wiring instead.
+
+An existing, checked-in compiler script can still use a plain file assignment without a producer.
+Tasks that only generate source or classpath entries do not need additional ordering against
+compiler-script preparation: Grails does not read the compile or runtime classpath to prepare its script.
+
+==== 63. `count()` Returns `Long`
 
 `count()` and the `count` property return `Long` instead of `Integer`:
 
