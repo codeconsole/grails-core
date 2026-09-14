@@ -21,6 +21,7 @@ package org.grails.gsp
 
 import grails.core.gsp.GrailsTagLibClass
 import org.grails.core.gsp.DefaultGrailsTagLibClass
+import org.codehaus.groovy.runtime.typehandling.GroovyCastException
 import org.grails.taglib.TagLibraryLookup
 import spock.lang.Specification
 
@@ -260,16 +261,52 @@ Date d4=new Date(123L)
         supplied << [42 as Integer, 42L, 42 as Short, 42 as BigInteger]
     }
 
-    def "a model value of the wrong type names the field and both types"() {
+    def "a model value is converted to the declared type the way a Groovy assignment converts it"() {
+        given:
+        def template = """@{ model="${declared} sampleCount"}\${sampleCount}"""
+        when:
+        def rendered = renderTemplate(template, [sampleCount: supplied], true)
+        then:
+        rendered == '42'
+        where:
+        declared  | supplied
+        'Integer' | 42L
+        'int'     | 42L
+        'Long'    | 42
+        'long'    | (42 as Short)
+        'Integer' | 42.0G
+        'String'  | "${40 + 2}"
+    }
+
+    def "a conversion that would change the value names the field and both types"() {
+        given:
+        def template = """@{ model="${declared} sampleCount"}\${sampleCount}"""
+        when:
+        renderTemplate(template, [sampleCount: supplied], true)
+        then:
+        GroovyPagesException e = thrown()
+        e.message.contains("Model field 'sampleCount'")
+        e.message.contains(declaredName)
+        e.message.contains(supplied.getClass().name)
+        where:
+        declared  | supplied       | declaredName
+        'Integer' | 3_000_000_000L | 'java.lang.Integer'
+        'int'     | 3_000_000_000L | 'int'
+        'Integer' | 42.9G          | 'java.lang.Integer'
+        'Short'   | 70_000         | 'java.lang.Short'
+    }
+
+    def "a model value that cannot be converted names the field and both types"() {
         given:
         def template = '''@{ model="Integer sampleCount"}${sampleCount}'''
         when:
-        renderTemplate(template, [sampleCount: 42L], true)
+        renderTemplate(template, [sampleCount: new Date()], true)
         then:
         GroovyPagesException e = thrown()
         e.message.contains("Model field 'sampleCount'")
         e.message.contains('java.lang.Integer')
-        e.message.contains('java.lang.Long')
+        e.message.contains('java.util.Date')
+        e.cause instanceof GroovyCastException
     }
 
     def renderTemplate(templateSource, model, expectedCompileStaticMode, printSource = false) {

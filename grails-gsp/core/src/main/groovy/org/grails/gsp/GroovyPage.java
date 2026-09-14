@@ -20,6 +20,8 @@ package org.grails.gsp;
 
 import java.io.Writer;
 import java.lang.reflect.Field;
+import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -33,6 +35,8 @@ import groovy.lang.GroovyObject;
 import groovy.lang.MissingMethodException;
 import groovy.lang.Script;
 import org.codehaus.groovy.runtime.InvokerHelper;
+import org.codehaus.groovy.runtime.typehandling.DefaultTypeTransformation;
+import org.codehaus.groovy.runtime.typehandling.GroovyCastException;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -183,17 +187,42 @@ public abstract class GroovyPage extends Script {
             if (value == null) {
                 continue;
             }
+            Object converted;
             try {
-                field.set(this, value);
-            } catch (IllegalArgumentException e) {
+                converted = DefaultTypeTransformation.castToType(value, field.getType());
+            } catch (GroovyCastException e) {
                 throw new GroovyPagesException("Model field '" + field.getName() + "' is declared as " +
                         field.getType().getName() + " but the model supplied an instance of " +
-                        value.getClass().getName() + ". Declare the field with a type the model value is " +
-                        "assignable to; model values are not coerced.", e, -1, getGroovyPageFileName());
+                        value.getClass().getName() + ", which cannot be converted to it.", e, -1, getGroovyPageFileName());
+            }
+            if (value instanceof Number && converted instanceof Number && !sameNumericValue((Number) value, (Number) converted)) {
+                throw new GroovyPagesException("Model field '" + field.getName() + "' is declared as " +
+                        field.getType().getName() + ", which cannot hold the " + value.getClass().getName() + " " +
+                        value + " the model supplied without changing it.", null, -1, getGroovyPageFileName());
+            }
+            try {
+                field.set(this, converted);
             } catch (IllegalAccessException e) {
                 throw new GroovyPagesException("Error setting model field '" + field.getName() + "'", e, -1, getGroovyPageFileName());
             }
         }
+    }
+
+    private static boolean sameNumericValue(Number original, Number converted) {
+        if (isIntegral(original) && isIntegral(converted)) {
+            return new BigInteger(original.toString()).equals(new BigInteger(converted.toString()));
+        }
+        try {
+            return new BigDecimal(original.toString()).compareTo(new BigDecimal(converted.toString())) == 0;
+        } catch (NumberFormatException e) {
+            // NaN and the infinities have no decimal form
+            return Double.compare(original.doubleValue(), converted.doubleValue()) == 0;
+        }
+    }
+
+    private static boolean isIntegral(Number number) {
+        return number instanceof Integer || number instanceof Long || number instanceof Short ||
+                number instanceof Byte || number instanceof BigInteger;
     }
 
     public Object raw(Object value) {
