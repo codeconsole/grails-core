@@ -55,11 +55,11 @@ class MappingEngineStringIdStorageSpec extends GrailsDataTckSpec<GrailsDataMongo
 
     void setupSpec() {
         manager.registerDomainClasses(MeVideo, MeOwner, MeAsset, MeTag, MeNote,
-                MeRole, MeRight, MeBiParent, MeBiChild)
+                MeRole, MeRight, MeBiParent, MeBiChild, MeFace, MeNose)
         mappingEngineDatastore = new MongoDatastore(
                 manager.configuration + [(MongoSettings.SETTING_ENGINE): 'mapping'],
                 MeVideo, MeOwner, MeAsset, MeTag, MeNote,
-                MeRole, MeRight, MeBiParent, MeBiChild)
+                MeRole, MeRight, MeBiParent, MeBiChild, MeFace, MeNose)
     }
 
     void "the datastore under test really is the mapping engine"() {
@@ -325,6 +325,27 @@ class MappingEngineStringIdStorageSpec extends GrailsDataTckSpec<GrailsDataMongo
         raw('meAsset').find(new Document('_id', new ObjectId(assetId))).first().get('owner') == new ObjectId(toId)
     }
 
+    void "updateAll rejects a hasOne association"() {
+        given: 'the two engines implement this separately, so each needs its own case'
+        String faceId = persist { Session s -> new MeFace(name: 'face') }
+        String noseId = null
+        mappingEngineDatastore.withSession { Session s ->
+            MeNose n = new MeNose(size: 'big', face: s.retrieve(MeFace, faceId))
+            s.persist(n); s.flush(); noseId = n.id
+        }
+
+        when:
+        mappingEngineDatastore.withSession { Session s ->
+            s.clear()
+            DetachedCriteria criteria = new DetachedCriteria(MeFace).build { eq 'name', 'face' }
+            ((MongoSession) s).updateAll(criteria, [nose: s.retrieve(MeNose, noseId)])
+        }
+
+        then:
+        UnsupportedOperationException e = thrown()
+        e.message.contains('nose')
+    }
+
     private String persist(Closure<?> make) {
         String id = null
         mappingEngineDatastore.withSession { Session s ->
@@ -415,5 +436,23 @@ class MeBiChild {
     String name
     MeBiParent parent
     static belongsTo = [parent: MeBiParent]
+    static mapping = { version false }
+}
+
+@Entity
+class MeFace {
+    String id
+    String name
+    MeNose nose
+    static hasOne = [nose: MeNose]
+    static mapping = { version false }
+}
+
+@Entity
+class MeNose {
+    String id
+    String size
+    MeFace face
+    static belongsTo = [face: MeFace]
     static mapping = { version false }
 }
