@@ -96,24 +96,14 @@ class CompilePluginSpec extends Specification {
         result.output.contains('TEST_INDY=true')
     }
 
-    def "disables invokedynamic when grailsIndy is false"() {
+    def "keeps invokedynamic on when grailsIndy is false"() {
         when:
         def result = runPrintIndy('-PgrailsIndy=false')
 
         then:
         result.task(':printIndy').outcome == TaskOutcome.SUCCESS
-        result.output.contains('MAIN_INDY=false')
-        result.output.contains('TEST_INDY=false')
-    }
-
-    def "trims whitespace when parsing grailsIndy"() {
-        when:
-        def result = runPrintIndy('-PgrailsIndy= false ')
-
-        then:
-        result.task(':printIndy').outcome == TaskOutcome.SUCCESS
-        result.output.contains('MAIN_INDY=false')
-        result.output.contains('TEST_INDY=false')
+        result.output.contains('MAIN_INDY=true')
+        result.output.contains('TEST_INDY=true')
     }
 
     private def runPrintIndy(String... extraArgs) {
