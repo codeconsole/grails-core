@@ -418,25 +418,23 @@ public class MongoSession extends AbstractMongoSession {
                     }
                 }
             }
-            // OneToMany / ManyToMany carry a collection of associated instances. Normal
-            // persistence stores their ids -- DBRefs where the mapping asks for it -- so the
-            // bulk path has to do the same rather than sending the domain objects through
-            // $set. Only those two kinds: Basic also extends ToMany but is a collection of
-            // simple values with no associated entity, and must pass through untouched.
             // A bidirectional one-to-many keeps its foreign key on the inverse side, so there
             // is no field on this document to update -- OneToManyEncoder's shouldEncodeIds
             // skips it for the same reason, and nothing reads one back. This says so rather
             // than leaving a stray field or silently doing nothing.
-            else if (association instanceof OneToMany && !(association instanceof ManyToMany) &&
-                    association.isBidirectional() &&
+            // ManyToMany extends ToMany, not OneToMany, so it never reaches this branch.
+            else if (association instanceof OneToMany && association.isBidirectional() &&
                     updateProperties.containsKey(associationName)) {
                 throw new UnsupportedOperationException(
                         "Cannot updateAll the bidirectional one-to-many [" + entity.getName() + "." +
                         associationName + "]: its foreign key is held by the inverse side, " +
                         "so update that instead");
             }
-            // Mirrors OneToManyEncoder's shouldEncodeIds for the rest: an id array belongs on
-            // this document when the association is unidirectional or many-to-many.
+            // Unidirectional OneToMany and ManyToMany carry a collection of associated instances.
+            // Normal persistence stores their ids -- DBRefs where the mapping asks for it -- so
+            // the bulk path does the same rather than sending domain objects through $set.
+            // Only those two kinds: Basic also extends ToMany but is a collection of simple
+            // values with no associated entity, and must pass through untouched.
             else if ((association instanceof OneToMany || association instanceof ManyToMany) &&
                     association.getAssociatedEntity() != null &&
                     updateProperties.containsKey(associationName)) {
