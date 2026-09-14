@@ -18,6 +18,7 @@
  */
 package org.grails.datastore.gorm.mongo.bugs
 
+import com.mongodb.DBRef
 import com.mongodb.client.MongoCollection
 import grails.persistence.Entity
 import org.apache.grails.data.mongo.core.GrailsDataMongoTckManager
@@ -40,7 +41,7 @@ import org.bson.types.ObjectId
 class StringIdAssociationStorageSpec extends GrailsDataTckSpec<GrailsDataMongoTckManager> {
 
     void setupSpec() {
-        manager.registerDomainClasses(RefProject, RefTicket, RefTag, RefPerson, RefNote, RefBiParent, RefBiChild, RefFace, RefNose)
+        manager.registerDomainClasses(RefProject, RefTicket, RefTag, RefPerson, RefNote, RefBiParent, RefBiChild, RefFace, RefNose, RefLinkedProject)
     }
 
     void "a to-one reference is written as the target's stored _id type"() {
@@ -395,8 +396,8 @@ class StringIdAssociationStorageSpec extends GrailsDataTckSpec<GrailsDataMongoTc
         rawFaces().find(new Document('_id', new ObjectId(face.id))).first().get('nose') == null
     }
 
-    void "updateAll drops nulls from a to-many rather than encoding them"() {
-        given: 'OneToManyEncoder filters nulls before wrapping; a DBRef(collection, null) is invalid'
+    void "updateAll keeps nulls in a plain to-many id list, as the encoder does"() {
+        given: 'OneToManyEncoder drops nulls only when wrapping DBRefs; a plain id list keeps them'
         RefTag a = new RefTag(label: 'keep-me').save(flush: true)
         RefProject project = new RefProject(name: 'Null tags').save(flush: true)
 
@@ -442,6 +443,30 @@ class StringIdAssociationStorageSpec extends GrailsDataTckSpec<GrailsDataMongoTc
         then:
         rawProjects().find(new Document('_id', new ObjectId(project.id))).first().get('tags') ==
                 [new ObjectId(a.id), new ObjectId(b.id)]
+    }
+
+    void "updateAll drops nulls from a reference to-many before wrapping DBRefs"() {
+        given: 'OneToManyEncoder filters nulls before wrapping; a DBRef(collection, null) is invalid'
+        RefTag a = new RefTag(label: 'ref-keep').save(flush: true)
+        RefLinkedProject project = new RefLinkedProject(name: 'Ref null tags').save(flush: true)
+
+        when:
+        manager.session.clear()
+        RefLinkedProject.where { name == 'Ref null tags' }.updateAll(tags: [RefTag.get(a.id), null])
+        List stored = rawLinkedProjects().find(new Document('_id', new ObjectId(project.id))).first().get('tags')
+
+        then: 'the null is gone and the one reference is a DBRef carrying the stored ObjectId'
+        stored.size() == 1
+        stored[0] instanceof DBRef
+        ((DBRef) stored[0]).id == new ObjectId(a.id)
+
+        and: 'and it reads back'
+        manager.session.clear()
+        RefLinkedProject.get(project.id).tags*.label == ['ref-keep']
+    }
+
+    private MongoCollection<Document> rawLinkedProjects() {
+        manager.mongoClient.getDatabase('test').getCollection('refLinkedProject')
     }
 
     private MongoCollection<Document> rawFaces() {
@@ -556,4 +581,16 @@ class RefNose {
     RefFace face
     static belongsTo = [face: RefFace]
     static mapping = { version false }
+}
+
+@Entity
+class RefLinkedProject {
+    String id
+    String name
+    Set<RefTag> tags = []
+    static hasMany = [tags: RefTag]
+    static mapping = {
+        version false
+        tags reference: true
+    }
 }
