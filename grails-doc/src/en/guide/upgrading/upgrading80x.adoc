@@ -3700,10 +3700,11 @@ already used rather than introducing a new one.
 
 ==== 64. Grails Plugins Run for a Grails Application Only
 
-The Grails plugin lifecycle ran for any Spring Boot application that had `grails-core` on its class path,
-whether or not it was a Grails application. An application that depended on a Grails library — GSP for its
-views, say — was given a `GrailsApplication`, a plugin manager, and the beans of every plugin found on the
-class path, over the top of what the libraries it did ask for auto-configure for themselves.
+In earlier Grails 8 milestones, the Grails plugin lifecycle ran for any Spring Boot application that had
+`grails-core` on its class path, whether or not it was a Grails application. An application that depended on
+a Grails library — GSP for its views, say — had Grails plugin beans registered alongside the library's own
+auto-configuration. This could prevent the context from starting because of duplicate beans or circular
+references. Grails 7 did not run the plugin lifecycle for a context that omitted the Grails application class.
 
 The lifecycle now runs only for a Grails application: one that `GrailsApp` launched, or one where a source of
 the context is a Grails application class, which is what `grails-app/init/Application.groovy` is. A Grails
@@ -3716,24 +3717,36 @@ longer registered. A plugin that also publishes an auto-configuration — as the
 `@GrailsBeans` generates for a plugin's `beans` block — continues to contribute through Spring Boot's own
 auto-configuration, which needs no lifecycle.
 
-It also matters inside a Grails application, in one place: a `@SpringBootTest` that names configuration
-classes of its own rather than the application class. The context of such a test has no Grails application
-class among its sources, so it is not a Grails application by the rule above and the lifecycle no longer runs
-for it — where before it did, and the test was given the whole plugin runtime.
+Inside a Grails application, `@SpringBootTest(classes = SomeConfig)` uses the explicitly named configuration
+classes. If those sources do not include the Grails application class, the plugin lifecycle does not run.
+This matches Grails 7. Earlier Grails 8 milestones attempted to register plugin beans in this context; with
+Hibernate, that could fail during startup because a plain Spring Boot application disallows circular references.
+
+A bare `@SpringBootTest` can discover the application's `Application` class automatically, so it does not
+need an explicit `classes` attribute to select the Grails lifecycle. When specifying custom configuration
+classes, include `Application` only if the test needs the Grails plugin runtime:
 
 [source,groovy]
 ----
-// Grails 7: the plugin lifecycle ran, and this context had a GrailsApplication and every plugin's beans
+// A context using only this configuration, without the Grails plugin lifecycle
 @SpringBootTest(classes = SomeConfig)
-class SomeSpec extends Specification { }
+class ConfigurationSpec extends Specification { }
 
-// Grails 8: name the application class as well, and the context is a Grails application again
-@SpringBootTest(classes = [Application, SomeConfig])
-class SomeSpec extends Specification { }
+// Include the application and start through its main method to apply GrailsApp's defaults
+@SpringBootTest(classes = [Application, SomeConfig], useMainMethod = SpringBootTest.UseMainMethod.ALWAYS)
+class ApplicationSpec extends Specification { }
 ----
 
-`@Integration` tests are unaffected: they always name the application class. So are tests using the
-`grails-testing-support` unit test mixins, which build their context without the lifecycle either way.
+Selecting the application class and applying the startup defaults from `GrailsApp` are separate concerns.
+By default, `@SpringBootTest` does not invoke the application's main method. In a Grails application with
+Hibernate, it can therefore fail on bean overriding or circular references even when the application class
+is selected. Use `useMainMethod = SpringBootTest.UseMainMethod.ALWAYS`, as above, or set both
+`spring.main.allow-bean-definition-overriding=true` and `spring.main.allow-circular-references=true` on the
+test. This startup limitation also existed before the lifecycle change.
+
+`@Integration` tests are unaffected: they name the application class and invoke its main method. So are
+tests using the `grails-testing-support` unit test mixins, which build their context without the lifecycle
+either way.
 
 ==== 65. `sitemesh.decorator.default` Is Consulted for the Default Layout
 

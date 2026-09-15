@@ -18,14 +18,15 @@
  */
 package grails.gsp.boot
 
-import org.springframework.core.io.DefaultResourceLoader
+import org.sitemesh.autoconfigure.SiteMeshViewResolverAutoConfiguration
+
+import org.springframework.boot.autoconfigure.AutoConfigurations
+import org.springframework.boot.test.context.runner.WebApplicationContextRunner
 import org.springframework.core.io.FileSystemResourceLoader
 import org.springframework.mock.web.MockServletContext
-import org.springframework.web.context.support.GenericWebApplicationContext
 import org.springframework.web.servlet.View
+import org.springframework.web.servlet.ViewResolver
 import org.springframework.web.servlet.view.AbstractUrlBasedView
-
-import org.grails.gsp.GroovyPagesTemplateEngine
 
 import spock.lang.Specification
 import spock.lang.TempDir
@@ -42,45 +43,50 @@ class StandaloneGroovyPageViewResolverSpec extends Specification {
     @TempDir
     File documentRoot
 
-    private GenericWebApplicationContext context
-
-    void cleanup() {
-        context?.close()
-    }
-
-    void 'a view with no template resolves to the JSP of its name where that JSP exists'() {
+    void 'a view with no template resolves to the existing JSP #viewName'() {
         given: 'a JSP in the servlet context, as src/main/webapp puts one there'
         new File(documentRoot, 'form.jsp').text = '<p>rendered by JSP</p>'
 
-        when:
-        View view = resolver().resolveViewName('form.jsp', Locale.ROOT)
-
-        then:
-        view instanceof AbstractUrlBasedView
-        ((AbstractUrlBasedView) view).url == 'form.jsp'
-    }
-
-    void 'a view with neither a template nor a JSP is left to the view resolvers after this one'() {
-        expect: 'nothing is answered for the name Boot renders its error page through, so that page is reached'
-        resolver().resolveViewName('error', Locale.ROOT) == null
-    }
-
-    private StandaloneGroovyPageViewResolver resolver() {
-        GspAutoConfiguration.GspTemplateEngineAutoConfiguration configuration =
-                new GspAutoConfiguration.GspTemplateEngineAutoConfiguration()
-        configuration.templateRoots = ['classpath:/templates'] as String[]
-
-        MockServletContext servletContext =
-                new MockServletContext("file:${documentRoot.absolutePath}", new FileSystemResourceLoader())
-        context = new GenericWebApplicationContext(servletContext)
-        context.refresh()
-
-        new StandaloneGroovyPageViewResolver(new GroovyPagesTemplateEngine(),
-                configuration.groovyPageLocator(new DefaultResourceLoader())).tap {
-            it.resolveJspView = true
-            it.allowGrailsViewCaching = false
-            it.applicationContext = context
+        expect:
+        runner().run { context ->
+            View view = context.getBean('gspViewResolver', ViewResolver).resolveViewName(viewName, Locale.ROOT)
+            assert view instanceof AbstractUrlBasedView
+            assert ((AbstractUrlBasedView) view).url == viewName
         }
+
+        where:
+        viewName << ['form.jsp', '/form.jsp']
+    }
+
+    void 'a missing view #viewName is left to the view resolvers after this one'() {
+        expect: 'nothing is answered for the name Boot renders its error page through, so that page is reached'
+        runner().run { context ->
+            assert context.getBean('gspViewResolver', ViewResolver).resolveViewName(viewName, Locale.ROOT) == null
+        }
+
+        where:
+        viewName << ['error', '/error', 'missing.jsp', '/missing.jsp']
+    }
+
+    void 'JSP fallback can be disabled even when the JSP exists'() {
+        given:
+        new File(documentRoot, 'form.jsp').text = '<p>rendered by JSP</p>'
+
+        expect:
+        runner().withPropertyValues('spring.gsp.jspEnabled=false').run { context ->
+            assert context.getBean('gspViewResolver', ViewResolver).resolveViewName('form.jsp', Locale.ROOT) == null
+        }
+    }
+
+    private WebApplicationContextRunner runner() {
+        new WebApplicationContextRunner()
+                .withConfiguration(AutoConfigurations.of(GspAutoConfiguration, SiteMeshViewResolverAutoConfiguration))
+                .withPropertyValues('spring.gsp.templateRoots=classpath:/templates', 'spring.gsp.view.cacheTimeout=0',
+                        'sitemesh.viewResolver.wrapMode=delegate')
+                .withInitializer { context ->
+                    context.servletContext = new MockServletContext(
+                            "file:${documentRoot.absolutePath}", new FileSystemResourceLoader())
+                }
     }
 
 }

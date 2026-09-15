@@ -36,7 +36,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * neither offers the link nor renders one - covered by {@link JspSupportTest}, since a test cannot
  * take the page out of a servlet context it did not pack.
  */
-@SpringBootTest(classes = Application.class, webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@SpringBootTest(classes = Application.class, webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
+        properties = "server.servlet.context-path=/gsp")
 class JspViewTest {
 
     @Value("${local.server.port}")
@@ -50,7 +51,7 @@ class JspViewTest {
 
     @Test
     void theFormOffersItsJspRendering() throws Exception {
-        assertThat(get("/")).contains("href=\"/jsp\"");
+        assertThat(get("/")).contains("href=\"/gsp/jsp\"");
     }
 
     @Test
@@ -61,11 +62,11 @@ class JspViewTest {
         // the heading is the layout's, carrying the view type of what it decorated
         assertThat(body).containsPattern("<h1[^>]*>Rendered by JSP</h1>");
         assertThat(body).contains("<title>Decorated");
-        assertThat(body).contains("href=\"/gsp\"");
+        assertThat(body).contains("href=\"/gsp/gsp\"");
     }
 
     private String get(String path) throws Exception {
-        HttpRequest request = HttpRequest.newBuilder(URI.create("http://localhost:" + port + path)).GET().build();
+        HttpRequest request = HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/gsp" + path)).GET().build();
         HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
 
         assertThat(response.statusCode()).isEqualTo(200);

@@ -20,9 +20,6 @@ package grails.gsp.boot;
 
 import java.net.MalformedURLException;
 
-import jakarta.servlet.ServletContext;
-
-import org.springframework.web.context.WebApplicationContext;
 import org.springframework.web.servlet.View;
 import org.springframework.web.servlet.view.AbstractUrlBasedView;
 
@@ -66,22 +63,14 @@ class StandaloneGroovyPageViewResolver extends GroovyPageViewResolver {
     }
 
     private boolean isServletContextResource(String url) {
-        ServletContext servletContext = servletContext();
-        if (servletContext == null || url == null) {
+        if (url == null) {
             return false;
         }
         try {
-            return servletContext.getResource(url.startsWith("/") ? url : "/" + url) != null;
+            return getServletContext().getResource(url.startsWith("/") ? url : "/" + url) != null;
         } catch (MalformedURLException e) {
             return false;
         }
-    }
-
-    private ServletContext servletContext() {
-        if (getApplicationContext() instanceof WebApplicationContext webApplicationContext) {
-            return webApplicationContext.getServletContext();
-        }
-        return null;
     }
 
 }
