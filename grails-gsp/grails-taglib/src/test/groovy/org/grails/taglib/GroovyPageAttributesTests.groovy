@@ -119,20 +119,27 @@ class GroovyPageAttributesTests {
     }
 
     // https://github.com/apache/grails-core/issues/16280
-    // gspTagSyntaxCall keeps a real setter, so assigning that one name invokes the setter rather
-    // than storing an entry - both in dotted and subscript form. That is the Grails 7 behaviour,
-    // and TagOutput and GroovyPage rely on it. Use put() to store an attribute of that name.
+    // gspTagSyntaxCall keeps a real setter, so assigning that one name in dotted form invokes
+    // the setter rather than storing an entry. That is the Grails 7 behaviour, and TagOutput
+    // relies on it. Use put() to store an attribute of that name.
     @Test
     void testAssigningGspTagSyntaxCallInvokesTheSetter() {
         def dotted = toGroovyPageAttributes([:])
         dotted.gspTagSyntaxCall = false
         assertFalse dotted.gspTagSyntaxCall()
         assertFalse dotted.containsKey('gspTagSyntaxCall')
+    }
 
+    // Groovy 6 dispatches subscript assignment on a Map to put(), not to a bean setter, so the
+    // subscript form stores an attribute of that name and leaves the flag alone. Groovy 5 sent
+    // it to the setter as well.
+    @Test
+    void testSubscriptAssignmentOfGspTagSyntaxCallStoresAnAttribute() {
         def subscript = toGroovyPageAttributes([:])
         subscript['gspTagSyntaxCall'] = false
-        assertFalse subscript.gspTagSyntaxCall()
-        assertFalse subscript.containsKey('gspTagSyntaxCall')
+        assertTrue subscript.gspTagSyntaxCall()
+        assertTrue subscript.containsKey('gspTagSyntaxCall')
+        assertEquals false, subscript['gspTagSyntaxCall']
     }
 
     @Test
