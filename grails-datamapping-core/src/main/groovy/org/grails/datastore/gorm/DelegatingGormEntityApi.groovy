@@ -49,11 +49,6 @@ class DelegatingGormEntityApi<D> implements GormEntityApi<D> {
     }
 
     @Override
-    D lockLatest() {
-        return instanceApi.lockLatest(target)
-    }
-
-    @Override
     def mutex(Closure callable) {
         return instanceApi.mutex(target, callable)
     }
@@ -61,6 +56,11 @@ class DelegatingGormEntityApi<D> implements GormEntityApi<D> {
     @Override
     D refresh() {
         return instanceApi.refresh(target)
+    }
+
+    @Override
+    D refresh(Map args) {
+        return instanceApi.refresh(target, args)
     }
 
     @Override

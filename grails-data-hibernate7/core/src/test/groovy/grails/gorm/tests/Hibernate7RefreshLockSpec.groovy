@@ -37,24 +37,24 @@ import grails.gorm.annotation.Entity
 import grails.gorm.api.GormAllOperations
 import grails.gorm.dirty.checking.DirtyCheck
 
-class Hibernate7LockLatestSpec extends HibernateGormDatastoreSpec {
+class Hibernate7RefreshLockSpec extends HibernateGormDatastoreSpec {
 
     void setupSpec() {
-        manager.registerDomainClasses(Hibernate7LockLatestBook, Hibernate7LockLatestRoutedBook,
-            Hibernate7LockLatestNonversionedBook, Hibernate7LockLatestEmbeddedBook)
+        manager.registerDomainClasses(Hibernate7RefreshLockBook, Hibernate7RefreshLockRoutedBook,
+            Hibernate7RefreshLockNonversionedBook, Hibernate7RefreshLockEmbeddedBook)
         // AUTO leaves an explicitly selected session flush mode intact during template calls.
         manager.grailsConfig['hibernate.flush.mode'] = 'AUTO'
         // ConfigObject needs the parent map for named connection discovery.
         manager.grailsConfig.dataSources.secondary = [
-            url: 'jdbc:h2:mem:hibernate7LockLatestSecondary;LOCK_TIMEOUT=10000'
+            url: 'jdbc:h2:mem:hibernate7RefreshLockSecondary;LOCK_TIMEOUT=10000'
         ]
     }
 
     void 'ordinary lock preserves pending changes and takes a write lock'() {
         given:
-        def book = new Hibernate7LockLatestBook(title: 'original').save(flush: true, failOnError: true)
-        Hibernate7LockLatestBook.withSession { it.clear() }
-        book = Hibernate7LockLatestBook.get(book.id)
+        def book = new Hibernate7RefreshLockBook(title: 'original').save(flush: true, failOnError: true)
+        Hibernate7RefreshLockBook.withSession { it.clear() }
+        book = Hibernate7RefreshLockBook.get(book.id)
         book.title = 'pending'
 
         when:
@@ -64,26 +64,26 @@ class Hibernate7LockLatestSpec extends HibernateGormDatastoreSpec {
         result.is(book)
         book.title == 'pending'
         book.version == 0
-        Hibernate7LockLatestBook.withSession { Session session ->
+        Hibernate7RefreshLockBook.withSession { Session session ->
             session.getCurrentLockMode(book) == LockMode.PESSIMISTIC_WRITE
         }
     }
 
-    void 'lockLatest discards pending changes under #flushMode flush mode'() {
+    void 'refresh(lock: true) discards pending changes under #flushMode flush mode'() {
         given:
-        def book = new Hibernate7LockLatestBook(title: 'original').save(flush: true, failOnError: true)
-        Hibernate7LockLatestBook.withSession { it.clear() }
-        book = Hibernate7LockLatestBook.get(book.id)
+        def book = new Hibernate7RefreshLockBook(title: 'original').save(flush: true, failOnError: true)
+        Hibernate7RefreshLockBook.withSession { it.clear() }
+        book = Hibernate7RefreshLockBook.get(book.id)
 
         expect:
-        Hibernate7LockLatestBook.withSession { Session session ->
+        Hibernate7RefreshLockBook.withSession { Session session ->
             def previousFlushMode = session.hibernateFlushMode
             try {
                 session.hibernateFlushMode = flushMode
                 book.title = 'pending'
                 assert book.isDirty('title')
 
-                assert book.lockLatest().is(book)
+                assert book.refresh(lock: true).is(book)
                 assert book.title == 'original'
                 assert book.version == 0
                 assert !book.isDirty('title')
@@ -93,7 +93,7 @@ class Hibernate7LockLatestSpec extends HibernateGormDatastoreSpec {
 
                 session.flush()
                 session.clear()
-                def reloaded = Hibernate7LockLatestBook.get(book.id)
+                def reloaded = Hibernate7RefreshLockBook.get(book.id)
                 assert reloaded.title == 'original'
                 assert reloaded.version == 0
                 true
@@ -106,17 +106,17 @@ class Hibernate7LockLatestSpec extends HibernateGormDatastoreSpec {
         flushMode << [FlushMode.AUTO, FlushMode.COMMIT]
     }
 
-    void 'lockLatest discards embedded edits without a version bump and tracks subsequent edits under #flushMode'() {
+    void 'refresh(lock: true) discards embedded edits without a version bump and tracks subsequent edits under #flushMode'() {
         given:
-        def book = new Hibernate7LockLatestEmbeddedBook(
+        def book = new Hibernate7RefreshLockEmbeddedBook(
             title: 'original',
-            details: new Hibernate7LockLatestDetails(summary: 'original summary', language: 'English')
+            details: new Hibernate7RefreshLockDetails(summary: 'original summary', language: 'English')
         ).save(flush: true, failOnError: true)
-        Hibernate7LockLatestEmbeddedBook.withSession { it.clear() }
-        book = Hibernate7LockLatestEmbeddedBook.get(book.id)
+        Hibernate7RefreshLockEmbeddedBook.withSession { it.clear() }
+        book = Hibernate7RefreshLockEmbeddedBook.get(book.id)
 
         expect:
-        Hibernate7LockLatestEmbeddedBook.withSession { Session session ->
+        Hibernate7RefreshLockEmbeddedBook.withSession { Session session ->
             def previousFlushMode = session.hibernateFlushMode
             try {
                 session.hibernateFlushMode = flushMode
@@ -125,7 +125,7 @@ class Hibernate7LockLatestSpec extends HibernateGormDatastoreSpec {
                 assert book.isDirty('title')
                 assert book.details.hasChanged('summary')
 
-                assert book.lockLatest().is(book)
+                assert book.refresh(lock: true).is(book)
                 assert book.title == 'original'
                 assert book.details.summary == 'original summary'
                 assert book.details.language == 'English'
@@ -145,7 +145,7 @@ class Hibernate7LockLatestSpec extends HibernateGormDatastoreSpec {
                 assert book.save(flush: true, failOnError: true).is(book)
                 assert book.version == 1
                 session.clear()
-                def reloaded = Hibernate7LockLatestEmbeddedBook.get(book.id)
+                def reloaded = Hibernate7RefreshLockEmbeddedBook.get(book.id)
                 assert reloaded.version == 1
                 assert reloaded.title == 'original'
                 assert reloaded.details.summary == 'saved summary'
@@ -160,17 +160,17 @@ class Hibernate7LockLatestSpec extends HibernateGormDatastoreSpec {
         flushMode << [FlushMode.AUTO, FlushMode.COMMIT]
     }
 
-    void 'lockLatest reloads a committed stale version and allows a subsequent save (proxy: #useProxy)'() {
+    void 'refresh(lock: true) reloads a committed stale version and allows a subsequent save (proxy: #useProxy)'() {
         given:
-        Long id = new Hibernate7LockLatestBook(title: 'original').save(flush: true, failOnError: true).id
+        Long id = new Hibernate7RefreshLockBook(title: 'original').save(flush: true, failOnError: true).id
         manager.transactionManager.commit(manager.transactionStatus)
         manager.transactionStatus = null
         def executor = Executors.newSingleThreadExecutor()
-        GormAllOperations<Hibernate7LockLatestBook> operations = Hibernate7LockLatestBook.'default'
+        GormAllOperations<Hibernate7RefreshLockBook> operations = Hibernate7RefreshLockBook.'default'
 
         when:
-        Hibernate7LockLatestBook.withNewSession { Session session ->
-            Hibernate7LockLatestBook.withTransaction {
+        Hibernate7RefreshLockBook.withNewSession { Session session ->
+            Hibernate7RefreshLockBook.withTransaction {
                 def book = useProxy ? operations.load(id) : operations.get(id)
                 assert Hibernate.isInitialized(book) == !useProxy
                 if (!useProxy) {
@@ -178,9 +178,9 @@ class Hibernate7LockLatestSpec extends HibernateGormDatastoreSpec {
                 }
 
                 executor.submit({
-                    Hibernate7LockLatestBook.withNewSession {
-                        Hibernate7LockLatestBook.withTransaction {
-                            def competingBook = Hibernate7LockLatestBook.get(id)
+                    Hibernate7RefreshLockBook.withNewSession {
+                        Hibernate7RefreshLockBook.withTransaction {
+                            def competingBook = Hibernate7RefreshLockBook.get(id)
                             competingBook.title = 'competing commit'
                             competingBook.save(flush: true, failOnError: true)
                             assert competingBook.version == 1
@@ -194,10 +194,10 @@ class Hibernate7LockLatestSpec extends HibernateGormDatastoreSpec {
                     assert book.version == 0
                     book.title = 'stale pending edit'
                 }
-                // Nothing has touched the proxy yet, so lockLatest is what initializes it.
+                // Nothing has touched the proxy yet, so the locked refresh is what initializes it.
                 assert Hibernate.isInitialized(book) == !useProxy
 
-                def result = useProxy ? operations.lockLatest(book) : book.lockLatest()
+                def result = useProxy ? operations.refresh(book, [lock: true]) : book.refresh(lock: true)
                 assert result.is(book)
                 assert Hibernate.isInitialized(book)
                 assert book.title == 'competing commit'
@@ -212,8 +212,8 @@ class Hibernate7LockLatestSpec extends HibernateGormDatastoreSpec {
         }
 
         then:
-        Hibernate7LockLatestBook.withNewSession {
-            def book = Hibernate7LockLatestBook.get(id)
+        Hibernate7RefreshLockBook.withNewSession {
+            def book = Hibernate7RefreshLockBook.get(id)
             book.title == 'saved after refresh' && book.version == 2
         }
 
@@ -225,12 +225,12 @@ class Hibernate7LockLatestSpec extends HibernateGormDatastoreSpec {
         useProxy << [false, true]
     }
 
-    void 'public operations lockLatest initializes a proxy and takes a write lock on the same instance'() {
+    void 'public operations refresh(lock: true) initializes a proxy and takes a write lock on the same instance'() {
         given:
-        Long id = new Hibernate7LockLatestBook(title: 'original').save(flush: true, failOnError: true).id
+        Long id = new Hibernate7RefreshLockBook(title: 'original').save(flush: true, failOnError: true).id
         manager.transactionManager.commit(manager.transactionStatus)
         manager.transactionStatus = null
-        GormAllOperations<Hibernate7LockLatestBook> operations = Hibernate7LockLatestBook.'default'
+        GormAllOperations<Hibernate7RefreshLockBook> operations = Hibernate7RefreshLockBook.'default'
         def executor = Executors.newSingleThreadExecutor()
 
         expect:
@@ -251,7 +251,7 @@ class Hibernate7LockLatestSpec extends HibernateGormDatastoreSpec {
                 } as Callable).get(10, TimeUnit.SECONDS)
 
                 assert !Hibernate.isInitialized(proxy)
-                def result = operations.lockLatest(proxy)
+                def result = operations.refresh(proxy, [lock: true])
                 assert result.is(proxy)
                 // getCurrentLockMode initializes a proxy, so check initialization first.
                 assert Hibernate.isInitialized(proxy)
@@ -267,13 +267,13 @@ class Hibernate7LockLatestSpec extends HibernateGormDatastoreSpec {
         assert executor == null || executor.awaitTermination(15, TimeUnit.SECONDS)
     }
 
-    void 'public operations lockLatest rejects a missing transaction without initializing a proxy'() {
+    void 'public operations refresh(lock: true) rejects a missing transaction without initializing a proxy'() {
         given:
-        Long id = new Hibernate7LockLatestBook(title: 'original').save(flush: true, failOnError: true).id
+        Long id = new Hibernate7RefreshLockBook(title: 'original').save(flush: true, failOnError: true).id
         manager.transactionManager.commit(manager.transactionStatus)
         manager.transactionStatus = null
-        GormAllOperations<Hibernate7LockLatestBook> operations = Hibernate7LockLatestBook.'default'
-        Hibernate7LockLatestBook proxy
+        GormAllOperations<Hibernate7RefreshLockBook> operations = Hibernate7RefreshLockBook.'default'
+        Hibernate7RefreshLockBook proxy
 
         when:
         operations.withNewSession { Session session ->
@@ -283,7 +283,7 @@ class Hibernate7LockLatestSpec extends HibernateGormDatastoreSpec {
             assert !session.transaction.isActive()
             proxy = operations.load(id)
             assert !Hibernate.isInitialized(proxy)
-            operations.lockLatest(proxy)
+            operations.refresh(proxy, [lock: true])
         }
 
         then:
@@ -292,50 +292,50 @@ class Hibernate7LockLatestSpec extends HibernateGormDatastoreSpec {
         !Hibernate.isInitialized(proxy)
     }
 
-    void 'lockLatest discards changes and permits saving a nonversioned entity'() {
+    void 'refresh(lock: true) discards changes and permits saving a nonversioned entity'() {
         given:
-        def book = new Hibernate7LockLatestNonversionedBook(title: 'original').save(flush: true, failOnError: true)
-        Hibernate7LockLatestNonversionedBook.withSession { it.clear() }
-        book = Hibernate7LockLatestNonversionedBook.get(book.id)
+        def book = new Hibernate7RefreshLockNonversionedBook(title: 'original').save(flush: true, failOnError: true)
+        Hibernate7RefreshLockNonversionedBook.withSession { it.clear() }
+        book = Hibernate7RefreshLockNonversionedBook.get(book.id)
         book.title = 'pending'
 
         when:
-        def result = book.lockLatest()
+        def result = book.refresh(lock: true)
 
         then:
         result.is(book)
         book.title == 'original'
-        Hibernate7LockLatestNonversionedBook.withSession { Session session ->
+        Hibernate7RefreshLockNonversionedBook.withSession { Session session ->
             session.getCurrentLockMode(book) == LockMode.PESSIMISTIC_WRITE
         }
 
         when:
         book.title = 'saved after refresh'
         def saved = book.save(flush: true, failOnError: true)
-        Hibernate7LockLatestNonversionedBook.withSession { it.clear() }
+        Hibernate7RefreshLockNonversionedBook.withSession { it.clear() }
 
         then:
         saved.is(book)
-        Hibernate7LockLatestNonversionedBook.get(book.id).title == 'saved after refresh'
+        Hibernate7RefreshLockNonversionedBook.get(book.id).title == 'saved after refresh'
     }
 
     void 'ordinary lock rejects a committed stale version without refreshing'() {
         given:
-        Long id = new Hibernate7LockLatestBook(title: 'original').save(flush: true, failOnError: true).id
+        Long id = new Hibernate7RefreshLockBook(title: 'original').save(flush: true, failOnError: true).id
         manager.transactionManager.commit(manager.transactionStatus)
         manager.transactionStatus = null
         def executor = Executors.newSingleThreadExecutor()
 
         when:
-        Hibernate7LockLatestBook.withNewSession {
-            Hibernate7LockLatestBook.withTransaction { status ->
-                def book = Hibernate7LockLatestBook.get(id)
+        Hibernate7RefreshLockBook.withNewSession {
+            Hibernate7RefreshLockBook.withTransaction { status ->
+                def book = Hibernate7RefreshLockBook.get(id)
                 assert book.version == 0
 
                 executor.submit({
-                    Hibernate7LockLatestBook.withNewSession {
-                        Hibernate7LockLatestBook.withTransaction {
-                            def competingBook = Hibernate7LockLatestBook.get(id)
+                    Hibernate7RefreshLockBook.withNewSession {
+                        Hibernate7RefreshLockBook.withTransaction {
+                            def competingBook = Hibernate7RefreshLockBook.get(id)
                             competingBook.title = 'competing commit'
                             competingBook.save(flush: true, failOnError: true)
                             assert competingBook.version == 1
@@ -357,8 +357,8 @@ class Hibernate7LockLatestSpec extends HibernateGormDatastoreSpec {
 
         then:
         thrown(OptimisticLockingFailureException)
-        Hibernate7LockLatestBook.withNewSession {
-            def book = Hibernate7LockLatestBook.get(id)
+        Hibernate7RefreshLockBook.withNewSession {
+            def book = Hibernate7RefreshLockBook.get(id)
             book.title == 'competing commit' && book.version == 1
         }
 
@@ -367,27 +367,27 @@ class Hibernate7LockLatestSpec extends HibernateGormDatastoreSpec {
         assert executor == null || executor.awaitTermination(15, TimeUnit.SECONDS)
     }
 
-    void 'lockLatest requires a transaction even with an open bound session and managed entity'() {
+    void 'refresh(lock: true) requires a transaction even with an open bound session and managed entity'() {
         given:
-        Long id = new Hibernate7LockLatestBook(title: 'original').save(flush: true, failOnError: true).id
+        Long id = new Hibernate7RefreshLockBook(title: 'original').save(flush: true, failOnError: true).id
         manager.transactionManager.commit(manager.transactionStatus)
         manager.transactionStatus = null
         assert !TransactionSynchronizationManager.isActualTransactionActive()
-        Hibernate7LockLatestBook book
+        Hibernate7RefreshLockBook book
 
         when:
-        Hibernate7LockLatestBook.withNewSession { Session session ->
+        Hibernate7RefreshLockBook.withNewSession { Session session ->
             assert session.isOpen()
             assert TransactionSynchronizationManager.hasResource(manager.sessionFactory)
             assert manager.sessionFactory.currentSession.is(session)
             assert !TransactionSynchronizationManager.isActualTransactionActive()
             assert !session.transaction.isActive()
-            book = Hibernate7LockLatestBook.get(id)
+            book = Hibernate7RefreshLockBook.get(id)
             assert session.contains(book)
             book.title = 'pending'
 
             try {
-                book.lockLatest()
+                book.refresh(lock: true)
             } finally {
                 assert session.isOpen()
                 assert !session.transaction.isActive()
@@ -399,74 +399,74 @@ class Hibernate7LockLatestSpec extends HibernateGormDatastoreSpec {
         exception.message == 'An active transaction is required.'
         book.title == 'pending'
         book.version == 0
-        Hibernate7LockLatestBook.withNewSession {
-            def reloaded = Hibernate7LockLatestBook.get(id)
+        Hibernate7RefreshLockBook.withNewSession {
+            def reloaded = Hibernate7RefreshLockBook.get(id)
             reloaded.title == 'original' && reloaded.version == 0
         }
     }
 
-    void 'lockLatest uses the named connection rather than the default database'() {
+    void 'refresh(lock: true) uses the named connection rather than the default database'() {
         given:
-        def defaultBook = new Hibernate7LockLatestRoutedBook(title: 'default').save(flush: true, failOnError: true)
+        def defaultBook = new Hibernate7RefreshLockRoutedBook(title: 'default').save(flush: true, failOnError: true)
 
         expect:
-        Hibernate7LockLatestRoutedBook.secondary.withNewSession { Session session ->
-            Hibernate7LockLatestRoutedBook.secondary.withTransaction {
+        Hibernate7RefreshLockRoutedBook.secondary.withNewSession { Session session ->
+            Hibernate7RefreshLockRoutedBook.secondary.withTransaction {
                 assert session.transaction.isActive()
                 def url = session.doReturningWork { connection -> connection.metaData.URL }
-                assert url == 'jdbc:h2:mem:hibernate7LockLatestSecondary'
-                def book = new Hibernate7LockLatestRoutedBook(title: 'secondary')
+                assert url == 'jdbc:h2:mem:hibernate7RefreshLockSecondary'
+                def book = new Hibernate7RefreshLockRoutedBook(title: 'secondary')
                 book.secondary.save(flush: true, failOnError: true)
                 Long secondaryId = book.id
                 // Each database generates identity independently, so the databases are told apart by
                 // what the default connection holds rather than by assuming the ids coincide.
-                Hibernate7LockLatestRoutedBook.withSession {
-                    assert Hibernate7LockLatestRoutedBook.get(secondaryId)?.title != 'secondary'
-                    assert Hibernate7LockLatestRoutedBook.findByTitle('secondary') == null
+                Hibernate7RefreshLockRoutedBook.withSession {
+                    assert Hibernate7RefreshLockRoutedBook.get(secondaryId)?.title != 'secondary'
+                    assert Hibernate7RefreshLockRoutedBook.findByTitle('secondary') == null
                 }
                 session.clear()
-                book = Hibernate7LockLatestRoutedBook.secondary.get(secondaryId)
+                book = Hibernate7RefreshLockRoutedBook.secondary.get(secondaryId)
                 assert session.contains(book)
                 book.title = 'pending'
 
-                assert book.secondary.lockLatest().is(book)
+                assert book.secondary.refresh(lock: true).is(book)
                 assert book.title == 'secondary'
                 assert book.version == 0
                 assert session.getCurrentLockMode(book) == LockMode.PESSIMISTIC_WRITE
                 session.flush()
                 session.clear()
-                assert Hibernate7LockLatestRoutedBook.secondary.get(secondaryId).title == 'secondary'
+                assert Hibernate7RefreshLockRoutedBook.secondary.get(secondaryId).title == 'secondary'
                 true
             }
         }
         defaultBook.title == 'default'
-        Hibernate7LockLatestRoutedBook.withSession { Session session ->
+        Hibernate7RefreshLockRoutedBook.withSession { Session session ->
             // Reload the default row to prove the named connection work never reached it.
             session.flush()
             session.clear()
-            def reloaded = Hibernate7LockLatestRoutedBook.get(defaultBook.id)
+            def reloaded = Hibernate7RefreshLockRoutedBook.get(defaultBook.id)
             reloaded.title == 'default' && reloaded.version == 0
         }
     }
 
-    void 'lockLatest requires a named connection transaction even when the default transaction is active'() {
+    void 'refresh(lock: true) requires a named connection transaction even when the default transaction is active'() {
         given:
-        Long id = Hibernate7LockLatestRoutedBook.secondary.withTransaction {
-            new Hibernate7LockLatestRoutedBook(title: 'secondary').secondary.save(flush: true, failOnError: true).id
+        Long id = Hibernate7RefreshLockRoutedBook.secondary.withTransaction {
+            new Hibernate7RefreshLockRoutedBook(title: 'secondary').secondary.save(flush: true, failOnError: true).id
         }
-        Hibernate7LockLatestRoutedBook book
+        Hibernate7RefreshLockRoutedBook book
 
         when:
-        Hibernate7LockLatestRoutedBook.secondary.withNewSession { Session session ->
-            book = Hibernate7LockLatestRoutedBook.secondary.get(id)
+        Hibernate7RefreshLockRoutedBook.secondary.withNewSession { Session session ->
+            book = Hibernate7RefreshLockRoutedBook.secondary.get(id)
             assert session.isOpen()
             assert session.contains(book)
             assert !session.transaction.isActive()
-            Hibernate7LockLatestRoutedBook.withSession { Session defaultSession ->
+            Hibernate7RefreshLockRoutedBook.withSession { Session defaultSession ->
                 assert defaultSession.transaction.isActive()
             }
             book.title = 'pending'
-            book.secondary.lockLatest()
+            book.secondary.refresh(lock: true)
         }
 
         then:
@@ -476,9 +476,9 @@ class Hibernate7LockLatestSpec extends HibernateGormDatastoreSpec {
         book.version == 0
     }
 
-    void 'lockLatest waits for a competing commit and holds the write lock until transaction completion'() {
+    void 'refresh(lock: true) waits for a competing commit and holds the write lock until transaction completion'() {
         given:
-        Long id = new Hibernate7LockLatestBook(title: 'original').save(flush: true, failOnError: true).id
+        Long id = new Hibernate7RefreshLockBook(title: 'original').save(flush: true, failOnError: true).id
         manager.transactionManager.commit(manager.transactionStatus)
         manager.transactionStatus = null
         def executor = Executors.newFixedThreadPool(3)
@@ -493,15 +493,15 @@ class Hibernate7LockLatestSpec extends HibernateGormDatastoreSpec {
 
         when:
         def refreshing = executor.submit({
-            Hibernate7LockLatestBook.withNewSession { Session session ->
-                Hibernate7LockLatestBook.withTransaction {
-                    def book = Hibernate7LockLatestBook.get(id)
+            Hibernate7RefreshLockBook.withNewSession { Session session ->
+                Hibernate7RefreshLockBook.withTransaction {
+                    def book = Hibernate7RefreshLockBook.get(id)
                     assert book.version == 0
                     book.title = 'pending edit'
                     loaded.countDown()
                     assert competingUpdate.await(10, TimeUnit.SECONDS)
                     refreshStarted.countDown()
-                    assert book.lockLatest().is(book)
+                    assert book.refresh(lock: true).is(book)
                     assert book.title == 'competing commit'
                     assert book.version == 1
                     assert session.getCurrentLockMode(book) == LockMode.PESSIMISTIC_WRITE
@@ -511,10 +511,10 @@ class Hibernate7LockLatestSpec extends HibernateGormDatastoreSpec {
             }
         } as Callable)
         def competing = executor.submit({
-            Hibernate7LockLatestBook.withNewSession {
-                Hibernate7LockLatestBook.withTransaction {
+            Hibernate7RefreshLockBook.withNewSession {
+                Hibernate7RefreshLockBook.withTransaction {
                     assert loaded.await(10, TimeUnit.SECONDS)
-                    def book = Hibernate7LockLatestBook.get(id)
+                    def book = Hibernate7RefreshLockBook.get(id)
                     book.title = 'competing commit'
                     book.save(flush: true, failOnError: true)
                     competingUpdate.countDown()
@@ -537,10 +537,10 @@ class Hibernate7LockLatestSpec extends HibernateGormDatastoreSpec {
 
         when:
         def contender = executor.submit({
-            Hibernate7LockLatestBook.withNewSession {
-                Hibernate7LockLatestBook.withTransaction {
+            Hibernate7RefreshLockBook.withNewSession {
+                Hibernate7RefreshLockBook.withTransaction {
                     contenderStarted.countDown()
-                    def book = Hibernate7LockLatestBook.lock(id)
+                    def book = Hibernate7RefreshLockBook.lock(id)
                     contenderLocked.countDown()
                     assert book.title == 'competing commit'
                     book.title = 'last commit'
@@ -561,8 +561,8 @@ class Hibernate7LockLatestSpec extends HibernateGormDatastoreSpec {
 
         then:
         contenderLocked.count == 0
-        Hibernate7LockLatestBook.withNewSession {
-            def book = Hibernate7LockLatestBook.get(id)
+        Hibernate7RefreshLockBook.withNewSession {
+            def book = Hibernate7RefreshLockBook.get(id)
             book.title == 'last commit' && book.version == 2
         }
 
@@ -572,17 +572,157 @@ class Hibernate7LockLatestSpec extends HibernateGormDatastoreSpec {
         executor?.shutdownNow()
         assert executor == null || executor.awaitTermination(15, TimeUnit.SECONDS)
     }
+
+    void 'static lock(id, refresh: true) reloads a committed stale version of the managed instance and allows a subsequent save'() {
+        given:
+        Long id = new Hibernate7RefreshLockBook(title: 'original').save(flush: true, failOnError: true).id
+        manager.transactionManager.commit(manager.transactionStatus)
+        manager.transactionStatus = null
+        def executor = Executors.newSingleThreadExecutor()
+
+        when:
+        Hibernate7RefreshLockBook.withNewSession { Session session ->
+            Hibernate7RefreshLockBook.withTransaction {
+                def book = Hibernate7RefreshLockBook.get(id)
+                assert book.version == 0
+
+                executor.submit({
+                    Hibernate7RefreshLockBook.withNewSession {
+                        Hibernate7RefreshLockBook.withTransaction {
+                            def competingBook = Hibernate7RefreshLockBook.get(id)
+                            competingBook.title = 'competing commit'
+                            competingBook.save(flush: true, failOnError: true)
+                            assert competingBook.version == 1
+                        }
+                    }
+                } as Callable).get(10, TimeUnit.SECONDS)
+
+                assert book.title == 'original'
+                assert book.version == 0
+                book.title = 'stale pending edit'
+
+                def locked = Hibernate7RefreshLockBook.lock(id, refresh: true)
+                assert locked.is(book)
+                assert book.title == 'competing commit'
+                assert book.version == 1
+                assert !book.isDirty('title')
+                assert session.getCurrentLockMode(book) == LockMode.PESSIMISTIC_WRITE
+
+                book.title = 'saved after locked refresh'
+                assert book.save(flush: true, failOnError: true).is(book)
+                assert book.version == 2
+            }
+        }
+
+        then:
+        Hibernate7RefreshLockBook.withNewSession {
+            def book = Hibernate7RefreshLockBook.get(id)
+            book.title == 'saved after locked refresh' && book.version == 2
+        }
+
+        cleanup:
+        executor?.shutdownNow()
+        assert executor == null || executor.awaitTermination(15, TimeUnit.SECONDS)
+    }
+
+    void 'static lock(id, refresh: true) loads and locks an instance that is not in the session'() {
+        given:
+        Long id = new Hibernate7RefreshLockBook(title: 'original').save(flush: true, failOnError: true).id
+        Hibernate7RefreshLockBook.withSession { it.clear() }
+
+        when:
+        def book = Hibernate7RefreshLockBook.lock(id, refresh: true)
+
+        then:
+        book != null
+        Hibernate.isInitialized(book)
+        book.title == 'original'
+        book.version == 0
+        Hibernate7RefreshLockBook.withSession { Session session ->
+            session.contains(book) && session.getCurrentLockMode(book) == LockMode.PESSIMISTIC_WRITE
+        }
+    }
+
+    void 'static lock(id, refresh: true) returns null for an unknown identifier'() {
+        expect:
+        Hibernate7RefreshLockBook.lock(-1L, refresh: true) == null
+    }
+
+    void 'static lock(id, args) without a refresh request locks the managed instance and preserves pending changes (#description)'() {
+        given:
+        def book = new Hibernate7RefreshLockBook(title: 'original').save(flush: true, failOnError: true)
+        Hibernate7RefreshLockBook.withSession { it.clear() }
+        book = Hibernate7RefreshLockBook.get(book.id)
+        book.title = 'pending'
+
+        when:
+        def result = Hibernate7RefreshLockBook.lock(args, book.id)
+
+        then:
+        result.is(book)
+        book.title == 'pending'
+        book.version == 0
+        Hibernate7RefreshLockBook.withSession { Session session ->
+            session.getCurrentLockMode(book) == LockMode.PESSIMISTIC_WRITE
+        }
+
+        where:
+        description      | args
+        'empty map'      | [:]
+        'refresh: false' | [refresh: false]
+    }
+
+    void 'static lock(id, refresh: true) requires an active transaction'() {
+        given:
+        Long id = new Hibernate7RefreshLockBook(title: 'original').save(flush: true, failOnError: true).id
+        manager.transactionManager.commit(manager.transactionStatus)
+        manager.transactionStatus = null
+
+        when:
+        Hibernate7RefreshLockBook.withNewSession { Session session ->
+            assert !session.getTransaction().isActive()
+            Hibernate7RefreshLockBook.lock(id, refresh: true)
+        }
+
+        then:
+        def exception = thrown(TransactionRequiredException)
+        exception.message == 'An active transaction is required.'
+    }
+
+    void 'refresh with arguments that do not request a lock reloads state without a write lock (#description)'() {
+        given:
+        def book = new Hibernate7RefreshLockBook(title: 'original').save(flush: true, failOnError: true)
+        Hibernate7RefreshLockBook.withSession { it.clear() }
+        book = Hibernate7RefreshLockBook.get(book.id)
+        book.title = 'pending'
+
+        when:
+        def result = book.refresh(args)
+
+        then:
+        result.is(book)
+        book.title == 'original'
+        book.version == 0
+        Hibernate7RefreshLockBook.withSession { Session session ->
+            session.getCurrentLockMode(book) != LockMode.PESSIMISTIC_WRITE
+        }
+
+        where:
+        description   | args
+        'empty map'   | [:]
+        'lock: false' | [lock: false]
+    }
 }
 
 @Entity
-class Hibernate7LockLatestBook {
+class Hibernate7RefreshLockBook {
     Long id
     Long version
     String title
 }
 
 @Entity
-class Hibernate7LockLatestRoutedBook {
+class Hibernate7RefreshLockRoutedBook {
     Long id
     Long version
     String title
@@ -593,7 +733,7 @@ class Hibernate7LockLatestRoutedBook {
 }
 
 @Entity
-class Hibernate7LockLatestNonversionedBook {
+class Hibernate7RefreshLockNonversionedBook {
     Long id
     String title
 
@@ -603,17 +743,17 @@ class Hibernate7LockLatestNonversionedBook {
 }
 
 @Entity
-class Hibernate7LockLatestEmbeddedBook {
+class Hibernate7RefreshLockEmbeddedBook {
     Long id
     Long version
     String title
-    Hibernate7LockLatestDetails details
+    Hibernate7RefreshLockDetails details
 
     static embedded = ['details']
 }
 
 @DirtyCheck
-class Hibernate7LockLatestDetails {
+class Hibernate7RefreshLockDetails {
     String summary
     String language
 }

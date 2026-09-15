@@ -39,15 +39,6 @@ trait GormEntityApi<D> {
      */
     abstract D lock()
     /**
-     * Reloads this instance's database state and version under a pessimistic write lock,
-     * discarding unflushed changes. Requires an active transaction.
-     *
-     * @return The same instance
-     * @throws jakarta.persistence.TransactionRequiredException if no transaction is active
-     * @throws UnsupportedOperationException if the datastore does not support {@code lockLatest()}
-     */
-    abstract D lockLatest()
-    /**
      * Locks the instance for updates for the scope of the passed closure
      *
      * @param callable The closure
@@ -59,6 +50,22 @@ trait GormEntityApi<D> {
      * @return The instance
      */
     abstract D refresh()
+    /**
+     * Refreshes the state of the current instance, with options.
+     *
+     * <p>Supported arguments:</p>
+     * <ul>
+     *   <li>{@code lock} - when {@code true}, reloads this instance's database state and version under a
+     *   pessimistic write lock in a single operation, discarding unflushed changes. Requires an active
+     *   transaction.</li>
+     * </ul>
+     *
+     * @param args The named arguments
+     * @return The instance
+     * @throws jakarta.persistence.TransactionRequiredException if {@code lock: true} is requested without an active transaction
+     * @throws UnsupportedOperationException if {@code lock: true} is requested and the datastore does not support it
+     */
+    abstract D refresh(Map args)
     /**
      * Saves an object the datastore
      * @return Returns the instance

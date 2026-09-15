@@ -159,7 +159,7 @@ class SubMember extends Member {
         method.returnType == QueryMethodArtefactDomain
     }
 
-    void "lockLatest retains the entity return type under static compilation for #annotation"() {
+    void "refresh(lock: true) and lock(id, refresh: true) resolve statically with the entity return type for #annotation"() {
         given:
         def classLoader = new GroovyClassLoader()
 
@@ -170,12 +170,20 @@ class SubMember extends Member {
 
             @CompileStatic
             class LockConsumer {
-                LockBook lockLatest(LockBook book) {
-                    book.lockLatest()
+                LockBook refreshWithLock(LockBook book) {
+                    book.refresh(lock: true)
                 }
 
-                LockBook lockConnection(GormEntityApi<LockBook> connection) {
-                    connection.lockLatest()
+                LockBook refreshConnection(GormEntityApi<LockBook> connection) {
+                    connection.refresh([lock: true])
+                }
+
+                LockBook lockWithRefresh(Long id) {
+                    LockBook.lock(id, refresh: true)
+                }
+
+                LockBook lockById(Long id) {
+                    LockBook.lock(id)
                 }
             }
 
@@ -187,10 +195,17 @@ class SubMember extends Member {
         def bookClass = classLoader.loadClass('LockBook')
 
         then:
-        consumer.getMethod('lockLatest', bookClass).returnType == bookClass
-        consumer.getMethod('lockConnection', GormEntityApi).returnType == bookClass
-        bookClass.getMethod('lockLatest').returnType == bookClass
-        bookClass.getMethod('lockLatest').isAnnotationPresent(Generated)
+        consumer.getMethod('refreshWithLock', bookClass).returnType == bookClass
+        consumer.getMethod('refreshConnection', GormEntityApi).returnType == bookClass
+        consumer.getMethod('lockWithRefresh', Long).returnType == bookClass
+        consumer.getMethod('lockById', Long).returnType == bookClass
+        bookClass.getMethod('refresh', Map).returnType == bookClass
+        bookClass.getMethod('refresh', Map).isAnnotationPresent(Generated)
+        !Modifier.isStatic(bookClass.getMethod('refresh', Map).modifiers)
+        bookClass.getMethod('lock', Map, Serializable).returnType == bookClass
+        bookClass.getMethod('lock', Map, Serializable).isAnnotationPresent(Generated)
+        Modifier.isStatic(bookClass.getMethod('lock', Map, Serializable).modifiers)
+        bookClass.getMethod('lock', Serializable).returnType == bookClass
 
         cleanup:
         classLoader.close()

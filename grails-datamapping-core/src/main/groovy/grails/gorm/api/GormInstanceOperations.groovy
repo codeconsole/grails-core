@@ -19,6 +19,10 @@
 
 package grails.gorm.api
 
+import groovy.transform.CompileStatic
+
+import org.grails.datastore.mapping.reflect.ClassUtils
+
 /**
  * Instance methods of the GORM API.
  *
@@ -28,9 +32,15 @@ package grails.gorm.api
 interface GormInstanceOperations<D> {
 
     /**
-     * The message reported when a datastore does not implement {@link #lockLatest(java.lang.Object)}.
+     * The message reported when a datastore does not support refreshing an instance under a pessimistic lock,
+     * whether requested as {@code instance.refresh(lock: true)} or {@code DomainClass.lock(id, refresh: true)}.
      */
-    String LOCK_LATEST_UNSUPPORTED = 'Datastore implementation does not support lockLatest()'
+    String REFRESH_LOCK_UNSUPPORTED = 'Datastore implementation does not support refreshing under a pessimistic lock'
+
+    /**
+     * The {@link #refresh(java.lang.Object, java.util.Map)} argument that requests a pessimistic write lock.
+     */
+    String ARGUMENT_LOCK = 'lock'
 
     /**
      * Allow access to datasource by name
@@ -53,19 +63,6 @@ interface GormInstanceOperations<D> {
     D lock(D instance)
 
     /**
-     * Reloads the instance's database state and version under a pessimistic write lock,
-     * discarding unflushed changes. Requires an active transaction.
-     *
-     * @param instance The instance
-     * @return The same instance
-     * @throws jakarta.persistence.TransactionRequiredException if no transaction is active
-     * @throws UnsupportedOperationException if the datastore does not support {@code lockLatest()}
-     */
-    default D lockLatest(D instance) {
-        throw new UnsupportedOperationException(LOCK_LATEST_UNSUPPORTED)
-    }
-
-    /**
      * Locks the instance for updates for the scope of the passed closure
      *
      * @param callable The closure
@@ -78,6 +75,33 @@ interface GormInstanceOperations<D> {
      * @return The instance
      */
     D refresh(D instance)
+
+    /**
+     * Refreshes the state of the given instance, with options.
+     *
+     * <p>Supported arguments:</p>
+     * <ul>
+     *   <li>{@code lock} - when {@code true}, reloads the instance's database state and version under a
+     *   pessimistic write lock in a single operation, discarding unflushed changes. Requires an active
+     *   transaction, which holds the lock until it commits or rolls back.</li>
+     * </ul>
+     *
+     * <p>Without {@code lock: true} this behaves like {@link #refresh(java.lang.Object)}. The default
+     * implementation rejects {@code lock: true}; datastores that support it override this method.</p>
+     *
+     * @param instance The instance
+     * @param args The named arguments
+     * @return The same instance
+     * @throws jakarta.persistence.TransactionRequiredException if {@code lock: true} is requested without an active transaction
+     * @throws UnsupportedOperationException if {@code lock: true} is requested and the datastore does not support it
+     */
+    @CompileStatic
+    default D refresh(D instance, Map args) {
+        if (ClassUtils.getBooleanFromMap(ARGUMENT_LOCK, args)) {
+            throw new UnsupportedOperationException(REFRESH_LOCK_UNSUPPORTED)
+        }
+        refresh(instance)
+    }
 
     /**
      * Saves an object the datastore

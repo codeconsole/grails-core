@@ -69,7 +69,7 @@ abstract class AbstractHibernateGormInstanceApi<D> extends GormInstanceApi<D> {
     private static final String ARGUMENT_INSERT = 'insert'
     private static final String ARGUMENT_MERGE = 'merge'
     private static final String ARGUMENT_FAIL_ON_ERROR = 'failOnError'
-    private static final String LOCK_LATEST_REQUIRES_TRANSACTION = 'An active transaction is required.'
+    private static final String REFRESH_LOCK_REQUIRES_TRANSACTION = 'An active transaction is required.'
     private static final Class DEFERRED_BINDING
 
     static {
@@ -246,10 +246,25 @@ abstract class AbstractHibernateGormInstanceApi<D> extends GormInstanceApi<D> {
     }
 
     @Override
-    D lockLatest(D instance) {
+    D attach(D instance) {
+        hibernateTemplate.lock(instance, LockMode.NONE)
+        return instance
+    }
+
+    @Override
+    D refresh(D instance) {
+        hibernateTemplate.refresh(instance)
+        return instance
+    }
+
+    @Override
+    D refresh(D instance, Map args) {
+        if (!ClassUtils.getBooleanFromMap(ARGUMENT_LOCK, args)) {
+            return refresh(instance)
+        }
         hibernateTemplate.execute { Session session ->
             if (!session.getTransaction().isActive()) {
-                throw new TransactionRequiredException(LOCK_LATEST_REQUIRES_TRANSACTION)
+                throw new TransactionRequiredException(REFRESH_LOCK_REQUIRES_TRANSACTION)
             }
             // Hibernate skips the locked refresh for an uninitialized proxy.
             Object target = proxyHandler.unwrap(instance)
@@ -261,18 +276,6 @@ abstract class AbstractHibernateGormInstanceApi<D> extends GormInstanceApi<D> {
                         target, sessionImplementor.getEntityPersister(null, target), sessionImplementor)
             }
         }
-        return instance
-    }
-
-    @Override
-    D attach(D instance) {
-        hibernateTemplate.lock(instance, LockMode.NONE)
-        return instance
-    }
-
-    @Override
-    D refresh(D instance) {
-        hibernateTemplate.refresh(instance)
         return instance
     }
 

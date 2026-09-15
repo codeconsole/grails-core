@@ -91,13 +91,6 @@ class TenantDelegatingGormOperations<D> implements GormAllOperations<D> {
     }
 
     @Override
-    D lockLatest(D instance) {
-        Tenants.withId(requireMultiTenantCapableDatastore(), tenantId) {
-            allOperations.lockLatest(instance)
-        }
-    }
-
-    @Override
     def <T> T mutex(D instance, Closure<T> callable) {
         Tenants.withId(requireMultiTenantCapableDatastore(), tenantId) {
             allOperations.mutex(instance, callable)
@@ -108,6 +101,13 @@ class TenantDelegatingGormOperations<D> implements GormAllOperations<D> {
     D refresh(D instance) {
         Tenants.withId(requireMultiTenantCapableDatastore(), tenantId) {
             allOperations.refresh(instance)
+        }
+    }
+
+    @Override
+    D refresh(D instance, Map args) {
+        Tenants.withId(requireMultiTenantCapableDatastore(), tenantId) {
+            allOperations.refresh(instance, args)
         }
     }
 
@@ -382,6 +382,13 @@ class TenantDelegatingGormOperations<D> implements GormAllOperations<D> {
     D lock(Serializable id) {
         Tenants.withId(requireMultiTenantCapableDatastore(), tenantId) {
             allOperations.lock(id)
+        }
+    }
+
+    @Override
+    D lock(Map args, Serializable id) {
+        Tenants.withId(requireMultiTenantCapableDatastore(), tenantId) {
+            allOperations.lock(args, id)
         }
     }
 
