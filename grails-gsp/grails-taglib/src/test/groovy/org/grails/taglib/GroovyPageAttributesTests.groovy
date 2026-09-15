@@ -133,7 +133,7 @@ class GroovyPageAttributesTests {
     }
 
     @Test
-    void testSubscriptAssignmentToGspTagSyntaxCallStoresAnEntry() {
+    void testSubscriptAssignmentOfGspTagSyntaxCallStoresAnAttribute() {
         def subscript = toGroovyPageAttributes([:])
         subscript['gspTagSyntaxCall'] = false
         assertTrue subscript.gspTagSyntaxCall()
