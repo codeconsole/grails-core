@@ -54,6 +54,17 @@ class RespondMethodSpec extends Specification implements ControllerUnitTest<Book
                                     multipartForm: 'multipart/form-data']
     }}
 
+    void 'legacy rendering remains the default on 8.0.x'() {
+        given:
+        response.format = 'json'
+
+        when:
+        controller.respond([65, 66] as byte[])
+
+        then:
+        response.json == [65, 66]
+    }
+
     void "Test that the respond method produces the correct model for a domain instance and no specific content type"() {
         given:"A book instance"
             def book = new Book(title: "The Stand").save(flush:true)

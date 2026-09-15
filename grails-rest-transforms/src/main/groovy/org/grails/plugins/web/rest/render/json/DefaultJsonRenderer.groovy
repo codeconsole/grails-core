@@ -19,6 +19,7 @@
 package org.grails.plugins.web.rest.render.json
 
 import java.nio.charset.Charset
+import java.nio.charset.StandardCharsets
 import java.util.function.Supplier
 
 import groovy.transform.CompileStatic
@@ -29,7 +30,9 @@ import org.springframework.http.HttpStatus
 import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpOutputMessage
 import org.springframework.http.MediaType
+import org.springframework.http.converter.AbstractJacksonHttpMessageConverter
 import org.springframework.http.converter.HttpMessageConverter
+import org.springframework.http.converter.json.JacksonJsonHttpMessageConverter
 import org.springframework.validation.Errors
 
 import grails.converters.JSON
@@ -42,6 +45,7 @@ import grails.web.mime.MimeType
 import grails.web.render.NamedJsonRenderer
 import org.grails.plugins.web.rest.render.WriterOutputStream
 import org.grails.plugins.web.rest.render.html.DefaultHtmlRenderer
+import org.grails.web.converters.jackson.GrailsJsonMapperCustomizer
 import org.grails.web.gsp.io.GrailsConventionGroovyPageLocator
 
 /**
@@ -79,6 +83,7 @@ class DefaultJsonRenderer<T> implements Renderer<T> {
     Supplier<List<HttpMessageConverter<?>>> springHttpMessageConvertersSupplier
     ValidationProblemDetailFactory validationProblemDetailFactory = new ValidationProblemDetailFactory()
     NamedJsonRenderer namedJsonRenderer
+    GrailsJsonMapperCustomizer grailsJsonMapperCustomizer
 
     DefaultJsonRenderer(Class<T> targetType) {
         this.targetType = targetType
@@ -182,16 +187,26 @@ class DefaultJsonRenderer<T> implements Renderer<T> {
     private boolean renderWithSpringConverter(Object object, MediaType mediaType, RenderContext context) {
         Class<?> objectType = object?.getClass() ?: Object
         HttpMessageConverter<Object> converter = (HttpMessageConverter<Object>) resolveSpringHttpMessageConverters().find {
-            HttpMessageConverter<?> candidate -> candidate.canWrite(objectType, mediaType)
+            HttpMessageConverter<?> candidate -> candidate.canWrite(objectType, mediaType) &&
+                    candidate.getSupportedMediaTypes(objectType).any { MediaType supported ->
+                        supported.subtype == 'json' || supported.subtype.endsWith('+json')
+                    }
         }
         if (converter == null) {
             return false
         }
 
-        // Write in the configured encoding rather than the converter's default so that the bytes it
-        // produces and the characters decoded back out agree. A media type carries no charset here,
-        // so Jackson would otherwise emit UTF-8 and any other configured encoding would mis-decode.
-        Charset charset = Charset.forName(encoding)
+        // Only adapt the standard converter. Application converter subclasses and per-type
+        // mappers retain their own serialization contract.
+        if (grailsJsonMapperCustomizer != null && converter.getClass() == JacksonJsonHttpMessageConverter &&
+                !((JacksonJsonHttpMessageConverter) converter).getMappersForType(objectType)) {
+            converter = new JacksonJsonHttpMessageConverter(grailsJsonMapperCustomizer.forGrails(
+                    ((JacksonJsonHttpMessageConverter) converter).mapper))
+        }
+        // Jackson only writes UTF encodings. Use UTF-8 for the intermediate byte stream;
+        // the servlet writer still applies the configured response encoding.
+        Charset charset = converter instanceof AbstractJacksonHttpMessageConverter ?
+                StandardCharsets.UTF_8 : Charset.forName(encoding)
         MediaType contentType = new MediaType(mediaType, charset)
         WriterOutputStream.writeThrough(context.writer, charset) { OutputStream body ->
             HttpOutputMessage message = new HttpOutputMessage() {

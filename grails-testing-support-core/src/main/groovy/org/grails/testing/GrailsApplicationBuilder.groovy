@@ -72,14 +72,12 @@ class GrailsApplicationBuilder {
             GrailsApplicationBuilder.classLoader
     )
 
-    // 'xml' resolves only when the optional grails-xml module is on the classpath; plugin
-    // discovery simply does not find it otherwise. Nothing depends on that plugin, so it would
-    // never be pulled in through the dependency graph the way converters is.
-    static final Set DEFAULT_INCLUDED_PLUGINS = ['core', 'eventBus', 'xml'] as Set
+    static final Set DEFAULT_INCLUDED_PLUGINS = ['core', 'eventBus'] as Set
 
     Closure doWithSpring
     Closure doWithConfig
     Set<String> includePlugins
+    Class<?> testClass
     boolean loadExternalBeans
     boolean localOverride = false
 
@@ -180,6 +178,10 @@ class GrailsApplicationBuilder {
             ((AnnotationConfigRegistry) context).register(ClassUtils.forName(it, classLoader))
         }
 
+        if (isWebTest()) {
+            ((AnnotationConfigRegistry) context).register(ClassUtils.forName(
+                    'org.springframework.boot.jackson.autoconfigure.JacksonAutoConfiguration', classLoader))
+        }
         prepareContext(context, beanFactory)
         context.refresh()
         context.registerShutdownHook()
@@ -192,10 +194,22 @@ class GrailsApplicationBuilder {
         AnnotationConfigUtils.registerAnnotationConfigProcessors((BeanDefinitionRegistry) beanFactory)
     }
 
+    private boolean isWebTest() {
+        // Resolve the optional web trait without making core testing support depend on it.
+        // Inspect the test type so trait ordering with DataTest cannot discard web setup.
+        String webTrait = 'grails.testing.web.GrailsWebUnitTest'
+        return testClass != null && ClassUtils.isPresent(webTrait, testClass.classLoader) &&
+                ClassUtils.forName(webTrait, testClass.classLoader).isAssignableFrom(testClass)
+    }
+
     protected PluginDiscovery registerPluginDiscoveryBean(ConfigurableApplicationContext applicationContext, ConfigurableBeanFactory beanFactory) {
         def discovery = new DefaultPluginDiscovery()
         // we must load the classpath since the plugin manager needs to find the default plugins
-        discovery.pluginFilter = new IncludingPluginFilter(includePlugins ?: DEFAULT_INCLUDED_PLUGINS)
+        Set<String> plugins = new HashSet<String>(includePlugins ?: DEFAULT_INCLUDED_PLUGINS)
+        if (isWebTest()) {
+            plugins.addAll(['converters', 'restResponder', 'xml'])
+        }
+        discovery.pluginFilter = new IncludingPluginFilter(plugins)
         discovery.init(applicationContext.getEnvironment())
         beanFactory.registerSingleton(PluginDiscovery.BEAN_NAME, discovery)
         discovery

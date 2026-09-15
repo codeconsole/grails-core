@@ -25,6 +25,11 @@ import org.springframework.context.support.StaticMessageSource
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.http.converter.HttpMessageConverter
+import org.springframework.http.converter.ByteArrayHttpMessageConverter
+import org.springframework.http.converter.StringHttpMessageConverter
+import org.springframework.http.converter.json.JacksonJsonHttpMessageConverter
+import tools.jackson.databind.json.JsonMapper
+import org.grails.web.converters.jackson.GrailsJsonMapperCustomizer
 import org.springframework.http.ProblemDetail
 import org.springframework.validation.BeanPropertyBindingResult
 import org.springframework.validation.Errors
@@ -54,10 +59,54 @@ class DefaultJsonRendererSpec extends Specification {
         ConvertersConfigurationHolder.clear()
     }
 
+    void 'real Spring converters serialize #value as JSON instead of raw content'() {
+        given:
+        def builder = JsonMapper.builder()
+        new GrailsJsonMapperCustomizer().customize(builder)
+        def renderer = new DefaultJsonRenderer<Object>(Object)
+        renderer.useSpringJson = true
+        renderer.springHttpMessageConverters = [new ByteArrayHttpMessageConverter(),
+                new StringHttpMessageConverter(), new JacksonJsonHttpMessageConverter(builder)]
+        def webRequest = GrailsWebMockUtil.bindMockWebRequest()
+
+        when:
+        renderer.render(value, new ServletRenderContext(webRequest))
+
+        then:
+        webRequest.response.contentAsString == expected
+
+        where:
+        value                           | expected
+        'ok'                            | '"ok"'
+        "Saved ${'Grails'}"              | '"Saved Grails"'
+        [message: "Saved ${'Grails'}"]   | '{"message":"Saved Grails"}'
+        [65, 66] as byte[]               | '"QUI="'
+    }
+
+    void 'Jackson bytes decode correctly with a non UTF response encoding'() {
+        given:
+        def renderer = new DefaultJsonRenderer<Object>(Object)
+        renderer.useSpringJson = true
+        renderer.encoding = 'ISO-8859-1'
+        renderer.springHttpMessageConverters = [new JacksonJsonHttpMessageConverter()]
+        def webRequest = GrailsWebMockUtil.bindMockWebRequest()
+
+        when:
+        renderer.render([title: 'café'], new ServletRenderContext(webRequest))
+
+        then:
+        webRequest.response.contentAsString == '{"title":"café"}'
+        webRequest.response.characterEncoding == 'ISO-8859-1'
+    }
+
     void 'selects the first MVC converter that can write the negotiated type'() {
         given:
-        def first = Mock(HttpMessageConverter)
-        def selected = Mock(HttpMessageConverter)
+        def first = Mock(HttpMessageConverter) {
+            getSupportedMediaTypes(_ as Class) >> [MediaType.APPLICATION_JSON, MediaType.APPLICATION_PROBLEM_JSON]
+        }
+        def selected = Mock(HttpMessageConverter) {
+            getSupportedMediaTypes(_ as Class) >> [MediaType.APPLICATION_JSON, MediaType.APPLICATION_PROBLEM_JSON]
+        }
         def renderer = new DefaultJsonRenderer<Map>(Map)
         renderer.useSpringJson = true
         renderer.springHttpMessageConverters = [first, selected]
@@ -77,7 +126,9 @@ class DefaultJsonRendererSpec extends Specification {
 
     void 'falls back to the legacy converter when MVC cannot write the response'() {
         given:
-        def converter = Mock(HttpMessageConverter)
+        def converter = Mock(HttpMessageConverter) {
+            getSupportedMediaTypes(_ as Class) >> [MediaType.APPLICATION_JSON, MediaType.APPLICATION_PROBLEM_JSON]
+        }
         def renderer = new DefaultJsonRenderer<Map>(Map)
         renderer.useSpringJson = true
         renderer.springHttpMessageConverters = [converter]
@@ -94,7 +145,9 @@ class DefaultJsonRendererSpec extends Specification {
 
     void 'per-response projections retain the legacy converter path'() {
         given:
-        def converter = Mock(HttpMessageConverter)
+        def converter = Mock(HttpMessageConverter) {
+            getSupportedMediaTypes(_ as Class) >> [MediaType.APPLICATION_JSON, MediaType.APPLICATION_PROBLEM_JSON]
+        }
         def renderer = new DefaultJsonRenderer<ProjectionBody>(ProjectionBody)
         renderer.useSpringJson = true
         renderer.springHttpMessageConverters = [converter]
@@ -129,7 +182,9 @@ class DefaultJsonRendererSpec extends Specification {
 
     void 'validation errors render as problem JSON through Spring conversion by default'() {
         given:
-        def converter = Mock(HttpMessageConverter)
+        def converter = Mock(HttpMessageConverter) {
+            getSupportedMediaTypes(_ as Class) >> [MediaType.APPLICATION_JSON, MediaType.APPLICATION_PROBLEM_JSON]
+        }
         def renderer = new DefaultJsonRenderer<Errors>(Errors)
         renderer.useSpringJson = true
         renderer.springHttpMessageConverters = [converter]
@@ -155,7 +210,9 @@ class DefaultJsonRendererSpec extends Specification {
 
     void 'the problem content type survives a response committed while writing'() {
         given: "a converter whose write commits the response, as a large body would"
-        def converter = Mock(HttpMessageConverter)
+        def converter = Mock(HttpMessageConverter) {
+            getSupportedMediaTypes(_ as Class) >> [MediaType.APPLICATION_JSON, MediaType.APPLICATION_PROBLEM_JSON]
+        }
         def renderer = new DefaultJsonRenderer<Errors>(Errors)
         renderer.useSpringJson = true
         renderer.springHttpMessageConverters = [converter]
@@ -178,7 +235,9 @@ class DefaultJsonRendererSpec extends Specification {
 
     void 'the negotiated content type is restored when no converter can write the problem'() {
         given:
-        def converter = Mock(HttpMessageConverter)
+        def converter = Mock(HttpMessageConverter) {
+            getSupportedMediaTypes(_ as Class) >> [MediaType.APPLICATION_JSON, MediaType.APPLICATION_PROBLEM_JSON]
+        }
         def renderer = new DefaultJsonRenderer<Errors>(Errors)
         renderer.useSpringJson = true
         renderer.springHttpMessageConverters = [converter]
@@ -223,7 +282,9 @@ class DefaultJsonRendererSpec extends Specification {
 
     void 'a non UTF-8 encoding round-trips through the Spring converter'() {
         given: "a renderer configured with a non UTF-8 encoding"
-        def converter = Mock(HttpMessageConverter)
+        def converter = Mock(HttpMessageConverter) {
+            getSupportedMediaTypes(_ as Class) >> [MediaType.APPLICATION_JSON, MediaType.APPLICATION_PROBLEM_JSON]
+        }
         def renderer = new DefaultJsonRenderer<Object>(Object)
         renderer.useSpringJson = true
         renderer.encoding = 'ISO-8859-1'
@@ -249,7 +310,9 @@ class DefaultJsonRendererSpec extends Specification {
     void 'the problem body carries a resolved message, not a raw template'() {
         given: "a constraint-style error whose default message still has argument placeholders"
         LocaleContextHolder.locale = Locale.ENGLISH
-        def converter = Mock(HttpMessageConverter)
+        def converter = Mock(HttpMessageConverter) {
+            getSupportedMediaTypes(_ as Class) >> [MediaType.APPLICATION_JSON, MediaType.APPLICATION_PROBLEM_JSON]
+        }
         def renderer = new DefaultJsonRenderer<Errors>(Errors)
         renderer.useSpringJson = true
         renderer.springHttpMessageConverters = [converter]
@@ -276,7 +339,9 @@ class DefaultJsonRendererSpec extends Specification {
 
     void 'the problem body reports the same status the response is sent with'() {
         given: "a renderer configured to answer validation failures with 400"
-        def converter = Mock(HttpMessageConverter)
+        def converter = Mock(HttpMessageConverter) {
+            getSupportedMediaTypes(_ as Class) >> [MediaType.APPLICATION_JSON, MediaType.APPLICATION_PROBLEM_JSON]
+        }
         def renderer = new DefaultJsonRenderer<Errors>(Errors)
         renderer.useSpringJson = true
         renderer.springHttpMessageConverters = [converter]

@@ -23,7 +23,7 @@ import java.io.Writer;
 import java.util.List;
 
 /**
- * Renders a value with a registered named JSON configuration.
+ * Renders a value with a registered named JSON configuration, or the default when the name is null.
  *
  * @since 8.0
  */
@@ -39,7 +39,7 @@ public interface NamedJsonRenderer {
      * <p>Deliberately not a default method: an implementation that quietly ignored the projection
      * would drop it from the response with nothing to indicate it had been requested.</p>
      *
-     * @param name the registered configuration
+     * @param name the registered configuration, or null for the default
      * @param value the value to write
      * @param writer the response writer
      * @param includes property names to include, or null for all

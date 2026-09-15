@@ -41,7 +41,8 @@ class WriterOutputStreamSpec extends Specification {
     void 'a multi-byte character split across writes is not corrupted'() {
         given: "the two bytes of an e-acute arrive in separate writes"
         def writer = new StringWriter()
-        byte[] bytes = 'café'.getBytes(UTF_8)
+        String body = 'café🌍' * 2000
+        byte[] bytes = body.getBytes(UTF_8)
 
         when:
         WriterOutputStream.writeThrough(writer, UTF_8) { stream ->
@@ -49,7 +50,7 @@ class WriterOutputStreamSpec extends Specification {
         }
 
         then:
-        writer.toString() == 'café'
+        writer.toString() == body
     }
 
     void 'a body larger than the internal buffer streams through intact'() {

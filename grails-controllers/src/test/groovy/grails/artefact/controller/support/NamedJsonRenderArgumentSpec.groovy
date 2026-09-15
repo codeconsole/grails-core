@@ -126,13 +126,20 @@ class NamedJsonRenderArgumentSpec extends Specification {
         webRequest.renderView
     }
 
-    void 'render json: without a configuration says which argument is missing'() {
+    void 'render json: without a configuration uses the default writer'() {
+        given:
+        def renderer = Mock(NamedJsonRenderer)
+        def controller = new NamedJsonArgumentController(namedJsonRenderer: renderer)
+
         when:
-        new NamedJsonArgumentController().render(json: [title: 'Grails'])
+        controller.render(json: [title: 'Grails'])
 
         then:
-        IllegalArgumentException e = thrown()
-        e.message.contains('jsonConfiguration')
+        1 * renderer.render(null, [title: 'Grails'], _, null, null) >> { arguments ->
+            arguments[2].write('{"title":"Grails"}')
+        }
+        0 * renderer.contains(_)
+        webRequest.response.contentAsString == '{"title":"Grails"}'
     }
 
     void 'render json: names an unregistered configuration'() {

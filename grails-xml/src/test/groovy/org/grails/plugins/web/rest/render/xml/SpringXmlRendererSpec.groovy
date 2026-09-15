@@ -21,6 +21,7 @@ package org.grails.plugins.web.rest.render.xml
 import groovy.xml.XmlSlurper
 
 import org.springframework.http.converter.xml.JacksonXmlHttpMessageConverter
+import org.springframework.http.converter.StringHttpMessageConverter
 import org.springframework.http.MediaType
 import org.springframework.http.converter.HttpMessageConverter
 import org.springframework.mock.web.MockHttpServletRequest
@@ -91,8 +92,25 @@ class SpringXmlRendererSpec extends Specification {
         then:
         1 * first.canWrite(XmlGreeting, MediaType.APPLICATION_XML) >> false
         1 * second.canWrite(XmlGreeting, MediaType.APPLICATION_XML) >> true
+        1 * second.getSupportedMediaTypes(XmlGreeting) >> [MediaType.APPLICATION_XML]
         1 * second.write(_, new MediaType(MediaType.APPLICATION_XML, UTF_8), _)
         0 * _
+    }
+
+    void 'a generic string converter does not strip the legacy XML string element'() {
+        given:
+        def renderer = new DefaultXmlRenderer<String>(String)
+        renderer.springHttpMessageConverters = [new StringHttpMessageConverter()]
+        def response = new MockHttpServletResponse()
+        def request = new GrailsWebRequest(new MockHttpServletRequest(), response, new MockServletContext())
+
+        when:
+        renderer.render('ok', new FixedMimeServletRenderContext(request, MimeType.XML))
+
+        then:
+        def xml = new XmlSlurper().parseText(response.contentAsString)
+        xml.name() == 'string'
+        xml.text() == 'ok'
     }
 
     void 'legacy XML conversion is retained for compatibility shapes'() {

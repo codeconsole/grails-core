@@ -70,9 +70,10 @@ public final class NamedJsonConfigurationRegistry {
         return configurations.containsKey(name);
     }
 
+    /** @param name the registered name, or null to use the default Grails writer */
     public ObjectWriter writer(String name) {
-        NamedJsonConfiguration configuration = configurations.get(name);
-        if (configuration == null) {
+        NamedJsonConfiguration configuration = name == null ? null : configurations.get(name);
+        if (name != null && configuration == null) {
             throw new IllegalArgumentException("Named JSON configuration [" + name + "] is not registered.");
         }
         JsonMapper mapper = this.jsonMapper.get();
@@ -81,7 +82,7 @@ public final class NamedJsonConfigurationRegistry {
                     "] cannot be used: no JsonMapper is available. Spring Boot's Jackson " +
                     "auto-configuration normally provides one.");
         }
-        return configuration.writer(mapper);
+        return configuration == null ? mapper.writer() : configuration.writer(mapper);
     }
 
     public String writeValueAsString(String name, Object value) {

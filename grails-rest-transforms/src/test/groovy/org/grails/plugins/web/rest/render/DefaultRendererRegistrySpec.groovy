@@ -145,21 +145,26 @@ class DefaultRendererRegistrySpec extends Specification {
         holder.converters == [early, late]
     }
 
-    void 'Spring JSON rendering can be disabled during migration'() {
+    void 'Spring JSON rendering is opt-in on 8.0.x for setting #setting'() {
         given:
         def context = new AnnotationConfigApplicationContext()
-        context.environment.propertySources.addFirst(
-                new MapPropertySource('test', ['grails.web.rendering.json.spring': 'false']))
+        context.environment.propertySources.addFirst(new MapPropertySource('test', setting))
         context.registerBean(PropertySourcesPlaceholderConfigurer)
         context.registerBean(DefaultRendererRegistry)
         context.refresh()
 
         expect:
-        !context.getBean(DefaultRendererRegistry)
-                .findRenderer(MimeType.JSON, new URL('https://grails.apache.org')).useSpringJson
+        context.getBean(DefaultRendererRegistry)
+                .findRenderer(MimeType.JSON, new URL('https://grails.apache.org')).useSpringJson == enabled
 
         cleanup:
         context.close()
+
+        where:
+        setting                                       | enabled
+        [:]                                           | false
+        ['grails.web.rendering.json.spring': 'false']  | false
+        ['grails.web.rendering.json.spring': 'true']   | true
     }
 
     void "Test that registering a HAL collection renderer works"() {

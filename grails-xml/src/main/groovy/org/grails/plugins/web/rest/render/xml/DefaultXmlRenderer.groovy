@@ -139,10 +139,10 @@ class DefaultXmlRenderer<T> implements Renderer<T> {
 
         if (namedConfiguration) {
             XML.use(namedConfiguration) {
-                converter = object as XML
+                converter = new XML(object)
             }
         } else {
-            converter = object as XML
+            converter = new XML(object)
         }
         renderXml(converter, context)
     }
@@ -157,7 +157,10 @@ class DefaultXmlRenderer<T> implements Renderer<T> {
         }
         MediaType mediaType = MediaType.parseMediaType((context.acceptMimeType ?: MimeType.XML).name)
         return (HttpMessageConverter<Object>) resolveSpringHttpMessageConverters().find { HttpMessageConverter<?> converter ->
-            converter.canWrite(object.getClass(), mediaType)
+            converter.canWrite(object.getClass(), mediaType) &&
+                    converter.getSupportedMediaTypes(object.getClass()).any { MediaType supported ->
+                        supported.subtype == 'xml' || supported.subtype.endsWith('+xml')
+                    }
         }
     }
 

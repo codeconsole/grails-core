@@ -95,8 +95,9 @@ class NamedJsonConfigurationRegistrySpec extends Specification {
         def application = new DefaultGrailsApplication(NamedJsonBook)
         application.mappingContext = mappingContext
         def builder = JsonMapper.builder()
-        new GrailsJsonMapperCustomizer(application, new DefaultProxyHandler()).customize(builder)
-        def registry = new NamedJsonConfigurationRegistry(builder.build())
+        def customizer = new GrailsJsonMapperCustomizer(application, new DefaultProxyHandler())
+        customizer.customize(builder)
+        def registry = new NamedJsonConfigurationRegistry(customizer.forGrails(builder.build()))
         registry.register('deep') { it.attribute('depth', 'deep') }
         def book = new NamedJsonBook(title: 'Projected').tap { id = 4 }
 

@@ -20,8 +20,11 @@ package org.grails.plugins.converters
 
 import groovy.transform.CompileStatic
 
+import tools.jackson.databind.json.JsonMapper
+
 import org.springframework.beans.factory.BeanRegistrar
 import org.springframework.beans.factory.BeanRegistry
+import org.springframework.beans.factory.NoSuchBeanDefinitionException
 import org.springframework.core.env.Environment
 
 import grails.converters.JSON
@@ -35,7 +38,6 @@ import org.grails.web.converters.configuration.ConvertersConfigurationInitialize
 import org.grails.web.converters.configuration.ObjectMarshallerRegisterer
 import org.grails.web.converters.jackson.GrailsJsonMapperCustomizer
 import org.grails.web.converters.jackson.JacksonNamedJsonRenderer
-import tools.jackson.databind.json.JsonMapper
 import org.grails.web.converters.marshaller.json.ValidationErrorsMarshaller as JsonErrorsMarshaller
 
 /**
@@ -76,7 +78,18 @@ class ConvertersGrailsPlugin extends Plugin {
                     // created before Jackson auto-configuration has produced Boot's mapper, and
                     // substituting a separately built one would silently drop spring.jackson.*,
                     // the application's builder customizers and the Grails serializers.
-                    new NamedJsonConfigurationRegistry(context.beanProvider(JsonMapper)::getIfAvailable)
+                    new NamedJsonConfigurationRegistry({ ->
+                        JsonMapper mapper = context.beanProvider(JsonMapper).getIfUnique()
+                        if (mapper == null) {
+                            try {
+                                mapper = context.bean('jacksonJsonMapper', JsonMapper)
+                            }
+                            catch (NoSuchBeanDefinitionException ignored) {
+                                return null
+                            }
+                        }
+                        context.bean('grailsJsonMapperCustomizer', GrailsJsonMapperCustomizer).forGrails(mapper)
+                    })
                 }
             }
             registry.registerBean('namedJsonRenderer', JacksonNamedJsonRenderer) {

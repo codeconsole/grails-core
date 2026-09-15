@@ -22,6 +22,8 @@ import org.springframework.beans.factory.support.BeanRegistryAdapter
 import org.springframework.beans.factory.support.DefaultListableBeanFactory
 import org.springframework.core.env.StandardEnvironment
 
+import grails.core.DefaultGrailsApplication
+import grails.core.support.proxy.DefaultProxyHandler
 import grails.converters.JSON
 import grails.converters.json.NamedJsonConfigurationRegistry
 import tools.jackson.databind.json.JsonMapper
@@ -37,6 +39,8 @@ class ConvertersGrailsPluginSpec extends Specification {
     def beanFactory = new DefaultListableBeanFactory()
 
     void setup() {
+        beanFactory.registerSingleton('grailsApplication', new DefaultGrailsApplication())
+        beanFactory.registerSingleton('proxyHandler', new DefaultProxyHandler())
         def registrar = new ConvertersGrailsPlugin().beanRegistrar()
         new BeanRegistryAdapter(beanFactory, new StandardEnvironment(), registrar.getClass()).register(registrar)
     }
@@ -88,6 +92,18 @@ class ConvertersGrailsPluginSpec extends Specification {
 
         then:
         configurationRegistry.writeValueAsString('deep', [title: 'Grails']) == '{"title":"Grails"}'
+    }
+
+    void "the conventional Boot mapper resolves multiple non-primary mapper beans"() {
+        given:
+        beanFactory.registerSingleton('jacksonJsonMapper', JsonMapper.builder().build())
+        beanFactory.registerSingleton('pluginMapper', JsonMapper.builder().build())
+        def registry = beanFactory.getBean('namedJsonConfigurationRegistry', NamedJsonConfigurationRegistry)
+        registry.register('deep') { }
+
+        expect:
+        registry.writeValueAsString('deep', [title: 'Grails']) == '{"title":"Grails"}'
+        registry.writeValueAsString(null, [ok: true]) == '{"ok":true}'
     }
 
     void "the named JSON renderer is created without a Boot JsonMapper"() {

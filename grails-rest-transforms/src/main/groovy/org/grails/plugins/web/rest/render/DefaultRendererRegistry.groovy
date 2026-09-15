@@ -43,6 +43,7 @@ import grails.web.mime.MimeType
 import grails.web.render.NamedJsonRenderer
 import org.grails.plugins.web.rest.render.html.DefaultHtmlRenderer
 import org.grails.plugins.web.rest.render.json.DefaultJsonRenderer
+import org.grails.web.converters.jackson.GrailsJsonMapperCustomizer
 import org.grails.web.gsp.io.GrailsConventionGroovyPageLocator
 import org.grails.web.util.ClassAndMimeTypeRegistry
 
@@ -82,12 +83,15 @@ class DefaultRendererRegistry extends ClassAndMimeTypeRegistry<Renderer, Rendere
     SpringMessageConverters springMessageConverters
 
     @Autowired(required = false)
+    GrailsJsonMapperCustomizer grailsJsonMapperCustomizer
+
+    @Autowired(required = false)
     NamedJsonRenderer namedJsonRenderer
 
     @Autowired(required = false)
     ValidationProblemDetailFactory validationProblemDetailFactory
 
-    @Value('${grails.web.rendering.json.spring:true}')
+    @Value('${grails.web.rendering.json.spring:false}')
     boolean useSpringJson
 
     @PostConstruct
@@ -123,6 +127,7 @@ class DefaultRendererRegistry extends ClassAndMimeTypeRegistry<Renderer, Rendere
     private void configureJsonRenderer(DefaultJsonRenderer renderer) {
         renderer.useSpringJson = useSpringJson
         renderer.namedJsonRenderer = namedJsonRenderer
+        renderer.grailsJsonMapperCustomizer = grailsJsonMapperCustomizer
         if (validationProblemDetailFactory != null) {
             renderer.validationProblemDetailFactory = validationProblemDetailFactory
         }

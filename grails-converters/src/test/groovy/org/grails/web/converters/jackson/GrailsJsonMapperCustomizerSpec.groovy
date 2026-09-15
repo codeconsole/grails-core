@@ -18,6 +18,15 @@
  */
 package org.grails.web.converters.jackson
 
+import com.fasterxml.jackson.annotation.JsonIgnore
+import com.fasterxml.jackson.annotation.JsonProperty
+import com.fasterxml.jackson.annotation.JsonInclude
+import com.fasterxml.jackson.annotation.JsonFormat
+import com.fasterxml.jackson.annotation.JsonView
+import tools.jackson.databind.PropertyNamingStrategies
+import tools.jackson.databind.module.SimpleModule
+import tools.jackson.databind.ser.std.ToStringSerializer
+
 import grails.core.DefaultGrailsApplication
 import grails.core.support.proxy.DefaultProxyHandler
 import grails.core.support.proxy.ProxyHandler
@@ -60,7 +69,7 @@ class GrailsJsonMapperCustomizerSpec extends Specification {
         context.close()
     }
 
-    void 'Boot JsonMapper uses persistent metadata and the configured identity policy for domain objects'() {
+    void 'Grails response mapper uses persistent metadata and the configured identity policy for domain objects'() {
         given:
         def mapper = domainMapper(true, true)
         def author = new JacksonAuthor(name: 'Douglas').tap { id = 2 }
@@ -80,7 +89,7 @@ class GrailsJsonMapperCustomizerSpec extends Specification {
         ]
     }
 
-    void 'Boot JsonMapper unwraps domain proxies before reading persistent properties'() {
+    void 'Grails response mapper unwraps domain proxies before reading persistent properties'() {
         given:
         def target = new JacksonBook(title: 'Unwrapped').tap { id = 1 }
         def proxy = new JacksonBookProxy(target: target)
@@ -120,8 +129,9 @@ class GrailsJsonMapperCustomizerSpec extends Specification {
 
         when: "auto-configuration builds the mapper ahead of GORM"
         def builder = JsonMapper.builder()
-        new GrailsJsonMapperCustomizer(application, new DefaultProxyHandler()).customize(builder)
-        def mapper = builder.build()
+        def customizer = new GrailsJsonMapperCustomizer(application, new DefaultProxyHandler())
+        customizer.customize(builder)
+        def mapper = customizer.forGrails(builder.build())
 
         then: "building does not fail"
         noExceptionThrown()
@@ -142,8 +152,9 @@ class GrailsJsonMapperCustomizerSpec extends Specification {
         def application = new DefaultGrailsApplication(JacksonBook, JacksonAuthor)
         application.config.setAt('grails.converters.domain.include.class', true)
         def builder = JsonMapper.builder()
-        new GrailsJsonMapperCustomizer(application, new DefaultProxyHandler()).customize(builder)
-        def mapper = builder.build()
+        def customizer = new GrailsJsonMapperCustomizer(application, new DefaultProxyHandler())
+        customizer.customize(builder)
+        def mapper = customizer.forGrails(builder.build())
         def book = new JacksonBook(title: 'Cached').tap { id = 9 }
 
         when: "the type is written once before GORM has initialized"
@@ -176,8 +187,9 @@ class GrailsJsonMapperCustomizerSpec extends Specification {
             }
         }
         def builder = JsonMapper.builder()
-        new GrailsJsonMapperCustomizer(application, new DefaultProxyHandler()).customize(builder)
-        def mapper = builder.build()
+        def customizer = new GrailsJsonMapperCustomizer(application, new DefaultProxyHandler())
+        customizer.customize(builder)
+        def mapper = customizer.forGrails(builder.build())
 
         when:
         mapper.writeValueAsString(new JacksonBook(title: 'Broken').tap { id = 3 })
@@ -185,6 +197,47 @@ class GrailsJsonMapperCustomizerSpec extends Specification {
         then: "the defect is not swallowed into ordinary bean serialization"
         def e = thrown(Exception)
         (e.message ?: e.cause?.message).contains('broken mapping')
+    }
+
+    void 'Boot JsonMapper writes nested and root GStrings as JSON strings'() {
+        given:
+        def builder = JsonMapper.builder()
+        new GrailsJsonMapperCustomizer().customize(builder)
+        def mapper = builder.build()
+        def title = 'Grails'
+
+        expect:
+        mapper.writeValueAsString("Saved ${title}") == '"Saved Grails"'
+        mapper.writeValueAsString([message: "Saved ${title}"]) == '{"message":"Saved Grails"}'
+    }
+
+    void 'Grails domain compatibility does not change Jackson annotations on the shared mapper'() {
+        given:
+        def builder = JsonMapper.builder().addMixIn(AnnotatedJacksonBook, AnnotatedJacksonBookMixin)
+                .propertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE)
+                .changeDefaultPropertyInclusion { it.withValueInclusion(JsonInclude.Include.NON_NULL) }
+        def customizer = new GrailsJsonMapperCustomizer()
+        customizer.customize(builder)
+        def mapper = builder.build()
+        customizer.forGrails(mapper)
+        def book = new AnnotatedJacksonBook(secret: 'private', title: 'Grails', firstName: 'Ada',
+                published: new Date(0), internal: 'hidden')
+
+        expect:
+        mapper.readValue(mapper.writerWithView(PublicView).writeValueAsString(book), Map) == [
+                book_title: 'Grails', first_name: 'Ada', published: '1970', summary: 'Grails by Ada']
+    }
+
+    void 'application domain serializers keep precedence in the Grails mapper'() {
+        given:
+        def application = new DefaultGrailsApplication(JacksonBook)
+        def source = JsonMapper.builder().addModule(new SimpleModule('application-json')
+                .addSerializer(JacksonBook, ToStringSerializer.instance)).build()
+        def book = new JacksonBook(title: 'Custom').tap { id = 3 }
+        def mapper = new GrailsJsonMapperCustomizer(application).forGrails(source)
+
+        expect:
+        mapper.writeValueAsString(book) == source.writeValueAsString(book)
     }
 
     private JsonMapper domainMapper(boolean includeVersion, boolean includeClass, ProxyHandler proxyHandler = null) {
@@ -195,8 +248,9 @@ class GrailsJsonMapperCustomizerSpec extends Specification {
         application.config.setAt('grails.converters.domain.include.version', includeVersion)
         application.config.setAt('grails.converters.domain.include.class', includeClass)
         def builder = JsonMapper.builder()
-        new GrailsJsonMapperCustomizer(application, proxyHandler ?: new DefaultProxyHandler()).customize(builder)
-        builder.build()
+        def customizer = new GrailsJsonMapperCustomizer(application, proxyHandler ?: new DefaultProxyHandler())
+        customizer.customize(builder)
+        customizer.forGrails(builder.build())
     }
 }
 
@@ -224,4 +278,33 @@ class JacksonAuthor {
 
 class JacksonBookProxy extends JacksonBook {
     JacksonBook target
+}
+
+class PublicView { }
+class InternalView extends PublicView { }
+
+@Entity
+@JsonView(PublicView)
+@com.fasterxml.jackson.annotation.JsonIgnoreProperties(['errors', 'dirty', 'dirtyPropertyNames', 'dirty_property_names', 'attached', 'version'])
+class AnnotatedJacksonBook {
+    @JsonIgnore
+    String secret
+    @JsonProperty('book_title')
+    String title
+    String firstName
+    @JsonFormat(pattern = 'yyyy', timezone = 'UTC')
+    Date published
+    @JsonView(InternalView)
+    String internal
+    String missing
+    String mixinHidden = 'private'
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    String emptyText = ''
+
+    String getSummary() { "$title by $firstName" }
+}
+
+abstract class AnnotatedJacksonBookMixin {
+    @JsonIgnore
+    abstract String getMixinHidden()
 }

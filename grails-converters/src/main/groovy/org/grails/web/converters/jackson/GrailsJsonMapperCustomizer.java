@@ -16,8 +16,17 @@
  */
 package org.grails.web.converters.jackson;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+
+import groovy.lang.GString;
+
+import tools.jackson.databind.JacksonModule;
 import tools.jackson.databind.json.JsonMapper;
 import tools.jackson.databind.module.SimpleModule;
+import tools.jackson.databind.ser.std.ToStringSerializer;
 
 import org.springframework.boot.jackson.autoconfigure.JsonMapperBuilderCustomizer;
 import org.springframework.validation.Errors;
@@ -41,6 +50,7 @@ public final class GrailsJsonMapperCustomizer implements JsonMapperBuilderCustom
     /** Writer attribute holding the property names to exclude, as a List or a Map keyed by type. */
     public static final String EXCLUDES_ATTRIBUTE = GrailsJsonMapperCustomizer.class.getName() + ".excludes";
 
+    private final ConcurrentMap<JsonMapper, JsonMapper> grailsMappers = new ConcurrentHashMap<>();
     private final GrailsApplication grailsApplication;
     private final ProxyHandler proxyHandler;
 
@@ -79,23 +89,45 @@ public final class GrailsJsonMapperCustomizer implements JsonMapperBuilderCustom
 
     @Override
     public void customize(JsonMapper.Builder builder) {
+        SimpleModule module = new SimpleModule("grails-json");
+        module.addSerializer(GString.class, ToStringSerializer.instance);
+        // Resolve messages at write time, after the application context is ready.
+        module.addSerializer(Errors.class, new SpringErrorsJsonSerializer(
+                () -> this.grailsApplication == null ? null : this.grailsApplication.getMainContext()));
+        builder.addModule(module);
+    }
+
+    /**
+     * Derives the mapper used by Grails responses without changing Spring MVC's mapper.
+     * Domain compatibility uses persistent metadata rather than Jackson's bean property model.
+     */
+    public JsonMapper forGrails(JsonMapper mapper) {
+        return grailsMappers.computeIfAbsent(mapper, source -> {
+            JsonMapper.Builder builder = source.rebuild();
+            List<JacksonModule> modules = new ArrayList<>();
+            builder.withModules(modules::add);
+            builder.removeAllModules();
+            // Install compatibility first so application serializers retain their precedence.
+            customizeDomains(builder);
+            builder.addModules(modules);
+            return builder.build();
+        });
+    }
+
+    private void customizeDomains(JsonMapper.Builder builder) {
         GrailsDomainSerializers domainSerializers = new GrailsDomainSerializers(
                 this::mappingContext, this::domainArtefact, this.proxyHandler,
                 () -> booleanProperty("grails.converters.json.domain.include.version",
                         "grails.converters.domain.include.version"),
                 () -> booleanProperty("grails.converters.json.domain.include.class",
                         "grails.converters.domain.include.class"));
-        SimpleModule module = new SimpleModule("grails-json") {
+        SimpleModule module = new SimpleModule("grails-domain-json") {
             @Override
             public void setupModule(SetupContext context) {
                 super.setupModule(context);
                 context.addSerializers(domainSerializers);
             }
         };
-        // Resolved per write rather than captured here: the mapper is built once, but the
-        // application context that resolves messages is not necessarily available at that point.
-        module.addSerializer(Errors.class, new SpringErrorsJsonSerializer(
-                () -> this.grailsApplication == null ? null : this.grailsApplication.getMainContext()));
         builder.addModule(module);
     }
 }

@@ -269,7 +269,7 @@ trait ResponseRenderer extends WebAttributes {
     }
 
     /**
-     * Renders the {@code json} argument with a registered named Jackson configuration:
+     * Renders the {@code json} argument with the default or a registered named Jackson configuration:
      *
      * <pre>render json: book, jsonConfiguration: 'deep'</pre>
      *
@@ -284,11 +284,10 @@ trait ResponseRenderer extends WebAttributes {
     private void renderNamedJson(Map argMap, GrailsWebRequest webRequest, HttpServletResponse response) {
         Object value = argMap.get(ARGUMENT_JSON)
         String configurationName = argMap.get(ARGUMENT_JSON_CONFIGURATION)?.toString()
-        if (!configurationName) {
-            throw new IllegalArgumentException(
-                    "Argument [$ARGUMENT_JSON_CONFIGURATION] is required when rendering [$ARGUMENT_JSON].")
+        if (namedJsonRenderer == null) {
+            throw new IllegalStateException('No JSON renderer is available.')
         }
-        if (namedJsonRenderer == null || !namedJsonRenderer.contains(configurationName)) {
+        if (configurationName && !namedJsonRenderer.contains(configurationName)) {
             throw new IllegalArgumentException("Named JSON configuration [$configurationName] is not registered.")
         }
         if (!applyContentType(response, argMap, value, false)) {
