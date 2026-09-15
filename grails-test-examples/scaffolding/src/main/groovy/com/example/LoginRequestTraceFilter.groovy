@@ -36,6 +36,10 @@ class LoginRequestTraceFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain) {
         String requestSession = request.requestedSessionId
         long started = System.nanoTime()
+        if (request.requestURI == '/login' && requestSession == null && request.getHeader('Referer') != null) {
+            System.out.println("LOGIN_RACE delaying background login without a session: ${request.getHeader('Referer')}")
+            Thread.sleep(200)
+        }
         try {
             chain.doFilter(request, response)
         } finally {
