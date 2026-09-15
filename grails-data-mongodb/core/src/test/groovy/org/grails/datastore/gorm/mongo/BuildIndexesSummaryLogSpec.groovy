@@ -72,7 +72,7 @@ class BuildIndexesSummaryLogSpec extends AutoStartedMongoSpec {
 
         datastore = new MongoDatastore(
                 ['grails.mongodb.url': dbContainer.getReplicaSetUrl(DATABASE)] as Map,
-                SummaryLoggedThing, OtherSummaryLoggedThing)
+                SummaryLoggedThing, OtherSummaryLoggedThing, UnindexedSummaryThing)
 
         // Snapshotted so that a feature triggering another build cannot change what the startup build said
         startupMessages = messagesForThisDatabase()
@@ -98,11 +98,11 @@ class BuildIndexesSummaryLogSpec extends AutoStartedMongoSpec {
         expect: "exactly one summary for the build, not one line per index"
         startupMessages.size() == 1
 
-        and: "it counted every declared index as created: two on one domain class, one on the other"
-        summary.contains('3 created, 0 already present')
+        and: "a duplicate declaration confirms the index just created instead of counting it twice"
+        summary.contains('3 created, 1 already present')
 
-        and: "and the domain classes they came from"
-        summary.contains('from 2 domain class(es)')
+        and: "the class count includes a class that declares no indexes"
+        summary.contains('from 3 domain class(es)')
 
         and: "and how long the caller waited"
         summary ==~ /Index build for database \[$DATABASE] finished in \d+ms: .*/
@@ -118,7 +118,7 @@ class BuildIndexesSummaryLogSpec extends AutoStartedMongoSpec {
         then: "the build reports that it created nothing, which is why it cost next to nothing"
         List<String> since = messagesForThisDatabase().drop(before)
         since.size() == 1
-        since.first().contains('0 created, 3 already present')
+        since.first().contains('0 created, 4 already present')
     }
 }
 
@@ -132,6 +132,7 @@ class SummaryLoggedThing {
         collection 'summaryLoggedThing'
         name index: true
         compoundIndex name: 1, age: -1
+        compoundIndex name: 1
     }
 }
 
@@ -144,4 +145,9 @@ class OtherSummaryLoggedThing {
         collection 'otherSummaryLoggedThing'
         title index: true
     }
+}
+
+@Entity
+class UnindexedSummaryThing {
+    String name
 }

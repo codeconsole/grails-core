@@ -79,6 +79,35 @@ class MongoConnectionSourceSettingsSpec extends Specification {
         settings.buildIndexesAsync
     }
 
+    void "test MongoDB setting names require the documented camel case spelling"() {
+        given:
+        def defaults = new MongoConnectionSourceSettings()
+
+        when:
+        def settings = new MongoConnectionSourceSettingsBuilder(DatastoreUtils.createPropertyResolver([
+                'grails.mongodb.database-name': 'ignoredDb',
+                'grails.mongodb.build-indexes': false,
+                'grails.mongodb.build-indexes-async': true
+        ])).build()
+
+        then:
+        settings.databaseName == defaults.databaseName
+        settings.buildIndexes
+        !settings.buildIndexesAsync
+
+        when:
+        settings = new MongoConnectionSourceSettingsBuilder(DatastoreUtils.createPropertyResolver([
+                'grails.mongodb.databaseName': 'configuredDb',
+                'grails.mongodb.buildIndexes': false,
+                'grails.mongodb.buildIndexesAsync': true
+        ])).build()
+
+        then:
+        settings.databaseName == 'configuredDb'
+        !settings.buildIndexes
+        settings.buildIndexesAsync
+    }
+
     void "test mongo client settings builder with URL"() {
         when:"using a property resolver"
         Map myMap = ['grails.mongodb.url': 'mongodb://foo:bar@mycompany/mydb?maxPoolSize=5']

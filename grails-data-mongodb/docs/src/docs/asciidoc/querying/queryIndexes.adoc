@@ -196,7 +196,7 @@ grails:
         buildIndexesAsync: true
 ----
 
-Startup then continues without waiting. The indexes are still built one at a time, on a single daemon thread per connection named `gorm-mongo-index-build-<connection>`, so enabling this does not launch several index builds against the server at once.
+Startup then continues without waiting. The indexes are still built one at a time per connection, on a daemon thread named `gorm-mongo-index-build-<connection>`. Different connections can build indexes concurrently, including when they use the same MongoDB server. The thread is released after the build finishes and it has been idle for one second.
 
 Two consequences are worth planning for:
 
@@ -215,6 +215,8 @@ An index build that finishes without error logs one summary line at `INFO`:
 ----
 Index build for database [myDb] finished in 412ms: 2 created, 5 already present, from 3 domain class(es)
 ----
+
+The domain class count includes every class considered for indexing, including classes that declare no indexes. The created and already-present counts describe index declarations; declaring the same keys twice can report one created and one already present.
 
 The elapsed time is what the caller actually spent waiting — startup with the default settings, or the background thread when `buildIndexesAsync` is enabled, where this line is also the only signal that the build has finished.
 

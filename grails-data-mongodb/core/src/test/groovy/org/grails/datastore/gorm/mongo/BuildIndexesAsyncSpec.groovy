@@ -133,6 +133,30 @@ class BuildIndexesAsyncSpec extends AutoStartedMongoSpec {
 
         and: "not by the thread that created the datastore, which did not wait for it"
         asyncRecorder.threads.first() != creatingThread
+
+        when: "the startup worker has no more work"
+        Thread startupWorker = asyncRecorder.workers.first()
+        startupWorker.join(10000)
+
+        then: "it is released without closing the datastore"
+        startupWorker.daemon
+        !startupWorker.alive
+
+        when: "another build is explicitly requested after the worker has exited"
+        asyncDatastore.buildIndex()
+
+        then: "a new worker performs the build"
+        conditions.eventually {
+            assert asyncRecorder.workers.size() == 2
+        }
+        !asyncRecorder.workers.last().is(startupWorker)
+
+        when:
+        Thread subsequentWorker = asyncRecorder.workers.last()
+        subsequentWorker.join(10000)
+
+        then:
+        !subsequentWorker.alive
     }
 }
 
@@ -141,16 +165,20 @@ class BuildIndexesAsyncSpec extends AutoStartedMongoSpec {
  */
 class CreateIndexThreadRecorder implements CommandListener {
 
-    private final Queue<String> recorded = new ConcurrentLinkedQueue<>()
+    private final Queue<Thread> recorded = new ConcurrentLinkedQueue<>()
 
     @Override
     void commandStarted(CommandStartedEvent event) {
         if (event.commandName == 'createIndexes') {
-            recorded.add(Thread.currentThread().name)
+            recorded.add(Thread.currentThread())
         }
     }
 
     List<String> getThreads() {
+        recorded.collect { it.name }.unique()
+    }
+
+    List<Thread> getWorkers() {
         recorded.toList().unique()
     }
 }

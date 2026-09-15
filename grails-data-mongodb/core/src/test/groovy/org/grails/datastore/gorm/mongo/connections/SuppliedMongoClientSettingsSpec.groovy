@@ -20,6 +20,7 @@ package org.grails.datastore.gorm.mongo.connections
 
 import com.mongodb.client.MongoClient
 import com.mongodb.client.MongoClients
+import grails.gorm.MultiTenant
 import grails.gorm.annotation.Entity
 import spock.lang.AutoCleanup
 import spock.lang.Shared
@@ -28,6 +29,7 @@ import org.apache.grails.testing.mongo.AutoStartedMongoSpec
 import org.grails.datastore.mapping.core.DatastoreUtils
 import org.grails.datastore.mapping.mongo.MongoDatastore
 import org.grails.datastore.mapping.mongo.config.MongoSettings
+import org.grails.datastore.mapping.multitenancy.MultiTenancySettings.MultiTenancyMode
 
 /**
  * An application that hands GORM an existing {@code MongoClient} - which is what happens whenever a
@@ -71,6 +73,65 @@ class SuppliedMongoClientSettingsSpec extends AutoStartedMongoSpec {
         datastore.isTransactionsEnabled()
     }
 
+    void "test a supplied client applies #prefix multi-tenancy mode #mode"() {
+        given:
+        def configuration = DatastoreUtils.createPropertyResolver([
+                'grails.mongodb.databaseName': 'suppliedTenantDb',
+                ("${prefix}.multiTenancy.mode".toString()): mode.name()
+        ])
+
+        when:
+        def tenantDatastore = new MongoDatastore(mongoClient, configuration, new Class[0])
+
+        then: "both the datastore and the settings used by GORM static APIs agree"
+        tenantDatastore.multiTenancyMode == mode
+        tenantDatastore.connectionSources.defaultConnectionSource.settings.multiTenancy.mode == mode
+
+        cleanup:
+        tenantDatastore?.close()
+
+        where:
+        [prefix, mode] << [['grails.gorm', 'grails.mongodb'], MultiTenancyMode.values().toList()].combinations()
+    }
+
+    void "test MongoDB tenancy settings override the global GORM fallback for a supplied client"() {
+        when:
+        def tenantDatastore = new MongoDatastore(mongoClient, DatastoreUtils.createPropertyResolver([
+                'grails.gorm.multiTenancy.mode': 'DISCRIMINATOR',
+                'grails.mongodb.multiTenancy.mode': 'NONE'
+        ]), new Class[0])
+
+        then:
+        tenantDatastore.multiTenancyMode == MultiTenancyMode.NONE
+        tenantDatastore.connectionSources.defaultConnectionSource.settings.multiTenancy.mode == MultiTenancyMode.NONE
+
+        cleanup:
+        tenantDatastore?.close()
+    }
+
+    void "test configured tenant discrimination isolates data with a supplied client"() {
+        given:
+        def tenantDatastore = new MongoDatastore(mongoClient, DatastoreUtils.createPropertyResolver([
+                'grails.mongodb.databaseName': 'suppliedTenantIsolationDb',
+                'grails.gorm.multiTenancy.mode': 'DISCRIMINATOR'
+        ]), SuppliedTenantThing)
+
+        when:
+        SuppliedTenantThing.withTenant('first') {
+            new SuppliedTenantThing(name: 'First tenant').save(flush: true, failOnError: true)
+        }
+        SuppliedTenantThing.withTenant('second') {
+            new SuppliedTenantThing(name: 'Second tenant').save(flush: true, failOnError: true)
+        }
+
+        then:
+        SuppliedTenantThing.withTenant('first') { SuppliedTenantThing.list()*.name } == ['First tenant']
+        SuppliedTenantThing.withTenant('second') { SuppliedTenantThing.list()*.name } == ['Second tenant']
+
+        cleanup:
+        tenantDatastore?.close()
+    }
+
     void "test the configured settings take effect and not merely report"() {
         when: "a document is written so the collection certainly exists"
         SuppliedClientThing.withNewSession {
@@ -91,4 +152,10 @@ class SuppliedClientThing {
         collection 'suppliedClientThing'
         name index: true
     }
+}
+
+@Entity
+class SuppliedTenantThing implements MultiTenant<SuppliedTenantThing> {
+    String tenantId
+    String name
 }
