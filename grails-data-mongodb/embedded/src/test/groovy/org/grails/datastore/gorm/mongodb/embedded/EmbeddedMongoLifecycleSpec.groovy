@@ -152,6 +152,7 @@ class EmbeddedMongoLifecycleSpec extends Specification {
 
         then: 'the second stop finds the files the first one removed, and says nothing of it'
         noExceptionThrown()
+        !running.running
         conditions.eventually { assert !listening(27979) }
     }
 
@@ -188,6 +189,7 @@ class EmbeddedMongoLifecycleSpec extends Specification {
 
         then:
         noExceptionThrown()
+        !running.running
         conditions.eventually { assert !listening(27978) }
     }
 
@@ -277,11 +279,11 @@ class EmbeddedMongoLifecycleSpec extends Specification {
         second?.stop()
     }
 
-    void 'stopping a server that is already stopped is what a shutdown hook does'() {
+    void 'stopping a server that is already stopped is what a shutdown hook does on port #port'() {
         given: 'an in-memory server the context stopped just after a client connected to it'
         RunningEmbeddedMongo running = new InMemoryMongoBackend()
-                .start(new EmbeddedMongoSettings(27974, null, null))
-        new Socket('localhost', 27974).withCloseable { }
+                .start(new EmbeddedMongoSettings(port, null, null))
+        new Socket('localhost', port).withCloseable { }
         running.stop()
 
         when: 'the JVM shutdown hook stops it again on the way out, which has to return for the JVM to exit'
@@ -290,6 +292,9 @@ class EmbeddedMongoLifecycleSpec extends Specification {
         then: 'it returns, and says nothing, because a hook has nowhere to report to'
         noExceptionThrown()
         !running.running
+
+        where: 'ten attempts give the race more chances to reproduce, on ports no other feature uses'
+        port << (27950..27959)
     }
 
     void 'an application whose context stopped its in-memory server still exits'() {

@@ -32,9 +32,9 @@ import org.springframework.core.env.MapPropertySource;
  * server a second time.
  *
  * <p>{@code EmbeddedMongoLifecycleSpec} runs it in a JVM of its own, since whether that JVM exits is
- * the question. It is written in Java rather than as a method of the specification: started through
- * Groovy and Spock, the same steps almost never hang even without the fix, and a regression test
- * that passes either way proves nothing.
+ * the question. The shutdown hang is a race: this Java application reproduced it reliably on the
+ * author's machine, while another machine reproduced it only in the in-process Spock feature.
+ * Both tests exercise the race, but neither is guaranteed to reproduce it without the fix.
  */
 public final class ContextStoppedServerApplication {
 
