@@ -94,7 +94,6 @@ class GroovydocEnhancerPluginSpec extends Specification {
                 .withProjectDir(projectDir)
                 .withPluginClasspath()
                 .withArguments('groovydoc', '--info', '--max-workers=1',
-                        '-Dspock.iKnowWhatImDoing.disableGroovyVersionCheck=true',
                         '-Dorg.gradle.jvmargs=-Xmx512m', '--stacktrace')
                 .build()
 

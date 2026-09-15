@@ -184,10 +184,8 @@ abstract class GroovydocEnhancerPlugin implements Plugin<Project> {
                     spec.executable = gdoc.javaLauncher.get().executablePath.asFile.absolutePath
                     spec.classpath(antClasspath)
                     spec.mainClass.set('org.apache.tools.ant.Main')
-                    String spockCheck = 'spock.iKnowWhatImDoing.disableGroovyVersionCheck'
-                    if (System.getProperty(spockCheck) != null) {
-                        spec.systemProperty(spockCheck, System.getProperty(spockCheck))
-                    }
+                    // Included builds (such as Forge) do not inherit the root JVM settings.
+                    spec.systemProperty('spock.iKnowWhatImDoing.disableGroovyVersionCheck', 'true')
                     spec.maxHeapSize = gdoc.maxMemory.get()
                     spec.args('-f', buildFile.absolutePath)
                 }.assertNormalExitValue()
