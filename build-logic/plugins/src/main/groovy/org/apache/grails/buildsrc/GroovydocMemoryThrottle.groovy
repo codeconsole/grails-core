@@ -25,8 +25,8 @@ import org.gradle.api.services.BuildService
 import org.gradle.api.services.BuildServiceParameters
 
 /**
- * Limits Groovydoc to one task at a time in the build JVM. Large documentation
- * trees otherwise compete for the same heap during parallel project execution.
+ * Limits Groovydoc to one task at a time. Its isolated JVMs must not compete
+ * for runner memory during parallel project execution.
  */
 @CompileStatic
 abstract class GroovydocMemoryThrottle implements BuildService<BuildServiceParameters.None> {

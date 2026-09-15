@@ -54,8 +54,61 @@ class GroovydocEnhancerPluginSpec extends Specification {
         groovydocFiles.any { it.name == compileOnlyJar.name }
     }
 
+    void 'generates documentation with links and markup in a separate JVM'() {
+        given: 'a source file and documentation options containing XML-sensitive characters'
+        new File(projectDir, 'settings.gradle').text = "rootProject.name = 'docs-fixture'"
+        File source = new File(projectDir, 'src/main/groovy/example/Sample.groovy')
+        source.parentFile.mkdirs()
+        source.text = '''package example
+            /** A documented class. */
+            class Sample {
+                /** Returns a string. */
+                String text() { 'example' }
+            }
+        '''
+        new File(projectDir, 'build.gradle').text = '''
+            plugins {
+                id 'groovy'
+                id 'org.apache.grails.buildsrc.groovydoc-enhancer'
+            }
+            ext.javaVersion = 21
+            repositories { mavenCentral() }
+            dependencies {
+                implementation 'org.apache.groovy:groovy:6.0.0-RC-2'
+                runtimeOnly 'org.spockframework:spock-core:2.4-groovy-5.0'
+                documentation 'org.apache.groovy:groovy-groovydoc:6.0.0-RC-2'
+                documentation 'org.apache.groovy:groovy-ant:6.0.0-RC-2'
+                documentation 'org.apache.groovy:groovy-templates:6.0.0-RC-2'
+                documentation 'com.github.javaparser:javaparser-core:3.28.2'
+            }
+            groovydocEnhancer.footer = '<strong>Docs &amp; examples</strong>'
+            tasks.named('groovydoc') {
+                windowTitle = 'API & examples'
+                ext.groovydocLinks = [[packages: 'java.', href: 'https://example.org/java/']]
+                maxMemory = '256m'
+            }
+        '''
+
+        when: 'the public documentation task runs'
+        def result = GradleRunner.create()
+                .withProjectDir(projectDir)
+                .withPluginClasspath()
+                .withArguments('groovydoc', '--info', '--max-workers=1',
+                        '-Dspock.iKnowWhatImDoing.disableGroovyVersionCheck=true',
+                        '-Dorg.gradle.jvmargs=-Xmx512m', '--stacktrace')
+                .build()
+
+        then: 'the isolated Ant invocation generates the configured HTML and external links'
+        result.task(':groovydoc').outcome == TaskOutcome.SUCCESS
+        result.output.contains('org.apache.tools.ant.Main -f')
+        String html = new File(projectDir, 'build/docs/groovydoc/example/Sample.html').text
+        html.contains('<strong>Docs &amp; examples</strong>')
+        html.contains('https://example.org/java/java/lang/String.html')
+        html.contains('A documented class.')
+    }
+
     void 'Groovydoc tasks in different projects do not overlap in a parallel build'() {
-        given: 'two documentation tasks competing for the build JVM heap'
+        given: 'two documentation tasks competing for runner memory'
         new File(projectDir, 'settings.gradle').text = "include 'one', 'two'"
         ['one', 'two'].each { name ->
             File directory = new File(projectDir, name)
