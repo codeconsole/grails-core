@@ -54,6 +54,7 @@ tasks.named('integrationTest') {
 // statically, so it is staged beside this application's own pages and compiled with them. The forge copy
 // is pinned to the profile copy by GrailsGspSpec, so compiling one covers both.
 def stageViewsWithWelcomePage = tasks.register('stageViewsWithWelcomePage', Sync) {
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     into layout.buildDirectory.dir('generated/views-with-welcome-page')
     from layout.projectDirectory.dir('grails-app/views')
     from rootProject.layout.projectDirectory.file('grails-profiles/web/skeleton/grails-app/views/index.gsp')

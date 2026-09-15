@@ -21,7 +21,6 @@ package org.grails.gsp;
 import java.io.Writer;
 import java.lang.reflect.Field;
 import java.math.BigDecimal;
-import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -36,7 +35,6 @@ import groovy.lang.MissingMethodException;
 import groovy.lang.Script;
 import org.codehaus.groovy.runtime.InvokerHelper;
 import org.codehaus.groovy.runtime.typehandling.DefaultTypeTransformation;
-import org.codehaus.groovy.runtime.typehandling.GroovyCastException;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -190,7 +188,7 @@ public abstract class GroovyPage extends Script {
             Object converted;
             try {
                 converted = DefaultTypeTransformation.castToType(value, field.getType());
-            } catch (GroovyCastException e) {
+            } catch (RuntimeException e) {
                 throw new GroovyPagesException("Model field '" + field.getName() + "' is declared as " +
                         field.getType().getName() + " but the model supplied an instance of " +
                         value.getClass().getName() + ", which cannot be converted to it.", e, -1, getGroovyPageFileName());
@@ -209,20 +207,25 @@ public abstract class GroovyPage extends Script {
     }
 
     private static boolean sameNumericValue(Number original, Number converted) {
-        if (isIntegral(original) && isIntegral(converted)) {
-            return new BigInteger(original.toString()).equals(new BigInteger(converted.toString()));
+        if (isFloatingPoint(original) && isFloatingPoint(converted)) {
+            // Every float is exactly representable as a double, including NaN and infinities.
+            return Double.compare(original.doubleValue(), converted.doubleValue()) == 0;
         }
         try {
-            return new BigDecimal(original.toString()).compareTo(new BigDecimal(converted.toString())) == 0;
+            return exactDecimalValue(original).compareTo(exactDecimalValue(converted)) == 0;
         } catch (NumberFormatException e) {
-            // NaN and the infinities have no decimal form
-            return Double.compare(original.doubleValue(), converted.doubleValue()) == 0;
+            // A non-finite floating-point value cannot equal a finite decimal or integer.
+            return false;
         }
     }
 
-    private static boolean isIntegral(Number number) {
-        return number instanceof Integer || number instanceof Long || number instanceof Short ||
-                number instanceof Byte || number instanceof BigInteger;
+    private static BigDecimal exactDecimalValue(Number number) {
+        // Decimal strings round floating-point values and can hide a loss of precision.
+        return isFloatingPoint(number) ? new BigDecimal(number.doubleValue()) : new BigDecimal(number.toString());
+    }
+
+    private static boolean isFloatingPoint(Number number) {
+        return number instanceof Float || number instanceof Double;
     }
 
     public Object raw(Object value) {
