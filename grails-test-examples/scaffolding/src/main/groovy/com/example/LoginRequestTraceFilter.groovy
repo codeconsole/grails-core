@@ -39,14 +39,15 @@ class LoginRequestTraceFilter extends OncePerRequestFilter {
         try {
             chain.doFilter(request, response)
         } finally {
-            if (request.requestURI.contains('login') || request.requestURI.contains('logout') ||
-                    request.requestURI.contains('/user/') || request.requestURI.contains('/book/')) {
+            if (true) {
                 def session = request.getSession(false)
                 SecurityContext context = (SecurityContext) session?.getAttribute('SPRING_SECURITY_CONTEXT')
                 System.out.println("LOGIN_TRACE ${request.method} ${request.requestURI} status=${response.status} " +
                         "location=${response.getHeader('Location')} authenticated=${context?.authentication?.authenticated} " +
                         "requestedSession=${requestSession?.hashCode()} session=${session?.id?.hashCode()} " +
-                        "elapsedMs=${(System.nanoTime() - started) / 1000000}")
+                        "elapsedMs=${(System.nanoTime() - started) / 1000000} " +
+                        "query=${request.queryString} dest=${request.getHeader('Sec-Fetch-Dest')} " +
+                        "referer=${request.getHeader('Referer')} dispatcher=${request.dispatcherType}")
             }
         }
     }
