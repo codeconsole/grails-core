@@ -33,7 +33,11 @@ class LoginPage extends NavigationPage {
     void login(String username = 'test@grails.org', String password = 'letmein') {
         this.username = username
         this.password = password
+        assert this.username.value() == username
+        assert this.password.value() == password
+        println "LOGIN_SUBMIT url=${browser.currentUrl} title=${title}"
         loginButton.click()
+        println "LOGIN_CLICK_RETURN url=${browser.currentUrl} title=${title}"
         // Wait for a definitive authenticated signal: the login page must be fully replaced
         // (title changed AND the login form is gone), not merely a transient title change.
         waitFor { title != pageTitle && $('input', name: 'username').empty }
