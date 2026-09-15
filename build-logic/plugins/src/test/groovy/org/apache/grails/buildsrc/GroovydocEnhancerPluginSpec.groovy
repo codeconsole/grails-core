@@ -21,6 +21,8 @@ package org.apache.grails.buildsrc
 import org.gradle.api.Project
 import org.gradle.api.tasks.javadoc.Groovydoc
 import org.gradle.testfixtures.ProjectBuilder
+import org.gradle.testkit.runner.GradleRunner
+import org.gradle.testkit.runner.TaskOutcome
 import spock.lang.Specification
 import spock.lang.TempDir
 
@@ -51,4 +53,58 @@ class GroovydocEnhancerPluginSpec extends Specification {
         groovydocFiles.any { it.name == runtimeOnlyJar.name }
         groovydocFiles.any { it.name == compileOnlyJar.name }
     }
+
+    void 'Groovydoc tasks in different projects do not overlap in a parallel build'() {
+        given: 'two documentation tasks competing for the build JVM heap'
+        new File(projectDir, 'settings.gradle').text = "include 'one', 'two'"
+        ['one', 'two'].each { name ->
+            File directory = new File(projectDir, name)
+            directory.mkdirs()
+            new File(directory, 'Sample.groovy').text = 'class Sample {}'
+        }
+        new File(projectDir, 'build.gradle').text = """
+            plugins {
+                id 'org.apache.grails.buildsrc.groovydoc-enhancer' apply false
+            }
+            subprojects {
+                apply plugin: 'groovy'
+                ext.javaVersion = 21
+                apply plugin: 'org.apache.grails.buildsrc.groovydoc-enhancer'
+                tasks.register('apiDocs', org.gradle.api.tasks.javadoc.Groovydoc) {
+                    source file('Sample.groovy')
+                    classpath = files()
+                    groovyClasspath = files()
+                    destinationDir = layout.buildDirectory.dir('docs').get().asFile
+                    // Observe scheduling without generating a large documentation tree.
+                    actions.clear()
+                    doLast {
+                        File active = rootProject.file('active-documentation-task')
+                        assert active.createNewFile(): 'Groovydoc tasks overlapped'
+                        try {
+                            Thread.sleep(1000)
+                            destinationDir.mkdirs()
+                            new File(destinationDir, 'index.html').text = project.name
+                        } finally {
+                            active.delete()
+                        }
+                    }
+                }
+            }
+        """
+
+        when: 'Gradle can run both subprojects concurrently'
+        def result = GradleRunner.create()
+                .withProjectDir(projectDir)
+                .withPluginClasspath()
+                .withArguments('apiDocs', '--parallel', '--max-workers=2',
+                        '-Dorg.gradle.jvmargs=-Xmx512m', '--stacktrace')
+                .build()
+
+        then: 'both tasks finish without simultaneous documentation work'
+        result.task(':one:apiDocs').outcome == TaskOutcome.SUCCESS
+        result.task(':two:apiDocs').outcome == TaskOutcome.SUCCESS
+        new File(projectDir, 'one/build/docs/index.html').text == 'one'
+        new File(projectDir, 'two/build/docs/index.html').text == 'two'
+    }
+
 }
