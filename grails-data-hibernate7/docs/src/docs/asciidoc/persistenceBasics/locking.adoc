@@ -25,34 +25,69 @@ GORM enables optimistic locking by default via a `version` column. See xref:ormd
 
 === Pessimistic Locking
 
-To acquire a database-level lock on a row, use `lock()`:
+Pessimistic locking acquires a database row lock, typically using SQL `SELECT ... FOR UPDATE`. Conflicting writes and lock requests may block; ordinary reads are not necessarily blocked. The exact behavior depends on the database and transaction isolation level.
+
+An active transaction is required. Use `withTransaction` as below or a GORM `@Transactional` method, keeping the lock and the work it protects in the same transaction. The lock is held until that transaction commits or rolls back. Calling `lockLatest()` without an active transaction throws `jakarta.persistence.TransactionRequiredException`. The instance must also be attached to the current session.
+
+To load an entity by identifier under a lock, use the static `lock(id)` method:
 
 [source,groovy]
 ----
 Book.withTransaction {
-    def book = Book.lock(1)         // <1>
+    def book = Book.lock(1)
     book.title = 'Updated Safely'
-    book.save()
-}                                   // <2>
+    book.save(failOnError: true)
+}
 ----
-<1> Issues `SELECT ... FOR UPDATE`, preventing concurrent reads/writes to this row.
-<2> Lock is released when the transaction commits.
+
+The static `Book.lock(id)` method is unchanged. It avoids a separate unlocked `get()` when the entity is not already managed, but does not guarantee that its state is refreshed if it is already managed in the current session. Use the instance method `lockLatest()` when a reload under the lock is required.
 
 You can also lock an already-loaded instance:
 
 [source,groovy]
 ----
-def book = Book.get(1)
-book.lock()                         // upgrades to a pessimistic lock
+Book.withTransaction {
+    def book = Book.get(1)
+    book.lock() // lock without refreshing
+    book.title = 'Updated title'
+    book.save(failOnError: true)
+}
 ----
 
-=== Refresh
+The instance method `book.lock()` is unchanged: it acquires a lock without reloading the entity's state. For an already-loaded, versioned entity, Hibernate still checks its version against the database. Another transaction can update the row between `get()` and `lock()`, causing an optimistic locking failure.
 
-To reload the current state from the database (discarding in-memory changes):
+==== Refreshing While Locking
+
+Use the dedicated instance method `lockLatest()` to reload an already-loaded entity's database state and version directly under a pessimistic WRITE lock. This refreshes the same instance in a single refresh-with-lock operation, not two separate calls to `lock()` and `refresh()` in either order. It reloads the version rather than trying to lock using the already-loaded version.
 
 [source,groovy]
 ----
-def book = Book.get(1)
-// ... another thread modifies the book ...
-book.refresh()                      // re-reads from the database
+Book.withTransaction {
+    def book = Book.get(1)
+    book.lockLatest()
+    if (book.title == 'Draft') {
+        book.title = 'Ready for review'
+        book.save(failOnError: true)
+    }
+}
 ----
+
+WARNING: Refreshing discards unflushed changes to the entity. Configured refresh cascades can also discard unflushed changes to associated entities; this is not a refresh of the whole object graph. Call `lockLatest()` *before* making decisions based on the entity's state or applying mutations. It does not preserve or merge pending edits.
+
+The method is supported by GORM for Hibernate 5 and Hibernate 7. Datastores that do not support `lockLatest()` throw `UnsupportedOperationException` rather than silently falling back to a non-refreshing lock.
+
+The database and transaction isolation level determine which state is visible to the locked refresh. `lockLatest()` does not override isolation rules or guarantee that every concurrent attempt succeeds. Deadlocks, lock timeouts, and transaction serialization failures remain possible.
+
+=== Refresh
+
+To reload state from the database without requesting a pessimistic lock (discarding unflushed in-memory changes), use `refresh()`:
+
+[source,groovy]
+----
+Book.withTransaction {
+    def book = Book.get(1)
+    book.refresh()
+}
+----
+
+Read visibility still depends on transaction isolation. If subsequent decisions or mutations require a reload protected by a write lock, use `lockLatest()` instead of separate `refresh()` and `lock()` calls.

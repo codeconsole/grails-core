@@ -82,6 +82,19 @@ trait GormEntity<D> implements GormValidateable, DirtyCheckable, GormEntityApi<D
     }
 
     /**
+     * Reloads this instance's database state and version under a pessimistic write lock,
+     * discarding unflushed changes. Requires an active transaction.
+     *
+     * @return The same instance
+     * @throws jakarta.persistence.TransactionRequiredException if no transaction is active
+     * @throws UnsupportedOperationException if the datastore does not support {@code lockLatest()}
+     */
+    @Generated
+    D lockLatest() {
+        currentGormInstanceApi().lockLatest(this)
+    }
+
+    /**
      * Locks the instance for updates for the scope of the passed closure
      *
      * @param callable The closure

@@ -240,6 +240,11 @@ class GormStaticApi<D> extends AbstractGormApi<D> implements GormAllOperations<D
     }
 
     @Override
+    D lockLatest(D instance) {
+        registry.findInstanceApi(persistentClass, null).lockLatest(instance)
+    }
+
+    @Override
     def <T1> T1 mutex(D instance, Closure<T1> callable) {
         registry.findInstanceApi(persistentClass, null).mutex(instance, callable)
     }

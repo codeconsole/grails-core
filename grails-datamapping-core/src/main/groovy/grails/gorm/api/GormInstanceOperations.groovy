@@ -28,6 +28,11 @@ package grails.gorm.api
 interface GormInstanceOperations<D> {
 
     /**
+     * The message reported when a datastore does not implement {@link #lockLatest(java.lang.Object)}.
+     */
+    String LOCK_LATEST_UNSUPPORTED = 'Datastore implementation does not support lockLatest()'
+
+    /**
      * Allow access to datasource by name
      *
      * @param instance The instance
@@ -46,6 +51,19 @@ interface GormInstanceOperations<D> {
      * @return The instance
      */
     D lock(D instance)
+
+    /**
+     * Reloads the instance's database state and version under a pessimistic write lock,
+     * discarding unflushed changes. Requires an active transaction.
+     *
+     * @param instance The instance
+     * @return The same instance
+     * @throws jakarta.persistence.TransactionRequiredException if no transaction is active
+     * @throws UnsupportedOperationException if the datastore does not support {@code lockLatest()}
+     */
+    default D lockLatest(D instance) {
+        throw new UnsupportedOperationException(LOCK_LATEST_UNSUPPORTED)
+    }
 
     /**
      * Locks the instance for updates for the scope of the passed closure

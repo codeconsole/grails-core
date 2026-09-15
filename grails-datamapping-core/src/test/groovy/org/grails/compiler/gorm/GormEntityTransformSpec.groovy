@@ -191,6 +191,8 @@ class GormEntityTransformSpec extends Specification{
         Author.getDeclaredMethod('setBooks', Set).isAnnotationPresent(Generated)
         Author.getDeclaredMethod('getBooks').isAnnotationPresent(Generated)
         Book.getDeclaredMethod('getAuthorId').isAnnotationPresent(Generated)
+        Book.getDeclaredMethod('lockLatest').isAnnotationPresent(Generated)
+        Book.getDeclaredMethod('lockLatest').returnType == Book
     }
 
     void 'test property/method missing'() {

@@ -25,7 +25,7 @@ under the License.
 === Purpose
 
 
-The `lock` method obtains a pessimistic lock using an SQL `select ... for update`.
+The `lock` method obtains a pessimistic lock on a database row, typically using SQL `select ... for update`. To reload an already-loaded entity under a pessimistic write lock with Hibernate 5 or Hibernate 7, use link:{domainClassesRefFromRef}lockLatest.html[lockLatest()] instead.
 
 
 === Examples
@@ -33,16 +33,23 @@ The `lock` method obtains a pessimistic lock using an SQL `select ... for update
 
 [source,groovy]
 ----
-def book = Book.get(1)
-book.lock()
+Book.withTransaction {
+    def book = Book.get(1)
+    book.lock() // unchanged: lock without refreshing
+    book.title = 'Updated title'
+    book.save(failOnError: true)
+}
 ----
-
 
 === Description
 
 
-The `lock` method obtains a pessimistic lock on an instance, locking the row in the database with `select ... for update`. The `lock` method is equivalent to using Hibernate's https://javadoc.io/doc/org.hibernate/hibernate-core/{hibernate5Version}/org/hibernate/LockMode.html#UPGRADE[LockMode.UPGRADE] in combination with the https://javadoc.io/doc/org.hibernate/hibernate-core/{hibernate5Version}/org/hibernate/Session.html#lock(java/lang/Object, org/hibernate/LockMode)[lock] method.
+Pessimistic locking requires an active transaction. Use `withTransaction` as above or a GORM `@Transactional` method, and keep the lock and the work it protects in the same transaction. The lock is held until that transaction commits or rolls back, not simply until a controller action returns.
 
-The lock is automatically released when the transaction commits. In Grails this is typically after an action has finished executing.
+The instance method `entity.lock()` is unchanged: it acquires a lock without reloading the entity's state. For an already-loaded, versioned entity, Hibernate still checks its version against the database; a concurrent update between loading and locking can therefore cause an optimistic locking failure.
+
+The static `DomainClass.lock(id)` method is also unchanged. It loads and locks by identifier, but does not guarantee a refresh if that entity is already managed in the current session. Use the dedicated instance method link:{domainClassesRefFromRef}lockLatest.html[lockLatest()] when a reload of the same instance's state and version under the lock is required. Unlike ordinary locking, that method discards unflushed changes and must be called before decisions or mutations based on the entity's state.
+
+Pessimistic locking does not guarantee freedom from deadlocks, lock timeouts, or transaction serialization failures. Locking and read visibility depend on the database and transaction isolation level; ordinary reads are not necessarily blocked by a write lock.
 
 Refer to the section on  link:{hibernate5GuideFromRef}index.html#locking[Optimistic and Pessimistic locking] in the user guide for info.

@@ -38,6 +38,7 @@ import org.codehaus.groovy.runtime.InvokerHelper
 
 import jakarta.persistence.FlushModeType
 import jakarta.persistence.LockModeType
+import jakarta.persistence.TransactionRequiredException
 
 import org.hibernate.HibernateException
 import org.hibernate.LockMode
@@ -84,6 +85,7 @@ class HibernateGormInstanceApi<D> extends GormInstanceApi<D> {
     private static final String ARGUMENT_INSERT = 'insert'
     private static final String ARGUMENT_MERGE = 'merge'
     private static final String ARGUMENT_FAIL_ON_ERROR = 'failOnError'
+    private static final String LOCK_LATEST_REQUIRES_TRANSACTION = 'An active transaction is required.'
     private static final Class DEFERRED_BINDING
 
     static {
@@ -222,6 +224,21 @@ class HibernateGormInstanceApi<D> extends GormInstanceApi<D> {
     D lock(D instance) {
         hibernateTemplate.lock(instance, LockMode.PESSIMISTIC_WRITE)
         instance
+    }
+
+    @Override
+    D lockLatest(D instance) {
+        hibernateTemplate.execute { Session session ->
+            // Hibernate only rejects a lock without a transaction when out-of-transaction update
+            // operations are disallowed, so the contract is enforced here regardless of that setting.
+            if (!session.getTransaction().isActive()) {
+                throw new TransactionRequiredException(LOCK_LATEST_REQUIRES_TRANSACTION)
+            }
+            // Unlike Hibernate 5, Hibernate 7 performs the locked refresh for an uninitialized proxy
+            // and resets GORM dirty state from its own post-load hook, so neither is done here.
+            session.refresh(instance, LockModeType.PESSIMISTIC_WRITE)
+        }
+        return instance
     }
 
     @Override

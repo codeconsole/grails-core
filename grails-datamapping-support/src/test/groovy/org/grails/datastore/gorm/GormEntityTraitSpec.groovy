@@ -18,6 +18,8 @@
  */
 package org.grails.datastore.gorm
 
+import groovy.transform.Generated
+
 import grails.artefact.Artefact
 import grails.persistence.Entity
 import org.grails.datastore.gorm.query.GormQueryOperations
@@ -155,6 +157,46 @@ class SubMember extends Member {
 
         then:
         method.returnType == QueryMethodArtefactDomain
+    }
+
+    void "lockLatest retains the entity return type under static compilation for #annotation"() {
+        given:
+        def classLoader = new GroovyClassLoader()
+
+        when:
+        def consumer = classLoader.parseClass("""
+            import groovy.transform.CompileStatic
+            import org.grails.datastore.gorm.GormEntityApi
+
+            @CompileStatic
+            class LockConsumer {
+                LockBook lockLatest(LockBook book) {
+                    book.lockLatest()
+                }
+
+                LockBook lockConnection(GormEntityApi<LockBook> connection) {
+                    connection.lockLatest()
+                }
+            }
+
+            @${annotation}
+            class LockBook {
+                String title
+            }
+        """)
+        def bookClass = classLoader.loadClass('LockBook')
+
+        then:
+        consumer.getMethod('lockLatest', bookClass).returnType == bookClass
+        consumer.getMethod('lockConnection', GormEntityApi).returnType == bookClass
+        bookClass.getMethod('lockLatest').returnType == bookClass
+        bookClass.getMethod('lockLatest').isAnnotationPresent(Generated)
+
+        cleanup:
+        classLoader.close()
+
+        where:
+        annotation << ['grails.persistence.Entity', "grails.artefact.Artefact('Domain')"]
     }
 }
 

@@ -2123,6 +2123,11 @@ include::ref/Domain Classes/load.adoc[]
 
 include::ref/Domain Classes/lock.adoc[]
 
+[[ref-domain-classes-lockLatest]]
+==== lockLatest
+
+include::ref/Domain Classes/lockLatest.adoc[]
+
 [[ref-domain-classes-mappedBy]]
 ==== mappedBy
 

@@ -18,7 +18,11 @@
  */
 package org.grails.datastore.gorm
 
+import groovy.transform.CompileStatic
+
 import grails.gorm.annotation.Entity
+import grails.gorm.api.GormAllOperations
+import grails.gorm.api.GormInstanceOperations
 import grails.gorm.multitenancy.Tenants
 import org.grails.datastore.mapping.core.Datastore
 import org.grails.datastore.mapping.core.Session
@@ -261,6 +265,48 @@ class GormStaticApiSpec extends Specification {
         api.proxy(saved.id) != null
         api.exists(saved.id)
         !api.exists(-999L)
+    }
+
+    void "all operations lockLatest rejects an unsupported datastore"() {
+        given:
+        def instance = new GormStaticApiThing(name: 'local change')
+        GormAllOperations<GormStaticApiThing> operations = GormStaticApiThing.'default'
+
+        when:
+        lockLatestInstance(operations, instance)
+
+        then:
+        def exception = thrown(UnsupportedOperationException)
+        exception.message == 'Datastore implementation does not support lockLatest()'
+        instance.name == 'local change'
+    }
+
+    void "the static api passes the instance to the instance api for the persistent class and returns its result"() {
+        given:
+        def recording = new RecordingGormInstanceApi<GormStaticApiThing>(GormStaticApiThing, datastore)
+        def reloaded = new GormStaticApiThing(name: 'reloaded')
+        recording.lockLatestResult = reloaded
+        def api = new GormStaticApi<GormStaticApiThing>(GormStaticApiThing, datastore, [])
+        GormRegistry.instance.registerEntityApis(GormStaticApiThing, api, recording,
+                new GormValidationApi<GormStaticApiThing>(GormStaticApiThing, datastore))
+        def instance = new GormStaticApiThing(name: 'local change')
+
+        when:
+        def result = api.lockLatest(instance)
+
+        then:
+        recording.lockLatestInvocations == 1
+        recording.lockLatestArgument.is(instance)
+        result.is(reloaded)
+
+        cleanup:
+        GormRegistry.instance.reset()
+    }
+
+    @CompileStatic
+    private static GormStaticApiThing lockLatestInstance(GormInstanceOperations<GormStaticApiThing> operations,
+                                                        GormStaticApiThing instance) {
+        operations.lockLatest(instance)
     }
 
     void "getAll resolves multiple persisted instances by varargs and iterable ids"() {

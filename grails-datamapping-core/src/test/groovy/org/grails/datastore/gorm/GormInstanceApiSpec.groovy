@@ -38,6 +38,9 @@ class GormInstanceApiSpec extends Specification {
     @AutoCleanup
     SimpleMapDatastore datastore
 
+    @AutoCleanup
+    SimpleMapDatastore connectionDatastore
+
     void setup() {
         GormRegistry.instance.reset()
         datastore = new SimpleMapDatastore(GormInstanceApiThing, GormInstanceApiInvalidThing)
@@ -189,6 +192,71 @@ class GormInstanceApiSpec extends Specification {
 
         expect:
         api.refresh(saved).is(saved)
+    }
+
+    void "lockLatest rejects an unsupported datastore without changing the entity"() {
+        given:
+        def saved = new GormInstanceApiThing(name: 'persisted').save(flush: true)
+        saved.name = 'local change'
+
+        when:
+        saved.lockLatest()
+
+        then:
+        def exception = thrown(UnsupportedOperationException)
+        exception.message == 'Datastore implementation does not support lockLatest()'
+        saved.name == 'local change'
+    }
+
+    void "named connection lockLatest rejects an unsupported datastore"() {
+        given:
+        connectionDatastore = new SimpleMapDatastore(['secondary'], GormLockConnectionThing)
+        def instance = new GormLockConnectionThing(name: 'local change')
+
+        when:
+        instance.secondary.lockLatest()
+
+        then:
+        def exception = thrown(UnsupportedOperationException)
+        exception.message == 'Datastore implementation does not support lockLatest()'
+        instance.name == 'local change'
+    }
+
+    void "lockLatest passes the entity to the instance api and returns the instance api result"() {
+        given:
+        def recording = new RecordingGormInstanceApi<GormInstanceApiThing>(GormInstanceApiThing, datastore)
+        def reloaded = new GormInstanceApiThing(name: 'reloaded')
+        recording.lockLatestResult = reloaded
+        GormRegistry.instance.registerEntityApis(GormInstanceApiThing,
+                new GormStaticApi<GormInstanceApiThing>(GormInstanceApiThing, datastore, []),
+                recording,
+                new GormValidationApi<GormInstanceApiThing>(GormInstanceApiThing, datastore))
+        def instance = new GormInstanceApiThing(name: 'local change')
+
+        when:
+        def result = instance.lockLatest()
+
+        then:
+        recording.lockLatestInvocations == 1
+        recording.lockLatestArgument.is(instance)
+        result.is(reloaded)
+    }
+
+    void "the delegating entity api passes its target to the instance api and returns the instance api result"() {
+        given:
+        def recording = new RecordingGormInstanceApi<GormInstanceApiThing>(GormInstanceApiThing, datastore)
+        def reloaded = new GormInstanceApiThing(name: 'reloaded')
+        recording.lockLatestResult = reloaded
+        def target = new GormInstanceApiThing(name: 'local change')
+        def delegating = new DelegatingGormEntityApi<GormInstanceApiThing>(recording, target)
+
+        when:
+        def result = delegating.lockLatest()
+
+        then:
+        recording.lockLatestInvocations == 1
+        recording.lockLatestArgument.is(target)
+        result.is(reloaded)
     }
 
     void "read resolves a persisted instance by id"() {
@@ -407,4 +475,35 @@ class DynamicAttributesThing implements DynamicAttributes {
 
 class NonDirtyCheckableThing {
     String name
+}
+
+@Entity
+class GormLockConnectionThing {
+    String name
+
+    static mapping = {
+        datasource 'ALL'
+    }
+}
+
+/**
+ * A datastore-supported instance api that records how {@code lockLatest} was called, so that
+ * delegation from the entity trait, the delegating entity api and the static api can be verified.
+ */
+class RecordingGormInstanceApi<D> extends GormInstanceApi<D> {
+
+    int lockLatestInvocations
+    D lockLatestArgument
+    D lockLatestResult
+
+    RecordingGormInstanceApi(Class<D> persistentClass, Datastore datastore) {
+        super(persistentClass, datastore)
+    }
+
+    @Override
+    D lockLatest(D instance) {
+        lockLatestInvocations++
+        lockLatestArgument = instance
+        return lockLatestResult
+    }
 }

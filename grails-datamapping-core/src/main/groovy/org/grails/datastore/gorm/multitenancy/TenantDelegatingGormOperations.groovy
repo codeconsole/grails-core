@@ -91,6 +91,13 @@ class TenantDelegatingGormOperations<D> implements GormAllOperations<D> {
     }
 
     @Override
+    D lockLatest(D instance) {
+        Tenants.withId(requireMultiTenantCapableDatastore(), tenantId) {
+            allOperations.lockLatest(instance)
+        }
+    }
+
+    @Override
     def <T> T mutex(D instance, Closure<T> callable) {
         Tenants.withId(requireMultiTenantCapableDatastore(), tenantId) {
             allOperations.mutex(instance, callable)

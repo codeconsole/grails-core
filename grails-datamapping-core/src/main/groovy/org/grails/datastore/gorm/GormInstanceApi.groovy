@@ -134,6 +134,11 @@ class GormInstanceApi<D> extends AbstractGormApi<D> implements GormInstanceOpera
     }
 
     @Override
+    D lockLatest(D instance) {
+        throw new UnsupportedOperationException(LOCK_LATEST_UNSUPPORTED)
+    }
+
+    @Override
     def <T> T mutex(D instance, Closure<T> callable) {
         execute({ Session session ->
             session.lock(instance)

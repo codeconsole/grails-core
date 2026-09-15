@@ -265,6 +265,28 @@ written rather than one to switch on over an existing database. See the
 link:{mongodb5Guide}index.html#idGeneration[Identity Generation] section of the GORM for MongoDB guide for
 details.
 
+==== Refreshing an Entity Under a Pessimistic Lock
+
+GORM for Hibernate 5 and Hibernate 7 supports the dedicated instance method link:{domainClassesRef}lockLatest.html[lockLatest()] to reload an already-loaded entity's database state and version directly under a pessimistic WRITE lock. This refreshes the same instance in a single refresh-with-lock operation, not separate `lock()` and `refresh()` calls.
+
+[source,groovy]
+----
+Book.withTransaction {
+    def book = Book.get(1)
+    book.lockLatest()
+    if (book.title == 'Draft') {
+        book.title = 'Ready for review'
+        book.save(failOnError: true)
+    }
+}
+----
+
+The existing `entity.lock()` method is unchanged and does not reload state. It still checks the version of an already-loaded, versioned entity, so a concurrent update can cause an optimistic locking failure. The static `DomainClass.lock(id)` method is also unchanged and does not guarantee a refresh when the entity is already managed in the current session. Unsupported datastores throw `UnsupportedOperationException` rather than silently falling back to ordinary locking.
+
+WARNING: Refreshing discards unflushed entity changes, including changes to associated entities reached by configured refresh cascades; it does not refresh the whole object graph. Call `lockLatest()` *before* making decisions based on the entity's state or applying mutations.
+
+An active transaction is required — without one `lockLatest()` throws `jakarta.persistence.TransactionRequiredException` — and the lock is held until that transaction commits or rolls back. The same operation is available on a named connection (`book.secondary.lockLatest()`) and under a bound tenant. The database and transaction isolation level determine which state is visible. `lockLatest()` does not guarantee that every concurrent attempt succeeds: deadlocks, lock timeouts, and transaction serialization failures remain possible.
+
 ==== Test HTTP Client Form Requests
 
 Integration tests that implement `HttpClientSupport` can now use `httpPostForm(...)` to send `application/x-www-form-urlencoded`

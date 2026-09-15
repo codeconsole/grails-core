@@ -183,6 +183,58 @@ class TenantDelegatingGormOperationsSpec extends Specification {
         1 * delegate.lock(instance)
     }
 
+    void "lockLatest returns the same instance under the bound tenant and restores the enclosing tenant"() {
+        given:
+        def delegate = Mock(GormAllOperations)
+        def decorator = buildOperations(delegate)
+        def tenantDatastore = (MultiTenantCapableDatastore) decorator.datastore
+        GormAllOperations<Object> operations = decorator
+        def instance = new Object()
+
+        when:
+        def result = Tenants.withId(tenantDatastore, 'outer') {
+            def locked = operations.lockLatest(instance)
+            assert Tenants.currentId(tenantDatastore) == 'outer'
+            locked
+        }
+
+        then:
+        1 * delegate.lockLatest(instance) >> {
+            assert Tenants.currentId(tenantDatastore) == 'tenant1'
+            instance
+        }
+        0 * delegate.lock(_)
+        0 * delegate.refresh(_)
+        result.is(instance)
+    }
+
+    void "lockLatest restores the enclosing tenant when the datastore rejects it"() {
+        given:
+        def delegate = Mock(GormAllOperations)
+        def decorator = buildOperations(delegate)
+        def tenantDatastore = (MultiTenantCapableDatastore) decorator.datastore
+        GormAllOperations<Object> operations = decorator
+        def instance = new Object()
+        def failure = new UnsupportedOperationException('Datastore implementation does not support lockLatest()')
+
+        when:
+        Tenants.withId(tenantDatastore, 'outer') {
+            try {
+                operations.lockLatest(instance)
+            } finally {
+                assert Tenants.currentId(tenantDatastore) == 'outer'
+            }
+        }
+
+        then:
+        1 * delegate.lockLatest(instance) >> {
+            assert Tenants.currentId(tenantDatastore) == 'tenant1'
+            throw failure
+        }
+        def exception = thrown(UnsupportedOperationException)
+        exception.is(failure)
+    }
+
     void "mutex(instance, callable) delegates to the wrapped operations under the bound tenant"() {
         given:
         def delegate = Mock(GormAllOperations)

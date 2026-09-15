@@ -38,11 +38,12 @@ This is useful as it allows a certain level of atomicity without resorting to pe
 
 [source,groovy]
 ----
-def airport = Airport.get(10)
-
 try {
-    airport.name = "Heathrow"
-    airport.save(flush: true)
+    Airport.withTransaction {
+        def airport = Airport.get(10)
+        airport.name = 'Heathrow'
+        airport.save(flush: true, failOnError: true)
+    }
 }
 catch (org.springframework.dao.OptimisticLockingFailureException e) {
     // deal with exception
@@ -59,47 +60,80 @@ NOTE: The `version` will only be updated after flushing the session.
 ==== Pessimistic Locking
 
 
-Pessimistic locking is equivalent to doing a SQL "SELECT * FOR UPDATE" statement and locking a row in the database. This has the implication that other read operations will be blocking until the lock is released.
+Pessimistic locking acquires a database row lock, typically using SQL `SELECT ... FOR UPDATE`. Conflicting writes and lock requests may block; ordinary reads are not necessarily blocked. The exact behavior depends on the database and transaction isolation level.
+
+An active transaction is required. Use `withTransaction` as below or a GORM `@Transactional` method, keeping the lock and the work it protects in the same transaction. The lock is held until that transaction commits or rolls back. Calling `lockLatest()` without an active transaction throws `jakarta.persistence.TransactionRequiredException`. The instance must also be attached to the current session.
 
 In GORM pessimistic locking is performed on an existing instance with the link:../api/org/grails/datastore/gorm/GormEntity.html#lock()[lock()] method:
 
 [source,groovy]
 ----
-def airport = Airport.get(10)
-airport.lock() // lock for update
-airport.name = "Heathrow"
-airport.save()
+Airport.withTransaction {
+    def airport = Airport.get(10)
+    airport.lock() // lock without refreshing
+    airport.name = 'Heathrow'
+    airport.save(failOnError: true)
+}
 ----
 
-GORM will automatically deal with releasing the lock for you once the transaction has been committed.
+The instance method `airport.lock()` is unchanged: it acquires a lock without reloading the entity's state. For an already-loaded, versioned entity, Hibernate still checks its version against the database. Another transaction can update the row between `get()` and `lock()`, causing an optimistic locking failure.
 
-However, in the above case what we are doing is "upgrading" from a regular SELECT to a SELECT..FOR UPDATE and another thread could still have updated the record in between the call to `get()` and the call to `lock()`.
+===== Refreshing While Locking
 
-To get around this problem you can use the static link:../api/org/grails/datastore/gorm/GormEntity.html#lock(java.io.Serializable)[lock(id)] method that takes an id just like link:../api/org/grails/datastore/gorm/GormEntity.html#get(java.io.Serializable)[get(id)]:
+Use the dedicated instance method `lockLatest()` to reload an already-loaded entity's database state and version directly under a pessimistic WRITE lock. This refreshes the same instance in a single refresh-with-lock operation, not two separate calls to `lock()` and `refresh()` in either order. It reloads the version rather than trying to lock using the already-loaded version.
 
 [source,groovy]
 ----
-def airport = Airport.lock(10) // lock for update
-airport.name = "Heathrow"
-airport.save()
+Airport.withTransaction {
+    def airport = Airport.get(10)
+    airport.lockLatest()
+    if (airport.name == 'London Airport') {
+        airport.name = 'Heathrow'
+        airport.save(failOnError: true)
+    }
+}
 ----
 
-In this case only SELECT..FOR UPDATE is issued.
+WARNING: Refreshing discards unflushed changes to the entity. Configured refresh cascades can also discard unflushed changes to associated entities; this is not a refresh of the whole object graph. Call `lockLatest()` *before* making decisions based on the entity's state or applying mutations. It does not preserve or merge pending edits.
+
+The method is supported by GORM for Hibernate 5 and Hibernate 7. Datastores that do not support `lockLatest()` throw `UnsupportedOperationException` rather than silently falling back to a non-refreshing lock.
+
+The database and transaction isolation level determine which state is visible to the locked refresh. `lockLatest()` does not override isolation rules or guarantee that every concurrent attempt succeeds. Deadlocks, lock timeouts, and transaction serialization failures remain possible.
+
+===== Locking by Identifier or Query
+
+The static link:../api/org/grails/datastore/gorm/GormEntity.html#lock(java.io.Serializable)[lock(id)] method is unchanged. It takes an identifier just like link:../api/org/grails/datastore/gorm/GormEntity.html#get(java.io.Serializable)[get(id)] and loads the entity under a lock, avoiding a separate unlocked `get()` when it is not already managed:
+
+[source,groovy]
+----
+Airport.withTransaction {
+    def airport = Airport.lock(10)
+    airport.name = 'Heathrow'
+    airport.save(failOnError: true)
+}
+----
+
+If the entity is already managed in the current session, `Airport.lock(id)` does not guarantee that its state is refreshed. Use the instance method `lockLatest()` when a reload under the lock is required.
 
 As well as the link:../api/org/grails/datastore/gorm/GormEntity.html#lock(java.io.Serializable)[lock(id)] method you can also obtain a pessimistic locking using queries. For example using a dynamic finder:
 
-[source,java]
+[source,groovy]
 ----
-def airport = Airport.findByName("Heathrow", [lock: true])
+Airport.withTransaction {
+    def airport = Airport.findByName('Heathrow', [lock: true])
+    // Perform work protected by the lock here.
+}
 ----
 
 Or using criteria:
 
-[source,java]
+[source,groovy]
 ----
-def airport = Airport.createCriteria().get {
-    eq('name', 'Heathrow')
-    lock true
+Airport.withTransaction {
+    def airport = Airport.createCriteria().get {
+        eq('name', 'Heathrow')
+        lock true
+    }
+    // Perform work protected by the lock here.
 }
 ----
-
