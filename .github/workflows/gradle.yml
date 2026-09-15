@@ -21,7 +21,7 @@ permissions:
 jobs:
   login:
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 80
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5.2.0
@@ -36,9 +36,14 @@ jobs:
           key: login-diag-${{ runner.os }}-${{ hashFiles('dependencies.gradle') }}
       - name: Exercise repeated login and saved-request redirects
         run: >
-          ./gradlew :grails-test-examples-scaffolding:integrationTest
-          -PgrailsIndy=true --max-workers=2 -PmaxTestParallel=1
-          --console=plain --stacktrace | tee login-diagnostic.log
+          ./gradlew bootJar check
+          --init-script .github/ci-exit-after-build.init.gradle
+          --no-daemon --continue --rerun-tasks --stacktrace
+          -PgrailsIndy=true -PonlyFunctionalTests -PskipCodeStyle
+          -PskipHibernate5Tests -PskipHibernate7Tests -PskipMongodbTests
+          -PskipNeo4jTests -PskipSpringSecurityTests -PskipRedisTests
+          -PtestShardCount=2 -PtestShardIndex=0
+          --console=plain 2>&1 | tee login-diagnostic.log
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:

@@ -32,6 +32,11 @@ class Application extends GrailsAutoConfiguration {
     }
 
     @Bean
+    LoginRequestTraceFilter loginRequestTraceFilter() {
+        return new LoginRequestTraceFilter()
+    }
+
+    @Bean
     AuditorAware<String> auditorAware() {
         return new SpringSecurityAuditorAware()
     }
