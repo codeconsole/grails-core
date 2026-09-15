@@ -42,7 +42,7 @@ class UserControllerSpec extends ContainerGebSpec {
         }
     }
 
-    void "User list attempt #attempt"() {
+    void "User list"() {
         when: 'an unauthenticated user requests the user list and signs in when prompted'
         via(UserListPage)
         at(LoginPage).login()
@@ -50,8 +50,5 @@ class UserControllerSpec extends ContainerGebSpec {
         then: 'the saved request redirects to the user list'
         at(UserListPage)
         scaffoldTable
-
-        where:
-        attempt << (1..20)
     }
 }

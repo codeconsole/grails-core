@@ -34,6 +34,8 @@ import org.springframework.web.filter.OncePerRequestFilter
 class LoginRequestTraceFilter extends OncePerRequestFilter {
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain) {
+        String requestSession = request.requestedSessionId
+        long started = System.nanoTime()
         try {
             chain.doFilter(request, response)
         } finally {
@@ -42,7 +44,9 @@ class LoginRequestTraceFilter extends OncePerRequestFilter {
                 def session = request.getSession(false)
                 SecurityContext context = (SecurityContext) session?.getAttribute('SPRING_SECURITY_CONTEXT')
                 System.out.println("LOGIN_TRACE ${request.method} ${request.requestURI} status=${response.status} " +
-                        "location=${response.getHeader('Location')} authenticated=${context?.authentication?.authenticated}")
+                        "location=${response.getHeader('Location')} authenticated=${context?.authentication?.authenticated} " +
+                        "requestedSession=${requestSession?.hashCode()} session=${session?.id?.hashCode()} " +
+                        "elapsedMs=${(System.nanoTime() - started) / 1000000}")
             }
         }
     }
