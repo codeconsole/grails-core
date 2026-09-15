@@ -22,7 +22,7 @@
 // These files are split to facilitate separation of build vs application dependencies. These are the application dependencies.
 ext {
     gradleBomDependencyVersions = [
-            'ant.version'                   : '1.10.17',
+            'ant.version'                   : '1.10.18',
             'asciidoctor-gradle-jvm.version': '4.0.5',
             'asciidoctorj.version'          : '3.0.1',
             'asm.version'                   : '9.10.1',
