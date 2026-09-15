@@ -224,12 +224,18 @@ import org.codehaus.groovy.transform.GroovyASTTransformationClass;
  * the enclosing-instance field is retyped to the new home while the outer class stays the old one.
  * Nothing reachable only through that field survives, so an anonymous class there may use its own
  * members, anything it inherits, and Groovy's extension methods ({@code println},
- * {@code with}, {@code tap}, {@code join}), and - on a statically compiled host, or in a method it
- * marks {@code @CompileStatic} itself - static members of the enclosing class, which are reached by
- * invokestatic rather than through the enclosing instance; a reference to anything else - a member the block declared, a member the descriptor
- * itself declares, one inherited from {@code Plugin} - is a compile error rather than a
- * {@code NoSuchFieldError} at runtime. Pass what it needs as a constructor argument or a
- * captured local, or give it a name and declare it as a static nested class.</p>
+ * {@code with}, {@code tap}, {@code join}), and static members of the enclosing class when Groovy
+ * compiles the reference to a direct static access. A method's {@code @CompileStatic} can enable
+ * that access, but not inside another method marked {@code @CompileDynamic} or
+ * {@code @CompileStatic(TypeCheckingMode.SKIP)}. Inside a method marked {@code @CompileStatic}, a
+ * nested anonymous method follows the enclosing class's mode unless it opts out; its own
+ * {@code @CompileStatic} does not enable static access on a dynamic host. An unannotated enclosing
+ * method imposes neither restriction. Qualifying a static member with its declaring class avoids
+ * these differences. An unqualified reference that requires the retyped enclosing instance - a
+ * member the block declared, a member the descriptor itself declares, one inherited from
+ * {@code Plugin} - is a compile error rather than a {@code NoSuchFieldError} at runtime. Pass what
+ * it needs as a constructor argument or a captured local, or give it a name and declare it as a
+ * static nested class.</p>
  *
  * <p>They are also the only correct way to reach a sibling bean. A host Spring does not proxy - an
  * {@code @AutoConfiguration}, a generated plugin sibling, a Grails {@code Application} class -

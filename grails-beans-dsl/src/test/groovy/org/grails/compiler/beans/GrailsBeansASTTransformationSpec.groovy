@@ -2402,67 +2402,91 @@ class GrailsBeansASTTransformationSpec extends Specification {
     }
 
     @Unroll
-    def "a nested anonymous class cannot exceed the body it was written in: #shape"() {
-        given: "Groovy visits it from the constructor call inside that body, so a dynamic body takes it"
-        String source = nestedPerBodySource(fixture, hostAnnotation, outerAnnotation, innerAnnotation,
-                open, close)
+    def "nested anonymous methods reach enclosing statics: #hostMode host, #methodModes, group=#grouped"() {
+        given:
+        String source = nestedPerBodySource(hostMode, methodModes, grouped)
+        GroovyClassLoader loader = new GroovyClassLoader(getClass().classLoader)
+        MultipleCompilationErrorsException rejected = null
+        String greeting = null
 
         when:
-        compile(source)
+        try {
+            loader.parseClass(source)
+            String owner = 'NestedModesAutoConfiguration' + (grouped ? '$ExtrasConfiguration' : '')
+            greeting = loader.loadClass(owner).getDeclaredConstructor().newInstance().greeter().greet()
+        } catch (MultipleCompilationErrorsException e) {
+            rejected = e
+        }
 
         then:
-        MultipleCompilationErrorsException e = thrown(MultipleCompilationErrorsException)
-        e.message.contains('static member of an enclosing class')
+        if (reachable) {
+            assert rejected == null
+            assert greeting == 'hello'
+        } else {
+            assert rejected != null
+            assert rejected.message.contains('static member of an enclosing class')
+        }
+
+        cleanup:
+        loader.close()
 
         where:
-        shape                                            | fixture   | hostAnnotation   | outerAnnotation   | innerAnnotation  | open                | close
-        'a @CompileDynamic method of a static host'      | 'NestedA' | '@CompileStatic' | '@CompileDynamic' | ''               | ''                  | ''
-        'the same inside a group'                        | 'NestedB' | '@CompileStatic' | '@CompileDynamic' | ''               | "group('extras') {" | '}'
-        'its own @CompileStatic does not rescue it'      | 'NestedC' | '@CompileStatic' | '@CompileDynamic' | '@CompileStatic' | ''                  | ''
+        hostMode | methodModes                     | grouped | reachable
+        'plain'  | ['static', 'static']            | false   | false
+        'plain'  | ['static', 'static']            | true    | false
+        'skip'   | ['static', 'static']            | false   | false
+        'plain'  | ['plain', 'static']             | false   | true
+        'plain'  | ['plain', 'static']             | true    | true
+        'skip'   | ['plain', 'static']             | false   | true
+        'plain'  | ['plain', 'plain', 'static']    | false   | true
+        'plain'  | ['static', 'plain', 'static']   | false   | false
+        'plain'  | ['static', 'plain']             | false   | false
+        'plain'  | ['static', 'dynamic']           | false   | false
+        'static' | ['static', 'plain']             | false   | true
+        'static' | ['static', 'static']            | false   | true
+        'static' | ['static', 'dynamic']           | false   | false
+        'static' | ['dynamic', 'plain']            | false   | false
+        'static' | ['dynamic', 'plain']            | true    | false
+        'static' | ['dynamic', 'static']           | false   | false
+        'static' | ['skip', 'static']              | false   | false
+        'static' | ['plain', 'dynamic']            | false   | false
+        'static' | ['plain', 'plain']              | false   | true
+        'plain'  | ['plain', 'plain']              | false   | false
+        'static' | ['dynamic', 'static', 'static'] | false   | false
+        'static' | ['plain', 'dynamic', 'static']  | false   | false
     }
 
-    def "a nested anonymous class in a statically compiled body does reach the enclosing statics"() {
-        given: "the control - nothing in the chain or the bodies says otherwise"
-        String source = nestedPerBodySource('NestedOk', '@CompileStatic', '', '', '', '')
-
-        and:
-        GroovyClassLoader loader = new GroovyClassLoader(getClass().classLoader)
-        loader.parseClass(source)
-
-        expect:
-        loader.loadClass('NestedOkAutoConfiguration')
-                .getDeclaredConstructor().newInstance().greeter().greet() == 'hello'
-    }
-
-    private static String nestedPerBodySource(String fixture, String hostAnnotation,
-            String outerAnnotation, String innerAnnotation, String open, String close) {
+    private static String nestedPerBodySource(String hostMode, List<String> methodModes, boolean grouped) {
+        Map<String, String> annotations = [
+                plain: '', static: '@CompileStatic', dynamic: '@CompileDynamic',
+                skip: '@CompileStatic(TypeCheckingMode.SKIP)'
+        ]
+        String body = 'helper()'
+        for (String mode : methodModes.reverse()) {
+            body = "new NestedModesGreeter() { ${annotations[mode]} String greet() { ${body} } }.greet()"
+        }
+        // The outermost instance is the bean; only the nested instances are invoked by its body.
+        body = body.substring(0, body.length() - '.greet()'.length())
         """
             import grails.compiler.beans.GrailsBeans
             import grails.plugins.Plugin
             import groovy.transform.CompileDynamic
             import groovy.transform.CompileStatic
+            import groovy.transform.TypeCheckingMode
             import org.springframework.boot.autoconfigure.AutoConfiguration
 
-            interface ${fixture}Greeter { String greet() }
+            interface NestedModesGreeter { String greet() }
 
             @GrailsBeans
-            ${hostAnnotation}
+            ${annotations[hostMode]}
             @AutoConfiguration
-            class ${fixture}GrailsPlugin extends Plugin {
+            class NestedModesGrailsPlugin extends Plugin {
                 static String helper() { 'hello' }
 
                 def beans = {
-                    ${open}
-                    bean('greeter', ${fixture}Greeter) {
-                        new ${fixture}Greeter() {
-                            ${outerAnnotation} String greet() {
-                                new ${fixture}Greeter() {
-                                    ${innerAnnotation} String greet() { helper() }
-                                }.greet()
-                            }
-                        }
-                    }
-                    ${close}
+                    ${grouped ? "group('extras') {" : ''}
+                    bean('greeter', NestedModesGreeter) { ${body} }
+                    ${grouped ? '}' : ''}
                 }
             }
         """

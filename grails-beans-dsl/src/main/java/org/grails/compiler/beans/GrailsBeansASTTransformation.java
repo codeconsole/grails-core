@@ -1550,7 +1550,7 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
             }
             for (ConstructorCallExpression call : anonymous) {
                 reportOutwardReferences(call.getType(), owner, isGroup, source,
-                        new HashSet<>(), new HashSet<>(), null);
+                        new HashSet<>(), new HashSet<>(), EnclosingMethodMode.NONE);
             }
         }
     }
@@ -1561,7 +1561,7 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
     // and only what lies beyond the outermost one is out of reach.
     private void reportOutwardReferences(ClassNode inner, ClassNode owner, boolean isGroup,
             SourceUnit source, Set<String> enclosingReachable, Set<ClassNode> visited,
-            Boolean enclosingBodyStatic) {
+            EnclosingMethodMode enclosingMode) {
         if (!visited.add(inner) || answersAnything(inner)) {
             return;
         }
@@ -1580,30 +1580,33 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
         Set<String> enclosingStatics = enclosingStaticNames(inner);
         Set<String> ownWithStatics = new HashSet<>(baseOwn);
         ownWithStatics.addAll(enclosingStatics);
-        // The body a class was written in is a ceiling on it, not merely its default. Groovy visits
-        // an anonymous class from the constructor call inside that body, so a dynamic body takes
-        // every class created in it along - measured, including one whose own method is marked
-        // @CompileStatic, which does not rescue it. Null means nothing encloses this class but the
-        // lifted bean method, where the chain alone decides and a method may still raise it.
-        boolean ceiling = enclosingBodyStatic == null || enclosingBodyStatic;
-        boolean classStaticsInReach = ceiling && inner.getOuterClass() != null &&
-                isStaticallyCompiled(inner.getOuterClass());
+        // An explicit SKIP propagates through every nested class. A method-level @CompileStatic
+        // does something different: Groovy's GROOVY-9327 visit checks nested classes inline and
+        // marks their methods as visited, so their own @CompileStatic cannot start another pass.
+        // Those methods retain the class-chain answer unless they explicitly opt out. A plain
+        // method propagates neither fact, so a nested method may still opt into static compilation.
+        boolean classStaticsInReach = enclosingMode != EnclosingMethodMode.SKIPPED &&
+                inner.getOuterClass() != null && isStaticallyCompiled(inner.getOuterClass());
         Set<String> classOwn = classStaticsInReach ? ownWithStatics : baseOwn;
 
-        // Per body, not per class: Groovy's type checker reads @CompileStatic/@CompileDynamic off
-        // the METHOD of an inner class whatever the enclosing classes say, so one method marked the
-        // other way reaches its enclosing statics - or stops reaching them - on its own.
+        // Decide each body's reach separately from the annotation state passed to nested classes.
         for (MethodNode method : inner.getMethods()) {
             if (method.getCode() == null) {
                 continue;
             }
-            boolean bodyStatic = ceiling && staticsInReach(method, classStaticsInReach);
+            EnclosingMethodMode methodMode = methodMode(method);
+            boolean bodyStatic = switch (enclosingMode) {
+                case SKIPPED -> false;
+                case STATIC -> methodMode != EnclosingMethodMode.SKIPPED && classStaticsInReach;
+                case NONE -> methodMode == EnclosingMethodMode.STATIC ||
+                        methodMode == EnclosingMethodMode.NONE && classStaticsInReach;
+            };
             // baseOwn, not the body's set, is what a class nested here inherits: the statics have to
             // reach it through its own answer or not at all, or a static body would hand them over
             // before that answer is ever consulted.
             recurseIntoNested(walkBody(method.getCode(), inner, owner, isGroup, source,
                     enclosingStatics, bodyStatic ? ownWithStatics : baseOwn),
-                    owner, isGroup, source, baseOwn, visited, bodyStatic);
+                    owner, isGroup, source, baseOwn, visited, nestedMethodMode(enclosingMode, methodMode));
         }
         // A field initializer and an object initializer are the class's code too - the Verifier only
         // folds them into the constructor at class generation, long after this - and there is
@@ -1612,33 +1615,47 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
             if (field.getInitialExpression() != null) {
                 recurseIntoNested(walkBody(field.getInitialExpression(), inner, owner, isGroup, source,
                         enclosingStatics, classOwn),
-                        owner, isGroup, source, baseOwn, visited, classStaticsInReach);
+                        owner, isGroup, source, baseOwn, visited, enclosingMode);
             }
         }
         for (Statement statement : inner.getObjectInitializerStatements()) {
             recurseIntoNested(walkBody(statement, inner, owner, isGroup, source, enclosingStatics,
-                    classOwn), owner, isGroup, source, baseOwn, visited, classStaticsInReach);
+                    classOwn), owner, isGroup, source, baseOwn, visited, enclosingMode);
         }
     }
 
     private void recurseIntoNested(List<ConstructorCallExpression> nested, ClassNode owner,
             boolean isGroup, SourceUnit source, Set<String> enclosingReachable,
-            Set<ClassNode> visited, boolean enclosingBodyStatic) {
+            Set<ClassNode> visited, EnclosingMethodMode enclosingMode) {
         for (ConstructorCallExpression call : nested) {
             reportOutwardReferences(call.getType(), owner, isGroup, source, enclosingReachable,
-                    visited, enclosingBodyStatic);
+                    visited, enclosingMode);
         }
     }
 
-    // A method's own @CompileStatic decides for that method; @CompileDynamic arrives here as
-    // @CompileStatic(TypeCheckingMode.SKIP), which is why the value has to be read rather than the
-    // annotation merely counted.
-    private boolean staticsInReach(MethodNode method, boolean classAnswer) {
+    private enum EnclosingMethodMode {
+        NONE, STATIC, SKIPPED
+    }
+
+    // @CompileDynamic arrives as @CompileStatic(TypeCheckingMode.SKIP). Absence is distinct from
+    // SKIP: an unannotated method does not prevent a nested method from opting in on its own.
+    private EnclosingMethodMode methodMode(MethodNode method) {
         List<AnnotationNode> annotations = method.getAnnotations(COMPILE_STATIC_TYPE);
-        if (!annotations.isEmpty()) {
-            return !isTypeCheckingSkipped(annotations.get(0));
+        if (annotations.isEmpty()) {
+            return EnclosingMethodMode.NONE;
         }
-        return classAnswer;
+        return isTypeCheckingSkipped(annotations.get(0)) ?
+                EnclosingMethodMode.SKIPPED : EnclosingMethodMode.STATIC;
+    }
+
+    private EnclosingMethodMode nestedMethodMode(EnclosingMethodMode enclosing, EnclosingMethodMode method) {
+        if (enclosing == EnclosingMethodMode.SKIPPED || method == EnclosingMethodMode.SKIPPED) {
+            return EnclosingMethodMode.SKIPPED;
+        }
+        if (enclosing == EnclosingMethodMode.STATIC || method == EnclosingMethodMode.STATIC) {
+            return EnclosingMethodMode.STATIC;
+        }
+        return EnclosingMethodMode.NONE;
     }
 
     private List<ConstructorCallExpression> walkBody(ASTNode body, ClassNode inner, ClassNode owner,
