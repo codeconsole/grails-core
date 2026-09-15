@@ -31,7 +31,6 @@ import spock.lang.AutoCleanup
 import spock.lang.Shared
 
 import org.apache.grails.testing.mongo.AutoStartedMongoSpec
-import org.grails.datastore.mapping.core.AbstractDatastore
 import org.grails.datastore.mapping.mongo.MongoDatastore
 
 /**
@@ -76,7 +75,7 @@ class BuildIndexesFailureSummarySpec extends AutoStartedMongoSpec {
 
         database.getCollection('rejectedThing').insertOne(new Document('code', 'first'))
 
-        datastoreLogger = LoggerFactory.getLogger(AbstractDatastore) as Logger
+        datastoreLogger = LoggerFactory.getLogger('org.grails.datastore.mapping') as Logger
         previousLevel = datastoreLogger.level
         datastoreLogger.level = Level.INFO
         logged.start()

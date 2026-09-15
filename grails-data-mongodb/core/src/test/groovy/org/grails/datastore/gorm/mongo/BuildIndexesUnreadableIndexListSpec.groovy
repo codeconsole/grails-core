@@ -35,7 +35,6 @@ import spock.lang.AutoCleanup
 import spock.lang.Shared
 
 import org.apache.grails.testing.mongo.AutoStartedMongoSpec
-import org.grails.datastore.mapping.core.AbstractDatastore
 import org.grails.datastore.mapping.core.DatastoreUtils
 import org.grails.datastore.mapping.mongo.MongoDatastore
 
@@ -78,7 +77,7 @@ class BuildIndexesUnreadableIndexListSpec extends AutoStartedMongoSpec {
         realClient.getDatabase(DATABASE).getCollection('unlistableConflictThing')
                 .createIndex(new Document('created', 1), new IndexOptions().expireAfter(999L, TimeUnit.SECONDS))
 
-        datastoreLogger = LoggerFactory.getLogger(AbstractDatastore) as Logger
+        datastoreLogger = LoggerFactory.getLogger('org.grails.datastore.mapping') as Logger
         previousLevel = datastoreLogger.level
         datastoreLogger.level = Level.INFO
         logged.start()

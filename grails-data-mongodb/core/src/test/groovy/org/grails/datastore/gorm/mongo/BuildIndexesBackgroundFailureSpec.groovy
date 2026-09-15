@@ -34,7 +34,6 @@ import spock.lang.Shared
 import spock.util.concurrent.PollingConditions
 
 import org.apache.grails.testing.mongo.AutoStartedMongoSpec
-import org.grails.datastore.mapping.core.AbstractDatastore
 import org.grails.datastore.mapping.core.DatastoreUtils
 import org.grails.datastore.mapping.mongo.MongoDatastore
 import org.grails.datastore.mapping.mongo.config.MongoSettings
@@ -65,7 +64,7 @@ class BuildIndexesBackgroundFailureSpec extends AutoStartedMongoSpec {
 
     void setupSpec() {
         realClient = MongoClients.create(dbContainer.getReplicaSetUrl('backgroundFailureDb'))
-        datastoreLogger = LoggerFactory.getLogger(AbstractDatastore) as Logger
+        datastoreLogger = LoggerFactory.getLogger('org.grails.datastore.mapping') as Logger
         previousLevel = datastoreLogger.level
         datastoreLogger.level = Level.DEBUG
         logged.start()

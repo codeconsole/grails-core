@@ -35,7 +35,6 @@ import spock.lang.Shared
 import org.apache.grails.testing.mongo.AutoStartedMongoSpec
 import org.grails.datastore.gorm.events.DefaultApplicationEventPublisher
 import org.grails.datastore.gorm.mongo.FailingMongoClient
-import org.grails.datastore.mapping.core.AbstractDatastore
 import org.grails.datastore.mapping.core.DatastoreUtils
 import org.grails.datastore.mapping.core.connections.ConnectionSource
 import org.grails.datastore.mapping.core.connections.DefaultConnectionSource
@@ -82,7 +81,7 @@ class BuildIndexesPerConnectionSpec extends AutoStartedMongoSpec {
         def buildReached = new CountDownLatch(1)
         def releaseBuild = new CountDownLatch(1)
         def worker = new AtomicReference<Thread>()
-        Logger logger = LoggerFactory.getLogger(AbstractDatastore) as Logger
+        Logger logger = LoggerFactory.getLogger('org.grails.datastore.mapping') as Logger
         Level previousLevel = logger.level
         def logged = new ListAppender<ILoggingEvent>()
         logger.level = Level.DEBUG
