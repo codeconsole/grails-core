@@ -23,7 +23,6 @@ import java.util.concurrent.atomic.AtomicLong
 
 import grails.core.gsp.GrailsTagLibClass
 import org.grails.core.gsp.DefaultGrailsTagLibClass
-import groovy.lang.GroovyRuntimeException
 import org.codehaus.groovy.runtime.typehandling.GroovyCastException
 import org.grails.taglib.TagLibraryLookup
 import spock.lang.Specification
