@@ -25,9 +25,12 @@ import org.springframework.web.context.request.async.WebAsyncManager
 import org.springframework.web.context.request.async.WebAsyncUtils
 import org.springframework.web.context.request.async.StandardServletAsyncWebRequest
 import org.springframework.web.servlet.ModelAndView
+import org.springframework.web.context.support.StaticWebApplicationContext
+import org.springframework.core.env.MapPropertySource
 
 import org.grails.async.factory.future.CompletableFuturePromise
 import org.grails.web.servlet.mvc.GrailsWebRequest
+import org.grails.web.util.GrailsApplicationAttributes
 import spock.lang.Specification
 
 class AsyncActionResultTransformerSpec extends Specification {
@@ -65,15 +68,17 @@ class AsyncActionResultTransformerSpec extends Specification {
     void 'delegates promise failures to Spring exception processing'() {
         given:
         CompletableFuturePromise<Object> promise = new CompletableFuturePromise<>()
+        def failure = new IllegalStateException('bad', new IOException('inner'))
 
         when:
         new AsyncActionResultTransformer().transformActionResult(webRequest, '/book/index', promise)
-        promise.completeExceptionally(new IllegalStateException('bad'))
+        promise.completeExceptionally(failure)
 
         then:
         asyncManager.hasConcurrentResult()
         asyncManager.concurrentResult instanceof IllegalStateException
         asyncManager.concurrentResult.message == 'bad'
+        asyncManager.concurrentResult.is(failure)
     }
 
     void 'joins async processing started eagerly by a web promise'() {
@@ -90,5 +95,41 @@ class AsyncActionResultTransformerSpec extends Specification {
         then:
         asyncManager.concurrentResult instanceof ModelAndView
         ((ModelAndView) asyncManager.concurrentResult).model.books == ['one']
+    }
+
+    void 'does not restart a completed async request'() {
+        given:
+        def transformer = new AsyncActionResultTransformer()
+        transformer.transformActionResult(webRequest, '/book/index', new CompletableFuturePromise<>())
+        asyncManager.asyncWebRequest.onComplete(new jakarta.servlet.AsyncEvent(request.asyncContext))
+
+        expect:
+        transformer.transformActionResult(webRequest, '/book/index', new CompletableFuturePromise<>()) == null
+        WebAsyncUtils.getAsyncManager(request).asyncWebRequest == null
+    }
+
+    void 'returned promises use the configured MVC timeout or the container default'() {
+        given:
+        def context = new StaticWebApplicationContext()
+        if (configured != null) {
+            context.environment.propertySources.addFirst(new MapPropertySource('test', ['spring.mvc.async.request-timeout': configured]))
+        }
+        request.servletContext.setAttribute(GrailsApplicationAttributes.APPLICATION_CONTEXT, context)
+        webRequest = new GrailsWebRequest(request, response, request.servletContext)
+
+        when:
+        new AsyncActionResultTransformer().transformActionResult(webRequest, '/book/index', new CompletableFuturePromise<>())
+
+        then:
+        request.asyncContext.timeout == expected
+
+        cleanup:
+        context.close()
+
+        where:
+        configured | expected
+        '2s'       | 2000L
+        '1500'     | 1500L
+        null       | 10000L
     }
 }

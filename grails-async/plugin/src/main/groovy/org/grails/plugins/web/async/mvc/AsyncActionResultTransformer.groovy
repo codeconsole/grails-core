@@ -22,13 +22,13 @@ import groovy.transform.CompileStatic
 
 import org.springframework.web.context.request.async.AsyncWebRequest
 import org.springframework.web.context.request.async.DeferredResult
-import org.springframework.web.context.request.async.StandardServletAsyncWebRequest
 import org.springframework.web.context.request.async.WebAsyncManager
 import org.springframework.web.context.request.async.WebAsyncUtils
 import org.springframework.web.servlet.ModelAndView
 
 import grails.async.Promise
 import grails.async.PromiseList
+import org.grails.plugins.web.async.GrailsAsyncWebRequest
 import org.grails.web.servlet.mvc.ActionResultTransformer
 import org.grails.web.servlet.mvc.GrailsWebRequest
 import org.grails.web.util.GrailsApplicationAttributes
@@ -47,10 +47,12 @@ class AsyncActionResultTransformer implements ActionResultTransformer {
         if (actionResult instanceof Promise promise) {
             final request = webRequest.getRequest()
             WebAsyncManager asyncManager = WebAsyncUtils.getAsyncManager(request)
-            final response = webRequest.getResponse()
+            if (GrailsAsyncWebRequest.isComplete(webRequest) || asyncManager.asyncWebRequest?.isAsyncComplete()) {
+                return null
+            }
 
             if (!asyncManager.isConcurrentHandlingStarted()) {
-                AsyncWebRequest asyncWebRequest = new StandardServletAsyncWebRequest(request, response)
+                AsyncWebRequest asyncWebRequest = GrailsAsyncWebRequest.create(webRequest)
                 asyncManager.setAsyncWebRequest(asyncWebRequest)
             }
             DeferredResult<Object> deferredResult = new DeferredResult<Object>()
@@ -69,14 +71,11 @@ class AsyncActionResultTransformer implements ActionResultTransformer {
                 }
             }
             promise.onError { Throwable failure ->
-                deferredResult.setErrorResult(unwrap(failure))
+                deferredResult.setErrorResult(failure)
             }
             return null
         }
         return actionResult
     }
 
-    private static Throwable unwrap(Throwable failure) {
-        return failure.cause ?: failure
-    }
 }

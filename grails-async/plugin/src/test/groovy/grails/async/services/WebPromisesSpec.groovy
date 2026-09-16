@@ -18,32 +18,32 @@
  */
 package grails.async.services
 
-import java.util.concurrent.Executor
-
 import spock.lang.Specification
 
 import org.springframework.mock.web.MockHttpServletRequest
 import org.springframework.mock.web.MockHttpServletResponse
 import org.springframework.mock.web.MockServletContext
 import org.springframework.web.context.request.RequestContextHolder
+import org.springframework.web.context.request.async.WebAsyncUtils
+import org.springframework.web.context.support.StaticWebApplicationContext
+import org.springframework.core.env.MapPropertySource
 
 import grails.async.Promises
 import grails.async.decorator.PromiseDecorator
 import grails.async.web.WebPromises
 import grails.util.GrailsWebMockUtil
 import org.grails.async.factory.future.CompletableFuturePromiseFactory
-import org.grails.plugins.web.async.GrailsWebRequestTaskDecorator
 import org.grails.web.servlet.mvc.GrailsWebRequest
+import org.grails.web.util.GrailsApplicationAttributes
 
 class WebPromisesSpec extends Specification {
 
     void setup() {
-        GrailsWebRequestTaskDecorator taskDecorator = new GrailsWebRequestTaskDecorator()
-        Executor executor = { Runnable task -> taskDecorator.decorate(task).run() }
-        WebPromises.promiseFactory = new CompletableFuturePromiseFactory(executor)
+        WebPromises.promiseFactory = null
     }
 
     void cleanup() {
+        ((CompletableFuturePromiseFactory) WebPromises.promiseFactory).close()
         WebPromises.promiseFactory = null
         RequestContextHolder.resetRequestAttributes()
     }
@@ -101,5 +101,60 @@ class WebPromisesSpec extends Specification {
 
         then:
         promise.get() == 'decorated value'
+    }
+
+    void 'rejects new tasks after the asynchronous request completes'() {
+        given:
+        def servletContext = new MockServletContext()
+        def request = new MockHttpServletRequest(servletContext)
+        request.asyncSupported = true
+        RequestContextHolder.setRequestAttributes(new GrailsWebRequest(request, new MockHttpServletResponse(), servletContext))
+        WebPromises.task { 1 }.get()
+        WebAsyncUtils.getAsyncManager(request).asyncWebRequest.onComplete(new jakarta.servlet.AsyncEvent(request.asyncContext))
+        boolean executed = false
+
+        when:
+        WebPromises.task { executed = true }
+
+        then:
+        def failure = thrown(IllegalStateException)
+        failure.message == 'Cannot start a task once asynchronous request processing has completed'
+        !executed
+    }
+
+    void 'standalone web tasks propagate parameters and honor the MVC timeout'() {
+        given:
+        def context = new StaticWebApplicationContext()
+        if (configured != null) {
+            context.environment.propertySources.addFirst(new MapPropertySource('test', ['spring.mvc.async.request-timeout': configured]))
+        }
+        def servletContext = new MockServletContext()
+        servletContext.setAttribute(GrailsApplicationAttributes.APPLICATION_CONTEXT, context)
+        def request = new MockHttpServletRequest(servletContext)
+        request.asyncSupported = true
+        request.addParameter('title', 'Grails')
+        def response = new MockHttpServletResponse()
+        RequestContextHolder.setRequestAttributes(new GrailsWebRequest(request, response, servletContext))
+
+        when:
+        def result = WebPromises.task {
+            def current = GrailsWebRequest.lookup()
+            current.currentResponse.writer.write(current.params.title as String)
+            return Thread.currentThread()
+        }.get()
+
+        then:
+        !result.is(Thread.currentThread())
+        response.contentAsString == 'Grails'
+        request.asyncContext.timeout == expected
+
+        cleanup:
+        context.close()
+
+        where:
+        configured | expected
+        '2s'       | 2000L
+        '1500'     | 1500L
+        null       | 10000L
     }
 }

@@ -31,6 +31,8 @@ import grails.async.Promise
 import grails.async.PromiseFactory
 import grails.async.decorator.PromiseDecorator
 import org.grails.async.factory.PromiseFactoryBuilder
+import org.grails.plugins.web.async.GrailsWebRequestTaskDecorator
+import org.grails.plugins.web.async.GrailsAsyncWebRequest
 import org.grails.web.servlet.mvc.GrailsWebRequest
 import org.grails.web.util.GrailsApplicationAttributes
 
@@ -48,6 +50,9 @@ class WebPromises {
     static PromiseFactory getPromiseFactory() {
         if (promiseFactory == null) {
             promiseFactory = new PromiseFactoryBuilder().build()
+            promiseFactory.addPromiseDecoratorLookupStrategy {
+                [new WebRequestPromiseDecorator()] as List<PromiseDecorator>
+            }
         }
         return promiseFactory
     }
@@ -57,6 +62,19 @@ class WebPromises {
     }
 
     private WebPromises() {}
+
+    private static class WebRequestPromiseDecorator implements PromiseDecorator {
+
+        @Override
+        <D> Closure<D> decorate(Closure<D> work) {
+            Object[] result = new Object[1]
+            Runnable decorated = new GrailsWebRequestTaskDecorator().decorate({ result[0] = work.call() } as Runnable)
+            return {
+                decorated.run()
+                return (D) result[0]
+            }
+        }
+    }
 
     /**
      * @see grails.async.PromiseFactory#waitAll(grails.async.Promise[])
@@ -182,14 +200,14 @@ class WebPromises {
         }
 
         WebAsyncManager asyncManager = WebAsyncUtils.getAsyncManager(webRequest.currentRequest)
+        if (GrailsAsyncWebRequest.isComplete(webRequest) || asyncManager.asyncWebRequest?.isAsyncComplete()) {
+            throw new IllegalStateException('Cannot start a task once asynchronous request processing has completed')
+        }
         if (asyncManager.isConcurrentHandlingStarted()) {
             return
         }
 
-        StandardServletAsyncWebRequest asyncWebRequest = new StandardServletAsyncWebRequest(
-                webRequest.currentRequest,
-                webRequest.currentResponse)
-        asyncWebRequest.timeout = -1L
+        StandardServletAsyncWebRequest asyncWebRequest = GrailsAsyncWebRequest.create(webRequest)
         asyncManager.asyncWebRequest = asyncWebRequest
         asyncWebRequest.startAsync()
         webRequest.currentRequest.setAttribute(GrailsApplicationAttributes.ASYNC_STARTED, true)
