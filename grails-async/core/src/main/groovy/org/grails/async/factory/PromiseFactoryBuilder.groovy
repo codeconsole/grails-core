@@ -25,6 +25,7 @@ import groovy.util.logging.Slf4j
 import java.util.concurrent.Executor
 
 import org.grails.async.factory.future.CompletableFuturePromiseFactory
+import org.grails.async.factory.future.VirtualThreadPromiseFactory
 
 /**
  * Constructs the default promise factory
@@ -45,8 +46,14 @@ class PromiseFactoryBuilder {
 
         PromiseFactory promiseFactory
         if (promiseFactories.isEmpty()) {
-            log.debug('No PromiseFactory implementation found. Using the CompletableFuture promise factory.')
-            promiseFactory = executor == null ? new CompletableFuturePromiseFactory() : new CompletableFuturePromiseFactory(executor)
+            if (System.getProperty('grails.async.promiseFactory') == 'virtual-thread') {
+                log.debug('No PromiseFactory implementation found. Using virtual thread promise factory.')
+                promiseFactory = new VirtualThreadPromiseFactory()
+            }
+            else {
+                log.debug('No PromiseFactory implementation found. Using the CompletableFuture promise factory.')
+                promiseFactory = executor == null ? new CompletableFuturePromiseFactory() : new CompletableFuturePromiseFactory(executor)
+            }
         }
         else {
             promiseFactory = promiseFactories.first()

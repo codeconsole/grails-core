@@ -127,6 +127,15 @@ class CompletableFuturePromiseFactorySpec extends Specification {
         new PromiseFactoryBuilder().build() instanceof CompletableFuturePromiseFactory
     }
 
+    void 'default builder retains the supplied application executor'() {
+        when:
+        def built = PromiseFactoryBuilder.build(sameThreadExecutor)
+
+        then:
+        built instanceof CompletableFuturePromiseFactory
+        built.createPromise { Thread.currentThread() }.get().is(Thread.currentThread())
+    }
+
     void 'direct and chained get preserve the original failure with its cause'() {
         given:
         def original = new IllegalStateException('outer', new IOException('inner'))
