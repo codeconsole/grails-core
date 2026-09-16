@@ -18,6 +18,9 @@
  */
 package grails.gorm.tests
 
+import java.sql.Connection
+import java.sql.DriverManager
+import java.sql.SQLTimeoutException
 import java.util.concurrent.Callable
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
@@ -995,10 +998,200 @@ class Hibernate7RefreshLockSpec extends HibernateGormDatastoreSpec {
         }
 
         where:
-        description   | args
-        'empty map'   | [:]
-        'lock: false' | [lock: false]
-        'lock: NONE'  | [lock: LockModeType.NONE]
+        description         | args
+        'empty map'         | [:]
+        'lock: false'       | [lock: false]
+        'lock: NONE'        | [lock: LockModeType.NONE]
+        "lock: 'NONE'"      | [lock: 'NONE']
+        'lock: null'        | [lock: null]
+    }
+    void 'refresh(lock: #type) reloads state under that lock mode and #versionOutcome'() {
+        given:
+        Long id = new Hibernate7RefreshLockBook(title: 'original').save(flush: true, failOnError: true).id
+        manager.transactionManager.commit(manager.transactionStatus)
+        manager.transactionStatus = null
+
+        when:
+        Map outcome = Hibernate7RefreshLockBook.withNewSession { Session session ->
+            Hibernate7RefreshLockBook.withTransaction {
+                def book = Hibernate7RefreshLockBook.get(id)
+                book.title = 'pending'
+                def result = book.refresh(lock: type)
+                [same: result.is(book), title: book.title, lockMode: session.getCurrentLockMode(book)]
+            }
+        }
+
+        then:
+        outcome.same
+        outcome.title == 'original'
+        outcome.lockMode == expectedLockMode
+        Hibernate7RefreshLockBook.withNewSession { Hibernate7RefreshLockBook.get(id).version } == expectedVersionAfterCommit
+
+        where:
+        type                                     | expectedLockMode                    | expectedVersionAfterCommit
+        LockModeType.READ                        | LockMode.OPTIMISTIC                 | 0
+        LockModeType.WRITE                       | LockMode.OPTIMISTIC_FORCE_INCREMENT | 1
+        LockModeType.OPTIMISTIC                  | LockMode.OPTIMISTIC                 | 0
+        LockModeType.OPTIMISTIC_FORCE_INCREMENT  | LockMode.OPTIMISTIC_FORCE_INCREMENT | 1
+        LockModeType.PESSIMISTIC_READ            | LockMode.PESSIMISTIC_READ           | 0
+        LockModeType.PESSIMISTIC_WRITE           | LockMode.PESSIMISTIC_WRITE          | 0
+        LockModeType.PESSIMISTIC_FORCE_INCREMENT | LockMode.PESSIMISTIC_FORCE_INCREMENT | 1
+        versionOutcome = expectedVersionAfterCommit ? 'increments the version at commit' : 'leaves the version alone'
+    }
+
+    void 'static lock(id, type: #type) loads an instance that is not in the session under that lock mode and #versionOutcome'() {
+        given:
+        Long id = new Hibernate7RefreshLockBook(title: 'original').save(flush: true, failOnError: true).id
+        manager.transactionManager.commit(manager.transactionStatus)
+        manager.transactionStatus = null
+
+        when:
+        Map outcome = Hibernate7RefreshLockBook.withNewSession { Session session ->
+            Hibernate7RefreshLockBook.withTransaction {
+                def book = Hibernate7RefreshLockBook.lock(id, type: type)
+                [loaded: book != null && Hibernate.isInitialized(book), title: book?.title, lockMode: session.getCurrentLockMode(book)]
+            }
+        }
+
+        then:
+        outcome.loaded
+        outcome.title == 'original'
+        outcome.lockMode == expectedLockMode
+        Hibernate7RefreshLockBook.withNewSession { Hibernate7RefreshLockBook.get(id).version } == expectedVersionAfterCommit
+
+        where:
+        type                                     | expectedLockMode                    | expectedVersionAfterCommit
+        LockModeType.READ                        | LockMode.OPTIMISTIC                 | 0
+        LockModeType.WRITE                       | LockMode.OPTIMISTIC_FORCE_INCREMENT | 1
+        LockModeType.OPTIMISTIC                  | LockMode.OPTIMISTIC                 | 0
+        LockModeType.OPTIMISTIC_FORCE_INCREMENT  | LockMode.OPTIMISTIC_FORCE_INCREMENT | 1
+        LockModeType.PESSIMISTIC_READ            | LockMode.PESSIMISTIC_READ           | 0
+        LockModeType.PESSIMISTIC_WRITE           | LockMode.PESSIMISTIC_WRITE          | 0
+        LockModeType.PESSIMISTIC_FORCE_INCREMENT | LockMode.PESSIMISTIC_FORCE_INCREMENT | 1
+        versionOutcome = expectedVersionAfterCommit ? 'increments the version at commit' : 'leaves the version alone'
+    }
+
+    void 'static lock(id, refresh: true, type: #type) reloads the managed instance under that lock mode and #versionOutcome'() {
+        given:
+        Long id = new Hibernate7RefreshLockBook(title: 'original').save(flush: true, failOnError: true).id
+        manager.transactionManager.commit(manager.transactionStatus)
+        manager.transactionStatus = null
+
+        when:
+        Map outcome = Hibernate7RefreshLockBook.withNewSession { Session session ->
+            Hibernate7RefreshLockBook.withTransaction {
+                def book = Hibernate7RefreshLockBook.get(id)
+                book.title = 'pending'
+                def result = Hibernate7RefreshLockBook.lock(id, refresh: true, type: type)
+                [same: result.is(book), title: book.title, lockMode: session.getCurrentLockMode(book)]
+            }
+        }
+
+        then:
+        outcome.same
+        outcome.title == 'original'
+        outcome.lockMode == expectedLockMode
+        Hibernate7RefreshLockBook.withNewSession { Hibernate7RefreshLockBook.get(id).version } == expectedVersionAfterCommit
+
+        where:
+        type                                     | expectedLockMode                    | expectedVersionAfterCommit
+        LockModeType.READ                        | LockMode.OPTIMISTIC                 | 0
+        LockModeType.WRITE                       | LockMode.OPTIMISTIC_FORCE_INCREMENT | 1
+        LockModeType.OPTIMISTIC                  | LockMode.OPTIMISTIC                 | 0
+        LockModeType.OPTIMISTIC_FORCE_INCREMENT  | LockMode.OPTIMISTIC_FORCE_INCREMENT | 1
+        LockModeType.PESSIMISTIC_READ            | LockMode.PESSIMISTIC_READ           | 0
+        LockModeType.PESSIMISTIC_WRITE           | LockMode.PESSIMISTIC_WRITE          | 0
+        LockModeType.PESSIMISTIC_FORCE_INCREMENT | LockMode.PESSIMISTIC_FORCE_INCREMENT | 1
+        versionOutcome = expectedVersionAfterCommit ? 'increments the version at commit' : 'leaves the version alone'
+    }
+
+    void 'refresh(lock: true) holds a database lock on the parent row while a refresh-cascaded association is join-fetched'() {
+        given:
+        Long parentId = new Hibernate7RefreshLockCascadeParent(title: 'original parent',
+                child: new Hibernate7RefreshLockCascadeChild(title: 'original child')).save(flush: true, failOnError: true).id
+        manager.transactionManager.commit(manager.transactionStatus)
+        manager.transactionStatus = null
+        def executor = Executors.newSingleThreadExecutor()
+        def refreshed = new CountDownLatch(1)
+        def allowRefreshCommit = new CountDownLatch(1)
+
+        when: 'a transaction reloads the parent under a lock while its child is already loaded'
+        def refreshing = executor.submit({
+            Hibernate7RefreshLockCascadeParent.withNewSession { Session session ->
+                Hibernate7RefreshLockCascadeParent.withTransaction {
+                    def parent = Hibernate7RefreshLockCascadeParent.get(parentId)
+                    assert Hibernate.isInitialized(parent.child)
+                    assert parent.refresh(lock: true).is(parent)
+                    assert session.getCurrentLockMode(parent) == LockMode.PESSIMISTIC_WRITE
+                    refreshed.countDown()
+                    assert allowRefreshCommit.await(10, TimeUnit.SECONDS)
+                }
+            }
+        } as Callable)
+
+        then: 'a competing SELECT ... FOR UPDATE on another connection is refused while that transaction is open'
+        refreshed.await(10, TimeUnit.SECONDS)
+        !parentRowLockGranted(parentId)
+
+        when:
+        allowRefreshCommit.countDown()
+        refreshing.get(10, TimeUnit.SECONDS)
+
+        then: 'and granted once it has ended'
+        parentRowLockGranted(parentId)
+
+        cleanup:
+        allowRefreshCommit?.countDown()
+        executor?.shutdownNow()
+        assert executor == null || executor.awaitTermination(15, TimeUnit.SECONDS)
+    }
+
+    void 'static lock(id, refresh: true) returns the initialized proxy the caller holds'() {
+        given:
+        Long id = new Hibernate7RefreshLockBook(title: 'original').save(flush: true, failOnError: true).id
+        Hibernate7RefreshLockBook.withSession { it.clear() }
+        def proxy = Hibernate7RefreshLockBook.load(id)
+        assert !Hibernate.isInitialized(proxy)
+        assert proxy.title == 'original'
+        proxy.title = 'pending'
+
+        when:
+        def result = Hibernate7RefreshLockBook.lock(id, refresh: true)
+
+        then:
+        result.is(proxy)
+        Hibernate.isInitialized(proxy)
+        proxy.title == 'original'
+        Hibernate7RefreshLockBook.withSession { Session session ->
+            session.getCurrentLockMode(proxy) == LockMode.PESSIMISTIC_WRITE
+        }
+    }
+
+    /**
+     * Attempts a plain JDBC {@code SELECT ... FOR UPDATE} of the cascade parent's row on a separate connection
+     * with a short lock timeout, and reports whether the database granted the lock. Unlike
+     * {@code getCurrentLockMode}, which reports what Hibernate recorded, this observes the lock itself.
+     */
+    private boolean parentRowLockGranted(Long parentId) {
+        Map<String, String> jdbc = Hibernate7RefreshLockCascadeParent.withNewSession { Session session ->
+            session.doReturningWork { Connection connection ->
+                [url: connection.metaData.URL.tokenize(';')[0], user: connection.metaData.userName]
+            }
+        }
+        String table = manager.sessionFactory.mappingMetamodel.getEntityDescriptor(Hibernate7RefreshLockCascadeParent).tableName
+        DriverManager.getConnection("${jdbc.url};LOCK_TIMEOUT=300", jdbc.user, '').withCloseable { Connection connection ->
+            connection.autoCommit = false
+            try {
+                connection.prepareStatement("select id from ${table} where id = ? for update".toString()).withCloseable { statement ->
+                    statement.setLong(1, parentId)
+                    statement.executeQuery().withCloseable { it.next() }
+                }
+            } catch (SQLTimeoutException ignored) {
+                false
+            } finally {
+                connection.rollback()
+            }
+        }
     }
 }
 

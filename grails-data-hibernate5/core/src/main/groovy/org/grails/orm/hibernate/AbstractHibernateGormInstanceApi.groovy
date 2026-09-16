@@ -34,6 +34,9 @@ import org.hibernate.engine.spi.CascadeStyle
 import org.hibernate.engine.spi.CascadingActions
 import org.hibernate.engine.spi.SessionImplementor
 import org.hibernate.persister.entity.EntityPersister
+import org.hibernate.type.CollectionType
+import org.hibernate.type.CompositeType
+import org.hibernate.type.Type
 
 import org.springframework.beans.BeanWrapperImpl
 import org.springframework.beans.InvalidPropertyException
@@ -280,7 +283,14 @@ abstract class AbstractHibernateGormInstanceApi<D> extends GormInstanceApi<D> {
             }
             // Hibernate skips the locked refresh for an uninitialized proxy.
             Object target = proxyHandler.unwrap(instance)
-            session.refresh(target, lockMode)
+            if (RefreshLockArguments.pessimistic(lockMode)) {
+                session.refresh(target, lockMode)
+            } else {
+                // Hibernate 5's refresh reloads the state but does not register an optimistic mode's version
+                // check or increment; lock() does, without touching the database until the transaction ends.
+                session.refresh(target)
+                session.lock(target, lockMode)
+            }
             // Hibernate 5 leaves GORM dirty flags behind on everything a native refresh reloads.
             resetDirtyAfterRefresh(session.unwrap(SessionImplementor), target,
                     Collections.newSetFromMap(new IdentityHashMap<Object, Boolean>()))
@@ -299,20 +309,41 @@ abstract class AbstractHibernateGormInstanceApi<D> extends GormInstanceApi<D> {
         EntityPersister persister = session.getEntityPersister(null, entity)
         session.factory.customEntityDirtinessStrategy.resetDirty(entity, persister, session)
         CascadeStyle[] cascadeStyles = persister.propertyCascadeStyles
+        Type[] types = persister.propertyTypes
         Object[] values = persister.getPropertyValues(entity)
         for (int i = 0; i < cascadeStyles.length; i++) {
-            Object value = values[i]
-            if (value == null || !cascadeStyles[i].doCascade(CascadingActions.REFRESH) || !Hibernate.isInitialized(value)) {
-                continue
+            if (cascadeStyles[i].doCascade(CascadingActions.REFRESH)) {
+                resetCascadedDirty(session, types[i], values[i], visited)
             }
-            Collection<Object> associated = value instanceof Map ? ((Map) value).values()
-                    : value instanceof Collection ? (Collection<Object>) value
-                    : [value]
-            for (Object element : associated) {
-                if (element != null && Hibernate.isInitialized(element)) {
-                    resetDirtyAfterRefresh(session, proxyHandler.unwrap(element), visited)
+        }
+    }
+
+    /**
+     * Follows a refresh cascade through the given value to the entities Hibernate reloaded. A component
+     * cascades whenever one of its own properties does, so it is descended into rather than treated as an
+     * entity; collections are visited element by element.
+     */
+    private void resetCascadedDirty(SessionImplementor session, Type type, Object value, Set<Object> visited) {
+        if (value == null || !Hibernate.isInitialized(value)) {
+            return
+        }
+        if (type.isComponentType()) {
+            CompositeType compositeType = (CompositeType) type
+            Type[] subtypes = compositeType.subtypes
+            Object[] subvalues = compositeType.getPropertyValues(value, session)
+            for (int i = 0; i < subtypes.length; i++) {
+                if (compositeType.getCascadeStyle(i).doCascade(CascadingActions.REFRESH)) {
+                    resetCascadedDirty(session, subtypes[i], subvalues[i], visited)
                 }
             }
+        } else if (type.isCollectionType()) {
+            Type elementType = ((CollectionType) type).getElementType(session.factory)
+            Collection<Object> elements = value instanceof Map ? ((Map) value).values() : (Collection<Object>) value
+            for (Object element : elements) {
+                resetCascadedDirty(session, elementType, element, visited)
+            }
+        } else if (type.isEntityType()) {
+            resetDirtyAfterRefresh(session, proxyHandler.unwrap(value), visited)
         }
     }
 

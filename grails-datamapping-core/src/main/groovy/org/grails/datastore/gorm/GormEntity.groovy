@@ -108,7 +108,7 @@ trait GormEntity<D> implements GormValidateable, DirtyCheckable, GormEntityApi<D
      * <ul>
      *   <li>{@code lock} - {@code true} reloads this instance's database state and version under a pessimistic
      *   write lock; a {@link jakarta.persistence.LockModeType} reloads them under that lock mode instead. Either
-     *   form is a single refresh-with-lock operation that discards unflushed changes, requires an attached
+     *   form acquires the lock before it reloads, discards unflushed changes, requires an attached
      *   instance and an active transaction, and holds the lock until that transaction commits or rolls back.
      *   {@code false} and {@link jakarta.persistence.LockModeType#NONE} request no lock.</li>
      * </ul>

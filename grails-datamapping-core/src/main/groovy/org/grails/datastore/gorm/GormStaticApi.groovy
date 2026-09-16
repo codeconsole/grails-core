@@ -514,7 +514,7 @@ class GormStaticApi<D> extends AbstractGormApi<D> implements GormAllOperations<D
         if (instance == null) {
             return null
         }
-        refresh(instance, [(RefreshLockArguments.LOCK): true])
+        registry.findInstanceApi(persistentClass, qualifier).refresh(instance, [(RefreshLockArguments.LOCK): true])
     }
 
     @Override

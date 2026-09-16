@@ -116,6 +116,16 @@ class RefreshLockArguments {
         ClassUtils.getBooleanFromMap(REFRESH, args)
     }
 
+    /**
+     * @return whether the lock mode takes a database lock, as opposed to the optimistic modes that only
+     * verify or increment the version when the transaction completes
+     */
+    static boolean pessimistic(LockModeType lockMode) {
+        lockMode == LockModeType.PESSIMISTIC_READ ||
+                lockMode == LockModeType.PESSIMISTIC_WRITE ||
+                lockMode == LockModeType.PESSIMISTIC_FORCE_INCREMENT
+    }
+
     private static LockModeType parseLockMode(String argument, Object value, String expected) {
         if (value instanceof LockModeType) {
             return value

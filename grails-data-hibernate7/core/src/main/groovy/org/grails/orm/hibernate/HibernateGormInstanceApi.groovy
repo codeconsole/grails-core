@@ -42,14 +42,13 @@ import jakarta.persistence.TransactionRequiredException
 
 import org.hibernate.HibernateException
 import org.hibernate.LockMode
-import org.hibernate.LockOptions
-import org.hibernate.Locking
 import org.hibernate.Session
 import org.hibernate.SessionFactory
 import org.hibernate.collection.spi.PersistentCollection
 import org.hibernate.engine.spi.EntityEntry
 import org.hibernate.engine.spi.SessionImplementor
 import org.hibernate.persister.entity.EntityPersister
+import org.hibernate.query.QueryFlushMode
 
 import org.springframework.beans.BeanWrapperImpl
 import org.springframework.beans.InvalidPropertyException
@@ -260,17 +259,43 @@ class HibernateGormInstanceApi<D> extends GormInstanceApi<D> {
             if (!session.contains(instance)) {
                 throw new IllegalArgumentException(REFRESH_LOCK_REQUIRES_ATTACHED)
             }
-            // Unlike Hibernate 5, Hibernate 7 performs the locked refresh for an uninitialized proxy
-            // and resets GORM dirty state from its own post-load hook, so neither is done here.
-            LockOptions lockOptions = new LockOptions(LockMode.fromJpaLockMode(lockMode))
-            // Hibernate 7.4 join-fetches refresh-cascaded associations and fails with a NullPointerException
-            // when it collects an already-loaded one for follow-on locking (dialects that cannot lock
-            // outer-joined rows, such as H2 and PostgreSQL). Skipping follow-on locking keeps the refreshed
-            // entity's own row locked; rows reloaded through the cascade are not locked on those dialects.
-            lockOptions.setFollowOnStrategy(Locking.FollowOn.IGNORE)
-            session.refresh(instance, lockOptions)
+            // Unlike Hibernate 5, Hibernate 7 refreshes an uninitialized proxy and resets GORM dirty state
+            // from its own post-load hook, so neither is done here.
+            if (RefreshLockArguments.pessimistic(lockMode)) {
+                lockRow(session, instance, lockMode)
+                session.refresh(instance)
+                // Records the lock mode on the entity entry. The version check this performs cannot fail:
+                // the row is locked by this transaction and its version was just reloaded.
+                session.lock(instance, lockMode)
+            } else {
+                session.refresh(instance, lockMode)
+            }
         }
         return instance
+    }
+
+    /**
+     * Takes the requested lock on the instance's own row, and nothing else, so that the state can then be
+     * reloaded under a lock that is already held.
+     * <p>
+     * {@code session.refresh(instance, lockMode)} cannot do this reliably in Hibernate 7.4. Its refresh
+     * statement join-fetches every refresh-cascaded association, lazy or not, and dialects that cannot lock
+     * outer-joined rows (H2, PostgreSQL) then have to fall back to follow-on locking, which fails with a
+     * NullPointerException when a join-fetched entity is already in the persistence context (reproduced with
+     * plain JPA entities and no GORM involved). {@code Locking.FollowOn.IGNORE} avoids the exception but drops
+     * the lock clause from the statement, so nothing is locked, and {@code Locking.Scope.ROOT_ONLY} fails the
+     * same way as the default. A scalar query has no joins, so it locks the root row the same way on every
+     * dialect, and unlike an entity query or {@code lock()} it performs no version check, so a stale instance
+     * can still be reloaded.
+     */
+    private void lockRow(Session session, D instance, LockModeType lockMode) {
+        String hql = "select 1 from ${persistentClass.name} e where e = :instance".toString()
+        // NO_FLUSH: the query must not flush the pending changes that the refresh is about to discard.
+        session.createSelectionQuery(hql, Integer)
+                .setParameter('instance', instance)
+                .setLockMode(lockMode)
+                .setQueryFlushMode(QueryFlushMode.NO_FLUSH)
+                .getResultList()
     }
 
     protected D performUpsert(D target, boolean shouldFlush) {

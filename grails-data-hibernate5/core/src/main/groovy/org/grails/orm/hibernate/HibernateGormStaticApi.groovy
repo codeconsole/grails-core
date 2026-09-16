@@ -33,6 +33,8 @@ import org.hibernate.FlushMode
 import org.hibernate.LockMode
 import org.hibernate.Session
 import org.hibernate.SessionFactory
+import org.hibernate.engine.spi.EntityKey
+import org.hibernate.engine.spi.PersistenceContext
 import org.hibernate.engine.spi.SessionImplementor
 import org.hibernate.persister.entity.EntityPersister
 import org.hibernate.query.Query
@@ -194,7 +196,14 @@ class HibernateGormStaticApi<D> extends AbstractHibernateGormStaticApi<D> {
     private Object findManagedInstance(Session session, Serializable id) {
         SessionImplementor sessionImplementor = session.unwrap(SessionImplementor)
         EntityPersister persister = sessionImplementor.factory.metamodel.entityPersister(persistentClass)
-        sessionImplementor.persistenceContextInternal.getEntity(sessionImplementor.generateEntityKey(id, persister))
+        EntityKey key = sessionImplementor.generateEntityKey(id, persister)
+        PersistenceContext persistenceContext = sessionImplementor.persistenceContextInternal
+        Object entity = persistenceContext.getEntity(key)
+        if (entity == null) {
+            return null
+        }
+        // Return the proxy when the caller holds one, so the result is the instance already in use.
+        persistenceContext.getProxy(key) ?: entity
     }
 
     @Override

@@ -43,6 +43,8 @@ import jakarta.persistence.TransactionRequiredException
 
 import org.hibernate.Session
 import org.hibernate.SessionFactory
+import org.hibernate.engine.spi.EntityKey
+import org.hibernate.engine.spi.PersistenceContext
 import org.hibernate.engine.spi.SessionImplementor
 import org.hibernate.jpa.AvailableHints
 import org.hibernate.persister.entity.EntityPersister
@@ -207,7 +209,14 @@ class HibernateGormStaticApi<D> extends GormStaticApi<D> {
     private Object findManagedInstance(Session session, Serializable id) {
         SessionImplementor sessionImplementor = session.unwrap(SessionImplementor)
         EntityPersister persister = sessionImplementor.factory.mappingMetamodel.getEntityDescriptor(persistentClass)
-        sessionImplementor.persistenceContextInternal.getEntity(sessionImplementor.generateEntityKey(id, persister))
+        EntityKey key = sessionImplementor.generateEntityKey(id, persister)
+        PersistenceContext persistenceContext = sessionImplementor.persistenceContextInternal
+        Object entity = persistenceContext.getEntity(key)
+        if (entity == null) {
+            return null
+        }
+        // Return the proxy when the caller holds one, so the result is the instance already in use.
+        persistenceContext.getProxy(key) ?: entity
     }
 
     D get(Serializable id) {

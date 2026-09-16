@@ -80,7 +80,38 @@ The static `DomainClass.lock(id)` method is also unchanged, as is `DomainClass.l
 
 Pass `type` to choose the lock mode. It accepts a `jakarta.persistence.LockModeType` or its name and defaults to `PESSIMISTIC_WRITE`; `NONE` is rejected. For example `Book.lock(1, type: LockModeType.PESSIMISTIC_READ)` acquires a pessimistic READ lock, whether the entity is loaded as part of the call or is already managed in the session. The semantics of each mode are those of the underlying JPA provider. Datastores that support only a pessimistic write lock throw `UnsupportedOperationException` for any other `type`.
 
-Pass `refresh: true` to reload instead. `DomainClass.lock(id, refresh: true)` behaves like `DomainClass.lock(id)`, except that when the entity is already managed in the current session it reloads that instance's state and version under the lock and returns that same managed instance. When the entity is not in the session it is loaded under the lock in a single statement. Both forms return `null` when no row exists for the identifier. Calling `lock(id, refresh: true)` without an active transaction throws `jakarta.persistence.TransactionRequiredException` before anything is loaded. On a named connection, `DomainClass.secondary.lock(id, refresh: true)` performs the whole operation on that connection and requires a transaction on it.
+The lock modes behave as follows on Hibernate 5 and Hibernate 7:
+
+[cols="2,2,3",options="header"]
+|===
+| Lock mode | Database lock | Effect
+
+| `PESSIMISTIC_WRITE`
+| Exclusive row lock, typically `SELECT ... FOR UPDATE`
+| The default, so `Book.lock(id)` and `Book.lock(id, refresh: true)` take this lock. Other transactions cannot update the row or take a pessimistic lock on it until this transaction ends.
+
+| `PESSIMISTIC_READ`
+| Shared row lock, `SELECT ... FOR SHARE` where the database supports it
+| Other transactions cannot update the row but may take the same shared lock. Databases without shared row locks take an exclusive lock instead.
+
+| `PESSIMISTIC_FORCE_INCREMENT`
+| Exclusive row lock
+| As `PESSIMISTIC_WRITE`, and the version is incremented as part of taking the lock, so a transaction still holding the previous version fails its next update.
+
+| `OPTIMISTIC` (JPA alias `READ`)
+| None
+| The version is re-read when the transaction commits, and the commit fails if another transaction changed it.
+
+| `OPTIMISTIC_FORCE_INCREMENT` (JPA alias `WRITE`)
+| None
+| The version is incremented when the transaction commits, so other transactions holding the previous version fail.
+
+| `NONE`
+| None
+| Rejected with `IllegalArgumentException`: a lock call must name a lock. Use `get(id)` to load without a lock.
+|===
+
+Pass `refresh: true` to reload instead. `DomainClass.lock(id, refresh: true)` behaves like `DomainClass.lock(id)`, except that when the entity is already managed in the current session it reloads that instance's state and version under the lock and returns that same managed instance. When the entity is not in the session it is loaded under the lock. Both forms return `null` when no row exists for the identifier. Calling `lock(id, refresh: true)` without an active transaction throws `jakarta.persistence.TransactionRequiredException` before anything is loaded. On a named connection, `DomainClass.secondary.lock(id, refresh: true)` performs the whole operation on that connection and requires a transaction on it.
 
 WARNING: `refresh: true` discards unflushed changes to the entity. Configured refresh cascades can also discard unflushed changes to associated entities; this is not a refresh of the whole object graph. Call it *before* making decisions based on the entity's state or applying mutations.
 
