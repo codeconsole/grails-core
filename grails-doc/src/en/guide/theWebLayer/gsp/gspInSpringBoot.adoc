@@ -101,6 +101,29 @@ Both kinds are found: a class annotated `@grails.gsp.TagLib`, and one annotated 
 tag library is. A tag library written for a plugin may expect collaborators the plugin would have contributed, and
 an application without the plugin has to declare those as beans too.
 
+The asset pipeline does that for its own tags. Add its Spring Boot module, which serves what the pipeline compiled,
+and `asset-pipeline-gsp`, which makes the `<asset:...>` tag libraries beans of the context:
+
+[source,groovy]
+.build.gradle
+----
+dependencies {
+    implementation 'cloud.wondrify:asset-pipeline-spring-boot'
+    implementation 'cloud.wondrify:asset-pipeline-gsp'
+}
+----
+
+A page or layout then names each asset, and the tag writes the URL of the file the pipeline compiled for it:
+
+[source,xml]
+----
+<asset:stylesheet src="application.css"/>
+<asset:javascript src="application.js"/>
+----
+
+The asset pipeline builds those URLs with a Grails link generator, so keep `grails-web-url-mappings` on the class
+path when excluding the parts of the Grails web tier an application does not use.
+
 ==== Generating Links
 
 A library that builds URLs with a Grails link generator works here, with one limitation: a link to a controller and
@@ -136,6 +159,6 @@ resolvers after this one.
 |The layout a page is decorated with when it names none.
 |===
 
-TIP: An application rendering precompiled views with SiteMesh layouts, serving stylesheets and scripts the asset
-pipeline compiled, and rendering a JSP alongside GSP is in `grails-test-examples/gsp-spring-boot` in the Grails
-source tree.
+TIP: An application rendering precompiled views with SiteMesh layouts, linking the stylesheets and scripts the asset
+pipeline compiled through its `<asset:...>` tags, and rendering a JSP alongside GSP is in
+`grails-test-examples/gsp-spring-boot` in the Grails source tree.

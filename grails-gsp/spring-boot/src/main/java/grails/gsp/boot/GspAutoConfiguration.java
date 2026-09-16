@@ -295,11 +295,12 @@ public class GspAutoConfiguration {
     }
 
     /**
-     * The mappings a link generator looks a controller and action up in. The url-mappings module
-     * contributes a link generator - the asset pipeline's {@code <asset:...>} tags build their URLs
-     * with one - and a Grails application gives it the mappings of its {@code UrlMappings} artefact.
-     * An application routing with Spring MVC has no such artefact and so no holder, which the
-     * generator requires; the empty one here is what it would otherwise have to declare itself.
+     * The mappings a link generator looks a controller and action up in. A Grails application gives
+     * its generator the mappings of its {@code UrlMappings} artefact. An application routing with
+     * Spring MVC has no such artefact and so no holder, but can still have a generator - the asset
+     * pipeline contributes one, which its {@code <asset:...>} tags build their URLs with - and the
+     * generator requires a holder; the empty one here is what the application would otherwise have to
+     * declare itself.
      */
     @Configuration
     @ConditionalOnClass(DefaultUrlMappingsHolder.class)
