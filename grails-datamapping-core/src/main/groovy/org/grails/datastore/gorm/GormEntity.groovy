@@ -106,22 +106,28 @@ trait GormEntity<D> implements GormValidateable, DirtyCheckable, GormEntityApi<D
      *
      * <p>Supported arguments:</p>
      * <ul>
-     *   <li>{@code lock} - when {@code true}, reloads this instance's database state and version under a
-     *   pessimistic write lock in a single operation, discarding unflushed changes. Requires an active
-     *   transaction, which holds the lock until it commits or rolls back.</li>
+     *   <li>{@code lock} - {@code true} reloads this instance's database state and version under a pessimistic
+     *   write lock; a {@link jakarta.persistence.LockModeType} reloads them under that lock mode instead. Either
+     *   form is a single refresh-with-lock operation that discards unflushed changes, requires an attached
+     *   instance and an active transaction, and holds the lock until that transaction commits or rolls back.
+     *   {@code false} and {@link jakarta.persistence.LockModeType#NONE} request no lock.</li>
      * </ul>
      *
      * <pre>
      * Book.withTransaction {
      *     def book = Book.get(id)
      *     book.refresh(lock: true)
+     *     book.refresh(lock: LockModeType.PESSIMISTIC_READ)
      * }
      * </pre>
      *
      * @param args The named arguments
      * @return The instance
-     * @throws jakarta.persistence.TransactionRequiredException if {@code lock: true} is requested without an active transaction
-     * @throws UnsupportedOperationException if {@code lock: true} is requested and the datastore does not support it
+     * @throws RuntimeException an implementation-specific exception if a lock is requested without an active
+     * transaction, such as {@code jakarta.persistence.TransactionRequiredException} for Hibernate
+     * @throws IllegalArgumentException if a lock is requested for an instance that is not attached to the
+     * current session, or the {@code lock} argument is neither a boolean nor a lock mode
+     * @throws UnsupportedOperationException if a lock is requested and the datastore does not support it
      */
     @Generated
     D refresh(Map args) {
@@ -738,6 +744,11 @@ trait GormEntity<D> implements GormValidateable, DirtyCheckable, GormEntityApi<D
      */
     @Generated
     static D lock(Serializable id) {
+        if (id instanceof Map) {
+            // Groovy resolves entity.lock(refresh: true) to this static method with the options map as the id.
+            throw new IllegalArgumentException('lock(Map) is not an instance method. Use ' +
+                    'DomainClass.lock(id, refresh: true) to lock by identifier, or refresh(lock: true) on the instance')
+        }
         currentGormStaticApi().lock(id)
     }
 
@@ -746,22 +757,28 @@ trait GormEntity<D> implements GormValidateable, DirtyCheckable, GormEntityApi<D
      *
      * <p>Supported arguments:</p>
      * <ul>
-     *   <li>{@code refresh} - when {@code true}, reloads the instance's database state and version under the
-     *   lock instead of locking the version already loaded in the current session. Unflushed changes to the
-     *   instance are discarded. Requires an active transaction.</li>
+     *   <li>{@code type} - the {@link jakarta.persistence.LockModeType} to acquire, or its name. Defaults to
+     *   {@link jakarta.persistence.LockModeType#PESSIMISTIC_WRITE}; {@code NONE} is rejected.</li>
+     *   <li>{@code refresh} - when {@code true}, reloads the database state and version of an instance that is
+     *   already managed in the current session under the lock instead of locking the version already loaded.
+     *   Unflushed changes to the instance are discarded. Requires an active transaction.</li>
      * </ul>
      *
      * <pre>
      * Book.withTransaction {
      *     def book = Book.lock(id, refresh: true)
+     *     def shared = Book.lock(otherId, type: LockModeType.PESSIMISTIC_READ)
      * }
      * </pre>
      *
      * @param args The named arguments
      * @param id The identifier
      * @return The instance, or {@code null} if no instance exists for the identifier
-     * @throws jakarta.persistence.TransactionRequiredException if {@code refresh: true} is requested without an active transaction
-     * @throws UnsupportedOperationException if {@code refresh: true} is requested and the datastore does not support it
+     * @throws RuntimeException an implementation-specific exception if {@code refresh: true} is requested without
+     * an active transaction, such as {@code jakarta.persistence.TransactionRequiredException} for Hibernate
+     * @throws IllegalArgumentException if {@code type} is neither a lock mode nor the name of one, or is {@code NONE}
+     * @throws UnsupportedOperationException if {@code refresh: true} or a non-default {@code type} is requested
+     * and the datastore does not support it
      */
     @Generated
     static D lock(Map args, Serializable id) {

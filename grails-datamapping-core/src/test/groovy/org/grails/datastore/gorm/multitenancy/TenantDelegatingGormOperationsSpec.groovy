@@ -217,7 +217,7 @@ class TenantDelegatingGormOperationsSpec extends Specification {
         GormAllOperations<Object> operations = decorator
         def instance = new Object()
         def args = [lock: true]
-        def failure = new UnsupportedOperationException('Datastore implementation does not support refreshing under a pessimistic lock')
+        def failure = new UnsupportedOperationException('Datastore implementation does not support refreshing under a lock')
 
         when:
         Tenants.withId(tenantDatastore, 'outer') {

@@ -42,6 +42,8 @@ import jakarta.persistence.TransactionRequiredException
 
 import org.hibernate.HibernateException
 import org.hibernate.LockMode
+import org.hibernate.LockOptions
+import org.hibernate.Locking
 import org.hibernate.Session
 import org.hibernate.SessionFactory
 import org.hibernate.collection.spi.PersistentCollection
@@ -58,6 +60,7 @@ import org.springframework.validation.Validator
 import grails.gorm.validation.CascadingValidator
 import org.grails.datastore.gorm.GormInstanceApi
 import org.grails.datastore.gorm.GormValidateable
+import org.grails.datastore.gorm.internal.RefreshLockArguments
 import org.grails.datastore.mapping.core.Datastore
 import org.grails.datastore.mapping.engine.event.ValidationEvent
 import org.grails.datastore.mapping.model.PersistentEntity
@@ -86,6 +89,7 @@ class HibernateGormInstanceApi<D> extends GormInstanceApi<D> {
     private static final String ARGUMENT_MERGE = 'merge'
     private static final String ARGUMENT_FAIL_ON_ERROR = 'failOnError'
     private static final String REFRESH_LOCK_REQUIRES_TRANSACTION = 'An active transaction is required.'
+    private static final String REFRESH_LOCK_REQUIRES_ATTACHED = 'The instance must be attached to the current session.'
     private static final Class DEFERRED_BINDING
 
     static {
@@ -242,7 +246,8 @@ class HibernateGormInstanceApi<D> extends GormInstanceApi<D> {
 
     @Override
     D refresh(D instance, Map args) {
-        if (!ClassUtils.getBooleanFromMap(ARGUMENT_LOCK, args)) {
+        LockModeType lockMode = RefreshLockArguments.lockModeFrom(args)
+        if (lockMode == null) {
             return refresh(instance)
         }
         hibernateTemplate.execute { Session session ->
@@ -251,9 +256,19 @@ class HibernateGormInstanceApi<D> extends GormInstanceApi<D> {
             if (!session.getTransaction().isActive()) {
                 throw new TransactionRequiredException(REFRESH_LOCK_REQUIRES_TRANSACTION)
             }
+            // Hibernate reports a detached instance with its own internal exception; report the contract instead.
+            if (!session.contains(instance)) {
+                throw new IllegalArgumentException(REFRESH_LOCK_REQUIRES_ATTACHED)
+            }
             // Unlike Hibernate 5, Hibernate 7 performs the locked refresh for an uninitialized proxy
             // and resets GORM dirty state from its own post-load hook, so neither is done here.
-            session.refresh(instance, LockModeType.PESSIMISTIC_WRITE)
+            LockOptions lockOptions = new LockOptions(LockMode.fromJpaLockMode(lockMode))
+            // Hibernate 7.4 join-fetches refresh-cascaded associations and fails with a NullPointerException
+            // when it collects an already-loaded one for follow-on locking (dialects that cannot lock
+            // outer-joined rows, such as H2 and PostgreSQL). Skipping follow-on locking keeps the refreshed
+            // entity's own row locked; rows reloaded through the cascade are not locked on those dialects.
+            lockOptions.setFollowOnStrategy(Locking.FollowOn.IGNORE)
+            session.refresh(instance, lockOptions)
         }
         return instance
     }

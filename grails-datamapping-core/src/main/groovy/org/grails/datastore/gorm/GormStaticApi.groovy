@@ -21,6 +21,8 @@ package org.grails.datastore.gorm
 import groovy.transform.CompileDynamic
 import groovy.util.logging.Slf4j
 
+import jakarta.persistence.LockModeType
+
 import org.springframework.transaction.PlatformTransactionManager
 import org.springframework.transaction.TransactionDefinition
 import org.springframework.transaction.support.DefaultTransactionDefinition
@@ -33,6 +35,7 @@ import grails.gorm.api.GormStaticOperations
 import grails.gorm.multitenancy.Tenants
 import grails.gorm.transactions.GrailsTransactionTemplate
 import org.grails.datastore.gorm.finders.FinderMethod
+import org.grails.datastore.gorm.internal.RefreshLockArguments
 import org.grails.datastore.gorm.transactions.DefaultTransactionTemplateFactory
 import org.grails.datastore.gorm.transactions.TransactionTemplateFactory
 import org.grails.datastore.mapping.core.Datastore
@@ -48,7 +51,6 @@ import org.grails.datastore.mapping.model.PersistentEntity
 import org.grails.datastore.mapping.multitenancy.MultiTenancySettings.MultiTenancyMode
 import org.grails.datastore.mapping.multitenancy.MultiTenantCapableDatastore
 import org.grails.datastore.mapping.query.api.BuildableCriteria
-import org.grails.datastore.mapping.reflect.ClassUtils
 import org.grails.datastore.mapping.transactions.TransactionCapableDatastore
 
 /**
@@ -500,7 +502,10 @@ class GormStaticApi<D> extends AbstractGormApi<D> implements GormAllOperations<D
 
     @Override
     D lock(Map args, Serializable id) {
-        if (!ClassUtils.getBooleanFromMap(ARGUMENT_REFRESH, args)) {
+        if (RefreshLockArguments.lockTypeFrom(args) != LockModeType.PESSIMISTIC_WRITE) {
+            throw new UnsupportedOperationException(RefreshLockArguments.UNSUPPORTED_TYPE)
+        }
+        if (!RefreshLockArguments.refreshRequested(args)) {
             return lock(id)
         }
         // Resolve the managed instance first (no query when it is already in the session), then let the
@@ -509,7 +514,7 @@ class GormStaticApi<D> extends AbstractGormApi<D> implements GormAllOperations<D
         if (instance == null) {
             return null
         }
-        refresh(instance, [(ARGUMENT_LOCK): true])
+        refresh(instance, [(RefreshLockArguments.LOCK): true])
     }
 
     @Override

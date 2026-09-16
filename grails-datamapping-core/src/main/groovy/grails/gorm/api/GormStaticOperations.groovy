@@ -21,14 +21,16 @@ package grails.gorm.api
 
 import groovy.transform.CompileStatic
 
+import jakarta.persistence.LockModeType
+
 import org.springframework.transaction.TransactionDefinition
 
 import grails.gorm.DetachedCriteria
 import org.grails.datastore.gorm.finders.FinderMethod
+import org.grails.datastore.gorm.internal.RefreshLockArguments
 import org.grails.datastore.mapping.model.PersistentEntity
 import org.grails.datastore.mapping.query.api.BuildableCriteria
 import org.grails.datastore.mapping.query.api.Criteria
-import org.grails.datastore.mapping.reflect.ClassUtils
 
 /**
  * Interface for the default static methods in GORM
@@ -37,12 +39,6 @@ import org.grails.datastore.mapping.reflect.ClassUtils
  * @since 6.0
  */
 interface GormStaticOperations<D> {
-
-    /**
-     * The {@link #lock(java.util.Map, java.io.Serializable)} argument that requests a reload of the
-     * instance's state and version under the lock.
-     */
-    String ARGUMENT_REFRESH = 'refresh'
 
     /**
      * @return The PersistentEntity for this class
@@ -238,24 +234,33 @@ interface GormStaticOperations<D> {
      *
      * <p>Supported arguments:</p>
      * <ul>
-     *   <li>{@code refresh} - when {@code true}, reloads the instance's database state and version under the
-     *   lock instead of locking the version already loaded in the current session. Unflushed changes to the
-     *   instance are discarded. Requires an active transaction.</li>
+     *   <li>{@code type} - the {@link jakarta.persistence.LockModeType} to acquire, or its name. Defaults to
+     *   {@link jakarta.persistence.LockModeType#PESSIMISTIC_WRITE}; {@code NONE} is rejected.</li>
+     *   <li>{@code refresh} - when {@code true}, reloads the database state and version of an instance that is
+     *   already managed in the current session under the lock instead of locking the version already loaded.
+     *   Unflushed changes to the instance are discarded. Requires an active transaction.</li>
      * </ul>
      *
-     * <p>Without {@code refresh: true} this behaves like {@link #lock(java.io.Serializable)}. The default
-     * implementation rejects {@code refresh: true}; datastores that support it override this method.</p>
+     * <p>Without either argument this behaves like {@link #lock(java.io.Serializable)}. The default
+     * implementation rejects {@code refresh: true} and any {@code type} other than a pessimistic write lock;
+     * datastores that support them override this method.</p>
      *
      * @param args The named arguments
      * @param id The identifier
      * @return The instance, or {@code null} if no instance exists for the identifier
-     * @throws jakarta.persistence.TransactionRequiredException if {@code refresh: true} is requested without an active transaction
-     * @throws UnsupportedOperationException if {@code refresh: true} is requested and the datastore does not support it
+     * @throws RuntimeException an implementation-specific exception if {@code refresh: true} is requested without
+     * an active transaction, such as {@code jakarta.persistence.TransactionRequiredException} for Hibernate
+     * @throws IllegalArgumentException if {@code type} is neither a lock mode nor the name of one, or is {@code NONE}
+     * @throws UnsupportedOperationException if {@code refresh: true} or a non-default {@code type} is requested
+     * and the datastore does not support it
      */
     @CompileStatic
     default D lock(Map args, Serializable id) {
-        if (ClassUtils.getBooleanFromMap(ARGUMENT_REFRESH, args)) {
-            throw new UnsupportedOperationException(GormInstanceOperations.REFRESH_LOCK_UNSUPPORTED)
+        if (RefreshLockArguments.refreshRequested(args)) {
+            throw new UnsupportedOperationException(RefreshLockArguments.UNSUPPORTED)
+        }
+        if (RefreshLockArguments.lockTypeFrom(args) != LockModeType.PESSIMISTIC_WRITE) {
+            throw new UnsupportedOperationException(RefreshLockArguments.UNSUPPORTED_TYPE)
         }
         lock(id)
     }

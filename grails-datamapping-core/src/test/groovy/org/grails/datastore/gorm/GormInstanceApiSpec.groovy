@@ -18,6 +18,8 @@
  */
 package org.grails.datastore.gorm
 
+import jakarta.persistence.LockModeType
+
 import grails.gorm.annotation.Entity
 import grails.gorm.api.GormInstanceOperations
 import org.grails.datastore.mapping.core.Datastore
@@ -209,7 +211,7 @@ class GormInstanceApiSpec extends Specification {
 
         then:
         def exception = thrown(UnsupportedOperationException)
-        exception.message == 'Datastore implementation does not support refreshing under a pessimistic lock'
+        exception.message == 'Datastore implementation does not support refreshing under a lock'
         saved.name == 'local change'
     }
 
@@ -223,8 +225,75 @@ class GormInstanceApiSpec extends Specification {
 
         then:
         def exception = thrown(UnsupportedOperationException)
-        exception.message == 'Datastore implementation does not support refreshing under a pessimistic lock'
+        exception.message == 'Datastore implementation does not support refreshing under a lock'
         instance.name == 'local change'
+    }
+
+    void "refresh(lock: #description) rejects an unsupported datastore like refresh(lock: true)"() {
+        given:
+        def saved = new GormInstanceApiThing(name: 'persisted').save(flush: true)
+        saved.name = 'local change'
+
+        when:
+        saved.refresh(lock: lock)
+
+        then:
+        def exception = thrown(UnsupportedOperationException)
+        exception.message == 'Datastore implementation does not support refreshing under a lock'
+        saved.name == 'local change'
+
+        where:
+        description               | lock
+        'PESSIMISTIC_READ'        | LockModeType.PESSIMISTIC_READ
+        'OPTIMISTIC'              | LockModeType.OPTIMISTIC
+        "'PESSIMISTIC_WRITE'"     | 'PESSIMISTIC_WRITE'
+        "'true'"                  | 'true'
+    }
+
+    void "refresh rejects a lock argument that is neither a boolean nor a lock mode (#description)"() {
+        given:
+        def saved = new GormInstanceApiThing(name: 'persisted').save(flush: true)
+        saved.name = 'local change'
+
+        when:
+        saved.refresh(lock: lock)
+
+        then:
+        def exception = thrown(IllegalArgumentException)
+        exception.message == "The 'lock' argument must be a boolean or a jakarta.persistence.LockModeType but was ${actual}"
+        saved.name == 'local change'
+
+        where:
+        description      | lock          | actual
+        'unknown name'   | 'SHARED'      | "'SHARED'"
+        'number'         | 1             | 'an instance of java.lang.Integer'
+    }
+
+    void "a direct implementation of the entity api inherits refresh(Map) (#description)"() {
+        given:
+        def api = new DirectEntityApi()
+
+        when:
+        def result = api.refresh(args)
+
+        then:
+        result.is(api)
+        api.refreshInvocations == 1
+
+        when:
+        api.refresh(lock: true)
+
+        then:
+        def exception = thrown(UnsupportedOperationException)
+        exception.message == 'Datastore implementation does not support refreshing under a lock'
+        api.refreshInvocations == 1
+
+        where:
+        description   | args
+        'empty map'   | [:]
+        'null map'    | null
+        'lock: false' | [lock: false]
+        'lock: NONE'  | [lock: LockModeType.NONE]
     }
 
     void "refresh with arguments that do not request a lock performs a plain refresh (#description)"() {
@@ -246,6 +315,8 @@ class GormInstanceApiSpec extends Specification {
         'empty map'       | [:]
         'null map'        | null
         'lock: false'     | [lock: false]
+        "lock: 'false'"   | [lock: 'false']
+        'lock: NONE'      | [lock: LockModeType.NONE]
         'other arguments' | [flush: true]
     }
 
@@ -311,7 +382,7 @@ class GormInstanceApiSpec extends Specification {
 
         then:
         def exception = thrown(UnsupportedOperationException)
-        exception.message == GormInstanceOperations.REFRESH_LOCK_UNSUPPORTED
+        exception.message == 'Datastore implementation does not support refreshing under a lock'
         calls.size() == 1
     }
 
@@ -593,4 +664,72 @@ class LockingGormInstanceApi<D> extends GormInstanceApi<D> {
         refreshArguments = args
         return refreshResult
     }
+}
+
+/**
+ * Implements the entity api directly rather than through GormEntity, as a third-party trait consumer might.
+ * Only refresh() is meaningful; the remaining abstract methods are stubs the test never calls.
+ */
+class DirectEntityApi implements GormEntityApi<DirectEntityApi> {
+    int refreshInvocations
+
+    @Override
+    DirectEntityApi refresh() {
+        refreshInvocations++
+        return this
+    }
+
+    @Override
+    boolean instanceOf(Class cls) { throw new UnsupportedOperationException() }
+
+    @Override
+    DirectEntityApi lock() { throw new UnsupportedOperationException() }
+
+    @Override
+    def mutex(Closure callable) { throw new UnsupportedOperationException() }
+
+    @Override
+    DirectEntityApi save() { throw new UnsupportedOperationException() }
+
+    @Override
+    DirectEntityApi insert() { throw new UnsupportedOperationException() }
+
+    @Override
+    DirectEntityApi insert(Map params) { throw new UnsupportedOperationException() }
+
+    @Override
+    DirectEntityApi merge() { throw new UnsupportedOperationException() }
+
+    @Override
+    DirectEntityApi merge(Map params) { throw new UnsupportedOperationException() }
+
+    @Override
+    DirectEntityApi save(boolean validate) { throw new UnsupportedOperationException() }
+
+    @Override
+    DirectEntityApi save(Map params) { throw new UnsupportedOperationException() }
+
+    @Override
+    Serializable ident() { throw new UnsupportedOperationException() }
+
+    @Override
+    DirectEntityApi attach() { throw new UnsupportedOperationException() }
+
+    @Override
+    boolean isAttached() { throw new UnsupportedOperationException() }
+
+    @Override
+    void discard() { throw new UnsupportedOperationException() }
+
+    @Override
+    void delete() { throw new UnsupportedOperationException() }
+
+    @Override
+    void delete(Map params) { throw new UnsupportedOperationException() }
+
+    @Override
+    boolean isDirty(String fieldName) { throw new UnsupportedOperationException() }
+
+    @Override
+    boolean isDirty() { throw new UnsupportedOperationException() }
 }

@@ -94,11 +94,15 @@ Airport.withTransaction {
 }
 ----
 
-The instance must be attached to the current session. `airport.refresh()` is unchanged, and `airport.refresh([:])` or `airport.refresh(lock: false)` behave exactly like it: a plain refresh with no lock and no transaction requirement. To lock by identifier and reload at the same time, use `Airport.lock(id, refresh: true)` as described below.
+To request a lock other than a pessimistic WRITE lock, pass a `jakarta.persistence.LockModeType` (or its name) as the `lock` argument, for example `airport.refresh(lock: LockModeType.PESSIMISTIC_READ)`. `lock: true` is equivalent to `lock: LockModeType.PESSIMISTIC_WRITE`, and the semantics of each mode are those of Hibernate's refresh with that lock mode. Any other value throws `IllegalArgumentException`.
 
-NOTE: There is no `airport.lock(refresh: true)`. Groovy resolves that call to the static `lock(Serializable id)` method with the options map as the identifier. The instance form is `airport.refresh(lock: true)`.
+The instance must be attached to the current session; refreshing a detached instance under a lock throws `IllegalArgumentException`, so re-attach it with `attach()` first. `airport.refresh()` is unchanged, and `airport.refresh([:])`, `airport.refresh(lock: false)` or `airport.refresh(lock: LockModeType.NONE)` behave exactly like it: a plain refresh with no lock and no transaction requirement. To lock by identifier and reload at the same time, use `Airport.lock(id, refresh: true)` as described below.
+
+NOTE: There is no `airport.lock(refresh: true)`. Groovy resolves that call to the static `lock(Serializable id)` method with the options map as the identifier, and GORM rejects it with an `IllegalArgumentException` that names the supported forms. The instance form is `airport.refresh(lock: true)`.
 
 WARNING: Refreshing discards unflushed changes to the entity. Configured refresh cascades can also discard unflushed changes to associated entities; this is not a refresh of the whole object graph. Call `refresh(lock: true)` *before* making decisions based on the entity's state or applying mutations. It does not preserve or merge pending edits.
+
+After a locked refresh, GORM resets the dirty-checking state of the refreshed entity, its embedded components, and the initialized associated entities that the refresh cascade reloaded, so discarded edits to a cascaded child do not schedule an update of that child at the next flush. The lock applies to the refreshed entity's own row; associated entities reloaded through a refresh cascade are not guaranteed to be locked.
 
 Refreshing under a lock is supported by GORM for Hibernate 5 and Hibernate 7. Datastores that do not support it throw `UnsupportedOperationException` rather than silently falling back to a plain refresh.
 
@@ -131,6 +135,8 @@ Airport.withTransaction {
 ----
 
 `lock(id, refresh: true)` has the same transaction requirement as `refresh(lock: true)`, discards unflushed changes in the same way, and throws `UnsupportedOperationException` on datastores that do not support it.
+
+Both static forms accept `type` to choose the lock mode: a `jakarta.persistence.LockModeType` or its name, defaulting to `PESSIMISTIC_WRITE` (`NONE` is rejected). `Airport.lock(10, type: LockModeType.PESSIMISTIC_READ)` acquires a pessimistic READ lock whether the entity is loaded by the call or already managed, and `Airport.lock(10, refresh: true, type: LockModeType.PESSIMISTIC_READ)` reloads a managed instance under that mode. Datastores that support only a pessimistic write lock throw `UnsupportedOperationException` for any other `type`.
 
 As well as the link:../api/org/grails/datastore/gorm/GormEntity.html#lock(java.io.Serializable)[lock(id)] method you can also obtain a pessimistic locking using queries. For example using a dynamic finder:
 

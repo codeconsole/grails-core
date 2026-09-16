@@ -21,7 +21,7 @@ package grails.gorm.api
 
 import groovy.transform.CompileStatic
 
-import org.grails.datastore.mapping.reflect.ClassUtils
+import org.grails.datastore.gorm.internal.RefreshLockArguments
 
 /**
  * Instance methods of the GORM API.
@@ -30,17 +30,6 @@ import org.grails.datastore.mapping.reflect.ClassUtils
  * @param <D> the entity/domain class
  */
 interface GormInstanceOperations<D> {
-
-    /**
-     * The message reported when a datastore does not support refreshing an instance under a pessimistic lock,
-     * whether requested as {@code instance.refresh(lock: true)} or {@code DomainClass.lock(id, refresh: true)}.
-     */
-    String REFRESH_LOCK_UNSUPPORTED = 'Datastore implementation does not support refreshing under a pessimistic lock'
-
-    /**
-     * The {@link #refresh(java.lang.Object, java.util.Map)} argument that requests a pessimistic write lock.
-     */
-    String ARGUMENT_LOCK = 'lock'
 
     /**
      * Allow access to datasource by name
@@ -81,24 +70,29 @@ interface GormInstanceOperations<D> {
      *
      * <p>Supported arguments:</p>
      * <ul>
-     *   <li>{@code lock} - when {@code true}, reloads the instance's database state and version under a
-     *   pessimistic write lock in a single operation, discarding unflushed changes. Requires an active
-     *   transaction, which holds the lock until it commits or rolls back.</li>
+     *   <li>{@code lock} - {@code true} reloads the instance's database state and version under a pessimistic
+     *   write lock; a {@link jakarta.persistence.LockModeType} reloads them under that lock mode instead. Either
+     *   form is a single refresh-with-lock operation that discards unflushed changes, requires an attached
+     *   instance and an active transaction, and holds the lock until that transaction commits or rolls back.
+     *   {@code false} and {@link jakarta.persistence.LockModeType#NONE} request no lock.</li>
      * </ul>
      *
-     * <p>Without {@code lock: true} this behaves like {@link #refresh(java.lang.Object)}. The default
-     * implementation rejects {@code lock: true}; datastores that support it override this method.</p>
+     * <p>Without a requested lock this behaves like {@link #refresh(java.lang.Object)}. The default
+     * implementation rejects a requested lock; datastores that support it override this method.</p>
      *
      * @param instance The instance
      * @param args The named arguments
      * @return The same instance
-     * @throws jakarta.persistence.TransactionRequiredException if {@code lock: true} is requested without an active transaction
-     * @throws UnsupportedOperationException if {@code lock: true} is requested and the datastore does not support it
+     * @throws RuntimeException an implementation-specific exception if a lock is requested without an active
+     * transaction, such as {@code jakarta.persistence.TransactionRequiredException} for Hibernate
+     * @throws IllegalArgumentException if a lock is requested for an instance that is not attached to the
+     * current session, or the {@code lock} argument is neither a boolean nor a lock mode
+     * @throws UnsupportedOperationException if a lock is requested and the datastore does not support it
      */
     @CompileStatic
     default D refresh(D instance, Map args) {
-        if (ClassUtils.getBooleanFromMap(ARGUMENT_LOCK, args)) {
-            throw new UnsupportedOperationException(REFRESH_LOCK_UNSUPPORTED)
+        if (RefreshLockArguments.lockModeFrom(args) != null) {
+            throw new UnsupportedOperationException(RefreshLockArguments.UNSUPPORTED)
         }
         refresh(instance)
     }

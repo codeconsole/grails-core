@@ -22,6 +22,8 @@ import groovy.transform.CompileDynamic
 import groovy.transform.CompileStatic
 
 import jakarta.persistence.FlushModeType
+import jakarta.persistence.LockModeType
+import jakarta.persistence.TransactionRequiredException
 import jakarta.persistence.criteria.CriteriaBuilder
 import jakarta.persistence.criteria.CriteriaQuery
 import jakarta.persistence.criteria.Root
@@ -31,6 +33,8 @@ import org.hibernate.FlushMode
 import org.hibernate.LockMode
 import org.hibernate.Session
 import org.hibernate.SessionFactory
+import org.hibernate.engine.spi.SessionImplementor
+import org.hibernate.persister.entity.EntityPersister
 import org.hibernate.query.Query
 
 import org.springframework.core.convert.ConversionService
@@ -41,6 +45,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import grails.orm.HibernateCriteriaBuilder
 import org.grails.datastore.gorm.finders.DynamicFinder
 import org.grails.datastore.gorm.finders.FinderMethod
+import org.grails.datastore.gorm.internal.RefreshLockArguments
 import org.grails.datastore.mapping.query.api.BuildableCriteria as GrailsCriteria
 import org.grails.datastore.mapping.query.event.PostQueryEvent
 import org.grails.datastore.mapping.query.event.PreQueryEvent
@@ -63,6 +68,7 @@ class HibernateGormStaticApi<D> extends AbstractHibernateGormStaticApi<D> {
     protected ConversionService conversionService
     protected Class identityType
     protected ClassLoader classLoader
+    private static final String LOCK_REFRESH_REQUIRES_TRANSACTION = 'An active transaction is required.'
     private HibernateGormInstanceApi<D> instanceApi
     private int defaultFlushMode
 
@@ -152,6 +158,43 @@ class HibernateGormStaticApi<D> extends AbstractHibernateGormStaticApi<D> {
     @Override
     D lock(Serializable id) {
         (D) hibernateTemplate.lock((Class)persistentClass, convertIdentifier(id), LockMode.PESSIMISTIC_WRITE)
+    }
+
+    @Override
+    D lock(Map args, Serializable id) {
+        LockModeType lockMode = RefreshLockArguments.lockTypeFrom(args)
+        boolean refresh = RefreshLockArguments.refreshRequested(args)
+        if (!refresh && lockMode == LockModeType.PESSIMISTIC_WRITE) {
+            return lock(id)
+        }
+        Serializable identifier = convertIdentifier(id)
+        if (identifier == null) {
+            return null
+        }
+        if (!refresh) {
+            return (D) hibernateTemplate.execute { Session session ->
+                session.find(persistentClass, identifier, lockMode)
+            }
+        }
+        // Stay on this connection's session: the generic implementation resolves the instance api through the
+        // registry, which yields the default connection for a named-connection static api.
+        (D) hibernateTemplate.execute { Session session ->
+            if (!session.getTransaction().isActive()) {
+                throw new TransactionRequiredException(LOCK_REFRESH_REQUIRES_TRANSACTION)
+            }
+            Object managed = findManagedInstance(session, identifier)
+            if (managed == null) {
+                // Not loaded yet, so a single locked load is enough.
+                return session.find(persistentClass, identifier, lockMode)
+            }
+            instanceApi.refresh((D) managed, [(RefreshLockArguments.LOCK): lockMode])
+        }
+    }
+
+    private Object findManagedInstance(Session session, Serializable id) {
+        SessionImplementor sessionImplementor = session.unwrap(SessionImplementor)
+        EntityPersister persister = sessionImplementor.factory.metamodel.entityPersister(persistentClass)
+        sessionImplementor.persistenceContextInternal.getEntity(sessionImplementor.generateEntityKey(id, persister))
     }
 
     @Override

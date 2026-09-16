@@ -23,6 +23,7 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
+import jakarta.persistence.LockModeType
 import jakarta.persistence.TransactionRequiredException
 
 import org.hibernate.FlushMode
@@ -40,7 +41,8 @@ class Hibernate5RefreshLockSpec extends HibernateGormDatastoreSpec {
 
     void setupSpec() {
         manager.registerDomainClasses(Hibernate5RefreshLockBook, Hibernate5RefreshLockRoutedBook,
-                Hibernate5RefreshLockNonversionedBook, Hibernate5RefreshLockEmbeddedBook)
+                Hibernate5RefreshLockNonversionedBook, Hibernate5RefreshLockEmbeddedBook,
+                Hibernate5RefreshLockCascadeParent, Hibernate5RefreshLockCascadeChild)
         // Let the template preserve the session flush mode instead of downgrading AUTO to COMMIT.
         manager.grailsConfig['hibernate.flush.mode'] = 'AUTO'
         // ConfigObject needs the parent map for named connection discovery.
@@ -659,10 +661,15 @@ class Hibernate5RefreshLockSpec extends HibernateGormDatastoreSpec {
         Long id = new Hibernate5RefreshLockBook(title: 'original').save(flush: true, failOnError: true).id
         Hibernate5RefreshLockBook.withSession { it.clear() }
 
+        def statistics = manager.sessionFactory.statistics
+        statistics.statisticsEnabled = true
+        long statementsBefore = statistics.prepareStatementCount
+
         when:
         def book = Hibernate5RefreshLockBook.lock(id, refresh: true)
 
-        then:
+        then: 'a single locked load, not an unlocked get followed by a locked refresh'
+        statistics.prepareStatementCount == statementsBefore + 1
         book != null
         Hibernate.isInitialized(book)
         book.title == 'original'
@@ -718,6 +725,286 @@ class Hibernate5RefreshLockSpec extends HibernateGormDatastoreSpec {
         exception.message == 'An active transaction is required.'
     }
 
+    void 'static lock(id, refresh: true) uses the named connection rather than the default database'() {
+        given:
+        def defaultBook = new Hibernate5RefreshLockRoutedBook(title: 'default').save(flush: true, failOnError: true)
+        Long defaultId = defaultBook.id
+
+        expect:
+        Hibernate5RefreshLockRoutedBook.secondary.withTransaction {
+            Hibernate5RefreshLockRoutedBook.secondary.withSession { Session session ->
+                assert session.getTransaction().isActive()
+                assert session.doReturningWork { connection -> connection.metaData.URL } == 'jdbc:h2:mem:hibernate5RefreshLockSecondary'
+                def book = new Hibernate5RefreshLockRoutedBook(title: 'secondary')
+                book.secondary.save(flush: true, failOnError: true)
+                Long secondaryId = book.id
+                session.clear()
+                book = Hibernate5RefreshLockRoutedBook.secondary.get(secondaryId)
+                assert session.contains(book)
+                book.title = 'pending'
+
+                def locked = Hibernate5RefreshLockRoutedBook.secondary.lock(secondaryId, refresh: true)
+                assert locked.is(book)
+                assert book.title == 'secondary'
+                assert book.version == 0
+                assert session.getCurrentLockMode(book) == LockMode.PESSIMISTIC_WRITE
+
+                session.flush()
+                session.clear()
+                def loaded = Hibernate5RefreshLockRoutedBook.secondary.lock(secondaryId, refresh: true)
+                assert loaded != null && !loaded.is(book)
+                assert loaded.title == 'secondary'
+                assert session.contains(loaded)
+                assert session.getCurrentLockMode(loaded) == LockMode.PESSIMISTIC_WRITE
+                true
+            }
+        }
+        Hibernate5RefreshLockRoutedBook.withSession { Session session ->
+            session.flush()
+            session.clear()
+            def reloadedDefault = Hibernate5RefreshLockRoutedBook.get(defaultId)
+            assert reloadedDefault.title == 'default'
+            assert reloadedDefault.version == 0
+            assert Hibernate5RefreshLockRoutedBook.countByTitle('secondary') == 0
+            assert Hibernate5RefreshLockRoutedBook.countByTitle('pending') == 0
+            true
+        }
+    }
+
+    void 'static lock(id, refresh: true) rejects a missing transaction before initializing a proxy'() {
+        given:
+        Long id = new Hibernate5RefreshLockBook(title: 'original').save(flush: true, failOnError: true).id
+        manager.transactionManager.commit(manager.transactionStatus)
+        manager.transactionStatus = null
+        Hibernate5RefreshLockBook proxy
+
+        when:
+        Hibernate5RefreshLockBook.withNewSession { Session session ->
+            assert !session.getTransaction().isActive()
+            proxy = Hibernate5RefreshLockBook.load(id)
+            assert !Hibernate.isInitialized(proxy)
+            Hibernate5RefreshLockBook.lock(id, refresh: true)
+        }
+
+        then:
+        def exception = thrown(TransactionRequiredException)
+        exception.message == 'An active transaction is required.'
+        !Hibernate.isInitialized(proxy)
+    }
+
+    void 'refresh(lock: true) rejects a detached instance without changing it (proxy: #useProxy)'() {
+        given:
+        Long id = new Hibernate5RefreshLockBook(title: 'original').save(flush: true, failOnError: true).id
+        Hibernate5RefreshLockBook.withSession { it.clear() }
+        def book = useProxy ? Hibernate5RefreshLockBook.load(id) : Hibernate5RefreshLockBook.get(id)
+        Hibernate5RefreshLockBook.withSession { Session session ->
+            assert session.contains(book)
+            session.evict(book)
+            assert !session.contains(book)
+        }
+        if (!useProxy) {
+            book.title = 'pending'
+        }
+
+        when: 'a detached proxy is refreshed through the operations api, as any call on the proxy itself would initialize it'
+        useProxy ? Hibernate5RefreshLockBook.'default'.refresh(book, [lock: true]) : book.refresh(lock: true)
+
+        then:
+        def exception = thrown(IllegalArgumentException)
+        exception.message == 'The instance must be attached to the current session.'
+        useProxy ? !Hibernate.isInitialized(book) : book.title == 'pending'
+        Hibernate5RefreshLockBook.withSession { Session session ->
+            session.clear()
+            Hibernate5RefreshLockBook.get(id).title == 'original'
+        }
+
+        where:
+        useProxy << [false, true]
+    }
+
+    void 'refresh(lock: #description) reloads state and version under the requested lock mode'() {
+        given:
+        def book = new Hibernate5RefreshLockBook(title: 'original').save(flush: true, failOnError: true)
+        Hibernate5RefreshLockBook.withSession { it.clear() }
+        book = Hibernate5RefreshLockBook.get(book.id)
+        book.title = 'pending'
+
+        when:
+        def result = book.refresh(lock: lock)
+
+        then:
+        result.is(book)
+        book.title == 'original'
+        book.version == 0
+        !book.isDirty()
+        Hibernate5RefreshLockBook.withSession { Session session ->
+            session.getCurrentLockMode(book) == expectedLockMode
+        }
+
+        where:
+        description                    | lock                             | expectedLockMode
+        'LockModeType.PESSIMISTIC_READ'  | LockModeType.PESSIMISTIC_READ    | LockMode.PESSIMISTIC_READ
+        'LockModeType.PESSIMISTIC_WRITE' | LockModeType.PESSIMISTIC_WRITE   | LockMode.PESSIMISTIC_WRITE
+        "'PESSIMISTIC_READ'"             | 'PESSIMISTIC_READ'               | LockMode.PESSIMISTIC_READ
+        "'true'"                         | 'true'                           | LockMode.PESSIMISTIC_WRITE
+    }
+
+    void 'refresh rejects a lock argument that is neither a boolean nor a lock mode without changing the entity'() {
+        given:
+        def book = new Hibernate5RefreshLockBook(title: 'original').save(flush: true, failOnError: true)
+        book.title = 'pending'
+
+        when:
+        book.refresh(lock: 'SHARED')
+
+        then:
+        def exception = thrown(IllegalArgumentException)
+        exception.message == "The 'lock' argument must be a boolean or a jakarta.persistence.LockModeType but was 'SHARED'"
+        book.title == 'pending'
+    }
+
+    void 'lock(refresh: true) on an instance explains that the instance form is refresh(lock: true)'() {
+        given:
+        def book = new Hibernate5RefreshLockBook(title: 'original').save(flush: true, failOnError: true)
+
+        when:
+        book.lock(refresh: true)
+
+        then:
+        def exception = thrown(IllegalArgumentException)
+        exception.message == 'lock(Map) is not an instance method. Use DomainClass.lock(id, refresh: true) ' +
+                'to lock by identifier, or refresh(lock: true) on the instance'
+    }
+
+    void 'static lock(id, type: #description) locks the managed instance under that mode and preserves pending changes'() {
+        given:
+        def book = new Hibernate5RefreshLockBook(title: 'original').save(flush: true, failOnError: true)
+        Hibernate5RefreshLockBook.withSession { it.clear() }
+        book = Hibernate5RefreshLockBook.get(book.id)
+        book.title = 'pending'
+
+        when:
+        def result = Hibernate5RefreshLockBook.lock(book.id, type: type)
+
+        then:
+        result.is(book)
+        book.title == 'pending'
+        book.version == 0
+        Hibernate5RefreshLockBook.withSession { Session session ->
+            session.getCurrentLockMode(book) == expectedLockMode
+        }
+
+        where:
+        description                      | type                           | expectedLockMode
+        'LockModeType.PESSIMISTIC_READ'  | LockModeType.PESSIMISTIC_READ  | LockMode.PESSIMISTIC_READ
+        'LockModeType.PESSIMISTIC_WRITE' | LockModeType.PESSIMISTIC_WRITE | LockMode.PESSIMISTIC_WRITE
+        "'pessimistic_read'"             | 'pessimistic_read'             | LockMode.PESSIMISTIC_READ
+    }
+
+    void 'static lock(id, type: PESSIMISTIC_READ) loads an instance that is not in the session under that mode (refresh: #refresh)'() {
+        given:
+        Long id = new Hibernate5RefreshLockBook(title: 'original').save(flush: true, failOnError: true).id
+        Hibernate5RefreshLockBook.withSession { it.clear() }
+
+        when:
+        def book = Hibernate5RefreshLockBook.lock(id, type: LockModeType.PESSIMISTIC_READ, refresh: refresh)
+
+        then:
+        book != null
+        Hibernate.isInitialized(book)
+        book.title == 'original'
+        Hibernate5RefreshLockBook.withSession { Session session ->
+            session.contains(book) && session.getCurrentLockMode(book) == LockMode.PESSIMISTIC_READ
+        }
+        Hibernate5RefreshLockBook.lock(-1L, type: LockModeType.PESSIMISTIC_READ, refresh: refresh) == null
+
+        where:
+        refresh << [false, true]
+    }
+
+    void 'static lock(id, refresh: true, type: PESSIMISTIC_READ) reloads the managed instance under that mode'() {
+        given:
+        def book = new Hibernate5RefreshLockBook(title: 'original').save(flush: true, failOnError: true)
+        Hibernate5RefreshLockBook.withSession { it.clear() }
+        book = Hibernate5RefreshLockBook.get(book.id)
+        book.title = 'pending'
+
+        when:
+        def result = Hibernate5RefreshLockBook.lock(book.id, refresh: true, type: LockModeType.PESSIMISTIC_READ)
+
+        then:
+        result.is(book)
+        book.title == 'original'
+        book.version == 0
+        !book.isDirty()
+        Hibernate5RefreshLockBook.withSession { Session session ->
+            session.getCurrentLockMode(book) == LockMode.PESSIMISTIC_READ
+        }
+    }
+
+    void 'static lock(id, type: #description) is rejected without touching the entity'() {
+        given:
+        def book = new Hibernate5RefreshLockBook(title: 'original').save(flush: true, failOnError: true)
+        book.title = 'pending'
+
+        when:
+        Hibernate5RefreshLockBook.lock(book.id, type: type, refresh: true)
+
+        then:
+        def exception = thrown(IllegalArgumentException)
+        exception.message == message
+        book.title == 'pending'
+
+        where:
+        description | type              | message
+        'NONE'      | LockModeType.NONE | "The 'type' argument must name a lock but was NONE"
+        "'SHARED'"  | 'SHARED'          | "The 'type' argument must be a jakarta.persistence.LockModeType but was 'SHARED'"
+    }
+
+    void 'refresh(lock: true) discards cascaded child edits without a spurious child update at flush'() {
+        given:
+        def child = new Hibernate5RefreshLockCascadeChild(title: 'original child')
+        def parent = new Hibernate5RefreshLockCascadeParent(title: 'original parent', child: child)
+                .save(flush: true, failOnError: true)
+        Long parentId = parent.id
+        Long childId = child.id
+        Hibernate5RefreshLockCascadeParent.withSession { it.clear() }
+        parent = Hibernate5RefreshLockCascadeParent.get(parentId)
+        child = parent.child
+        assert Hibernate.isInitialized(child)
+        parent.title = 'pending parent'
+        child.title = 'pending child'
+        assert child.isDirty('title')
+
+        when:
+        def result = parent.refresh(lock: true)
+
+        then: 'the configured refresh cascade reloads the child as well'
+        result.is(parent)
+        parent.title == 'original parent'
+        child.title == 'original child'
+        !parent.isDirty()
+        !child.isDirty()
+        child.listDirtyPropertyNames().isEmpty()
+        Hibernate5RefreshLockCascadeParent.withSession { Session session ->
+            session.getCurrentLockMode(parent) == LockMode.PESSIMISTIC_WRITE
+        }
+
+        when: 'the discarded edits must not schedule an update of either entity at flush'
+        Hibernate5RefreshLockCascadeParent.withSession { it.flush() }
+
+        then:
+        parent.version == 0
+        child.version == 0
+
+        when:
+        Hibernate5RefreshLockCascadeParent.withSession { it.clear() }
+
+        then:
+        Hibernate5RefreshLockCascadeChild.get(childId).version == 0
+        Hibernate5RefreshLockCascadeChild.get(childId).title == 'original child'
+    }
+
     void 'refresh with arguments that do not request a lock reloads state without a write lock (#description)'() {
         given:
         def book = new Hibernate5RefreshLockBook(title: 'original').save(flush: true, failOnError: true)
@@ -740,6 +1027,7 @@ class Hibernate5RefreshLockSpec extends HibernateGormDatastoreSpec {
         description   | args
         'empty map'   | [:]
         'lock: false' | [lock: false]
+        'lock: NONE'  | [lock: LockModeType.NONE]
     }
 }
 
@@ -785,4 +1073,23 @@ class Hibernate5RefreshLockEmbeddedBook {
 class Hibernate5RefreshLockDetails {
     String summary
     String language
+}
+
+@Entity
+class Hibernate5RefreshLockCascadeParent {
+    Long id
+    Long version
+    String title
+    Hibernate5RefreshLockCascadeChild child
+
+    static mapping = {
+        child cascade: 'all', lazy: false
+    }
+}
+
+@Entity
+class Hibernate5RefreshLockCascadeChild {
+    Long id
+    Long version
+    String title
 }

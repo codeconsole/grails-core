@@ -20,6 +20,8 @@ package org.grails.datastore.gorm
 
 import groovy.transform.CompileStatic
 
+import jakarta.persistence.LockModeType
+
 import grails.gorm.annotation.Entity
 import grails.gorm.api.GormAllOperations
 import grails.gorm.api.GormInstanceOperations
@@ -282,7 +284,7 @@ class GormStaticApiSpec extends Specification {
 
         then:
         def exception = thrown(UnsupportedOperationException)
-        exception.message == 'Datastore implementation does not support refreshing under a pessimistic lock'
+        exception.message == 'Datastore implementation does not support refreshing under a lock'
         instance.name == 'local change'
     }
 
@@ -322,11 +324,52 @@ class GormStaticApiSpec extends Specification {
         result.is(locked)
 
         where:
-        description       | args
-        'empty map'       | [:]
-        'null map'        | null
-        'refresh: false'  | [refresh: false]
-        'other arguments' | [flush: true]
+        description               | args
+        'empty map'               | [:]
+        'null map'                | null
+        'refresh: false'          | [refresh: false]
+        'other arguments'         | [flush: true]
+        'type: PESSIMISTIC_WRITE' | [type: LockModeType.PESSIMISTIC_WRITE]
+        "type: 'pessimistic_write'" | [type: 'pessimistic_write']
+    }
+
+    void "lock(args, id) with a non-default type rejects an unsupported datastore (#description)"() {
+        given:
+        def api = new LockRecordingGormStaticApi<GormStaticApiThing>(GormStaticApiThing, datastore)
+
+        when:
+        lockWithArguments(api, args, 42L)
+
+        then:
+        def exception = thrown(UnsupportedOperationException)
+        exception.message == 'Datastore implementation does not support lock types other than PESSIMISTIC_WRITE'
+        api.lockedIds.isEmpty()
+        api.resolvedIds.isEmpty()
+
+        where:
+        description              | args
+        'PESSIMISTIC_READ'       | [type: LockModeType.PESSIMISTIC_READ]
+        "'OPTIMISTIC'"           | [type: 'OPTIMISTIC']
+        'with refresh: false'    | [type: LockModeType.PESSIMISTIC_READ, refresh: false]
+    }
+
+    void "lock(args, id) rejects an invalid type before doing anything (#description)"() {
+        given:
+        def api = new LockRecordingGormStaticApi<GormStaticApiThing>(GormStaticApiThing, datastore)
+
+        when:
+        lockWithArguments(api, args, 42L)
+
+        then:
+        def exception = thrown(IllegalArgumentException)
+        exception.message == message
+        api.lockedIds.isEmpty()
+
+        where:
+        description    | args                          | message
+        'NONE'         | [type: LockModeType.NONE]     | "The 'type' argument must name a lock but was NONE"
+        'unknown name' | [type: 'SHARED']              | "The 'type' argument must be a jakarta.persistence.LockModeType but was 'SHARED'"
+        'boolean'      | [type: true]                  | "The 'type' argument must be a jakarta.persistence.LockModeType but was an instance of java.lang.Boolean"
     }
 
     void "lock(args, id) with refresh: true resolves the managed instance and refreshes it under a lock"() {
@@ -375,7 +418,7 @@ class GormStaticApiSpec extends Specification {
 
         then:
         def exception = thrown(UnsupportedOperationException)
-        exception.message == 'Datastore implementation does not support refreshing under a pessimistic lock'
+        exception.message == 'Datastore implementation does not support refreshing under a lock'
     }
 
     void "the default lock(args, id) of the static operations contract splits on the refresh argument"() {
@@ -403,8 +446,44 @@ class GormStaticApiSpec extends Specification {
 
         then:
         def exception = thrown(UnsupportedOperationException)
-        exception.message == GormInstanceOperations.REFRESH_LOCK_UNSUPPORTED
+        exception.message == 'Datastore implementation does not support refreshing under a lock'
         calls.size() == 1
+
+        when:
+        operations.lock([type: LockModeType.PESSIMISTIC_READ], 7L)
+
+        then:
+        def typeException = thrown(UnsupportedOperationException)
+        typeException.message == 'Datastore implementation does not support lock types other than PESSIMISTIC_WRITE'
+        calls.size() == 1
+
+        when:
+        def written = operations.lock([type: LockModeType.PESSIMISTIC_WRITE], 8L)
+
+        then:
+        calls == [['lock', [7L]], ['lock', [8L]]]
+        written == 'locked'
+    }
+
+    void "lock(Map) on the entity explains that the instance form is refresh(lock: true)"() {
+        when:
+        GormStaticApiThing.lock(refresh: true)
+
+        then:
+        def exception = thrown(IllegalArgumentException)
+        exception.message == 'lock(Map) is not an instance method. Use DomainClass.lock(id, refresh: true) ' +
+                'to lock by identifier, or refresh(lock: true) on the instance'
+    }
+
+    void "lock(Map) called on an instance is rejected the same way"() {
+        given:
+        def saved = new GormStaticApiThing(name: 'persisted').save(flush: true)
+
+        when:
+        saved.lock(refresh: true)
+
+        then:
+        thrown(IllegalArgumentException)
     }
 
     private GormStaticApi<GormStaticApiThing> registerStaticApiWith(GormInstanceApi<GormStaticApiThing> instanceApi) {

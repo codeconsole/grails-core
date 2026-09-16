@@ -21,15 +21,19 @@ package org.grails.orm.hibernate
 import groovy.transform.CompileDynamic
 import groovy.transform.CompileStatic
 
+import jakarta.persistence.LockModeType
 import jakarta.persistence.TransactionRequiredException
 
 import org.hibernate.FlushMode
+import org.hibernate.Hibernate
 import org.hibernate.HibernateException
 import org.hibernate.LockMode
-import org.hibernate.LockOptions
 import org.hibernate.Session
 import org.hibernate.SessionFactory
+import org.hibernate.engine.spi.CascadeStyle
+import org.hibernate.engine.spi.CascadingActions
 import org.hibernate.engine.spi.SessionImplementor
+import org.hibernate.persister.entity.EntityPersister
 
 import org.springframework.beans.BeanWrapperImpl
 import org.springframework.beans.InvalidPropertyException
@@ -40,6 +44,7 @@ import org.springframework.validation.Validator
 import grails.gorm.validation.CascadingValidator
 import org.grails.datastore.gorm.GormInstanceApi
 import org.grails.datastore.gorm.GormValidateable
+import org.grails.datastore.gorm.internal.RefreshLockArguments
 import org.grails.datastore.mapping.core.Datastore
 import org.grails.datastore.mapping.dirty.checking.DirtyCheckable
 import org.grails.datastore.mapping.engine.event.ValidationEvent
@@ -70,6 +75,7 @@ abstract class AbstractHibernateGormInstanceApi<D> extends GormInstanceApi<D> {
     private static final String ARGUMENT_MERGE = 'merge'
     private static final String ARGUMENT_FAIL_ON_ERROR = 'failOnError'
     private static final String REFRESH_LOCK_REQUIRES_TRANSACTION = 'An active transaction is required.'
+    private static final String REFRESH_LOCK_REQUIRES_ATTACHED = 'The instance must be attached to the current session.'
     private static final Class DEFERRED_BINDING
 
     static {
@@ -259,24 +265,55 @@ abstract class AbstractHibernateGormInstanceApi<D> extends GormInstanceApi<D> {
 
     @Override
     D refresh(D instance, Map args) {
-        if (!ClassUtils.getBooleanFromMap(ARGUMENT_LOCK, args)) {
+        LockModeType lockMode = RefreshLockArguments.lockModeFrom(args)
+        if (lockMode == null) {
             return refresh(instance)
         }
         hibernateTemplate.execute { Session session ->
             if (!session.getTransaction().isActive()) {
                 throw new TransactionRequiredException(REFRESH_LOCK_REQUIRES_TRANSACTION)
             }
+            // Hibernate 5 would silently re-associate a detached instance where Hibernate 7 rejects it,
+            // so the attachment contract is enforced here, before a detached proxy could be initialized.
+            if (!session.contains(instance)) {
+                throw new IllegalArgumentException(REFRESH_LOCK_REQUIRES_ATTACHED)
+            }
             // Hibernate skips the locked refresh for an uninitialized proxy.
             Object target = proxyHandler.unwrap(instance)
-            session.refresh(target, new LockOptions(LockMode.PESSIMISTIC_WRITE))
-            // Reset owner and embedded dirty flags left behind by native refresh.
-            if (target instanceof DirtyCheckable) {
-                SessionImplementor sessionImplementor = session.unwrap(SessionImplementor)
-                sessionImplementor.factory.customEntityDirtinessStrategy.resetDirty(
-                        target, sessionImplementor.getEntityPersister(null, target), sessionImplementor)
-            }
+            session.refresh(target, lockMode)
+            // Hibernate 5 leaves GORM dirty flags behind on everything a native refresh reloads.
+            resetDirtyAfterRefresh(session.unwrap(SessionImplementor), target,
+                    Collections.newSetFromMap(new IdentityHashMap<Object, Boolean>()))
         }
         return instance
+    }
+
+    /**
+     * Resets the dirty state of a refreshed entity, its embedded components, and every initialized association
+     * that Hibernate's refresh cascade reloaded along with it.
+     */
+    private void resetDirtyAfterRefresh(SessionImplementor session, Object entity, Set<Object> visited) {
+        if (!(entity instanceof DirtyCheckable) || !visited.add(entity)) {
+            return
+        }
+        EntityPersister persister = session.getEntityPersister(null, entity)
+        session.factory.customEntityDirtinessStrategy.resetDirty(entity, persister, session)
+        CascadeStyle[] cascadeStyles = persister.propertyCascadeStyles
+        Object[] values = persister.getPropertyValues(entity)
+        for (int i = 0; i < cascadeStyles.length; i++) {
+            Object value = values[i]
+            if (value == null || !cascadeStyles[i].doCascade(CascadingActions.REFRESH) || !Hibernate.isInitialized(value)) {
+                continue
+            }
+            Collection<Object> associated = value instanceof Map ? ((Map) value).values()
+                    : value instanceof Collection ? (Collection<Object>) value
+                    : [value]
+            for (Object element : associated) {
+                if (element != null && Hibernate.isInitialized(element)) {
+                    resetDirtyAfterRefresh(session, proxyHandler.unwrap(element), visited)
+                }
+            }
+        }
     }
 
     protected D performSave(final D target, final boolean flush) {
