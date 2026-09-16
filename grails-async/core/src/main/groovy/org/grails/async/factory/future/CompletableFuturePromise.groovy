@@ -20,10 +20,9 @@ package org.grails.async.factory.future
 
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CompletionStage
+import java.util.concurrent.CompletionException
 import java.util.concurrent.Executor
 import java.util.concurrent.ExecutionException
-import java.util.concurrent.TimeUnit
-import java.util.concurrent.TimeoutException
 
 import groovy.transform.CompileStatic
 
@@ -39,15 +38,8 @@ import grails.async.Promise
 class CompletableFuturePromise<T> extends CompletableFuture<T> implements Promise<T> {
 
     final Executor executor
-    private final boolean unwrapFailureOnGet
-
-    CompletableFuturePromise(boolean unwrapFailureOnGet = false) {
-        this(null, unwrapFailureOnGet)
-    }
-
-    CompletableFuturePromise(Executor executor, boolean unwrapFailureOnGet = false) {
+    CompletableFuturePromise(Executor executor = null) {
         this.executor = executor
-        this.unwrapFailureOnGet = unwrapFailureOnGet
     }
 
     @Override
@@ -57,7 +49,7 @@ class CompletableFuturePromise<T> extends CompletableFuture<T> implements Promis
 
     @Override
     <U> CompletableFuturePromise<U> newIncompleteFuture() {
-        return new CompletableFuturePromise<U>(executor, unwrapFailureOnGet)
+        return new CompletableFuturePromise<U>(executor)
     }
 
     @Override
@@ -95,41 +87,14 @@ class CompletableFuturePromise<T> extends CompletableFuture<T> implements Promis
         return onComplete(callable)
     }
 
-    @Override
-    T get() throws InterruptedException, ExecutionException {
-        try {
-            return super.get()
-        }
-        catch (ExecutionException failure) {
-            if (unwrapFailureOnGet) {
-                throw failure.cause
-            }
-            throw failure
-        }
-    }
-
-    @Override
-    T get(long timeout, TimeUnit unit) throws InterruptedException, ExecutionException, TimeoutException {
-        try {
-            return super.get(timeout, unit)
-        }
-        catch (ExecutionException failure) {
-            if (unwrapFailureOnGet) {
-                throw failure.cause
-            }
-            throw failure
-        }
-    }
-
     static <T> CompletableFuturePromise<T> fromStage(
             CompletionStage<T> stage,
-            Executor executor = null,
-            boolean unwrapFailureOnGet = true) {
+            Executor executor = null) {
         Executor stageExecutor = executor
         if (stageExecutor == null && stage instanceof CompletableFuturePromise) {
             stageExecutor = ((CompletableFuturePromise<?>) stage).executor
         }
-        CompletableFuturePromise<T> promise = new CompletableFuturePromise<T>(stageExecutor, unwrapFailureOnGet)
+        CompletableFuturePromise<T> promise = new CompletableFuturePromise<T>(stageExecutor)
         stage.whenComplete { T value, Throwable failure ->
             if (failure == null) {
                 promise.complete(value)
@@ -141,7 +106,10 @@ class CompletableFuturePromise<T> extends CompletableFuture<T> implements Promis
         return promise
     }
 
-    private static Throwable unwrap(Throwable failure) {
-        return failure.cause ?: failure
+    static Throwable unwrap(Throwable failure) {
+        while ((failure instanceof CompletionException || failure instanceof ExecutionException) && failure.cause != null) {
+            failure = failure.cause
+        }
+        return failure
     }
 }

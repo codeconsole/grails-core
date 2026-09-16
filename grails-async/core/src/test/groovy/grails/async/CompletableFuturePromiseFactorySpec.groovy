@@ -20,7 +20,9 @@ package grails.async
 
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.Executor
+import java.util.concurrent.ExecutionException
 import java.util.concurrent.Future
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
 import org.grails.async.factory.PromiseFactoryBuilder
@@ -123,5 +125,61 @@ class CompletableFuturePromiseFactorySpec extends Specification {
     void 'uses the modern factory by default'() {
         expect:
         new PromiseFactoryBuilder().build() instanceof CompletableFuturePromiseFactory
+    }
+
+    void 'direct and chained get preserve the original failure with its cause'() {
+        given:
+        def original = new IllegalStateException('outer', new IOException('inner'))
+        def promise = factory.createPromise { throw original }
+        if (chained) {
+            promise = promise.then { it }
+        }
+
+        when:
+        if (timed) {
+            promise.get(5, TimeUnit.SECONDS)
+        }
+        else {
+            promise.get()
+        }
+
+        then:
+        def failure = thrown(ExecutionException)
+        failure.cause.is(original)
+
+        where:
+        chained | timed
+        false   | false
+        false   | true
+        true    | false
+        true    | true
+    }
+
+    void 'single and aggregate error callbacks receive the same original failure'() {
+        given:
+        def original = new IllegalStateException('outer', new IOException('inner'))
+        def promise = factory.createPromise { throw original }
+        Throwable single
+        Throwable aggregate
+
+        when:
+        promise.onError { single = it }
+        factory.onError([promise]) { aggregate = it }
+
+        then:
+        single.is(original)
+        aggregate.is(original)
+    }
+
+    void 'a failing recovery callback preserves its own failure'() {
+        given:
+        def original = new IllegalStateException('callback', new IOException('inner'))
+
+        when:
+        factory.createPromise { throw new IOException('task') }.onError { throw original }.get()
+
+        then:
+        def failure = thrown(ExecutionException)
+        failure.cause.is(original)
     }
 }

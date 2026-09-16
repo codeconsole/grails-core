@@ -22,7 +22,6 @@ import java.util.concurrent.CompletableFuture
 import java.util.concurrent.Executor
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
-import java.util.concurrent.ExecutionException
 import java.util.concurrent.TimeUnit
 import java.util.function.Supplier
 
@@ -78,7 +77,7 @@ class CompletableFuturePromiseFactory extends AbstractPromiseFactory implements 
             CompletableFuture<T> future = CompletableFuture.supplyAsync(
                     { decorated.call() } as Supplier<T>,
                     executor)
-            return CompletableFuturePromise.fromStage(future, executor, false)
+            return CompletableFuturePromise.fromStage(future, executor)
         }
 
         PromiseList<T> promises = new PromiseList<T>()
@@ -124,10 +123,9 @@ class CompletableFuturePromiseFactory extends AbstractPromiseFactory implements 
                 result.complete(promises.collect { Promise<T> promise -> promise.get() })
             }
             else {
-                Throwable cause = failure.cause ?: failure
-                ExecutionException reportedFailure = new ExecutionException(cause)
+                Throwable cause = CompletableFuturePromise.unwrap(failure)
                 try {
-                    callable.call(reportedFailure)
+                    callable.call(cause)
                 }
                 catch (Throwable callbackFailure) {
                     result.completeExceptionally(callbackFailure)
