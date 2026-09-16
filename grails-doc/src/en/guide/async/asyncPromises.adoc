@@ -119,6 +119,12 @@ spring:
 
 Spring Boot also composes any `org.springframework.core.task.TaskDecorator` beans with the executor. Grails contributes a decorator that makes the current `GrailsWebRequest` available inside `task { }`. When Micrometer context propagation is on the classpath, setting `spring.task.execution.propagate-context` to `true` additionally propagates observation and logging context.
 
+The Grails decorator also applies to other Boot-managed executors that consume `TaskDecorator` beans, including `@Async` execution and scheduling initiated during a web request. Avoid retaining request state in long-lived background work.
+
+If Boot does not provide a bean named `applicationTaskExecutor`, Grails uses its managed `grailsPromiseExecutor`, with eight core threads and an unbounded queue. Other executor and scheduler beans do not change that selection. Tune the Boot executor using `spring.task.execution` for application workloads; blocking on tasks queued to the same saturated pool can deadlock. A standalone factory continues to use a cached pool, and standalone `WebPromises` propagate request context without requiring the plugin.
+
+Direct and chained `get()` calls (including timed calls) report failures as `ExecutionException`, with the original failure as the cause. Error callbacks, including list callbacks, receive the original failure, preserving its own cause chain.
+
 The default promise is also a JDK `CompletionStage`. Asynchronous stage operations such as `thenApplyAsync` continue to use Boot's `applicationTaskExecutor`, so they retain the same lifecycle, virtual-thread, and context-propagation configuration as Groovy `then` callbacks.
 
 However, the design of the Grails promises framework is such that you can swap out the underlying implementation for your own or one of the pre-supported implementations. For example to use RxJava 1.x simply add the RxJava dependency to `build.gradle`:
