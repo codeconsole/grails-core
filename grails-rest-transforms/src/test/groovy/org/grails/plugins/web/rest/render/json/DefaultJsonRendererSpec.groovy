@@ -29,6 +29,7 @@ import org.springframework.http.converter.ByteArrayHttpMessageConverter
 import org.springframework.http.converter.StringHttpMessageConverter
 import org.springframework.http.converter.json.JacksonJsonHttpMessageConverter
 import tools.jackson.databind.json.JsonMapper
+import tools.jackson.databind.PropertyNamingStrategies
 import org.grails.web.converters.jackson.GrailsJsonMapperCustomizer
 import org.springframework.http.ProblemDetail
 import org.springframework.validation.BeanPropertyBindingResult
@@ -57,6 +58,22 @@ class DefaultJsonRendererSpec extends Specification {
 
     void cleanup() {
         ConvertersConfigurationHolder.clear()
+    }
+
+    void 'legacy rendering writes a JSON string with configuration #configuration'() {
+        given:
+        def renderer = new DefaultJsonRenderer<Object>(Object)
+        renderer.namedConfiguration = configuration
+        def webRequest = GrailsWebMockUtil.bindMockWebRequest()
+
+        when:
+        renderer.render('ok', new ServletRenderContext(webRequest))
+
+        then:
+        webRequest.response.contentAsString == '"ok"'
+
+        where:
+        configuration << [null, 'deep']
     }
 
     void 'real Spring converters serialize #value as JSON instead of raw content'() {
@@ -97,6 +114,23 @@ class DefaultJsonRendererSpec extends Specification {
         then:
         webRequest.response.contentAsString == '{"title":"café"}'
         webRequest.response.characterEncoding == 'ISO-8859-1'
+    }
+
+    void 'repeated Grails conversion keeps each source converter mapper configuration'() {
+        given:
+        def first = new JacksonJsonHttpMessageConverter(JsonMapper.builder().build())
+        def second = new JacksonJsonHttpMessageConverter(JsonMapper.builder()
+                .propertyNamingStrategy(PropertyNamingStrategies.UPPER_CAMEL_CASE).build())
+        def renderer = new DefaultJsonRenderer<Object>(Object)
+        renderer.useSpringJson = true
+        renderer.grailsJsonMapperCustomizer = new GrailsJsonMapperCustomizer()
+        expect:
+        [first, second, first, second].every { source ->
+            def webRequest = GrailsWebMockUtil.bindMockWebRequest()
+            renderer.springHttpMessageConverters = [source]
+            renderer.render(new ProjectionBody(title: 'Grails', hidden: true), new ServletRenderContext(webRequest))
+            webRequest.response.contentAsString.contains(source.is(first) ? '"title":"Grails"' : '"Title":"Grails"')
+        }
     }
 
     void 'selects the first MVC converter that can write the negotiated type'() {

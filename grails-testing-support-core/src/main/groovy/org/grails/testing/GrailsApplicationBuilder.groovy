@@ -26,10 +26,12 @@ import jakarta.servlet.ServletContext
 
 import org.springframework.beans.BeansException
 import org.springframework.beans.MutablePropertyValues
+import org.springframework.beans.factory.BeanRegistrar
 import org.springframework.beans.factory.config.BeanDefinition
 import org.springframework.beans.factory.config.ConfigurableBeanFactory
 import org.springframework.beans.factory.config.ConstructorArgumentValues
 import org.springframework.beans.factory.support.BeanDefinitionRegistry
+import org.springframework.beans.factory.support.BeanRegistryAdapter
 import org.springframework.beans.factory.support.DefaultListableBeanFactory
 import org.springframework.beans.factory.support.RootBeanDefinition
 import org.springframework.boot.autoconfigure.AutoConfiguration
@@ -183,9 +185,29 @@ class GrailsApplicationBuilder {
                     'org.springframework.boot.jackson.autoconfigure.JacksonAutoConfiguration', classLoader))
         }
         prepareContext(context, beanFactory)
+        if (isWebTest()) {
+            // Contribute beans without discovering the plugins' controllers/urlMappings dependencies.
+            // Both Jackson and data binding must see these definitions during context refresh.
+            PluginDiscovery discovery = beanFactory.getBean(PluginDiscovery.BEAN_NAME, PluginDiscovery)
+            if (discovery.findPlugin('converters') == null) {
+                registerPluginBeans(context, beanFactory, 'org.grails.plugins.converters.ConvertersGrailsPlugin')
+            }
+            String xmlPlugin = 'org.grails.plugins.xml.XmlGrailsPlugin'
+            if (discovery.findPlugin('xml') == null && ClassUtils.isPresent(xmlPlugin, classLoader)) {
+                registerPluginBeans(context, beanFactory, xmlPlugin)
+            }
+        }
         context.refresh()
         context.registerShutdownHook()
         return context
+    }
+
+    private static void registerPluginBeans(ConfigurableApplicationContext context,
+            DefaultListableBeanFactory beanFactory, String className) {
+        Class<?> pluginClass = ClassUtils.forName(className, GrailsApplicationBuilder.classLoader)
+        Object plugin = pluginClass.getDeclaredConstructor().newInstance()
+        BeanRegistrar registrar = (BeanRegistrar) pluginClass.getMethod('beanRegistrar').invoke(plugin)
+        new BeanRegistryAdapter(beanFactory, context.environment, registrar.getClass()).register(registrar)
     }
 
     protected void prepareContext(ConfigurableApplicationContext applicationContext, ConfigurableBeanFactory beanFactory) {
@@ -207,7 +229,7 @@ class GrailsApplicationBuilder {
         // we must load the classpath since the plugin manager needs to find the default plugins
         Set<String> plugins = new HashSet<String>(includePlugins ?: DEFAULT_INCLUDED_PLUGINS)
         if (isWebTest()) {
-            plugins.addAll(['converters', 'restResponder', 'xml'])
+            plugins.add('restResponder')
         }
         discovery.pluginFilter = new IncludingPluginFilter(plugins)
         discovery.init(applicationContext.getEnvironment())

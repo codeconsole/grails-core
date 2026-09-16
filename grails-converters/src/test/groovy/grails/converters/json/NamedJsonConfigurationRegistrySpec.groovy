@@ -32,6 +32,31 @@ import spock.lang.Specification
 
 class NamedJsonConfigurationRegistrySpec extends Specification {
 
+    void 'mapper resolution retries absence and caches the first successful lookup'() {
+        given:
+        int lookups = 0
+        JsonMapper available = null
+        def registry = new NamedJsonConfigurationRegistry({ -> lookups++; available })
+        registry.register('deep') { }
+
+        when:
+        registry.writer('deep')
+
+        then:
+        thrown(IllegalStateException)
+        lookups == 1
+
+        when:
+        available = JsonMapper.builder().build()
+        String named = registry.writeValueAsString('deep', [ok: true])
+        String unnamed = registry.writeValueAsString(null, [ok: true])
+
+        then:
+        named == '{"ok":true}'
+        unnamed == named
+        lookups == 2
+    }
+
     void 'named serializers are isolated and support direct string and writer output'() {
         given:
         JsonMapper mapper = JsonMapper.builder().build()

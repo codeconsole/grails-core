@@ -3870,8 +3870,12 @@ Jackson conversion uses UTF-8 for intermediate bytes; the response writer applie
 Controller unit tests use Boot's Jackson configuration and the same setting. A test's `doWithSpring`
 can supply a mapper or `JsonMapperBuilderCustomizer` just as an application can. Named JSON
 configurations work through `render` and `respond` in `ControllerUnitTest`. The optional `grails-xml`
-plugin is loaded by web test traits when present; plain `GrailsUnitTest` and `ServiceUnitTest` do not
-load XML or the web plugin graph simply because that module is on the classpath.
+beans are contributed by web test traits when present, without loading the XML plugin's dependency
+graph. Web traits automatically include `restResponder`, even when a test overrides
+`getIncludePlugins()`, and provide JSON conversion beans and Boot's mapper configuration.
+They do not automatically load the controllers, URL mappings or i18n plugins; link generation retains
+the curated unit-test setup. Plain `GrailsUnitTest` and `ServiceUnitTest` do not load XML or the web
+plugin graph simply because that module is on the classpath.
 
 ==== 66. JSON Request Binding Uses the Boot `JsonMapper`
 

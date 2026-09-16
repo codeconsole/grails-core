@@ -40,6 +40,7 @@ import org.grails.web.converters.jackson.GrailsJsonMapperCustomizer;
 public final class NamedJsonConfigurationRegistry {
 
     private final Supplier<JsonMapper> jsonMapper;
+    private volatile JsonMapper resolvedMapper;
     private final ConcurrentMap<String, NamedJsonConfiguration> configurations = new ConcurrentHashMap<>();
 
     public NamedJsonConfigurationRegistry(JsonMapper jsonMapper) {
@@ -50,7 +51,8 @@ public final class NamedJsonConfigurationRegistry {
      * @param jsonMapper supplies the mapper each configuration derives from, resolved when a writer
      * is first needed. Deferring it means the registry can be created before Jackson
      * auto-configuration has produced Spring Boot's mapper, and still derive from that mapper
-     * rather than from a separately configured one.
+     * rather than from a separately configured one. The first successful resolution is cached;
+     * a missing mapper is retried on the next write.
      */
     public NamedJsonConfigurationRegistry(Supplier<JsonMapper> jsonMapper) {
         this.jsonMapper = Objects.requireNonNull(jsonMapper, "jsonMapper");
@@ -76,13 +78,27 @@ public final class NamedJsonConfigurationRegistry {
         if (name != null && configuration == null) {
             throw new IllegalArgumentException("Named JSON configuration [" + name + "] is not registered.");
         }
-        JsonMapper mapper = this.jsonMapper.get();
+        JsonMapper mapper = resolveMapper();
         if (mapper == null) {
             throw new IllegalStateException("Named JSON configuration [" + name +
                     "] cannot be used: no JsonMapper is available. Spring Boot's Jackson " +
                     "auto-configuration normally provides one.");
         }
         return configuration == null ? mapper.writer() : configuration.writer(mapper);
+    }
+
+    private JsonMapper resolveMapper() {
+        JsonMapper mapper = resolvedMapper;
+        if (mapper == null) {
+            synchronized (this) {
+                mapper = resolvedMapper;
+                if (mapper == null) {
+                    mapper = jsonMapper.get();
+                    resolvedMapper = mapper;
+                }
+            }
+        }
+        return mapper;
     }
 
     public String writeValueAsString(String name, Object value) {

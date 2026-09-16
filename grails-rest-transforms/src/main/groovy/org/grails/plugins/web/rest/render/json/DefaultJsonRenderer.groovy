@@ -20,6 +20,8 @@ package org.grails.plugins.web.rest.render.json
 
 import java.nio.charset.Charset
 import java.nio.charset.StandardCharsets
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.ConcurrentMap
 import java.util.function.Supplier
 
 import groovy.transform.CompileStatic
@@ -56,6 +58,8 @@ import org.grails.web.gsp.io.GrailsConventionGroovyPageLocator
  */
 @CompileStatic
 class DefaultJsonRenderer<T> implements Renderer<T> {
+
+    private final ConcurrentMap<JacksonJsonHttpMessageConverter, JacksonJsonHttpMessageConverter> grailsConverters = new ConcurrentHashMap<>()
 
     static final MimeType PROBLEM_JSON = new MimeType('application/problem+json', 'json')
 
@@ -166,10 +170,10 @@ class DefaultJsonRenderer<T> implements Renderer<T> {
         String legacyConfiguration = selectedConfiguration ?: namedConfiguration
         if (legacyConfiguration) {
             JSON.use(legacyConfiguration) {
-                converter = object as JSON
+                converter = new JSON(object)
             }
         } else {
-            converter = object as JSON
+            converter = new JSON(object)
         }
         renderJson(converter, context)
     }
@@ -200,8 +204,9 @@ class DefaultJsonRenderer<T> implements Renderer<T> {
         // mappers retain their own serialization contract.
         if (grailsJsonMapperCustomizer != null && converter.getClass() == JacksonJsonHttpMessageConverter &&
                 !((JacksonJsonHttpMessageConverter) converter).getMappersForType(objectType)) {
-            converter = new JacksonJsonHttpMessageConverter(grailsJsonMapperCustomizer.forGrails(
-                    ((JacksonJsonHttpMessageConverter) converter).mapper))
+            converter = grailsConverters.computeIfAbsent((JacksonJsonHttpMessageConverter) converter) { source ->
+                new JacksonJsonHttpMessageConverter(grailsJsonMapperCustomizer.forGrails(source.mapper))
+            }
         }
         // Jackson only writes UTF encodings. Use UTF-8 for the intermediate byte stream;
         // the servlet writer still applies the configured response encoding.

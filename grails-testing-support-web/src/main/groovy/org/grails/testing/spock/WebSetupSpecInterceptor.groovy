@@ -47,8 +47,6 @@ import org.grails.gsp.GroovyPagesTemplateEngine
 import org.grails.gsp.jsp.TagLibraryResolverImpl
 import org.grails.plugins.codecs.CodecsGrailsPlugin
 import org.grails.plugins.codecs.DefaultCodecLookup
-import org.grails.plugins.converters.ConvertersGrailsPlugin
-import org.grails.plugins.web.rest.render.DefaultRendererRegistry
 import org.grails.plugins.web.rest.render.SpringMessageConverters
 import org.grails.testing.runtime.support.GroovyPageUnitTestResourceLoader
 import org.grails.testing.runtime.support.LazyTagLibraryLookup
@@ -78,8 +76,6 @@ class WebSetupSpecInterceptor implements IMethodInterceptor {
         GrailsApplication grailsApplication = test.grailsApplication
         Map<String, String> groovyPages = test.views
 
-        test.defineBeans(new ConvertersGrailsPlugin())
-
         SpringMessageConverters converters = test.applicationContext.getBean(SpringMessageConverters)
         JsonMapper mapper = test.applicationContext.getBeanProvider(JsonMapper).getIfUnique() ?:
                 test.applicationContext.getBean('jacksonJsonMapper', JsonMapper)
@@ -108,15 +104,16 @@ class WebSetupSpecInterceptor implements IMethodInterceptor {
                 'org.grails.beans.ConstraintsEvaluator'(DefaultConstraintEvaluator, constraintRegistry, new KeyValueMappingContext('test'), ConstraintEvalUtils.getDefaultConstraints(grailsApplication.config))
             }
 
-            rendererRegistry(DefaultRendererRegistry) {
-                modelSuffix = config.getProperty('grails.scaffolding.templates.domainSuffix', '')
-            }
             String urlConverterType = config.getProperty(Settings.WEB_URL_CONVERTER)
             "${grails.web.UrlConverter.BEAN_NAME}"('hyphenated' == urlConverterType ? HyphenatedUrlConverter : CamelCaseUrlConverter)
 
-            grailsUrlMappingsHolder(UrlMappingsHolderFactoryBean)
+            if (!test.applicationContext.containsBean('grailsUrlMappingsHolder')) {
+                grailsUrlMappingsHolder(UrlMappingsHolderFactoryBean)
+            }
 
-            grailsLinkGenerator(DefaultLinkGenerator, config?.grails?.serverURL ?: 'http://localhost:8080')
+            if (!test.applicationContext.containsBean('grailsLinkGenerator')) {
+                grailsLinkGenerator(DefaultLinkGenerator, config?.grails?.serverURL ?: 'http://localhost:8080')
+            }
 
             if (ClassUtils.isPresent('UrlMappings', classLoader)) {
                 grailsApplication.addArtefact(UrlMappingsArtefactHandler.TYPE, classLoader.loadClass('UrlMappings'))
@@ -132,7 +129,6 @@ class WebSetupSpecInterceptor implements IMethodInterceptor {
                 jsonSmartViewResolver(viewResolver)
             } catch (ClassNotFoundException ignored) { }
 
-            localeResolver(SessionLocaleResolver)
             multipartResolver(StandardServletMultipartResolver)
 
             "${CompositeViewResolver.BEAN_NAME}"(CompositeViewResolver)
@@ -169,7 +165,9 @@ class WebSetupSpecInterceptor implements IMethodInterceptor {
                 }
             }
             filteringCodecsByContentTypeSettings(FilteringCodecsByContentTypeSettings, grailsApplication)
-            localeResolver(SessionLocaleResolver)
+            if (!test.applicationContext.containsBean('localeResolver')) {
+                localeResolver(SessionLocaleResolver)
+            }
         }
 
         CodecsGrailsPlugin codecsGrailsPlugin = new CodecsGrailsPlugin()

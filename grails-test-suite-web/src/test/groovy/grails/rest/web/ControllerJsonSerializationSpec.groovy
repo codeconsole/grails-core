@@ -23,6 +23,8 @@ import grails.artefact.Artefact
 import grails.persistence.Entity
 import grails.testing.gorm.DomainUnitTest
 import org.springframework.boot.jackson.autoconfigure.JsonMapperBuilderCustomizer
+import org.springframework.beans.factory.annotation.Autowired
+import org.grails.web.converters.jackson.GrailsJsonMapperCustomizer
 import tools.jackson.databind.PropertyNamingStrategies
 import tools.jackson.databind.json.JsonMapper
 import grails.converters.json.NamedJsonConfigurationRegistry
@@ -35,6 +37,21 @@ import spock.lang.Specification
 
 class ControllerJsonSerializationSpec extends Specification implements ControllerUnitTest<JsonResponseController>,
         DomainUnitTest<JsonResponseDomain> {
+
+    Set<String> getIncludePlugins() {
+        ['core'] as Set<String>
+    }
+
+    void 'web serialization keeps the curated plugin graph with explicit plugin selection'() {
+        expect:
+        applicationContext.getBean(grails.plugins.GrailsPluginManager).allPlugins*.name as Set ==
+                ['core', 'restResponder'] as Set
+        grailsApplication.getArtefacts('UrlMappings').length == 0
+        applicationContext.containsBean('xmlRenderer')
+        applicationContext.containsBean('namedJsonConfigurationRegistry')
+        applicationContext.getBean(JsonNamingCustomizer).appliedCustomizer.is(
+                applicationContext.getBean(GrailsJsonMapperCustomizer))
+    }
 
     Closure doWithConfig() {
         { config -> config['grails.web.rendering.json.spring'] = true }
@@ -151,8 +168,13 @@ class JsonResponseDomain {
 }
 
 class JsonNamingCustomizer implements JsonMapperBuilderCustomizer {
+    @Autowired
+    GrailsJsonMapperCustomizer grailsCustomizer
+    GrailsJsonMapperCustomizer appliedCustomizer
+
     @Override
     void customize(JsonMapper.Builder builder) {
+        appliedCustomizer = grailsCustomizer
         builder.propertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE)
     }
 }
