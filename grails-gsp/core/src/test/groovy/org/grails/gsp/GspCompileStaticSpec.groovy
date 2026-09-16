@@ -23,6 +23,7 @@ import java.util.concurrent.atomic.AtomicLong
 
 import grails.core.gsp.GrailsTagLibClass
 import org.grails.core.gsp.DefaultGrailsTagLibClass
+import groovy.lang.GroovyRuntimeException
 import org.codehaus.groovy.runtime.typehandling.GroovyCastException
 import org.grails.taglib.TagLibraryLookup
 import spock.lang.Specification
@@ -287,6 +288,14 @@ Date d4=new Date(123L)
         'Double'     | Double.NEGATIVE_INFINITY | '-Infinity'
         'BigDecimal' | 0.5d                     | '0.5'
         'Double'     | 0.5G                     | '0.5'
+        'Double'     | 0.1G                     | '0.1'
+        'double'     | 19.99G                   | '19.99'
+        'Float'      | 19.99G                   | '19.99'
+        'BigDecimal' | 0.1d                     | '0.1'
+        'BigDecimal' | 19.99d                   | '19.99'
+        'BigDecimal' | 0.1f                     | '0.1'
+        'BigDecimal' | 0.30000000000000004d     | '0.30000000000000004'
+        'Double'     | new BigInteger('1' + '0' * 23) | '1.0E23'
         'Long'       | new AtomicLong(42L)      | '42'
     }
 
@@ -295,40 +304,47 @@ Date d4=new Date(123L)
         def template = """@{ model="${declared} sampleCount"}\${sampleCount}"""
         when:
         renderTemplate(template, [sampleCount: supplied], true)
-        then:
+        then: 'the value converted, so it is the guard that refused it'
         GroovyPagesException e = thrown()
         e.message.contains("Model field 'sampleCount'")
         e.message.contains(declaredName)
         e.message.contains(supplied.getClass().name)
+        e.message.contains('without changing it')
+        e.cause == null
         where:
         declared     | supplied                | declaredName
         'Integer'    | 3_000_000_000L          | 'java.lang.Integer'
         'int'        | 3_000_000_000L          | 'int'
         'Integer'    | 42.9G                   | 'java.lang.Integer'
+        'Integer'    | 42.5d                   | 'java.lang.Integer'
         'Short'      | 70_000                  | 'java.lang.Short'
         'Float'      | 0.1d                    | 'java.lang.Float'
         'float'      | 1.1d                    | 'float'
         'Double'     | Long.MAX_VALUE          | 'java.lang.Double'
+        'Double'     | 123456789012345678L     | 'java.lang.Double'
         'Float'      | 16_777_217              | 'java.lang.Float'
         'Double'     | 9_007_199_254_740_993G  | 'java.lang.Double'
-        'Double'     | 0.1G                    | 'java.lang.Double'
-        'BigDecimal' | 0.1d                    | 'java.math.BigDecimal'
+        'Long'       | 1.0E+23G                | 'java.lang.Long'
         'Integer'    | Double.NaN              | 'java.lang.Integer'
-        'Double'     | new BigDecimal('1E400') | 'java.lang.Double'
-        'Double'     | Float.NEGATIVE_INFINITY | 'java.lang.Double'
     }
 
     def "a model value that cannot be converted names the field and both types"() {
         given:
-        def template = '''@{ model="Integer sampleCount"}${sampleCount}'''
+        def template = """@{ model="${declared} sampleCount"}\${sampleCount}"""
         when:
-        renderTemplate(template, [sampleCount: new Date()], true)
-        then:
+        renderTemplate(template, [sampleCount: supplied], true)
+        then: 'Groovy refused the conversion, so the page reports it with the cause'
         GroovyPagesException e = thrown()
         e.message.contains("Model field 'sampleCount'")
-        e.message.contains('java.lang.Integer')
-        e.message.contains('java.util.Date')
-        e.cause instanceof GroovyCastException
+        e.message.contains(declaredName)
+        e.message.contains(supplied.getClass().name)
+        e.message.contains('cannot be converted')
+        cause.isInstance(e.cause)
+        where:
+        declared  | supplied                | declaredName       | cause
+        'Integer' | new Date()              | 'java.lang.Integer' | GroovyCastException
+        'Double'  | new BigDecimal('1E400') | 'java.lang.Double'  | GroovyRuntimeException
+        'Double'  | Float.NEGATIVE_INFINITY | 'java.lang.Double'  | GroovyRuntimeException
     }
 
     def "a non-finite value that cannot be converted names the field and both types"() {

@@ -211,17 +211,17 @@ public abstract class GroovyPage extends Script {
             // Every float is exactly representable as a double, including NaN and infinities.
             return Double.compare(original.doubleValue(), converted.doubleValue()) == 0;
         }
+        // A floating-point value prints as the shortest decimal that reads back to it, which is
+        // also the decimal Groovy converts it to, so comparing the decimal forms accepts exactly
+        // the conversions that convert back to the original: 19.99G for a Double, 19.99d for a
+        // BigDecimal. A decimal with more digits than the type can carry prints differently
+        // once converted and is rejected.
         try {
-            return exactDecimalValue(original).compareTo(exactDecimalValue(converted)) == 0;
+            return new BigDecimal(original.toString()).compareTo(new BigDecimal(converted.toString())) == 0;
         } catch (NumberFormatException e) {
             // A non-finite floating-point value cannot equal a finite decimal or integer.
             return false;
         }
-    }
-
-    private static BigDecimal exactDecimalValue(Number number) {
-        // Decimal strings round floating-point values and can hide a loss of precision.
-        return isFloatingPoint(number) ? new BigDecimal(number.doubleValue()) : new BigDecimal(number.toString());
     }
 
     private static boolean isFloatingPoint(Number number) {
