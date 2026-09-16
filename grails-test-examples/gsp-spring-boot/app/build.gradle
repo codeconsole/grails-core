@@ -84,10 +84,10 @@ dependencies {
     implementation platform(project(':grails-bom'))
 
     // GSP brings the Grails web tier with it. This application uses the part of it that renders a
-    // view, and each exclusion below names a part it does not: it routes and binds with Spring MVC,
-    // it has no domain classes, and it answers in HTML.
+    // view, and each exclusion below names a part it does not: it binds with Spring MVC, it has no
+    // domain classes, and it answers in HTML. The URL mappings stay although it maps none: the asset
+    // pipeline builds the URL of every asset with a Grails link generator, which requires them.
     implementation(project(':grails-gsp-spring-boot')) {
-        exclude group: 'org.apache.grails.web', module: 'grails-web-url-mappings' // g:link, g:createLink
         exclude group: 'org.apache.grails.data', module: 'grails-datamapping-validation' // g:validate
         exclude group: 'org.apache.grails.web', module: 'grails-web-databinding'
         exclude group: 'org.apache.grails.databinding', module: 'grails-databinding-core'
@@ -104,12 +104,14 @@ dependencies {
     assetDevelopmentRuntime 'org.webjars.npm:bootstrap' // compiled into application.css and application.js
     assetDevelopmentRuntime 'org.webjars.npm:bootstrap-icons' // the icons of the theme menu
 
-    // The filter that serves what the pipeline compiled, from the asset pipeline's own Spring Boot
-    // module. Application imports its configuration; nothing else is declared for it here.
+    // The asset pipeline's own Spring Boot module serves what the pipeline compiled, and configures
+    // itself. asset-pipeline-gsp makes the <asset:...> tag libraries beans of this context, so the
+    // layout names each asset and the tags write the url the manifest gives it. Nothing is declared
+    // for either in the application.
     implementation 'cloud.wondrify:asset-pipeline-spring-boot'
+    implementation 'cloud.wondrify:asset-pipeline-gsp'
 
     implementation(project(':grails-web-jsp')) {
-        exclude group: 'org.apache.grails.web', module: 'grails-web-url-mappings'
         exclude group: 'org.apache.grails.data', module: 'grails-datamapping-validation'
         exclude group: 'org.apache.grails.web', module: 'grails-web-databinding'
         exclude group: 'org.apache.grails.databinding', module: 'grails-databinding-core'

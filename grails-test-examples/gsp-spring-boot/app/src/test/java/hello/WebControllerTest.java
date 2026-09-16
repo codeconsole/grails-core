@@ -23,6 +23,8 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Value;
@@ -55,15 +57,23 @@ class WebControllerTest {
 
     @Test
     void whatTheAssetPipelineCompiledIsLinkedAndServed() throws Exception {
-        // Bootstrap is compiled into application.css at build time, and the layout links it by
-        // name; the asset pipeline's filter resolves that name to the digest-named file the build
-        // wrote, so what the browser is sent is the compiled stylesheet and script
+        // Bootstrap is compiled into application.css at build time, and the layout names it with
+        // the asset pipeline's tags, which write the url of the file the build wrote for it; so what
+        // the browser is sent from those urls is the compiled stylesheet and script
         String page = get("/");
-        assertThat(page).contains("href=\"/assets/application.css\"");
-        assertThat(page).contains("src=\"/assets/theme.js\"");
+        String stylesheet = linkedUrl(page, "href", "application", ".css");
+        String script = linkedUrl(page, "src", "theme", ".js");
 
-        assertThat(get("/assets/application.css")).contains("--bs-").contains(".field-error");
-        assertThat(get("/assets/theme.js")).contains("data-bs-theme");
+        assertThat(get(stylesheet)).contains("--bs-").contains(".field-error");
+        assertThat(get(script)).contains("data-bs-theme");
+    }
+
+    /** The url an attribute of the page links an asset by, which starts with the asset's name. */
+    private static String linkedUrl(String page, String attribute, String name, String extension) {
+        Matcher matcher = Pattern.compile(attribute + "=\"(/assets/" + name + "[^\"]*" + Pattern.quote(extension) + "[^\"]*)\"")
+                .matcher(page);
+        assertThat(matcher.find()).as("a link to %s%s in the page", name, extension).isTrue();
+        return matcher.group(1);
     }
 
     @Test
