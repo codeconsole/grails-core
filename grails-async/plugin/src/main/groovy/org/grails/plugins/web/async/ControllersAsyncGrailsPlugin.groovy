@@ -22,6 +22,7 @@ import groovy.transform.CompileStatic
 
 import org.springframework.beans.factory.BeanRegistrar
 import org.springframework.beans.factory.BeanRegistry
+import org.springframework.beans.factory.NoSuchBeanDefinitionException
 import org.springframework.core.env.Environment
 import org.springframework.core.task.AsyncTaskExecutor
 import org.springframework.core.task.TaskDecorator
@@ -61,6 +62,7 @@ class ControllersAsyncGrailsPlugin extends Plugin {
                     List<TaskDecorator> decorators = context.beanProvider(TaskDecorator).orderedStream().toList()
                     ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor()
                     executor.threadNamePrefix = 'grails-promise-'
+                    executor.corePoolSize = 8
                     if (decorators) {
                         executor.taskDecorator = new CompositeTaskDecorator(decorators)
                     }
@@ -69,7 +71,16 @@ class ControllersAsyncGrailsPlugin extends Plugin {
             }
             registry.registerBean('grailsPromiseFactory', PromiseFactory) {
                 it.supplier { context ->
-                    AsyncTaskExecutor executor = context.bean(AsyncTaskExecutor)
+                    AsyncTaskExecutor executor
+                    try {
+                        executor = context.bean('applicationTaskExecutor', AsyncTaskExecutor)
+                    }
+                    catch (NoSuchBeanDefinitionException missing) {
+                        if (missing.beanName != 'applicationTaskExecutor') {
+                            throw missing
+                        }
+                        executor = context.bean('grailsPromiseExecutor', AsyncTaskExecutor)
+                    }
                     PromiseFactory promiseFactory = PromiseFactoryBuilder.build(executor)
                     Promises.setPromiseFactory(promiseFactory)
                     WebPromises.setPromiseFactory(promiseFactory)

@@ -18,6 +18,9 @@
  */
 package org.grails.plugins.web.async
 
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+
 import org.springframework.beans.factory.support.BeanRegistryAdapter
 import org.springframework.beans.factory.support.DefaultListableBeanFactory
 import org.springframework.core.env.StandardEnvironment
@@ -25,6 +28,7 @@ import org.springframework.core.task.AsyncTaskExecutor
 import org.springframework.core.task.TaskDecorator
 import org.springframework.core.task.SyncTaskExecutor
 import org.springframework.core.task.support.TaskExecutorAdapter
+import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler
 
 import grails.async.PromiseFactory
 import org.grails.plugins.web.async.mvc.AsyncActionResultTransformer
@@ -32,6 +36,11 @@ import org.grails.plugins.web.async.mvc.AsyncActionResultTransformer
 import spock.lang.Specification
 
 class ControllersAsyncGrailsPluginSpec extends Specification {
+
+    void cleanup() {
+        grails.async.Promises.promiseFactory = null
+        grails.async.web.WebPromises.promiseFactory = null
+    }
 
     void "beanRegistrar registers the async promise beans"() {
         given:
@@ -53,6 +62,8 @@ class ControllersAsyncGrailsPluginSpec extends Specification {
         def beanFactory = new DefaultListableBeanFactory()
         AsyncTaskExecutor executor = new TaskExecutorAdapter(new SyncTaskExecutor())
         beanFactory.registerSingleton('applicationTaskExecutor', executor)
+        beanFactory.registerSingleton('taskScheduler', new ThreadPoolTaskScheduler())
+        beanFactory.registerSingleton('otherExecutor', new TaskExecutorAdapter(new SyncTaskExecutor()))
         def registrar = new ControllersAsyncGrailsPlugin().beanRegistrar()
         new BeanRegistryAdapter(beanFactory, new StandardEnvironment(), registrar.getClass()).register(registrar)
 
@@ -66,6 +77,7 @@ class ControllersAsyncGrailsPluginSpec extends Specification {
     void 'promise factory uses a managed fallback executor when Boot does not provide one'() {
         given:
         def beanFactory = new DefaultListableBeanFactory()
+        beanFactory.registerSingleton('taskScheduler', new ThreadPoolTaskScheduler())
         def registrar = new ControllersAsyncGrailsPlugin().beanRegistrar()
         new BeanRegistryAdapter(beanFactory, new StandardEnvironment(), registrar.getClass()).register(registrar)
 
@@ -77,6 +89,27 @@ class ControllersAsyncGrailsPluginSpec extends Specification {
         worker.name.startsWith('grails-promise-')
 
         cleanup:
+        beanFactory.destroySingletons()
+    }
+
+    void 'fallback executes dependent promises concurrently'() {
+        given:
+        def beanFactory = new DefaultListableBeanFactory()
+        def registrar = new ControllersAsyncGrailsPlugin().beanRegistrar()
+        new BeanRegistryAdapter(beanFactory, new StandardEnvironment(), registrar.getClass()).register(registrar)
+        def factory = beanFactory.getBean('grailsPromiseFactory', PromiseFactory)
+        def released = new CountDownLatch(1)
+
+        when:
+        def first = factory.createPromise { released.await(5, TimeUnit.SECONDS) }
+        def second = factory.createPromise { released.countDown() }
+
+        then:
+        first.get(10, TimeUnit.SECONDS)
+        second.get(10, TimeUnit.SECONDS) == null
+
+        cleanup:
+        released.countDown()
         beanFactory.destroySingletons()
     }
 }
