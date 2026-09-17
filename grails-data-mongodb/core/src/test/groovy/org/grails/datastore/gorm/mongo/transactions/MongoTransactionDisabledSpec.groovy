@@ -75,8 +75,11 @@ class MongoTransactionDisabledSpec extends EmbeddedReplicaSetSpec {
             LegacyThing.withNewSession { LegacyThing.count() }
         }
 
-        then: "the queued write was left where it was, rather than committed by a read"
+        then: "the read did not persist the queued write"
         written == 0
+
+        and: "the write is dropped when its session closes, as it would be on Hibernate"
+        LegacyThing.withNewSession { LegacyThing.count() } == 0
     }
 
     void "a read-write transaction still flushes the surrounding session"() {

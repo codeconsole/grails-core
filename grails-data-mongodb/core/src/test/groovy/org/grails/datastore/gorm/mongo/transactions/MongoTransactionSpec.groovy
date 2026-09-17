@@ -188,8 +188,11 @@ class MongoTransactionSpec extends EmbeddedReplicaSetSpec {
             TxPerson.withNewSession { TxPerson.count() }
         }
 
-        then: "the queued write was left where it was, rather than committed by a read"
+        then: "the read did not persist the queued write"
         written == 0
+
+        and: "the write is dropped when its session closes, as it would be on Hibernate"
+        TxPerson.withNewSession { TxPerson.count() } == 0
     }
 
     void "test a per-transaction timeout is rejected rather than silently ignored"() {
