@@ -46,7 +46,8 @@ class Hibernate7RefreshLockSpec extends HibernateGormDatastoreSpec {
     void setupSpec() {
         manager.registerDomainClasses(Hibernate7RefreshLockBook, Hibernate7RefreshLockRoutedBook,
             Hibernate7RefreshLockNonversionedBook, Hibernate7RefreshLockEmbeddedBook,
-            Hibernate7RefreshLockCascadeParent, Hibernate7RefreshLockCascadeChild)
+            Hibernate7RefreshLockCascadeParent, Hibernate7RefreshLockCascadeChild,
+            Hibernate7RefreshLockJoinedRoot, Hibernate7RefreshLockJoinedSub)
         // AUTO leaves an explicitly selected session flush mode intact during template calls.
         manager.grailsConfig['hibernate.flush.mode'] = 'AUTO'
         // ConfigObject needs the parent map for named connection discovery.
@@ -1167,20 +1168,84 @@ class Hibernate7RefreshLockSpec extends HibernateGormDatastoreSpec {
         }
     }
 
+    void 'refresh(lock: true) on a joined-table subclass waits for a competing commit to the root row (#description)'() {
+        given:
+        Long id = new Hibernate7RefreshLockJoinedSub(title: 'original', extra: 'subclass state')
+                .save(flush: true, failOnError: true).id
+        manager.transactionManager.commit(manager.transactionStatus)
+        manager.transactionStatus = null
+        def executor = Executors.newSingleThreadExecutor()
+        def loaded = new CountDownLatch(1)
+        def refreshed = new CountDownLatch(1)
+        Connection competitor = openCompetingConnection(10000)
+        String rootTable = tableName(Hibernate7RefreshLockJoinedRoot)
+        Class entityClass = loadThroughRoot ? Hibernate7RefreshLockJoinedRoot : Hibernate7RefreshLockJoinedSub
+
+        when: 'a competing connection updates the root row, which holds the version, and keeps its transaction open'
+        competitor.prepareStatement("update ${rootTable} set title = 'competing commit', version = version + 1 where id = ?".toString())
+                .withCloseable { statement ->
+                    statement.setLong(1, id)
+                    assert statement.executeUpdate() == 1
+                }
+        def refreshing = executor.submit({
+            Hibernate7RefreshLockJoinedSub.withNewSession { Session session ->
+                Hibernate7RefreshLockJoinedSub.withTransaction {
+                    def book = entityClass.get(id)
+                    assert book instanceof Hibernate7RefreshLockJoinedSub
+                    assert book.version == 0
+                    loaded.countDown()
+                    def result = useStatic ? entityClass.lock(id, refresh: true) : book.refresh(lock: true)
+                    assert result.is(book)
+                    assert book.title == 'competing commit'
+                    assert book.version == 1
+                    assert book.extra == 'subclass state'
+                    assert session.getCurrentLockMode(book) == LockMode.PESSIMISTIC_WRITE
+                    refreshed.countDown()
+                    book.title = 'saved after refresh'
+                    assert book.save(flush: true, failOnError: true).is(book)
+                    assert book.version == 2
+                }
+            }
+        } as Callable)
+
+        then: 'the locked refresh waits on the root row instead of reading it while the competitor holds it'
+        loaded.await(10, TimeUnit.SECONDS)
+        !refreshed.await(200, TimeUnit.MILLISECONDS)
+        !refreshing.isDone()
+
+        when:
+        competitor.commit()
+        refreshing.get(10, TimeUnit.SECONDS)
+
+        then: 'and then reloads the committed root state and version under its own lock'
+        refreshed.count == 0
+        Hibernate7RefreshLockJoinedSub.withNewSession {
+            def book = Hibernate7RefreshLockJoinedSub.get(id)
+            book.title == 'saved after refresh' && book.version == 2 && book.extra == 'subclass state'
+        }
+
+        cleanup:
+        competitor?.rollback()
+        competitor?.close()
+        executor?.shutdownNow()
+        assert executor == null || executor.awaitTermination(15, TimeUnit.SECONDS)
+
+        where:
+        description                                       | loadThroughRoot | useStatic
+        'loaded as the subclass'                          | false           | false
+        'loaded polymorphically through the root'         | true            | false
+        'static lock(id, refresh: true) on the subclass'  | false           | true
+        'static lock(id, refresh: true) on the root'      | true            | true
+    }
+
     /**
      * Attempts a plain JDBC {@code SELECT ... FOR UPDATE} of the cascade parent's row on a separate connection
      * with a short lock timeout, and reports whether the database granted the lock. Unlike
      * {@code getCurrentLockMode}, which reports what Hibernate recorded, this observes the lock itself.
      */
     private boolean parentRowLockGranted(Long parentId) {
-        Map<String, String> jdbc = Hibernate7RefreshLockCascadeParent.withNewSession { Session session ->
-            session.doReturningWork { Connection connection ->
-                [url: connection.metaData.URL.tokenize(';')[0], user: connection.metaData.userName]
-            }
-        }
-        String table = manager.sessionFactory.mappingMetamodel.getEntityDescriptor(Hibernate7RefreshLockCascadeParent).tableName
-        DriverManager.getConnection("${jdbc.url};LOCK_TIMEOUT=300", jdbc.user, '').withCloseable { Connection connection ->
-            connection.autoCommit = false
+        String table = tableName(Hibernate7RefreshLockCascadeParent)
+        openCompetingConnection(300).withCloseable { Connection connection ->
             try {
                 connection.prepareStatement("select id from ${table} where id = ? for update".toString()).withCloseable { statement ->
                     statement.setLong(1, parentId)
@@ -1192,6 +1257,25 @@ class Hibernate7RefreshLockSpec extends HibernateGormDatastoreSpec {
                 connection.rollback()
             }
         }
+    }
+
+    /**
+     * Opens a separate, non-auto-commit JDBC connection to the default database so a competitor can hold or
+     * contend for row locks independently of any Hibernate session.
+     */
+    private Connection openCompetingConnection(int lockTimeoutMillis) {
+        Map<String, String> jdbc = Hibernate7RefreshLockBook.withNewSession { Session session ->
+            session.doReturningWork { Connection connection ->
+                [url: connection.metaData.URL.tokenize(';')[0], user: connection.metaData.userName]
+            }
+        }
+        Connection connection = DriverManager.getConnection("${jdbc.url};LOCK_TIMEOUT=${lockTimeoutMillis}".toString(), jdbc.user, '')
+        connection.autoCommit = false
+        connection
+    }
+
+    private String tableName(Class entityClass) {
+        manager.sessionFactory.mappingMetamodel.getEntityDescriptor(entityClass).tableName
     }
 }
 
@@ -1256,4 +1340,20 @@ class Hibernate7RefreshLockCascadeChild {
     Long id
     Long version
     String title
+}
+
+@Entity
+class Hibernate7RefreshLockJoinedRoot {
+    Long id
+    Long version
+    String title
+
+    static mapping = {
+        tablePerHierarchy false
+    }
+}
+
+@Entity
+class Hibernate7RefreshLockJoinedSub extends Hibernate7RefreshLockJoinedRoot {
+    String extra
 }

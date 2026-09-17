@@ -289,7 +289,11 @@ class HibernateGormInstanceApi<D> extends GormInstanceApi<D> {
      * can still be reloaded.
      */
     private void lockRow(Session session, D instance, LockModeType lockMode) {
-        String hql = "select 1 from ${persistentClass.name} e where e = :instance".toString()
+        // Lock the hierarchy root: its row holds the version and is the row lock() contends on. With joined-table
+        // inheritance a query against the subclass alone selects, and therefore locks, only the subclass table.
+        String rootEntityName = session.unwrap(SessionImplementor).factory.mappingMetamodel
+                .getEntityDescriptor(persistentClass).rootEntityName
+        String hql = "select 1 from ${rootEntityName} e where e = :instance".toString()
         // NO_FLUSH: the query must not flush the pending changes that the refresh is about to discard.
         session.createSelectionQuery(hql, Integer)
                 .setParameter('instance', instance)
