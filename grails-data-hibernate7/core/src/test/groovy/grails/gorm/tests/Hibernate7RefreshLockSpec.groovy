@@ -1271,8 +1271,9 @@ class Hibernate7RefreshLockSpec extends HibernateGormDatastoreSpec {
         def saved = new Hibernate7RefreshLockUnionSub(title: 'original', extra: 'subclass state')
                 .save(flush: true, failOnError: true)
         Long id = saved.id
-        // Hibernate 7 flushes a new table-per-concrete-class entity as an insert followed by an update, so the
-        // row starts at version 1 rather than 0. Versions are therefore asserted relative to the saved instance.
+        // The pre-insert id generator this hierarchy needs defers the insert to the flush, and GORM for Hibernate 7
+        // then updates the freshly inserted row as well, so it starts at version 1 rather than 0 (see #16349).
+        // Versions are therefore asserted relative to the saved instance.
         Long initialVersion = saved.version
         manager.transactionManager.commit(manager.transactionStatus)
         manager.transactionStatus = null
