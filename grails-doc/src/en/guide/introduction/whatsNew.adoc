@@ -333,6 +333,16 @@ session are shared, and the two object-mapping models stay separate. See the
 link:{mongodb5Guide}index.html#springDataInterop[Spring Data MongoDB Interoperability] section of the GORM for MongoDB
 guide for details.
 
+==== Read-Only Transactions Behave the Same on MongoDB as on Hibernate
+
+`@ReadOnly` and `@Transactional(readOnly = true)` now mean the same thing in GORM for MongoDB as in GORM for Hibernate:
+a read-only transaction commits without flushing the session. Previously a read-only commit on MongoDB flushed whatever
+the session had queued, so read-only code could persist another caller's unflushed writes, and a read-only transaction started
+while a session was flushing (for example from a validator or a `beforeInsert` event) could re-enter validation. This is a
+behavior change for code that saves without `flush: true` and relies on a later read-only transaction to persist the
+write; see the xref:upgrading#upgrading80x[upgrade guide] and the
+link:{mongodb5Guide}index.html#transactions[Transactions] section of the GORM for MongoDB guide.
+
 ==== Ahead-of-Time Processing
 
 A Grails application can now be processed by Spring's ahead-of-time engine. Applying Spring Boot's AOT plugin adds a
