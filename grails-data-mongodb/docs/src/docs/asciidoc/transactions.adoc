@@ -42,6 +42,7 @@ For example in this case neither `Person` object will be persisted to the databa
 
 Using the lower level API you can of course also take advantage of Mongo's support for https://docs.mongodb.org/manual/tutorial/isolate-sequence-of-operations[Atomic operations].
 
+[[readOnlyTransactions]]
 === Read-Only Transactions
 
 A read-only transaction, such as a service method annotated with `@ReadOnly` or `@Transactional(readOnly = true)`, commits without flushing the session. This holds whether or not multi-document transactions are enabled, and matches GORM for Hibernate, where a read-only transaction puts the session into `MANUAL` flush mode.

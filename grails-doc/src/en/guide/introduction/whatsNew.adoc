@@ -341,7 +341,7 @@ the session had queued, so read-only code could persist another caller's unflush
 while a session was flushing (for example from a validator or a `beforeInsert` event) could re-enter validation. This is a
 behavior change for code that saves without `flush: true` and relies on a later read-only transaction to persist the
 write; see the xref:upgrading#upgrading80x[upgrade guide] and the
-link:{mongodb5Guide}index.html#transactions[Transactions] section of the GORM for MongoDB guide.
+link:{mongodb5Guide}index.html#readOnlyTransactions[Read-Only Transactions] section of the GORM for MongoDB guide.
 
 ==== Ahead-of-Time Processing
 
