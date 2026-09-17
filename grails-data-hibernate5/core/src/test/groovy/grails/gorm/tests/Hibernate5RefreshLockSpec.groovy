@@ -46,7 +46,8 @@ class Hibernate5RefreshLockSpec extends HibernateGormDatastoreSpec {
         manager.registerDomainClasses(Hibernate5RefreshLockBook, Hibernate5RefreshLockRoutedBook,
                 Hibernate5RefreshLockNonversionedBook, Hibernate5RefreshLockEmbeddedBook,
                 Hibernate5RefreshLockCascadeParent, Hibernate5RefreshLockCascadeChild,
-                Hibernate5RefreshLockEmbeddedOwner, Hibernate5RefreshLockJoinedRoot, Hibernate5RefreshLockJoinedSub)
+                Hibernate5RefreshLockEmbeddedOwner, Hibernate5RefreshLockJoinedRoot, Hibernate5RefreshLockJoinedSub,
+                Hibernate5RefreshLockUnionRoot, Hibernate5RefreshLockUnionSub)
         // Let the template preserve the session flush mode instead of downgrading AUTO to COMMIT.
         manager.grailsConfig['hibernate.flush.mode'] = 'AUTO'
         // ConfigObject needs the parent map for named connection discovery.
@@ -1286,7 +1287,7 @@ class Hibernate5RefreshLockSpec extends HibernateGormDatastoreSpec {
         } as Callable)
 
         then: 'the locked refresh waits on the root row instead of reading it while the competitor holds it'
-        loaded.await(10, TimeUnit.SECONDS)
+        loaded.await(10, TimeUnit.SECONDS) || refreshing.get(1, TimeUnit.SECONDS)
         !refreshed.await(200, TimeUnit.MILLISECONDS)
         !refreshing.isDone()
 
@@ -1298,6 +1299,76 @@ class Hibernate5RefreshLockSpec extends HibernateGormDatastoreSpec {
         refreshed.count == 0
         Hibernate5RefreshLockJoinedSub.withNewSession {
             def book = Hibernate5RefreshLockJoinedSub.get(id)
+            book.title == 'saved after refresh' && book.version == 2 && book.extra == 'subclass state'
+        }
+
+        cleanup:
+        competitor?.rollback()
+        competitor?.close()
+        executor?.shutdownNow()
+        assert executor == null || executor.awaitTermination(15, TimeUnit.SECONDS)
+
+        where:
+        description                                       | loadThroughRoot | useStatic
+        'loaded as the subclass'                          | false           | false
+        'loaded polymorphically through the root'         | true            | false
+        'static lock(id, refresh: true) on the subclass'  | false           | true
+        'static lock(id, refresh: true) on the root'      | true            | true
+    }
+
+    void 'refresh(lock: true) on a table-per-concrete-class subclass waits for a competing commit to its row (#description)'() {
+        given:
+        Long id = new Hibernate5RefreshLockUnionSub(title: 'original', extra: 'subclass state')
+                .save(flush: true, failOnError: true).id
+        manager.transactionManager.commit(manager.transactionStatus)
+        manager.transactionStatus = null
+        def executor = Executors.newSingleThreadExecutor()
+        def loaded = new CountDownLatch(1)
+        def refreshed = new CountDownLatch(1)
+        Connection competitor = openCompetingConnection(10000)
+        String concreteTable = tableName(Hibernate5RefreshLockUnionSub)
+        Class entityClass = loadThroughRoot ? Hibernate5RefreshLockUnionRoot : Hibernate5RefreshLockUnionSub
+
+        when: 'a competing connection updates the concrete table, which holds the whole row, and keeps its transaction open'
+        competitor.prepareStatement("update ${concreteTable} set title = 'competing commit', version = version + 1 where id = ?".toString())
+                .withCloseable { statement ->
+                    statement.setLong(1, id)
+                    assert statement.executeUpdate() == 1
+                }
+        def refreshing = executor.submit({
+            Hibernate5RefreshLockUnionSub.withNewSession { Session session ->
+                Hibernate5RefreshLockUnionSub.withTransaction {
+                    def book = entityClass.get(id)
+                    assert book instanceof Hibernate5RefreshLockUnionSub
+                    assert book.version == 0
+                    loaded.countDown()
+                    def result = useStatic ? entityClass.lock(id, refresh: true) : book.refresh(lock: true)
+                    assert result.is(book)
+                    assert book.title == 'competing commit'
+                    assert book.version == 1
+                    assert book.extra == 'subclass state'
+                    assert session.getCurrentLockMode(book) == LockMode.PESSIMISTIC_WRITE
+                    refreshed.countDown()
+                    book.title = 'saved after refresh'
+                    assert book.save(flush: true, failOnError: true).is(book)
+                    assert book.version == 2
+                }
+            }
+        } as Callable)
+
+        then: 'the locked refresh waits on the concrete row instead of reading it through the union of the hierarchy'
+        loaded.await(10, TimeUnit.SECONDS) || refreshing.get(1, TimeUnit.SECONDS)
+        !refreshed.await(200, TimeUnit.MILLISECONDS)
+        !refreshing.isDone()
+
+        when:
+        competitor.commit()
+        refreshing.get(10, TimeUnit.SECONDS)
+
+        then: 'and then reloads the committed state and version under its own lock'
+        refreshed.count == 0
+        Hibernate5RefreshLockUnionSub.withNewSession {
+            def book = Hibernate5RefreshLockUnionSub.get(id)
             book.title == 'saved after refresh' && book.version == 2 && book.extra == 'subclass state'
         }
 
@@ -1452,5 +1523,22 @@ class Hibernate5RefreshLockJoinedRoot {
 
 @Entity
 class Hibernate5RefreshLockJoinedSub extends Hibernate5RefreshLockJoinedRoot {
+    String extra
+}
+
+@Entity
+class Hibernate5RefreshLockUnionRoot {
+    Long id
+    Long version
+    String title
+
+    static mapping = {
+        tablePerConcreteClass true
+        id generator: 'increment'
+    }
+}
+
+@Entity
+class Hibernate5RefreshLockUnionSub extends Hibernate5RefreshLockUnionRoot {
     String extra
 }

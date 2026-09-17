@@ -40,6 +40,7 @@ import jakarta.persistence.FlushModeType
 import jakarta.persistence.LockModeType
 import jakarta.persistence.TransactionRequiredException
 
+import org.hibernate.Hibernate
 import org.hibernate.HibernateException
 import org.hibernate.LockMode
 import org.hibernate.Session
@@ -48,6 +49,7 @@ import org.hibernate.collection.spi.PersistentCollection
 import org.hibernate.engine.spi.EntityEntry
 import org.hibernate.engine.spi.SessionImplementor
 import org.hibernate.persister.entity.EntityPersister
+import org.hibernate.persister.entity.UnionSubclassEntityPersister
 import org.hibernate.query.QueryFlushMode
 
 import org.springframework.beans.BeanWrapperImpl
@@ -264,9 +266,7 @@ class HibernateGormInstanceApi<D> extends GormInstanceApi<D> {
             if (RefreshLockArguments.pessimistic(lockMode)) {
                 lockRow(session, instance, lockMode)
                 session.refresh(instance)
-                // Records the lock mode on the entity entry. The version check this performs cannot fail:
-                // the row is locked by this transaction and its version was just reloaded.
-                session.lock(instance, lockMode)
+                recordLockMode(session, instance, lockMode)
             } else {
                 session.refresh(instance, lockMode)
             }
@@ -287,19 +287,45 @@ class HibernateGormInstanceApi<D> extends GormInstanceApi<D> {
      * same way as the default. A scalar query has no joins, so it locks the root row the same way on every
      * dialect, and unlike an entity query or {@code lock()} it performs no version check, so a stale instance
      * can still be reloaded.
+     * <p>
+     * The query targets the hierarchy root, whose row holds the version and is the row {@code lock()} contends
+     * on: with joined-table inheritance a query against the subclass alone selects, and therefore locks, only
+     * the subclass table. A {@code tablePerConcreteClass} hierarchy goes the other way. Its root is rendered as
+     * a union of the concrete tables, through which databases such as H2 do not lock rows, so the query targets
+     * the instance's concrete class instead, whose table holds the whole row. An instance whose own class has
+     * union subclasses is still rendered as a union, the same limit {@code lock()} has on such a hierarchy.
      */
     private void lockRow(Session session, D instance, LockModeType lockMode) {
-        // Lock the hierarchy root: its row holds the version and is the row lock() contends on. With joined-table
-        // inheritance a query against the subclass alone selects, and therefore locks, only the subclass table.
-        String rootEntityName = session.unwrap(SessionImplementor).factory.mappingMetamodel
-                .getEntityDescriptor(persistentClass).rootEntityName
-        String hql = "select 1 from ${rootEntityName} e where e = :instance".toString()
+        EntityPersister descriptor = session.unwrap(SessionImplementor).factory.mappingMetamodel
+                .getEntityDescriptor(persistentClass)
+        String lockEntityName = descriptor instanceof UnionSubclassEntityPersister ?
+                session.getEntityName(instance) : descriptor.rootEntityName
+        String hql = "select 1 from ${lockEntityName} e where e = :instance".toString()
         // NO_FLUSH: the query must not flush the pending changes that the refresh is about to discard.
         session.createSelectionQuery(hql, Integer)
                 .setParameter('instance', instance)
                 .setLockMode(lockMode)
                 .setQueryFlushMode(QueryFlushMode.NO_FLUSH)
                 .getResultList()
+    }
+
+    /**
+     * Records the lock this transaction now holds on the instance's entity entry, which is what
+     * {@code getCurrentLockMode} reports and what Hibernate consults before it re-locks the row. The scalar lock
+     * query does not touch the entry and a plain refresh leaves it unlocked.
+     * <p>
+     * {@code session.lock} would record it too, at the cost of a version-checked lock statement that re-locks a
+     * row this transaction already holds, so the entry is set directly. {@code PESSIMISTIC_FORCE_INCREMENT} keeps
+     * going through {@code session.lock}, which is what performs the increment.
+     */
+    private void recordLockMode(Session session, D instance, LockModeType lockMode) {
+        if (lockMode == LockModeType.PESSIMISTIC_FORCE_INCREMENT) {
+            session.lock(instance, lockMode)
+            return
+        }
+        EntityEntry entry = session.unwrap(SessionImplementor).persistenceContextInternal
+                .getEntry(Hibernate.unproxy(instance))
+        entry.setLockMode(LockMode.fromJpaLockMode(lockMode))
     }
 
     protected D performUpsert(D target, boolean shouldFlush) {

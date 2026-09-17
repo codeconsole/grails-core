@@ -47,7 +47,8 @@ class Hibernate7RefreshLockSpec extends HibernateGormDatastoreSpec {
         manager.registerDomainClasses(Hibernate7RefreshLockBook, Hibernate7RefreshLockRoutedBook,
             Hibernate7RefreshLockNonversionedBook, Hibernate7RefreshLockEmbeddedBook,
             Hibernate7RefreshLockCascadeParent, Hibernate7RefreshLockCascadeChild,
-            Hibernate7RefreshLockJoinedRoot, Hibernate7RefreshLockJoinedSub)
+            Hibernate7RefreshLockJoinedRoot, Hibernate7RefreshLockJoinedSub,
+            Hibernate7RefreshLockUnionRoot, Hibernate7RefreshLockUnionSub)
         // AUTO leaves an explicitly selected session flush mode intact during template calls.
         manager.grailsConfig['hibernate.flush.mode'] = 'AUTO'
         // ConfigObject needs the parent map for named connection discovery.
@@ -631,6 +632,33 @@ class Hibernate7RefreshLockSpec extends HibernateGormDatastoreSpec {
         assert executor == null || executor.awaitTermination(15, TimeUnit.SECONDS)
     }
 
+    void 'refresh(lock: #type) on a managed instance issues #statements statements: the lock, the reload#increment'() {
+        given:
+        Long id = new Hibernate7RefreshLockBook(title: 'original').save(flush: true, failOnError: true).id
+        Hibernate7RefreshLockBook.withSession { it.clear() }
+        def book = Hibernate7RefreshLockBook.get(id)
+
+        def statistics = manager.sessionFactory.statistics
+        statistics.statisticsEnabled = true
+        long statementsBefore = statistics.prepareStatementCount
+
+        when:
+        book.refresh(lock: type)
+
+        then: 'the lock this transaction already holds is recorded without re-locking the row'
+        statistics.prepareStatementCount == statementsBefore + statements
+        Hibernate7RefreshLockBook.withSession { Session session ->
+            session.getCurrentLockMode(book) == expectedLockMode
+        }
+
+        where:
+        type                                     | expectedLockMode                    | statements
+        LockModeType.PESSIMISTIC_READ            | LockMode.PESSIMISTIC_READ           | 2
+        LockModeType.PESSIMISTIC_WRITE           | LockMode.PESSIMISTIC_WRITE          | 2
+        LockModeType.PESSIMISTIC_FORCE_INCREMENT | LockMode.PESSIMISTIC_FORCE_INCREMENT | 3
+        increment = statements == 3 ? ' and the version increment' : ''
+    }
+
     void 'static lock(id, refresh: true) loads and locks an instance that is not in the session'() {
         given:
         Long id = new Hibernate7RefreshLockBook(title: 'original').save(flush: true, failOnError: true).id
@@ -1209,7 +1237,7 @@ class Hibernate7RefreshLockSpec extends HibernateGormDatastoreSpec {
         } as Callable)
 
         then: 'the locked refresh waits on the root row instead of reading it while the competitor holds it'
-        loaded.await(10, TimeUnit.SECONDS)
+        loaded.await(10, TimeUnit.SECONDS) || refreshing.get(1, TimeUnit.SECONDS)
         !refreshed.await(200, TimeUnit.MILLISECONDS)
         !refreshing.isDone()
 
@@ -1222,6 +1250,80 @@ class Hibernate7RefreshLockSpec extends HibernateGormDatastoreSpec {
         Hibernate7RefreshLockJoinedSub.withNewSession {
             def book = Hibernate7RefreshLockJoinedSub.get(id)
             book.title == 'saved after refresh' && book.version == 2 && book.extra == 'subclass state'
+        }
+
+        cleanup:
+        competitor?.rollback()
+        competitor?.close()
+        executor?.shutdownNow()
+        assert executor == null || executor.awaitTermination(15, TimeUnit.SECONDS)
+
+        where:
+        description                                       | loadThroughRoot | useStatic
+        'loaded as the subclass'                          | false           | false
+        'loaded polymorphically through the root'         | true            | false
+        'static lock(id, refresh: true) on the subclass'  | false           | true
+        'static lock(id, refresh: true) on the root'      | true            | true
+    }
+
+    void 'refresh(lock: true) on a table-per-concrete-class subclass waits for a competing commit to its row (#description)'() {
+        given:
+        def saved = new Hibernate7RefreshLockUnionSub(title: 'original', extra: 'subclass state')
+                .save(flush: true, failOnError: true)
+        Long id = saved.id
+        // Hibernate 7 flushes a new table-per-concrete-class entity as an insert followed by an update, so the
+        // row starts at version 1 rather than 0. Versions are therefore asserted relative to the saved instance.
+        Long initialVersion = saved.version
+        manager.transactionManager.commit(manager.transactionStatus)
+        manager.transactionStatus = null
+        def executor = Executors.newSingleThreadExecutor()
+        def loaded = new CountDownLatch(1)
+        def refreshed = new CountDownLatch(1)
+        Connection competitor = openCompetingConnection(10000)
+        String concreteTable = tableName(Hibernate7RefreshLockUnionSub)
+        Class entityClass = loadThroughRoot ? Hibernate7RefreshLockUnionRoot : Hibernate7RefreshLockUnionSub
+
+        when: 'a competing connection updates the concrete table, which holds the whole row, and keeps its transaction open'
+        competitor.prepareStatement("update ${concreteTable} set title = 'competing commit', version = version + 1 where id = ?".toString())
+                .withCloseable { statement ->
+                    statement.setLong(1, id)
+                    assert statement.executeUpdate() == 1
+                }
+        def refreshing = executor.submit({
+            Hibernate7RefreshLockUnionSub.withNewSession { Session session ->
+                Hibernate7RefreshLockUnionSub.withTransaction {
+                    def book = entityClass.get(id)
+                    assert book instanceof Hibernate7RefreshLockUnionSub
+                    assert book.version == initialVersion
+                    loaded.countDown()
+                    def result = useStatic ? entityClass.lock(id, refresh: true) : book.refresh(lock: true)
+                    assert result.is(book)
+                    assert book.title == 'competing commit'
+                    assert book.version == initialVersion + 1
+                    assert book.extra == 'subclass state'
+                    assert session.getCurrentLockMode(book) == LockMode.PESSIMISTIC_WRITE
+                    refreshed.countDown()
+                    book.title = 'saved after refresh'
+                    assert book.save(flush: true, failOnError: true).is(book)
+                    assert book.version == initialVersion + 2
+                }
+            }
+        } as Callable)
+
+        then: 'the locked refresh waits on the concrete row instead of reading it through the union of the hierarchy'
+        loaded.await(10, TimeUnit.SECONDS) || refreshing.get(1, TimeUnit.SECONDS)
+        !refreshed.await(200, TimeUnit.MILLISECONDS)
+        !refreshing.isDone()
+
+        when:
+        competitor.commit()
+        refreshing.get(10, TimeUnit.SECONDS)
+
+        then: 'and then reloads the committed state and version under its own lock'
+        refreshed.count == 0
+        Hibernate7RefreshLockUnionSub.withNewSession {
+            def book = Hibernate7RefreshLockUnionSub.get(id)
+            book.title == 'saved after refresh' && book.version == initialVersion + 2 && book.extra == 'subclass state'
         }
 
         cleanup:
@@ -1355,5 +1457,22 @@ class Hibernate7RefreshLockJoinedRoot {
 
 @Entity
 class Hibernate7RefreshLockJoinedSub extends Hibernate7RefreshLockJoinedRoot {
+    String extra
+}
+
+@Entity
+class Hibernate7RefreshLockUnionRoot {
+    Long id
+    Long version
+    String title
+
+    static mapping = {
+        tablePerConcreteClass true
+        id generator: 'increment'
+    }
+}
+
+@Entity
+class Hibernate7RefreshLockUnionSub extends Hibernate7RefreshLockUnionRoot {
     String extra
 }

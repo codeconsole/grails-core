@@ -88,6 +88,8 @@ Every lock mode is available to `refresh(lock: ...)` and to the static `type` ar
 | `refresh(lock: LockModeType.NONE)` is a plain refresh, exactly like `refresh(lock: false)`. `lock(id, type: LockModeType.NONE)` is rejected with `IllegalArgumentException`: a lock call must name a lock.
 |===
 
+NOTE: In a hierarchy mapped with `tablePerConcreteClass true`, Hibernate 7 locks an already-loaded instance of a class that has subclasses through a union of the concrete tables, and some databases, H2 among them, do not lock rows through such a query. This applies to `lock()`, to `lock(id)` on a managed instance, and to `refresh(lock: true)` on an instance of such a class. `refresh(lock: true)` and `lock(id, refresh: true)` on an instance of a class without subclasses lock its concrete table directly.
+
 You can also lock an already-loaded instance:
 
 [source,groovy]
