@@ -293,17 +293,24 @@ class HibernateGormInstanceApi<D> extends GormInstanceApi<D> {
      * the subclass table. A {@code tablePerConcreteClass} hierarchy goes the other way. Its root is rendered as
      * a union of the concrete tables, through which databases such as H2 do not lock rows, so the query targets
      * the instance's concrete class instead, whose table holds the whole row. An instance whose own class has
-     * union subclasses is still rendered as a union, the same limit {@code lock()} has on such a hierarchy.
+     * union subclasses is still rendered as a union, a limit {@code lock()} has for every class in such a
+     * hierarchy because it always locks through the root.
      */
     private void lockRow(Session session, D instance, LockModeType lockMode) {
         EntityPersister descriptor = session.unwrap(SessionImplementor).factory.mappingMetamodel
                 .getEntityDescriptor(persistentClass)
-        String lockEntityName = descriptor instanceof UnionSubclassEntityPersister ?
-                session.getEntityName(instance) : descriptor.rootEntityName
+        Object lockTarget = instance
+        String lockEntityName = descriptor.rootEntityName
+        if (descriptor instanceof UnionSubclassEntityPersister) {
+            // The query names the concrete entity, so a root-typed proxy cannot be bound to its parameter:
+            // bind the target instead. The proxy has to be initialized to know the concrete entity anyway.
+            lockTarget = Hibernate.unproxy(instance)
+            lockEntityName = session.getEntityName(lockTarget)
+        }
         String hql = "select 1 from ${lockEntityName} e where e = :instance".toString()
         // NO_FLUSH: the query must not flush the pending changes that the refresh is about to discard.
         session.createSelectionQuery(hql, Integer)
-                .setParameter('instance', instance)
+                .setParameter('instance', lockTarget)
                 .setLockMode(lockMode)
                 .setQueryFlushMode(QueryFlushMode.NO_FLUSH)
                 .getResultList()
@@ -315,8 +322,10 @@ class HibernateGormInstanceApi<D> extends GormInstanceApi<D> {
      * query does not touch the entry and a plain refresh leaves it unlocked.
      * <p>
      * {@code session.lock} would record it too, at the cost of a version-checked lock statement that re-locks a
-     * row this transaction already holds, so the entry is set directly. {@code PESSIMISTIC_FORCE_INCREMENT} keeps
-     * going through {@code session.lock}, which is what performs the increment.
+     * row this transaction already holds, so the entry is set directly. Like Hibernate's own lock upgrade, this
+     * never weakens the recorded mode: the transaction still holds the stronger lock it took earlier.
+     * {@code PESSIMISTIC_FORCE_INCREMENT} keeps going through {@code session.lock}, which is what performs the
+     * increment.
      */
     private void recordLockMode(Session session, D instance, LockModeType lockMode) {
         if (lockMode == LockModeType.PESSIMISTIC_FORCE_INCREMENT) {
@@ -325,7 +334,10 @@ class HibernateGormInstanceApi<D> extends GormInstanceApi<D> {
         }
         EntityEntry entry = session.unwrap(SessionImplementor).persistenceContextInternal
                 .getEntry(Hibernate.unproxy(instance))
-        entry.setLockMode(LockMode.fromJpaLockMode(lockMode))
+        LockMode requested = LockMode.fromJpaLockMode(lockMode)
+        if (requested.greaterThan(entry.lockMode)) {
+            entry.setLockMode(requested)
+        }
     }
 
     protected D performUpsert(D target, boolean shouldFlush) {

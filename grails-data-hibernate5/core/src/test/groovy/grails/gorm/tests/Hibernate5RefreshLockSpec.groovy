@@ -1210,14 +1210,14 @@ class Hibernate5RefreshLockSpec extends HibernateGormDatastoreSpec {
 
         then: 'a competing SELECT ... FOR UPDATE on another connection is refused while that transaction is open'
         refreshed.await(10, TimeUnit.SECONDS)
-        !parentRowLockGranted(parentId)
+        !rowLockGranted(Hibernate5RefreshLockCascadeParent, parentId)
 
         when:
         allowRefreshCommit.countDown()
         refreshing.get(10, TimeUnit.SECONDS)
 
         then: 'and granted once it has ended'
-        parentRowLockGranted(parentId)
+        rowLockGranted(Hibernate5RefreshLockCascadeParent, parentId)
 
         cleanup:
         allowRefreshCommit?.countDown()
@@ -1244,6 +1244,62 @@ class Hibernate5RefreshLockSpec extends HibernateGormDatastoreSpec {
         Hibernate5RefreshLockBook.withSession { Session session ->
             session.getCurrentLockMode(proxy) == LockMode.PESSIMISTIC_WRITE
         }
+    }
+
+    void 'static lock(id, refresh: true) through the root of a #description hierarchy locks the row behind an initialized root-typed proxy'() {
+        given: 'a subclass row that the session knows only as a proxy of the root type, as a lazy association declared with the root type holds'
+        Long id = saved.save(flush: true, failOnError: true).id
+        rootClass.withSession { it.clear() }
+        def proxy = rootClass.load(id)
+        assert !Hibernate.isInitialized(proxy)
+        assert proxy.title == 'original'
+        proxy.title = 'pending'
+
+        when:
+        def result = rootClass.lock(id, refresh: true)
+
+        then: 'the proxy the caller holds is reloaded and the row that holds its state is locked'
+        result.is(proxy)
+        subClass.isInstance(Hibernate.unproxy(proxy))
+        proxy.title == 'original'
+        Hibernate.unproxy(proxy).extra == 'subclass state'
+        rootClass.withSession { Session session ->
+            session.getCurrentLockMode(proxy) == LockMode.PESSIMISTIC_WRITE
+        }
+        !rowLockGranted(lockedTableClass, id)
+
+        where:
+        description                | rootClass                       | subClass                       | lockedTableClass
+        'table-per-concrete-class' | Hibernate5RefreshLockUnionRoot  | Hibernate5RefreshLockUnionSub  | Hibernate5RefreshLockUnionSub
+        'joined-table'             | Hibernate5RefreshLockJoinedRoot | Hibernate5RefreshLockJoinedSub | Hibernate5RefreshLockJoinedRoot
+        saved = rootClass == Hibernate5RefreshLockUnionRoot ?
+                new Hibernate5RefreshLockUnionSub(title: 'original', extra: 'subclass state') :
+                new Hibernate5RefreshLockJoinedSub(title: 'original', extra: 'subclass state')
+    }
+
+    void 'refresh(lock: #requested) after #held reloads the state but never weakens the lock this transaction already holds'() {
+        given:
+        Long id = new Hibernate5RefreshLockBook(title: 'original').save(flush: true, failOnError: true).id
+        Hibernate5RefreshLockBook.withSession { it.clear() }
+        def book = Hibernate5RefreshLockBook.get(id)
+        acquire(book)
+        book.title = 'pending'
+
+        when:
+        book.refresh(lock: requested)
+
+        then:
+        book.title == 'original'
+        Hibernate5RefreshLockBook.withSession { Session session ->
+            session.getCurrentLockMode(book) == expectedLockMode
+        }
+
+        where:
+        held                                         | acquire                                                       | requested                      || expectedLockMode
+        'lock()'                                     | { it.lock() }                                                 | LockModeType.PESSIMISTIC_READ  || LockMode.PESSIMISTIC_WRITE
+        'refresh(lock: true)'                        | { it.refresh(lock: true) }                                    | LockModeType.PESSIMISTIC_READ  || LockMode.PESSIMISTIC_WRITE
+        'refresh(lock: PESSIMISTIC_FORCE_INCREMENT)' | { it.refresh(lock: LockModeType.PESSIMISTIC_FORCE_INCREMENT) } | LockModeType.PESSIMISTIC_WRITE || LockMode.FORCE // Hibernate 5 records its legacy alias
+        'refresh(lock: PESSIMISTIC_READ)'            | { it.refresh(lock: LockModeType.PESSIMISTIC_READ) }           | LockModeType.PESSIMISTIC_WRITE || LockMode.PESSIMISTIC_WRITE
     }
 
     void 'refresh(lock: true) on a joined-table subclass waits for a competing commit to the root row (#description)'() {
@@ -1387,16 +1443,16 @@ class Hibernate5RefreshLockSpec extends HibernateGormDatastoreSpec {
     }
 
     /**
-     * Attempts a plain JDBC {@code SELECT ... FOR UPDATE} of the cascade parent's row on a separate connection
-     * with a short lock timeout, and reports whether the database granted the lock. Unlike
+     * Attempts a plain JDBC {@code SELECT ... FOR UPDATE} of the entity's row in the given class's table on a
+     * separate connection with a short lock timeout, and reports whether the database granted the lock. Unlike
      * {@code getCurrentLockMode}, which reports what Hibernate recorded, this observes the lock itself.
      */
-    private boolean parentRowLockGranted(Long parentId) {
-        String table = tableName(Hibernate5RefreshLockCascadeParent)
+    private boolean rowLockGranted(Class entityClass, Long id) {
+        String table = tableName(entityClass)
         openCompetingConnection(300).withCloseable { Connection connection ->
             try {
                 connection.prepareStatement("select id from ${table} where id = ? for update".toString()).withCloseable { statement ->
-                    statement.setLong(1, parentId)
+                    statement.setLong(1, id)
                     statement.executeQuery().withCloseable { it.next() }
                 }
             } catch (SQLTimeoutException ignored) {
