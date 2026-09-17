@@ -274,7 +274,7 @@ public abstract class AbstractMongoSession extends AbstractSession<MongoClient> 
 
     @Override
     protected Transaction beginTransactionInternal(TransactionDefinition definition) {
-        return beginTransactionInternal(definition.isReadOnly());
+        return beginTransactionInternal(definition != null && definition.isReadOnly());
     }
 
     private Transaction beginTransactionInternal(boolean readOnly) {
