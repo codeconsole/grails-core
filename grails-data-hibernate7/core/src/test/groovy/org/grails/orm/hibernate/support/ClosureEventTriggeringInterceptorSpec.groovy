@@ -327,6 +327,20 @@ class ClosureEventTriggeringInterceptorSpec extends HibernateGormDatastoreSpec {
         noExceptionThrown()
     }
 
+    @Rollback
+    void "native session.merge() of a transient entity does not fail for a missing callback registry on the merge delegate"() {
+        given: "the interceptor is wired into the real session factory, exercising the production injectCallbackRegistry call"
+        def sfi = sessionFactory.unwrap(SessionFactoryImplementor)
+
+        when: "merging a never-persisted entity through Hibernate's own merge event, not GORM's merge() (which does not use it)"
+        def merged = sfi.currentSession.merge(new InterceptorBook(title: 'merged via native session'))
+        sfi.currentSession.flush()
+
+        then: "DefaultMergeEventListener.performSave() calls callbackRegistry.preCreate() on its own listener instance - a missing injection throws NullPointerException here"
+        noExceptionThrown()
+        merged != null
+    }
+
     // -------------------------------------------------------------------------
     // setApplicationContext with non-ConfigurableApplicationContext
     // -------------------------------------------------------------------------

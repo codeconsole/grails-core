@@ -254,7 +254,7 @@ class GormStaticApi<D> extends AbstractGormApi<D> implements GormAllOperations<D
 
     @Override
     D refresh(D instance, Map args) {
-        registry.findInstanceApi(persistentClass, null).refresh(instance, args)
+        registry.findInstanceApi(persistentClass, qualifier).refresh(instance, args)
     }
 
     @Override

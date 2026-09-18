@@ -256,11 +256,14 @@ interface GormStaticOperations<D> {
      */
     @CompileStatic
     default D lock(Map args, Serializable id) {
-        if (RefreshLockArguments.refreshRequested(args)) {
-            throw new UnsupportedOperationException(RefreshLockArguments.UNSUPPORTED)
-        }
+        // Validated in the same order as GormStaticApi.lock(Map, Serializable), the implementation this
+        // default backs for any datastore that does not override it, so the same invalid combination of
+        // arguments is rejected with the same reason regardless of which of the two runs.
         if (RefreshLockArguments.lockTypeFrom(args) != LockModeType.PESSIMISTIC_WRITE) {
             throw new UnsupportedOperationException(RefreshLockArguments.UNSUPPORTED_TYPE)
+        }
+        if (RefreshLockArguments.refreshRequested(args)) {
+            throw new UnsupportedOperationException(RefreshLockArguments.UNSUPPORTED)
         }
         lock(id)
     }

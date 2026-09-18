@@ -299,6 +299,23 @@ class Hibernate7RefreshLockSpec extends HibernateGormDatastoreSpec {
         !Hibernate.isInitialized(proxy)
     }
 
+    void 'static lock(id, type: PESSIMISTIC_READ) without a refresh request rejects a missing transaction'() {
+        given:
+        Long id = new Hibernate7RefreshLockBook(title: 'original').save(flush: true, failOnError: true).id
+        manager.transactionManager.commit(manager.transactionStatus)
+        manager.transactionStatus = null
+
+        when:
+        Hibernate7RefreshLockBook.withNewSession { Session session ->
+            assert !session.transaction.isActive()
+            Hibernate7RefreshLockBook.lock(id, type: LockModeType.PESSIMISTIC_READ)
+        }
+
+        then:
+        def exception = thrown(TransactionRequiredException)
+        exception.message == 'An active transaction is required.'
+    }
+
     void 'refresh(lock: true) discards changes and permits saving a nonversioned entity'() {
         given:
         def book = new Hibernate7RefreshLockNonversionedBook(title: 'original').save(flush: true, failOnError: true)

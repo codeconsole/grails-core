@@ -62,6 +62,11 @@ class RefreshLockArguments {
     static final String UNSUPPORTED_TYPE = 'Datastore implementation does not support lock types other than PESSIMISTIC_WRITE'
 
     /**
+     * The message reported when a lock or a locked refresh is requested outside of an active transaction.
+     */
+    static final String TRANSACTION_REQUIRED = 'An active transaction is required.'
+
+    /**
      * Resolves the lock requested by the {@code lock} argument.
      *
      * @param args The named arguments, may be {@code null}

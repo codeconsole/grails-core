@@ -230,6 +230,7 @@ public class ClosureEventTriggeringInterceptor
     @Override
     public void injectCallbackRegistry(CallbackRegistry callbackRegistry) {
         persistEventListener.injectCallbackRegistry(callbackRegistry);
+        mergeEventListener.injectCallbackRegistry(callbackRegistry);
     }
 
     @Override

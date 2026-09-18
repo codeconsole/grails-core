@@ -91,7 +91,6 @@ class HibernateGormStaticApi<D> extends GormStaticApi<D> {
     protected Class identityType
     protected ClassLoader classLoader
     protected String qualifier
-    private static final String LOCK_REFRESH_REQUIRES_TRANSACTION = 'An active transaction is required.'
     private HibernateGormInstanceApi<D> instanceApi
 
     HibernateGormStaticApi(Class<D> persistentClass, HibernateDatastore datastore, List<FinderMethod> finders,
@@ -188,6 +187,9 @@ class HibernateGormStaticApi<D> extends GormStaticApi<D> {
         }
         if (!refresh) {
             return (D) hibernateTemplate.execute { Session session ->
+                if (!session.getTransaction().isActive()) {
+                    throw new TransactionRequiredException(RefreshLockArguments.TRANSACTION_REQUIRED)
+                }
                 session.find(persistentClass, identifier, lockMode)
             }
         }
@@ -195,7 +197,7 @@ class HibernateGormStaticApi<D> extends GormStaticApi<D> {
         // registry, which yields the default connection for a named-connection static api.
         (D) hibernateTemplate.execute { Session session ->
             if (!session.getTransaction().isActive()) {
-                throw new TransactionRequiredException(LOCK_REFRESH_REQUIRES_TRANSACTION)
+                throw new TransactionRequiredException(RefreshLockArguments.TRANSACTION_REQUIRED)
             }
             Object managed = findManagedInstance(session, identifier)
             if (managed == null) {

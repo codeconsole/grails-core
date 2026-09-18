@@ -77,7 +77,6 @@ abstract class AbstractHibernateGormInstanceApi<D> extends GormInstanceApi<D> {
     private static final String ARGUMENT_INSERT = 'insert'
     private static final String ARGUMENT_MERGE = 'merge'
     private static final String ARGUMENT_FAIL_ON_ERROR = 'failOnError'
-    private static final String REFRESH_LOCK_REQUIRES_TRANSACTION = 'An active transaction is required.'
     private static final String REFRESH_LOCK_REQUIRES_ATTACHED = 'The instance must be attached to the current session.'
     private static final Class DEFERRED_BINDING
 
@@ -274,14 +273,18 @@ abstract class AbstractHibernateGormInstanceApi<D> extends GormInstanceApi<D> {
         }
         hibernateTemplate.execute { Session session ->
             if (!session.getTransaction().isActive()) {
-                throw new TransactionRequiredException(REFRESH_LOCK_REQUIRES_TRANSACTION)
+                throw new TransactionRequiredException(RefreshLockArguments.TRANSACTION_REQUIRED)
             }
             // Hibernate 5 would silently re-associate a detached instance where Hibernate 7 rejects it,
             // so the attachment contract is enforced here, before a detached proxy could be initialized.
             if (!session.contains(instance)) {
                 throw new IllegalArgumentException(REFRESH_LOCK_REQUIRES_ATTACHED)
             }
-            // Hibernate skips the locked refresh for an uninitialized proxy.
+            // Hibernate skips the locked refresh for an uninitialized proxy. Forcing initialization first (via
+            // a JPA find()/get() with the lock mode instead of unwrap()) was tried and reverted: Hibernate 5's
+            // JPA-compatible find() throws MappingException("Unknown entity: ...$HibernateProxy$...") when the
+            // persistence context already holds the id under the proxy's dynamically-generated subclass, so the
+            // extra unlocked SELECT here is the price of correctness, not an oversight.
             Object target = proxyHandler.unwrap(instance)
             if (RefreshLockArguments.pessimistic(lockMode)) {
                 session.refresh(target, lockMode)
@@ -301,6 +304,13 @@ abstract class AbstractHibernateGormInstanceApi<D> extends GormInstanceApi<D> {
     /**
      * Resets the dirty state of a refreshed entity, its embedded components, and every initialized association
      * that Hibernate's refresh cascade reloaded along with it.
+     * <p>
+     * This walks Hibernate's own {@code CascadeStyle}/{@code Type} metadata to find the reloaded associations
+     * and components; it does not duplicate {@link GrailsEntityDirtinessStrategy#resetDirty}, which is called
+     * for the entity itself (and, through it, {@code PersistentEntity.getEmbedded()} for its own embedded
+     * properties). The two walk different metadata for different scopes - GORM's own embedded-property model
+     * here versus Hibernate's live persister/cascade metadata for the association graph the refresh reloaded -
+     * so they are kept separate rather than merged into one traversal.
      */
     private void resetDirtyAfterRefresh(SessionImplementor session, Object entity, Set<Object> visited) {
         if (!(entity instanceof DirtyCheckable) || !visited.add(entity)) {

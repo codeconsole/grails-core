@@ -214,8 +214,12 @@ class HibernateConnectionSourceSettings extends ConnectionSourceSettings {
                 return [
 //                    'save': eventTriggeringInterceptor,
 //                    'save-update': eventTriggeringInterceptor,
-//                        "merge": eventTriggeringInterceptor,
-//                        "persist": eventTriggeringInterceptor,
+                    'merge': eventTriggeringInterceptor,
+                    // Hibernate's internal event name for EventType.PERSIST is 'create' (historical naming);
+                    // 'create-onflush' is the same PersistEventListener interface, fired for a persist
+                    // cascaded during flush rather than the initial explicit one.
+                    'create': eventTriggeringInterceptor,
+                    'create-onflush': eventTriggeringInterceptor,
                     'pre-load': eventTriggeringInterceptor,
                     'post-load': eventTriggeringInterceptor,
                     'pre-insert': eventTriggeringInterceptor,

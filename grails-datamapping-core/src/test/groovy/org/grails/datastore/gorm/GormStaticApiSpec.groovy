@@ -309,6 +309,43 @@ class GormStaticApiSpec extends Specification {
         GormRegistry.instance.reset()
     }
 
+    void "refresh(instance, args) on a non-default qualifier routes through that qualifier's connection, not the default one"() {
+        given: 'a default datastore and a separately-registered named connection, each with its own live entity'
+        def defaultDs = new SimpleMapDatastore(GormStaticApiThing)
+        def namedDs = new SimpleMapDatastore(GormStaticApiThing)
+        GormRegistry.instance.registerDatastore(ConnectionSource.DEFAULT, defaultDs)
+        // GormStaticApiThing was already registered against the spec's own SimpleMapDatastore (the
+        // 'datastore' field) as a side effect of its construction. Overwrite that entity-specific
+        // DEFAULT mapping, and the api registration, so lookups for this class resolve defaultDs.
+        GormRegistry.instance.registerEntityDatastore(GormStaticApiThing.name, ConnectionSource.DEFAULT, defaultDs)
+        GormRegistry.instance.registerEntityDatastore(GormStaticApiThing.name, 'orders', namedDs)
+        GormRegistry.instance.registerEntityApis(GormStaticApiThing,
+                new GormStaticApi<GormStaticApiThing>(GormStaticApiThing, defaultDs, []),
+                new GormInstanceApi<GormStaticApiThing>(GormStaticApiThing, defaultDs),
+                new GormValidationApi<GormStaticApiThing>(GormStaticApiThing, defaultDs))
+
+        and: 'an instance persisted only in the named connection, then locally mutated'
+        def instance = new GormStaticApiThing(name: 'persisted in orders')
+        def namedSession = namedDs.connect()
+        namedSession.persist(instance)
+        namedSession.flush()
+        instance.name = 'unflushed local change'
+
+        and: 'a static api bound to the named qualifier'
+        def qualifiedApi = new GormStaticApi<GormStaticApiThing>(GormStaticApiThing, defaultDs.mappingContext, [],
+                { defaultDs } as DatastoreResolver, 'orders', GormRegistry.instance)
+
+        when:
+        def result = qualifiedApi.refresh(instance, [:])
+
+        then: 'the refresh reloaded state from the orders connection, proving that connection was used'
+        result.is(instance)
+        instance.name == 'persisted in orders'
+
+        cleanup:
+        GormRegistry.instance.reset()
+    }
+
     void "lock(args, id) without a refresh request locks by identifier only (#description)"() {
         given:
         def api = new LockRecordingGormStaticApi<GormStaticApiThing>(GormStaticApiThing, datastore)
@@ -465,6 +502,35 @@ class GormStaticApiSpec extends Specification {
         written == 'locked'
     }
 
+    void "the default lock(args, id) of the static operations contract rejects an invalid type before a combined refresh request, the same way GormStaticApi does"() {
+        given: 'an implementation that provides nothing beyond the interface defaults'
+        GormStaticOperations<Object> operations = (GormStaticOperations<Object>) Proxy.newProxyInstance(
+                GormStaticOperations.classLoader, [GormStaticOperations] as Class[],
+                { Object proxy, Method method, Object[] methodArgs ->
+                    if (method.isDefault()) {
+                        return InvocationHandler.invokeDefault(proxy, method, methodArgs)
+                    }
+                    return null
+                } as InvocationHandler)
+        def api = new LockRecordingGormStaticApi<GormStaticApiThing>(GormStaticApiThing, datastore)
+        def combinedArgs = [type: LockModeType.PESSIMISTIC_READ, refresh: true]
+
+        when: 'the interface default handles a lock type it does not support combined with a refresh request'
+        operations.lock(combinedArgs, 7L)
+
+        then:
+        def defaultException = thrown(UnsupportedOperationException)
+
+        when: 'GormStaticApi.lock(Map, Serializable) handles the identical combined input'
+        lockWithArguments(api, combinedArgs, 7L)
+
+        then: 'both reject it for the same reason, the type, not the refresh flag'
+        def concreteException = thrown(UnsupportedOperationException)
+        concreteException.message == defaultException.message
+        defaultException.message == 'Datastore implementation does not support lock types other than PESSIMISTIC_WRITE'
+        api.lockedIds.isEmpty()
+    }
+
     void "lock(Map) on the entity explains that the instance form is refresh(lock: true)"() {
         when:
         GormStaticApiThing.lock(refresh: true)
@@ -473,6 +539,16 @@ class GormStaticApiSpec extends Specification {
         def exception = thrown(IllegalArgumentException)
         exception.message == 'lock(Map) is not an instance method. Use DomainClass.lock(id, refresh: true) ' +
                 'to lock by identifier, or refresh(lock: true) on the instance'
+    }
+
+    void "lock(Serializable id) accepts a legitimate Map-shaped composite identifier instead of treating it as misdispatched lock options"() {
+        when: 'the Map keys are ordinary entity properties, not the fixed set of lock/refresh/type option names'
+        GormStaticApiThing.lock([street: 'Main St', city: 'Springfield'])
+
+        then: 'it is not rejected as a misdispatched lock(refresh: true) call - it reaches the real locking' +
+                ' path, which fails for the unrelated reason that this test datastore does not support locking'
+        def exception = thrown(UnsupportedOperationException)
+        exception.message == 'Datastore [org.grails.datastore.mapping.simple.SimpleMapSession] does not support locking.'
     }
 
     void "lock(Map) called on an instance is rejected the same way"() {

@@ -33,6 +33,8 @@ import org.hibernate.event.spi.EventType;
 import org.hibernate.integrator.spi.Integrator;
 import org.hibernate.service.spi.SessionFactoryServiceRegistry;
 
+import org.grails.orm.hibernate.support.ClosureEventTriggeringInterceptor;
+
 public class EventListenerIntegrator implements Integrator {
 
     protected static final List<EventType<?>> TYPES = Arrays.asList(
@@ -133,7 +135,16 @@ public class EventListenerIntegrator implements Integrator {
         var isMergeEvent = eventType.equals(EventType.MERGE);
         var isPersistEventListener = listener instanceof org.hibernate.event.internal.DefaultPersistEventListener;
         var isPersistEvent = eventType.equals(EventType.PERSIST);
-        return isMergeListener && isMergeEvent || isPersistEventListener && isPersistEvent;
+        // ClosureEventTriggeringInterceptor is registered for merge/persist/persist-on-flush too, but it composes
+        // (rather than extends) DefaultMergeEventListener/DefaultPersistEventListener, delegating every call to
+        // its own internal instance of each. Appending it to Hibernate's own default listener group would run
+        // that delegated persist/merge logic a second time for every entity - replace the default listener
+        // instead, the same way we do for the Default*EventListener subclasses above.
+        var isClosureEventTriggeringInterceptor = listener instanceof ClosureEventTriggeringInterceptor;
+        var isMergeOrPersistEvent = isMergeEvent || isPersistEvent || eventType.equals(EventType.PERSIST_ONFLUSH);
+        return isMergeListener && isMergeEvent ||
+                isPersistEventListener && isPersistEvent ||
+                isClosureEventTriggeringInterceptor && isMergeOrPersistEvent;
     }
 
     @SuppressWarnings("unchecked")

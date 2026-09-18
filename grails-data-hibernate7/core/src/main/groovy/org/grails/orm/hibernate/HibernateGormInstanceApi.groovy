@@ -89,7 +89,6 @@ class HibernateGormInstanceApi<D> extends GormInstanceApi<D> {
     private static final String ARGUMENT_INSERT = 'insert'
     private static final String ARGUMENT_MERGE = 'merge'
     private static final String ARGUMENT_FAIL_ON_ERROR = 'failOnError'
-    private static final String REFRESH_LOCK_REQUIRES_TRANSACTION = 'An active transaction is required.'
     private static final String REFRESH_LOCK_REQUIRES_ATTACHED = 'The instance must be attached to the current session.'
     private static final Class DEFERRED_BINDING
 
@@ -255,7 +254,7 @@ class HibernateGormInstanceApi<D> extends GormInstanceApi<D> {
             // Hibernate only rejects a lock without a transaction when out-of-transaction update
             // operations are disallowed, so the contract is enforced here regardless of that setting.
             if (!session.getTransaction().isActive()) {
-                throw new TransactionRequiredException(REFRESH_LOCK_REQUIRES_TRANSACTION)
+                throw new TransactionRequiredException(RefreshLockArguments.TRANSACTION_REQUIRED)
             }
             // Hibernate reports a detached instance with its own internal exception; report the contract instead.
             if (!session.contains(instance)) {

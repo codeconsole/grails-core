@@ -30,6 +30,8 @@ import org.hibernate.event.spi.LoadEventListener
 import org.hibernate.service.spi.SessionFactoryServiceRegistry
 import spock.lang.Specification
 
+import org.grails.orm.hibernate.support.ClosureEventTriggeringInterceptor
+
 class EventListenerIntegratorSpec extends Specification {
 
     Metadata metadata = Mock(Metadata)
@@ -128,6 +130,28 @@ class EventListenerIntegratorSpec extends Specification {
 
         then:
         1 * listenerRegistry.setListeners(EventType.MERGE, mergeListener)
+    }
+
+    def "integrate uses setListeners (override) for ClosureEventTriggeringInterceptor on #eventType"() {
+        given: "the interceptor composes rather than extends Hibernate's default merge/persist listeners"
+        ClosureEventTriggeringInterceptor interceptor = new ClosureEventTriggeringInterceptor()
+        HibernateEventListeners hibernateEventListeners = Mock(HibernateEventListeners)
+        hibernateEventListeners.getListenerMap() >> [(eventName): interceptor]
+
+        EventListenerIntegrator integrator = new EventListenerIntegrator(hibernateEventListeners, [:])
+
+        when:
+        integrator.integrate(metadata, bootstrapContext, sfi)
+
+        then: "appending it would double-fire its delegated merge/persist logic for every entity"
+        1 * listenerRegistry.setListeners(eventType, interceptor)
+        0 * listenerRegistry.appendListeners(eventType, interceptor)
+
+        where:
+        eventType                  | eventName
+        EventType.MERGE            | 'merge'
+        EventType.PERSIST          | 'create'
+        EventType.PERSIST_ONFLUSH  | 'create-onflush'
     }
 
     def "integrate appends (not overrides) non-merge non-persist listeners from hibernateEventListeners"() {
