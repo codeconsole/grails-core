@@ -19,7 +19,10 @@
 package org.grails.plugins.web.async
 
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 
 import org.springframework.beans.factory.support.BeanRegistryAdapter
 import org.springframework.beans.factory.support.DefaultListableBeanFactory
@@ -29,8 +32,20 @@ import org.springframework.core.task.TaskDecorator
 import org.springframework.core.task.SyncTaskExecutor
 import org.springframework.core.task.support.TaskExecutorAdapter
 import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler
+import org.springframework.context.support.GenericApplicationContext
+import org.springframework.mock.web.MockHttpServletRequest
+import org.springframework.mock.web.MockHttpServletResponse
+import org.springframework.mock.web.MockServletContext
+import org.springframework.web.context.request.RequestContextHolder
+import org.springframework.beans.factory.BeanCreationException
+import org.springframework.beans.factory.BeanNotOfRequiredTypeException
 
 import grails.async.PromiseFactory
+import grails.async.Promises
+import grails.async.web.WebPromises
+import grails.events.bus.EventBus
+import org.grails.events.bus.spring.EventBusFactoryBean
+import org.grails.web.servlet.mvc.GrailsWebRequest
 import org.grails.plugins.web.async.mvc.AsyncActionResultTransformer
 
 import spock.lang.Specification
@@ -110,6 +125,81 @@ class ControllersAsyncGrailsPluginSpec extends Specification {
 
         cleanup:
         released.countDown()
+        beanFactory.destroySingletons()
+    }
+
+    void 'virtual thread opt-in retains composed decorators and asynchronous events'() {
+        given:
+        String previous = System.getProperty('grails.async.promiseFactory')
+        System.setProperty('grails.async.promiseFactory', 'virtual-thread')
+        def context = new GenericApplicationContext()
+        def decorated = new AtomicInteger()
+        TaskDecorator custom = (Runnable task) -> {
+            Runnable work = () -> {
+                decorated.incrementAndGet()
+                task.run()
+            }
+            return work
+        }
+        context.beanFactory.registerSingleton('customDecorator', custom)
+        def registrar = new ControllersAsyncGrailsPlugin().beanRegistrar()
+        new BeanRegistryAdapter(context.defaultListableBeanFactory, context.environment, registrar.class).register(registrar)
+        context.registerBean('eventBus', EventBusFactoryBean)
+        context.refresh()
+        def factory = context.getBean('grailsPromiseFactory', PromiseFactory)
+        def servletContext = new MockServletContext()
+        def request = new MockHttpServletRequest(servletContext)
+        request.asyncSupported = true
+        RequestContextHolder.setRequestAttributes(new GrailsWebRequest(request, new MockHttpServletResponse(), servletContext))
+        def delivered = new LinkedBlockingQueue<List>()
+        context.getBean('eventBus', EventBus).on('test') {
+            delivered.add([Thread.currentThread().isVirtual(), GrailsWebRequest.lookup() != null])
+        }
+
+        expect:
+        Promises.task { Thread.currentThread().isVirtual() && GrailsWebRequest.lookup() != null }.get(5, TimeUnit.SECONDS)
+        WebPromises.task { Thread.currentThread().isVirtual() && GrailsWebRequest.lookup() != null }.get(5, TimeUnit.SECONDS)
+
+        when:
+        context.getBean('eventBus', EventBus).notify('test', 'value')
+
+        then:
+        delivered.poll(5, TimeUnit.SECONDS) == [true, true]
+        decorated.get() >= 3
+
+        when:
+        context.close()
+        factory.createPromise { 1 }
+
+        then:
+        thrown(RejectedExecutionException)
+
+        cleanup:
+        context.close()
+        RequestContextHolder.resetRequestAttributes()
+        if (previous == null) {
+            System.clearProperty('grails.async.promiseFactory')
+        }
+        else {
+            System.setProperty('grails.async.promiseFactory', previous)
+        }
+    }
+
+    void 'a mistyped named application executor fails visibly instead of silently falling back'() {
+        given:
+        def beanFactory = new DefaultListableBeanFactory()
+        beanFactory.registerSingleton('applicationTaskExecutor', new SyncTaskExecutor())
+        def registrar = new ControllersAsyncGrailsPlugin().beanRegistrar()
+        new BeanRegistryAdapter(beanFactory, new StandardEnvironment(), registrar.class).register(registrar)
+
+        when:
+        beanFactory.getBean('grailsPromiseFactory')
+
+        then:
+        def failure = thrown(BeanCreationException)
+        failure.mostSpecificCause instanceof BeanNotOfRequiredTypeException
+
+        cleanup:
         beanFactory.destroySingletons()
     }
 }

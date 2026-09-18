@@ -20,6 +20,8 @@
 package grails.async.web
 
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.Executor
+import java.util.function.UnaryOperator
 
 import groovy.transform.CompileStatic
 
@@ -31,8 +33,9 @@ import grails.async.Promise
 import grails.async.PromiseFactory
 import grails.async.decorator.PromiseDecorator
 import org.grails.async.factory.PromiseFactoryBuilder
+import org.grails.async.factory.future.CompletableFuturePromiseFactory
 import org.grails.plugins.web.async.GrailsWebRequestTaskDecorator
-import org.grails.plugins.web.async.GrailsAsyncWebRequest
+import org.grails.plugins.web.async.AsyncRequestSupport
 import org.grails.web.servlet.mvc.GrailsWebRequest
 import org.grails.web.util.GrailsApplicationAttributes
 
@@ -49,15 +52,22 @@ class WebPromises {
 
     static PromiseFactory getPromiseFactory() {
         if (promiseFactory == null) {
-            promiseFactory = new PromiseFactoryBuilder().build()
-            promiseFactory.addPromiseDecoratorLookupStrategy {
-                [new WebRequestPromiseDecorator()] as List<PromiseDecorator>
+            GrailsWebRequestTaskDecorator decorator = new GrailsWebRequestTaskDecorator()
+            UnaryOperator<Executor> decorateExecutor = (Executor executor) -> {
+                Executor decorated = (Runnable task) -> executor.execute(decorator.decorate(task))
+                return decorated
             }
+            setPromiseFactory(PromiseFactoryBuilder.build(null, decorateExecutor))
         }
         return promiseFactory
     }
 
     static void setPromiseFactory(PromiseFactory promiseFactory) {
+        if (promiseFactory != null && !(promiseFactory instanceof CompletableFuturePromiseFactory)) {
+            promiseFactory.addPromiseDecoratorLookupStrategy {
+                [new WebRequestPromiseDecorator()] as List<PromiseDecorator>
+            }
+        }
         WebPromises.@promiseFactory = promiseFactory
     }
 
@@ -67,12 +77,17 @@ class WebPromises {
 
         @Override
         <D> Closure<D> decorate(Closure<D> work) {
-            Object[] result = new Object[1]
-            Runnable decorated = new GrailsWebRequestTaskDecorator().decorate({ result[0] = work.call() } as Runnable)
-            return {
+            GrailsWebRequest captured = GrailsWebRequest.lookup()
+            return { Object... args ->
+                Object[] result = new Object[1]
+                Runnable decorated = new GrailsWebRequestTaskDecorator().decorate(() -> { result[0] = invokeWork(work, args) }, captured)
                 decorated.run()
                 return (D) result[0]
             }
+        }
+
+        private static <D> D invokeWork(Closure<D> work, Object[] args) {
+            return work.call(*args)
         }
     }
 
@@ -200,14 +215,14 @@ class WebPromises {
         }
 
         WebAsyncManager asyncManager = WebAsyncUtils.getAsyncManager(webRequest.currentRequest)
-        if (GrailsAsyncWebRequest.isComplete(webRequest) || asyncManager.asyncWebRequest?.isAsyncComplete()) {
+        if (AsyncRequestSupport.isComplete(webRequest) || asyncManager.asyncWebRequest?.isAsyncComplete()) {
             throw new IllegalStateException('Cannot start a task once asynchronous request processing has completed')
         }
         if (asyncManager.isConcurrentHandlingStarted()) {
             return
         }
 
-        StandardServletAsyncWebRequest asyncWebRequest = GrailsAsyncWebRequest.create(webRequest)
+        StandardServletAsyncWebRequest asyncWebRequest = AsyncRequestSupport.create(webRequest)
         asyncManager.asyncWebRequest = asyncWebRequest
         asyncWebRequest.startAsync()
         webRequest.currentRequest.setAttribute(GrailsApplicationAttributes.ASYNC_STARTED, true)

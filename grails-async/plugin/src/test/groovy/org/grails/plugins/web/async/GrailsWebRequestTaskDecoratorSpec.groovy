@@ -45,4 +45,20 @@ class GrailsWebRequestTaskDecoratorSpec extends Specification {
         then:
         GrailsWebRequest.lookup() == null
     }
+
+    void 'checked failures retain their identity and restore the previous context'() {
+        given:
+        def previous = GrailsWebMockUtil.bindMockWebRequest()
+        def failure = new IOException('io')
+        Runnable work = () -> { throw failure }
+        def decorated = new GrailsWebRequestTaskDecorator().decorate(work)
+
+        when:
+        decorated.run()
+
+        then:
+        def observed = thrown(IOException)
+        observed.is(failure)
+        GrailsWebRequest.lookup().is(previous)
+    }
 }

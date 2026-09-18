@@ -28,7 +28,7 @@ import org.springframework.web.servlet.ModelAndView
 
 import grails.async.Promise
 import grails.async.PromiseList
-import org.grails.plugins.web.async.GrailsAsyncWebRequest
+import org.grails.plugins.web.async.AsyncRequestSupport
 import org.grails.web.servlet.mvc.ActionResultTransformer
 import org.grails.web.servlet.mvc.GrailsWebRequest
 import org.grails.web.util.GrailsApplicationAttributes
@@ -47,12 +47,12 @@ class AsyncActionResultTransformer implements ActionResultTransformer {
         if (actionResult instanceof Promise promise) {
             final request = webRequest.getRequest()
             WebAsyncManager asyncManager = WebAsyncUtils.getAsyncManager(request)
-            if (GrailsAsyncWebRequest.isComplete(webRequest) || asyncManager.asyncWebRequest?.isAsyncComplete()) {
-                return null
+            if (AsyncRequestSupport.isComplete(webRequest) || asyncManager.asyncWebRequest?.isAsyncComplete()) {
+                throw new IllegalStateException('Cannot process a promise once asynchronous request processing has completed')
             }
 
             if (!asyncManager.isConcurrentHandlingStarted()) {
-                AsyncWebRequest asyncWebRequest = GrailsAsyncWebRequest.create(webRequest)
+                AsyncWebRequest asyncWebRequest = AsyncRequestSupport.create(webRequest)
                 asyncManager.setAsyncWebRequest(asyncWebRequest)
             }
             DeferredResult<Object> deferredResult = new DeferredResult<Object>()

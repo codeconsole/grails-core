@@ -37,12 +37,15 @@ class GrailsWebRequestTaskDecorator implements TaskDecorator {
 
     @Override
     Runnable decorate(Runnable task) {
-        GrailsWebRequest captured = GrailsWebRequest.lookup()
+        return decorate(task, GrailsWebRequest.lookup())
+    }
+
+    Runnable decorate(Runnable task, GrailsWebRequest captured) {
         if (captured == null) {
             return task
         }
 
-        return {
+        return () -> {
             RequestAttributes previous = RequestContextHolder.getRequestAttributes()
             GrailsWebRequest taskRequest = new GrailsWebRequest(
                     captured.currentRequest,

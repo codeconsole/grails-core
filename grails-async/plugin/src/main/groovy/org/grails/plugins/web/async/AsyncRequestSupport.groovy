@@ -21,6 +21,7 @@ package org.grails.plugins.web.async
 import groovy.transform.CompileStatic
 
 import org.springframework.boot.convert.DurationStyle
+import org.springframework.context.ApplicationContext
 import org.springframework.web.context.request.async.StandardServletAsyncWebRequest
 
 import org.grails.web.servlet.mvc.GrailsWebRequest
@@ -29,22 +30,32 @@ import org.grails.web.servlet.mvc.GrailsWebRequest
  * Applies the same timeout policy to eager and controller-result async requests.
  */
 @CompileStatic
-class GrailsAsyncWebRequest {
+class AsyncRequestSupport {
 
-    private static final String COMPLETED = GrailsAsyncWebRequest.name + '.COMPLETED'
+    private static final String COMPLETED = AsyncRequestSupport.name + '.COMPLETED'
+    private static final Map<ApplicationContext, Optional<Long>> TIMEOUTS = new WeakHashMap<>()
 
     static boolean isComplete(GrailsWebRequest request) {
         return request.currentRequest.getAttribute(COMPLETED) == Boolean.TRUE
     }
 
     static StandardServletAsyncWebRequest create(GrailsWebRequest request) {
-        def asyncRequest = new StandardServletAsyncWebRequest(request.currentRequest, request.currentResponse)
+        StandardServletAsyncWebRequest asyncRequest = new StandardServletAsyncWebRequest(request.currentRequest, request.currentResponse)
         // WebAsyncManager removes itself on completion, so retain the guard on the request.
         asyncRequest.addCompletionHandler { request.currentRequest.setAttribute(COMPLETED, Boolean.TRUE) }
-        String timeout = request.applicationContext?.environment?.getProperty('spring.mvc.async.request-timeout')
-        if (timeout != null) {
-            asyncRequest.timeout = DurationStyle.detectAndParse(timeout).toMillis()
-        }
+        asyncRequest.timeout = timeoutFor(request.applicationContext)
         return asyncRequest
+    }
+
+    private static Long timeoutFor(ApplicationContext context) {
+        if (context == null) {
+            return null
+        }
+        synchronized (TIMEOUTS) {
+            return TIMEOUTS.computeIfAbsent(context, (ApplicationContext application) -> {
+                String configured = application.environment.getProperty('spring.mvc.async.request-timeout')
+                return configured == null ? Optional.<Long>empty() : Optional.of(DurationStyle.detectAndParse(configured).toMillis())
+            }).orElse(null)
+        }
     }
 }

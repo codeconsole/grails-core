@@ -18,7 +18,12 @@
  */
 package grails.async.services
 
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.ExecutionException
+import java.util.concurrent.TimeUnit
+
 import spock.lang.Specification
+import spock.util.concurrent.PollingConditions
 
 import org.springframework.mock.web.MockHttpServletRequest
 import org.springframework.mock.web.MockHttpServletResponse
@@ -32,7 +37,7 @@ import grails.async.Promises
 import grails.async.decorator.PromiseDecorator
 import grails.async.web.WebPromises
 import grails.util.GrailsWebMockUtil
-import org.grails.async.factory.future.CompletableFuturePromiseFactory
+import org.grails.async.factory.future.CachedThreadPoolPromiseFactory
 import org.grails.web.servlet.mvc.GrailsWebRequest
 import org.grails.web.util.GrailsApplicationAttributes
 
@@ -43,7 +48,13 @@ class WebPromisesSpec extends Specification {
     }
 
     void cleanup() {
-        ((CompletableFuturePromiseFactory) WebPromises.promiseFactory).close()
+        def factory = WebPromises.promiseFactory
+        if (factory instanceof Closeable) {
+            factory.close()
+        }
+        else if (factory instanceof java.util.concurrent.ExecutorService) {
+            factory.shutdownNow()
+        }
         WebPromises.promiseFactory = null
         RequestContextHolder.resetRequestAttributes()
     }
@@ -156,5 +167,88 @@ class WebPromisesSpec extends Specification {
         '2s'       | 2000L
         '1500'     | 1500L
         null       | 10000L
+    }
+
+    void 'standalone and custom factories retain request context through chained callbacks'() {
+        given:
+        String previous = System.getProperty('grails.async.promiseFactory')
+        System.setProperty('grails.async.promiseFactory', mode == 'virtual' ? 'virtual-thread' : '')
+        if (mode == 'legacy') {
+            WebPromises.promiseFactory = new CachedThreadPoolPromiseFactory()
+        }
+        def servletContext = new MockServletContext()
+        def request = new MockHttpServletRequest(servletContext)
+        request.asyncSupported = true
+        request.addParameter('title', 'Grails')
+        def response = new MockHttpServletResponse()
+        RequestContextHolder.setRequestAttributes(new GrailsWebRequest(request, response, servletContext))
+        def release = new CountDownLatch(1)
+
+        when:
+        def promise = WebPromises.task {
+            assert release.await(5, TimeUnit.SECONDS)
+            assert GrailsWebRequest.lookup() != null
+            return 'Hello'
+        }.then { value ->
+            def current = GrailsWebRequest.lookup()
+            current.currentResponse.writer.write("$value ${current.params.title}")
+            return current.params.title
+        }
+        release.countDown()
+
+        then:
+        new PollingConditions(timeout: 5).eventually { assert promise.done }
+        promise.get(10, TimeUnit.SECONDS) == 'Grails'
+        response.contentAsString == 'Hello Grails'
+
+        cleanup:
+        release.countDown()
+        if (previous == null) {
+            System.clearProperty('grails.async.promiseFactory')
+        }
+        else {
+            System.setProperty('grails.async.promiseFactory', previous)
+        }
+
+        where:
+        mode << ['default', 'virtual', 'legacy']
+    }
+
+    void 'web task and then callbacks preserve checked exceptions'() {
+        given:
+        def servletContext = new MockServletContext()
+        def request = new MockHttpServletRequest(servletContext)
+        request.asyncSupported = true
+        RequestContextHolder.setRequestAttributes(new GrailsWebRequest(request, new MockHttpServletResponse(), servletContext))
+        def original = new IOException('io', new IOException('inner'))
+        def promise = chained ? WebPromises.task { 1 }.then { throw original } : WebPromises.task { throw original }
+        Throwable observed
+        def recovery = promise.onError { observed = it }
+
+        when:
+        promise.get(5, TimeUnit.SECONDS)
+
+        then:
+        def failure = thrown(ExecutionException)
+        failure.cause.is(original)
+        recovery.get(5, TimeUnit.SECONDS).is(original)
+        observed.is(original)
+
+        where:
+        chained << [false, true]
+    }
+
+    void 'standalone task lists use the request-aware executor'() {
+        given:
+        def servletContext = new MockServletContext()
+        def request = new MockHttpServletRequest(servletContext)
+        request.asyncSupported = true
+        RequestContextHolder.setRequestAttributes(new GrailsWebRequest(request, new MockHttpServletResponse(), servletContext))
+
+        expect:
+        WebPromises.tasks([
+                { GrailsWebRequest.lookup() != null },
+                { GrailsWebRequest.lookup() != null }
+        ]).get(5, TimeUnit.SECONDS) == [true, true]
     }
 }

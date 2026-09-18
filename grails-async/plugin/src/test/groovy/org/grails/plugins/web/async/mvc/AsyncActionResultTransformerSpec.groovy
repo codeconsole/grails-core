@@ -27,6 +27,7 @@ import org.springframework.web.context.request.async.StandardServletAsyncWebRequ
 import org.springframework.web.servlet.ModelAndView
 import org.springframework.web.context.support.StaticWebApplicationContext
 import org.springframework.core.env.MapPropertySource
+import org.springframework.mock.env.MockEnvironment
 
 import org.grails.async.factory.future.CompletableFuturePromise
 import org.grails.web.servlet.mvc.GrailsWebRequest
@@ -68,7 +69,6 @@ class AsyncActionResultTransformerSpec extends Specification {
     void 'delegates promise failures to Spring exception processing'() {
         given:
         CompletableFuturePromise<Object> promise = new CompletableFuturePromise<>()
-        def failure = new IllegalStateException('bad', new IOException('inner'))
 
         when:
         new AsyncActionResultTransformer().transformActionResult(webRequest, '/book/index', promise)
@@ -76,9 +76,11 @@ class AsyncActionResultTransformerSpec extends Specification {
 
         then:
         asyncManager.hasConcurrentResult()
-        asyncManager.concurrentResult instanceof IllegalStateException
         asyncManager.concurrentResult.message == 'bad'
         asyncManager.concurrentResult.is(failure)
+
+        where:
+        failure << [new IllegalStateException('bad', new IOException('inner')), new IOException('bad', new IOException('inner'))]
     }
 
     void 'joins async processing started eagerly by a web promise'() {
@@ -103,8 +105,12 @@ class AsyncActionResultTransformerSpec extends Specification {
         transformer.transformActionResult(webRequest, '/book/index', new CompletableFuturePromise<>())
         asyncManager.asyncWebRequest.onComplete(new jakarta.servlet.AsyncEvent(request.asyncContext))
 
-        expect:
-        transformer.transformActionResult(webRequest, '/book/index', new CompletableFuturePromise<>()) == null
+        when:
+        transformer.transformActionResult(webRequest, '/book/index', new CompletableFuturePromise<>())
+
+        then:
+        def failure = thrown(IllegalStateException)
+        failure.message.contains('completed')
         WebAsyncUtils.getAsyncManager(request).asyncWebRequest == null
     }
 
@@ -131,5 +137,28 @@ class AsyncActionResultTransformerSpec extends Specification {
         '2s'       | 2000L
         '1500'     | 1500L
         null       | 10000L
+    }
+
+    void 'timeout is parsed once per application context'() {
+        given:
+        def context = new StaticWebApplicationContext()
+        def environment = Mock(MockEnvironment)
+        context.environment = environment
+        request.servletContext.setAttribute(GrailsApplicationAttributes.APPLICATION_CONTEXT, context)
+
+        when:
+        2.times {
+            def nextRequest = new MockHttpServletRequest(request.servletContext)
+            nextRequest.asyncSupported = true
+            def next = new GrailsWebRequest(nextRequest, new MockHttpServletResponse(), request.servletContext)
+            new AsyncActionResultTransformer().transformActionResult(next, '/book/index', new CompletableFuturePromise<>())
+            assert nextRequest.asyncContext.timeout == 2000L
+        }
+
+        then:
+        1 * environment.getProperty('spring.mvc.async.request-timeout') >> '2s'
+
+        cleanup:
+        context.close()
     }
 }

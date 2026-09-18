@@ -19,6 +19,10 @@
 package org.grails.plugins.web.async
 
 import groovy.transform.CompileStatic
+import groovy.util.logging.Slf4j
+
+import java.util.concurrent.Executor
+import java.util.function.UnaryOperator
 
 import org.springframework.beans.factory.BeanRegistrar
 import org.springframework.beans.factory.BeanRegistry
@@ -34,6 +38,7 @@ import grails.async.Promises
 import grails.plugins.Plugin
 import grails.async.web.WebPromises
 import org.grails.async.factory.PromiseFactoryBuilder
+import org.grails.async.factory.future.VirtualThreadPromiseFactory
 import org.grails.plugins.web.async.mvc.AsyncActionResultTransformer
 
 /**
@@ -44,6 +49,7 @@ import org.grails.plugins.web.async.mvc.AsyncActionResultTransformer
  * @since 2.0
  */
 @CompileStatic
+@Slf4j
 class ControllersAsyncGrailsPlugin extends Plugin {
 
     def grailsVersion = '8.0.0-SNAPSHOT > *'
@@ -72,6 +78,7 @@ class ControllersAsyncGrailsPlugin extends Plugin {
             registry.registerBean('grailsPromiseFactory', PromiseFactory) {
                 it.supplier { context ->
                     AsyncTaskExecutor executor
+                    String executorName = 'applicationTaskExecutor'
                     try {
                         executor = context.bean('applicationTaskExecutor', AsyncTaskExecutor)
                     }
@@ -80,8 +87,16 @@ class ControllersAsyncGrailsPlugin extends Plugin {
                             throw missing
                         }
                         executor = context.bean('grailsPromiseExecutor', AsyncTaskExecutor)
+                        executorName = 'grailsPromiseExecutor'
                     }
-                    PromiseFactory promiseFactory = PromiseFactoryBuilder.build(executor)
+                    CompositeTaskDecorator decorator = new CompositeTaskDecorator(context.beanProvider(TaskDecorator).orderedStream().toList())
+                    UnaryOperator<Executor> decorateExecutor = (Executor owned) -> {
+                        Executor decorated = (Runnable task) -> owned.execute(decorator.decorate(task))
+                        return decorated
+                    }
+                    PromiseFactory promiseFactory = PromiseFactoryBuilder.build(executor, decorateExecutor)
+                    String execution = promiseFactory instanceof VirtualThreadPromiseFactory ? 'owned virtual-thread executor' : executorName
+                    log.debug('Created promise factory {} with {}', promiseFactory.class.name, execution)
                     Promises.setPromiseFactory(promiseFactory)
                     WebPromises.setPromiseFactory(promiseFactory)
                     return promiseFactory
