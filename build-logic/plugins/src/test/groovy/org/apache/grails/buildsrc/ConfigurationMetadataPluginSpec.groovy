@@ -30,6 +30,12 @@ import java.util.zip.ZipFile
 
 class ConfigurationMetadataPluginSpec extends Specification {
 
+    // the fixture compiles against the versions the framework ships with, supplied by build.gradle
+    private static final String GROOVY = "org.apache.groovy:groovy:${System.getProperty('fixture.groovy.version')}"
+    private static final String SPRING_BOOT =
+            "org.springframework.boot:spring-boot:${System.getProperty('fixture.spring-boot.version')}"
+    private static final String PAYLOADS = GenerateConfigurationMetadataTask.PAYLOAD_DIRECTORY
+
     @TempDir
     Path projectDir
 
@@ -43,25 +49,12 @@ class ConfigurationMetadataPluginSpec extends Specification {
             }
             repositories { mavenCentral() }
             dependencies {
-                implementation 'org.apache.groovy:groovy:5.0.7'
+                implementation '${GROOVY}'
             }
             sourceSets.main.groovy.srcDir '${path(new File(workspace, 'grails-configuration-metadata/src/main/groovy'))}'
             sourceSets.main.resources.srcDir '${path(new File(workspace, 'grails-configuration-metadata/src/main/resources'))}'
         """.stripIndent())
-        write('build.gradle', '''
-            plugins {
-                id 'groovy'
-                id 'org.apache.grails.buildsrc.configuration-metadata'
-            }
-
-            repositories { mavenCentral() }
-
-            dependencies {
-                implementation 'org.apache.groovy:groovy:5.0.7'
-                implementation 'org.springframework.boot:spring-boot:4.1.0'
-            }
-
-        '''.stripIndent())
+        writeBuildScript()
         writeJavaConfiguration(false)
         write('src/main/java/fixture/RootConfiguration.java', '''
             package fixture;
@@ -87,10 +80,10 @@ class ConfigurationMetadataPluginSpec extends Specification {
                 List<String> names
                 GroovyNested nested
                 private String internalSecret
-            }
 
-            class GroovyNested {
-                boolean enabled
+                static class GroovyNested {
+                    boolean enabled
+                }
             }
         """.stripIndent())
         write('src/main/resources/META-INF/spring-configuration-metadata.json', '{"obsolete":true}')
@@ -139,12 +132,12 @@ class ConfigurationMetadataPluginSpec extends Specification {
         !property(metadata, 'fixture.groovy.dynamicValue').containsKey('defaultValue')
         group(metadata, 'fixture.java.nested').type == 'fixture.JavaNested'
         group(metadata, 'fixture.java.nested').sourceType == 'fixture.JavaConfiguration'
-        group(metadata, 'fixture.groovy.nested').type == 'fixture.GroovyNested'
+        group(metadata, 'fixture.groovy.nested').type == 'fixture.GroovyConfiguration$GroovyNested'
         group(metadata, 'fixture.groovy.nested').sourceType == 'fixture.GroovyConfiguration'
         property(metadata, 'fixture.java.nested') == null
         property(metadata, 'fixture.groovy.nested') == null
-        property(metadata, 'fixture.java.nested.enabled').type == 'boolean'
-        property(metadata, 'fixture.groovy.nested.enabled').type == 'boolean'
+        property(metadata, 'fixture.java.nested.enabled').type == 'java.lang.Boolean'
+        property(metadata, 'fixture.groovy.nested.enabled').type == 'java.lang.Boolean'
         property(metadata, 'rootValue').type == 'java.lang.String'
         !metadata.groups*.name.contains('')
         property(metadata, 'fixture.java.readOnlyNames').type == 'java.util.List<java.lang.String>'
@@ -176,6 +169,10 @@ class ConfigurationMetadataPluginSpec extends Specification {
         and: 'the source metadata is replaced by exactly one generated jar entry'
         metadataFile().text != '{"obsolete":true}'
         metadataEntryCount() == 1
+
+        and: 'the Groovy payload is a build-time side-car file that never reaches the jar'
+        projectDir.resolve("build/classes/groovy/main/${PAYLOADS}/fixture.GroovyConfiguration.json").toFile().isFile()
+        jarEntries().every { String name -> !name.startsWith(PAYLOADS) }
 
         when: 'nothing changes'
         BuildResult unchanged = run('jar')
@@ -518,19 +515,7 @@ class ConfigurationMetadataPluginSpec extends Specification {
 
     def "rejects any duplicate compiled class name across input directories"() {
         given: 'a second source set compiles the same binary name as the main source set'
-        write('build.gradle', '''
-            plugins {
-                id 'groovy'
-                id 'org.apache.grails.buildsrc.configuration-metadata'
-            }
-
-            repositories { mavenCentral() }
-
-            dependencies {
-                implementation 'org.apache.groovy:groovy:5.0.7'
-                implementation 'org.springframework.boot:spring-boot:4.1.0'
-            }
-
+        writeBuildScript("""
             sourceSets {
                 dup {
                     java.srcDir 'src/dup/java'
@@ -538,15 +523,15 @@ class ConfigurationMetadataPluginSpec extends Specification {
             }
 
             dependencies {
-                dupImplementation 'org.apache.groovy:groovy:5.0.7'
-                dupImplementation 'org.springframework.boot:spring-boot:4.1.0'
+                dupImplementation '${GROOVY}'
+                dupImplementation '${SPRING_BOOT}'
             }
 
             tasks.named('generateConfigurationMetadata') {
                 classesDirs.from(sourceSets.dup.output.classesDirs)
                 dependsOn sourceSets.dup.output
             }
-        '''.stripIndent())
+        """)
         write('src/main/java/fixture/Duplicate.java', '''
             package fixture;
 
@@ -614,7 +599,7 @@ class ConfigurationMetadataPluginSpec extends Specification {
         nested.size() == 2
         nested*.sourceType as Set == ['fixture.SharedA', 'fixture.SharedB'] as Set
         nested*.type as Set == ['fixture.NestedA', 'fixture.NestedB'] as Set
-        property(metadata, 'fixture.shared.nested.enabled').type == 'boolean'
+        property(metadata, 'fixture.shared.nested.enabled').type == 'java.lang.Boolean'
         property(metadata, 'fixture.shared.nested.label').type == 'java.lang.String'
     }
 
@@ -703,6 +688,237 @@ class ConfigurationMetadataPluginSpec extends Specification {
         property(readMetadata(), 'fixture.java.names').type == 'java.util.List<java.lang.String>'
     }
 
+    def "ignores the payload of a Groovy class that is no longer annotated"() {
+        given:
+        run('generateConfigurationMetadata')
+
+        when: 'the annotation is removed without cleaning and an old payload is still around'
+        write('src/main/groovy/fixture/GroovyConfiguration.groovy', """
+            package fixture
+
+            class GroovyConfiguration {
+                String constantValue = 'constant'
+            }
+        """.stripIndent())
+        File stale = projectDir.resolve("build/classes/groovy/main/${PAYLOADS}/fixture.GroovyConfiguration.json").toFile()
+        run('generateConfigurationMetadata')
+        stale.parentFile.mkdirs()
+        stale.text = '{"prefix":"fixture.groovy","properties":[{"name":"fixture.groovy.stale","type":"java.lang.String"}]}'
+        run('generateConfigurationMetadata')
+        Map metadata = readMetadata()
+
+        then:
+        !metadata.groups*.name.contains('fixture.groovy')
+        !metadata.properties*.name.any { String name -> name.startsWith('fixture.groovy.') }
+    }
+
+    def "types the constructor parameters of an inner class from its generic signature"() {
+        given: 'a constructor whose mandated outer instance is absent from the generic signature'
+        resetFixture()
+        write('src/main/java/fixture/InnerConfiguration.java', """
+            package fixture;
+
+            import java.util.List;
+            import org.springframework.boot.context.properties.ConfigurationProperties;
+
+            @ConfigurationProperties("fixture.inner")
+            public class InnerConfiguration {
+                private Inner inner;
+                public Inner getInner() { return inner; }
+                public void setInner(Inner inner) { this.inner = inner; }
+
+                public class Inner {
+                    private final List<String> labels;
+                    private final int size;
+                    public Inner(List<String> labels, int size) {
+                        this.labels = labels;
+                        this.size = size;
+                    }
+                }
+            }
+        """.stripIndent())
+
+        when:
+        run('generateConfigurationMetadata')
+        Map metadata = readMetadata()
+
+        then:
+        group(metadata, 'fixture.inner.inner').type == 'fixture.InnerConfiguration$Inner'
+        property(metadata, 'fixture.inner.inner.labels').type == 'java.util.List<java.lang.String>'
+        property(metadata, 'fixture.inner.inner.size').type == 'java.lang.Integer'
+    }
+
+    def "excludes framework accessors when a Groovy class falls back to bytecode scanning"() {
+        given: 'a prefix the compiler cannot read as a literal'
+        resetFixture()
+        write('src/main/groovy/fixture/DeferredConfiguration.groovy', """
+            package fixture
+
+            import org.springframework.boot.context.properties.ConfigurationProperties
+
+            @ConfigurationProperties(prefix = (String) 'fixture.deferred')
+            class DeferredConfiguration {
+                String value
+                boolean enabled
+
+                void setGrailsApplication(Object grailsApplication) {
+                }
+            }
+        """.stripIndent())
+
+        when:
+        run('generateConfigurationMetadata')
+        Map metadata = readMetadata()
+
+        then:
+        metadata.properties*.name == ['fixture.deferred.enabled', 'fixture.deferred.value']
+        property(metadata, 'fixture.deferred.enabled').type == 'java.lang.Boolean'
+    }
+
+    def "discovers getter-only nested objects"() {
+        given:
+        resetFixture()
+        write('src/main/java/fixture/PoolConfiguration.java', """
+            package fixture;
+
+            import org.springframework.boot.context.properties.ConfigurationProperties;
+
+            @ConfigurationProperties("fixture.pooled")
+            public class PoolConfiguration {
+                private final Pool pool = new Pool();
+                private final Empty empty = new Empty();
+                public Pool getPool() { return pool; }
+                public Empty getEmpty() { return empty; }
+                public PoolConfiguration getSelf() { return this; }
+
+                public static class Pool {
+                    private int size;
+                    private final Limits limits = new Limits();
+                    public int getSize() { return size; }
+                    public void setSize(int size) { this.size = size; }
+                    public Limits getLimits() { return limits; }
+                }
+
+                public static class Limits {
+                    private long max;
+                    public long getMax() { return max; }
+                    public void setMax(long max) { this.max = max; }
+                }
+
+                public static class Empty {
+                    public String getComputed() { return "computed"; }
+                }
+            }
+        """.stripIndent())
+
+        when:
+        run('generateConfigurationMetadata')
+        Map metadata = readMetadata()
+
+        then: 'only read-only objects that have something to bind become groups'
+        metadata.groups*.name == ['fixture.pooled', 'fixture.pooled.pool', 'fixture.pooled.pool.limits']
+        metadata.properties*.name == ['fixture.pooled.pool.limits.max', 'fixture.pooled.pool.size']
+        property(metadata, 'fixture.pooled.pool.limits.max').type == 'java.lang.Long'
+    }
+
+    def "resolves the property type from the accessors regardless of their declaration order"() {
+        given:
+        resetFixture()
+        write('src/main/java/fixture/AccessorConfiguration.java', """
+            package fixture;
+
+            import java.util.Collection;
+            import java.util.List;
+            import java.util.Set;
+            import org.springframework.boot.context.properties.ConfigurationProperties;
+
+            @ConfigurationProperties("fixture.accessor")
+            public class AccessorConfiguration {
+                public void setValues(List<String> values) { }
+                public List<String> getValues() { return null; }
+                public void setValues(Set<String> values) { }
+
+                public void setNames(List<String> names) { }
+                public Collection<String> getNames() { return null; }
+
+                public void setImports(List<String> imports) { }
+                public void setImports(String[] imports) { }
+            }
+        """.stripIndent())
+
+        when:
+        run('generateConfigurationMetadata')
+        Map metadata = readMetadata()
+
+        then: 'the setter matching the getter wins, then a setter over the getter, then the first setter by type name'
+        property(metadata, 'fixture.accessor.values').type == 'java.util.List<java.lang.String>'
+        property(metadata, 'fixture.accessor.names').type == 'java.util.List<java.lang.String>'
+        property(metadata, 'fixture.accessor.imports').type == 'java.lang.String[]'
+    }
+
+    def "warns about a delegate compiled elsewhere only while the overlay leaves it undocumented"() {
+        given:
+        resetFixture()
+        write('src/main/groovy/fixture/DelegatingConfiguration.groovy', """
+            package fixture
+
+            import org.springframework.boot.context.properties.ConfigurationProperties
+
+            @ConfigurationProperties('fixture.delegating')
+            class DelegatingConfiguration {
+                @Delegate URI endpoint
+                String plain
+            }
+        """.stripIndent())
+
+        when:
+        BuildResult undocumented = run('generateConfigurationMetadata')
+
+        then:
+        undocumented.output.contains("uses @Delegate field 'endpoint' of type 'java.net.URI'")
+        readMetadata().properties*.name == ['fixture.delegating.plain']
+
+        when: 'the overlay documents a delegated property'
+        write('src/main/resources/META-INF/additional-spring-configuration-metadata.json',
+                '{"properties":[{"name":"fixture.delegating.host","type":"java.lang.String"}]}')
+        BuildResult documented = run('generateConfigurationMetadata')
+
+        then:
+        !documented.output.contains('@Delegate')
+        readMetadata().properties*.name == ['fixture.delegating.host', 'fixture.delegating.plain']
+    }
+
+    def "generates the properties of a delegate compiled by the same project"() {
+        given:
+        resetFixture()
+        write('src/main/groovy/fixture/LocalDelegatingConfiguration.groovy', """
+            package fixture
+
+            import org.springframework.boot.context.properties.ConfigurationProperties
+
+            class LocalDefaults {
+                String origin
+                int maxAge
+            }
+
+            @ConfigurationProperties('fixture.local')
+            class LocalDelegatingConfiguration {
+                @Delegate LocalDefaults defaults = new LocalDefaults()
+                String plain
+            }
+        """.stripIndent())
+
+        when:
+        BuildResult result = run('generateConfigurationMetadata')
+        Map metadata = readMetadata()
+
+        then:
+        !result.output.contains('@Delegate')
+        metadata.properties*.name == ['fixture.local.maxAge', 'fixture.local.origin', 'fixture.local.plain']
+        metadata.properties*.sourceType.unique() == ['fixture.LocalDelegatingConfiguration']
+        property(metadata, 'fixture.local.maxAge').type == 'java.lang.Integer'
+    }
+
     private void writeJavaConfiguration(boolean includeTimeout) {
         String timeout = includeTimeout ? '''
                 private java.time.Duration timeout;
@@ -759,6 +975,22 @@ class ConfigurationMetadataPluginSpec extends Specification {
                 <T> GenericConstructor(T value) { }
             }
         """.stripIndent())
+    }
+
+    private void writeBuildScript(String additionalConfiguration = '') {
+        write('build.gradle', """
+            plugins {
+                id 'groovy'
+                id 'org.apache.grails.buildsrc.configuration-metadata'
+            }
+
+            repositories { mavenCentral() }
+
+            dependencies {
+                implementation '${GROOVY}'
+                implementation '${SPRING_BOOT}'
+            }
+        """.stripIndent() + additionalConfiguration.stripIndent())
     }
 
     private void resetFixture() {
@@ -919,10 +1151,14 @@ class ConfigurationMetadataPluginSpec extends Specification {
     }
 
     private int metadataEntryCount() {
+        jarEntries().count { String name -> name == 'META-INF/spring-configuration-metadata.json' }
+    }
+
+    private List<String> jarEntries() {
         File jar = projectDir.resolve('build/libs/metadata-fixture.jar').toFile()
         ZipFile zip = new ZipFile(jar)
         try {
-            zip.entries().toList().count { it.name == 'META-INF/spring-configuration-metadata.json' }
+            zip.entries().toList()*.name
         } finally {
             zip.close()
         }

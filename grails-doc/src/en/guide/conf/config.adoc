@@ -121,8 +121,9 @@ link:../ref/Configuration/Application%20Properties.html[Application Properties r
 entries.
 
 For configuration classes written in Groovy, Grails collects metadata with a compiler AST transformation. The
-transformation stores metadata independently in each compiled `@ConfigurationProperties` class, and the build merges
-those class payloads after compilation. Java configuration classes are inspected from their compiled bytecode. This
+transformation writes the metadata of each `@ConfigurationProperties` class to its own build-time file next to the
+compiled classes, and the build merges those files after compilation. Nothing is added to the compiled classes, and
+the per-class files are not packaged. Java configuration classes are inspected from their compiled bytecode. This
 avoids Java annotation processing on Groovy sources, which would interfere with incremental Groovy compilation.
 
 Framework modules can also register legacy Groovy configuration DSL sources for static metadata discovery. Grails
@@ -135,6 +136,10 @@ The generated metadata describes bindable fields and bean properties. A module c
 other details that cannot be derived safely from bytecode or static DSL syntax. Curated values override generated values
 for the same property. The module build merges all generated and curated entries into the single standard
 `META-INF/spring-configuration-metadata.json` resource published in the module JAR.
+
+Generated types follow the Spring Boot convention of naming primitives by their wrapper, for example
+`java.lang.Boolean`. Properties contributed by a Groovy `@Delegate` field are generated when the delegate is compiled
+by the same module; otherwise the build asks for them to be described in the curated metadata.
 
 Only compile-time constant Groovy initializers are emitted as generated defaults. Defaults calculated by constructors,
 method calls, environment checks, system properties, or other dynamic expressions are intentionally omitted unless a

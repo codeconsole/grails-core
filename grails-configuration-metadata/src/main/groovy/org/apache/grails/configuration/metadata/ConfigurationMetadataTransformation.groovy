@@ -31,30 +31,26 @@ import org.codehaus.groovy.ast.expr.Expression
 import org.codehaus.groovy.ast.MethodNode
 import org.codehaus.groovy.control.CompilePhase
 import org.codehaus.groovy.control.SourceUnit
-import org.codehaus.groovy.control.messages.WarningMessage
-import org.codehaus.groovy.syntax.SyntaxException
-import org.codehaus.groovy.syntax.Token
-import org.codehaus.groovy.syntax.Types
 import org.codehaus.groovy.transform.ASTTransformation
 import org.codehaus.groovy.transform.GroovyASTTransformation
 
-import static java.lang.reflect.Modifier.PRIVATE
-import static java.lang.reflect.Modifier.FINAL
-import static java.lang.reflect.Modifier.STATIC
+import java.nio.charset.StandardCharsets
 
 /**
- * Embeds configuration metadata in each annotated Groovy class. Aggregation is deliberately
- * deferred to the Gradle task so incremental Groovy compilation never writes shared output.
- * This transformation runs during SEMANTIC_ANALYSIS, before {@code @Delegate} composes methods.
+ * Writes the configuration metadata of each annotated Groovy class to its own side-car file,
+ * {@code META-INF/grails-configuration-metadata/<class name>.json}, in the compiler target directory.
+ * Aggregation is deliberately deferred to the Gradle task so incremental Groovy compilation never
+ * writes shared output, and nothing is added to the compiled class itself.
+ * This transformation runs during SEMANTIC_ANALYSIS, before {@code @Delegate} composes methods, so
+ * {@code @Delegate} fields are only reported in the payload and left for the Gradle task to resolve.
  */
 @CompileStatic
 @GroovyASTTransformation(phase = CompilePhase.SEMANTIC_ANALYSIS)
 class ConfigurationMetadataTransformation implements ASTTransformation {
 
-    static final String PAYLOAD_FIELD = '__grailsConfigurationMetadata'
+    static final String PAYLOAD_DIRECTORY = 'META-INF/grails-configuration-metadata'
     private static final String CONSTRUCTOR_BINDING =
             'org.springframework.boot.context.properties.bind.ConstructorBinding'
-    private static final int SYNTHETIC = 0x00001000
     private static final String CONFIGURATION_PROPERTIES = 'org.springframework.boot.context.properties.ConfigurationProperties'
     private static final String NESTED_CONFIGURATION_PROPERTY =
             'org.springframework.boot.context.properties.NestedConfigurationProperty'
@@ -67,31 +63,29 @@ class ConfigurationMetadataTransformation implements ASTTransformation {
     }
 
     private static void addPayload(ClassNode node, SourceUnit source) {
-        FieldNode existingField = node.getDeclaredField(PAYLOAD_FIELD)
-        if (existingField != null) {
-            source.addError(new SyntaxException(
-                    "Configuration properties classes cannot declare reserved field '${PAYLOAD_FIELD}'",
-                    existingField.lineNumber, existingField.columnNumber))
+        File targetDirectory = source.configuration.targetDirectory
+        if (targetDirectory == null) {
             return
         }
+        File payloadFile = new File(targetDirectory, "${PAYLOAD_DIRECTORY}/${node.name}.json")
         def annotation = node.getAnnotations(ClassHelper.make(CONFIGURATION_PROPERTIES))[0]
         Expression prefixExpression = annotation.getMember('prefix') ?: annotation.getMember('value')
         if (prefixExpression != null && !(prefixExpression instanceof ConstantExpression)) {
+            payloadFile.delete()
             return
         }
         String prefix = prefixExpression == null ? '' : String.valueOf(((ConstantExpression) prefixExpression).value)
-        warnForDelegateProperties(node, source)
         Map<String, List<Map<String, Object>>> metadata = metadata(
                 node, prefix, node.name, new LinkedHashSet<String>())
         String payload = toJson([
                 prefix: prefix,
                 sourceType: node.name,
                 groups: metadata.get('groups'),
-                properties: metadata.get('properties')
+                properties: metadata.get('properties'),
+                delegates: delegates(node)
         ])
-        FieldNode field = node.addField(PAYLOAD_FIELD, PRIVATE | STATIC | FINAL | SYNTHETIC,
-                ClassHelper.STRING_TYPE, new ConstantExpression(payload))
-        field.synthetic = true
+        payloadFile.parentFile.mkdirs()
+        payloadFile.setText(payload, StandardCharsets.UTF_8.name())
     }
 
     private static Map<String, List<Map<String, Object>>> metadata(ClassNode node, String prefix,
@@ -154,19 +148,12 @@ class ConfigurationMetadataTransformation implements ASTTransformation {
         FieldNode field = property.field
         boolean constructorBound = !field.final || constructorBoundProperties(field.owner).contains(field.name)
         !field.static && constructorBound && !field.name.startsWith('$') &&
-                field.name != 'metaClass' && field.name != PAYLOAD_FIELD &&
-                !isDelegate(field)
+                field.name != 'metaClass' && !isDelegate(field)
     }
 
-    private static void warnForDelegateProperties(ClassNode node, SourceUnit source) {
-        node.fields.each { FieldNode field ->
-            if (isDelegate(field)) {
-                String warning = "Configuration properties class uses @Delegate field '${node.name}.${field.name}', " +
-                        'but SEMANTIC_ANALYSIS runs before @Delegate composition. ' +
-                        'Add metadata for delegated properties to additional-spring-configuration-metadata.json.'
-                source.errorCollector.addWarning(WarningMessage.LIKELY_ERRORS, warning,
-                        Token.newSymbol(Types.UNKNOWN, field.lineNumber, field.columnNumber), source)
-            }
+    private static List<Map<String, Object>> delegates(ClassNode node) {
+        node.fields.findAll { FieldNode field -> isDelegate(field) }.collect { FieldNode field ->
+            [field: field.name, type: field.type.name] as Map<String, Object>
         }
     }
 
@@ -209,8 +196,9 @@ class ConfigurationMetadataTransformation implements ASTTransformation {
             }
             mergeAccessorProperty(node, bindable, propertyName, propertyType, annotations)
         }
-        node.methods.findAll { MethodNode method -> isStandardGetter(method) &&
-                isNestedConfigurationProperty(node, method.returnType, method.annotations) }.each { MethodNode getter ->
+        node.methods.findAll { MethodNode method ->
+            isStandardGetter(method) && isNestedConfigurationProperty(node, method.returnType, method.annotations)
+        }.each { MethodNode getter ->
             String propertySuffix = getter.name.startsWith('get') ? getter.name.substring(3) : getter.name.substring(2)
             mergeAccessorProperty(node, bindable, decapitalize(propertySuffix), getter.returnType, getter.annotations)
         }
@@ -265,18 +253,25 @@ class ConfigurationMetadataTransformation implements ASTTransformation {
     }
 
     private static String typeName(ClassNode type) {
+        if (ClassHelper.isPrimitiveType(type)) {
+            return ClassHelper.getWrapper(type).name
+        }
+        genericTypeName(type)
+    }
+
+    private static String genericTypeName(ClassNode type) {
         if (type.array) {
-            return "${typeName(type.componentType)}[]"
+            return "${genericTypeName(type.componentType)}[]"
         }
         String name = type.name
         GenericsType[] genericsTypes = type.genericsTypes
         if (genericsTypes) {
-            name += '<' + genericsTypes.collect { GenericsType generic -> genericTypeName(generic) }.join(',') + '>'
+            name += '<' + genericsTypes.collect { GenericsType generic -> typeArgumentName(generic) }.join(',') + '>'
         }
         name
     }
 
-    private static String genericTypeName(GenericsType generic) {
+    private static String typeArgumentName(GenericsType generic) {
         if (generic.wildcard) {
             if (generic.lowerBound) {
                 return "? super ${typeName(generic.lowerBound)}"
