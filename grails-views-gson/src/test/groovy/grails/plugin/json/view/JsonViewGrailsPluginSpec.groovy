@@ -69,10 +69,10 @@ class JsonViewGrailsPluginSpec extends Specification {
     }
 
     void "configuration metadata includes generator settings as an explicit nested property"() {
-        when:
-        def metadataField = JsonViewConfiguration.getDeclaredField('__grailsConfigurationMetadata')
-        metadataField.accessible = true
-        Map metadata = new JsonSlurper().parseText(metadataField.get(null) as String) as Map
+        when: 'the published metadata of this module is read from the classpath'
+        Map metadata = getClass().classLoader.getResources('META-INF/spring-configuration-metadata.json').toList()
+                .collect { URL url -> new JsonSlurper().parse(url) as Map }
+                .find { Map candidate -> candidate.get('groups').any { it.name == 'grails.views.json' } }
 
         then:
         metadata.get('groups').any { it.name == 'grails.views.json.generator' }

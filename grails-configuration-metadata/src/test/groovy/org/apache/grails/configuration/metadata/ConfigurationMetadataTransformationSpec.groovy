@@ -27,25 +27,26 @@ import org.codehaus.groovy.ast.stmt.EmptyStatement
 import org.codehaus.groovy.classgen.GeneratorContext
 import org.codehaus.groovy.control.CompilePhase
 import org.codehaus.groovy.control.CompilerConfiguration
-import org.codehaus.groovy.control.MultipleCompilationErrorsException
 import org.codehaus.groovy.control.SourceUnit
 import org.codehaus.groovy.control.customizers.CompilationCustomizer
-import org.codehaus.groovy.control.messages.WarningMessage
 import org.springframework.boot.context.properties.ConfigurationProperties
 import org.springframework.boot.context.properties.NestedConfigurationProperty
 import spock.lang.Specification
+import spock.lang.TempDir
 import spock.lang.Unroll
 
-import java.lang.reflect.Field
 import java.lang.reflect.Modifier
 
 class ConfigurationMetadataTransformationSpec extends Specification {
 
     private static final int SYNTHETIC = 0x00001000
 
+    @TempDir
+    File targetDirectory
+
     def "global transform emits actual properties and nested groups with only constant defaults"() {
         given:
-        GroovyClassLoader loader = new GroovyClassLoader(getClass().classLoader)
+        GroovyClassLoader loader = newLoader()
 
         when:
         Class<?> configuration = loader.parseClass('''
@@ -72,15 +73,10 @@ class ConfigurationMetadataTransformationSpec extends Specification {
                 }
             }
         ''')
-        Field payloadField = configuration.getDeclaredField(ConfigurationMetadataTransformation.PAYLOAD_FIELD)
-        payloadField.accessible = true
-        Map payload = new JsonSlurper().parseText(payloadField.get(null) as String) as Map
+        Map payload = payloadFor(configuration)
 
-        then:
-        Modifier.isPrivate(payloadField.modifiers)
-        Modifier.isStatic(payloadField.modifiers)
-        Modifier.isFinal(payloadField.modifiers)
-        payloadField.synthetic
+        then: 'the payload is a side-car file and the compiled class carries no metadata member'
+        configuration.declaredFields*.name.every { String name -> !name.toLowerCase().contains('metadata') }
         payload.prefix == 'sample.service'
         payload.sourceType == 'example.SampleConfiguration'
         payload.get('groups') == [[
@@ -99,6 +95,8 @@ class ConfigurationMetadataTransformationSpec extends Specification {
         !payload.get('properties')*.name.contains('sample.service.internalSecret')
         payload.get('properties').find { it.name == 'sample.service.displayName' }.defaultValue == 'Grails'
         payload.get('properties').find { it.name == 'sample.service.port' }.defaultValue == 8080
+        payload.get('properties').find { it.name == 'sample.service.port' }.type == 'java.lang.Integer'
+        payload.get('properties').find { it.name == 'sample.service.nested.enabled' }.type == 'java.lang.Boolean'
         payload.get('properties').find { it.name == 'sample.service.nested.enabled' }.defaultValue
         payload.get('properties').find { it.name == 'sample.service.labels' }.type == 'java.util.List<java.lang.String>'
         !payload.get('properties').find { it.name == 'sample.service.dynamicValue' }.containsKey('defaultValue')
@@ -109,23 +107,25 @@ class ConfigurationMetadataTransformationSpec extends Specification {
         loader.close()
     }
 
-    def "global transform rejects a user property that collides with its metadata payload"() {
+    def "global transform writes nothing when the compiler has no target directory"() {
         given:
         GroovyClassLoader loader = new GroovyClassLoader(getClass().classLoader)
 
         when:
-        loader.parseClass('''
+        Class<?> configuration = loader.parseClass('''
+            package example
+
             import org.springframework.boot.context.properties.ConfigurationProperties
 
-            @ConfigurationProperties('sample')
-            class CollidingConfiguration {
-                String __grailsConfigurationMetadata
+            @ConfigurationProperties('sample.memory')
+            class InMemoryConfiguration {
+                String value
             }
         ''')
 
         then:
-        MultipleCompilationErrorsException error = thrown()
-        error.message.contains("reserved field '__grailsConfigurationMetadata'")
+        configuration.name == 'example.InMemoryConfiguration'
+        !payloadFile('example.InMemoryConfiguration').exists()
 
         cleanup:
         loader.close()
@@ -133,7 +133,7 @@ class ConfigurationMetadataTransformationSpec extends Specification {
 
     def "global transform excludes delegated and framework setters while collecting inherited setters"() {
         given:
-        GroovyClassLoader loader = new GroovyClassLoader(getClass().classLoader)
+        GroovyClassLoader loader = newLoader()
 
         when:
         loader.parseClass('''
@@ -188,17 +188,17 @@ class ConfigurationMetadataTransformationSpec extends Specification {
     }
 
     @Unroll
-    def "global transform warns about #visibility #delegateType fields before Delegate composition"() {
+    def "global transform reports #visibility #delegateType fields for the build to resolve"() {
         given:
-        List<WarningMessage> warnings = []
+        List warnings = []
         CompilerConfiguration compilerConfiguration = new CompilerConfiguration()
         compilerConfiguration.addCompilationCustomizers(new CompilationCustomizer(CompilePhase.CANONICALIZATION) {
             @Override
             void call(SourceUnit source, GeneratorContext context, ClassNode classNode) {
-                warnings.addAll(source.errorCollector.warnings.findAll { it instanceof WarningMessage } as List<WarningMessage>)
+                warnings.addAll(source.errorCollector.warnings ?: [])
             }
         })
-        GroovyClassLoader loader = new GroovyClassLoader(getClass().classLoader, compilerConfiguration)
+        GroovyClassLoader loader = newLoader(compilerConfiguration)
         if (delegateType == 'groovy.transform.Delegate') {
             loader.parseClass('''
                 package groovy.transform
@@ -218,17 +218,15 @@ class ConfigurationMetadataTransformationSpec extends Specification {
             @ConfigurationProperties('sample.delegate')
             class DelegatingConfiguration {
                 ${visibility}@Delegate URI endpoint
+                String plain
             }
         """)
         Map payload = payloadFor(configuration)
 
-        then:
-        WarningMessage warning = warnings.find { it.message.contains('DelegatingConfiguration.endpoint') &&
-                it.message.contains('SEMANTIC_ANALYSIS') &&
-                it.message.contains('additional-spring-configuration-metadata.json') }
-        warning
-        warning.context.startLine == 9
-        !payload.get('properties')*.name.contains('sample.delegate.endpoint')
+        then: 'the delegate is recorded without a compiler warning, which an overlay could never silence'
+        payload.get('delegates') == [[field: 'endpoint', type: 'java.net.URI']]
+        payload.get('properties')*.name == ['sample.delegate.plain']
+        warnings.isEmpty()
 
         cleanup:
         loader.close()
@@ -245,7 +243,7 @@ class ConfigurationMetadataTransformationSpec extends Specification {
 
     def "global transform only recurses into inner and explicitly nested configuration properties"() {
         given:
-        GroovyClassLoader loader = new GroovyClassLoader(getClass().classLoader)
+        GroovyClassLoader loader = newLoader()
 
         when:
         loader.parseClass('''
@@ -301,7 +299,7 @@ class ConfigurationMetadataTransformationSpec extends Specification {
 
     def "global transform recognizes inherited nested configuration properties annotated on JavaBean getters"() {
         given:
-        GroovyClassLoader loader = new GroovyClassLoader(getClass().classLoader)
+        GroovyClassLoader loader = newLoader()
 
         when:
         loader.parseClass('''
@@ -344,7 +342,7 @@ class ConfigurationMetadataTransformationSpec extends Specification {
 
     def "global transform merges compatible nested annotations from field-backed and getter-only JavaBean accessors"() {
         given:
-        GroovyClassLoader loader = new GroovyClassLoader(getClass().classLoader)
+        GroovyClassLoader loader = newLoader()
 
         when:
         loader.parseClass('''
@@ -401,7 +399,7 @@ class ConfigurationMetadataTransformationSpec extends Specification {
 
     def "global transform selects only supported constructor binding candidates"() {
         given:
-        GroovyClassLoader loader = new GroovyClassLoader(getClass().classLoader)
+        GroovyClassLoader loader = newLoader()
 
         when:
         loader.parseClass('''
@@ -543,7 +541,7 @@ class ConfigurationMetadataTransformationSpec extends Specification {
                 }
             }
         })
-        GroovyClassLoader loader = new GroovyClassLoader(getClass().classLoader, compilerConfiguration)
+        GroovyClassLoader loader = newLoader(compilerConfiguration)
 
         when:
         Class<?> configuration = loader.parseClass('''
@@ -569,8 +567,11 @@ class ConfigurationMetadataTransformationSpec extends Specification {
     }
 
     def "global transform defers a non-ConstantExpression prefix to bytecode scanning"() {
-        given:
-        GroovyClassLoader loader = new GroovyClassLoader(getClass().classLoader)
+        given: 'a stale payload from an earlier compilation with a literal prefix'
+        GroovyClassLoader loader = newLoader()
+        File stale = payloadFile('example.DynamicPrefixConfiguration')
+        stale.parentFile.mkdirs()
+        stale.text = '{}'
 
         when:
         loader.parseClass('''
@@ -587,7 +588,7 @@ class ConfigurationMetadataTransformationSpec extends Specification {
 
         then:
         configuration.getAnnotation(ConfigurationProperties).prefix() == 'sample.deferred'
-        !configuration.declaredFields*.name.contains(ConfigurationMetadataTransformation.PAYLOAD_FIELD)
+        !stale.exists()
 
         cleanup:
         loader.close()
@@ -595,7 +596,7 @@ class ConfigurationMetadataTransformationSpec extends Specification {
 
     def "global transform skips annotated interfaces"() {
         given:
-        GroovyClassLoader loader = new GroovyClassLoader(getClass().classLoader)
+        GroovyClassLoader loader = newLoader()
 
         when:
         loader.parseClass('''
@@ -611,7 +612,8 @@ class ConfigurationMetadataTransformationSpec extends Specification {
         Class<?> ignored = loader.loadClass('example.IgnoredConfiguration')
 
         then:
-        !ignored.declaredFields*.name.contains(ConfigurationMetadataTransformation.PAYLOAD_FIELD)
+        ignored.interface
+        !payloadFile('example.IgnoredConfiguration').exists()
 
         cleanup:
         loader.close()
@@ -619,7 +621,7 @@ class ConfigurationMetadataTransformationSpec extends Specification {
 
     def "global transform renders generic types and JSON-escapes constant defaults"() {
         given:
-        GroovyClassLoader loader = new GroovyClassLoader(getClass().classLoader)
+        GroovyClassLoader loader = newLoader()
         String expected = 'quote" slash\\ newline\n control\u0001'
 
         when:
@@ -631,6 +633,8 @@ class ConfigurationMetadataTransformationSpec extends Specification {
             @ConfigurationProperties('sample.types')
             class TypeConfiguration<T> {
                 String[] names
+                int[] ports
+                long timeout
                 List<? extends Number> extendsNumbers
                 List<? super Integer> superNumbers
                 List<?> unknowns
@@ -642,6 +646,8 @@ class ConfigurationMetadataTransformationSpec extends Specification {
 
         then:
         payload.get('properties').find { it.name == 'sample.types.names' }.type == 'java.lang.String[]'
+        payload.get('properties').find { it.name == 'sample.types.ports' }.type == 'int[]'
+        payload.get('properties').find { it.name == 'sample.types.timeout' }.type == 'java.lang.Long'
         payload.get('properties').find { it.name == 'sample.types.extendsNumbers' }.type ==
                 'java.util.List<? extends java.lang.Number>'
         payload.get('properties').find { it.name == 'sample.types.superNumbers' }.type ==
@@ -656,7 +662,7 @@ class ConfigurationMetadataTransformationSpec extends Specification {
 
     def "global transform emits unprefixed names when configuration properties has no prefix"() {
         given:
-        GroovyClassLoader loader = new GroovyClassLoader(getClass().classLoader)
+        GroovyClassLoader loader = newLoader()
 
         when:
         Class<?> configuration = loader.parseClass('''
@@ -679,9 +685,16 @@ class ConfigurationMetadataTransformationSpec extends Specification {
         loader.close()
     }
 
-    private static Map payloadFor(Class<?> configuration) {
-        Field payloadField = configuration.getDeclaredField(ConfigurationMetadataTransformation.PAYLOAD_FIELD)
-        payloadField.accessible = true
-        new JsonSlurper().parseText(payloadField.get(null) as String) as Map
+    private GroovyClassLoader newLoader(CompilerConfiguration compilerConfiguration = new CompilerConfiguration()) {
+        compilerConfiguration.targetDirectory = targetDirectory
+        new GroovyClassLoader(getClass().classLoader, compilerConfiguration)
+    }
+
+    private File payloadFile(String className) {
+        new File(targetDirectory, "${ConfigurationMetadataTransformation.PAYLOAD_DIRECTORY}/${className}.json")
+    }
+
+    private Map payloadFor(Class<?> configuration) {
+        new JsonSlurper().parse(payloadFile(configuration.name), 'UTF-8') as Map
     }
 }

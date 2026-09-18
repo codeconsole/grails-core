@@ -55,6 +55,9 @@ dependencies {
 
 tasks.named('test') {
     useJUnitPlatform()
+    // ConfigurationMetadataPluginSpec compiles its fixtures against the versions the framework ships with
+    systemProperty('fixture.groovy.version', bomDependencyVersions['groovy.version'])
+    systemProperty('fixture.spring-boot.version', gradleBomDependencyVersions['spring-boot.version'])
 }
 
 gradlePlugin {

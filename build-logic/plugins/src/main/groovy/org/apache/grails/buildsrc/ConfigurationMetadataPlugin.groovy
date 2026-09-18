@@ -36,11 +36,11 @@ import org.gradle.api.tasks.OutputDirectory
 import org.gradle.api.tasks.PathSensitive
 import org.gradle.api.tasks.PathSensitivity
 import org.gradle.api.tasks.TaskAction
+import org.gradle.api.tasks.bundling.Jar
 import org.gradle.api.tasks.compile.JavaCompile
 import org.objectweb.asm.AnnotationVisitor
 import org.objectweb.asm.ClassReader
 import org.objectweb.asm.ClassVisitor
-import org.objectweb.asm.FieldVisitor
 import org.objectweb.asm.MethodVisitor
 import org.objectweb.asm.Opcodes
 import org.objectweb.asm.RecordComponentVisitor
@@ -89,6 +89,10 @@ class ConfigurationMetadataPlugin implements Plugin<Project> {
                 it.dependsOn(generate)
                 it.from(generate)
             }
+            // the per-class payloads are build-time input of generateConfigurationMetadata only
+            project.tasks.withType(Jar).configureEach { Jar task ->
+                task.exclude("${GenerateConfigurationMetadataTask.PAYLOAD_DIRECTORY}/**")
+            }
         }
     }
 }
@@ -100,7 +104,14 @@ abstract class GenerateConfigurationMetadataTask extends DefaultTask {
             'Lorg/springframework/boot/context/properties/ConfigurationProperties;'
     static final String CONSTRUCTOR_BINDING =
             'Lorg/springframework/boot/context/properties/bind/ConstructorBinding;'
-    static final String PAYLOAD_FIELD = '__grailsConfigurationMetadata'
+    static final String PAYLOAD_DIRECTORY = 'META-INF/grails-configuration-metadata'
+    private static final List<String> FRAMEWORK_ACCESSORS = ['getMetaClass', 'setMetaClass', 'setGrailsApplication']
+    private static final List<String> ROOT_TYPES = ['java.lang.Object', 'java.lang.Record', 'groovy.lang.GroovyObject']
+    private static final Map<String, String> WRAPPERS = [
+            'boolean': 'java.lang.Boolean', 'byte': 'java.lang.Byte', 'char': 'java.lang.Character',
+            'double': 'java.lang.Double', 'float': 'java.lang.Float', 'int': 'java.lang.Integer',
+            'long': 'java.lang.Long', 'short': 'java.lang.Short'
+    ]
 
     @InputFiles
     @PathSensitive(PathSensitivity.RELATIVE)
@@ -120,6 +131,7 @@ abstract class GenerateConfigurationMetadataTask extends DefaultTask {
     @TaskAction
     void generate() {
         Map<String, ClassModel> models = readModels()
+        Map overlay = readOverlay()
         List<Map<String, Object>> groups = []
         List<Map<String, Object>> properties = []
         models.values().findAll { ClassModel model -> model.prefix != null }.sort { ClassModel model -> model.name }.each {
@@ -138,13 +150,14 @@ abstract class GenerateConfigurationMetadataTask extends DefaultTask {
                     entry.sourceType = model.name
                     properties << entry
                 }
+                addDelegatedProperties(model, models, overlay, groups, properties)
             } else {
                 GenerateConfigurationMetadataTask.addProperties(
                         model, model.prefix, model.name, models, groups, properties, new LinkedHashSet<String>())
             }
         }
 
-        Map<String, Object> metadata = merge(groups, properties, readOverlay())
+        Map<String, Object> metadata = merge(groups, properties, overlay)
         File output = outputDirectory.get().asFile
         fileSystemOperations.delete { it.delete(output) }
         File target = new File(output, 'META-INF/spring-configuration-metadata.json')
@@ -175,7 +188,74 @@ abstract class GenerateConfigurationMetadataTask extends DefaultTask {
                 paths.close()
             }
         }
+        readPayloads(models)
         models
+    }
+
+    /**
+     * Payloads are honoured only for a compiled class that still carries the annotation, so a payload left
+     * behind by a deleted or no longer annotated source never leaks into the metadata.
+     */
+    private void readPayloads(Map<String, ClassModel> models) {
+        classesDirs.files.collect { File directory -> new File(directory, PAYLOAD_DIRECTORY) }
+                .findAll { File directory -> directory.isDirectory() }
+                .sort { File directory -> directory.absolutePath }.each { File directory ->
+            directory.listFiles().findAll { File file -> file.isFile() && file.name.endsWith('.json') }
+                    .sort { File file -> file.name }.each { File file ->
+                ClassModel model = models[file.name - '.json']
+                if (model?.prefix != null) {
+                    GenerateConfigurationMetadataTask.applyPayload(model, file.getText(StandardCharsets.UTF_8.name()))
+                }
+            }
+        }
+    }
+
+    /**
+     * The compiler cannot see what a {@code @Delegate} field contributes, so its properties are taken from
+     * the delegate's compiled class. Whatever is not compiled by this project has to come from the overlay.
+     */
+    protected void addDelegatedProperties(ClassModel model, Map<String, ClassModel> models, Map overlay,
+                                        List<Map<String, Object>> groups, List<Map<String, Object>> properties) {
+        model.payloadDelegates.each { Map<String, Object> delegate ->
+            ClassModel delegateModel = models[delegate.type as String]
+            if (delegateModel != null) {
+                List<Map<String, Object>> delegatedGroups = []
+                List<Map<String, Object>> delegatedProperties = []
+                GenerateConfigurationMetadataTask.addProperties(delegateModel, model.prefix, model.name, models,
+                        delegatedGroups, delegatedProperties, new LinkedHashSet<String>())
+                Set<String> known = (groups + properties).findAll { Map<String, Object> entry ->
+                    entry.sourceType == model.name
+                }*.name as Set<String>
+                groups.addAll(delegatedGroups.findAll { Map<String, Object> entry -> !(entry.name in known) })
+                properties.addAll(delegatedProperties.findAll { Map<String, Object> entry -> !(entry.name in known) })
+            }
+            if (!GenerateConfigurationMetadataTask.fullyCompiledHere(delegateModel, models) &&
+                    !GenerateConfigurationMetadataTask.overlayDocuments(overlay, model.prefix, properties)) {
+                logger.warn("Configuration properties class '${model.name}' uses @Delegate field '${delegate.field}' " +
+                        "of type '${delegate.type}', which is not entirely compiled by this project. " +
+                        'Add metadata for the delegated properties to additional-spring-configuration-metadata.json.')
+            }
+        }
+    }
+
+    private static boolean fullyCompiledHere(ClassModel model, Map<String, ClassModel> models) {
+        ClassModel current = model
+        while (current != null) {
+            if (current.superName == null || current.superName in ROOT_TYPES) {
+                return true
+            }
+            current = models[current.superName]
+        }
+        false
+    }
+
+    private static boolean overlayDocuments(Map overlay, String prefix, List<Map<String, Object>> generated) {
+        Set<String> generatedNames = generated*.name as Set<String>
+        String start = prefix ? "${prefix}." : ''
+        ((overlay.get('properties') ?: []) as List).any { Object entry ->
+            String name = entry instanceof Map ? ((Map) entry).name as String : null
+            name != null && name.startsWith(start) && !(name in generatedNames)
+        }
     }
 
     static ClassModel readClass(byte[] bytes) {
@@ -205,15 +285,6 @@ abstract class GenerateConfigurationMetadataTask extends DefaultTask {
             }
 
             @Override
-            FieldVisitor visitField(int access, String name, String descriptor, String signature, Object value) {
-                int payloadAccess = Opcodes.ACC_PRIVATE | Opcodes.ACC_STATIC | Opcodes.ACC_FINAL | Opcodes.ACC_SYNTHETIC
-                if (name == PAYLOAD_FIELD && value instanceof String && (access & payloadAccess) == payloadAccess) {
-                    model.payload = value as String
-                }
-                null
-            }
-
-            @Override
             RecordComponentVisitor visitRecordComponent(String name, String descriptor, String signature) {
                 model.properties[name] = new PropertyModel(
                         name: name,
@@ -231,17 +302,25 @@ abstract class GenerateConfigurationMetadataTask extends DefaultTask {
                     model.constructors << constructor
                     Type[] argumentTypes = method.argumentTypes
                     List<String> argumentTypeNames = methodArgumentTypes(descriptor, signature)
+                    // a generic Signature attribute leaves out the synthetic and mandated parameters that the
+                    // descriptor and MethodParameters include, so those must not advance the type index
+                    boolean implicitParametersOmitted = argumentTypeNames.size() != argumentTypes.length
                     return new MethodVisitor(Opcodes.ASM9) {
                         private int parameterIndex
+                        private int implicitParameters
 
                         @Override
                         void visitParameter(String parameterName, int parameterAccess) {
-                            if (parameterName && parameterIndex < argumentTypes.length &&
-                                    (parameterAccess & (Opcodes.ACC_SYNTHETIC | Opcodes.ACC_MANDATED)) == 0) {
+                            boolean implicit = (parameterAccess & (Opcodes.ACC_SYNTHETIC | Opcodes.ACC_MANDATED)) != 0
+                            int typeIndex = implicitParametersOmitted ? parameterIndex - implicitParameters : parameterIndex
+                            if (parameterName && !implicit && typeIndex < argumentTypeNames.size()) {
                                 constructor.properties[parameterName] = new PropertyModel(
                                         name: parameterName,
-                                        type: argumentTypeNames[parameterIndex],
+                                        type: argumentTypeNames[typeIndex],
                                         constructorBound: true)
+                            }
+                            if (implicit) {
+                                implicitParameters++
                             }
                             parameterIndex++
                         }
@@ -254,7 +333,8 @@ abstract class GenerateConfigurationMetadataTask extends DefaultTask {
                     }
                 }
                 if ((access & Opcodes.ACC_PUBLIC) == 0 ||
-                        (access & (Opcodes.ACC_STATIC | Opcodes.ACC_SYNTHETIC)) != 0 || name.contains('$')) {
+                        (access & (Opcodes.ACC_STATIC | Opcodes.ACC_SYNTHETIC)) != 0 || name.contains('$') ||
+                        name in FRAMEWORK_ACCESSORS) {
                     return null
                 }
                 if (name.startsWith('get') && name.length() > 3 && method.argumentTypes.length == 0 &&
@@ -273,39 +353,42 @@ abstract class GenerateConfigurationMetadataTask extends DefaultTask {
             }
         }, ClassReader.SKIP_CODE | ClassReader.SKIP_FRAMES)
 
-        if (model.payload != null) {
-            Map payload = new JsonSlurper().parseText(model.payload) as Map
-            model.prefix = payload.get('prefix') as String
-            model.name = payload.get('sourceType') as String
-            model.payloadGroups = ((payload.get('groups') ?: []) as List).collect { Map group ->
-                new LinkedHashMap<String, Object>(group)
-            }
-            model.payloadProperties = ((payload.get('properties') ?: []) as List).collect { Map property ->
-                new LinkedHashMap<String, Object>(property)
-            }
-        } else {
-            List<ConstructorModel> selectedConstructors = model.constructors.findAll { ConstructorModel constructor ->
-                constructor.selected
-            }
-            ConstructorModel bindingConstructor = selectedConstructors.size() == 1 ? selectedConstructors[0] :
-                    (model.constructors.size() == 1 && !model.constructors[0].properties.isEmpty() ?
-                            model.constructors[0] : null)
-            bindingConstructor?.properties?.each { String name, PropertyModel constructorProperty ->
-                PropertyModel property = model.properties.computeIfAbsent(name) { new PropertyModel(name: name) }
-                property.type = property.type ?: constructorProperty.type
-                property.constructorBound = true
-            }
-            model.properties = model.properties.findAll { String name, PropertyModel property ->
-                property.writable || property.collectionOrMap() || property.constructorBound
-            }
+        model.properties.values().each { PropertyModel property -> property.resolveAccessorType() }
+        List<ConstructorModel> selectedConstructors = model.constructors.findAll { ConstructorModel constructor ->
+            constructor.selected
+        }
+        ConstructorModel bindingConstructor = selectedConstructors.size() == 1 ? selectedConstructors[0] :
+                (model.constructors.size() == 1 && !model.constructors[0].properties.isEmpty() ?
+                        model.constructors[0] : null)
+        bindingConstructor?.properties?.each { String name, PropertyModel constructorProperty ->
+            PropertyModel property = model.properties.computeIfAbsent(name) { new PropertyModel(name: name) }
+            property.type = property.type ?: constructorProperty.type
+            property.constructorBound = true
         }
         model
     }
 
+    static void applyPayload(ClassModel model, String json) {
+        Map payload = new JsonSlurper().parseText(json) as Map
+        model.prefix = payload.get('prefix') as String
+        model.payloadGroups = ((payload.get('groups') ?: []) as List).collect { Map group ->
+            new LinkedHashMap<String, Object>(group)
+        }
+        model.payloadProperties = ((payload.get('properties') ?: []) as List).collect { Map property ->
+            new LinkedHashMap<String, Object>(property)
+        }
+        model.payloadDelegates = ((payload.get('delegates') ?: []) as List).collect { Map delegate ->
+            new LinkedHashMap<String, Object>(delegate)
+        }
+    }
+
     private static void addAccessor(ClassModel model, String name, String descriptor, String signature, boolean writable) {
         PropertyModel property = model.properties.computeIfAbsent(name) { new PropertyModel(name: name) }
-        if (property.type == null || signature != null) {
-            property.type = fieldType(descriptor, signature)
+        String type = fieldType(descriptor, signature)
+        if (writable) {
+            property.setterTypes << type
+        } else {
+            property.getterType = property.getterType ?: type
         }
         property.writable |= writable
         property.readable |= !writable
@@ -318,11 +401,11 @@ abstract class GenerateConfigurationMetadataTask extends DefaultTask {
         if (!visiting.add(model.name)) {
             return
         }
-        propertiesFor(model, models, new LinkedHashSet<String>()).values()
+        bindableProperties(model, models, new LinkedHashSet<String>(visiting - model.name)).values()
                 .sort { PropertyModel property -> property.name }.each { PropertyModel property ->
             String name = prefix ? "${prefix}.${property.name}" : property.name
             ClassModel nested = models[property.rawType()]
-            if (nested != null && !propertiesFor(nested, models, new LinkedHashSet<String>()).isEmpty()) {
+            if (nested != null && !bindableProperties(nested, models, new LinkedHashSet<String>(visiting)).isEmpty()) {
                 groups << [name: name, type: property.type, sourceType: sourceType]
                 addProperties(nested, name, sourceType, models, groups, properties, visiting)
             } else {
@@ -330,6 +413,27 @@ abstract class GenerateConfigurationMetadataTask extends DefaultTask {
             }
         }
         visiting.remove(model.name)
+    }
+
+    /**
+     * A property binds when it can be written, is a mutable container, or is a getter-only nested object that
+     * itself has something to bind.
+     */
+    private static Map<String, PropertyModel> bindableProperties(ClassModel model, Map<String, ClassModel> models,
+                                                                  Set<String> visiting) {
+        if (!visiting.add(model.name)) {
+            return [:]
+        }
+        Map<String, PropertyModel> bindable = propertiesFor(model, models, new LinkedHashSet<String>()).findAll {
+            String name, PropertyModel property ->
+            if (property.writable || property.constructorBound || property.collectionOrMap()) {
+                return true
+            }
+            ClassModel nested = models[property.rawType()]
+            nested != null && !bindableProperties(nested, models, visiting).isEmpty()
+        }
+        visiting.remove(model.name)
+        bindable
     }
 
     private static Map<String, PropertyModel> propertiesFor(ClassModel model, Map<String, ClassModel> models,
@@ -490,7 +594,11 @@ abstract class GenerateConfigurationMetadataTask extends DefaultTask {
     }
 
     private static String fieldType(String descriptor, String signature) {
-        signature ? new TypeSignatureParser(signature).parse() : Type.getType(descriptor).className
+        box(signature ? new TypeSignatureParser(signature).parse() : Type.getType(descriptor).className)
+    }
+
+    private static String box(String type) {
+        WRAPPERS[type] ?: type
     }
 
     private static String methodReturnSignature(String signature) {
@@ -502,8 +610,9 @@ abstract class GenerateConfigurationMetadataTask extends DefaultTask {
     }
 
     private static List<String> methodArgumentTypes(String descriptor, String signature) {
-        signature?.startsWith('(') ? new TypeSignatureParser(signature).parseMethodArguments() :
+        List<String> types = signature?.startsWith('(') ? new TypeSignatureParser(signature).parseMethodArguments() :
                 Type.getArgumentTypes(descriptor).collect { Type argument -> argument.className }
+        types.collect { String type -> box(type) }
     }
 
     private static String decapitalize(String value) {
@@ -516,9 +625,9 @@ abstract class GenerateConfigurationMetadataTask extends DefaultTask {
         String superName
         List<String> interfaces = []
         String prefix
-        String payload
         List<Map<String, Object>> payloadGroups = []
         List<Map<String, Object>> payloadProperties
+        List<Map<String, Object>> payloadDelegates = []
         List<ConstructorModel> constructors = []
         Map<String, PropertyModel> properties = [:]
     }
@@ -531,12 +640,32 @@ abstract class GenerateConfigurationMetadataTask extends DefaultTask {
     private static class PropertyModel {
         String name
         String type
+        String getterType
+        List<String> setterTypes = []
         boolean constructorBound
         boolean readable
         boolean writable
 
+        /**
+         * Mirrors Spring Boot's JavaBean binder independently of method order: the setter that agrees with
+         * the getter binds, otherwise the first setter by type name, and a getter on its own names the type.
+         */
+        void resolveAccessorType() {
+            if (setterTypes) {
+                String matching = setterTypes.find { String setterType -> raw(setterType) == raw(getterType) }
+                type = matching ? [getterType, matching].find { String candidate -> candidate.contains('<') } ?: matching :
+                        setterTypes.toSorted()[0]
+            } else if (getterType) {
+                type = getterType
+            }
+        }
+
         String rawType() {
-            type.replaceFirst(/<.*/, '').replace('[]', '')
+            raw(type)
+        }
+
+        private static String raw(String type) {
+            type?.replaceFirst(/<.*/, '')?.replace('[]', '')
         }
 
         boolean collectionOrMap() {
