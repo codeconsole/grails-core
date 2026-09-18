@@ -16,23 +16,22 @@
  *  specific language governing permissions and limitations
  *  under the License.
  */
-package org.grails.async.factory.future
+package pubsub.demo
 
-import java.util.concurrent.Executor
-import java.util.concurrent.Executors
-import java.util.function.UnaryOperator
+import org.springframework.test.context.TestPropertySource
 
-import groovy.transform.CompileStatic
+import grails.testing.mixin.integration.Integration
+import org.apache.grails.testing.http.client.HttpClientSupport
+import spock.lang.Specification
+import spock.lang.Tag
 
-/**
- * CompletableFuture promises executed on owned Java virtual threads.
- *
- * @since 8.0
- */
-@CompileStatic
-class VirtualThreadPromiseFactory extends CompletableFuturePromiseFactory {
+@Integration
+@Tag('http-client')
+@TestPropertySource(properties = ['spring.mvc.async.request-timeout=100ms'])
+class TimeoutControllerSpec extends Specification implements HttpClientSupport {
 
-    VirtualThreadPromiseFactory(UnaryOperator<Executor> executorDecorator = UnaryOperator.<Executor>identity()) {
-        super(Executors.newVirtualThreadPerTaskExecutor(), executorDecorator)
+    void 'an eager web promise timeout returns service unavailable'() {
+        expect:
+        http('/timeout').assertStatus(503)
     }
 }
