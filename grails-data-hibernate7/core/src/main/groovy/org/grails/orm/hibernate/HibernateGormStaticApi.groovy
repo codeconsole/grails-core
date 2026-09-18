@@ -309,9 +309,9 @@ class HibernateGormStaticApi<D> extends GormStaticApi<D> {
     }
 
     @Override
-    Integer count() {
+    Long count() {
         String entity = persistentEntity.name
-        doSingleInternal("select count(*) from $entity" as String, [:], [], [:], false) as Integer
+        doSingleInternal("select count(*) from $entity" as String, [:], [], [:], false) as Long
     }
 
     @Override

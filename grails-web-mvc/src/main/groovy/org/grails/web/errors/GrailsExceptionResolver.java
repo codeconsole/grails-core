@@ -41,6 +41,7 @@ import org.springframework.beans.BeanUtils;
 import org.springframework.beans.BeansException;
 import org.springframework.context.ApplicationContext;
 import org.springframework.web.context.ServletContextAware;
+import org.springframework.web.context.request.async.AsyncRequestTimeoutException;
 import org.springframework.web.servlet.ModelAndView;
 import org.springframework.web.servlet.View;
 import org.springframework.web.servlet.ViewResolver;
@@ -102,15 +103,21 @@ public class GrailsExceptionResolver extends SimpleMappingExceptionResolver impl
 
         ex = findWrappedException(ex);
 
-        logFullStackTraceIfEnabled(ex);
-
-        filterStackTrace(ex);
+        if (!(ex instanceof AsyncRequestTimeoutException)) {
+            logFullStackTraceIfEnabled(ex);
+            filterStackTrace(ex);
+        }
 
         ModelAndView mv = super.resolveException(request, response, handler, ex);
 
         setStatus(request, response, mv, ex);
 
-        logStackTrace(ex, request);
+        if (ex instanceof AsyncRequestTimeoutException) {
+            LOG.debug("Async request timed out: {}", request.getRequestURI());
+        }
+        else {
+            logStackTrace(ex, request);
+        }
 
         UrlMappingsHolder urlMappings = lookupUrlMappings();
         if (urlMappings != null) {
@@ -163,9 +170,9 @@ public class GrailsExceptionResolver extends SimpleMappingExceptionResolver impl
     }
 
     protected void setStatus(HttpServletRequest request, HttpServletResponse response, ModelAndView mv, Exception e) {
-        response.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
-        // expose the servlet 2.3 specs status code request attribute as 500
-        request.setAttribute(WebUtils.ERROR_STATUS_CODE_ATTRIBUTE, HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+        int status = exceptionStatus(e);
+        response.setStatus(status);
+        request.setAttribute(WebUtils.ERROR_STATUS_CODE_ATTRIBUTE, status);
         final GrailsWrappedRuntimeException gwre = new GrailsWrappedRuntimeException(servletContext, e);
         mv.addObject(WebUtils.ERROR_EXCEPTION_ATTRIBUTE, gwre);
         mv.addObject(WebUtils.EXCEPTION_ATTRIBUTE, gwre);
@@ -290,15 +297,23 @@ public class GrailsExceptionResolver extends SimpleMappingExceptionResolver impl
     }
 
     protected UrlMappingInfo matchStatusCode(Exception ex, UrlMappingsHolder urlMappings) {
-        UrlMappingInfo info = urlMappings.matchStatusCode(HttpServletResponse.SC_INTERNAL_SERVER_ERROR, ex);
+        int status = exceptionStatus(ex);
+        UrlMappingInfo info = urlMappings.matchStatusCode(status, ex);
         if (info == null) {
-            info = urlMappings.matchStatusCode(HttpServletResponse.SC_INTERNAL_SERVER_ERROR,
+            info = urlMappings.matchStatusCode(status,
                     getRootCause(ex));
         }
         if (info == null) {
-            info = urlMappings.matchStatusCode(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+            info = urlMappings.matchStatusCode(status);
         }
         return info;
+    }
+
+    private static int exceptionStatus(Exception ex) {
+        if (ex instanceof AsyncRequestTimeoutException timeout) {
+            return timeout.getStatusCode().value();
+        }
+        return HttpServletResponse.SC_INTERNAL_SERVER_ERROR;
     }
 
     protected void logStackTrace(Exception e, HttpServletRequest request) {

@@ -800,7 +800,7 @@ trait GormEntity<D> implements GormValidateable, DirtyCheckable, GormEntityApi<D
      * @return The number of persisted entities
      */
     @Generated
-    static Integer count() {
+    static Long count() {
         currentGormStaticApi().count()
     }
 
@@ -808,7 +808,7 @@ trait GormEntity<D> implements GormValidateable, DirtyCheckable, GormEntityApi<D
      * Same as {@link #count()} but allows property-style syntax (Foo.count)
      */
     @Generated
-    static Integer getCount() {
+    static Long getCount() {
         currentGormStaticApi().getCount()
     }
 
