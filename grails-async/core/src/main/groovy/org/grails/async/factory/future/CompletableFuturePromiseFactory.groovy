@@ -23,7 +23,7 @@ import java.util.concurrent.Executor
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
-import java.util.function.Supplier
+import java.util.function.UnaryOperator
 
 import groovy.transform.AutoFinal
 import groovy.transform.CompileStatic
@@ -33,6 +33,7 @@ import jakarta.annotation.PreDestroy
 import grails.async.Promise
 import grails.async.PromiseList
 import grails.async.factory.AbstractPromiseFactory
+import grails.async.decorator.PromiseDecorator
 import org.grails.async.factory.BoundPromise
 
 /**
@@ -48,16 +49,21 @@ class CompletableFuturePromiseFactory extends AbstractPromiseFactory implements 
     private final ExecutorService ownedExecutor
 
     CompletableFuturePromiseFactory() {
-        this(Executors.newCachedThreadPool(), true)
+        this(UnaryOperator.<Executor>identity())
+    }
+
+    CompletableFuturePromiseFactory(UnaryOperator<Executor> executorDecorator) {
+        this(Executors.newCachedThreadPool(), executorDecorator)
     }
 
     CompletableFuturePromiseFactory(Executor executor) {
-        this(executor, false)
+        this.executor = executor
+        this.ownedExecutor = null
     }
 
-    private CompletableFuturePromiseFactory(Executor executor, boolean ownsExecutor) {
-        this.executor = executor
-        this.ownedExecutor = ownsExecutor ? (ExecutorService) executor : null
+    protected CompletableFuturePromiseFactory(ExecutorService ownedExecutor, UnaryOperator<Executor> executorDecorator) {
+        this.executor = executorDecorator.apply(ownedExecutor)
+        this.ownedExecutor = ownedExecutor
     }
 
     @Override
@@ -75,7 +81,7 @@ class CompletableFuturePromiseFactory extends AbstractPromiseFactory implements 
         if (closures.length == 1) {
             Closure<T> decorated = applyDecorators(closures[0], null)
             CompletableFuture<T> future = CompletableFuture.supplyAsync(
-                    { decorated.call() } as Supplier<T>,
+                    () -> decorated.call(),
                     executor)
             return CompletableFuturePromise.fromStage(future, executor)
         }
@@ -85,6 +91,18 @@ class CompletableFuturePromiseFactory extends AbstractPromiseFactory implements 
             promises.add(createPromise(closure))
         }
         return promises as Promise<T>
+    }
+
+    @Override
+    <T> Promise<List<T>> createPromise(List<Closure<T>> closures, List<PromiseDecorator> decorators) {
+        if (closures == null) {
+            return createBoundPromise(Collections.<T>emptyList())
+        }
+        PromiseList<T> promises = new PromiseList<>()
+        for (Closure<T> closure : closures) {
+            promises.add(createPromise(closure, decorators))
+        }
+        return promises
     }
 
     @Override
@@ -106,10 +124,10 @@ class CompletableFuturePromiseFactory extends AbstractPromiseFactory implements 
         CompletableFuture<Void> all = CompletableFuture.allOf(*promises.collect { Promise<T> promise ->
             asCompletableFuture(promise)
         } as CompletableFuture[])
-        return CompletableFuturePromise.fromStage(all.thenApply {
+        return CompletableFuturePromise.fromStage(all.thenApply((Void ignored) -> {
             List<T> values = promises.collect { Promise<T> promise -> promise.get() }
             return callable.call(values) as List<T>
-        }, executor)
+        }), executor)
     }
 
     @Override
@@ -141,7 +159,7 @@ class CompletableFuturePromiseFactory extends AbstractPromiseFactory implements 
         if (promise instanceof CompletableFuture future) {
             return (CompletableFuture<T>) future
         }
-        return CompletableFuture.supplyAsync({ promise.get() } as Supplier<T>, executor)
+        return CompletableFuture.supplyAsync(() -> promise.get(), executor)
     }
 
     @Override

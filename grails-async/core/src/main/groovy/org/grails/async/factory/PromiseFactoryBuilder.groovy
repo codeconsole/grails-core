@@ -23,6 +23,7 @@ import grails.async.PromiseFactory
 import groovy.transform.CompileStatic
 import groovy.util.logging.Slf4j
 import java.util.concurrent.Executor
+import java.util.function.UnaryOperator
 
 import org.grails.async.factory.future.CompletableFuturePromiseFactory
 import org.grails.async.factory.future.VirtualThreadPromiseFactory
@@ -40,7 +41,7 @@ class PromiseFactoryBuilder {
     /**
      * @return Builds the default PromiseFactory
      */
-    static PromiseFactory build(Executor executor = null) {
+    static PromiseFactory build(Executor executor = null, UnaryOperator<Executor> ownedExecutorDecorator = UnaryOperator.<Executor>identity()) {
 
         List<PromiseFactory> promiseFactories = ServiceLoader.load(PromiseFactory).toList()
 
@@ -48,11 +49,11 @@ class PromiseFactoryBuilder {
         if (promiseFactories.isEmpty()) {
             if (System.getProperty('grails.async.promiseFactory') == 'virtual-thread') {
                 log.debug('No PromiseFactory implementation found. Using virtual thread promise factory.')
-                promiseFactory = new VirtualThreadPromiseFactory()
+                promiseFactory = new VirtualThreadPromiseFactory(ownedExecutorDecorator)
             }
             else {
                 log.debug('No PromiseFactory implementation found. Using the CompletableFuture promise factory.')
-                promiseFactory = executor == null ? new CompletableFuturePromiseFactory() : new CompletableFuturePromiseFactory(executor)
+                promiseFactory = executor == null ? new CompletableFuturePromiseFactory(ownedExecutorDecorator) : new CompletableFuturePromiseFactory(executor)
             }
         }
         else {

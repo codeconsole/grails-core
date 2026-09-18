@@ -22,7 +22,10 @@ import java.util.concurrent.CompletableFuture
 import java.util.concurrent.Executor
 import java.util.concurrent.ExecutionException
 import java.util.concurrent.Future
+import java.util.concurrent.Executors
+import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.TimeUnit
+import java.util.function.UnaryOperator
 import java.util.concurrent.atomic.AtomicInteger
 
 import org.grails.async.factory.PromiseFactoryBuilder
@@ -138,7 +141,7 @@ class CompletableFuturePromiseFactorySpec extends Specification {
 
     void 'direct and chained get preserve the original failure with its cause'() {
         given:
-        def original = new IllegalStateException('outer', new IOException('inner'))
+        def original = checked ? new IOException('outer', new IOException('inner')) : new IllegalStateException('outer', new IOException('inner'))
         def promise = factory.createPromise { throw original }
         if (chained) {
             promise = promise.then { it }
@@ -157,16 +160,12 @@ class CompletableFuturePromiseFactorySpec extends Specification {
         failure.cause.is(original)
 
         where:
-        chained | timed
-        false   | false
-        false   | true
-        true    | false
-        true    | true
+        [chained, timed, checked] << [[false, true], [false, true], [false, true]].combinations()
     }
 
     void 'single and aggregate error callbacks receive the same original failure'() {
         given:
-        def original = new IllegalStateException('outer', new IOException('inner'))
+        def original = checked ? new IOException('outer', new IOException('inner')) : new IllegalStateException('outer', new IOException('inner'))
         def promise = factory.createPromise { throw original }
         Throwable single
         Throwable aggregate
@@ -178,11 +177,14 @@ class CompletableFuturePromiseFactorySpec extends Specification {
         then:
         single.is(original)
         aggregate.is(original)
+
+        where:
+        checked << [false, true]
     }
 
     void 'a failing recovery callback preserves its own failure'() {
         given:
-        def original = new IllegalStateException('callback', new IOException('inner'))
+        def original = checked ? new IOException('callback', new IOException('inner')) : new IllegalStateException('callback', new IOException('inner'))
 
         when:
         factory.createPromise { throw new IOException('task') }.onError { throw original }.get()
@@ -190,5 +192,74 @@ class CompletableFuturePromiseFactorySpec extends Specification {
         then:
         def failure = thrown(ExecutionException)
         failure.cause.is(original)
+
+        where:
+        checked << [false, true]
+    }
+
+    void 'checked failures from then and aggregate callbacks are not proxy wrapped'() {
+        given:
+        def original = new IOException('callback')
+        def promise = aggregate
+                ? factory.onComplete([factory.createPromise { 1 }]) { throw original }
+                : factory.createPromise { 1 }.then { throw original }
+
+        when:
+        promise.get()
+
+        then:
+        def failure = thrown(ExecutionException)
+        failure.cause.is(original)
+
+        where:
+        aggregate << [false, true]
+    }
+
+    void 'bridging a non CompletionStage promise preserves the original checked failure'() {
+        given:
+        def original = new IOException('io')
+        def bound = factory.createBoundPromise(new ExecutionException(original))
+        Throwable observed
+
+        when:
+        factory.onError([bound]) { observed = it }.get()
+
+        then:
+        def failure = thrown(ExecutionException)
+        failure.cause.is(original)
+        observed.is(original)
+    }
+
+    void 'closing a decorated owned executor shuts down the underlying pool'() {
+        given:
+        UnaryOperator<Executor> decorator = (Executor executor) -> {
+            Executor decorated = (Runnable task) -> executor.execute(task)
+            return decorated
+        }
+        def owned = new CompletableFuturePromiseFactory(decorator)
+        assert owned.createPromise { 42 }.get() == 42
+
+        when:
+        owned.close()
+        owned.close()
+        owned.createPromise { 1 }
+
+        then:
+        thrown(RejectedExecutionException)
+    }
+
+    void 'closing a factory leaves its externally supplied executor running'() {
+        given:
+        def executor = Executors.newSingleThreadExecutor()
+        def external = new CompletableFuturePromiseFactory(executor)
+
+        when:
+        external.close()
+
+        then:
+        external.createPromise { 42 }.get() == 42
+
+        cleanup:
+        executor.shutdownNow()
     }
 }

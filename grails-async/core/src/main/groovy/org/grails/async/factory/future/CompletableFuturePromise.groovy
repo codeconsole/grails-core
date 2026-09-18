@@ -60,7 +60,7 @@ class CompletableFuturePromise<T> extends CompletableFuture<T> implements Promis
 
     @Override
     Promise<T> onComplete(Closure<T> callable) {
-        return fromStage(thenApply(callable), executor)
+        return fromStage(thenApply((T value) -> callable.call(value)), executor)
     }
 
     @Override
