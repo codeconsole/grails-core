@@ -40,7 +40,7 @@ Book.withTransaction {
 }
 ----
 
-The static `Book.lock(id)` method is unchanged, as is `Book.lock(id, [:])`. It avoids a separate unlocked `get()` when the entity is not already managed, but when the entity is already managed in the current session it locks and version-checks the already-loaded state rather than reloading it. Pass `refresh: true` to reload that instance's state and version under the lock instead:
+The static `Book.lock(id)` method is unchanged, and `Book.lock(id, refresh: false)` behaves the same way. It avoids a separate unlocked `get()` when the entity is not already managed, but when the entity is already managed in the current session it locks and version-checks the already-loaded state rather than reloading it. Pass `refresh: true` to reload that instance's state and version under the lock instead:
 
 [source,groovy]
 ----

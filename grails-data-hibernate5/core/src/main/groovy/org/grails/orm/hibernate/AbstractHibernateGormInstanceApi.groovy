@@ -286,6 +286,12 @@ abstract class AbstractHibernateGormInstanceApi<D> extends GormInstanceApi<D> {
             // persistence context already holds the id under the proxy's dynamically-generated subclass, so the
             // extra unlocked SELECT here is the price of correctness, not an oversight.
             Object target = proxyHandler.unwrap(instance)
+            // Hibernate cascades the refresh over the graph as it stands before the reload, and the reload then
+            // replaces the root's collections with uninitialized wrappers, so the reloaded entities are gathered
+            // from that graph first.
+            SessionImplementor sessionImplementor = session.unwrap(SessionImplementor)
+            Set<Object> refreshed = Collections.newSetFromMap(new IdentityHashMap<Object, Boolean>())
+            collectRefreshed(sessionImplementor, target, refreshed)
             if (RefreshLockArguments.pessimistic(lockMode)) {
                 session.refresh(target, lockMode)
             } else {
@@ -295,45 +301,47 @@ abstract class AbstractHibernateGormInstanceApi<D> extends GormInstanceApi<D> {
                 session.lock(target, lockMode)
             }
             // Hibernate 5 leaves GORM dirty flags behind on everything a native refresh reloads.
-            resetDirtyAfterRefresh(session.unwrap(SessionImplementor), target,
-                    Collections.newSetFromMap(new IdentityHashMap<Object, Boolean>()))
+            for (Object entity : refreshed) {
+                sessionImplementor.factory.customEntityDirtinessStrategy.resetDirty(entity,
+                        sessionImplementor.getEntityPersister(null, entity), sessionImplementor)
+            }
         }
         return instance
     }
 
     /**
-     * Resets the dirty state of a refreshed entity, its embedded components, and every initialized association
-     * that Hibernate's refresh cascade reloaded along with it.
+     * Gathers the entity itself, and every initialized association that Hibernate's refresh cascade will reload
+     * along with it, so that their dirty state can be reset once the refresh has run.
      * <p>
-     * This walks Hibernate's own {@code CascadeStyle}/{@code Type} metadata to find the reloaded associations
-     * and components; it does not duplicate {@link GrailsEntityDirtinessStrategy#resetDirty}, which is called
-     * for the entity itself (and, through it, {@code PersistentEntity.getEmbedded()} for its own embedded
-     * properties). The two walk different metadata for different scopes - GORM's own embedded-property model
-     * here versus Hibernate's live persister/cascade metadata for the association graph the refresh reloaded -
-     * so they are kept separate rather than merged into one traversal.
+     * This walks Hibernate's own {@code CascadeStyle}/{@code Type} metadata to find the cascaded associations
+     * and components; it does not duplicate {@code GrailsEntityDirtinessStrategy#resetDirty}, which resets the
+     * entity itself (and, through it, {@code PersistentEntity.getEmbedded()} for its own embedded properties).
+     * The two walk different metadata for different scopes - GORM's own embedded-property model there versus
+     * Hibernate's live persister/cascade metadata for the association graph the refresh reloads here - so they
+     * are kept separate rather than merged into one traversal.
      */
-    private void resetDirtyAfterRefresh(SessionImplementor session, Object entity, Set<Object> visited) {
-        if (!(entity instanceof DirtyCheckable) || !visited.add(entity)) {
+    private void collectRefreshed(SessionImplementor session, Object entity, Set<Object> refreshed) {
+        if (!(entity instanceof DirtyCheckable) || !refreshed.add(entity)) {
             return
         }
         EntityPersister persister = session.getEntityPersister(null, entity)
-        session.factory.customEntityDirtinessStrategy.resetDirty(entity, persister, session)
         CascadeStyle[] cascadeStyles = persister.propertyCascadeStyles
         Type[] types = persister.propertyTypes
         Object[] values = persister.getPropertyValues(entity)
         for (int i = 0; i < cascadeStyles.length; i++) {
             if (cascadeStyles[i].doCascade(CascadingActions.REFRESH)) {
-                resetCascadedDirty(session, types[i], values[i], visited)
+                collectCascaded(session, types[i], values[i], refreshed)
             }
         }
     }
 
     /**
-     * Follows a refresh cascade through the given value to the entities Hibernate reloaded. A component
+     * Follows a refresh cascade through the given value to the entities Hibernate will reload. A component
      * cascades whenever one of its own properties does, so it is descended into rather than treated as an
-     * entity; collections are visited element by element.
+     * entity; an initialized collection is visited element by element, and an uninitialized one is skipped
+     * just as the cascade skips it.
      */
-    private void resetCascadedDirty(SessionImplementor session, Type type, Object value, Set<Object> visited) {
+    private void collectCascaded(SessionImplementor session, Type type, Object value, Set<Object> refreshed) {
         if (value == null || !Hibernate.isInitialized(value)) {
             return
         }
@@ -343,17 +351,20 @@ abstract class AbstractHibernateGormInstanceApi<D> extends GormInstanceApi<D> {
             Object[] subvalues = compositeType.getPropertyValues(value, session)
             for (int i = 0; i < subtypes.length; i++) {
                 if (compositeType.getCascadeStyle(i).doCascade(CascadingActions.REFRESH)) {
-                    resetCascadedDirty(session, subtypes[i], subvalues[i], visited)
+                    collectCascaded(session, subtypes[i], subvalues[i], refreshed)
                 }
             }
         } else if (type.isCollectionType()) {
-            Type elementType = ((CollectionType) type).getElementType(session.factory)
-            Collection<Object> elements = value instanceof Map ? ((Map) value).values() : (Collection<Object>) value
-            for (Object element : elements) {
-                resetCascadedDirty(session, elementType, element, visited)
+            CollectionType collectionType = (CollectionType) type
+            Type elementType = collectionType.getElementType(session.factory)
+            // Hibernate's own element iterator covers every collection it maps: sets and lists, the values
+            // of a map, and the elements of an array.
+            Iterator<Object> elements = collectionType.getElementsIterator(value, session)
+            while (elements.hasNext()) {
+                collectCascaded(session, elementType, elements.next(), refreshed)
             }
         } else if (type.isEntityType()) {
-            resetDirtyAfterRefresh(session, proxyHandler.unwrap(value), visited)
+            collectRefreshed(session, proxyHandler.unwrap(value), refreshed)
         }
     }
 

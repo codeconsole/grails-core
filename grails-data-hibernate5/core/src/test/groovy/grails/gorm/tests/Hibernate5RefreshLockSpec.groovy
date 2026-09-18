@@ -46,7 +46,7 @@ class Hibernate5RefreshLockSpec extends HibernateGormDatastoreSpec {
         manager.registerDomainClasses(Hibernate5RefreshLockBook, Hibernate5RefreshLockRoutedBook,
                 Hibernate5RefreshLockNonversionedBook, Hibernate5RefreshLockEmbeddedBook,
                 Hibernate5RefreshLockCascadeParent, Hibernate5RefreshLockCascadeChild,
-                Hibernate5RefreshLockEmbeddedOwner, Hibernate5RefreshLockJoinedRoot, Hibernate5RefreshLockJoinedSub,
+                Hibernate5RefreshLockCollectionParent, Hibernate5RefreshLockEmbeddedOwner, Hibernate5RefreshLockJoinedRoot, Hibernate5RefreshLockJoinedSub,
                 Hibernate5RefreshLockUnionRoot, Hibernate5RefreshLockUnionSub)
         // Let the template preserve the session flush mode instead of downgrading AUTO to COMMIT.
         manager.grailsConfig['hibernate.flush.mode'] = 'AUTO'
@@ -1027,6 +1027,42 @@ class Hibernate5RefreshLockSpec extends HibernateGormDatastoreSpec {
         Hibernate5RefreshLockCascadeChild.get(childId).title == 'original child'
     }
 
+    void 'refresh(lock: true) discards cascaded edits to the elements of a collection without a spurious update at flush'() {
+        given:
+        def parent = new Hibernate5RefreshLockCollectionParent(title: 'original parent')
+                .addToChildren(title: 'original first')
+                .addToChildren(title: 'original second')
+                .save(flush: true, failOnError: true)
+        Long parentId = parent.id
+        Hibernate5RefreshLockCollectionParent.withSession { it.clear() }
+        parent = Hibernate5RefreshLockCollectionParent.get(parentId)
+        def children = parent.children.sort { it.title }
+        assert Hibernate.isInitialized(parent.children)
+        parent.title = 'pending parent'
+        children.each { it.title = 'pending ' + it.id }
+        assert children.every { it.isDirty('title') }
+
+        when:
+        def result = parent.refresh(lock: true)
+
+        then: 'the refresh cascade reloads every element and the dirty state follows it'
+        result.is(parent)
+        parent.title == 'original parent'
+        children*.title.sort() == ['original first', 'original second']
+        !parent.isDirty()
+        children.every { !it.isDirty() && it.listDirtyPropertyNames().isEmpty() }
+        Hibernate5RefreshLockCollectionParent.withSession { Session session ->
+            session.getCurrentLockMode(parent) == LockMode.PESSIMISTIC_WRITE
+        }
+
+        when: 'the discarded edits must not schedule an update of the parent or any element at flush'
+        Hibernate5RefreshLockCollectionParent.withSession { it.flush() }
+
+        then:
+        parent.version == 0
+        children.every { it.version == 0 }
+    }
+
     void 'refresh with arguments that do not request a lock reloads state without a write lock (#description)'() {
         given:
         def book = new Hibernate5RefreshLockBook(title: 'original').save(flush: true, failOnError: true)
@@ -1561,6 +1597,19 @@ class Hibernate5RefreshLockCascadeChild {
     Long id
     Long version
     String title
+}
+
+@Entity
+class Hibernate5RefreshLockCollectionParent {
+    Long id
+    Long version
+    String title
+
+    static hasMany = [children: Hibernate5RefreshLockCascadeChild]
+
+    static mapping = {
+        children cascade: 'all', lazy: false
+    }
 }
 
 @Entity

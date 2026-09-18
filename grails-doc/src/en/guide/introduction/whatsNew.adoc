@@ -295,7 +295,7 @@ On Hibernate 5, a locked refresh also resets GORM's dirty-checking state on the 
 
 ===== Lock by Identifier with Refresh
 
-The static link:{domainClassesRef}lock.html[lock] method accepts `refresh: true`. `Book.lock(id, refresh: true)` behaves like `Book.lock(id)`, but when the entity is already managed in the current session it reloads that instance's state and version under the lock instead of locking the already-loaded state, and returns that same managed instance. When the entity is not in the session it is loaded under the lock. `null` is returned when no row exists for the identifier. `DomainClass.lock(id)` and `DomainClass.lock(id, [:])` continue to lock without refreshing.
+The static link:{domainClassesRef}lock.html[lock] method accepts `refresh: true`. `Book.lock(id, refresh: true)` behaves like `Book.lock(id)`, but when the entity is already managed in the current session it reloads that instance's state and version under the lock instead of locking the already-loaded state, and returns that same managed instance. When the entity is not in the session it is loaded under the lock. `null` is returned when no row exists for the identifier. `DomainClass.lock(id)` and `DomainClass.lock(id, refresh: false)` continue to lock without refreshing.
 
 [source,groovy]
 ----

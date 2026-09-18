@@ -76,7 +76,7 @@ Pessimistic locking requires an active transaction. Use `withTransaction` as abo
 
 The instance method `entity.lock()` is unchanged: it acquires a lock without reloading the entity's state. For an already-loaded, versioned entity, Hibernate still checks its version against the database; a concurrent update between loading and locking can therefore cause an optimistic locking failure.
 
-The static `DomainClass.lock(id)` method is also unchanged, as is `DomainClass.lock(id, [:])`: both lock without refreshing. When the entity is not yet in the session it is loaded under the lock, avoiding a separate unlocked `get()`. When the entity is already managed in the current session, its already-loaded state is locked and version-checked rather than reloaded.
+The static `DomainClass.lock(id)` method is also unchanged, and `DomainClass.lock(id, refresh: false)` behaves the same: both lock without refreshing. When the entity is not yet in the session it is loaded under the lock, avoiding a separate unlocked `get()`. When the entity is already managed in the current session, its already-loaded state is locked and version-checked rather than reloaded.
 
 Pass `type` to choose the lock mode. It accepts a `jakarta.persistence.LockModeType` or its name and defaults to `PESSIMISTIC_WRITE`; `NONE` is rejected. For example `Book.lock(1, type: LockModeType.PESSIMISTIC_READ)` acquires a pessimistic READ lock, whether the entity is loaded as part of the call or is already managed in the session. The semantics of each mode are those of the underlying JPA provider. Datastores that support only a pessimistic write lock throw `UnsupportedOperationException` for any other `type`.
 

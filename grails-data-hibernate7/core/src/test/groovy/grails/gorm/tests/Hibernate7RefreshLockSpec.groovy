@@ -47,7 +47,7 @@ class Hibernate7RefreshLockSpec extends HibernateGormDatastoreSpec {
         manager.registerDomainClasses(Hibernate7RefreshLockBook, Hibernate7RefreshLockRoutedBook,
             Hibernate7RefreshLockNonversionedBook, Hibernate7RefreshLockEmbeddedBook,
             Hibernate7RefreshLockCascadeParent, Hibernate7RefreshLockCascadeChild,
-            Hibernate7RefreshLockJoinedRoot, Hibernate7RefreshLockJoinedSub,
+            Hibernate7RefreshLockCollectionParent, Hibernate7RefreshLockJoinedRoot, Hibernate7RefreshLockJoinedSub,
             Hibernate7RefreshLockUnionRoot, Hibernate7RefreshLockUnionSub)
         // AUTO leaves an explicitly selected session flush mode intact during template calls.
         manager.grailsConfig['hibernate.flush.mode'] = 'AUTO'
@@ -1025,6 +1025,42 @@ class Hibernate7RefreshLockSpec extends HibernateGormDatastoreSpec {
         Hibernate7RefreshLockCascadeChild.get(childId).title == 'original child'
     }
 
+    void 'refresh(lock: true) discards cascaded edits to the elements of a collection without a spurious update at flush'() {
+        given:
+        def parent = new Hibernate7RefreshLockCollectionParent(title: 'original parent')
+                .addToChildren(title: 'original first')
+                .addToChildren(title: 'original second')
+                .save(flush: true, failOnError: true)
+        Long parentId = parent.id
+        Hibernate7RefreshLockCollectionParent.withSession { it.clear() }
+        parent = Hibernate7RefreshLockCollectionParent.get(parentId)
+        def children = parent.children.sort { it.title }
+        assert Hibernate.isInitialized(parent.children)
+        parent.title = 'pending parent'
+        children.each { it.title = 'pending ' + it.id }
+        assert children.every { it.isDirty('title') }
+
+        when:
+        def result = parent.refresh(lock: true)
+
+        then: 'the refresh cascade reloads every element and the dirty state follows it'
+        result.is(parent)
+        parent.title == 'original parent'
+        children*.title.sort() == ['original first', 'original second']
+        !parent.isDirty()
+        children.every { !it.isDirty() && it.listDirtyPropertyNames().isEmpty() }
+        Hibernate7RefreshLockCollectionParent.withSession { Session session ->
+            session.getCurrentLockMode(parent) == LockMode.PESSIMISTIC_WRITE
+        }
+
+        when: 'the discarded edits must not schedule an update of the parent or any element at flush'
+        Hibernate7RefreshLockCollectionParent.withSession { it.flush() }
+
+        then:
+        parent.version == 0
+        children.every { it.version == 0 }
+    }
+
     void 'refresh with arguments that do not request a lock reloads state without a write lock (#description)'() {
         given:
         def book = new Hibernate7RefreshLockBook(title: 'original').save(flush: true, failOnError: true)
@@ -1341,13 +1377,8 @@ class Hibernate7RefreshLockSpec extends HibernateGormDatastoreSpec {
 
     void 'refresh(lock: true) on a table-per-concrete-class subclass waits for a competing commit to its row (#description)'() {
         given:
-        def saved = new Hibernate7RefreshLockUnionSub(title: 'original', extra: 'subclass state')
-                .save(flush: true, failOnError: true)
-        Long id = saved.id
-        // The pre-insert id generator this hierarchy needs defers the insert to the flush, and GORM for Hibernate 7
-        // then updates the freshly inserted row as well, so it starts at version 1 rather than 0 (see #16349).
-        // Versions are therefore asserted relative to the saved instance.
-        Long initialVersion = saved.version
+        Long id = new Hibernate7RefreshLockUnionSub(title: 'original', extra: 'subclass state')
+                .save(flush: true, failOnError: true).id
         manager.transactionManager.commit(manager.transactionStatus)
         manager.transactionStatus = null
         def executor = Executors.newSingleThreadExecutor()
@@ -1368,18 +1399,18 @@ class Hibernate7RefreshLockSpec extends HibernateGormDatastoreSpec {
                 Hibernate7RefreshLockUnionSub.withTransaction {
                     def book = entityClass.get(id)
                     assert book instanceof Hibernate7RefreshLockUnionSub
-                    assert book.version == initialVersion
+                    assert book.version == 0
                     loaded.countDown()
                     def result = useStatic ? entityClass.lock(id, refresh: true) : book.refresh(lock: true)
                     assert result.is(book)
                     assert book.title == 'competing commit'
-                    assert book.version == initialVersion + 1
+                    assert book.version == 1
                     assert book.extra == 'subclass state'
                     assert session.getCurrentLockMode(book) == LockMode.PESSIMISTIC_WRITE
                     refreshed.countDown()
                     book.title = 'saved after refresh'
                     assert book.save(flush: true, failOnError: true).is(book)
-                    assert book.version == initialVersion + 2
+                    assert book.version == 2
                 }
             }
         } as Callable)
@@ -1397,7 +1428,7 @@ class Hibernate7RefreshLockSpec extends HibernateGormDatastoreSpec {
         refreshed.count == 0
         Hibernate7RefreshLockUnionSub.withNewSession {
             def book = Hibernate7RefreshLockUnionSub.get(id)
-            book.title == 'saved after refresh' && book.version == initialVersion + 2 && book.extra == 'subclass state'
+            book.title == 'saved after refresh' && book.version == 2 && book.extra == 'subclass state'
         }
 
         cleanup:
@@ -1516,6 +1547,19 @@ class Hibernate7RefreshLockCascadeChild {
     Long id
     Long version
     String title
+}
+
+@Entity
+class Hibernate7RefreshLockCollectionParent {
+    Long id
+    Long version
+    String title
+
+    static hasMany = [children: Hibernate7RefreshLockCascadeChild]
+
+    static mapping = {
+        children cascade: 'all', lazy: false
+    }
 }
 
 @Entity

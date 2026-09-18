@@ -121,7 +121,7 @@ Airport.withTransaction {
 }
 ----
 
-If the entity is already managed in the current session, `Airport.lock(id)` locks and version-checks the already-loaded state; it does not reload it. `Airport.lock(id, [:])` behaves the same way. Pass `refresh: true` to the link:../api/org/grails/datastore/gorm/GormEntity.html#lock(java.util.Map,%20java.io.Serializable)[lock(Map, id)] method to reload that instance's state and version under the lock instead. The same managed instance is returned; when the entity is not in the session it is loaded and locked. Both forms return `null` when no row exists for the identifier.
+If the entity is already managed in the current session, `Airport.lock(id)` locks and version-checks the already-loaded state; it does not reload it. `Airport.lock(id, refresh: false)` behaves the same way. Pass `refresh: true` to the link:../api/org/grails/datastore/gorm/GormEntity.html#lock(java.util.Map,%20java.io.Serializable)[lock(Map, id)] method to reload that instance's state and version under the lock instead. The same managed instance is returned; when the entity is not in the session it is loaded and locked. Both forms return `null` when no row exists for the identifier.
 
 [source,groovy]
 ----

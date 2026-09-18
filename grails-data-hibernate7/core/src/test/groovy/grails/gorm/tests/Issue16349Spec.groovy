@@ -24,7 +24,8 @@ import org.grails.datastore.mapping.dirty.checking.DirtyCheckable
 class Issue16349Spec extends HibernateGormDatastoreSpec {
 
     void setupSpec() {
-        manager.registerDomainClasses(Issue16349IdentityBook, Issue16349IncrementBook)
+        manager.registerDomainClasses(Issue16349IdentityBook, Issue16349IncrementBook,
+                Issue16349UnionRoot, Issue16349UnionSub)
     }
 
     void 'identity generator: save does not issue an extra update'() {
@@ -50,6 +51,21 @@ class Issue16349Spec extends HibernateGormDatastoreSpec {
 
         when:
         def book = new Issue16349IncrementBook(title: 'original').save(flush: true, failOnError: true)
+
+        then:
+        book.version == 0
+        statistics.entityInsertCount == 1
+        statistics.entityUpdateCount == 0
+    }
+
+    void 'table-per-concrete-class subclass, which cannot use the identity generator: save does not issue an extra update'() {
+        given:
+        def statistics = manager.sessionFactory.statistics
+        statistics.statisticsEnabled = true
+        statistics.clear()
+
+        when:
+        def book = new Issue16349UnionSub(title: 'original', extra: 'subclass state').save(flush: true, failOnError: true)
 
         then:
         book.version == 0
@@ -91,4 +107,21 @@ class Issue16349IncrementBook {
     static mapping = {
         id generator: 'increment'
     }
+}
+
+@Entity
+class Issue16349UnionRoot {
+    Long id
+    Long version
+    String title
+
+    static mapping = {
+        tablePerConcreteClass true
+        id generator: 'increment'
+    }
+}
+
+@Entity
+class Issue16349UnionSub extends Issue16349UnionRoot {
+    String extra
 }
