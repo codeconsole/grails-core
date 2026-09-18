@@ -156,6 +156,7 @@ public class ClosureEventTriggeringInterceptor
     private final DefaultPersistEventListener persistEventListener = new DefaultPersistEventListener();
     private final DefaultMergeEventListener mergeEventListener = new DefaultMergeEventListener();
     private final PersistOnFlushEventListener persistOnFlushEventListener = new PersistOnFlushEventListener();
+    private final ObservingEventListener observingEventListener = new ObservingEventListener();
     /** The datastore. */
     protected HibernateDatastore datastore;
 
@@ -257,6 +258,18 @@ public class ClosureEventTriggeringInterceptor
         return persistOnFlushEventListener;
     }
 
+    /**
+     * The listener to keep in a persist or merge group that an application listener has taken over.
+     * <p>
+     * This interceptor performs the persist or merge itself, through the default listener it composes, so
+     * leaving it in such a group would run that work a second time for every entity. The returned listener
+     * carries only the part that must survive - GORM's own event and its change tracking - and leaves the
+     * operation to the listener that replaced the group.
+     */
+    public ObservingEventListener getObservingEventListener() {
+        return observingEventListener;
+    }
+
     @Override
     public void injectCallbackRegistry(CallbackRegistry callbackRegistry) {
         persistEventListener.injectCallbackRegistry(callbackRegistry);
@@ -264,8 +277,43 @@ public class ClosureEventTriggeringInterceptor
         persistOnFlushEventListener.injectCallbackRegistry(callbackRegistry);
     }
 
+    /**
+     * Publishes this interceptor's persist and merge events and activates change tracking, without performing
+     * the operation itself. Registered in place of the interceptor when an application listener has taken over
+     * a group, so it runs after that listener rather than before it.
+     */
+    public final class ObservingEventListener implements MergeEventListener, PersistEventListener {
+
+        @Override
+        public void onMerge(MergeEvent event) throws HibernateException {
+            publishMergeEvent(event);
+            activateDirtyCheckingOnMergeResult(event);
+        }
+
+        @Override
+        public void onMerge(MergeEvent event, MergeContext copiedAlready) throws HibernateException {
+            publishMergeEvent(event);
+            activateDirtyCheckingOnMergeResult(event);
+        }
+
+        @Override
+        public void onPersist(PersistEvent event) throws HibernateException {
+            publishPersistEvent(event);
+        }
+
+        @Override
+        public void onPersist(PersistEvent event, PersistContext createdAlready) throws HibernateException {
+            publishPersistEvent(event);
+        }
+    }
+
     /** The listener this interceptor contributes for Hibernate's persist-on-flush event. */
     public final class PersistOnFlushEventListener extends DefaultPersistOnFlushEventListener {
+
+        /** @see ClosureEventTriggeringInterceptor#getObservingEventListener() */
+        public ObservingEventListener getObservingEventListener() {
+            return observingEventListener;
+        }
 
         @Override
         public void onPersist(PersistEvent event) throws HibernateException {

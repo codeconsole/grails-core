@@ -105,6 +105,11 @@ class TenantDelegatingGormOperations<D> implements GormAllOperations<D> {
     }
 
     @Override
+    boolean supportsLockedRefresh() {
+        allOperations.supportsLockedRefresh()
+    }
+
+    @Override
     D refresh(D instance, Map args) {
         Tenants.withId(requireMultiTenantCapableDatastore(), tenantId) {
             allOperations.refresh(instance, args)

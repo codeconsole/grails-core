@@ -246,6 +246,11 @@ class HibernateGormInstanceApi<D> extends GormInstanceApi<D> {
     }
 
     @Override
+    boolean supportsLockedRefresh() {
+        true
+    }
+
+    @Override
     D refresh(D instance, Map args) {
         LockModeType lockMode = RefreshLockArguments.lockModeFrom(args)
         if (lockMode == null) {
@@ -337,6 +342,12 @@ class HibernateGormInstanceApi<D> extends GormInstanceApi<D> {
         }
         EntityEntry entry = session.unwrap(SessionImplementor).persistenceContextInternal
                 .getEntry(Hibernate.unproxy(instance))
+        if (entry == null) {
+            // Nothing in the persistence context tracks the instance any more, so there is no entry to record
+            // the mode on. The row is locked either way; let lock() record it rather than fail on the entry.
+            session.lock(instance, lockMode)
+            return
+        }
         LockMode requested = LockMode.fromJpaLockMode(lockMode)
         if (requested.greaterThan(entry.lockMode)) {
             entry.setLockMode(requested)

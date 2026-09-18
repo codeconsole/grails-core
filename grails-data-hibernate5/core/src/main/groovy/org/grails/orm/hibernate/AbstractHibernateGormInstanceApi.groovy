@@ -36,6 +36,7 @@ import org.hibernate.engine.spi.CascadingActions
 import org.hibernate.engine.spi.SessionImplementor
 import org.hibernate.persister.entity.AbstractEntityPersister
 import org.hibernate.persister.entity.EntityPersister
+import org.hibernate.query.Query
 import org.hibernate.type.CollectionType
 import org.hibernate.type.CompositeType
 import org.hibernate.type.Type
@@ -268,6 +269,11 @@ abstract class AbstractHibernateGormInstanceApi<D> extends GormInstanceApi<D> {
     }
 
     @Override
+    boolean supportsLockedRefresh() {
+        true
+    }
+
+    @Override
     D refresh(D instance, Map args) {
         LockModeType lockMode = RefreshLockArguments.lockModeFrom(args)
         if (lockMode == null) {
@@ -295,9 +301,12 @@ abstract class AbstractHibernateGormInstanceApi<D> extends GormInstanceApi<D> {
                 if (locksThroughTheLoader(sessionImplementor, target)) {
                     session.refresh(target, lockMode)
                 } else {
-                    // The loader would silently drop the lock clause, so reload first and take the lock with a
-                    // statement of its own. That lock is version-checked, so a writer that slipped in between
-                    // the two is reported rather than ignored.
+                    // The loader would silently drop the lock clause, so the row is locked by a statement of
+                    // its own before it is reloaded. Locking first is what lets a stale instance be reloaded
+                    // here as it is everywhere else: the lock() below still version-checks, but it now runs
+                    // against a row this transaction already holds, so no writer can invalidate the version
+                    // the reload has just read.
+                    lockRow(session, target, lockMode)
                     session.refresh(target)
                     session.lock(target, lockMode)
                 }
@@ -335,6 +344,28 @@ abstract class AbstractHibernateGormInstanceApi<D> extends GormInstanceApi<D> {
     }
 
     /**
+     * Takes the requested lock on the row that holds the entity's version, and nothing else, so that the state
+     * can then be reloaded under a lock that is already held.
+     * <p>
+     * The query names the hierarchy root, whose table holds the version and is the row {@code lock()} contends
+     * on, and Hibernate applies the lock clause to that root table even when a subclass is queried. A scalar
+     * projection keeps the statement free of the subclass joins that the dialects reaching this path cannot
+     * lock, and, unlike {@code lock()}, performs no version check, so a stale instance can still be reloaded.
+     */
+    private void lockRow(Session session, Object target, LockModeType lockMode) {
+        String rootEntityName = session.unwrap(SessionImplementor).getEntityPersister(null, target).rootEntityName
+        Query<Integer> query = session.createQuery("select 1 from ${rootEntityName} e where e = :instance".toString(), Integer)
+        query.setParameter('instance', target)
+        query.setLockMode(lockMode)
+        // Follow-on locking locks the entities a query returned, and this one returns none, so the lock would
+        // be lost: require the dialect to carry the lock clause in the statement itself.
+        query.lockOptions.followOnLocking = Boolean.FALSE
+        // MANUAL: the query must not flush the pending changes that the refresh is about to discard.
+        query.setHibernateFlushMode(FlushMode.MANUAL)
+        query.list()
+    }
+
+    /**
      * Gathers the entity itself, and every initialized association that Hibernate's refresh cascade will reload
      * along with it, so that their dirty state can be reset once the refresh has run.
      * <p>
@@ -356,10 +387,11 @@ abstract class AbstractHibernateGormInstanceApi<D> extends GormInstanceApi<D> {
         EntityPersister persister = session.getEntityPersister(null, entity)
         CascadeStyle[] cascadeStyles = persister.propertyCascadeStyles
         Type[] types = persister.propertyTypes
-        Object[] values = persister.getPropertyValues(entity)
         for (int i = 0; i < cascadeStyles.length; i++) {
             if (cascadeStyles[i].doCascade(CascadingActions.REFRESH)) {
-                collectCascaded(session, types[i], values[i], refreshed, visited)
+                // Read the cascaded properties one at a time: reading them all would materialise every lazy
+                // attribute group on the entity for the sake of the few the cascade follows.
+                collectCascaded(session, types[i], persister.getPropertyValue(entity, i), refreshed, visited)
             }
         }
     }

@@ -473,6 +473,24 @@ class GormStaticApiSpec extends Specification {
         GormRegistry.instance.reset()
     }
 
+    void "lock(args, id) with refresh: true rejects a datastore that overrides refresh(D, Map) without supporting a lock"() {
+        given: 'an instance api that honours arguments of its own but never takes a lock'
+        def unlockable = new UnlockableRefreshingGormInstanceApi<GormStaticApiThing>(GormStaticApiThing, datastore)
+        def api = registerStaticApiWith(unlockable)
+        def saved = new GormStaticApiThing(name: 'persisted').save(flush: true)
+
+        when:
+        api.lock([refresh: true], saved.id)
+
+        then: 'support is what the datastore declares, not whether it happens to override the method'
+        def exception = thrown(UnsupportedOperationException)
+        exception.message == 'Datastore implementation does not support refreshing under a lock'
+        unlockable.refreshInvocations == 0
+
+        cleanup:
+        GormRegistry.instance.reset()
+    }
+
     void "lock(args, id) with refresh: true returns null without refreshing when no instance exists"() {
         given:
         def locking = new LockingGormInstanceApi<GormStaticApiThing>(GormStaticApiThing, datastore)
@@ -574,14 +592,15 @@ class GormStaticApiSpec extends Specification {
         api.lockedIds.isEmpty()
     }
 
-    void "lock(Map) on the entity explains that the instance form is refresh(lock: true)"() {
+    void "lock(Map) on the entity names both supported forms"() {
         when:
         GormStaticApiThing.lock(refresh: true)
 
         then:
         def exception = thrown(IllegalArgumentException)
-        exception.message == 'lock(Map) is not an instance method. Use DomainClass.lock(id, refresh: true) ' +
-                'to lock by identifier, or refresh(lock: true) on the instance'
+        exception.message == 'lock was called with named arguments but no identifier. ' +
+                'Use DomainClass.lock(id, refresh: true) to lock by identifier, ' +
+                'or instance.refresh(lock: true) to reload an instance under a lock'
     }
 
     void "lock(Map) called on an instance is rejected the same way"() {

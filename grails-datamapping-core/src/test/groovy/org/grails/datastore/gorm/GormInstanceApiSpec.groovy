@@ -658,6 +658,11 @@ class LockingGormInstanceApi<D> extends GormInstanceApi<D> {
     }
 
     @Override
+    boolean supportsLockedRefresh() {
+        true
+    }
+
+    @Override
     D refresh(D instance, Map args) {
         refreshInvocations++
         refreshedInstance = instance
@@ -732,4 +737,23 @@ class DirectEntityApi implements GormEntityApi<DirectEntityApi> {
 
     @Override
     boolean isDirty() { throw new UnsupportedOperationException() }
+}
+
+/**
+ * Overrides refresh(D, Map) for arguments of its own without supporting a lock, as a datastore that
+ * honours something like refresh(flush: true) would.
+ */
+class UnlockableRefreshingGormInstanceApi<D> extends GormInstanceApi<D> {
+
+    int refreshInvocations
+
+    UnlockableRefreshingGormInstanceApi(Class<D> persistentClass, Datastore datastore) {
+        super(persistentClass, datastore)
+    }
+
+    @Override
+    D refresh(D instance, Map args) {
+        refreshInvocations++
+        return instance
+    }
 }

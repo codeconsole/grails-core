@@ -84,7 +84,7 @@ class RefreshLockArguments {
             if (text.equalsIgnoreCase('true')) {
                 return LockModeType.PESSIMISTIC_WRITE
             }
-            if (text.isEmpty() || text.equalsIgnoreCase('false')) {
+            if (text.equalsIgnoreCase('false')) {
                 return null
             }
         }
@@ -129,7 +129,7 @@ class RefreshLockArguments {
             if (text.equalsIgnoreCase('true')) {
                 return true
             }
-            if (text.isEmpty() || text.equalsIgnoreCase('false')) {
+            if (text.equalsIgnoreCase('false')) {
                 return false
             }
             throw new IllegalArgumentException("The '${REFRESH}' argument must be a boolean but was '${text}'")

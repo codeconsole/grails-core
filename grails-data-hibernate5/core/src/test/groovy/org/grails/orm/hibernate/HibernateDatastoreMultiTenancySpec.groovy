@@ -109,6 +109,8 @@ class HibernateDatastoreMultiTenancySpec extends HibernateGormDatastoreSpec {
         description               | args
         'type: PESSIMISTIC_READ'  | [type: LockModeType.PESSIMISTIC_READ]
         'refresh: true'           | [refresh: true]
+        'no arguments'            | [:]
+        'type: PESSIMISTIC_WRITE' | [type: LockModeType.PESSIMISTIC_WRITE]
     }
 
     void "test getDatastoreForConnection throws exception for invalid connection"() {

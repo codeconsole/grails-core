@@ -162,6 +162,39 @@ class ClosureEventTriggeringInterceptorSpec extends HibernateGormDatastoreSpec {
         listener.eventTypes.contains(MergeEvent)
     }
 
+    @Rollback
+    void "the observing listener publishes the GORM #description event without performing the operation"() {
+        given: "the listener kept behind an application listener that performs the operation itself"
+        def interceptor = registeredInterceptor()
+        def listener = addCapturingListener()
+        def source = sessionFactory.unwrap(SessionFactoryImplementor).currentSession as org.hibernate.event.spi.EventSource
+        def book = new InterceptorBook(title: 'observed')
+
+        when:
+        fire(interceptor.observingEventListener, book, source)
+
+        then: "GORM's event is published and change tracking is activated"
+        listener.eventTypes.contains(eventClass)
+        book instanceof org.grails.datastore.mapping.dirty.checking.DirtyCheckable
+
+        and: "but nothing was persisted: the listener that replaced the group does that"
+        !source.contains(book)
+        book.id == null
+
+        where:
+        description | eventClass   | fire
+        'persist'   | PersistEvent | { l, b, s -> l.onPersist(new org.hibernate.event.spi.PersistEvent('entity', b, s)) }
+        'merge'     | MergeEvent   | { l, b, s -> l.onMerge(new org.hibernate.event.spi.MergeEvent('entity', b, s)) }
+    }
+
+    private ClosureEventTriggeringInterceptor registeredInterceptor() {
+        def sfi = sessionFactory.unwrap(SessionFactoryImplementor)
+        sfi.serviceRegistry.getService(EventListenerRegistry)
+                .getEventListenerGroup(EventType.PRE_INSERT)
+                .listeners()
+                .find { it instanceof ClosureEventTriggeringInterceptor } as ClosureEventTriggeringInterceptor
+    }
+
     // -------------------------------------------------------------------------
     // requiresPostCommitHandling
     // -------------------------------------------------------------------------

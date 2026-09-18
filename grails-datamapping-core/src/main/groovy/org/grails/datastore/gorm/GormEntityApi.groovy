@@ -19,6 +19,8 @@
 
 package org.grails.datastore.gorm
 
+import groovy.transform.CompileStatic
+
 import org.grails.datastore.gorm.internal.RefreshLockArguments
 
 /**
@@ -73,6 +75,7 @@ trait GormEntityApi<D> {
      * current session, or the {@code lock} argument is neither a boolean nor a lock mode
      * @throws UnsupportedOperationException if a lock is requested and the implementation does not support it
      */
+    @CompileStatic
     D refresh(Map args) {
         if (RefreshLockArguments.lockModeFrom(args) != null) {
             throw new UnsupportedOperationException(RefreshLockArguments.UNSUPPORTED)

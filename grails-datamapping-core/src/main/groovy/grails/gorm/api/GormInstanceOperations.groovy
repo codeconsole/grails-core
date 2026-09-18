@@ -98,6 +98,20 @@ interface GormInstanceOperations<D> {
     }
 
     /**
+     * Whether {@link #refresh(java.lang.Object, java.util.Map)} reloads an instance under a requested lock.
+     *
+     * <p>A datastore that overrides {@code refresh(D, Map)} to honour the {@code lock} argument must report
+     * {@code true} here; one that overrides it for unrelated arguments must not, so that callers are told the
+     * lock is unavailable instead of receiving an instance that was never locked.</p>
+     *
+     * @return {@code false} for the default implementation, which rejects a requested lock
+     */
+    @CompileStatic
+    default boolean supportsLockedRefresh() {
+        false
+    }
+
+    /**
      * Saves an object the datastore
      * @return Returns the instance
      */

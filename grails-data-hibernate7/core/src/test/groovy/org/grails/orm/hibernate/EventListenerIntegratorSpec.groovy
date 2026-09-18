@@ -173,7 +173,7 @@ class EventListenerIntegratorSpec extends Specification {
         1 * listenerRegistry.appendListeners(EventType.LOAD, onFlushListener)
     }
 
-    def "integrate keeps the Grails interceptor when an application listener replaces Hibernate's default on #eventType"() {
+    def "integrate keeps the Grails interceptor as an observer when an application listener replaces Hibernate's default on #eventType"() {
         given: "an application listener of its own for an event the interceptor also handles"
         ClosureEventTriggeringInterceptor interceptor = new ClosureEventTriggeringInterceptor()
         def applicationListener = eventType == EventType.MERGE ?
@@ -188,15 +188,57 @@ class EventListenerIntegratorSpec extends Specification {
         when:
         integrator.integrate(metadata, bootstrapContext, sfi)
 
-        then: "the application listener replaces Hibernate's default, and the interceptor is kept behind it"
+        then: "the application listener replaces Hibernate's default, and GORM's event publishing is kept behind it"
         1 * group.clearListeners()
         1 * group.appendListener(applicationListener)
-        1 * group.appendListener(interceptor)
+        1 * group.appendListener(interceptor.observingEventListener)
+
+        and: "not the interceptor itself, which would perform the same merge or persist a second time"
+        0 * group.appendListener(interceptor)
 
         where:
         eventType         | eventName
         EventType.MERGE   | 'merge'
         EventType.PERSIST | 'create'
+    }
+
+    def "integrate keeps the persist-on-flush listener as an observer when an application listener replaces it"() {
+        given:
+        ClosureEventTriggeringInterceptor interceptor = new ClosureEventTriggeringInterceptor()
+        def applicationListener = new DefaultPersistOnFlushEventListener()
+        def group = Mock(EventListenerGroup)
+        group.listeners() >> [interceptor.persistOnFlushEventListener]
+        listenerRegistry.getEventListenerGroup(EventType.PERSIST_ONFLUSH) >> group
+
+        EventListenerIntegrator integrator = new EventListenerIntegrator(
+                Mock(HibernateEventListeners), ['create-onflush': applicationListener])
+
+        when:
+        integrator.integrate(metadata, bootstrapContext, sfi)
+
+        then:
+        1 * group.clearListeners()
+        1 * group.appendListener(applicationListener)
+        1 * group.appendListener(interceptor.observingEventListener)
+        0 * group.appendListener(interceptor.persistOnFlushEventListener)
+    }
+
+    def "integrate does not keep a second copy of the listener it is installing"() {
+        given: "a group that already holds the very listener being registered"
+        ClosureEventTriggeringInterceptor interceptor = new ClosureEventTriggeringInterceptor()
+        def group = Mock(EventListenerGroup)
+        group.listeners() >> [interceptor]
+        listenerRegistry.getEventListenerGroup(EventType.MERGE) >> group
+
+        EventListenerIntegrator integrator = new EventListenerIntegrator(null, ['merge': interceptor])
+
+        when:
+        integrator.integrate(metadata, bootstrapContext, sfi)
+
+        then: "it is installed once, with no observer alongside it"
+        1 * group.clearListeners()
+        1 * group.appendListener(interceptor)
+        0 * group.appendListener(interceptor.observingEventListener)
     }
 
     def "integrate appends (not overrides) non-merge non-persist listeners from hibernateEventListeners"() {

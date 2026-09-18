@@ -3822,3 +3822,29 @@ protected void onPersistenceEvent(AbstractPersistenceEvent event) {
     }
 }
 ----
+
+==== 68. `lock(id)` Applies the Multi-Tenancy Filter
+
+`DomainClass.lock(id)` loaded the row by identifier, and Hibernate's tenant filter does not apply to a load
+by identifier. A `MultiTenant` entity could therefore be locked, and returned, by a tenant that does not own
+it, even though `get(id)` correctly returned `null` for the same identifier.
+
+The lock now loads a multi-tenant entity through a query, as `get(id)` does, so it resolves within the bound
+tenant and returns `null` for a row that belongs to another one. Entities that are not multi-tenant are
+unaffected, and so is the statement issued for them.
+
+Code that relied on `lock(id)` reaching across tenants has to bind the owning tenant explicitly:
+
+[source,groovy]
+----
+Tenants.withId('tenant1') {
+    Book.lock(id)
+}
+----
+
+==== 69. `refresh` on a Named-Connection Static API Uses That Connection
+
+`Book.secondary.refresh(book)` resolved the instance API for the *default* connection rather than for
+`secondary`, so the refresh ran on the wrong session. It now resolves the connection the operations handle
+was obtained for, matching every other method reached that way. Applications using a single datasource, and
+the `book.refresh()` instance method, are unaffected.

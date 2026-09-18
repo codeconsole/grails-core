@@ -123,7 +123,7 @@ public class EventListenerIntegrator implements Integrator {
                     // since ClosureEventTriggeringInterceptor extends DefaultSaveOrUpdateEventListener we
                     // want to override instead of append the listener here
                     // to avoid there being 2 implementations which would impact performance too
-                    List<T> retained = grailsOwnedListeners(group);
+                    List<T> retained = grailsOwnedListeners(group, listener);
                     group.clearListeners();
                     group.appendListener(listener);
                     for (T grailsListener : retained) {
@@ -169,7 +169,7 @@ public class EventListenerIntegrator implements Integrator {
                 // to override instead of append the listener here
                 // to avoid there being 2 implementations which would impact performance too
                 EventListenerGroup<T> group = listenerRegistry.getEventListenerGroup(eventType);
-                List<T> retained = grailsOwnedListeners(group);
+                List<T> retained = grailsOwnedListeners(group, (T) listener);
                 listenerRegistry.setListeners(eventType, (T) listener);
                 for (T grailsListener : retained) {
                     group.appendListener(grailsListener);
@@ -181,28 +181,44 @@ public class EventListenerIntegrator implements Integrator {
     }
 
     /**
-     * The listeners in the group that GORM itself contributed, which a replacement must not discard.
+     * What GORM contributed to the group that a replacement must not discard, in the form it can keep.
      * <p>
      * Replacing a group is meant to displace Hibernate's own default listener, but an application can register
      * a listener of its own for the same event. Without this, such a listener would silently take GORM's
-     * persistence events and its dirty-check activation with it.
+     * persistence events and its dirty-check activation with it. The replacement performs the persist or merge
+     * itself, so what is kept is the interceptor's observing listener rather than the interceptor, which would
+     * otherwise perform that same operation a second time for every entity.
      */
-    private <T> List<T> grailsOwnedListeners(EventListenerGroup<T> group) {
+    @SuppressWarnings("unchecked")
+    private <T> List<T> grailsOwnedListeners(EventListenerGroup<T> group, T replacement) {
         List<T> retained = new ArrayList<>();
         if (group == null || group.listeners() == null) {
             return retained;
         }
         for (T existing : group.listeners()) {
-            if (isGrailsOwned(existing)) {
-                retained.add(existing);
+            if (existing == replacement) {
+                continue;
+            }
+            Object kept = retainedForm(existing);
+            if (kept != null) {
+                retained.add((T) kept);
             }
         }
         return retained;
     }
 
-    private boolean isGrailsOwned(Object listener) {
-        return listener instanceof ClosureEventTriggeringInterceptor ||
-                listener instanceof ClosureEventTriggeringInterceptor.PersistOnFlushEventListener;
+    private Object retainedForm(Object listener) {
+        if (listener instanceof ClosureEventTriggeringInterceptor) {
+            return ((ClosureEventTriggeringInterceptor) listener).getObservingEventListener();
+        }
+        if (listener instanceof ClosureEventTriggeringInterceptor.PersistOnFlushEventListener) {
+            return ((ClosureEventTriggeringInterceptor.PersistOnFlushEventListener) listener)
+                    .getObservingEventListener();
+        }
+        if (listener instanceof ClosureEventTriggeringInterceptor.ObservingEventListener) {
+            return listener;
+        }
+        return null;
     }
 
     @Override

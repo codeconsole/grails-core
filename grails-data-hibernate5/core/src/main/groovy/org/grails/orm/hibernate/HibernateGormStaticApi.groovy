@@ -160,7 +160,18 @@ class HibernateGormStaticApi<D> extends AbstractHibernateGormStaticApi<D> {
 
     @Override
     D lock(Serializable id) {
-        (D) hibernateTemplate.lock((Class)persistentClass, convertIdentifier(id), LockMode.PESSIMISTIC_WRITE)
+        if (!persistentEntity.isMultiTenant()) {
+            return (D) hibernateTemplate.lock((Class) persistentClass, convertIdentifier(id), LockMode.PESSIMISTIC_WRITE)
+        }
+        // Hibernate's tenant filter does not apply to a load by identifier, so a multi-tenant row is loaded
+        // through a query the way get(id) does, rather than handed to whichever tenant asks for the id.
+        Serializable identifier = convertIdentifier(id)
+        if (identifier == null) {
+            return null
+        }
+        (D) hibernateTemplate.execute { Session session ->
+            lockedLoad(session, identifier, LockModeType.PESSIMISTIC_WRITE)
+        }
     }
 
     @Override

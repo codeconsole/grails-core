@@ -955,8 +955,9 @@ class Hibernate5RefreshLockSpec extends HibernateGormDatastoreSpec {
 
         then:
         def exception = thrown(IllegalArgumentException)
-        exception.message == 'lock(Map) is not an instance method. Use DomainClass.lock(id, refresh: true) ' +
-                'to lock by identifier, or refresh(lock: true) on the instance'
+        exception.message == 'lock was called with named arguments but no identifier. ' +
+                'Use DomainClass.lock(id, refresh: true) to lock by identifier, ' +
+                'or instance.refresh(lock: true) to reload an instance under a lock'
     }
 
     void 'static lock(id, type: #description) locks the managed instance under that mode and preserves pending changes'() {

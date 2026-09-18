@@ -40,6 +40,10 @@ import org.grails.datastore.mapping.query.Query as GormQuery
 
 import jakarta.persistence.LockModeType
 import jakarta.persistence.TransactionRequiredException
+import jakarta.persistence.criteria.CriteriaBuilder
+import jakarta.persistence.criteria.CriteriaQuery
+import jakarta.persistence.criteria.Expression
+import jakarta.persistence.criteria.Root
 
 import org.hibernate.Session
 import org.hibernate.SessionFactory
@@ -175,6 +179,22 @@ class HibernateGormStaticApi<D> extends GormStaticApi<D> {
     }
 
     @Override
+    D lock(Serializable id) {
+        if (!persistentEntity.isMultiTenant()) {
+            return super.lock(id)
+        }
+        // Hibernate's tenant filter does not apply to a load by identifier, so a multi-tenant row is loaded
+        // through a query the way get(id) does, rather than handed to whichever tenant asks for the id.
+        Serializable identifier = convertIdentifier(id)
+        if (identifier == null) {
+            return null
+        }
+        (D) hibernateTemplate.execute { Session session ->
+            lockedLoad(session, identifier, LockModeType.PESSIMISTIC_WRITE)
+        }
+    }
+
+    @Override
     D lock(Map args, Serializable id) {
         LockModeType lockMode = RefreshLockArguments.lockTypeFrom(args)
         boolean refresh = RefreshLockArguments.refreshRequested(args)
@@ -218,12 +238,16 @@ class HibernateGormStaticApi<D> extends GormStaticApi<D> {
         if (!persistentEntity.isMultiTenant()) {
             return session.find(persistentClass, identifier, lockMode)
         }
-        D instance = (D) new HibernateQuery(hibernateSession, (GrailsHibernatePersistentEntity) persistentEntity)
-                .idEq(identifier).singleResult()
-        if (instance != null) {
-            session.lock(instance, lockMode)
-        }
-        instance
+        // One statement fetches and locks the row. Locking it after a separate query would version-check a row
+        // this transaction does not hold yet, so a writer that committed in between would fail the call - the
+        // outcome a locked reload exists to avoid.
+        CriteriaBuilder criteriaBuilder = session.criteriaBuilder
+        CriteriaQuery criteriaQuery = criteriaBuilder.createQuery(persistentEntity.javaClass)
+        Root queryRoot = criteriaQuery.from(persistentEntity.javaClass)
+        criteriaQuery = criteriaQuery.where(
+                criteriaBuilder.equal((Expression<?>) queryRoot.get(persistentEntity.identity.name), identifier)
+        )
+        (D) session.createQuery(criteriaQuery).setLockMode(lockMode).uniqueResult()
     }
 
     private Object findManagedInstance(Session session, Serializable id) {

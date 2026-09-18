@@ -38,7 +38,6 @@ class RefreshLockArgumentsSpec extends Specification {
         [lock: true]                                   | LockModeType.PESSIMISTIC_WRITE
         [lock: 'true']                                 | LockModeType.PESSIMISTIC_WRITE
         [lock: 'false']                                | null
-        [lock: '']                                     | null
         [lock: LockModeType.PESSIMISTIC_READ]           | LockModeType.PESSIMISTIC_READ
         [lock: 'PESSIMISTIC_READ']                      | LockModeType.PESSIMISTIC_READ
         [lock: LockModeType.NONE]                       | null
@@ -58,6 +57,13 @@ class RefreshLockArgumentsSpec extends Specification {
         then:
         def nameException = thrown(IllegalArgumentException)
         nameException.message == "The 'lock' argument must be a boolean or a jakarta.persistence.LockModeType but was 'bogus'"
+
+        when: 'a blank value, which a caller reading the mode from configuration or a parameter can supply'
+        RefreshLockArguments.lockModeFrom([lock: ' '])
+
+        then: 'it is rejected rather than read as no lock, which would hand back an unlocked instance'
+        def blankException = thrown(IllegalArgumentException)
+        blankException.message == "The 'lock' argument must be a boolean or a jakarta.persistence.LockModeType but was ''"
     }
 
     @Unroll
@@ -105,7 +111,6 @@ class RefreshLockArgumentsSpec extends Specification {
         [refresh: true]    | true
         [refresh: 'true']  | true
         [refresh: 'false'] | false
-        [refresh: '']      | false
     }
 
     @Unroll
@@ -120,6 +125,8 @@ class RefreshLockArgumentsSpec extends Specification {
         where:
         args               | message
         [refresh: 'yes']   | "The 'refresh' argument must be a boolean but was 'yes'"
+        [refresh: '']      | "The 'refresh' argument must be a boolean but was ''"
+        [refresh: ' ']     | "The 'refresh' argument must be a boolean but was ''"
         [refresh: 1]       | "The 'refresh' argument must be a boolean but was an instance of java.lang.Integer"
     }
 

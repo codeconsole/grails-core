@@ -746,8 +746,9 @@ trait GormEntity<D> implements GormValidateable, DirtyCheckable, GormEntityApi<D
     static D lock(Serializable id) {
         if (id instanceof Map) {
             // Groovy resolves entity.lock(refresh: true) to this static method with the options map as the id.
-            throw new IllegalArgumentException('lock(Map) is not an instance method. Use ' +
-                    'DomainClass.lock(id, refresh: true) to lock by identifier, or refresh(lock: true) on the instance')
+            throw new IllegalArgumentException('lock was called with named arguments but no identifier. ' +
+                    'Use DomainClass.lock(id, refresh: true) to lock by identifier, ' +
+                    'or instance.refresh(lock: true) to reload an instance under a lock')
         }
         currentGormStaticApi().lock(id)
     }

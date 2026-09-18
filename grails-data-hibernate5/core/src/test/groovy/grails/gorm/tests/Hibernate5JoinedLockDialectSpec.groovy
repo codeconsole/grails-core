@@ -21,7 +21,12 @@ package grails.gorm.tests
 import java.sql.Connection
 import java.sql.DriverManager
 import java.sql.SQLTimeoutException
+import java.util.concurrent.Callable
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
+import org.hibernate.LockMode
 import org.hibernate.Session
 import org.hibernate.dialect.H2Dialect
 import org.hibernate.persister.entity.AbstractEntityPersister
@@ -68,9 +73,79 @@ class Hibernate5JoinedLockDialectSpec extends HibernateGormDatastoreSpec {
         'joined-table subclass' | Hibernate5JoinedLockSub     | { new Hibernate5JoinedLockSub(title: 'sub', extra: 'x') }
     }
 
-    private boolean rootRowLockGranted(Long id) {
-        String table = ((AbstractEntityPersister) manager.sessionFactory.metamodel
+    void 'refresh(lock: true) on a #description waits for a competing writer rather than reading the row first'() {
+        given:
+        Long id = create().save(flush: true, failOnError: true).id
+        manager.transactionManager.commit(manager.transactionStatus)
+        manager.transactionStatus = null
+        def executor = Executors.newSingleThreadExecutor()
+        def loaded = new CountDownLatch(1)
+        def refreshed = new CountDownLatch(1)
+        Connection competitor = openCompetingConnection(10000)
+
+        when: 'a competitor updates the root row, which holds the version, and keeps its transaction open'
+        competitor.prepareStatement("update ${rootTableName()} set title = 'competing commit', version = version + 1 where id = ?".toString())
+                .withCloseable { statement ->
+                    statement.setLong(1, id)
+                    assert statement.executeUpdate() == 1
+                }
+        def refreshing = executor.submit({
+            Hibernate5JoinedLockRoot.withNewSession { Session session ->
+                Hibernate5JoinedLockRoot.withTransaction {
+                    def instance = entityClass.get(id)
+                    assert instance.version == 0
+                    loaded.countDown()
+                    assert instance.refresh(lock: true).is(instance)
+                    assert instance.title == 'competing commit'
+                    assert instance.version == 1
+                    assert session.getCurrentLockMode(instance) == LockMode.PESSIMISTIC_WRITE
+                    refreshed.countDown()
+                }
+            }
+        } as Callable)
+
+        then: 'the lock is taken before the state is read, so the refresh waits instead of reading the row it is about to fail a version check on'
+        loaded.await(10, TimeUnit.SECONDS) || refreshing.get(1, TimeUnit.SECONDS)
+        !refreshed.await(200, TimeUnit.MILLISECONDS)
+        !refreshing.isDone()
+
+        when:
+        competitor.commit()
+        refreshing.get(10, TimeUnit.SECONDS)
+
+        then: 'and then reloads the committed state and version under the lock it holds'
+        refreshed.count == 0
+
+        cleanup:
+        competitor?.rollback()
+        competitor?.close()
+        executor?.shutdownNow()
+        assert executor == null || executor.awaitTermination(15, TimeUnit.SECONDS)
+
+        where:
+        description             | entityClass              | create
+        'hierarchy root'        | Hibernate5JoinedLockRoot | { new Hibernate5JoinedLockRoot(title: 'original') }
+        'joined-table subclass' | Hibernate5JoinedLockSub  | { new Hibernate5JoinedLockSub(title: 'original', extra: 'x') }
+    }
+
+    private Connection openCompetingConnection(int lockTimeoutMillis) {
+        Map<String, String> jdbc = Hibernate5JoinedLockRoot.withNewSession { Session session ->
+            session.doReturningWork { Connection connection ->
+                [url: connection.metaData.URL.tokenize(';')[0], user: connection.metaData.userName]
+            }
+        }
+        Connection connection = DriverManager.getConnection("${jdbc.url};LOCK_TIMEOUT=${lockTimeoutMillis}".toString(), jdbc.user, '')
+        connection.autoCommit = false
+        connection
+    }
+
+    private String rootTableName() {
+        ((AbstractEntityPersister) manager.sessionFactory.metamodel
                 .entityPersister(Hibernate5JoinedLockRoot.name)).tableName
+    }
+
+    private boolean rootRowLockGranted(Long id) {
+        String table = rootTableName()
         Map<String, String> jdbc = Hibernate5JoinedLockRoot.withNewSession { Session session ->
             session.doReturningWork { Connection connection ->
                 [url: connection.metaData.URL.tokenize(';')[0], user: connection.metaData.userName]
