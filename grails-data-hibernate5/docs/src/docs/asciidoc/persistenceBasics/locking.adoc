@@ -62,7 +62,9 @@ NOTE: The `version` will only be updated after flushing the session.
 
 Pessimistic locking acquires a database row lock, typically using SQL `SELECT ... FOR UPDATE`. Conflicting writes and lock requests may block; ordinary reads are not necessarily blocked. The exact behavior depends on the database and transaction isolation level.
 
-An active transaction is required. Use `withTransaction` as below or a GORM `@Transactional` method, keeping the lock and the work it protects in the same transaction. The lock is held until that transaction commits or rolls back. Refreshing under a lock with `refresh(lock: true)` or `lock(id, refresh: true)` without an active transaction throws `jakarta.persistence.TransactionRequiredException`.
+An active transaction is required. Use `withTransaction` as below or a GORM `@Transactional` method, keeping the lock and the work it protects in the same transaction. The lock is held until that transaction commits or rolls back. `refresh(lock: ...)`, `lock(id, refresh: true)` and any call passing `type` throw `jakarta.persistence.TransactionRequiredException` without an active transaction, before anything is loaded.
+
+WARNING: `entity.lock()` and `lock(id)` do not report that mistake. Hibernate 5 does not require a transaction for them, so without one the `SELECT ... FOR UPDATE` runs on an auto-commit connection: the call returns the instance, `getCurrentLockMode` reports `PESSIMISTIC_WRITE`, and yet the row lock is released as soon as the statement completes - another transaction can take it immediately, and nothing protects the work that follows. GORM for Hibernate 7 rejects the same two calls with `jakarta.persistence.TransactionRequiredException`. Always lock inside a transaction.
 
 In GORM pessimistic locking is performed on an existing instance with the link:../api/org/grails/datastore/gorm/GormEntity.html#lock()[lock()] method:
 

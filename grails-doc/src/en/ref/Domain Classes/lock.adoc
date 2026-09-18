@@ -80,9 +80,11 @@ The static `DomainClass.lock(id)` method is also unchanged, and `DomainClass.loc
 
 The forms that take named arguments - `lock(id, refresh: true)` and any call passing `type` - require an active
 transaction and throw `jakarta.persistence.TransactionRequiredException` without one, before anything is loaded.
-`lock(id)` and `lock(id, refresh: false)` keep the behaviour they have always had, which differs by
-implementation: GORM for Hibernate 7 rejects the call without a transaction, while GORM for Hibernate 5 returns
-the instance and acquires no lasting lock. Always lock inside a transaction.
+`lock(id)`, `lock(id, refresh: false)` and the instance method `entity.lock()` keep the behaviour they have
+always had, which differs by implementation. GORM for Hibernate 7 rejects them without a transaction, with the
+same exception. GORM for Hibernate 5 does not: the call returns the instance and `getCurrentLockMode` reports
+`PESSIMISTIC_WRITE`, but the statement ran on an auto-commit connection, so the row lock is gone as soon as it
+completes and another transaction can take it immediately. Always lock inside a transaction.
 
 Pass `type` to choose the lock mode. It accepts a `jakarta.persistence.LockModeType` or its name and defaults to `PESSIMISTIC_WRITE`; `NONE` is rejected. For example `Book.lock(1, type: LockModeType.PESSIMISTIC_READ)` acquires a pessimistic READ lock, whether the entity is loaded as part of the call or is already managed in the session. The semantics of each mode are those of the JPA `LockModeType` of the same name. Datastores that support only a pessimistic write lock throw `UnsupportedOperationException` for any other `type`.
 
