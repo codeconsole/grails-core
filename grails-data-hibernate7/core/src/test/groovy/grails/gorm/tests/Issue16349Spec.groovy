@@ -25,7 +25,8 @@ class Issue16349Spec extends HibernateGormDatastoreSpec {
 
     void setupSpec() {
         manager.registerDomainClasses(Issue16349IdentityBook, Issue16349IncrementBook,
-                Issue16349AssignedBook, Issue16349UnionRoot, Issue16349UnionSub)
+                Issue16349AssignedBook, Issue16349UnionRoot, Issue16349UnionSub,
+                Issue16349Shelf, Issue16349ShelvedBook)
     }
 
     void 'identity generator: save does not issue an extra update'() {
@@ -86,6 +87,27 @@ class Issue16349Spec extends HibernateGormDatastoreSpec {
         book.version == 0
         statistics.entityInsertCount == 1
         statistics.entityUpdateCount == 0
+    }
+
+    void 'increment generator: a child persisted by the flush-time cascade does not issue an extra update'() {
+        given: 'a managed parent, so the child is reached by the cascade Hibernate runs at flush rather than by save'
+        def shelf = new Issue16349Shelf(name: 'fiction').save(flush: true, failOnError: true)
+        def statistics = manager.sessionFactory.statistics
+        statistics.statisticsEnabled = true
+        statistics.clear()
+
+        when:
+        def book = new Issue16349ShelvedBook(title: 'cascaded')
+        shelf.addToBooks(book)
+        Issue16349Shelf.withSession { it.flush() }
+
+        then: 'the persist-on-flush listener activates tracking before the insert, as an explicit persist does'
+        book.version == 0
+
+        and: 'the child is written by a single insert; the one update is the parent, whose collection changed'
+        def childStatistics = statistics.getEntityStatistics(Issue16349ShelvedBook.name)
+        childStatistics.insertCount == 1
+        childStatistics.updateCount == 0
     }
 
     void 'increment generator: manually activating dirty-check tracking before flush avoids the extra update'() {
@@ -150,4 +172,31 @@ class Issue16349UnionRoot {
 @Entity
 class Issue16349UnionSub extends Issue16349UnionRoot {
     String extra
+}
+
+@Entity
+class Issue16349Shelf {
+    Long id
+    Long version
+    String name
+
+    static hasMany = [books: Issue16349ShelvedBook]
+
+    static mapping = {
+        id generator: 'increment'
+        books cascade: 'all'
+    }
+}
+
+@Entity
+class Issue16349ShelvedBook {
+    Long id
+    Long version
+    String title
+
+    static belongsTo = [shelf: Issue16349Shelf]
+
+    static mapping = {
+        id generator: 'increment'
+    }
 }

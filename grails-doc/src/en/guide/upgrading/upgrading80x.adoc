@@ -3846,5 +3846,6 @@ Tenants.withId('tenant1') {
 
 `Book.secondary.refresh(book)` resolved the instance API for the *default* connection rather than for
 `secondary`, so the refresh ran on the wrong session. It now resolves the connection the operations handle
-was obtained for, matching every other method reached that way. Applications using a single datasource, and
-the `book.refresh()` instance method, are unaffected.
+was obtained for. Only `refresh` was changed; `save`, `insert`, `merge`, `delete`, `attach`, `discard` and
+`lock` on a named-connection static API still resolve the default connection. Applications using a single
+datasource, and the `book.refresh()` instance method, are unaffected.
