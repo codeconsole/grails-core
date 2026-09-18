@@ -270,17 +270,13 @@ class ConfigurationMetadataPluginSpec extends Specification {
         property(editedMetadata, 'grails.plugin.springsecurity.authentication.sessionTimeout').defaultValue == 30
         metadataEntryCount() == 1
 
-        when: 'the DSL source is deleted without cleaning'
-        projectDir.resolve('src/dsl/fixture/SecurityConfig.groovy').toFile().delete()
-        BuildResult deleted = run('jar')
-        Map deletedMetadata = readMetadata()
+        when: 'the registered DSL source is deleted'
+        File dslSource = projectDir.resolve('src/dsl/fixture/SecurityConfig.groovy').toFile()
+        dslSource.delete()
+        BuildResult deleted = runner('jar').buildAndFail()
 
-        then: 'DSL-derived metadata is removed while the curated overlay remains'
-        deleted.task(':generateConfigurationMetadata').outcome == TaskOutcome.SUCCESS
-        property(deletedMetadata, 'grails.plugin.springsecurity.oauth.client.clientId') == null
-        property(deletedMetadata, 'grails.plugin.springsecurity.authentication.sessionTimeout') == null
-        property(deletedMetadata, 'grails.plugin.springsecurity.userLookup.userDomainClassName').defaultValue == 'overlay.User'
-        metadataEntryCount() == 1
+        then: 'the stale registration fails the build instead of silently dropping the DSL metadata'
+        deleted.output.contains("Groovy DSL configuration source '${dslSource.absolutePath}' does not exist")
     }
 
     def "merges same-name DSL typed and curated metadata fields by precedence"() {
@@ -479,6 +475,160 @@ class ConfigurationMetadataPluginSpec extends Specification {
 
         and: 'no property is emitted under the environments/production/test path'
         !metadata.properties*.name.any { String name -> name.contains('.environments.') }
+    }
+
+    def "ignores local variables and closures passed to ordinary method calls"() {
+        given:
+        write('src/dsl/fixture/CodeConfig.groovy', '''
+            security {
+                def helper = 'x'
+                String other = 'y'
+                def (first, second) = [1, 2]
+                helper = 'reassigned'
+                helper.nested = 'ignored'
+                enabled = true
+                items.each { item -> visited = true }
+                settings.with { applied = true }
+                this.explicit { skipped = true }
+                section {
+                    helper = 'still local'
+                    value = 1
+                }
+            }
+        '''.stripIndent())
+        configureDslMetadata('src/dsl/fixture/CodeConfig.groovy')
+
+        when:
+        run('generateConfigurationMetadata')
+        Map metadata = readMetadata()
+
+        then: 'only assignments in sections opened on the script itself are settings'
+        metadata.properties*.name.findAll { String name -> name.startsWith('grails.plugin.springsecurity.') } == [
+                'grails.plugin.springsecurity.enabled',
+                'grails.plugin.springsecurity.section.value'
+        ]
+    }
+
+    def "drops the type when any assignment of a property cannot be inferred"() {
+        given:
+        write('src/dsl/fixture/DynamicTypeConfig.groovy', '''
+            security {
+                if (System.getProperty('env') == 'test') {
+                    timeout = 'PT30S'
+                } else {
+                    timeout = computeTimeout()
+                }
+                retries = 5
+                environments {
+                    production {
+                        retries = computeRetries()
+                    }
+                }
+                environment = System.getenv()
+                home = System.getenv('HOME')
+            }
+        '''.stripIndent())
+        configureDslMetadata('src/dsl/fixture/DynamicTypeConfig.groovy')
+
+        when:
+        run('generateConfigurationMetadata')
+        Map metadata = readMetadata()
+
+        then: 'a dynamic branch may yield any type'
+        !property(metadata, 'grails.plugin.springsecurity.timeout').containsKey('type')
+        !property(metadata, 'grails.plugin.springsecurity.retries').containsKey('type')
+        property(metadata, 'grails.plugin.springsecurity.retries').defaultValue == 5
+
+        and: 'only a named environment variable is known to be a string'
+        !property(metadata, 'grails.plugin.springsecurity.environment').containsKey('type')
+        property(metadata, 'grails.plugin.springsecurity.home').type == 'java.lang.String'
+    }
+
+    def "parses dotted assignments, environments and if blocks at the top level of the script"() {
+        given:
+        write('src/dsl/fixture/TopLevelConfig.groovy', '''
+            security.top = 5
+            security.nested.flag = true
+            unrelated.value = 'ignored'
+            standalone = 'ignored'
+
+            environments {
+                production {
+                    security {
+                        envOnly = 1
+                    }
+                    security.envDotted = 'prod'
+                }
+            }
+
+            if (System.getProperty('env') == 'test') {
+                security {
+                    conditionalOnly = 'test'
+                }
+            }
+        '''.stripIndent())
+        configureDslMetadata('src/dsl/fixture/TopLevelConfig.groovy')
+
+        when:
+        run('generateConfigurationMetadata')
+        Map metadata = readMetadata()
+
+        then:
+        metadata.properties*.name.findAll { String name -> name.startsWith('grails.plugin.springsecurity.') } == [
+                'grails.plugin.springsecurity.conditionalOnly',
+                'grails.plugin.springsecurity.envDotted',
+                'grails.plugin.springsecurity.envOnly',
+                'grails.plugin.springsecurity.nested.flag',
+                'grails.plugin.springsecurity.top'
+        ]
+        property(metadata, 'grails.plugin.springsecurity.top').defaultValue == 5
+
+        and: 'values that depend on the environment or a condition have no static default'
+        property(metadata, 'grails.plugin.springsecurity.envOnly').type == 'java.lang.Integer'
+        !property(metadata, 'grails.plugin.springsecurity.envOnly').containsKey('defaultValue')
+        !property(metadata, 'grails.plugin.springsecurity.conditionalOnly').containsKey('defaultValue')
+        !metadata.properties*.name.any { String name -> name.startsWith('unrelated') || name == 'standalone' }
+    }
+
+    def "fails when a registered DSL root is not declared by any source"() {
+        given:
+        write('src/dsl/fixture/RenamedRootConfig.groovy', '''
+            springSecurity {
+                enabled = true
+            }
+        '''.stripIndent())
+        configureDslMetadata('src/dsl/fixture/RenamedRootConfig.groovy')
+
+        when:
+        BuildResult result = runner('generateConfigurationMetadata').buildAndFail()
+
+        then:
+        result.output.contains('No Groovy DSL configuration source declares the registered root(s) [security]')
+    }
+
+    def "fails when the overlay restates a default the DSL source already declares"() {
+        given:
+        writeGroovyDslConfiguration(false)
+        configureDslMetadata('src/dsl/fixture/SecurityConfig.groovy')
+        write('src/main/resources/META-INF/additional-spring-configuration-metadata.json', '''
+            {
+              "properties": [
+                {"name": "grails.plugin.springsecurity.authentication.maxAttempts", "defaultValue": 3},
+                {"name": "grails.plugin.springsecurity.authentication.roles", "defaultValue": ["ROLE_USER", "ROLE_ADMIN"]},
+                {"name": "grails.plugin.springsecurity.userLookup.enabled", "defaultValue": false},
+                {"name": "grails.plugin.springsecurity.authentication.dynamicDefault", "defaultValue": "curated"}
+              ]
+            }
+        '''.stripIndent())
+
+        when:
+        BuildResult result = runner('generateConfigurationMetadata').buildAndFail()
+
+        then: 'only identical defaults are rejected, a differing one is a deliberate override'
+        result.output.contains('restates the default that the Groovy DSL source already declares for 2 properties')
+        result.output.contains('grails.plugin.springsecurity.authentication.maxAttempts, ' +
+                'grails.plugin.springsecurity.authentication.roles')
+        !result.output.contains('grails.plugin.springsecurity.userLookup.enabled')
     }
 
     def "reports the actual source file for malformed DSL"() {

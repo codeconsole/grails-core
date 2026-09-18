@@ -147,6 +147,7 @@ abstract class GenerateConfigurationMetadataTask extends DefaultTask {
         List<Map<String, Object>> dslProperties = GroovyDslConfigurationMetadataParser.parse(
                 dslConfigurationFiles.files, dslRootPrefixes.get())
         Map overlay = readOverlay()
+        GenerateConfigurationMetadataTask.rejectRestatedDslDefaults(dslProperties, overlay)
         List<Map<String, Object>> groups = []
         List<Map<String, Object>> properties = []
         models.values().findAll { ClassModel model -> model.prefix != null }.sort { ClassModel model -> model.name }.each {
@@ -250,6 +251,27 @@ abstract class GenerateConfigurationMetadataTask extends DefaultTask {
                         "of type '${delegate.type}', which is not entirely compiled by this project. " +
                         'Add metadata for the delegated properties to additional-spring-configuration-metadata.json.')
             }
+        }
+    }
+
+    /**
+     * The overlay always wins, so a default it merely repeats would hide every later change to the DSL
+     * source. Only a default that deliberately differs from the DSL source belongs in the overlay.
+     */
+    private static void rejectRestatedDslDefaults(List<Map<String, Object>> dslProperties, Map overlay) {
+        Map<String, Object> overlayByName = ((overlay.get('properties') ?: []) as List).findAll { Object entry ->
+            entry instanceof Map
+        }.collectEntries { Object entry -> [(((Map) entry).name as String): entry] }
+        List<String> restated = dslProperties.findAll { Map<String, Object> property ->
+            Map curated = overlayByName[property.name as String] as Map
+            property.containsKey('defaultValue') && curated?.containsKey('defaultValue') &&
+                    JsonOutput.toJson(canonical(curated.defaultValue)) == JsonOutput.toJson(canonical(property.defaultValue))
+        }*.name.sort() as List<String>
+        if (restated) {
+            throw new IllegalArgumentException('additional-spring-configuration-metadata.json restates the default ' +
+                    "that the Groovy DSL source already declares for ${restated.size()} propert" +
+                    "${restated.size() == 1 ? 'y' : 'ies'}; remove 'defaultValue' from these entries so the DSL source " +
+                    "stays the single source of truth: ${restated.join(', ')}")
         }
     }
 
