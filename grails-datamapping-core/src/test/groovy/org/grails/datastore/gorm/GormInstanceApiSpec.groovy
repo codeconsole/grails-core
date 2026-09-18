@@ -30,6 +30,7 @@ import org.grails.datastore.mapping.dirty.checking.DirtyCheckable
 import org.grails.datastore.mapping.proxy.EntityProxy
 import org.grails.datastore.mapping.simple.SimpleMapDatastore
 import org.grails.datastore.mapping.transactions.TransactionCapableDatastore
+import org.grails.datastore.gorm.internal.RefreshLockArguments
 import org.grails.datastore.gorm.schemaless.DynamicAttributes
 import org.springframework.validation.Errors
 import org.springframework.validation.Validator
@@ -336,6 +337,45 @@ class GormInstanceApiSpec extends Specification {
         locking.refreshedInstance.is(instance)
         locking.refreshArguments == [lock: true]
         result.is(reloaded)
+    }
+
+    void "mutex reloads under the lock when the datastore supports it, and runs the closure after"() {
+        given:
+        def locking = new LockingGormInstanceApi<GormInstanceApiThing>(GormInstanceApiThing, datastore)
+        locking.refreshResult = new GormInstanceApiThing(name: 'reloaded')
+        registerInstanceApi(locking)
+        def instance = new GormInstanceApiThing(name: 'local change')
+        def ran = []
+
+        when:
+        def result = instance.mutex { ran << 'closure'; 'outcome' }
+
+        then: 'the row is reloaded under an exclusive lock rather than version-checked as loaded'
+        locking.refreshInvocations == 1
+        locking.refreshedInstance.is(instance)
+        locking.refreshArguments == [lock: true]
+
+        and: 'the closure runs while the lock is held, and its result is returned'
+        ran == ['closure']
+        result == 'outcome'
+    }
+
+    void "mutex still takes the datastore's own lock when it cannot reload under one"() {
+        given: 'the stock instance api, which keeps the datastore-neutral default of refresh(D, Map)'
+        def api = new GormInstanceApi<GormInstanceApiThing>(GormInstanceApiThing, datastore)
+        registerInstanceApi(api)
+        def instance = new GormInstanceApiThing(name: 'unsupported').save(flush: true)
+
+        expect:
+        !api.supportsLockedRefresh()
+
+        when:
+        instance.mutex { 'outcome' }
+
+        then: 'the failure is the one this datastore has always reported from session.lock, not a new one about reloading'
+        def exception = thrown(UnsupportedOperationException)
+        exception.message.contains('does not support locking')
+        exception.message != RefreshLockArguments.UNSUPPORTED
     }
 
     void "the delegating entity api passes its target and arguments to the instance api and returns its result"() {

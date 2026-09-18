@@ -204,6 +204,75 @@ class Hibernate5RefreshLockSpec extends HibernateGormDatastoreSpec {
         flushMode << [FlushMode.AUTO, FlushMode.COMMIT]
     }
 
+    void 'mutex reloads the committed state under the lock instead of failing on the version already loaded'() {
+        given:
+        Long id = new Hibernate5RefreshLockBook(title: 'original').save(flush: true, failOnError: true).id
+        manager.transactionManager.commit(manager.transactionStatus)
+        manager.transactionStatus = null
+        def executor = Executors.newSingleThreadExecutor()
+        def seen = [:]
+
+        when:
+        Hibernate5RefreshLockBook.withNewSession { Session session ->
+            Hibernate5RefreshLockBook.withTransaction {
+                def book = Hibernate5RefreshLockBook.get(id)
+                assert book.version == 0
+
+                executor.submit({
+                    Hibernate5RefreshLockBook.withNewSession {
+                        Hibernate5RefreshLockBook.withTransaction {
+                            def competing = Hibernate5RefreshLockBook.get(id)
+                            competing.title = 'competing commit'
+                            competing.save(flush: true, failOnError: true)
+                        }
+                    }
+                } as Callable).get(10, TimeUnit.SECONDS)
+
+                // The instance still holds the version it was loaded with, which lock() would reject.
+                assert book.version == 0
+                seen.closureResult = book.mutex { book.title }
+                seen.version = book.version
+                seen.lockMode = session.getCurrentLockMode(book)
+            }
+        }
+
+        then: 'the closure runs on the committed state, behind an exclusive lock, rather than throwing'
+        noExceptionThrown()
+        seen.closureResult == 'competing commit'
+        seen.version == 1
+        seen.lockMode == LockMode.PESSIMISTIC_WRITE
+
+        cleanup:
+        executor?.shutdownNow()
+        assert executor == null || executor.awaitTermination(15, TimeUnit.SECONDS)
+    }
+
+    void 'an instance operation reached through the named-connection static api runs on that connection'() {
+        given: 'no session open for the default connection, so only the named one can serve the save'
+        manager.transactionManager.commit(manager.transactionStatus)
+        manager.transactionStatus = null
+
+        when:
+        Long id = Hibernate5RefreshLockRoutedBook.secondary.withNewSession {
+            Hibernate5RefreshLockRoutedBook.secondary.withTransaction {
+                def book = new Hibernate5RefreshLockRoutedBook(title: 'via static secondary')
+                Hibernate5RefreshLockRoutedBook.secondary.save(book, [flush: true, failOnError: true])
+                book.id
+            }
+        }
+
+        then: 'the static api resolves its own connection, whose session is the only one open'
+        id != null
+
+        and: 'the row is on that connection and not on the default one'
+        Hibernate5RefreshLockRoutedBook.secondary.withNewSession {
+            Hibernate5RefreshLockRoutedBook.secondary.get(id)?.title == 'via static secondary'
+        }
+        Hibernate5RefreshLockRoutedBook.withNewSession {
+            Hibernate5RefreshLockRoutedBook.findAllByTitle('via static secondary').isEmpty()
+        }
+    }
+
     void 'ordinary lock rejects a stale committed version'() {
         given:
         Long id = new Hibernate5RefreshLockBook(title: 'original').save(flush: true, failOnError: true).id

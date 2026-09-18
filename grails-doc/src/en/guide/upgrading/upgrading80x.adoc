@@ -3842,10 +3842,67 @@ Tenants.withId('tenant1') {
 }
 ----
 
-==== 69. `refresh` on a Named-Connection Static API Uses That Connection
+==== 69. Instance Operations on a Named-Connection Static API Use That Connection
 
-`Book.secondary.refresh(book)` resolved the instance API for the *default* connection rather than for
-`secondary`, so the refresh ran on the wrong session. It now resolves the connection the operations handle
-was obtained for. Only `refresh` was changed; `save`, `insert`, `merge`, `delete`, `attach`, `discard` and
-`lock` on a named-connection static API still resolve the default connection. Applications using a single
-datasource, and the `book.refresh()` instance method, are unaffected.
+Reaching an instance operation through a named-connection static API - `Book.secondary.save(book)`,
+`Book.secondary.delete(book)` and so on - resolved the instance API for the *default* connection rather than
+for `secondary`. With only the named connection's session open, which is the normal arrangement, the call
+failed with `No Session found for current thread`:
+
+[source,groovy]
+----
+Book.secondary.withNewSession {
+    Book.secondary.withTransaction {
+        Book.secondary.save(book)     // threw: resolved the default connection
+    }
+}
+----
+
+Every such operation now resolves the connection the handle was obtained for: `save`, `insert`, `merge`,
+`delete`, `attach`, `isAttached`, `discard`, `ident`, `lock`, `mutex`, `refresh` and `instanceOf`. The example
+above now saves to `secondary`.
+
+GORM for Hibernate 5 needed a second fix for this to take effect. Its static API discarded the connection
+qualifier it was created with and reported `DEFAULT` for every connection, so a named-connection handle could
+not resolve anything but the default one. It now records its own qualifier, as GORM for Hibernate 7 already
+did. Anything that reads the qualifier of a Hibernate 5 named-connection static API therefore sees the real
+connection name where it previously saw `default`.
+
+Applications using a single datasource are unaffected, and so is the instance form `book.secondary.save()`,
+which already resolved the named connection.
+
+==== 70. `mutex` Reloads the Instance Under the Lock
+
+`entity.mutex { }` took an exclusive lock on the instance's already-loaded state and ran the closure. Because
+that lock is version-checked, a transaction that committed to the row between the load and the `mutex` call
+made it fail with an optimistic locking failure - the closure never ran.
+
+Where the datastore supports it, GORM for Hibernate 5 and 7 included, `mutex` now acquires the lock without a
+version check and reloads the row under it, so it waits for a competing writer and the closure runs on the
+committed state. The lock stays exclusive; there is no argument to weaken it, since a shared or optimistic
+lock would not give the closure mutual exclusion.
+
+Three consequences for existing code:
+
+* **Unflushed changes to the instance are discarded**, as they are for `refresh`. Apply changes inside the
+closure, not before the `mutex` call:
++
+[source,groovy]
+----
+book.title = 'new title'
+book.mutex { book.save() }        // the pending title is discarded by the reload
+
+book.mutex {                      // apply the change inside instead
+    book.title = 'new title'
+    book.save()
+}
+----
+* **An active transaction is required.** Without one the call now throws
+`jakarta.persistence.TransactionRequiredException`.
+* **The instance must be attached** to the current session; a detached one throws `IllegalArgumentException`.
+Re-attach it with `attach()` first.
+
+Code that relied on `mutex` failing fast on a stale version should check the version itself, or use
+`entity.lock()`, which is unchanged.
+
+Datastores that cannot reload under a lock keep their previous behaviour.

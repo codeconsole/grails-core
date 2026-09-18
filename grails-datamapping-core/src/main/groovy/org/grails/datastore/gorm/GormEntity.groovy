@@ -82,7 +82,12 @@ trait GormEntity<D> implements GormValidateable, DirtyCheckable, GormEntityApi<D
     }
 
     /**
-     * Locks the instance for updates for the scope of the passed closure
+     * Locks the instance for updates for the scope of the passed closure.
+     *
+     * <p>The lock is exclusive. Where the datastore supports it the instance's state and version are reloaded
+     * under the lock, so that a competing writer is waited for and the closure runs on the committed state
+     * rather than failing on the version loaded earlier. Reloading discards unflushed changes to the instance,
+     * so call this before making changes, and an active transaction and an attached instance are required.</p>
      *
      * @param callable The closure
      * @return The result of the closure

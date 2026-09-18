@@ -114,6 +114,25 @@ NOTE: `PESSIMISTIC_FORCE_INCREMENT` is recorded by Hibernate 5 under its legacy 
 
 The database and transaction isolation level determine which state is visible to the locked refresh. `refresh(lock: true)` does not override isolation rules or guarantee that every concurrent attempt succeeds. Deadlocks, lock timeouts, and transaction serialization failures remain possible.
 
+===== Holding the Lock for a Block of Work
+
+link:../api/org/grails/datastore/gorm/GormEntity.html#mutex(groovy.lang.Closure)[mutex(Closure)] locks the instance exclusively for the scope of the closure and returns the closure's result:
+
+[source,groovy]
+----
+Airport.withTransaction {
+    def airport = Airport.get(10)
+    airport.mutex {
+        airport.name = 'Heathrow'
+        airport.save(failOnError: true)
+    }
+}
+----
+
+It reloads the instance's state and version under the lock, so a transaction that committed to the row after it was loaded is waited for rather than reported as an optimistic locking failure, and the closure runs on the committed state. The lock is always exclusive; there is no argument to select another mode, because a shared or optimistic lock would not give the closure mutual exclusion.
+
+WARNING: Reloading discards unflushed changes to the instance, exactly as `refresh(lock: true)` does. Make changes *inside* the closure, not before the call. An active transaction and an attached instance are required, as they are for `refresh(lock: true)`.
+
 ===== Locking by Identifier or Query
 
 The static link:../api/org/grails/datastore/gorm/GormEntity.html#lock(java.io.Serializable)[lock(id)] method is unchanged. It takes an identifier just like link:../api/org/grails/datastore/gorm/GormEntity.html#get(java.io.Serializable)[get(id)] and loads the entity under a lock, avoiding a separate unlocked `get()` when it is not already managed:

@@ -48,6 +48,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 
 import grails.orm.HibernateCriteriaBuilder
 import org.grails.datastore.gorm.finders.DynamicFinder
+import org.grails.datastore.mapping.core.connections.ConnectionSource
 import org.grails.datastore.gorm.finders.FinderMethod
 import org.grails.datastore.gorm.internal.RefreshLockArguments
 import org.grails.datastore.mapping.query.api.BuildableCriteria as GrailsCriteria
@@ -72,13 +73,15 @@ class HibernateGormStaticApi<D> extends AbstractHibernateGormStaticApi<D> {
     protected ConversionService conversionService
     protected Class identityType
     protected ClassLoader classLoader
+    protected String qualifier
     private HibernateGormInstanceApi<D> instanceApi
     private int defaultFlushMode
 
     HibernateGormStaticApi(Class<D> persistentClass, HibernateDatastore datastore, List<FinderMethod> finders,
-                ClassLoader classLoader, PlatformTransactionManager transactionManager) {
+                ClassLoader classLoader, PlatformTransactionManager transactionManager, String qualifier = null) {
         super(persistentClass, datastore, finders, transactionManager)
         this.classLoader = classLoader
+        this.qualifier = qualifier
         sessionFactory = datastore.getSessionFactory()
         conversionService = datastore.mappingContext.conversionService
 
@@ -90,6 +93,23 @@ class HibernateGormStaticApi<D> extends AbstractHibernateGormStaticApi<D> {
     @Override
     GrailsHibernateTemplate getHibernateTemplate() {
         return (GrailsHibernateTemplate) super.getHibernateTemplate()
+    }
+
+    /**
+     * The connection this api was created for. {@code AbstractGormApi} records {@code DEFAULT} for every api
+     * built through the deprecated constructor this class uses, so the qualifier is kept here instead, and
+     * an entity mapped to a single named datasource reports that one when no qualifier was given.
+     */
+    String getQualifier() {
+        if (qualifier != null) return qualifier
+        def dsNames = persistentEntity.mapping.mappedForm.datasources
+        if (dsNames) {
+            String first = dsNames[0]
+            if (first != ConnectionSource.DEFAULT && first != 'ALL') {
+                return first
+            }
+        }
+        null
     }
 
     @Override

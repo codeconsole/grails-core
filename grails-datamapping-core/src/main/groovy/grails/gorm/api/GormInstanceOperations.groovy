@@ -52,8 +52,14 @@ interface GormInstanceOperations<D> {
     D lock(D instance)
 
     /**
-     * Locks the instance for updates for the scope of the passed closure
+     * Locks the given instance for updates for the scope of the passed closure.
      *
+     * <p>The lock is exclusive. A datastore that reports {@link #supportsLockedRefresh()} reloads the
+     * instance's state and version under the lock, so that a competing writer is waited for and the closure
+     * runs on the committed state rather than failing on the version loaded earlier. Reloading discards
+     * unflushed changes to the instance, and requires an active transaction and an attached instance.</p>
+     *
+     * @param instance The instance
      * @param callable The closure
      * @return The result of the closure
      */
