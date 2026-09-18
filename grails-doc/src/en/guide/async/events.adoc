@@ -31,6 +31,8 @@ implementation 'org.apache.grails:grails-events'
 
 If no asynchronous framework is present on the classpath then Grails creates an EventBus based on the currently active `PromiseFactory`. The default is link:{api}org/grails/async/factory/future/CompletableFuturePromiseFactory.html[CompletableFuturePromiseFactory]. In a Grails application it executes work on Spring Boot's `applicationTaskExecutor`.
 
+When `grails.async.promiseFactory=virtual-thread` selects the opt-in factory, the event bus instead shares that factory's decorated virtual-thread executor and remains asynchronous.
+
 If you wish to use a popular async framework such as RxJava as the `EventBus` implementation then you will need to add the appropriate dependency. For example for RxJava 1.x:
 
 [source,groovy,subs="attributes"]
