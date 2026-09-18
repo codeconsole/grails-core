@@ -29,6 +29,7 @@ import org.hibernate.Hibernate;
 import org.hibernate.HibernateException;
 import org.hibernate.event.internal.DefaultMergeEventListener;
 import org.hibernate.event.internal.DefaultPersistEventListener;
+import org.hibernate.event.internal.DefaultPersistOnFlushEventListener;
 import org.hibernate.event.spi.MergeContext;
 import org.hibernate.event.spi.MergeEvent;
 import org.hibernate.event.spi.MergeEventListener;
@@ -154,6 +155,7 @@ public class ClosureEventTriggeringInterceptor
 
     private final DefaultPersistEventListener persistEventListener = new DefaultPersistEventListener();
     private final DefaultMergeEventListener mergeEventListener = new DefaultMergeEventListener();
+    private final PersistOnFlushEventListener persistOnFlushEventListener = new PersistOnFlushEventListener();
     /** The datastore. */
     protected HibernateDatastore datastore;
 
@@ -227,10 +229,37 @@ public class ClosureEventTriggeringInterceptor
         }
     }
 
+    /**
+     * The listener to register for Hibernate's {@code create-onflush} event, the persist it cascades to
+     * reachable transient entities when the session flushes. That event is not handled by this class itself
+     * because Hibernate's default listener for it uses the {@code PERSIST_ON_FLUSH} cascade action, which the
+     * plain persist delegate does not, so the returned listener extends that default and publishes the same
+     * GORM persist event as an explicit persist.
+     */
+    public PersistEventListener getPersistOnFlushEventListener() {
+        return persistOnFlushEventListener;
+    }
+
     @Override
     public void injectCallbackRegistry(CallbackRegistry callbackRegistry) {
         persistEventListener.injectCallbackRegistry(callbackRegistry);
         mergeEventListener.injectCallbackRegistry(callbackRegistry);
+        persistOnFlushEventListener.injectCallbackRegistry(callbackRegistry);
+    }
+
+    private final class PersistOnFlushEventListener extends DefaultPersistOnFlushEventListener {
+
+        @Override
+        public void onPersist(PersistEvent event) throws HibernateException {
+            publishPersistEvent(event);
+            super.onPersist(event);
+        }
+
+        @Override
+        public void onPersist(PersistEvent event, PersistContext createdAlready) throws HibernateException {
+            publishPersistEvent(event);
+            super.onPersist(event, createdAlready);
+        }
     }
 
     @Override

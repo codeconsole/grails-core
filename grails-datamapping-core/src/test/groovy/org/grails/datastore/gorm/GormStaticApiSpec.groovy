@@ -541,16 +541,6 @@ class GormStaticApiSpec extends Specification {
                 'to lock by identifier, or refresh(lock: true) on the instance'
     }
 
-    void "lock(Serializable id) accepts a legitimate Map-shaped composite identifier instead of treating it as misdispatched lock options"() {
-        when: 'the Map keys are ordinary entity properties, not the fixed set of lock/refresh/type option names'
-        GormStaticApiThing.lock([street: 'Main St', city: 'Springfield'])
-
-        then: 'it is not rejected as a misdispatched lock(refresh: true) call - it reaches the real locking' +
-                ' path, which fails for the unrelated reason that this test datastore does not support locking'
-        def exception = thrown(UnsupportedOperationException)
-        exception.message == 'Datastore [org.grails.datastore.mapping.simple.SimpleMapSession] does not support locking.'
-    }
-
     void "lock(Map) called on an instance is rejected the same way"() {
         given:
         def saved = new GormStaticApiThing(name: 'persisted').save(flush: true)

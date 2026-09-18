@@ -91,6 +91,8 @@ class HibernateConnectionSourceSettingsSpec extends Specification {
     void "test toHibernateEventListeners"() {
         given:
         def interceptor = Mock(org.grails.orm.hibernate.support.ClosureEventTriggeringInterceptor)
+        def onFlushListener = Mock(org.hibernate.event.spi.PersistEventListener)
+        interceptor.persistOnFlushEventListener >> onFlushListener
 
         expect:
         HibernateConnectionSourceSettings.HibernateSettings.toHibernateEventListeners(null).isEmpty()
@@ -113,7 +115,7 @@ class HibernateConnectionSourceSettingsSpec extends Specification {
         ] as Set
         listeners['merge'].is(interceptor)
         listeners['create'].is(interceptor)
-        listeners['create-onflush'].is(interceptor)
+        listeners['create-onflush'].is(onFlushListener)
     }
 
     void "test toProperties with dirty checking and custom config"() {

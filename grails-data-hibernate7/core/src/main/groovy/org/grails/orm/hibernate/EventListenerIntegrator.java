@@ -27,6 +27,7 @@ import java.util.Map;
 import org.hibernate.boot.Metadata;
 import org.hibernate.boot.spi.BootstrapContext;
 import org.hibernate.engine.spi.SessionFactoryImplementor;
+import org.hibernate.event.internal.DefaultPersistOnFlushEventListener;
 import org.hibernate.event.service.spi.EventListenerGroup;
 import org.hibernate.event.service.spi.EventListenerRegistry;
 import org.hibernate.event.spi.EventType;
@@ -135,16 +136,19 @@ public class EventListenerIntegrator implements Integrator {
         var isMergeEvent = eventType.equals(EventType.MERGE);
         var isPersistEventListener = listener instanceof org.hibernate.event.internal.DefaultPersistEventListener;
         var isPersistEvent = eventType.equals(EventType.PERSIST);
-        // ClosureEventTriggeringInterceptor is registered for merge/persist/persist-on-flush too, but it composes
-        // (rather than extends) DefaultMergeEventListener/DefaultPersistEventListener, delegating every call to
-        // its own internal instance of each. Appending it to Hibernate's own default listener group would run
-        // that delegated persist/merge logic a second time for every entity - replace the default listener
-        // instead, the same way we do for the Default*EventListener subclasses above.
+        var isPersistOnFlushListener = listener instanceof DefaultPersistOnFlushEventListener;
+        var isPersistOnFlushEvent = eventType.equals(EventType.PERSIST_ONFLUSH);
+        // ClosureEventTriggeringInterceptor is registered for merge and persist too, but it composes (rather
+        // than extends) DefaultMergeEventListener/DefaultPersistEventListener, delegating every call to its own
+        // internal instance of each. Appending it to Hibernate's own default listener group would run that
+        // delegated persist/merge logic a second time for every entity - replace the default listener instead,
+        // the same way we do for the Default*EventListener subclasses above. The persist-on-flush listener it
+        // supplies extends DefaultPersistOnFlushEventListener and is covered by that clause.
         var isClosureEventTriggeringInterceptor = listener instanceof ClosureEventTriggeringInterceptor;
-        var isMergeOrPersistEvent = isMergeEvent || isPersistEvent || eventType.equals(EventType.PERSIST_ONFLUSH);
         return isMergeListener && isMergeEvent ||
                 isPersistEventListener && isPersistEvent ||
-                isClosureEventTriggeringInterceptor && isMergeOrPersistEvent;
+                isPersistOnFlushListener && isPersistOnFlushEvent ||
+                isClosureEventTriggeringInterceptor && (isMergeEvent || isPersistEvent);
     }
 
     @SuppressWarnings("unchecked")

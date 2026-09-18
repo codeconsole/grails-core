@@ -28,7 +28,6 @@ import org.springframework.transaction.TransactionDefinition
 
 import grails.gorm.DetachedCriteria
 import org.grails.datastore.gorm.finders.FinderMethod
-import org.grails.datastore.gorm.internal.RefreshLockArguments
 import org.grails.datastore.mapping.dirty.checking.DirtyCheckable
 import org.grails.datastore.mapping.model.MappingContext
 import org.grails.datastore.mapping.model.PersistentEntity
@@ -745,28 +744,12 @@ trait GormEntity<D> implements GormValidateable, DirtyCheckable, GormEntityApi<D
      */
     @Generated
     static D lock(Serializable id) {
-        if (id instanceof Map && isLikelyMisdispatchedLockOptions((Map) id)) {
+        if (id instanceof Map) {
             // Groovy resolves entity.lock(refresh: true) to this static method with the options map as the id.
             throw new IllegalArgumentException('lock(Map) is not an instance method. Use ' +
                     'DomainClass.lock(id, refresh: true) to lock by identifier, or refresh(lock: true) on the instance')
         }
         currentGormStaticApi().lock(id)
-    }
-
-    /**
-     * Distinguishes a caller's mistaken {@code entity.lock(refresh: true)} - which Groovy dispatches here with
-     * the named-argument map standing in for the identifier - from a genuine Map-shaped composite/embedded
-     * identifier, whose keys are entity-specific property names rather than the fixed set of options this class
-     * defines for {@code lock}/{@code refresh}.
-     *
-     * @param id the argument received in place of the identifier
-     * @return {@code true} only when every key is a recognized lock/refresh option name
-     */
-    @Generated
-    private static boolean isLikelyMisdispatchedLockOptions(Map id) {
-        !id.isEmpty() && id.keySet().every {
-            it == RefreshLockArguments.LOCK || it == RefreshLockArguments.REFRESH || it == RefreshLockArguments.TYPE
-        }
     }
 
     /**

@@ -355,6 +355,12 @@ Book.withTransaction {
 
 Without an active transaction, `refresh` with a lock and `lock(id, refresh: true)` throw `jakarta.persistence.TransactionRequiredException` before anything is loaded. The database and transaction isolation level determine which state is visible. Locking does not guarantee that every concurrent attempt succeeds: deadlocks, lock timeouts, and transaction serialization failures remain possible. See the Optimistic and Pessimistic Locking section of the GORM for link:{hibernate7Guide}index.html#locking[Hibernate 7] or link:{hibernate5Guide}index.html#locking[Hibernate 5] guide for details.
 
+==== GORM for Hibernate 7 Persist and Merge Events
+
+GORM for Hibernate 7 now starts tracking changes to an entity when it is persisted or merged, not only once its row has been inserted. Previously an entity whose identifier is generated before the insert, such as one mapped with `id generator: 'increment'` or any member of a `tablePerConcreteClass` hierarchy, was written with an `INSERT` immediately followed by an `UPDATE` of the same row and started at `version` 1. It now starts at `version` 0 with a single statement, as on Hibernate 5.
+
+As part of this change, persistence event listeners on Hibernate 7 receive a `PersistEvent` (`eventType` `Persist`) for every explicit or flush-time cascaded persist and a `MergeEvent` (`eventType` `Merge`) for every merge. Neither event can be cancelled. Hibernate 5 continues to publish `SaveOrUpdateEvent` at the same points. A listener that switches over `event.eventType` with a default branch that throws should handle the new values. See the Events and Auto Timestamping section of the GORM for link:{hibernate7Guide}index.html#eventsAutoTimestamping[Hibernate 7] guide.
+
 ==== Test HTTP Client Form Requests
 
 Integration tests that implement `HttpClientSupport` can now use `httpPostForm(...)` to send `application/x-www-form-urlencoded`

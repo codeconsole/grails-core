@@ -30,6 +30,8 @@ import org.hibernate.event.spi.LoadEventListener
 import org.hibernate.service.spi.SessionFactoryServiceRegistry
 import spock.lang.Specification
 
+import org.hibernate.event.internal.DefaultPersistOnFlushEventListener
+
 import org.grails.orm.hibernate.support.ClosureEventTriggeringInterceptor
 
 class EventListenerIntegratorSpec extends Specification {
@@ -132,11 +134,12 @@ class EventListenerIntegratorSpec extends Specification {
         1 * listenerRegistry.setListeners(EventType.MERGE, mergeListener)
     }
 
-    def "integrate uses setListeners (override) for ClosureEventTriggeringInterceptor on #eventType"() {
+    def "integrate uses setListeners (override) for the interceptor's listener on #eventType"() {
         given: "the interceptor composes rather than extends Hibernate's default merge/persist listeners"
         ClosureEventTriggeringInterceptor interceptor = new ClosureEventTriggeringInterceptor()
+        Object listener = eventType == EventType.PERSIST_ONFLUSH ? interceptor.persistOnFlushEventListener : interceptor
         HibernateEventListeners hibernateEventListeners = Mock(HibernateEventListeners)
-        hibernateEventListeners.getListenerMap() >> [(eventName): interceptor]
+        hibernateEventListeners.getListenerMap() >> [(eventName): listener]
 
         EventListenerIntegrator integrator = new EventListenerIntegrator(hibernateEventListeners, [:])
 
@@ -144,14 +147,31 @@ class EventListenerIntegratorSpec extends Specification {
         integrator.integrate(metadata, bootstrapContext, sfi)
 
         then: "appending it would double-fire its delegated merge/persist logic for every entity"
-        1 * listenerRegistry.setListeners(eventType, interceptor)
-        0 * listenerRegistry.appendListeners(eventType, interceptor)
+        1 * listenerRegistry.setListeners(eventType, listener)
+        0 * listenerRegistry.appendListeners(eventType, listener)
 
         where:
         eventType                  | eventName
         EventType.MERGE            | 'merge'
         EventType.PERSIST          | 'create'
         EventType.PERSIST_ONFLUSH  | 'create-onflush'
+    }
+
+    def "integrate overrides Hibernate's persist-on-flush listener only for the persist-on-flush event"() {
+        given: "a listener that keeps the PERSIST_ON_FLUSH cascade action, as the interceptor's does"
+        DefaultPersistOnFlushEventListener onFlushListener = new DefaultPersistOnFlushEventListener()
+        HibernateEventListeners hibernateEventListeners = Mock(HibernateEventListeners)
+        hibernateEventListeners.getListenerMap() >> ['create-onflush': onFlushListener, 'load': onFlushListener]
+
+        EventListenerIntegrator integrator = new EventListenerIntegrator(hibernateEventListeners, [:])
+
+        when:
+        integrator.integrate(metadata, bootstrapContext, sfi)
+
+        then:
+        1 * listenerRegistry.setListeners(EventType.PERSIST_ONFLUSH, onFlushListener)
+        0 * listenerRegistry.appendListeners(EventType.PERSIST_ONFLUSH, onFlushListener)
+        1 * listenerRegistry.appendListeners(EventType.LOAD, onFlushListener)
     }
 
     def "integrate appends (not overrides) non-merge non-persist listeners from hibernateEventListeners"() {
