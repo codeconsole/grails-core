@@ -430,6 +430,25 @@ class GormStaticApiSpec extends Specification {
         GormRegistry.instance.reset()
     }
 
+    void "lock(args, id) with refresh: true rejects a datastore that cannot refresh under a lock before reading anything"() {
+        given: 'an instance api that keeps the datastore-neutral default of refresh(D, Map)'
+        def api = new LockRecordingGormStaticApi<GormStaticApiThing>(GormStaticApiThing, datastore)
+        GormRegistry.instance.registerEntityApis(GormStaticApiThing, api,
+                new GormInstanceApi<GormStaticApiThing>(GormStaticApiThing, datastore),
+                new GormValidationApi<GormStaticApiThing>(GormStaticApiThing, datastore))
+
+        when:
+        api.lock([refresh: true], 42L)
+
+        then: 'the refusal does not depend on whether the row exists, so nothing is read'
+        def exception = thrown(UnsupportedOperationException)
+        exception.message == 'Datastore implementation does not support refreshing under a lock'
+        api.resolvedIds.isEmpty()
+
+        cleanup:
+        GormRegistry.instance.reset()
+    }
+
     void "lock(args, id) with refresh: true returns null without refreshing when no instance exists"() {
         given:
         def locking = new LockingGormInstanceApi<GormStaticApiThing>(GormStaticApiThing, datastore)

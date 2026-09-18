@@ -30,9 +30,11 @@ import org.hibernate.HibernateException
 import org.hibernate.LockMode
 import org.hibernate.Session
 import org.hibernate.SessionFactory
+import org.hibernate.collection.spi.PersistentCollection
 import org.hibernate.engine.spi.CascadeStyle
 import org.hibernate.engine.spi.CascadingActions
 import org.hibernate.engine.spi.SessionImplementor
+import org.hibernate.persister.entity.AbstractEntityPersister
 import org.hibernate.persister.entity.EntityPersister
 import org.hibernate.type.CollectionType
 import org.hibernate.type.CompositeType
@@ -280,23 +282,28 @@ abstract class AbstractHibernateGormInstanceApi<D> extends GormInstanceApi<D> {
             if (!session.contains(instance)) {
                 throw new IllegalArgumentException(REFRESH_LOCK_REQUIRES_ATTACHED)
             }
-            // Hibernate skips the locked refresh for an uninitialized proxy. Forcing initialization first (via
-            // a JPA find()/get() with the lock mode instead of unwrap()) was tried and reverted: Hibernate 5's
-            // JPA-compatible find() throws MappingException("Unknown entity: ...$HibernateProxy$...") when the
-            // persistence context already holds the id under the proxy's dynamically-generated subclass, so the
-            // extra unlocked SELECT here is the price of correctness, not an oversight.
+            // Hibernate skips the locked refresh for an uninitialized proxy, so the target is refreshed instead.
             Object target = proxyHandler.unwrap(instance)
             // Hibernate cascades the refresh over the graph as it stands before the reload, and the reload then
             // replaces the root's collections with uninitialized wrappers, so the reloaded entities are gathered
             // from that graph first.
             SessionImplementor sessionImplementor = session.unwrap(SessionImplementor)
             Set<Object> refreshed = Collections.newSetFromMap(new IdentityHashMap<Object, Boolean>())
-            collectRefreshed(sessionImplementor, target, refreshed)
+            collectRefreshed(sessionImplementor, target, refreshed,
+                    Collections.newSetFromMap(new IdentityHashMap<Object, Boolean>()))
             if (RefreshLockArguments.pessimistic(lockMode)) {
-                session.refresh(target, lockMode)
+                if (locksThroughTheLoader(sessionImplementor, target)) {
+                    session.refresh(target, lockMode)
+                } else {
+                    // The loader would silently drop the lock clause, so reload first and take the lock with a
+                    // statement of its own. That lock is version-checked, so a writer that slipped in between
+                    // the two is reported rather than ignored.
+                    session.refresh(target)
+                    session.lock(target, lockMode)
+                }
             } else {
-                // Hibernate 5's refresh reloads the state but does not register an optimistic mode's version
-                // check or increment; lock() does, without touching the database until the transaction ends.
+                // An optimistic mode is registered through lock(), which records the version check or increment
+                // for the end of the transaction without touching the database now.
                 session.refresh(target)
                 session.lock(target, lockMode)
             }
@@ -310,6 +317,24 @@ abstract class AbstractHibernateGormInstanceApi<D> extends GormInstanceApi<D> {
     }
 
     /**
+     * Whether a refresh under a pessimistic lock actually locks the row.
+     * <p>
+     * Hibernate 5 loads such a refresh through the entity loader for the requested lock mode, and
+     * {@code AbstractEntityPersister} silently substitutes a plain read loader when the entity spans more than
+     * one table, has subclasses, and the dialect cannot lock an outer-joined row - PostgreSQL, DB2 and
+     * CockroachDB among them. No statement then carries a lock clause, yet the lock mode is still recorded on
+     * the entity, so the caller cannot tell. The row is locked with a separate statement in that case.
+     */
+    private boolean locksThroughTheLoader(SessionImplementor session, Object entity) {
+        EntityPersister persister = session.getEntityPersister(null, entity)
+        if (!(persister instanceof AbstractEntityPersister) || !((AbstractEntityPersister) persister).hasSubclasses()) {
+            return true
+        }
+        ((AbstractEntityPersister) persister).subclassTableSpan == 1 ||
+                session.factory.jdbcServices.dialect.supportsOuterJoinForUpdate()
+    }
+
+    /**
      * Gathers the entity itself, and every initialized association that Hibernate's refresh cascade will reload
      * along with it, so that their dirty state can be reset once the refresh has run.
      * <p>
@@ -320,9 +345,13 @@ abstract class AbstractHibernateGormInstanceApi<D> extends GormInstanceApi<D> {
      * Hibernate's live persister/cascade metadata for the association graph the refresh reloads here - so they
      * are kept separate rather than merged into one traversal.
      */
-    private void collectRefreshed(SessionImplementor session, Object entity, Set<Object> refreshed) {
-        if (!(entity instanceof DirtyCheckable) || !refreshed.add(entity)) {
+    private void collectRefreshed(SessionImplementor session, Object entity, Set<Object> refreshed, Set<Object> visited) {
+        if (!visited.add(entity)) {
             return
+        }
+        // An entity that is not dirty-checkable needs no reset, but the cascade still reaches through it.
+        if (entity instanceof DirtyCheckable) {
+            refreshed.add(entity)
         }
         EntityPersister persister = session.getEntityPersister(null, entity)
         CascadeStyle[] cascadeStyles = persister.propertyCascadeStyles
@@ -330,7 +359,7 @@ abstract class AbstractHibernateGormInstanceApi<D> extends GormInstanceApi<D> {
         Object[] values = persister.getPropertyValues(entity)
         for (int i = 0; i < cascadeStyles.length; i++) {
             if (cascadeStyles[i].doCascade(CascadingActions.REFRESH)) {
-                collectCascaded(session, types[i], values[i], refreshed)
+                collectCascaded(session, types[i], values[i], refreshed, visited)
             }
         }
     }
@@ -338,11 +367,22 @@ abstract class AbstractHibernateGormInstanceApi<D> extends GormInstanceApi<D> {
     /**
      * Follows a refresh cascade through the given value to the entities Hibernate will reload. A component
      * cascades whenever one of its own properties does, so it is descended into rather than treated as an
-     * entity; an initialized collection is visited element by element, and an uninitialized one is skipped
-     * just as the cascade skips it.
+     * entity; an initialized collection is visited element by element, and an uninitialized one contributes
+     * only the elements queued onto it, which the cascade does reach.
      */
-    private void collectCascaded(SessionImplementor session, Type type, Object value, Set<Object> refreshed) {
-        if (value == null || !Hibernate.isInitialized(value)) {
+    private void collectCascaded(SessionImplementor session, Type type, Object value, Set<Object> refreshed, Set<Object> visited) {
+        if (value == null) {
+            return
+        }
+        if (!Hibernate.isInitialized(value)) {
+            // An uninitialized collection is not loaded by the cascade, but elements queued onto it are.
+            if (value instanceof PersistentCollection) {
+                Type elementType = ((CollectionType) type).getElementType(session.factory)
+                Iterator<Object> queued = ((PersistentCollection) value).queuedAdditionIterator()
+                while (queued != null && queued.hasNext()) {
+                    collectCascaded(session, elementType, queued.next(), refreshed, visited)
+                }
+            }
             return
         }
         if (type.isComponentType()) {
@@ -351,7 +391,7 @@ abstract class AbstractHibernateGormInstanceApi<D> extends GormInstanceApi<D> {
             Object[] subvalues = compositeType.getPropertyValues(value, session)
             for (int i = 0; i < subtypes.length; i++) {
                 if (compositeType.getCascadeStyle(i).doCascade(CascadingActions.REFRESH)) {
-                    collectCascaded(session, subtypes[i], subvalues[i], refreshed)
+                    collectCascaded(session, subtypes[i], subvalues[i], refreshed, visited)
                 }
             }
         } else if (type.isCollectionType()) {
@@ -361,10 +401,10 @@ abstract class AbstractHibernateGormInstanceApi<D> extends GormInstanceApi<D> {
             // of a map, and the elements of an array.
             Iterator<Object> elements = collectionType.getElementsIterator(value, session)
             while (elements.hasNext()) {
-                collectCascaded(session, elementType, elements.next(), refreshed)
+                collectCascaded(session, elementType, elements.next(), refreshed, visited)
             }
         } else if (type.isEntityType()) {
-            collectRefreshed(session, proxyHandler.unwrap(value), refreshed)
+            collectRefreshed(session, proxyHandler.unwrap(value), refreshed, visited)
         }
     }
 

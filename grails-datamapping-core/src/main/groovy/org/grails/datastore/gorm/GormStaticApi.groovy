@@ -249,7 +249,7 @@ class GormStaticApi<D> extends AbstractGormApi<D> implements GormAllOperations<D
 
     @Override
     D refresh(D instance) {
-        registry.findInstanceApi(persistentClass, null).refresh(instance)
+        registry.findInstanceApi(persistentClass, qualifier).refresh(instance)
     }
 
     @Override
@@ -508,13 +508,28 @@ class GormStaticApi<D> extends AbstractGormApi<D> implements GormAllOperations<D
         if (!RefreshLockArguments.refreshRequested(args)) {
             return lock(id)
         }
+        GormInstanceApi<D> instanceApi = registry.findInstanceApi(persistentClass, qualifier)
+        // Reject an unsupported request before reading anything, as the type check above does. A datastore
+        // that keeps the default refresh(D, Map) cannot reload under a lock at all, so the identifier is
+        // irrelevant to the outcome.
+        if (!supportsLockedRefresh(instanceApi)) {
+            throw new UnsupportedOperationException(RefreshLockArguments.UNSUPPORTED)
+        }
         // Resolve the managed instance first (no query when it is already in the session), then let the
         // instance api reload state and version under the lock instead of checking the loaded version.
         D instance = get(id)
         if (instance == null) {
             return null
         }
-        registry.findInstanceApi(persistentClass, qualifier).refresh(instance, [(RefreshLockArguments.LOCK): true])
+        instanceApi.refresh(instance, [(RefreshLockArguments.LOCK): true])
+    }
+
+    /**
+     * Whether the given instance api reloads under a lock, as opposed to inheriting the datastore-neutral
+     * default of {@code GormInstanceOperations.refresh(D, Map)}, which rejects the request.
+     */
+    private boolean supportsLockedRefresh(GormInstanceApi<D> instanceApi) {
+        instanceApi.getClass().getMethod('refresh', Object, Map).declaringClass != GormInstanceOperations
     }
 
     @Override

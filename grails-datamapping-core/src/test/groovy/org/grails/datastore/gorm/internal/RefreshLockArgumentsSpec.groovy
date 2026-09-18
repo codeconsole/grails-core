@@ -25,16 +25,6 @@ import spock.lang.Unroll
 
 class RefreshLockArgumentsSpec extends Specification {
 
-    void "the error message constants are stable, since h5/h7 and the static API contract compare against them literally"() {
-        expect:
-        RefreshLockArguments.LOCK == 'lock'
-        RefreshLockArguments.REFRESH == 'refresh'
-        RefreshLockArguments.TYPE == 'type'
-        RefreshLockArguments.UNSUPPORTED == 'Datastore implementation does not support refreshing under a lock'
-        RefreshLockArguments.UNSUPPORTED_TYPE == 'Datastore implementation does not support lock types other than PESSIMISTIC_WRITE'
-        RefreshLockArguments.TRANSACTION_REQUIRED == 'An active transaction is required.'
-    }
-
     @Unroll
     void "lockModeFrom(#args) resolves #expected"() {
         expect:
@@ -114,6 +104,23 @@ class RefreshLockArgumentsSpec extends Specification {
         [refresh: false]   | false
         [refresh: true]    | true
         [refresh: 'true']  | true
+        [refresh: 'false'] | false
+        [refresh: '']      | false
+    }
+
+    @Unroll
+    void "refreshRequested rejects #args rather than silently treating it as no refresh"() {
+        when:
+        RefreshLockArguments.refreshRequested(args)
+
+        then:
+        def exception = thrown(IllegalArgumentException)
+        exception.message == message
+
+        where:
+        args               | message
+        [refresh: 'yes']   | "The 'refresh' argument must be a boolean but was 'yes'"
+        [refresh: 1]       | "The 'refresh' argument must be a boolean but was an instance of java.lang.Integer"
     }
 
     @Unroll

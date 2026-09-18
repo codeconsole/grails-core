@@ -94,7 +94,9 @@ Airport.withTransaction {
 }
 ----
 
-To request a lock other than a pessimistic WRITE lock, pass a `jakarta.persistence.LockModeType` (or its name) as the `lock` argument, for example `airport.refresh(lock: LockModeType.PESSIMISTIC_READ)`. `lock: true` is equivalent to `lock: LockModeType.PESSIMISTIC_WRITE`, and the semantics of each mode are those of Hibernate's refresh with that lock mode. Any other value throws `IllegalArgumentException`.
+To request a lock other than a pessimistic WRITE lock, pass a `jakarta.persistence.LockModeType` (or its name) as the `lock` argument, for example `airport.refresh(lock: LockModeType.PESSIMISTIC_READ)`. `lock: true` is equivalent to `lock: LockModeType.PESSIMISTIC_WRITE`, and the semantics of each mode are those of the JPA `LockModeType` of the same name. A value that is neither a boolean, a `LockModeType`, nor the name of one throws `IllegalArgumentException`.
+
+NOTE: An optimistic mode requested while the transaction already holds a stronger lock on the same instance is superseded by that lock, so no version check or increment is registered for it.
 
 The instance must be attached to the current session; refreshing a detached instance under a lock throws `IllegalArgumentException`, so re-attach it with `attach()` first. `airport.refresh()` is unchanged, and `airport.refresh([:])`, `airport.refresh(lock: false)` or `airport.refresh(lock: LockModeType.NONE)` behave exactly like it: a plain refresh with no lock and no transaction requirement. To lock by identifier and reload at the same time, use `Airport.lock(id, refresh: true)` as described below.
 
@@ -105,6 +107,8 @@ WARNING: Refreshing discards unflushed changes to the entity. Configured refresh
 After a locked refresh, GORM resets the dirty-checking state of the refreshed entity, its embedded components, and every initialized entity the refresh cascade reloaded, including associations reached through an embedded component, so discarded edits to a cascaded child do not schedule an update of that child or bump its version at the next flush. A plain `refresh()` does not reset that state on Hibernate 5. The lock applies to the refreshed entity's own row; associated entities reloaded through a refresh cascade are not guaranteed to be locked.
 
 Refreshing under a lock is supported by GORM for Hibernate 5 and Hibernate 7. Datastores that do not support it throw `UnsupportedOperationException` rather than silently falling back to a plain refresh.
+
+NOTE: `PESSIMISTIC_FORCE_INCREMENT` is recorded by Hibernate 5 under its legacy `LockMode.FORCE` name, which `getCurrentLockMode` reports. On databases whose `SELECT ... FOR UPDATE` takes a `NOWAIT` clause for that mode, such as PostgreSQL, Oracle and MySQL 8, a contended row fails immediately rather than waiting.
 
 The database and transaction isolation level determine which state is visible to the locked refresh. `refresh(lock: true)` does not override isolation rules or guarantee that every concurrent attempt succeeds. Deadlocks, lock timeouts, and transaction serialization failures remain possible.
 

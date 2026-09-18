@@ -678,6 +678,33 @@ class Hibernate5RefreshLockSpec extends HibernateGormDatastoreSpec {
         assert executor == null || executor.awaitTermination(15, TimeUnit.SECONDS)
     }
 
+    void 'refresh(lock: #type) on a managed instance issues #statements statements: the locked reload#increment'() {
+        given:
+        Long id = new Hibernate5RefreshLockBook(title: 'original').save(flush: true, failOnError: true).id
+        Hibernate5RefreshLockBook.withSession { it.clear() }
+        def book = Hibernate5RefreshLockBook.get(id)
+
+        def statistics = manager.sessionFactory.statistics
+        statistics.statisticsEnabled = true
+        long statementsBefore = statistics.prepareStatementCount
+
+        when:
+        book.refresh(lock: type)
+
+        then: 'Hibernate 5 reloads and locks in one statement, so no extra round trip records the mode'
+        statistics.prepareStatementCount == statementsBefore + statements
+        Hibernate5RefreshLockBook.withSession { Session session ->
+            session.getCurrentLockMode(book) == expectedLockMode
+        }
+
+        where:
+        type                                     | expectedLockMode           | statements
+        LockModeType.PESSIMISTIC_READ            | LockMode.PESSIMISTIC_READ  | 1
+        LockModeType.PESSIMISTIC_WRITE           | LockMode.PESSIMISTIC_WRITE | 1
+        LockModeType.PESSIMISTIC_FORCE_INCREMENT | LockMode.FORCE             | 2
+        increment = statements == 2 ? ' and the version increment' : ''
+    }
+
     void 'static lock(id, refresh: true) loads and locks an instance that is not in the session'() {
         given:
         Long id = new Hibernate5RefreshLockBook(title: 'original').save(flush: true, failOnError: true).id
@@ -699,6 +726,40 @@ class Hibernate5RefreshLockSpec extends HibernateGormDatastoreSpec {
         Hibernate5RefreshLockBook.withSession { Session session ->
             session.contains(book) && session.getCurrentLockMode(book) == LockMode.PESSIMISTIC_WRITE
         }
+    }
+
+    void 'static lock(id, refresh: true) returns null for an entity deleted in this session'() {
+        given:
+        def book = new Hibernate5RefreshLockBook(title: 'original').save(flush: true, failOnError: true)
+        Long id = book.id
+        book.delete()
+
+        expect: 'the deleted row is reported as gone, the way lock(id) reports it'
+        Hibernate5RefreshLockBook.lock(id, refresh: true) == null
+    }
+
+    void 'refresh(lock: #requested) after #held keeps the version behaviour of the mode actually in force'() {
+        given:
+        Long id = new Hibernate5RefreshLockBook(title: 'original').save(flush: true, failOnError: true).id
+        manager.transactionManager.commit(manager.transactionStatus)
+        manager.transactionStatus = null
+
+        when: 'an optimistic increment is requested while a stronger lock is already held'
+        Hibernate5RefreshLockBook.withNewSession {
+            Hibernate5RefreshLockBook.withTransaction {
+                def book = Hibernate5RefreshLockBook.get(id)
+                acquire(book)
+                book.refresh(lock: requested)
+            }
+        }
+
+        then: 'the held lock stands, and only a request that is not superseded increments the version'
+        Hibernate5RefreshLockBook.withNewSession { Hibernate5RefreshLockBook.get(id).version } == expectedVersion
+
+        where:
+        held                  | acquire        | requested                                    || expectedVersion
+        'nothing'             | { }            | LockModeType.OPTIMISTIC_FORCE_INCREMENT      || 1
+        'a pessimistic lock'  | { it.lock() }  | LockModeType.OPTIMISTIC_FORCE_INCREMENT      || 0
     }
 
     void 'static lock(id, refresh: true) returns null for an unknown identifier'() {

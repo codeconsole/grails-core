@@ -26,6 +26,7 @@ import jakarta.persistence.LockModeType
 import jakarta.persistence.TransactionRequiredException
 import jakarta.persistence.criteria.CriteriaBuilder
 import jakarta.persistence.criteria.CriteriaQuery
+import jakarta.persistence.criteria.Expression
 import jakarta.persistence.criteria.Root
 
 import org.hibernate.Criteria
@@ -36,6 +37,7 @@ import org.hibernate.SessionFactory
 import org.hibernate.engine.spi.EntityKey
 import org.hibernate.engine.spi.PersistenceContext
 import org.hibernate.engine.spi.SessionImplementor
+import org.hibernate.engine.spi.Status
 import org.hibernate.persister.entity.EntityPersister
 import org.hibernate.query.Query
 
@@ -177,7 +179,7 @@ class HibernateGormStaticApi<D> extends AbstractHibernateGormStaticApi<D> {
                 if (!session.getTransaction().isActive()) {
                     throw new TransactionRequiredException(RefreshLockArguments.TRANSACTION_REQUIRED)
                 }
-                session.find(persistentClass, identifier, lockMode)
+                lockedLoad(session, identifier, lockMode)
             }
         }
         // Stay on this connection's session: the generic implementation resolves the instance api through the
@@ -189,10 +191,29 @@ class HibernateGormStaticApi<D> extends AbstractHibernateGormStaticApi<D> {
             Object managed = findManagedInstance(session, identifier)
             if (managed == null) {
                 // Not loaded yet, so a single locked load is enough.
-                return session.find(persistentClass, identifier, lockMode)
+                return lockedLoad(session, identifier, lockMode)
             }
             instanceApi.refresh((D) managed, [(RefreshLockArguments.LOCK): lockMode])
         }
+    }
+
+    /**
+     * Loads and locks the row for the given identifier.
+     * <p>
+     * A multi-tenant entity is loaded through a query, as {@code get} does, because Hibernate's tenant filter
+     * does not apply to a load by identifier and would otherwise hand out another tenant's row.
+     */
+    private D lockedLoad(Session session, Serializable identifier, LockModeType lockMode) {
+        if (!persistentEntity.isMultiTenant()) {
+            return session.find(persistentClass, identifier, lockMode)
+        }
+        CriteriaBuilder criteriaBuilder = session.getCriteriaBuilder()
+        CriteriaQuery criteriaQuery = criteriaBuilder.createQuery(persistentEntity.javaClass)
+        Root queryRoot = criteriaQuery.from(persistentEntity.javaClass)
+        criteriaQuery = criteriaQuery.where(
+                criteriaBuilder.equal((Expression<?>) queryRoot.get(persistentEntity.identity.name), identifier)
+        )
+        (D) proxyHandler.unwrap(session.createQuery(criteriaQuery).setLockMode(lockMode).uniqueResult())
     }
 
     private Object findManagedInstance(Session session, Serializable id) {
@@ -202,6 +223,12 @@ class HibernateGormStaticApi<D> extends AbstractHibernateGormStaticApi<D> {
         PersistenceContext persistenceContext = sessionImplementor.persistenceContextInternal
         Object entity = persistenceContext.getEntity(key)
         if (entity == null) {
+            return null
+        }
+        Status status = persistenceContext.getEntry(entity)?.status
+        if (status == Status.DELETED || status == Status.GONE) {
+            // A deleted entity is no longer attached for refresh purposes; fall back to the locked load,
+            // which reports the row as gone the same way lock(id) does.
             return null
         }
         // Return the proxy when the caller holds one, so the result is the instance already in use.

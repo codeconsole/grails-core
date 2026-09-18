@@ -23,8 +23,6 @@ import groovy.transform.CompileStatic
 
 import jakarta.persistence.LockModeType
 
-import org.grails.datastore.mapping.reflect.ClassUtils
-
 /**
  * Resolves the named arguments shared by {@code refresh(Map)} and {@code lock(Map, Serializable)}.
  *
@@ -116,9 +114,28 @@ class RefreshLockArguments {
     /**
      * @param args The named arguments, may be {@code null}
      * @return Whether the {@code refresh} argument requests a reload under the lock
+     * @throws IllegalArgumentException if the argument is neither a boolean nor the text of one
      */
     static boolean refreshRequested(Map args) {
-        ClassUtils.getBooleanFromMap(REFRESH, args)
+        Object value = args?.get(REFRESH)
+        if (value == null) {
+            return false
+        }
+        if (value instanceof Boolean) {
+            return (Boolean) value
+        }
+        if (value instanceof CharSequence) {
+            String text = value.toString().trim()
+            if (text.equalsIgnoreCase('true')) {
+                return true
+            }
+            if (text.isEmpty() || text.equalsIgnoreCase('false')) {
+                return false
+            }
+            throw new IllegalArgumentException("The '${REFRESH}' argument must be a boolean but was '${text}'")
+        }
+        throw new IllegalArgumentException("The '${REFRESH}' argument must be a boolean but was an instance of " +
+                value.getClass().name)
     }
 
     /**

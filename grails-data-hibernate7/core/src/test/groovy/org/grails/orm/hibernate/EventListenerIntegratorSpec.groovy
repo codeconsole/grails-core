@@ -23,14 +23,13 @@ import org.hibernate.boot.spi.BootstrapContext
 import org.hibernate.engine.spi.SessionFactoryImplementor
 import org.hibernate.event.internal.DefaultMergeEventListener
 import org.hibernate.event.internal.DefaultPersistEventListener
+import org.hibernate.event.internal.DefaultPersistOnFlushEventListener
 import org.hibernate.event.service.spi.EventListenerGroup
 import org.hibernate.event.service.spi.EventListenerRegistry
 import org.hibernate.event.spi.EventType
 import org.hibernate.event.spi.LoadEventListener
 import org.hibernate.service.spi.SessionFactoryServiceRegistry
 import spock.lang.Specification
-
-import org.hibernate.event.internal.DefaultPersistOnFlushEventListener
 
 import org.grails.orm.hibernate.support.ClosureEventTriggeringInterceptor
 
@@ -172,6 +171,32 @@ class EventListenerIntegratorSpec extends Specification {
         1 * listenerRegistry.setListeners(EventType.PERSIST_ONFLUSH, onFlushListener)
         0 * listenerRegistry.appendListeners(EventType.PERSIST_ONFLUSH, onFlushListener)
         1 * listenerRegistry.appendListeners(EventType.LOAD, onFlushListener)
+    }
+
+    def "integrate keeps the Grails interceptor when an application listener replaces Hibernate's default on #eventType"() {
+        given: "an application listener of its own for an event the interceptor also handles"
+        ClosureEventTriggeringInterceptor interceptor = new ClosureEventTriggeringInterceptor()
+        def applicationListener = eventType == EventType.MERGE ?
+                new DefaultMergeEventListener() : new DefaultPersistEventListener()
+        def group = Mock(EventListenerGroup)
+        group.listeners() >> [interceptor]
+        listenerRegistry.getEventListenerGroup(eventType) >> group
+
+        EventListenerIntegrator integrator = new EventListenerIntegrator(
+                Mock(HibernateEventListeners), [(eventName): applicationListener])
+
+        when:
+        integrator.integrate(metadata, bootstrapContext, sfi)
+
+        then: "the application listener replaces Hibernate's default, and the interceptor is kept behind it"
+        1 * group.clearListeners()
+        1 * group.appendListener(applicationListener)
+        1 * group.appendListener(interceptor)
+
+        where:
+        eventType         | eventName
+        EventType.MERGE   | 'merge'
+        EventType.PERSIST | 'create'
     }
 
     def "integrate appends (not overrides) non-merge non-persist listeners from hibernateEventListeners"() {

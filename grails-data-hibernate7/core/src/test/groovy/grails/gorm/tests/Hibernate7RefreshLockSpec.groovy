@@ -47,7 +47,8 @@ class Hibernate7RefreshLockSpec extends HibernateGormDatastoreSpec {
         manager.registerDomainClasses(Hibernate7RefreshLockBook, Hibernate7RefreshLockRoutedBook,
             Hibernate7RefreshLockNonversionedBook, Hibernate7RefreshLockEmbeddedBook,
             Hibernate7RefreshLockCascadeParent, Hibernate7RefreshLockCascadeChild,
-            Hibernate7RefreshLockCollectionParent, Hibernate7RefreshLockJoinedRoot, Hibernate7RefreshLockJoinedSub,
+            Hibernate7RefreshLockCollectionParent, Hibernate7RefreshLockEmbeddedOwner,
+            Hibernate7RefreshLockJoinedRoot, Hibernate7RefreshLockJoinedSub,
             Hibernate7RefreshLockUnionRoot, Hibernate7RefreshLockUnionSub)
         // AUTO leaves an explicitly selected session flush mode intact during template calls.
         manager.grailsConfig['hibernate.flush.mode'] = 'AUTO'
@@ -699,6 +700,40 @@ class Hibernate7RefreshLockSpec extends HibernateGormDatastoreSpec {
         }
     }
 
+    void 'static lock(id, refresh: true) returns null for an entity deleted in this session'() {
+        given:
+        def book = new Hibernate7RefreshLockBook(title: 'original').save(flush: true, failOnError: true)
+        Long id = book.id
+        book.delete()
+
+        expect: 'the deleted row is reported as gone, the way lock(id) reports it'
+        Hibernate7RefreshLockBook.lock(id, refresh: true) == null
+    }
+
+    void 'refresh(lock: #requested) after #held keeps the version behaviour of the mode actually in force'() {
+        given:
+        Long id = new Hibernate7RefreshLockBook(title: 'original').save(flush: true, failOnError: true).id
+        manager.transactionManager.commit(manager.transactionStatus)
+        manager.transactionStatus = null
+
+        when: 'an optimistic increment is requested while a stronger lock is already held'
+        Hibernate7RefreshLockBook.withNewSession {
+            Hibernate7RefreshLockBook.withTransaction {
+                def book = Hibernate7RefreshLockBook.get(id)
+                acquire(book)
+                book.refresh(lock: requested)
+            }
+        }
+
+        then: 'the held lock stands, and only a request that is not superseded increments the version'
+        Hibernate7RefreshLockBook.withNewSession { Hibernate7RefreshLockBook.get(id).version } == expectedVersion
+
+        where:
+        held                  | acquire        | requested                                    || expectedVersion
+        'nothing'             | { }            | LockModeType.OPTIMISTIC_FORCE_INCREMENT      || 1
+        'a pessimistic lock'  | { it.lock() }  | LockModeType.OPTIMISTIC_FORCE_INCREMENT      || 0
+    }
+
     void 'static lock(id, refresh: true) returns null for an unknown identifier'() {
         expect:
         Hibernate7RefreshLockBook.lock(-1L, refresh: true) == null
@@ -1059,6 +1094,52 @@ class Hibernate7RefreshLockSpec extends HibernateGormDatastoreSpec {
         then:
         parent.version == 0
         children.every { it.version == 0 }
+    }
+
+    void 'refresh(lock: true) discards edits reached through an embedded component that cascades to an association'() {
+        given:
+        def child = new Hibernate7RefreshLockCascadeChild(title: 'original child')
+        def owner = new Hibernate7RefreshLockEmbeddedOwner(title: 'original owner',
+                details: new Hibernate7RefreshLockOwnerDetails(note: 'original note', child: child))
+                .save(flush: true, failOnError: true)
+        Long ownerId = owner.id
+        Long childId = child.id
+        Hibernate7RefreshLockEmbeddedOwner.withSession { it.clear() }
+        owner = Hibernate7RefreshLockEmbeddedOwner.get(ownerId)
+        child = owner.details.child
+        assert child.title == 'original child'
+        owner.title = 'pending owner'
+        owner.details.note = 'pending note'
+        child.title = 'pending child'
+        assert child.isDirty('title')
+
+        when:
+        def result = owner.refresh(lock: true)
+
+        then: 'the refresh cascade through the component reloads the child and the dirty state follows it'
+        result.is(owner)
+        owner.title == 'original owner'
+        owner.details.note == 'original note'
+        child.title == 'original child'
+        !owner.isDirty()
+        !child.isDirty()
+        Hibernate7RefreshLockEmbeddedOwner.withSession { Session session ->
+            session.getCurrentLockMode(owner) == LockMode.PESSIMISTIC_WRITE
+        }
+
+        when: 'the discarded edits must not schedule an update of either entity at flush'
+        Hibernate7RefreshLockEmbeddedOwner.withSession { it.flush() }
+
+        then:
+        owner.version == 0
+        child.version == 0
+
+        when:
+        Hibernate7RefreshLockEmbeddedOwner.withSession { it.clear() }
+
+        then:
+        Hibernate7RefreshLockCascadeChild.get(childId).version == 0
+        Hibernate7RefreshLockCascadeChild.get(childId).title == 'original child'
     }
 
     void 'refresh with arguments that do not request a lock reloads state without a write lock (#description)'() {
@@ -1559,6 +1640,26 @@ class Hibernate7RefreshLockCollectionParent {
 
     static mapping = {
         children cascade: 'all', lazy: false
+    }
+}
+
+@Entity
+class Hibernate7RefreshLockEmbeddedOwner {
+    Long id
+    Long version
+    String title
+    Hibernate7RefreshLockOwnerDetails details
+
+    static embedded = ['details']
+}
+
+@DirtyCheck
+class Hibernate7RefreshLockOwnerDetails {
+    String note
+    Hibernate7RefreshLockCascadeChild child
+
+    static mapping = {
+        child cascade: 'all'
     }
 }
 

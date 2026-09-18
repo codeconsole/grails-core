@@ -27,7 +27,7 @@ GORM enables optimistic locking by default via a `version` column. See xref:ormd
 
 Pessimistic locking acquires a database row lock, typically using SQL `SELECT ... FOR UPDATE`. Conflicting writes and lock requests may block; ordinary reads are not necessarily blocked. The exact behavior depends on the database and transaction isolation level.
 
-An active transaction is required. Use `withTransaction` as below or a GORM `@Transactional` method, keeping the lock and the work it protects in the same transaction. The lock is held until that transaction commits or rolls back. Refreshing under a lock with `refresh(lock: true)` or `lock(id, refresh: true)` without an active transaction throws `jakarta.persistence.TransactionRequiredException`.
+An active transaction is required. Use `withTransaction` as below or a GORM `@Transactional` method, keeping the lock and the work it protects in the same transaction. The lock is held until that transaction commits or rolls back. Locking without an active transaction throws `jakarta.persistence.TransactionRequiredException` before anything is loaded; this applies to `refresh(lock: ...)` and to every form of `lock(id, ...)`.
 
 To load an entity by identifier under a lock, use the static `lock(id)` method:
 
@@ -88,7 +88,7 @@ Every lock mode is available to `refresh(lock: ...)` and to the static `type` ar
 | `refresh(lock: LockModeType.NONE)` is a plain refresh, exactly like `refresh(lock: false)`. `lock(id, type: LockModeType.NONE)` is rejected with `IllegalArgumentException`: a lock call must name a lock.
 |===
 
-NOTE: In a hierarchy mapped with `tablePerConcreteClass true`, Hibernate 7 locks through a union of the concrete tables whenever it goes through the hierarchy root: `lock()` and `lock(id)` on a managed instance of any class in the hierarchy, and `lock(id)` or `lock(id, refresh: true)` through the root class for a row not yet loaded. Some databases, H2 among them, do not lock rows through such a query. `refresh(lock: true)` and `lock(id, refresh: true)` on a managed instance of a class without subclasses, and `lock(id)` through that class for a row not yet loaded, lock its concrete table directly.
+NOTE: In a hierarchy mapped with `tablePerConcreteClass true`, Hibernate 7 locks through a union of the concrete tables whenever it goes through the hierarchy root, and some databases, H2 among them, do not lock rows through such a query. `refresh(lock: true)` and `lock(id, refresh: true)` on a managed instance of a class without subclasses lock its concrete table directly, as does `lock(id)` through that class for a row not yet loaded.
 
 You can also lock an already-loaded instance:
 
@@ -120,7 +120,9 @@ Book.withTransaction {
 }
 ----
 
-To request a lock other than a pessimistic WRITE lock, pass a `jakarta.persistence.LockModeType` (or its name) as the `lock` argument, for example `book.refresh(lock: LockModeType.PESSIMISTIC_READ)`. `lock: true` is equivalent to `lock: LockModeType.PESSIMISTIC_WRITE`, and the semantics of each mode are those of Hibernate's refresh with that lock mode. Any other value throws `IllegalArgumentException`.
+To request a lock other than a pessimistic WRITE lock, pass a `jakarta.persistence.LockModeType` (or its name) as the `lock` argument, for example `book.refresh(lock: LockModeType.PESSIMISTIC_READ)`. `lock: true` is equivalent to `lock: LockModeType.PESSIMISTIC_WRITE`, and the semantics of each mode are those of the JPA `LockModeType` of the same name. A value that is neither a boolean, a `LockModeType`, nor the name of one throws `IllegalArgumentException`.
+
+NOTE: An optimistic mode requested while the transaction already holds a stronger lock on the same instance is superseded by that lock, so no version check or increment is registered for it.
 
 The instance must be attached to the current session; refreshing a detached instance under a lock throws `IllegalArgumentException`, so re-attach it with `attach()` first. `book.refresh()` is unchanged, and `book.refresh([:])`, `book.refresh(lock: false)` or `book.refresh(lock: LockModeType.NONE)` behave exactly like it: a plain refresh with no lock and no transaction requirement. To lock by identifier and reload at the same time, use `Book.lock(id, refresh: true)` as described above.
 

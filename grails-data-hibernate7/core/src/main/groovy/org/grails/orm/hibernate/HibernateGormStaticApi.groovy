@@ -190,7 +190,7 @@ class HibernateGormStaticApi<D> extends GormStaticApi<D> {
                 if (!session.getTransaction().isActive()) {
                     throw new TransactionRequiredException(RefreshLockArguments.TRANSACTION_REQUIRED)
                 }
-                session.find(persistentClass, identifier, lockMode)
+                lockedLoad(session, identifier, lockMode)
             }
         }
         // Stay on this connection's session: the generic implementation resolves the instance api through the
@@ -202,10 +202,28 @@ class HibernateGormStaticApi<D> extends GormStaticApi<D> {
             Object managed = findManagedInstance(session, identifier)
             if (managed == null) {
                 // Not loaded yet, so a single locked load is enough.
-                return session.find(persistentClass, identifier, lockMode)
+                return lockedLoad(session, identifier, lockMode)
             }
             instanceApi.refresh((D) managed, [(RefreshLockArguments.LOCK): lockMode])
         }
+    }
+
+    /**
+     * Loads and locks the row for the given identifier.
+     * <p>
+     * A multi-tenant entity is loaded through a query, as {@code get} does, because Hibernate's tenant filter
+     * does not apply to a load by identifier and would otherwise hand out another tenant's row.
+     */
+    private D lockedLoad(Session session, Serializable identifier, LockModeType lockMode) {
+        if (!persistentEntity.isMultiTenant()) {
+            return session.find(persistentClass, identifier, lockMode)
+        }
+        D instance = (D) new HibernateQuery(hibernateSession, (GrailsHibernatePersistentEntity) persistentEntity)
+                .idEq(identifier).singleResult()
+        if (instance != null) {
+            session.lock(instance, lockMode)
+        }
+        instance
     }
 
     private Object findManagedInstance(Session session, Serializable id) {
@@ -215,6 +233,11 @@ class HibernateGormStaticApi<D> extends GormStaticApi<D> {
         PersistenceContext persistenceContext = sessionImplementor.persistenceContextInternal
         Object entity = persistenceContext.getEntity(key)
         if (entity == null) {
+            return null
+        }
+        if (persistenceContext.getEntry(entity)?.status?.isDeletedOrGone()) {
+            // A deleted entity is no longer attached for refresh purposes; fall back to the locked load,
+            // which reports the row as gone the same way lock(id) does.
             return null
         }
         // Return the proxy when the caller holds one, so the result is the instance already in use.

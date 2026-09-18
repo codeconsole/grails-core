@@ -43,6 +43,7 @@ import jakarta.persistence.TransactionRequiredException
 import org.hibernate.Hibernate
 import org.hibernate.HibernateException
 import org.hibernate.LockMode
+import org.hibernate.Locking
 import org.hibernate.Session
 import org.hibernate.SessionFactory
 import org.hibernate.collection.spi.PersistentCollection
@@ -311,6 +312,9 @@ class HibernateGormInstanceApi<D> extends GormInstanceApi<D> {
         session.createSelectionQuery(hql, Integer)
                 .setParameter('instance', lockTarget)
                 .setLockMode(lockMode)
+                // DISALLOW: a dialect that cannot lock this statement must say so rather than quietly
+                // returning a row it never locked.
+                .setFollowOnStrategy(Locking.FollowOn.DISALLOW)
                 .setQueryFlushMode(QueryFlushMode.NO_FLUSH)
                 .getResultList()
     }

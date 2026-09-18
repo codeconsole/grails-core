@@ -181,6 +181,7 @@ public class ClosureEventTriggeringInterceptor
     public void onMerge(MergeEvent hibernateEvent) throws HibernateException {
         publishMergeEvent(hibernateEvent);
         mergeEventListener.onMerge(hibernateEvent);
+        activateDirtyCheckingOnMergeResult(hibernateEvent);
     }
 
     private Object getMergeEntity(MergeEvent hibernateEvent) {
@@ -191,6 +192,22 @@ public class ClosureEventTriggeringInterceptor
     public void onMerge(MergeEvent hibernateEvent, MergeContext copiedAlready) throws HibernateException {
         publishMergeEvent(hibernateEvent);
         mergeEventListener.onMerge(hibernateEvent, copiedAlready);
+        activateDirtyCheckingOnMergeResult(hibernateEvent);
+    }
+
+    /**
+     * Starts tracking changes on the managed copy a merge produced.
+     * <p>
+     * Merging a transient instance that already carries an identifier saves that copy directly rather than
+     * firing a persist event, so nothing else would activate GORM's change tracking before the flush. An
+     * untracked instance reports every property as changed, which schedules an {@code UPDATE} behind the
+     * {@code INSERT} and starts the entity at version 1.
+     */
+    private void activateDirtyCheckingOnMergeResult(MergeEvent hibernateEvent) {
+        Object result = hibernateEvent.getResult();
+        if (result != null) {
+            activateDirtyChecking(result);
+        }
     }
 
     private void publishMergeEvent(MergeEvent hibernateEvent) {
@@ -247,7 +264,8 @@ public class ClosureEventTriggeringInterceptor
         persistOnFlushEventListener.injectCallbackRegistry(callbackRegistry);
     }
 
-    private final class PersistOnFlushEventListener extends DefaultPersistOnFlushEventListener {
+    /** The listener this interceptor contributes for Hibernate's persist-on-flush event. */
+    public final class PersistOnFlushEventListener extends DefaultPersistOnFlushEventListener {
 
         @Override
         public void onPersist(PersistEvent event) throws HibernateException {

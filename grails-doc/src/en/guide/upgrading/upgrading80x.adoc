@@ -3528,3 +3528,52 @@ logging:
     level:
         org.apache.grails.common.reflect.ReflectionUtils: ERROR
 ----
+
+==== 58. GORM for Hibernate 7 Tracks Changes From Persist, Not From Insert
+
+GORM for Hibernate 7 now activates its dirty-check tracking when an entity is persisted or merged rather
+than after its row has been inserted. Two observable behaviours change for existing applications on
+Hibernate 7. Applications on Hibernate 5 are unaffected.
+
+===== 58.1 A New Entity Starts at Version 0
+
+An entity whose identifier is generated before the insert, for example one mapped with
+`id generator: 'increment'` or `'assigned'`, or any member of a `tablePerConcreteClass` hierarchy, was
+written with an `INSERT` immediately followed by an `UPDATE` of the same row, so it started at `version` 1.
+It now starts at `version` 0 and costs a single statement, as on Hibernate 5 and as entities using the
+default `identity` generator always did.
+
+Code that compared such a version against 1, or that counted statements or update events for a new entity,
+needs to expect the value it would have had on Hibernate 5:
+
+[source,groovy]
+----
+def book = new Book(title: 'Grails').save(flush: true)   // id generator: 'increment'
+assert book.version == 0                                  // was 1 before Grails 8.0
+----
+
+===== 58.2 Persistence Listeners Receive Persist and Merge Events
+
+An `AbstractPersistenceEventListener` on Hibernate 7 now receives a `PersistEvent` (`eventType` `Persist`)
+for every explicit or flush-time cascaded persist, and a `MergeEvent` (`eventType` `Merge`) for every
+merge. Neither can be cancelled. Hibernate 5 publishes `SaveOrUpdateEvent` when an entity is saved and
+publishes no event for a merge.
+
+A listener that switches over `event.eventType` and throws in its default branch must handle the new
+values:
+
+[source,groovy]
+----
+@Override
+protected void onPersistenceEvent(AbstractPersistenceEvent event) {
+    switch (event.eventType) {
+        case Persist:                      // new on Hibernate 7
+        case Merge:                        // new on Hibernate 7
+        case PreInsert:
+            // ...
+            break
+        default:
+            throw new IllegalStateException("Unhandled ${event.eventType}")
+    }
+}
+----

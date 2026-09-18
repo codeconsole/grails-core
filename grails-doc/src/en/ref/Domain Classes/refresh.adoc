@@ -66,7 +66,7 @@ Re-reads the state of the given instance from the underlying database. It is ina
 
 Pass `lock: true` to reload the instance's database state and version under a pessimistic WRITE lock. `entity.refresh(lock: true)` acquires the row lock before it reads, so the state and version it loads are the ones the lock protects; it never checks the already-loaded version, and it returns the same instance.
 
-To request a different lock, pass a `jakarta.persistence.LockModeType` (or its name) instead of `true`. For example `entity.refresh(lock: LockModeType.PESSIMISTIC_READ)` reloads the instance under a pessimistic READ lock. `lock: true` is equivalent to `lock: LockModeType.PESSIMISTIC_WRITE`; `lock: false` and `lock: LockModeType.NONE` request no lock and behave like `entity.refresh()`. Any other value throws `IllegalArgumentException`. The semantics of each lock mode are those of the underlying JPA provider's refresh with that mode.
+To request a different lock, pass a `jakarta.persistence.LockModeType` (or its name) instead of `true`. For example `entity.refresh(lock: LockModeType.PESSIMISTIC_READ)` reloads the instance under a pessimistic READ lock. `lock: true` is equivalent to `lock: LockModeType.PESSIMISTIC_WRITE`; `lock: false` and `lock: LockModeType.NONE` request no lock and behave like `entity.refresh()`. A value that is neither a boolean, a `LockModeType`, nor the name of one throws `IllegalArgumentException`. The semantics of each lock mode are those of the JPA `LockModeType` of the same name.
 
 The lock modes behave as follows on Hibernate 5 and Hibernate 7:
 
