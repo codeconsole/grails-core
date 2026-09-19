@@ -26,7 +26,22 @@ class Issue16349Spec extends HibernateGormDatastoreSpec {
     void setupSpec() {
         manager.registerDomainClasses(Issue16349IdentityBook, Issue16349IncrementBook,
                 Issue16349AssignedBook, Issue16349UnionRoot, Issue16349UnionSub,
-                Issue16349Shelf, Issue16349ShelvedBook)
+                Issue16349Shelf, Issue16349ShelvedBook, Issue16349SequenceBook)
+    }
+
+    void 'sequence generator: save does not issue an extra update'() {
+        given:
+        def statistics = manager.sessionFactory.statistics
+        statistics.statisticsEnabled = true
+        statistics.clear()
+
+        when:
+        def book = new Issue16349SequenceBook(title: 'original').save(flush: true, failOnError: true)
+
+        then:
+        book.version == 0
+        statistics.entityInsertCount == 1
+        statistics.entityUpdateCount == 0
     }
 
     void 'identity generator: save does not issue an extra update'() {
@@ -143,6 +158,17 @@ class Issue16349IncrementBook {
 
     static mapping = {
         id generator: 'increment'
+    }
+}
+
+@Entity
+class Issue16349SequenceBook {
+    Long id
+    Long version
+    String title
+
+    static mapping = {
+        id generator: 'sequence'
     }
 }
 

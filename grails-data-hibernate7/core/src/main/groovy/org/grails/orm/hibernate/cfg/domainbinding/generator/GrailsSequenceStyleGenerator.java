@@ -26,6 +26,7 @@ import org.hibernate.boot.model.relational.SqlStringGenerationContext;
 import org.hibernate.boot.model.relational.internal.SqlStringGenerationContextImpl;
 import org.hibernate.engine.jdbc.env.spi.JdbcEnvironment;
 import org.hibernate.generator.GeneratorCreationContext;
+import org.hibernate.id.PersistentIdentifierGenerator;
 import org.hibernate.id.enhanced.SequenceStyleGenerator;
 
 import org.grails.orm.hibernate.cfg.HibernateSimpleIdentity;
@@ -43,6 +44,18 @@ public class GrailsSequenceStyleGenerator extends SequenceStyleGenerator {
 
         generatorProps.putIfAbsent(INCREMENT_PARAM, "50");
         generatorProps.putIfAbsent(OPT_PARAM, "pooled-lo");
+        // Without an explicit 'sequence' mapping param, Hibernate's own naming strategy falls back to
+        // deriving an implicit sequence name from the target table - but only if it is told what that
+        // table is. Hibernate's standard generator-creation path supplies this itself; the Grails-specific
+        // path that constructs this generator directly does not, so without it every implicit sequence
+        // mapping fails session factory bootstrap with "Unable to determine implicit sequence name for
+        // target table 'null'". Only resolved when actually needed, since getRootClass() is not always
+        // available (e.g. a component/embedded identifier's generator).
+        boolean hasExplicitSequenceName = generatorProps.containsKey(SEQUENCE_PARAM) ||
+                generatorProps.containsKey(ALT_SEQUENCE_PARAM);
+        if (!hasExplicitSequenceName && context.getRootClass() != null) {
+            generatorProps.putIfAbsent(PersistentIdentifierGenerator.TABLE, context.getRootClass().getTable().getName());
+        }
 
         this.configure(context, generatorProps);
 

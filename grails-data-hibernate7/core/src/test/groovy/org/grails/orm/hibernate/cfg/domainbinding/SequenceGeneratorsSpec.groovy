@@ -30,6 +30,7 @@ class SequenceGeneratorsSpec extends HibernateGormDatastoreSpec {
         manager.registerDomainClasses(EntityWithIdentity,
                                      EntityWithNative,
                                      EntityWithSequence,
+                                     EntityWithImplicitSequence,
                                      EntityWithTable,
                                      EntityWithUUID,
                                      EntityWithAssigned)
@@ -58,6 +59,15 @@ class SequenceGeneratorsSpec extends HibernateGormDatastoreSpec {
     void "test sequence generator"() {
         when:
         def entity = new EntityWithSequence(name: "test").save(flush: true)
+
+        then:
+        entity.id != null
+    }
+
+    @Rollback
+    void "test sequence generator with no explicit sequence name"() {
+        when: "the mapping names no sequence, so Hibernate must derive an implicit one from the table"
+        def entity = new EntityWithImplicitSequence(name: "test").save(flush: true)
 
         then:
         entity.id != null
@@ -116,6 +126,15 @@ class EntityWithSequence {
     String name
     static mapping = {
         id generator: 'sequence', params: [sequence_name: 'seq_test']
+    }
+}
+
+@Entity
+class EntityWithImplicitSequence {
+    Long id
+    String name
+    static mapping = {
+        id generator: 'sequence'
     }
 }
 

@@ -28,6 +28,7 @@ import org.hibernate.engine.jdbc.env.spi.JdbcEnvironment
 import org.hibernate.generator.GeneratorCreationContext
 import org.hibernate.id.enhanced.DatabaseStructure
 import org.hibernate.mapping.RootClass
+import org.hibernate.mapping.Table
 
 class GrailsSequenceStyleGeneratorSpec extends HibernateGormDatastoreSpec {
 
@@ -75,8 +76,9 @@ class GrailsSequenceStyleGeneratorSpec extends HibernateGormDatastoreSpec {
         def context = Mock(GeneratorCreationContext)
         def persistentEntity = getPersistentEntity(SequenceStyleGeneratorSpecEntity) as GrailsHibernatePersistentEntity
         def rootClass = new RootClass(binder.getMetadataBuildingContext())
+        rootClass.setTable(new Table('orm', 'sequence_style_generator_spec_entity'))
         persistentEntity.setPersistentClass(rootClass)
-        
+
         def database = binder.getMetadataBuildingContext().getMetadataCollector().getDatabase()
         def jdbcEnvironment = binder.getJdbcEnvironment()
         def mappedId = Mock(HibernateSimpleIdentity)
@@ -84,6 +86,7 @@ class GrailsSequenceStyleGeneratorSpec extends HibernateGormDatastoreSpec {
 
         context.getDatabase() >> database
         context.getServiceRegistry() >> binder.getMetadataBuildingContext().getBuildingOptions().getServiceRegistry()
+        context.getRootClass() >> rootClass
         mappedId.getProperties() >> props
 
         when:
@@ -98,8 +101,11 @@ class GrailsSequenceStyleGeneratorSpec extends HibernateGormDatastoreSpec {
         given:
         def binder = getGrailsDomainBinder()
         def context = Mock(GeneratorCreationContext)
+        def rootClass = new RootClass(binder.getMetadataBuildingContext())
+        rootClass.setTable(new Table('orm', 'sequence_style_generator_spec_entity'))
 
         context.getServiceRegistry() >> binder.getMetadataBuildingContext().getBuildingOptions().getServiceRegistry()
+        context.getRootClass() >> rootClass
 
         when:
         def generator = new TestGrailsSequenceStyleGenerator(context, null, null)
@@ -118,9 +124,12 @@ class GrailsSequenceStyleGeneratorSpec extends HibernateGormDatastoreSpec {
         def jdbcEnvironment = binder.getJdbcEnvironment()
         def structure = Mock(DatabaseStructure)
         staticMockStructure = structure
+        def rootClass = new RootClass(binder.getMetadataBuildingContext())
+        rootClass.setTable(new Table('orm', 'sequence_style_generator_spec_entity'))
 
         context.getDatabase() >> database
         context.getServiceRegistry() >> binder.getMetadataBuildingContext().getBuildingOptions().getServiceRegistry()
+        context.getRootClass() >> rootClass
 
         when:
         def generator = new TestGrailsSequenceStyleGenerator(context, null, jdbcEnvironment)

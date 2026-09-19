@@ -3906,3 +3906,22 @@ Code that relied on `mutex` failing fast on a stale version should check the ver
 `entity.lock()`, which is unchanged.
 
 Datastores that cannot reload under a lock keep their previous behaviour.
+
+==== 71. `id generator: 'sequence'` No Longer Requires an Explicit Name on Hibernate 7
+
+On GORM for Hibernate 7, mapping an identifier with `id generator: 'sequence'` and no `params: [sequence:
+'...']` failed at session factory bootstrap:
+
+[source,groovy]
+----
+static mapping = {
+    id generator: 'sequence'   // threw: Unable to determine implicit sequence name for target table 'null'
+}
+----
+
+Hibernate's own generator-creation path supplies the target table so it can derive an implicit sequence name
+when none is given; the Grails-specific path that constructs the generator directly did not. The table name
+is now supplied the same way, so the mapping above starts the application and derives a sequence name from
+the table, matching Hibernate's own naming convention.
+
+Mappings that already name an explicit sequence are unaffected.
