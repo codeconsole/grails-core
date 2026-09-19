@@ -70,10 +70,9 @@ class XmlGrailsPlugin extends Plugin {
             // reads, because the harness rebuilds that singleton.
             registry.registerBean('xmlRenderer', DefaultXmlRenderer) {
                 it.supplier {
-                    configure(new DefaultXmlRenderer<Object>(
-                            Object,
-                            it.beanProvider(GrailsConventionGroovyPageLocator).getIfAvailable(),
-                            null), environment, it.beanProvider(SpringMessageConverters).getIfAvailable())
+                    DefaultXmlRenderer<Object> renderer = new DefaultXmlRenderer<>(Object)
+                    renderer.groovyPageLocatorProvider = it.beanProvider(GrailsConventionGroovyPageLocator)
+                    configure(renderer, environment, it.beanProvider(SpringMessageConverters).getIfAvailable())
                 }
             }
             registry.registerBean('xmlErrorsRenderer', XmlErrorsRenderer) {

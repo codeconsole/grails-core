@@ -59,9 +59,9 @@ import org.grails.web.gsp.io.GrailsConventionGroovyPageLocator
 @CompileStatic
 class DefaultJsonRenderer<T> implements Renderer<T> {
 
-    private final ConcurrentMap<JacksonJsonHttpMessageConverter, JacksonJsonHttpMessageConverter> grailsConverters = new ConcurrentHashMap<>()
-
     static final MimeType PROBLEM_JSON = new MimeType('application/problem+json', 'json')
+
+    private final ConcurrentMap<JacksonJsonHttpMessageConverter, JacksonJsonHttpMessageConverter> grailsConverters = new ConcurrentHashMap<>()
 
     final Class<T> targetType
     MimeType[] mimeTypes = [MimeType.JSON, MimeType.TEXT_JSON] as MimeType[]

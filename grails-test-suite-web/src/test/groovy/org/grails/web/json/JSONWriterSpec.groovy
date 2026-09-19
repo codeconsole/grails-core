@@ -24,10 +24,10 @@ import spock.lang.Specification
 
 class JSONWriterSpec extends Specification {
 
-    void 'a scalar root is a complete JSON document'() {
+    void 'a scalar root is a complete JSON document with #writerType.simpleName'() {
         given:
         def output = new StringWriter()
-        def writer = new JSONWriter(output)
+        def writer = writerType.getConstructor(Writer).newInstance(output)
 
         when:
         writer.value(value)
@@ -42,17 +42,34 @@ class JSONWriterSpec extends Specification {
         thrown(JSONException)
         output.toString() == expected
 
+        when:
+        writer.object()
+
+        then:
+        thrown(JSONException)
+        output.toString() == expected
+
+        when:
+        writer.array()
+
+        then:
+        thrown(JSONException)
+        output.toString() == expected
+
         where:
-        value          | expected
-        'ok'           | '"ok"'
-        'a"b\nc'       | '"a\\"b\\nc"'
-        "Hi ${'Ada'}"  | '"Hi Ada"'
-        42L            | '42'
-        1.5d           | '1.5'
-        true           | 'true'
-        null           | 'null'
+        [writerType, value, expected] << [JSONWriter, PrettyPrintJSONWriter].collectMany { type ->
+            [
+                [type, 'ok', '"ok"'],
+                [type, 'a"b\nc', '"a\\"b\\nc"'],
+                [type, "Hi ${'Ada'}", '"Hi Ada"'],
+                [type, 42L, '42'],
+                [type, 1.5d, '1.5'],
+                [type, true, 'true'],
+                [type, null, 'null'],
+            ]
+        }
     }
-    
+
     @Issue('GRAILS-10823')
     void 'Test rendering a forward slash'() {
         given:

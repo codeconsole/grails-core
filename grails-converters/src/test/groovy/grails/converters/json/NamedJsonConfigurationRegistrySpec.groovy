@@ -18,6 +18,12 @@
  */
 package grails.converters.json
 
+import java.util.concurrent.Callable
+import java.util.concurrent.CyclicBarrier
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
+
 import tools.jackson.core.JacksonException
 import tools.jackson.core.JsonGenerator
 import tools.jackson.databind.SerializationContext
@@ -55,6 +61,34 @@ class NamedJsonConfigurationRegistrySpec extends Specification {
         named == '{"ok":true}'
         unnamed == named
         lookups == 2
+    }
+
+    void 'concurrent first writes resolve the mapper without serializing bean lookups'() {
+        given:
+        def mapper = JsonMapper.builder().build()
+        def lookups = new AtomicInteger()
+        def barrier = new CyclicBarrier(2)
+        def registry = new NamedJsonConfigurationRegistry({ ->
+            lookups.incrementAndGet()
+            barrier.await(5, TimeUnit.SECONDS)
+            mapper
+        })
+        registry.register('deep') { }
+        def executor = Executors.newFixedThreadPool(2)
+
+        when:
+        def writes = (1..2).collect {
+            executor.submit({ -> registry.writeValueAsString('deep', [ok: true]) } as Callable<String>)
+        }
+        def results = writes.collect { it.get(10, TimeUnit.SECONDS) }
+
+        then:
+        results == ['{"ok":true}', '{"ok":true}']
+        registry.writeValueAsString(null, [ok: true]) == '{"ok":true}'
+        lookups.get() == 2
+
+        cleanup:
+        executor.shutdownNow()
     }
 
     void 'named serializers are isolated and support direct string and writer output'() {

@@ -1094,17 +1094,16 @@ To migrate your custom converters:
 
 ==== 25. Rendering Enum values as JSON
 
-It is no longer possible to render a single enum value as JSON using the `render(Number.ONE as JSON)` syntax.
-Previously, rendering an enum value would produce a JSON string with the type and name of the enum value like:
-```json
-{
-  "enumType": "com.example.Number",
-  "name": "ONE"
-}
-```
+Rendering a single enum value with `render(Number.ONE as JSON)` now produces the JSON string `"ONE"`.
+The default enum marshaller uses the enum name, including when the value is nested in an object or array.
+It no longer produces the older object containing `enumType` and `name` properties.
 
-Rendering an enum value as JSON will now instead throw a `ConverterException`.
-See https://github.com/apache/grails-core/pull/15212[PR 15212] for more details on this change.
+The legacy JSON converter now accepts scalar root values: strings (including GStrings), numbers,
+booleans, `null`, and enum names. Use `new JSON(value)` for scalar values, with or without
+`grails.converters.json.pretty.print=true`. Groovy's built-in casts for strings and numbers do not
+support `value as JSON`; construct the converter explicitly for those values.
+Non-null scalar `respond` responses use the same rendering behavior. Rendering a scalar converter
+no longer throws a `ConverterException` merely because the root is a scalar.
 
 [[_hibernate_5_to_hibernate_7_migration]]
 ==== 26. Hibernate 5 to Hibernate 7 Migration

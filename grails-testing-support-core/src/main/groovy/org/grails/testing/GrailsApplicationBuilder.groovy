@@ -189,8 +189,9 @@ class GrailsApplicationBuilder {
             // Contribute beans without discovering the plugins' controllers/urlMappings dependencies.
             // Both Jackson and data binding must see these definitions during context refresh.
             PluginDiscovery discovery = beanFactory.getBean(PluginDiscovery.BEAN_NAME, PluginDiscovery)
-            if (discovery.findPlugin('converters') == null) {
-                registerPluginBeans(context, beanFactory, 'org.grails.plugins.converters.ConvertersGrailsPlugin')
+            String convertersPlugin = 'org.grails.plugins.converters.ConvertersGrailsPlugin'
+            if (discovery.findPlugin('converters') == null && ClassUtils.isPresent(convertersPlugin, classLoader)) {
+                registerPluginBeans(context, beanFactory, convertersPlugin)
             }
             String xmlPlugin = 'org.grails.plugins.xml.XmlGrailsPlugin'
             if (discovery.findPlugin('xml') == null && ClassUtils.isPresent(xmlPlugin, classLoader)) {

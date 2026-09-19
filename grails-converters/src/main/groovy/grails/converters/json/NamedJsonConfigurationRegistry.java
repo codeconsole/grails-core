@@ -90,12 +90,9 @@ public final class NamedJsonConfigurationRegistry {
     private JsonMapper resolveMapper() {
         JsonMapper mapper = resolvedMapper;
         if (mapper == null) {
-            synchronized (this) {
-                mapper = resolvedMapper;
-                if (mapper == null) {
-                    mapper = jsonMapper.get();
-                    resolvedMapper = mapper;
-                }
+            mapper = jsonMapper.get();
+            if (mapper != null) {
+                resolvedMapper = mapper;
             }
         }
         return mapper;

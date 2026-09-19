@@ -27,6 +27,7 @@ import org.springframework.validation.Errors
 import org.springframework.http.converter.HttpMessageConverter
 
 import grails.converters.XML
+import grails.rest.render.RenderContext
 import grails.rest.render.Renderer
 import grails.web.mime.MimeType
 import org.grails.plugins.web.rest.render.DefaultRendererRegistry
@@ -37,6 +38,8 @@ import org.grails.web.converters.configuration.XmlConvertersConfigurationInitial
 import org.grails.web.converters.marshaller.xml.ValidationErrorsMarshaller
 import org.grails.web.databinding.bindingsource.HalXmlDataBindingSourceCreator
 import org.grails.web.databinding.bindingsource.XmlDataBindingSourceCreator
+import org.grails.web.gsp.io.GrailsConventionGroovyPageLocator
+import org.grails.gsp.io.GroovyPageScriptSource
 
 import spock.lang.Specification
 
@@ -106,6 +109,27 @@ class XmlGrailsPluginSpec extends Specification {
             encoding == 'ISO-8859-1'
             springHttpMessageConvertersSupplier.get() == [first, second]
         }
+    }
+
+    void 'a renderer discovers a GSP locator registered after its creation'() {
+        given:
+        def renderer = beanFactory.getBean('xmlRenderer', DefaultXmlRenderer)
+        def locator = Mock(GrailsConventionGroovyPageLocator)
+        beanFactory.registerSingleton('groovyPageLocator', locator)
+        def context = Mock(RenderContext) {
+            getAcceptMimeType() >> MimeType.XML
+            getControllerName() >> 'book'
+            getActionName() >> 'show'
+        }
+
+        when:
+        renderer.render([title: 'Grails'], context)
+
+        then:
+        1 * locator.findViewForFormat('book', 'show', 'xml') >> Stub(GroovyPageScriptSource)
+        1 * context.setModel([title: 'Grails'])
+        1 * context.setViewName('show')
+        0 * context.getWriter()
     }
 
     void 'nothing registers XML renderers other than those beans'() {

@@ -23,6 +23,7 @@ import java.util.function.Supplier
 
 import groovy.transform.CompileStatic
 
+import org.springframework.beans.factory.ObjectProvider
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.http.HttpStatus
@@ -57,11 +58,16 @@ class DefaultXmlRenderer<T> implements Renderer<T> {
     @Value('${grails.converters.encoding:UTF-8}')
     String encoding = GrailsWebUtil.DEFAULT_ENCODING
 
-    @Autowired(required = false)
     GrailsConventionGroovyPageLocator groovyPageLocator
 
+    // Resolving the locator while collecting MIME type providers creates a bean cycle.
     @Autowired(required = false)
+    ObjectProvider<GrailsConventionGroovyPageLocator> groovyPageLocatorProvider
+
     RendererRegistry rendererRegistry
+
+    @Autowired(required = false)
+    ObjectProvider<RendererRegistry> rendererRegistryProvider
 
     List<HttpMessageConverter<?>> springHttpMessageConverters = []
 
@@ -104,10 +110,12 @@ class DefaultXmlRenderer<T> implements Renderer<T> {
         context.setContentType(GrailsWebUtil.getContentType(mimeType.name, encoding))
 
         def viewName = context.viewName ?: context.actionName
-        final view = groovyPageLocator?.findViewForFormat(context.controllerName, viewName, mimeType.extension)
+        GrailsConventionGroovyPageLocator locator = groovyPageLocator ?: groovyPageLocatorProvider?.getIfAvailable()
+        final view = locator?.findViewForFormat(context.controllerName, viewName, mimeType.extension)
         if (view) {
             // if a view is provided, we use the HTML renderer to return an appropriate model to the view
-            Renderer htmlRenderer = rendererRegistry?.findRenderer(MimeType.HTML, object)
+            RendererRegistry registry = rendererRegistry ?: rendererRegistryProvider?.getIfAvailable()
+            Renderer htmlRenderer = registry?.findRenderer(MimeType.HTML, object)
             if (htmlRenderer == null) {
                 htmlRenderer = new DefaultHtmlRenderer(targetType)
                 htmlRenderer.encoding = encoding
