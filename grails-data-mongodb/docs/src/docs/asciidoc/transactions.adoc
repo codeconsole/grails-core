@@ -45,7 +45,7 @@ Using the lower level API you can of course also take advantage of Mongo's suppo
 [[readOnlyTransactions]]
 === Read-Only Transactions
 
-A read-only transaction, such as a service method annotated with `@ReadOnly` or `@Transactional(readOnly = true)`, commits without flushing the session. This holds whether or not multi-document transactions are enabled, and matches GORM for Hibernate, where a read-only transaction puts the session into `MANUAL` flush mode.
+A read-only transaction, such as a service method annotated with `@ReadOnly` or `@Transactional(readOnly = true)`, commits without flushing the session. This holds whether or not multi-document transactions are enabled, and is how read-only transactions behave on GORM's other datastores — on Hibernate, for instance, a read-only transaction puts the session into `MANUAL` flush mode.
 
 It matters for a write that is saved without `flush: true` and is still queued when read-only code runs in the same session:
 
