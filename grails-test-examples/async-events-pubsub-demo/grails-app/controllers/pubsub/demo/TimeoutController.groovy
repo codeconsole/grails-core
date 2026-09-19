@@ -16,23 +16,19 @@
  *  specific language governing permissions and limitations
  *  under the License.
  */
-package org.grails.async.factory.future
+package pubsub.demo
 
-import java.util.concurrent.Executor
-import java.util.concurrent.Executors
-import java.util.function.UnaryOperator
+import grails.compiler.GrailsCompileStatic
 
-import groovy.transform.CompileStatic
+import static grails.async.web.WebPromises.task
 
-/**
- * CompletableFuture promises executed on owned Java virtual threads.
- *
- * @since 8.0
- */
-@CompileStatic
-class VirtualThreadPromiseFactory extends CompletableFuturePromiseFactory {
+@GrailsCompileStatic
+class TimeoutController {
 
-    VirtualThreadPromiseFactory(UnaryOperator<Executor> executorDecorator = UnaryOperator.<Executor>identity()) {
-        super(Executors.newVirtualThreadPerTaskExecutor(), executorDecorator)
+    def index() {
+        task {
+            sleep(5000)
+            [:]
+        }
     }
 }
