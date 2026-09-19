@@ -3420,7 +3420,7 @@ serialVersionUID` field was accessible before checking that it was static, which
 every serializable bean declares that field, so this affected a large share of objects passed to `as JSON`.
 
 Grails 8 adds compatibility handling for the non-public case, and reports each such class once so that the
-code can be corrected — see 54.2 below. The shape that hits it is an anonymous implementation of a public
+code can be corrected — see 58.2 below. The shape that hits it is an anonymous implementation of a public
 interface:
 
 [source,groovy]
@@ -3439,7 +3439,7 @@ NOTE: Ordinary Groovy code is unaffected. Property access and method calls throu
 on such an object from any package, as does the JDK's `Introspector`; only raw reflection against the method
 as the non-public class declares it fails. That is what bean marshalling was doing.
 
-===== 54.1 Public Fields of Non-Public Classes Are Now Included
+===== 58.1 Public Fields of Non-Public Classes Are Now Included
 
 Java and Groovy beans are now treated alike. A `public` instance field declared on a class that is not
 public was silently omitted from the JSON or XML body when the bean was a plain Java object; it is now
@@ -3457,7 +3457,7 @@ A `public` *field* that cannot be read at all — because its class is in a name
 its package — is skipped, and the rest of the object still converts. A *getter* in that same situation is
 not skipped: the conversion fails, as it did before Grails 8.
 
-===== 54.2 The Warning
+===== 58.2 The Warning
 
 Reading a bean whose class is not public is compatibility handling rather than a supported contract, so each
 such class is reported once:
@@ -3769,7 +3769,83 @@ Paginated list responses already type `totalCount` as `Long` through the same ty
 `DefaultGraphQLPaginationResponseHandler`, so this aligns the count field with a scalar the schema
 already used rather than introducing a new one.
 
-==== 64. XML Web Support Is Optional
+==== 64. Grails Plugins Run for a Grails Application Only
+
+In earlier Grails 8 milestones, the Grails plugin lifecycle ran for any Spring Boot application that had
+`grails-core` on its class path, whether or not it was a Grails application. An application that depended on
+a Grails library — GSP for its views, say — had Grails plugin beans registered alongside the library's own
+auto-configuration. This could prevent the context from starting because of duplicate beans or circular
+references. Grails 7 did not run the plugin lifecycle for a context that omitted the Grails application class.
+
+The lifecycle now runs only for a Grails application: one that `GrailsApp` launched, or one where a source of
+the context is a Grails application class, which is what `grails-app/init/Application.groovy` is. A Grails
+application is unaffected either way. A Spring Boot application using a Grails library gets that library's
+auto-configuration and nothing else.
+
+This matters if you deliberately put a Grails plugin on the class path of an application that is not a Grails
+application and relied on its `doWithSpring` or `beanRegistrar` beans being contributed. Those beans are no
+longer registered. A plugin that also publishes an auto-configuration — as the Grails modules do, and as
+`@GrailsBeans` generates for a plugin's `beans` block — continues to contribute through Spring Boot's own
+auto-configuration, which needs no lifecycle.
+
+Inside a Grails application, `@SpringBootTest(classes = SomeConfig)` uses the explicitly named configuration
+classes. If those sources do not include the Grails application class, the plugin lifecycle does not run.
+This matches Grails 7. Earlier Grails 8 milestones attempted to register plugin beans in this context; with
+Hibernate, that could fail during startup because a plain Spring Boot application disallows circular references.
+
+A bare `@SpringBootTest` can discover the application's `Application` class automatically, so it does not
+need an explicit `classes` attribute to select the Grails lifecycle. When specifying custom configuration
+classes, include `Application` only if the test needs the Grails plugin runtime:
+
+[source,groovy]
+----
+// A context using only this configuration, without the Grails plugin lifecycle
+@SpringBootTest(classes = SomeConfig)
+class ConfigurationSpec extends Specification { }
+
+// Include the application and start through its main method to apply GrailsApp's defaults
+@SpringBootTest(classes = [Application, SomeConfig], useMainMethod = SpringBootTest.UseMainMethod.ALWAYS)
+class ApplicationSpec extends Specification { }
+----
+
+Selecting the application class and applying the startup defaults from `GrailsApp` are separate concerns.
+By default, `@SpringBootTest` does not invoke the application's main method. In a Grails application with
+Hibernate, it can therefore fail on bean overriding or circular references even when the application class
+is selected. Use `useMainMethod = SpringBootTest.UseMainMethod.ALWAYS`, as above, or set both
+`spring.main.allow-bean-definition-overriding=true` and `spring.main.allow-circular-references=true` on the
+test. This startup limitation also existed before the lifecycle change.
+
+`@Integration` tests are unaffected: they name the application class and invoke its main method. So are
+tests using the `grails-testing-support` unit test mixins, which build their context without the lifecycle
+either way.
+
+==== 65. `sitemesh.decorator.default` Is Consulted for the Default Layout
+
+The SiteMesh 3 integration resolved the default layout from `grails.sitemesh.default.layout`, falling back to
+the legacy `grails.views.layout.default`. With neither set it used the implicit `application` layout.
+
+SiteMesh's own `sitemesh.decorator.default` is now consulted as a last fallback, after both Grails keys. It is
+the property a Spring Boot application rendering views with GSP configures, and a Grails application has it
+set from the Grails keys already, so it decides only where neither Grails key is set.
+
+This changes behaviour for a Grails application that set `sitemesh.decorator.default` and neither Grails key:
+it was decorated with the implicit `application` layout and is now decorated with the layout that property
+names. Set `grails.sitemesh.default.layout` to be explicit, or remove `sitemesh.decorator.default` to keep the
+implicit `application` layout. An application that sets either Grails key is unaffected — those still win.
+
+==== 66. Promise Execution and Async Request Migration
+
+The default `PromiseFactory` now uses JDK `CompletableFuture`; it is no longer an `ExecutorPromiseFactory` or an `ExecutorService`. Inject `PromiseFactory` for promise operations rather than casting it to the legacy executor implementation. Explicit GPars and RxJava providers remain available.
+
+In applications, promises and the default event bus share Boot's named `applicationTaskExecutor`. This changes the usual execution policy from an expanding cached pool to Boot's configured executor (normally eight core threads with an unbounded queue). Review blocking workloads and configure `spring.task.execution.pool` and shutdown settings accordingly, or enable `spring.threads.virtual.enabled` on Java 21+. Avoid waiting synchronously for nested tasks in the same saturated pool. If Boot does not provide the named executor, Grails supplies an eight-core-thread managed fallback. Standalone promise factories retain a cached pool.
+
+The FutureTask-based promise implementations, `PromiseFactoryBean`, `AsyncController.startAsync()`, and the Grails-specific Servlet async wrappers are deprecated for removal. Replace custom legacy factory wiring with the async plugin and Boot executor configuration; replace manual Servlet dispatch/completion with a returned `Promise`. Existing Groovy `task`, `tasks`, `then`, and `onError` entry points remain supported.
+
+Both eager web promises and returned promises now honor `spring.mvc.async.request-timeout`; the Servlet container default applies when unset (normally 30 seconds on Tomcat), rather than an infinite timeout for eager web promises. Timeouts return HTTP 503 and can use a `503` URL mapping. Set a timeout explicitly if your application requires long-running responses. With the default and virtual-thread factories, single and aggregate error callbacks receive the original failure, while both direct and chained `get()` methods use the `Future` contract's `ExecutionException` wrapper.
+
+The `grails.async.promiseFactory=virtual-thread` opt-in now uses the same CompletableFuture implementation with its own decorated executor; it no longer relies on the deprecated FutureTask classes. Its default event bus remains asynchronous and its web tasks propagate request context. Its aggregate `onComplete` resolves to the callback's result, and aggregate `onError` observes the original failure while leaving the returned promise failed, rather than recovering to an empty list.
+
+==== 67. XML Web Support Is Optional
 
 XML conversion, request-body binding, codecs, and REST renderers now live in the optional
 `grails-xml` module. Newly generated applications and the web starter no longer include that module by
@@ -3815,7 +3891,7 @@ APIs.
 This change does not affect Grails plugin descriptors. Plugin metadata continues to be generated and
 published in its existing descriptor format; `grails-xml` concerns application HTTP payloads only.
 
-==== 65. `respond()` Uses Spring JSON Conversion
+==== 68. `respond()` Uses Spring JSON Conversion
 
 Spring JSON rendering is opt-in on `8.0.x`: ordinary `respond()` calls continue to use the legacy
 Grails JSON converter unless `grails.web.rendering.json.spring` is `true`. Changing the default belongs
@@ -3876,7 +3952,7 @@ They do not automatically load the controllers, URL mappings or i18n plugins; li
 the curated unit-test setup. Plain `GrailsUnitTest` and `ServiceUnitTest` do not load XML or the web
 plugin graph simply because that module is on the classpath.
 
-==== 66. JSON Request Binding Uses the Boot `JsonMapper`
+==== 69. JSON Request Binding Uses the Boot `JsonMapper`
 
 JSON request bodies used for Grails data binding are now parsed by Spring Boot's configured Jackson 3
 `JsonMapper`. Mapper features installed through `JsonMapperBuilderCustomizer` therefore apply consistently
@@ -3891,7 +3967,7 @@ Untyped JSON numbers keep the types the previous parser produced. Values with a 
 as `BigDecimal` rather than `Double`, so binding a request value such as `1.15` to a `BigDecimal` property
 retains exactly the digits the request sent. Whole numbers continue to bind as `Integer` or `Long`.
 
-==== 67. REST Validation Errors Use RFC 9457 Problems
+==== 70. REST Validation Errors Use RFC 9457 Problems
 
 When Spring JSON rendering is enabled, `respond()` renders Spring `Errors` as
 `application/problem+json` by default. Grails uses the public `ValidationProblemDetailFactory` bean to
@@ -3926,7 +4002,7 @@ Rejected field values are excluded by default because they can contain passwords
 sensitive request data. Applications that deliberately need those values can define their own
 `new ValidationProblemDetailFactory(true)` bean after reviewing that exposure risk.
 
-==== 68. HAL Rendering
+==== 71. HAL Rendering
 
 Existing Grails HAL JSON renderers remain available through explicit renderer registration.
 Adding `spring-boot-starter-hateoas` alone does not register a Grails renderer for Spring HATEOAS
