@@ -143,6 +143,7 @@ spring:
 
 The `grails.controllers.upload.\*` configuration properties are no longer supported.
 Applications that still define any property under `grails.controllers.upload` fail at startup with migration instructions.
+This startup check is a migration aid for Grails 8 only and will be removed in Grails 9, after which leftover `grails.controllers.upload` properties are silently ignored.
 Move those settings to Spring Boot's `spring.servlet.multipart.*` namespace:
 
 [source,yaml]

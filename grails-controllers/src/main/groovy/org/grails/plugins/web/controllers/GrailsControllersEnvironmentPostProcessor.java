@@ -29,8 +29,14 @@ import org.springframework.core.env.ConfigurableEnvironment;
 /**
  * Environment post processor that checks for legacy multipart configuration properties.
  *
+ * <p>This is a temporary migration aid for applications upgrading from Grails 7. It only
+ * rejects the removed {@code grails.controllers.upload} properties, it does not translate them.
+ *
  * @since 8.0
+ * @deprecated the guard is only needed while applications migrate to {@code spring.servlet.multipart},
+ * it will be removed in Grails 9.0 without replacement
  */
+@Deprecated(forRemoval = true, since = "8.0")
 public class GrailsControllersEnvironmentPostProcessor implements EnvironmentPostProcessor {
 
     private static final String LEGACY_MULTIPART_CONFIGURATION = "grails.controllers.upload";
