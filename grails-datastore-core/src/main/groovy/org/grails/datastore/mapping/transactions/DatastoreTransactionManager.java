@@ -176,6 +176,12 @@ public class DatastoreTransactionManager extends AbstractPlatformTransactionMana
                         session.flush();
                     }
                 }
+                else if (session != null && session.hasPendingOperations()) {
+                    logger.warn("Read-only transaction on Session [" + session + "] is committing without " +
+                            "flushing the session, which holds pending inserts, updates or deletes that this " +
+                            "transaction did not persist. Flush them explicitly with save(flush: true), or " +
+                            "perform them in a read-write transaction.");
+                }
                 if (status.isDebug()) {
                     logger.debug("Committing Datastore transaction on Session [" + session + "]");
                 }

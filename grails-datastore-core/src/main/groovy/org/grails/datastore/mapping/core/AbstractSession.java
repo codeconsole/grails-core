@@ -348,7 +348,7 @@ public abstract class AbstractSession<N> extends AbstractAttributeStoringSession
 
             flushActive = true;
 
-            hasInserts = hasUpdates();
+            hasInserts = hasPendingOperations();
             if (hasInserts) {
                 flushPendingInserts(pendingInserts);
                 flushPendingUpdates(pendingUpdates);
@@ -451,7 +451,8 @@ public abstract class AbstractSession<N> extends AbstractAttributeStoringSession
         }
     }
 
-    private boolean hasUpdates() {
+    @Override
+    public boolean hasPendingOperations() {
         return !pendingInserts.isEmpty() || !pendingUpdates.isEmpty() || !pendingDeletes.isEmpty() || !postFlushOperations.isEmpty();
     }
 

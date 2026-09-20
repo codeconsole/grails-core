@@ -66,4 +66,6 @@ The read-only transaction does not persist `Fred`. The session is left in `COMMI
 
 In earlier versions, committing a read-only transaction flushed the session, so a write like this was persisted as a side effect of the read. If your code relies on that, flush the write explicitly with `save(flush: true)`, or perform it inside a read-write transaction.
 
+To help find such code, a read-only transaction that commits while its session still holds queued inserts, updates or deletes logs a warning from `org.grails.datastore.mapping.transactions.DatastoreTransactionManager`. The warning names the session and reports that the transaction did not persist the queued operations; it does not say whether a later read-write transaction in the same session will.
+
 NOTE: When GORM and Spring Data MongoDB share a transaction, `readOnly` only governs GORM's flush. See <<springDataInterop,Spring Data MongoDB Interoperability>>.

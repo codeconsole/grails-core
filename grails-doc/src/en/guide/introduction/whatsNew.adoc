@@ -342,9 +342,12 @@ read-only code could persist another caller's unflushed writes, and a read-only 
 flushing (for example from a validator or a `beforeInsert` event) could re-enter validation.
 
 `AbstractSession` now passes the transaction definition to `beginTransactionInternal(TransactionDefinition)` rather than
-discarding it, so a datastore can act on `readOnly` and on anything else the definition carries. This is a behavior
-change for MongoDB code that saves without `flush: true` and relies on a later read-only transaction to persist the
-write; see the xref:upgrading#upgrading80x[upgrade guide] and the
+discarding it, so a datastore can act on `readOnly` and on anything else the definition carries. `Session` also gained
+`hasPendingOperations()`, and `DatastoreTransactionManager` uses it to log a warning when a read-only transaction commits
+while its session still holds queued inserts, updates or deletes, so a write that a read-only transaction used to persist
+by accident is reported rather than silently dropped. This is a behavior change for MongoDB code that saves without
+`flush: true` and relies on a later read-only transaction to persist the write; see the
+xref:upgrading#upgrading80x[upgrade guide] and the
 link:{mongodb5Guide}index.html#readOnlyTransactions[Read-Only Transactions] section of the GORM for MongoDB guide.
 
 ==== Ahead-of-Time Processing
