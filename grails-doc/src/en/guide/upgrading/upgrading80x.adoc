@@ -3768,3 +3768,15 @@ This changes behaviour for a Grails application that set `sitemesh.decorator.def
 it was decorated with the implicit `application` layout and is now decorated with the layout that property
 names. Set `grails.sitemesh.default.layout` to be explicit, or remove `sitemesh.decorator.default` to keep the
 implicit `application` layout. An application that sets either Grails key is unaffected — those still win.
+
+==== 66. Promise Execution and Async Request Migration
+
+The default `PromiseFactory` now uses JDK `CompletableFuture`; it is no longer an `ExecutorPromiseFactory` or an `ExecutorService`. Inject `PromiseFactory` for promise operations rather than casting it to the legacy executor implementation. Explicit GPars and RxJava providers remain available.
+
+In applications, promises and the default event bus share Boot's named `applicationTaskExecutor`. This changes the usual execution policy from an expanding cached pool to Boot's configured executor (normally eight core threads with an unbounded queue). Review blocking workloads and configure `spring.task.execution.pool` and shutdown settings accordingly, or enable `spring.threads.virtual.enabled` on Java 21+. Avoid waiting synchronously for nested tasks in the same saturated pool. If Boot does not provide the named executor, Grails supplies an eight-core-thread managed fallback. Standalone promise factories retain a cached pool.
+
+The FutureTask-based promise implementations, `PromiseFactoryBean`, `AsyncController.startAsync()`, and the Grails-specific Servlet async wrappers are deprecated for removal. Replace custom legacy factory wiring with the async plugin and Boot executor configuration; replace manual Servlet dispatch/completion with a returned `Promise`. Existing Groovy `task`, `tasks`, `then`, and `onError` entry points remain supported.
+
+Both eager web promises and returned promises now honor `spring.mvc.async.request-timeout`; the Servlet container default applies when unset (normally 30 seconds on Tomcat), rather than an infinite timeout for eager web promises. Timeouts return HTTP 503 and can use a `503` URL mapping. Set a timeout explicitly if your application requires long-running responses. With the default and virtual-thread factories, single and aggregate error callbacks receive the original failure, while both direct and chained `get()` methods use the `Future` contract's `ExecutionException` wrapper.
+
+The `grails.async.promiseFactory=virtual-thread` opt-in now uses the same CompletableFuture implementation with its own decorated executor; it no longer relies on the deprecated FutureTask classes. Its default event bus remains asynchronous and its web tasks propagate request context. Its aggregate `onComplete` resolves to the callback's result, and aggregate `onError` observes the original failure while leaving the returned promise failed, rather than recovering to an empty list.
