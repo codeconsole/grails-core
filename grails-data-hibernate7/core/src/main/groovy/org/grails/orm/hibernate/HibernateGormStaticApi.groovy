@@ -198,27 +198,26 @@ class HibernateGormStaticApi<D> extends GormStaticApi<D> {
     D lock(Map args, Serializable id) {
         LockModeType lockMode = RefreshLockArguments.lockTypeFrom(args)
         boolean refresh = RefreshLockArguments.refreshRequested(args)
-        if (!refresh && lockMode == LockModeType.PESSIMISTIC_WRITE) {
+        if (!refresh && !RefreshLockArguments.typeRequested(args)) {
+            // Nothing was asked for that lock(id) does not already do, so keep its behaviour exactly,
+            // including what it does without a transaction. A call that names a type does not take this
+            // route even when it names the default one, because it is one of the forms documented to
+            // require a transaction.
             return lock(id)
         }
-        Serializable identifier = convertIdentifier(id)
-        if (identifier == null) {
-            return null
-        }
-        if (!refresh) {
-            return (D) hibernateTemplate.execute { Session session ->
-                if (!session.getTransaction().isActive()) {
-                    throw new TransactionRequiredException(RefreshLockArguments.TRANSACTION_REQUIRED)
-                }
-                lockedLoad(session, identifier, lockMode)
-            }
-        }
-        // Stay on this connection's session: the generic implementation resolves the instance api through the
-        // registry, which yields the default connection for a named-connection static api.
         (D) hibernateTemplate.execute { Session session ->
             if (!session.getTransaction().isActive()) {
                 throw new TransactionRequiredException(RefreshLockArguments.TRANSACTION_REQUIRED)
             }
+            Serializable identifier = convertIdentifier(id)
+            if (identifier == null) {
+                return null
+            }
+            if (!refresh) {
+                return lockedLoad(session, identifier, lockMode)
+            }
+            // Stay on this connection's session: the generic implementation resolves the instance api
+            // through the registry, which yields the default connection for a named-connection static api.
             Object managed = findManagedInstance(session, identifier)
             if (managed == null) {
                 // Not loaded yet, so a single locked load is enough.

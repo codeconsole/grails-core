@@ -271,7 +271,7 @@ details.
 
 ==== GORM for Hibernate Locking Improvements
 
-GORM for Hibernate 5 and Hibernate 7 gain three related locking capabilities. All of them require an active transaction, hold the lock until that transaction commits or rolls back, and are available on named connections (`Book.secondary.lock(id, refresh: true)`, `book.secondary.refresh(lock: true)`, within a transaction on that connection) and under a bound tenant. Datastores that do not support a capability throw `UnsupportedOperationException` rather than silently falling back to a plain refresh or an ordinary lock. The existing `entity.lock()`, `DomainClass.lock(id)` and `entity.refresh()` methods are unchanged.
+GORM for Hibernate 5 and Hibernate 7 gain three related locking capabilities. All of them require an active transaction, hold the lock until that transaction commits or rolls back, and are available on named connections (`Book.secondary.lock(id, refresh: true)`, `book.secondary.refresh(lock: true)`, within a transaction on that connection) and under a bound tenant. Datastores that do not support a capability throw `UnsupportedOperationException` rather than silently falling back to a plain refresh or an ordinary lock. The existing `entity.lock()`, `DomainClass.lock(id)` and `entity.refresh()` methods are unchanged; `entity.mutex` is built on the first of these capabilities and changes behaviour, as described below.
 
 ===== Refresh Under a Lock
 
@@ -357,7 +357,25 @@ Book.withTransaction {
 }
 ----
 
-Without an active transaction, `refresh` with a lock and `lock(id, refresh: true)` throw `jakarta.persistence.TransactionRequiredException` before anything is loaded. The database and transaction isolation level determine which state is visible. Locking does not guarantee that every concurrent attempt succeeds: deadlocks, lock timeouts, and transaction serialization failures remain possible. See the Optimistic and Pessimistic Locking section of the GORM for link:{hibernate7Guide}index.html#locking[Hibernate 7] or link:{hibernate5Guide}index.html#locking[Hibernate 5] guide for details.
+Without an active transaction, `refresh` with a lock, `lock(id, refresh: true)` and any `lock(id, ...)` call naming a `type` throw `jakarta.persistence.TransactionRequiredException` before anything is loaded. The database and transaction isolation level determine which state is visible. Locking does not guarantee that every concurrent attempt succeeds: deadlocks, lock timeouts, and transaction serialization failures remain possible. See the Optimistic and Pessimistic Locking section of the GORM for link:{hibernate7Guide}index.html#locking[Hibernate 7] or link:{hibernate5Guide}index.html#locking[Hibernate 5] guide for details.
+
+===== Holding a Lock for a Block of Work
+
+`entity.mutex(Closure)` locks an instance for the scope of a closure. It took an exclusive lock on the state already loaded, and because that lock is version-checked, a transaction that committed to the row after the instance was loaded failed the call with an optimistic locking failure and the closure never ran. Where the datastore supports a locked refresh, it now reloads the row under the lock instead, so it waits for the competing writer and the closure runs on the committed state. The lock is always exclusive; there is no argument to select another mode, because a shared or optimistic lock would not give the closure mutual exclusion.
+
+[source,groovy]
+----
+Airport.withTransaction {
+    def airport = Airport.get(10)
+    airport.mutex {
+        airport.name = 'Heathrow'
+        airport.save(failOnError: true)
+    }
+}
+----
+
+WARNING: Reloading discards unflushed changes to the instance, exactly as `refresh(lock: true)` does, so apply them *inside* the closure rather than before the call. `mutex` now also requires an active transaction and an attached instance. See the upgrade notes for the full list of consequences. Datastores that cannot reload under a lock keep their previous behaviour.
+
 
 ==== GORM for Hibernate 7 Persist and Merge Events
 

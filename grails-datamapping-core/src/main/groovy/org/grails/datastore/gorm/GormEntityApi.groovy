@@ -20,6 +20,8 @@
 package org.grails.datastore.gorm
 
 import groovy.transform.CompileStatic
+import groovy.transform.NamedParam
+import groovy.transform.NamedParams
 
 import org.grails.datastore.gorm.internal.RefreshLockArguments
 
@@ -76,7 +78,9 @@ trait GormEntityApi<D> {
      * @throws UnsupportedOperationException if a lock is requested and the implementation does not support it
      */
     @CompileStatic
-    D refresh(Map args) {
+    D refresh(@NamedParams([
+            @NamedParam(value = 'lock', type = Object, required = false)
+    ]) Map args) {
         if (RefreshLockArguments.lockModeFrom(args) != null) {
             throw new UnsupportedOperationException(RefreshLockArguments.UNSUPPORTED)
         }

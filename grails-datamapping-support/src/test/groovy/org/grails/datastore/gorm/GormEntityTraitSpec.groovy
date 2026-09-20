@@ -18,7 +18,14 @@
  */
 package org.grails.datastore.gorm
 
+import groovy.transform.CompileStatic
 import groovy.transform.Generated
+import groovy.transform.NamedParam
+import groovy.transform.NamedParams
+
+import org.codehaus.groovy.control.CompilerConfiguration
+import org.codehaus.groovy.control.MultipleCompilationErrorsException
+import org.codehaus.groovy.control.customizers.ASTTransformationCustomizer
 
 import grails.artefact.Artefact
 import grails.persistence.Entity
@@ -27,9 +34,11 @@ import org.grails.datastore.mapping.dirty.checking.DirtyCheckable
 import org.grails.datastore.mapping.model.config.GormProperties
 import org.grails.datastore.mapping.reflect.ClassPropertyFetcher
 import spock.lang.Specification
+import spock.lang.Unroll
 
 import java.lang.reflect.Method
 import java.lang.reflect.Modifier
+import java.lang.reflect.Parameter
 
 /**
  * @author graemerocher
@@ -212,6 +221,137 @@ class SubMember extends Member {
 
         where:
         annotation << ['grails.persistence.Entity', "grails.artefact.Artefact('Domain')"]
+    }
+
+    void "the supported named arguments are declared on the woven domain class methods"() {
+        given:
+        def classLoader = new GroovyClassLoader()
+
+        when:
+        classLoader.parseClass(NAMED_PARAM_BOOK)
+        def bookClass = classLoader.loadClass('NamedParamBook')
+
+        then: "refresh names lock, and lock names refresh and type"
+        namedArgumentsOf(bookClass.getMethod('refresh', Map).parameters[0]) == ['lock']
+        namedArgumentsOf(bookClass.getMethod('lock', Map, Serializable).parameters[0]) == ['refresh', 'type']
+
+        and: "the value types stay open, because each argument accepts more than one form"
+        bookClass.getMethod('refresh', Map).parameters[0]
+                .getAnnotation(NamedParams).value().every { it.type() == Object }
+
+        cleanup:
+        classLoader.close()
+    }
+
+    @Unroll
+    void "a statically compiled caller of #expression compiles"() {
+        given:
+        def classLoader = compilingStatically()
+
+        when:
+        classLoader.parseClass("class Caller { void call(NamedParamBook book, Long id) { ${expression} } }")
+
+        then:
+        noExceptionThrown()
+
+        cleanup:
+        classLoader.close()
+
+        where:
+        expression << [
+                'book.refresh(lock: true)',
+                'book.refresh(lock: false)',
+                'NamedParamBook.lock(id, refresh: true)',
+                "NamedParamBook.lock(id, type: 'pessimistic_read')",
+                'NamedParamBook.lock(id, refresh: true, type: null)',
+        ]
+    }
+
+    @Unroll
+    void "a statically compiled caller of #expression is rejected, naming #unknown"() {
+        given:
+        def classLoader = compilingStatically()
+
+        when:
+        classLoader.parseClass("class Caller { void call(NamedParamBook book, Long id) { ${expression} } }")
+
+        then:
+        def error = thrown(MultipleCompilationErrorsException)
+        error.message.contains("unexpected named arg: ${unknown}")
+
+        cleanup:
+        classLoader.close()
+
+        where:
+        expression                                            | unknown
+        'book.refresh(lcok: true)'                            | 'lcok'
+        'NamedParamBook.lock(id, refesh: true)'               | 'refesh'
+        'NamedParamBook.lock(id, refresh: true, unknown: 1)'  | 'unknown'
+    }
+
+    void "a map argument that is not written as named arguments is still accepted, so a caller can pass one through"() {
+        given:
+        def classLoader = compilingStatically()
+
+        when:
+        classLoader.parseClass('''
+            class PassThroughCaller {
+                void call(NamedParamBook book, Long id, Map options) {
+                    book.refresh(options)
+                    NamedParamBook.lock(options, id)
+                }
+            }
+        ''')
+
+        then:
+        noExceptionThrown()
+
+        cleanup:
+        classLoader.close()
+    }
+
+    @Unroll
+    void "a dynamically compiled caller of #expression compiles, because the metadata only checks static calls"() {
+        given:
+        def classLoader = new GroovyClassLoader()
+        classLoader.parseClass(NAMED_PARAM_BOOK)
+
+        when:
+        classLoader.parseClass("class DynamicCaller { void call(NamedParamBook book, Long id) { ${expression} } }")
+
+        then:
+        noExceptionThrown()
+
+        cleanup:
+        classLoader.close()
+
+        where:
+        expression << ['book.refresh(lcok: true)', 'NamedParamBook.lock(id, refesh: true)']
+    }
+
+    private static final String NAMED_PARAM_BOOK = '''
+        import grails.persistence.Entity
+
+        @Entity
+        class NamedParamBook {
+            String title
+        }
+    '''
+
+    /**
+     * A loader whose callers are statically compiled, with the domain class itself compiled normally by its
+     * parent so that only the call sites are under static type checking.
+     */
+    private static GroovyClassLoader compilingStatically() {
+        def entityLoader = new GroovyClassLoader(GormEntityTraitSpec.classLoader)
+        entityLoader.parseClass(NAMED_PARAM_BOOK)
+        def configuration = new CompilerConfiguration()
+        configuration.addCompilationCustomizers(new ASTTransformationCustomizer(CompileStatic))
+        new GroovyClassLoader(entityLoader, configuration)
+    }
+
+    private static List<String> namedArgumentsOf(Parameter parameter) {
+        parameter.getAnnotation(NamedParams).value().collect { NamedParam named -> named.value() }
     }
 }
 

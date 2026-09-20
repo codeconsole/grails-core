@@ -447,6 +447,109 @@ class Hibernate5RefreshLockSpec extends HibernateGormDatastoreSpec {
         !Hibernate.isInitialized(proxy)
     }
 
+    void 'mutex reloads the instance, so a pending change is discarded and no update is scheduled'() {
+        given:
+        def book = new Hibernate5RefreshLockBook(title: 'original').save(flush: true, failOnError: true)
+        Hibernate5RefreshLockBook.withSession { it.clear() }
+        book = Hibernate5RefreshLockBook.get(book.id)
+        book.title = 'pending'
+        assert book.isDirty('title')
+
+        when:
+        def seen = book.mutex { book.title }
+        Hibernate5RefreshLockBook.withSession { Session session -> session.flush() }
+
+        then: 'the closure saw the committed state, and the discarded edit left no trace'
+        seen == 'original'
+        book.title == 'original'
+        !book.isDirty('title')
+        book.version == 0
+        Hibernate5RefreshLockBook.withSession { Session session ->
+            session.clear()
+            Hibernate5RefreshLockBook.get(book.id).title == 'original'
+        }
+    }
+
+    void 'mutex rejects a missing transaction'() {
+        given:
+        Long id = new Hibernate5RefreshLockBook(title: 'original').save(flush: true, failOnError: true).id
+        manager.transactionManager.commit(manager.transactionStatus)
+        manager.transactionStatus = null
+
+        when:
+        Hibernate5RefreshLockBook.withNewSession { Session session ->
+            assert !session.getTransaction().isActive()
+            Hibernate5RefreshLockBook.get(id).mutex { 'never runs' }
+        }
+
+        then:
+        def exception = thrown(TransactionRequiredException)
+        exception.message == 'An active transaction is required.'
+    }
+
+    void 'mutex rejects a detached instance'() {
+        given:
+        Long id = new Hibernate5RefreshLockBook(title: 'original').save(flush: true, failOnError: true).id
+        Hibernate5RefreshLockBook.withSession { it.clear() }
+        def book = Hibernate5RefreshLockBook.get(id)
+        Hibernate5RefreshLockBook.withSession { Session session ->
+            session.evict(book)
+            assert !session.contains(book)
+        }
+
+        when:
+        book.mutex { 'never runs' }
+
+        then:
+        def exception = thrown(IllegalArgumentException)
+        exception.message == 'The instance must be attached to the current session.'
+    }
+
+    void 'static lock(id, type: #description) rejects a missing transaction even when it names the default lock'() {
+        given:
+        Long id = new Hibernate5RefreshLockBook(title: 'original').save(flush: true, failOnError: true).id
+        manager.transactionManager.commit(manager.transactionStatus)
+        manager.transactionStatus = null
+
+        when: 'naming the mode is one of the forms documented to require a transaction, default or not'
+        Hibernate5RefreshLockBook.withNewSession { Session session ->
+            assert !session.getTransaction().isActive()
+            Hibernate5RefreshLockBook.lock(id, type: type)
+        }
+
+        then:
+        def exception = thrown(TransactionRequiredException)
+        exception.message == 'An active transaction is required.'
+
+        where:
+        description                      | type
+        'LockModeType.PESSIMISTIC_WRITE' | LockModeType.PESSIMISTIC_WRITE
+        "'pessimistic_write'"            | 'pessimistic_write'
+    }
+
+    void 'static lock(id#description) keeps the route lock(id) has always taken without a transaction'() {
+        given:
+        Long id = new Hibernate5RefreshLockBook(title: 'original').save(flush: true, failOnError: true).id
+        manager.transactionManager.commit(manager.transactionStatus)
+        manager.transactionStatus = null
+
+        when: 'nothing was asked for that lock(id) does not already do, so Hibernate 5 permits it as it always has'
+        def title = Hibernate5RefreshLockBook.withNewSession { Session session ->
+            assert !session.getTransaction().isActive()
+            lockCall(id)?.title
+        }
+
+        then:
+        notThrown(TransactionRequiredException)
+        title == 'original'
+
+        where:
+        description        | lockCall
+        ''                 | { Long bookId -> Hibernate5RefreshLockBook.lock(bookId) }
+        ', refresh: false' | { Long bookId -> Hibernate5RefreshLockBook.lock(bookId, refresh: false) }
+        ', type: null'     | { Long bookId -> Hibernate5RefreshLockBook.lock(bookId, type: null) }
+    }
+
     void 'static lock(id, type: PESSIMISTIC_READ) without a refresh request rejects a missing transaction'() {
         given:
         Long id = new Hibernate5RefreshLockBook(title: 'original').save(flush: true, failOnError: true).id

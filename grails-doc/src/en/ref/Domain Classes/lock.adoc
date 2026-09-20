@@ -79,7 +79,9 @@ The instance method `entity.lock()` is unchanged: it acquires a lock without rel
 The static `DomainClass.lock(id)` method is also unchanged, and `DomainClass.lock(id, refresh: false)` behaves the same: both lock without refreshing. When the entity is not yet in the session it is loaded under the lock, avoiding a separate unlocked `get()`. When the entity is already managed in the current session, its already-loaded state is locked and version-checked rather than reloaded.
 
 The forms that take named arguments - `lock(id, refresh: true)` and any call passing `type` - require an active
-transaction and throw `jakarta.persistence.TransactionRequiredException` without one, before anything is loaded.
+transaction and throw `jakarta.persistence.TransactionRequiredException` without one, before anything is loaded,
+including for a `null` identifier. A `type` supplied as `null` counts as absent: the call takes the default lock
+and behaves exactly like `lock(id)`, transaction requirement included.
 `lock(id)`, `lock(id, refresh: false)` and the instance method `entity.lock()` keep the behaviour they have
 always had, which differs by implementation. GORM for Hibernate 7 rejects them without a transaction, with the
 same exception. GORM for Hibernate 5 does not: the call returns the instance and `getCurrentLockMode` reports

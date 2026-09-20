@@ -20,6 +20,8 @@
 package grails.gorm.api
 
 import groovy.transform.CompileStatic
+import groovy.transform.NamedParam
+import groovy.transform.NamedParams
 
 import jakarta.persistence.LockModeType
 
@@ -235,7 +237,8 @@ interface GormStaticOperations<D> {
      * <p>Supported arguments:</p>
      * <ul>
      *   <li>{@code type} - the {@link jakarta.persistence.LockModeType} to acquire, or its name. Defaults to
-     *   {@link jakarta.persistence.LockModeType#PESSIMISTIC_WRITE}; {@code NONE} is rejected.</li>
+     *   {@link jakarta.persistence.LockModeType#PESSIMISTIC_WRITE}; {@code NONE} is rejected. Naming a mode
+     *   requires an active transaction, the default one included; a {@code null} counts as not naming one.</li>
      *   <li>{@code refresh} - when {@code true}, reloads the database state and version of an instance that is
      *   already managed in the current session under the lock instead of locking the version already loaded.
      *   Unflushed changes to the instance are discarded. Requires an active transaction.</li>
@@ -248,14 +251,18 @@ interface GormStaticOperations<D> {
      * @param args The named arguments
      * @param id The identifier
      * @return The instance, or {@code null} if no instance exists for the identifier
-     * @throws RuntimeException an implementation-specific exception if {@code refresh: true} is requested without
-     * an active transaction, such as {@code jakarta.persistence.TransactionRequiredException} for Hibernate
+     * @throws RuntimeException an implementation-specific exception if {@code refresh: true} or a {@code type} is
+     * requested without an active transaction, such as {@code jakarta.persistence.TransactionRequiredException}
+     * for Hibernate
      * @throws IllegalArgumentException if {@code type} is neither a lock mode nor the name of one, or is {@code NONE}
      * @throws UnsupportedOperationException if {@code refresh: true} or a non-default {@code type} is requested
      * and the datastore does not support it
      */
     @CompileStatic
-    default D lock(Map args, Serializable id) {
+    default D lock(@NamedParams([
+            @NamedParam(value = 'refresh', type = Object, required = false),
+            @NamedParam(value = 'type', type = Object, required = false)
+    ]) Map args, Serializable id) {
         // Validated in the same order as GormStaticApi.lock(Map, Serializable), the implementation this
         // default backs for any datastore that does not override it, so the same invalid combination of
         // arguments is rejected with the same reason regardless of which of the two runs.

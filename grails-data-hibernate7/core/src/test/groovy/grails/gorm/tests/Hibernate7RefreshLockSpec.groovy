@@ -300,6 +300,121 @@ class Hibernate7RefreshLockSpec extends HibernateGormDatastoreSpec {
         !Hibernate.isInitialized(proxy)
     }
 
+    void 'mutex reloads the instance, so a pending change is discarded and no update is scheduled'() {
+        given:
+        def book = new Hibernate7RefreshLockBook(title: 'original').save(flush: true, failOnError: true)
+        Hibernate7RefreshLockBook.withSession { it.clear() }
+        book = Hibernate7RefreshLockBook.get(book.id)
+        book.title = 'pending'
+        assert book.isDirty('title')
+
+        when:
+        def seen = book.mutex { book.title }
+        Hibernate7RefreshLockBook.withSession { Session session -> session.flush() }
+
+        then: 'the closure saw the committed state, and the discarded edit left no trace'
+        seen == 'original'
+        book.title == 'original'
+        !book.isDirty('title')
+        book.version == 0
+        Hibernate7RefreshLockBook.withSession { Session session ->
+            session.clear()
+            Hibernate7RefreshLockBook.get(book.id).title == 'original'
+        }
+    }
+
+    void 'mutex rejects a missing transaction'() {
+        given:
+        Long id = new Hibernate7RefreshLockBook(title: 'original').save(flush: true, failOnError: true).id
+        manager.transactionManager.commit(manager.transactionStatus)
+        manager.transactionStatus = null
+
+        when:
+        Hibernate7RefreshLockBook.withNewSession { Session session ->
+            assert !session.transaction.isActive()
+            Hibernate7RefreshLockBook.get(id).mutex { 'never runs' }
+        }
+
+        then:
+        def exception = thrown(TransactionRequiredException)
+        exception.message == 'An active transaction is required.'
+    }
+
+    void 'mutex rejects a detached instance'() {
+        given:
+        Long id = new Hibernate7RefreshLockBook(title: 'original').save(flush: true, failOnError: true).id
+        Hibernate7RefreshLockBook.withSession { it.clear() }
+        def book = Hibernate7RefreshLockBook.get(id)
+        Hibernate7RefreshLockBook.withSession { Session session ->
+            session.evict(book)
+            assert !session.contains(book)
+        }
+
+        when:
+        book.mutex { 'never runs' }
+
+        then:
+        def exception = thrown(IllegalArgumentException)
+        exception.message == 'The instance must be attached to the current session.'
+    }
+
+    void 'static lock(id, type: #description) rejects a missing transaction even when it names the default lock'() {
+        given:
+        Long id = new Hibernate7RefreshLockBook(title: 'original').save(flush: true, failOnError: true).id
+        manager.transactionManager.commit(manager.transactionStatus)
+        manager.transactionStatus = null
+
+        when: 'naming the mode is one of the forms documented to require a transaction, default or not'
+        Hibernate7RefreshLockBook.withNewSession { Session session ->
+            assert !session.transaction.isActive()
+            Hibernate7RefreshLockBook.lock(id, type: type)
+        }
+
+        then:
+        def exception = thrown(TransactionRequiredException)
+        exception.message == 'An active transaction is required.'
+
+        where:
+        description                      | type
+        'LockModeType.PESSIMISTIC_WRITE' | LockModeType.PESSIMISTIC_WRITE
+        "'pessimistic_write'"            | 'pessimistic_write'
+    }
+
+    void 'static lock(id#description) takes the same route as lock(id) without a transaction'() {
+        given:
+        Long id = new Hibernate7RefreshLockBook(title: 'original').save(flush: true, failOnError: true).id
+        manager.transactionManager.commit(manager.transactionStatus)
+        manager.transactionStatus = null
+
+        when: 'nothing was asked for that lock(id) does not already do, so the call must not diverge from it'
+        def plain = outcomeWithoutTransaction { Hibernate7RefreshLockBook.lock(id) }
+        def withArguments = outcomeWithoutTransaction { lockCall(id) }
+
+        then:
+        withArguments == plain
+
+        where:
+        description        | lockCall
+        ', refresh: false' | { Long bookId -> Hibernate7RefreshLockBook.lock(bookId, refresh: false) }
+        ', type: null'     | { Long bookId -> Hibernate7RefreshLockBook.lock(bookId, type: null) }
+    }
+
+    /**
+     * Runs the call in a session with no transaction and reports what it did - the title it returned, or the
+     * type of exception it threw - so that two forms can be compared without pinning either one.
+     */
+    private static Object outcomeWithoutTransaction(Closure<?> call) {
+        Hibernate7RefreshLockBook.withNewSession { Session session ->
+            assert !session.transaction.isActive()
+            try {
+                call.call()?.title
+            }
+            catch (Throwable failure) {
+                failure.getClass()
+            }
+        }
+    }
+
     void 'static lock(id, type: PESSIMISTIC_READ) without a refresh request rejects a missing transaction'() {
         given:
         Long id = new Hibernate7RefreshLockBook(title: 'original').save(flush: true, failOnError: true).id

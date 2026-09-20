@@ -113,6 +113,15 @@ class RefreshLockArguments {
 
     /**
      * @param args The named arguments, may be {@code null}
+     * @return Whether the call selected a lock mode itself, rather than taking the default. A {@code type}
+     * supplied as {@code null} counts as absent, the way {@link #lockTypeFrom(Map)} reads it.
+     */
+    static boolean typeRequested(Map args) {
+        args?.get(TYPE) != null
+    }
+
+    /**
+     * @param args The named arguments, may be {@code null}
      * @return Whether the {@code refresh} argument requests a reload under the lock
      * @throws IllegalArgumentException if the argument is neither a boolean nor the text of one
      */

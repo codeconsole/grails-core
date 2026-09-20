@@ -80,6 +80,32 @@ class RefreshLockArgumentsSpec extends Specification {
         [type: 'pessimistic_read']                      | LockModeType.PESSIMISTIC_READ
     }
 
+    @Unroll
+    void "typeRequested(#args) is #expected"() {
+        expect:
+        RefreshLockArguments.typeRequested(args) == expected
+
+        where:
+        args                                          | expected
+        null                                           | false
+        [:]                                            | false
+        [refresh: true]                                | false
+        [type: null]                                   | false
+        [type: LockModeType.PESSIMISTIC_WRITE]          | true
+        [type: LockModeType.PESSIMISTIC_READ]           | true
+        [type: 'pessimistic_read']                      | true
+    }
+
+    void "typeRequested distinguishes the default lock mode from one the caller named"() {
+        expect: "both resolve to the same mode"
+        RefreshLockArguments.lockTypeFrom([:]) == LockModeType.PESSIMISTIC_WRITE
+        RefreshLockArguments.lockTypeFrom([type: LockModeType.PESSIMISTIC_WRITE]) == LockModeType.PESSIMISTIC_WRITE
+
+        and: "but only one of them named it, which is what selects the transaction-checked path"
+        !RefreshLockArguments.typeRequested([:])
+        RefreshLockArguments.typeRequested([type: LockModeType.PESSIMISTIC_WRITE])
+    }
+
     void "lockTypeFrom rejects NONE explicitly"() {
         when:
         RefreshLockArguments.lockTypeFrom([type: LockModeType.NONE])
