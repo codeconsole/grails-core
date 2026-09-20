@@ -3907,7 +3907,7 @@ Code that relied on `mutex` failing fast on a stale version should check the ver
 
 Datastores that cannot reload under a lock keep their previous behaviour.
 
-==== 71. `id generator: 'sequence'` No Longer Requires an Explicit Name on Hibernate 7
+==== 71. `id generator: 'sequence'` Derives Its Name From the Table on Hibernate 7
 
 On GORM for Hibernate 7, mapping an identifier with `id generator: 'sequence'` and no `params: [sequence:
 '...']` failed at session factory bootstrap:
@@ -3921,7 +3921,30 @@ static mapping = {
 
 Hibernate's own generator-creation path supplies the target table so it can derive an implicit sequence name
 when none is given; the Grails-specific path that constructs the generator directly did not. The table name
-is now supplied the same way, so the mapping above starts the application and derives a sequence name from
-the table, matching Hibernate's own naming convention.
+is now supplied the same way, so the mapping above starts the application.
 
-Mappings that already name an explicit sequence are unaffected.
+The derived name is not the one Grails 7 used. Hibernate 7 names the sequence after the entity's table with
+its own `_SEQ` suffix, where Grails 7 on Hibernate 5 gave every such mapping the same `hibernate_sequence`:
+
+[cols="2,2",options="header"]
+|===
+| `id generator: 'sequence'` on table `book` | Sequence
+
+| Grails 7, on Hibernate 5
+| `hibernate_sequence`
+
+| Grails 8, on Hibernate 7
+| `book_SEQ`
+|===
+
+An application whose schema is created at startup is unaffected. One that upgrades against an existing
+database has to either add the new sequences to that schema or keep the old name explicitly:
+
+[source,groovy]
+----
+static mapping = {
+    id generator: 'sequence', params: [sequence: 'hibernate_sequence']
+}
+----
+
+Mappings that already name a sequence are unaffected, and so is GORM for Hibernate 5.

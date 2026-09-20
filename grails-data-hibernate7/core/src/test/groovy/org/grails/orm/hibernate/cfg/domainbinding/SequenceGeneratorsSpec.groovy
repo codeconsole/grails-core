@@ -19,6 +19,12 @@
 
 package org.grails.orm.hibernate.cfg.domainbinding
 
+import java.sql.Connection
+import java.sql.ResultSet
+import java.sql.Statement
+
+import org.hibernate.Session
+
 import grails.gorm.annotation.Entity
 import grails.gorm.tests.HibernateGormDatastoreSpec
 import grails.gorm.transactions.Rollback
@@ -71,6 +77,26 @@ class SequenceGeneratorsSpec extends HibernateGormDatastoreSpec {
 
         then:
         entity.id != null
+
+        and: "the derived name is the table with Hibernate's suffix, which is what the upgrade notes promise"
+        sequenceNames().contains('ENTITY_WITH_IMPLICIT_SEQUENCE_SEQ')
+    }
+
+    private static Set<String> sequenceNames() {
+        Set<String> names = [] as Set
+        EntityWithImplicitSequence.withSession { Session session ->
+            session.doWork { Connection connection ->
+                connection.createStatement().withCloseable { Statement statement ->
+                    statement.executeQuery('select sequence_name from information_schema.sequences')
+                            .withCloseable { ResultSet rows ->
+                                while (rows.next()) {
+                                    names << rows.getString(1).toUpperCase(Locale.ROOT)
+                                }
+                            }
+                }
+            }
+        }
+        names
     }
 
     @Rollback

@@ -51,9 +51,7 @@ public class GrailsSequenceStyleGenerator extends SequenceStyleGenerator {
         // mapping fails session factory bootstrap with "Unable to determine implicit sequence name for
         // target table 'null'". Only resolved when actually needed, since getRootClass() is not always
         // available (e.g. a component/embedded identifier's generator).
-        boolean hasExplicitSequenceName = generatorProps.containsKey(SEQUENCE_PARAM) ||
-                generatorProps.containsKey(ALT_SEQUENCE_PARAM);
-        if (!hasExplicitSequenceName && context.getRootClass() != null) {
+        if (!hasExplicitSequenceName(generatorProps) && context.getRootClass() != null) {
             generatorProps.putIfAbsent(PersistentIdentifierGenerator.TABLE, context.getRootClass().getTable().getName());
         }
 
@@ -79,6 +77,19 @@ public class GrailsSequenceStyleGenerator extends SequenceStyleGenerator {
                 this.initialize(sqlContext);
             }
         }
+    }
+
+    /**
+     * Whether the mapping named the sequence itself, resolved the way {@link SequenceStyleGenerator} resolves
+     * it: {@code sequence_name} when present, otherwise {@code sequence}, and a blank name counts as no name
+     * at all. Anything the generator would treat as unnamed still needs the target table to derive one.
+     */
+    private static boolean hasExplicitSequenceName(Properties generatorProps) {
+        Object sequenceName = generatorProps.get(SEQUENCE_PARAM);
+        if (sequenceName == null) {
+            sequenceName = generatorProps.get(ALT_SEQUENCE_PARAM);
+        }
+        return sequenceName != null && !sequenceName.toString().isEmpty();
     }
 
     @Override
