@@ -47,6 +47,8 @@ import org.bson.codecs.Codec;
 import org.bson.codecs.configuration.CodecProvider;
 import org.bson.codecs.configuration.CodecRegistries;
 import org.bson.codecs.configuration.CodecRegistry;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.MessageSource;
@@ -155,6 +157,8 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
     private static final int INDEX_OPTIONS_CONFLICT_CODE = 85;
     public static final String CODEC_ENGINE = MongoConstants.CODEC_ENGINE;
 
+    private static final Logger LOG = LoggerFactory.getLogger(MongoDatastore.class);
+
     /**
      * Not final because {@link #start()} replaces it after a CRaC restore. Everything other
      * than construction reaches it through {@link #getMongoClient()}, so a replacement is
@@ -222,6 +226,11 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
         this.defaultFlushMode = settings.getFlushMode();
         this.stateless = settings.isStateless();
         this.codecEngine = settings.getEngine().equals(MongoConstants.CODEC_ENGINE);
+        if (!this.codecEngine) {
+            LOG.warn("The '{}' persistence engine is deprecated and will be removed in a " +
+                    "future release. Remove the {} setting to use the default codec engine.",
+                    settings.getEngine(), MongoSettings.SETTING_ENGINE);
+        }
         this.transactionsEnabled = settings.isTransactional();
         this.buildIndexes = settings.isBuildIndexes();
         this.buildIndexesAsync = settings.isBuildIndexesAsync();
