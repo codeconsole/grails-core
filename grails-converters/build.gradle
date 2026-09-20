@@ -41,13 +41,8 @@ dependencies {
     api project(':grails-web-common')
     api 'org.apache.groovy:groovy'
 
-    // Provided by the container at runtime, but ConvertersExtension is a Groovy extension module
-    // whose getJSON/getXML signatures take HttpServletRequest, and the Groovy compiler loads every
-    // extension module it finds on a compile classpath before compiling anything. A consumer that
-    // depends on this module without a web starter (a plugin, a library) otherwise fails compileGroovy
-    // with "Unable to configure org.grails.web.converters.ConvertersExtension due to missing dependency
-    // jakarta/servlet/http/HttpServletRequest". Same declaration as grails-controllers and
-    // grails-web-taglib.
+    // api needed downstream: ConvertersExtension is a Groovy extension module with HttpServletRequest
+    // in its signatures, and the Groovy compiler loads it from any compile classpath it is on
     compileOnlyApi 'jakarta.servlet:jakarta.servlet-api'
 
     implementation 'org.apache.commons:commons-lang3'
