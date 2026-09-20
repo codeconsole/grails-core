@@ -1501,7 +1501,9 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
     public void close() {
         MongoClient current = this.mongo;
         shutDownIndexBuild();
-        for (MongoDatastore datastore : datastoresByConnectionSource.values()) {
+        // Over a snapshot: the connection sources listener can still add a child while this runs, and a
+        // ConcurrentModificationException here would escape before anything below had a chance to close.
+        for (MongoDatastore datastore : new ArrayList<>(datastoresByConnectionSource.values())) {
             if (datastore != this) {
                 datastore.shutDownIndexBuild();
             }
