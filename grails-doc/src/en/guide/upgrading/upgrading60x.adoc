@@ -460,3 +460,7 @@ class MyJob {
 ----
 
 See the xref:backgroundJobs.adoc#quartzJobProperties[Job Properties] section for the full set of supported properties and their defaults.
+
+==== 17. GORM for MongoDB rejects Map criterion values that contain `$` keys
+
+`findWhere`, `findAllWhere`, criteria queries, the `where` DSL and dynamic finders now throw `InvalidDataAccessResourceUsageException` when a `Map` passed as a criterion value contains a key starting with `$` at any level, on any property type including enums. MongoDB interprets such a value document as an operator expression rather than as a value. Maps without such keys are still sent as literal subdocument comparisons, so exact matches on `Map` properties, dotted paths and array elements are unchanged, and geospatial criteria are exempt. Code that deliberately passed an operator document through a criteria value should use the native `find(Bson)` API instead.

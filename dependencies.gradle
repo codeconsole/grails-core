@@ -22,13 +22,13 @@
 // These files are split to facilitate separation of build vs application dependencies. These are the application dependencies.
 ext {
     gradleBomDependencyVersions = [
-            'ant.version'                   : '1.10.15',
+            'ant.version'                   : '1.10.18',
             'asm.version'                   : '9.10.1',
             'asciidoctor-gradle-jvm.version': '4.0.5',
-            'asciidoctorj.version'          : '3.0.0',
-            'asset-pipeline-gradle.version' : '5.0.34',
+            'asciidoctorj.version'          : '3.0.1',
+            'asset-pipeline-gradle.version' : '5.0.35',
             'bnd.version'                   : '7.1.0',
-            'byte-buddy.version'            : '1.18.3',
+            'byte-buddy.version'            : '1.18.14',
             'commons-text.version'          : '1.15.0',
             'directory-watcher.version'     : '0.19.1',
             'gradle-spock.version'          : '2.3-groovy-3.0',
@@ -81,7 +81,7 @@ ext {
     ]
 
     bomDependencyVersions = [
-            'asset-pipeline-bom.version'    : '5.0.34',
+            'asset-pipeline-bom.version'    : '5.0.35',
             'cas-client-core.version'       : '4.0.4',
             'bootstrap-icons.version'       : '1.13.1',
             'bootstrap.version'             : '5.3.8',
@@ -117,8 +117,8 @@ ext {
             'hibernate-groovy-proxy.version': '1.1',
             'jakarta-servlet-api.version'   : '6.1.0',
             'jakarta-validation-api.version': '3.1.1',
-            'junit.version'                 : '5.13.3',
-            'junit-platform.version'        : '1.13.3',
+            'junit.version'                 : '5.13.4',
+            'junit-platform.version'        : '1.13.4',
             // Security: overrides spring-boot-dependencies (1.15.12). 1.16.7 is the oldest open source release that
             // fixes CVE-2026-59295 (DoS in the Apache HttpAsyncClient instrumentation) and CVE-2026-59296 (metric
             // name/tag injection via unsanitised newlines); the 1.15.13 patch is Enterprise Support only.
