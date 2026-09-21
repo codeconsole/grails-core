@@ -39,6 +39,7 @@ import org.gradle.api.tasks.PathSensitive
 import org.gradle.api.tasks.PathSensitivity
 import org.gradle.api.tasks.TaskAction
 import org.gradle.api.tasks.bundling.Jar
+import org.gradle.api.tasks.compile.GroovyCompile
 import org.gradle.api.tasks.compile.JavaCompile
 import org.objectweb.asm.AnnotationVisitor
 import org.objectweb.asm.ClassReader
@@ -61,7 +62,15 @@ class ConfigurationMetadataPlugin implements Plugin<Project> {
     void apply(Project project) {
         project.plugins.withId('java') {
             JavaPluginExtension java = project.extensions.getByType(JavaPluginExtension)
+            // constructor binding is read from the MethodParameters attribute; Java sources joint-compiled
+            // by GroovyCompile take their javac flags from the task's compile options as well
             project.tasks.withType(JavaCompile).configureEach { JavaCompile task ->
+                if (!task.options.compilerArgs.contains('-parameters')) {
+                    task.options.compilerArgs.add('-parameters')
+                }
+            }
+            project.tasks.withType(GroovyCompile).configureEach { GroovyCompile task ->
+                task.groovyOptions.parameters = true
                 if (!task.options.compilerArgs.contains('-parameters')) {
                     task.options.compilerArgs.add('-parameters')
                 }
@@ -218,7 +227,7 @@ abstract class GenerateConfigurationMetadataTask extends DefaultTask {
                 .sort { File directory -> directory.absolutePath }.each { File directory ->
             directory.listFiles().findAll { File file -> file.isFile() && file.name.endsWith('.json') }
                     .sort { File file -> file.name }.each { File file ->
-                ClassModel model = models[file.name - '.json']
+                ClassModel model = models[file.name.replaceFirst(/\.json$/, '')]
                 if (model?.prefix != null) {
                     GenerateConfigurationMetadataTask.applyPayload(model, file.getText(StandardCharsets.UTF_8.name()))
                 }
@@ -498,11 +507,11 @@ abstract class GenerateConfigurationMetadataTask extends DefaultTask {
                                               List<Map<String, Object>> typedProperties,
                                               Map overlay) {
         Map<String, Object> result = [:]
-        result['groups'] = mergeGroups(dslGroups + typedGroups, (overlay.get('groups') ?: []) as List)
-        result['properties'] = mergeNamed(dslProperties, typedProperties,
+        result['groups'] = mergeSourced(dslGroups + typedGroups, (overlay.get('groups') ?: []) as List, 'groups')
+        result['properties'] = mergeSourced(layerDsl(dslProperties, typedProperties),
                 (overlay.get('properties') ?: []) as List, 'properties')
         if (overlay.containsKey('hints')) {
-            result['hints'] = mergeNamed([], [], overlay.get('hints') as List, 'hints')
+            result['hints'] = mergeNamed([], overlay.get('hints') as List, 'hints')
         }
         overlay.each { Object keyValue, Object value ->
             String key = keyValue.toString()
@@ -513,30 +522,40 @@ abstract class GenerateConfigurationMetadataTask extends DefaultTask {
         if (overlay.containsKey('ignored')) {
             Map ignored = new LinkedHashMap((overlay.get('ignored') ?: [:]) as Map)
             if (ignored.containsKey('properties')) {
-                ignored['properties'] = mergeNamed([], [], ignored.get('properties') as List, 'ignored.properties')
+                ignored['properties'] = mergeNamed([], ignored.get('properties') as List, 'ignored.properties')
             }
             result['ignored'] = ignored
         }
         result
     }
 
-    private static List<Object> mergeNamed(List dsl, List typed, List overlay, String category) {
-        Map<String, Object> dslByName = indexByName(dsl, category, 'DSL')
-        Map<String, Object> typedByName = indexByName(typed, category, 'generated')
-        Map<String, Object> overlayByName = indexByName(overlay, category, 'overlay')
-        Map<String, Object> merged = new LinkedHashMap<>(dslByName)
-        typedByName.each { String name, Object value ->
-            merged[name] = mergeFields(merged[name], value)
+    /**
+     * A DSL property carries no provenance, so it sits underneath every typed property of the same name, whose
+     * own fields win. A DSL property that no configuration class declares stands on its own.
+     */
+    private static List<Map<String, Object>> layerDsl(List<Map<String, Object>> dslProperties,
+                                                      List<Map<String, Object>> typedProperties) {
+        Map<String, Object> dslByName = indexByName(dslProperties, 'properties', 'DSL')
+        Set<String> typedNames = typedProperties*.name as Set<String>
+        List<Map<String, Object>> layered = typedProperties.collect { Map<String, Object> typed ->
+            Map dsl = dslByName[typed.name as String] as Map
+            dsl == null ? typed : (new LinkedHashMap<String, Object>(dsl) + typed) as Map<String, Object>
         }
-        overlayByName.each { String name, Object value ->
-            merged[name] = mergeFields(merged[name], value)
-        }
-        merged.keySet().sort().collect { String name -> merged[name] }
+        layered + dslProperties.findAll { Map<String, Object> dsl -> !(dsl.name in typedNames) }
     }
 
-    private static Object mergeFields(Object lowerPrecedence, Object higherPrecedence) {
-        lowerPrecedence instanceof Map && higherPrecedence instanceof Map ?
-                new LinkedHashMap((Map) lowerPrecedence) + (Map) higherPrecedence : higherPrecedence
+    private static List<Object> mergeNamed(List generated, List overlay, String category) {
+        Map<String, Object> generatedByName = indexByName(generated, category, 'generated')
+        Map<String, Object> overlayByName = indexByName(overlay, category, 'overlay')
+        Map<String, Object> merged = new LinkedHashMap<>(generatedByName)
+        overlayByName.each { String name, Object value ->
+            if (merged[name] instanceof Map && value instanceof Map) {
+                merged[name] = new LinkedHashMap((Map) merged[name]) + (Map) value
+            } else {
+                merged[name] = value
+            }
+        }
+        merged.keySet().sort().collect { String name -> merged[name] }
     }
 
     private static Map<String, Object> indexByName(List source, String category, String sourceName) {
@@ -554,53 +573,57 @@ abstract class GenerateConfigurationMetadataTask extends DefaultTask {
         indexed
     }
 
-    private static List<Object> mergeGroups(List generated, List overlay) {
+    /**
+     * Groups and properties are identified by name and provenance, since the metadata format allows a name to
+     * repeat, as it does when two configuration classes share a prefix. An overlay entry without provenance
+     * augments every generated entry of that name.
+     */
+    private static List<Object> mergeSourced(List generated, List overlay, String category) {
         Map<String, Object> merged = new LinkedHashMap<>()
         generated.each { Object entry ->
-            Map<String, Object> group = (Map<String, Object>) entry
-            String key = groupKey(group)
-            if (merged.containsKey(key)) {
-                throw new IllegalArgumentException("Conflicting generated groups metadata for '${group.name}'")
+            Map<String, Object> item = (Map<String, Object>) entry
+            String key = sourcedKey(item)
+            if (merged.containsKey(key) && merged[key] != item) {
+                throw new IllegalArgumentException("Conflicting generated ${category} metadata for '${item.name}' " +
+                        "from source type '${item.sourceType}'")
             }
-            merged[key] = group
+            merged[key] = item
         }
-        Set<String> appliedNameOnly = new LinkedHashSet<>()
-        Set<String> appliedOverlayKeys = new LinkedHashSet<>()
+        Map<String, Object> appliedNameOnly = new LinkedHashMap<>()
+        Map<String, Object> appliedOverlayKeys = new LinkedHashMap<>()
         overlay.each { Object entry ->
-            Map<String, Object> group = (Map<String, Object>) entry
-            String name = group.name as String
+            Map<String, Object> item = (Map<String, Object>) entry
+            String name = item.name as String
             if (!name) {
-                throw new IllegalArgumentException("groups entry has no name")
+                throw new IllegalArgumentException("${category} entry has no name")
             }
-            String sourceType = group.sourceType as String
-            String sourceMethod = group.sourceMethod as String
-            if (sourceType == null && sourceMethod == null) {
-                if (!appliedNameOnly.add(name)) {
-                    throw new IllegalArgumentException("Conflicting overlay groups metadata for '${name}'")
+            boolean nameOnly = item.sourceType == null && item.sourceMethod == null
+            Map<String, Object> applied = nameOnly ? appliedNameOnly : appliedOverlayKeys
+            String appliedKey = nameOnly ? name : sourcedKey(item)
+            if (applied.containsKey(appliedKey)) {
+                if (applied[appliedKey] != item) {
+                    throw new IllegalArgumentException("Conflicting overlay ${category} metadata for '${name}'")
                 }
+                return
+            }
+            applied[appliedKey] = item
+            if (nameOnly) {
                 boolean matched = false
                 List<String> keys = new ArrayList<>(merged.keySet())
                 keys.each { String key ->
                     Object existing = merged[key]
                     if (existing instanceof Map && ((Map) existing).name == name) {
-                        merged[key] = new LinkedHashMap((Map) existing) + group
+                        merged[key] = new LinkedHashMap((Map) existing) + item
                         matched = true
                     }
                 }
                 if (!matched) {
-                    merged[groupKey(group)] = group
+                    merged[sourcedKey(item)] = item
                 }
             } else {
-                String key = groupKey(group)
-                if (!appliedOverlayKeys.add(key)) {
-                    throw new IllegalArgumentException("Conflicting overlay groups metadata for '${name}'")
-                }
+                String key = sourcedKey(item)
                 Object existing = merged[key]
-                if (existing instanceof Map) {
-                    merged[key] = new LinkedHashMap((Map) existing) + group
-                } else {
-                    merged[key] = group
-                }
+                merged[key] = existing instanceof Map ? new LinkedHashMap((Map) existing) + item : item
             }
         }
         merged.entrySet().sort { a, b ->
@@ -618,10 +641,10 @@ abstract class GenerateConfigurationMetadataTask extends DefaultTask {
         }.collect { Map.Entry entry -> entry.value }
     }
 
-    private static String groupKey(Map<String, Object> group) {
-        String name = group.name as String
-        String sourceType = group.sourceType as String
-        String sourceMethod = group.sourceMethod as String
+    private static String sourcedKey(Map<String, Object> item) {
+        String name = item.name as String
+        String sourceType = item.sourceType as String
+        String sourceMethod = item.sourceMethod as String
         name + '|' + (sourceType ?: '') + '|' + (sourceMethod ?: '')
     }
 
