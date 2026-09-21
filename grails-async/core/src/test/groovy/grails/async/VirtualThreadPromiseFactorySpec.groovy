@@ -19,6 +19,7 @@
 package grails.async
 
 import java.util.concurrent.ExecutionException
+import java.util.concurrent.Executor
 
 import org.grails.async.factory.PromiseFactoryBuilder
 import org.grails.async.factory.SynchronousPromiseFactory
@@ -50,13 +51,17 @@ class VirtualThreadPromiseFactorySpec extends Specification {
         System.setProperty('grails.async.promiseFactory', 'virtual-thread')
 
         when:
-        PromiseFactory factory = PromiseFactoryBuilder.build()
+        PromiseFactory factory = PromiseFactoryBuilder.build(executor)
 
         then:
         factory instanceof VirtualThreadPromiseFactory
+        factory.createPromise { Thread.currentThread().isVirtual() }.get()
 
         cleanup:
         (factory as Closeable)?.close()
+
+        where:
+        executor << [null, { Runnable work -> work.run() } as Executor]
     }
 
     void 'virtual thread factory executes promises'() {
@@ -94,7 +99,23 @@ class VirtualThreadPromiseFactorySpec extends Specification {
         factory.close()
     }
 
-    void 'onComplete resolves to the waited values and invokes the callback for its side effect'() {
+    void 'closure lists use this factory rather than the global promise factory'() {
+        given:
+        def factory = new VirtualThreadPromiseFactory()
+        Promises.promiseFactory = new SynchronousPromiseFactory()
+
+        expect:
+        factory.createPromise([
+                { Thread.currentThread().isVirtual() },
+                { Thread.currentThread().isVirtual() }
+        ]).get() == [true, true]
+        factory.createPromise((List<Closure<Boolean>>) null).get() == []
+
+        cleanup:
+        factory.close()
+    }
+
+    void 'onComplete resolves to the callback result like the default factory'() {
         given:
         def factory = new VirtualThreadPromiseFactory()
         List<Promise<Integer>> promises = [factory.createPromise { 1 }, factory.createPromise { 2 }]
@@ -103,12 +124,12 @@ class VirtualThreadPromiseFactorySpec extends Specification {
         when: 'the returned promise is consumed as a statically-typed List, not just Object'
         Promise<List<Integer>> combined = factory.onComplete(promises) { List<Integer> values ->
             observed = values
-            'a value that is not a List - the resolved value must not become this'
+            values.collect { it * 2 }
         }
         List<Integer> result = combined.get()
 
         then:
-        result == [1, 2]
+        result == [2, 4]
         observed == [1, 2]
 
         cleanup:
@@ -133,10 +154,11 @@ class VirtualThreadPromiseFactorySpec extends Specification {
         factory.close()
     }
 
-    void 'onError invokes the callback and resolves to an empty list when a promise fails'() {
+    void 'aggregate onError reports the original failure and preserves failed completion'() {
         given:
         def factory = new VirtualThreadPromiseFactory()
-        List<Promise<Integer>> promises = [factory.createPromise { throw new IllegalStateException('boom') }]
+        def original = new IOException('boom')
+        List<Promise<Integer>> promises = [factory.createPromise { throw original }]
         Throwable observed = null
 
         when:
@@ -144,10 +166,9 @@ class VirtualThreadPromiseFactorySpec extends Specification {
         List<Integer> result = combined.get()
 
         then:
-        result == []
-        observed instanceof ExecutionException
-        observed.cause instanceof IllegalStateException
-        observed.cause.message == 'boom'
+        def failure = thrown(ExecutionException)
+        failure.cause.is(original)
+        observed.is(original)
 
         cleanup:
         factory.close()
