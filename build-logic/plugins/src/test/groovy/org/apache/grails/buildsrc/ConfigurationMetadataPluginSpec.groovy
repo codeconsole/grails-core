@@ -339,6 +339,7 @@ class ConfigurationMetadataPluginSpec extends Specification {
         write('src/dsl/fixture/LiteralConfig.groovy', '''
             security {
                 literals {
+                    nothing = null
                     nullList = [null, 'present']
                     nullMap = [first: null, second: 'present']
                     unsupportedMap = [(1): 'one']
@@ -354,6 +355,11 @@ class ConfigurationMetadataPluginSpec extends Specification {
         then:
         result.task(':generateConfigurationMetadata').outcome == TaskOutcome.SUCCESS
         property(metadata, 'grails.plugin.springsecurity.literals.nullList').defaultValue == [null, 'present']
+
+        and: 'a setting that is null by default has no default, rather than an explicit null one'
+        property(metadata, 'grails.plugin.springsecurity.literals.nothing') == [
+                name: 'grails.plugin.springsecurity.literals.nothing'
+        ]
         property(metadata, 'grails.plugin.springsecurity.literals.nullMap').defaultValue == [first: null, second: 'present']
         property(metadata, 'grails.plugin.springsecurity.literals.unsupportedMap').type == 'java.util.Map'
         !property(metadata, 'grails.plugin.springsecurity.literals.unsupportedMap').containsKey('defaultValue')
@@ -477,6 +483,39 @@ class ConfigurationMetadataPluginSpec extends Specification {
         !metadata.properties*.name.any { String name -> name.contains('.environments.') }
     }
 
+    def "parses an environment declared inside an if statement and ignores ordinary calls in an environments block"() {
+        given:
+        write('src/dsl/fixture/ConditionalEnvironmentConfig.groovy', '''
+            security {
+                environments {
+                    if (System.getProperty('flag')) {
+                        production {
+                            foo = 1
+                        }
+                    } else {
+                        test {
+                            bar = 'x'
+                        }
+                    }
+                    candidates.each { candidate -> looped = 1 }
+                }
+            }
+        '''.stripIndent())
+        configureDslMetadata('src/dsl/fixture/ConditionalEnvironmentConfig.groovy')
+
+        when:
+        run('generateConfigurationMetadata')
+        Map metadata = readMetadata()
+
+        then: 'only a call on the script itself names an environment'
+        metadata.properties*.name.findAll { String name -> name.startsWith('grails.plugin.springsecurity.') } == [
+                'grails.plugin.springsecurity.bar',
+                'grails.plugin.springsecurity.foo'
+        ]
+        property(metadata, 'grails.plugin.springsecurity.foo').type == 'java.lang.Integer'
+        !property(metadata, 'grails.plugin.springsecurity.foo').containsKey('defaultValue')
+    }
+
     def "ignores local variables and closures passed to ordinary method calls"() {
         given:
         write('src/dsl/fixture/CodeConfig.groovy', '''
@@ -490,6 +529,7 @@ class ConfigurationMetadataPluginSpec extends Specification {
                 items.each { item -> visited = true }
                 settings.with { applied = true }
                 this.explicit { skipped = true }
+                helper { viaLocal = true }
                 section {
                     helper = 'still local'
                     value = 1
@@ -588,6 +628,44 @@ class ConfigurationMetadataPluginSpec extends Specification {
         !property(metadata, 'grails.plugin.springsecurity.envOnly').containsKey('defaultValue')
         !property(metadata, 'grails.plugin.springsecurity.conditionalOnly').containsKey('defaultValue')
         !metadata.properties*.name.any { String name -> name.startsWith('unrelated') || name == 'standalone' }
+    }
+
+    def "ignores a top-level local variable that shares its name with a registered root"() {
+        given:
+        write('src/dsl/fixture/ShadowedRootConfig.groovy', '''
+            security {
+                enabled = true
+            }
+            if (System.getProperty('flag')) {
+                def security = [:]
+                security.shadowed = true
+            }
+        '''.stripIndent())
+        configureDslMetadata('src/dsl/fixture/ShadowedRootConfig.groovy')
+
+        when:
+        run('generateConfigurationMetadata')
+        Map metadata = readMetadata()
+
+        then:
+        metadata.properties*.name.findAll { String name -> name.startsWith('grails.plugin.springsecurity.') } == [
+                'grails.plugin.springsecurity.enabled'
+        ]
+    }
+
+    def "does not take a top-level local variable for the declaration of a registered root"() {
+        given:
+        write('src/dsl/fixture/LocalRootConfig.groovy', '''
+            def security = [:]
+            security.enabled = true
+        '''.stripIndent())
+        configureDslMetadata('src/dsl/fixture/LocalRootConfig.groovy')
+
+        when:
+        BuildResult result = runner('generateConfigurationMetadata').buildAndFail()
+
+        then:
+        result.output.contains('No Groovy DSL configuration source declares the registered root(s) [security]')
     }
 
     def "fails when a registered DSL root is not declared by any source"() {

@@ -59,7 +59,8 @@ final class GroovyDslConfigurationMetadataParser {
             if (!file.isFile()) {
                 throw new IllegalArgumentException("Groovy DSL configuration source '${file.absolutePath}' does not exist")
             }
-            parseTopLevel(parseSource(file).statementBlock, rootPrefixes, false, properties, matchedRoots)
+            parseTopLevel(parseSource(file).statementBlock, rootPrefixes, false, properties, matchedRoots,
+                    new LinkedHashSet<String>())
         }
         List<String> unmatchedRoots = (rootPrefixes.keySet() - matchedRoots).sort()
         if (unmatchedRoots) {
@@ -111,22 +112,28 @@ final class GroovyDslConfigurationMetadataParser {
 
     /**
      * The top level of a ConfigSlurper script may open a root section, assign a dotted path that starts
-     * with a root, or wrap either of those in an if statement or an environments block.
+     * with a root, or wrap either of those in an if statement or an environments block. A local variable
+     * that shares its name with a root hides the root, so it neither yields settings nor declares the root.
      */
     private static void parseTopLevel(Statement statement, Map<String, String> rootPrefixes, boolean conditional,
-                                      List<Map<String, Object>> properties, Set<String> matchedRoots) {
+                                      List<Map<String, Object>> properties, Set<String> matchedRoots,
+                                      Set<String> locals) {
         if (statement instanceof BlockStatement) {
+            Set<String> scopedLocals = new LinkedHashSet<>(locals)
             statement.statements.each { Statement child ->
-                parseTopLevel(child, rootPrefixes, conditional, properties, matchedRoots)
+                parseTopLevel(child, rootPrefixes, conditional, properties, matchedRoots, scopedLocals)
             }
         } else if (statement instanceof IfStatement) {
-            parseTopLevel(statement.ifBlock, rootPrefixes, true, properties, matchedRoots)
-            parseTopLevel(statement.elseBlock, rootPrefixes, true, properties, matchedRoots)
+            parseTopLevel(statement.ifBlock, rootPrefixes, true, properties, matchedRoots, locals)
+            parseTopLevel(statement.elseBlock, rootPrefixes, true, properties, matchedRoots, locals)
         } else if (statement instanceof ExpressionStatement) {
             Expression expression = statement.expression
-            if (isAssignment(expression)) {
+            if (expression instanceof DeclarationExpression) {
+                locals.addAll(declaredNames(expression))
+            } else if (isAssignment(expression)) {
                 List<String> segments = leftHandPath((expression as BinaryExpression).leftExpression)
-                String prefix = segments == null || segments.size() < 2 ? null : rootPrefixes[segments[0]]
+                String prefix = segments == null || segments.size() < 2 || segments[0] in locals ?
+                        null : rootPrefixes[segments[0]]
                 if (prefix != null) {
                     matchedRoots << segments[0]
                     addProperty("${prefix}.${segments.tail().join('.')}",
@@ -138,11 +145,11 @@ final class GroovyDslConfigurationMetadataParser {
                 String root = call.methodAsString
                 if (root == 'environments') {
                     environmentClosures(closure.code).each { ClosureExpression environment ->
-                        parseTopLevel(environment.code, rootPrefixes, true, properties, matchedRoots)
+                        parseTopLevel(environment.code, rootPrefixes, true, properties, matchedRoots, locals)
                     }
-                } else if (rootPrefixes[root] != null) {
+                } else if (rootPrefixes[root] != null && !(root in locals)) {
                     matchedRoots << root
-                    parseStatements(closure.code, rootPrefixes[root], conditional, properties, new LinkedHashSet<String>())
+                    parseStatements(closure.code, rootPrefixes[root], conditional, properties, locals)
                 }
             }
         }
@@ -189,7 +196,7 @@ final class GroovyDslConfigurationMetadataParser {
                     environmentClosures(closure.code).each { ClosureExpression environment ->
                         parseStatements(environment.code, prefix, true, properties, locals)
                     }
-                } else {
+                } else if (!(call.methodAsString in locals)) {
                     parseStatements(closure.code, "${prefix}.${call.methodAsString}", conditional, properties, locals)
                 }
             }
@@ -223,15 +230,18 @@ final class GroovyDslConfigurationMetadataParser {
      * A ConfigSlurper {@code environments { production { ... } } } block picks exactly one named
      * environment closure at runtime; unlike an ordinary nested section, its name is not part of
      * the property path. Each environment closure is parsed under the unchanged prefix, marked
-     * conditional the same way an if/else branch is.
+     * conditional the same way an if/else branch is. An environment may itself be declared inside
+     * an if statement, and only a call on the script itself names one, as for any other section.
      */
     private static List<ClosureExpression> environmentClosures(Statement statement) {
         if (statement instanceof BlockStatement) {
             return statement.statements.collectMany { Statement child -> environmentClosures(child) }
         }
-        MethodCallExpression call = methodCall(statement)
-        ClosureExpression closure = call == null ? null : closureArgument(call)
-        closure == null ? [] : [closure]
+        if (statement instanceof IfStatement) {
+            return environmentClosures(statement.ifBlock) + environmentClosures(statement.elseBlock)
+        }
+        statement instanceof ExpressionStatement && isSectionCall(statement.expression) ?
+                [closureArgument(statement.expression as MethodCallExpression)] : []
     }
 
     private static void addProperty(String name, Expression value, boolean conditional,
@@ -243,7 +253,8 @@ final class GroovyDslConfigurationMetadataParser {
         } else if (!inference.literal) {
             property.dynamic = true
         }
-        if (!conditional && inference.literal) {
+        // a null default is no default: the key is omitted, as it is for every other setting without one
+        if (!conditional && inference.literal && inference.value != null) {
             property.defaultValue = inference.value
         }
         properties << property
@@ -259,11 +270,6 @@ final class GroovyDslConfigurationMetadataParser {
             return owner == null ? null : owner + expression.property.value
         }
         null
-    }
-
-    private static MethodCallExpression methodCall(Statement statement) {
-        statement instanceof ExpressionStatement && statement.expression instanceof MethodCallExpression ?
-                statement.expression as MethodCallExpression : null
     }
 
     private static ClosureExpression closureArgument(MethodCallExpression call) {
