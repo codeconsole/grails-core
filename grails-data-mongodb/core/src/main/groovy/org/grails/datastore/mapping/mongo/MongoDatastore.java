@@ -20,6 +20,7 @@ import java.io.IOException;
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -1544,16 +1545,22 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
         return false;
     }
 
+    /**
+     * Whether two key patterns describe the same index. Order counts: {@code {a: 1, b: 1}} and
+     * {@code {b: 1, a: 1}} are two indexes to MongoDB, and one cannot serve the other's sort.
+     */
     private static boolean sameKeyPattern(Document existingKey, Document desiredKey) {
         if (existingKey.size() != desiredKey.size()) {
             return false;
         }
-        for (Map.Entry<String, Object> entry : desiredKey.entrySet()) {
-            if (!existingKey.containsKey(entry.getKey())) {
+        Iterator<Map.Entry<String, Object>> existing = existingKey.entrySet().iterator();
+        for (Map.Entry<String, Object> desired : desiredKey.entrySet()) {
+            Map.Entry<String, Object> actual = existing.next();
+            if (!actual.getKey().equals(desired.getKey())) {
                 return false;
             }
-            Object a = existingKey.get(entry.getKey());
-            Object b = entry.getValue();
+            Object a = actual.getValue();
+            Object b = desired.getValue();
             if (a instanceof Number && b instanceof Number) {
                 if (((Number) a).doubleValue() != ((Number) b).doubleValue()) {
                     return false;
