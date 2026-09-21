@@ -1627,6 +1627,7 @@ Now the framework bean simply backs off.
 
 NOTE: The clean back-off applies to beans that are registered before auto-configuration conditions are evaluated: `@Bean` methods in application configuration classes, and — as of the retimed plugin lifecycle (see _Plugin Beans Now Register Before Spring Boot Auto-Configuration_ below) — beans contributed through a plugin's `doWithSpring` or `beanRegistrar()`.
 Beans contributed through the application's `resources.groovy` or `resources.xml` register later and continue to take effect through bean-definition overriding, exactly as in previous releases.
+The one exception is a `@Configuration` class registered there, which is no longer processed — see <<resources-groovy-configuration-classes,`@Configuration` classes registered in `resources.groovy`>> below.
 
 [[plugin-beans-before-autoconfiguration]]
 ==== 33. Plugin Beans Now Register Before Spring Boot Auto-Configuration
@@ -1692,6 +1693,34 @@ class MyGrailsPlugin extends Plugin {
 Both hooks may be used on the same plugin during migration; when a registrar and the DSL register a bean under the same name, the registrar's definition wins.
 
 **Bean-definition overriding edge case.** Grails defaults `spring.main.allow-bean-definition-overriding` to `true`, and under that default nothing changes: an application bean (from the application class, `resources.groovy` or `resources.xml`) that uses the same name as a plugin bean still replaces the plugin's bean. However, because plugin beans now register earlier and application beans register in a separate, later step, an application that explicitly sets `spring.main.allow-bean-definition-overriding` to `false` will see a `BeanDefinitionOverrideException` for an application bean that shadows a plugin bean — in previous releases the two definitions were merged before a single registry write, so the shadowing was silent even with overriding disabled.
+
+[[resources-groovy-configuration-classes]]
+**`@Configuration` classes registered in `resources.groovy` are no longer processed.** In Grails 7 and earlier, a class annotated with `@Configuration` could be registered as a bean in the application's `resources.groovy` or `resources.xml`, or in the `doWithSpring` of the `Application` class, and its `@Bean` methods, `@Import` and `@Enable...` annotations were still honored. This is a breaking change in Grails 8: those bean definitions register after Spring has finished parsing configuration classes, so such a class is now created as a plain bean and none of the beans it declares are registered. No error or warning is reported — the beans are simply missing. The same applies to the application's `beanRegistrar()`.
+
+`@Configuration` classes contributed by a plugin's `doWithSpring` or `beanRegistrar()` are not affected, because plugin beans now register before configuration classes are parsed.
+
+`resources.groovy` and `resources.xml` are for defining beans. Register a configuration class with Spring directly instead, either by importing it from the `Application` class:
+
+[source,groovy]
+----
+import org.springframework.context.annotation.Import
+
+import grails.boot.GrailsApp
+import grails.boot.config.GrailsAutoConfiguration
+
+@Import(MyConfiguration)
+class Application extends GrailsAutoConfiguration {
+
+    static void main(String[] args) {
+        GrailsApp.run(Application, args)
+    }
+}
+----
+
+or by annotating the `Application` class with `@ComponentScan` so that configuration classes in the application's packages are discovered.
+Alternatively, declare the beans themselves — in `resources.groovy`, or in a `beans` block on the `Application` class (see link:spring.html#springdslAdditional[Configuring Additional Beans]).
+
+Plugin authors who previously told users to replace a plugin-provided `@Configuration` class through `resources.groovy` should ship that class as a Spring Boot auto-configuration and let users customize it through `@ConditionalOnMissingBean`-guarded beans or configuration properties instead.
 
 
 ==== 34. Compile-Time GORM Query Safety Check
