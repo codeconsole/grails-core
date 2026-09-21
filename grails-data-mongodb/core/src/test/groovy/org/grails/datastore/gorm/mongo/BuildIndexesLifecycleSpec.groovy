@@ -157,7 +157,7 @@ class BuildIndexesLifecycleSpec extends AutoStartedMongoSpec {
         then: "the request is deferred, not refused"
         notThrown(Exception)
         log.events.any {
-            it.level == Level.INFO && it.formattedMessage.contains('will run when the datastore is restarted')
+            it.level == Level.INFO && it.formattedMessage.contains('for connection [default] while the datastore is stopped; it will run when the datastore is restarted')
         }
 
         when: "the index is dropped on the server and the datastore restarted"
@@ -174,6 +174,26 @@ class BuildIndexesLifecycleSpec extends AutoStartedMongoSpec {
         log?.close()
     }
 
+    void "test a build on the calling thread requested after close() is refused with a warning"() {
+        given:
+        def log = new CapturedLog('org.grails.datastore.mapping', Level.INFO)
+        def datastore = new MongoDatastore(['grails.mongodb.url': dbContainer.getReplicaSetUrl('closedSyncDb')] as Map,
+                ClosedSyncThing)
+        datastore.close()
+
+        when: "a synchronous build is requested, which would otherwise run against the closed client"
+        datastore.buildIndex()
+
+        then:
+        notThrown(Exception)
+        log.events.any {
+            it.level == Level.WARN && it.formattedMessage.contains('requested for connection [default] after the datastore was closed')
+        }
+
+        cleanup:
+        log?.close()
+    }
+
     void "test a build requested after close() is refused with a warning rather than an exception"() {
         given:
         def log = new CapturedLog('org.grails.datastore.mapping', Level.INFO)
@@ -186,7 +206,7 @@ class BuildIndexesLifecycleSpec extends AutoStartedMongoSpec {
         then:
         notThrown(Exception)
         log.events.any {
-            it.level == Level.WARN && it.formattedMessage.contains('requested after the datastore was closed')
+            it.level == Level.WARN && it.formattedMessage.contains('requested for connection [default] after the datastore was closed')
         }
 
         cleanup:
@@ -248,6 +268,17 @@ class SlowToStopDatastore extends MongoDatastore {
                 // A step that does not respond to interruption, as a blocking call may not
             }
         }
+    }
+}
+
+@Entity
+class ClosedSyncThing {
+    String name
+
+    static mapping = {
+        version false
+        collection 'closedSyncThing'
+        name index: true
     }
 }
 

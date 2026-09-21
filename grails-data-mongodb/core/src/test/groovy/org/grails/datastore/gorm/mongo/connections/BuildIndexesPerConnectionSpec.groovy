@@ -178,6 +178,13 @@ class BuildIndexesPerConnectionSpec extends AutoStartedMongoSpec {
                 'grails.mongodb.connections'      : [checkpointedChild: [url: dbContainer.getReplicaSetUrl('checkpointedChildDb'), buildIndexes: true]]
         ]), factory, new DefaultApplicationEventPublisher(), AsyncPerConnectionThing)
         buildReached.await(30, TimeUnit.SECONDS)
+
+        then: "the build announces which connection it is for"
+        log.events.any {
+            it.formattedMessage.startsWith('Building the indexes declared by the domain classes for connection [checkpointedChild]')
+        }
+
+        when:
         parent.stop()
 
         then: "the child's build is abandoned as a shutdown, not reported as a failure"
@@ -201,6 +208,41 @@ class BuildIndexesPerConnectionSpec extends AutoStartedMongoSpec {
         releaseBuild.countDown()
         parent?.close()
         inspector?.close()
+        log?.close()
+    }
+
+    void "test start() neither waits on nor re-runs a connection added while the datastore was stopped"() {
+        given:
+        def conditions = new PollingConditions(timeout: 30)
+        def log = new CapturedLog('org.grails.datastore.mapping', Level.INFO)
+        String caller = Thread.currentThread().name
+        def parent = new MongoDatastore(DatastoreUtils.createPropertyResolver([
+                'grails.mongodb.url'              : dbContainer.getReplicaSetUrl('stoppedParentDb'),
+                'grails.mongodb.buildIndexes'     : false,
+                'grails.mongodb.buildIndexesAsync': true
+        ]), AsyncPerConnectionThing)
+        parent.stop()
+        parent.connectionSources.addConnectionSource('addedWhileStopped',
+                [url: dbContainer.getReplicaSetUrl('addedWhileStoppedDb'), buildIndexes: true])
+        conditions.eventually {
+            assert log.events.any { it.formattedMessage.contains('database [addedWhileStoppedDb] finished') }
+        }
+        def announced = { ->
+            log.events.count {
+                it.threadName == caller &&
+                        it.formattedMessage.startsWith('Building the indexes declared by the domain classes for connection [addedWhileStopped]')
+            }
+        }
+        int before = announced()
+
+        when: "the datastore is restarted"
+        parent.start()
+
+        then: "that connection's build was never interrupted, so start() starts no second one"
+        announced() == before
+
+        cleanup:
+        parent?.close()
         log?.close()
     }
 

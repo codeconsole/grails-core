@@ -125,6 +125,38 @@ class BuildIndexesBackgroundFailureSpec extends AutoStartedMongoSpec {
         backgroundBuildFailures() == errorsBefore
     }
 
+    void "test a genuine failure that coincides with shutdown is still reported as an error"() {
+        given:
+        def conditions = new PollingConditions(timeout: 30)
+        def buildReached = new CountDownLatch(1)
+        def release = new CountDownLatch(1)
+        int errorsBefore = backgroundBuildFailures()
+        MongoClient failsDuringShutdown = FailingMongoClient.wrap(realClient, 'createIndex') {
+            buildReached.countDown()
+            // A command already on the server does not stop for the interrupt; this one then fails in its own right
+            while (true) {
+                try {
+                    release.await()
+                    break
+                }
+                catch (InterruptedException ignored) {
+                }
+            }
+            throw new MongoException('E11000 duplicate key error collection: backgroundFailureDb.shutdownFailureThing')
+        }
+        def datastore = asyncDatastoreOn(failsDuringShutdown, 'backgroundFailureDb', ShutdownFailureThing)
+        buildReached.await(30, TimeUnit.SECONDS)
+
+        when: "the datastore is closed while the build is on its way to failing"
+        datastore.close()
+        release.countDown()
+
+        then: "the shutdown does not explain a duplicate key, so it is reported as the failure it is"
+        conditions.eventually {
+            assert backgroundBuildFailures() == errorsBefore + 1
+        }
+    }
+
     private int backgroundBuildFailures() {
         log.events.count {
             it.level == Level.ERROR && it.formattedMessage.contains('The background index build failed')
@@ -139,6 +171,17 @@ class FailedBackgroundThing {
     static mapping = {
         version false
         collection 'failedBackgroundThing'
+        name index: true
+    }
+}
+
+@Entity
+class ShutdownFailureThing {
+    String name
+
+    static mapping = {
+        version false
+        collection 'shutdownFailureThing'
         name index: true
     }
 }

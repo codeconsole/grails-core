@@ -45,7 +45,7 @@ class FailingMongoClient {
      * @param failingMethod the driver method to intercept, by name
      * @param onCall what to do in its place — throw, block until released, or decide call by call. It
      *               receives a closure that makes the real call, for an interception that lets some calls
-     *               through.
+     *               through, and, if it takes a second parameter, the database or collection being called.
      */
     static MongoClient wrap(MongoClient delegate, String failingMethod, Closure<?> onCall) {
         (MongoClient) proxy(MongoClient, delegate, failingMethod, onCall)
@@ -57,7 +57,9 @@ class FailingMongoClient {
             @Override
             Object invoke(Object proxyInstance, Method method, Object[] args) {
                 if (method.name == failingMethod) {
-                    return onCall.call({ -> invokeTarget(target, method, args) })
+                    Closure<Object> proceed = { -> invokeTarget(target, method, args) }
+                    // A two-argument interceptor also gets the object called, to tell one collection from another
+                    return onCall.maximumNumberOfParameters >= 2 ? onCall.call(proceed, target) : onCall.call(proceed)
                 }
                 Object result = invokeTarget(target, method, args)
                 if (result instanceof MongoDatabase) {
