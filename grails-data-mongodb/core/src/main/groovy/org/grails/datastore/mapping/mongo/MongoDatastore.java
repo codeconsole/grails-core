@@ -1173,15 +1173,13 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
                 }
 
                 for (Map compoundIndex : mappedForm.getCompoundIndices()) {
-
-                    Map indexAttributes = null;
-                    if (compoundIndex.containsKey(INDEX_ATTRIBUTES)) {
-                        Object o = compoundIndex.remove(INDEX_ATTRIBUTES);
-                        if (o instanceof Map) {
-                            indexAttributes = (Map) o;
-                        }
-                    }
-                    Document indexDef = new Document(compoundIndex);
+                    // A copy, because the declaration is shared: every connection builds from the same
+                    // mapping, and taking the attributes out of the original would leave the next build
+                    // an index with none.
+                    Map declaration = new LinkedHashMap(compoundIndex);
+                    Object attributes = declaration.remove(INDEX_ATTRIBUTES);
+                    Map indexAttributes = attributes instanceof Map ? (Map) attributes : null;
+                    Document indexDef = new Document(declaration);
                     createOrUpdateIndex(entity, collection, indexDef, indexAttributes,
                             "compound index with definition [" + indexDef + "]", summary, existingIndexes);
                 }
