@@ -32,6 +32,8 @@ import org.grails.datastore.mapping.mongo.MongoDatastore
 import org.grails.datastore.mapping.mongo.config.MongoMappingContext
 import org.grails.datastore.mapping.mongo.config.MongoSettings
 import org.grails.datastore.mapping.multitenancy.MultiTenancySettings.MultiTenancyMode
+import org.grails.datastore.mapping.multitenancy.resolvers.NoTenantResolver
+import org.grails.datastore.mapping.multitenancy.resolvers.SystemPropertyTenantResolver
 
 /**
  * An application that hands GORM an existing {@code MongoClient} - which is what happens whenever a
@@ -112,6 +114,29 @@ class SuppliedMongoClientSettingsSpec extends AutoStartedMongoSpec {
 
         where:
         [prefix, mode] << [['grails.gorm', 'grails.mongodb'], MultiTenancyMode.values().toList()].combinations()
+    }
+
+    void "test a supplied client takes its tenant resolver from tenantResolverClass, and only from there"() {
+        when: "the resolver is named by class, the only way to supply one when the client is supplied"
+        def named = new MongoDatastore(mongoClient, DatastoreUtils.createPropertyResolver([
+                'grails.gorm.multiTenancy.mode'               : 'DISCRIMINATOR',
+                'grails.gorm.multiTenancy.tenantResolverClass': SystemPropertyTenantResolver.name
+        ]), new Class[0])
+
+        then:
+        named.tenantResolver instanceof SystemPropertyTenantResolver
+
+        when: "no resolver is named"
+        def unnamed = new MongoDatastore(mongoClient, DatastoreUtils.createPropertyResolver([
+                'grails.gorm.multiTenancy.mode': 'DISCRIMINATOR'
+        ]), new Class[0])
+
+        then: "the mode is active with a resolver that refuses every tenant-scoped operation"
+        unnamed.tenantResolver instanceof NoTenantResolver
+
+        cleanup:
+        named?.close()
+        unnamed?.close()
     }
 
     void "test MongoDB tenancy settings override the global GORM fallback for a supplied client"() {
