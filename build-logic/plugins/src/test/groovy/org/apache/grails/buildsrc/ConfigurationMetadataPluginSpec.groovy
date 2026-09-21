@@ -291,6 +291,80 @@ class ConfigurationMetadataPluginSpec extends Specification {
         property(metadata, 'fixture.shared.secondValue').type == 'java.lang.String'
     }
 
+    def "preserves a property name repeated by two configuration classes sharing a prefix"() {
+        given: 'two configuration classes expose the same property under the same prefix'
+        resetFixture()
+        ['RepeatedA', 'RepeatedB'].each { String className ->
+            write("src/main/java/fixture/${className}.java", """
+                package fixture;
+
+                import org.springframework.boot.context.properties.ConfigurationProperties;
+
+                @ConfigurationProperties("fixture.repeated")
+                public class ${className} {
+                    private boolean enabled;
+                    public boolean isEnabled() { return enabled; }
+                    public void setEnabled(boolean enabled) { this.enabled = enabled; }
+                }
+            """.stripIndent())
+        }
+        write('src/main/resources/META-INF/additional-spring-configuration-metadata.json', '''
+            {"properties":[
+              {"name":"fixture.repeated.enabled","description":"Shared"},
+              {"name":"fixture.repeated.enabled","sourceType":"fixture.RepeatedB","defaultValue":true}
+            ]}
+        '''.stripIndent())
+
+        when:
+        BuildResult result = run('generateConfigurationMetadata')
+
+        then: 'both properties survive because their provenance differs'
+        result.task(':generateConfigurationMetadata').outcome == TaskOutcome.SUCCESS
+        List repeated = readMetadata().properties.findAll { Map property -> property.name == 'fixture.repeated.enabled' }
+        repeated*.sourceType == ['fixture.RepeatedA', 'fixture.RepeatedB']
+
+        and: 'a name-only overlay entry augments both while a source-qualified one targets its own'
+        repeated*.description == ['Shared', 'Shared']
+        repeated*.defaultValue == [null, true]
+    }
+
+    def "preserves a nested property that another configuration class binds by its own prefix"() {
+        given: 'a nested property of one class is the prefix of another'
+        resetFixture()
+        write('src/main/java/fixture/Outer.java', '''
+            package fixture;
+
+            import org.springframework.boot.context.properties.ConfigurationProperties;
+
+            @ConfigurationProperties("fixture.outer")
+            public class Outer {
+                private Inner inner;
+                public Inner getInner() { return inner; }
+                public void setInner(Inner inner) { this.inner = inner; }
+            }
+        '''.stripIndent())
+        write('src/main/java/fixture/Inner.java', '''
+            package fixture;
+
+            import org.springframework.boot.context.properties.ConfigurationProperties;
+
+            @ConfigurationProperties("fixture.outer.inner")
+            public class Inner {
+                private String label;
+                public String getLabel() { return label; }
+                public void setLabel(String label) { this.label = label; }
+            }
+        '''.stripIndent())
+
+        when:
+        BuildResult result = run('generateConfigurationMetadata')
+
+        then:
+        result.task(':generateConfigurationMetadata').outcome == TaskOutcome.SUCCESS
+        readMetadata().properties.findAll { Map property -> property.name == 'fixture.outer.inner.label' }*.sourceType ==
+                ['fixture.Inner', 'fixture.Outer']
+    }
+
     def "preserves repeated nested group names from different source types"() {
         given: 'two configuration classes expose different nested types under the same property name'
         resetFixture()
@@ -417,6 +491,73 @@ class ConfigurationMetadataPluginSpec extends Specification {
         then:
         !metadata.groups*.name.contains('fixture.groovy')
         !metadata.properties*.name.any { String name -> name.startsWith('fixture.groovy.') }
+    }
+
+    def "applies the payload of a Groovy class whose package contains a json segment"() {
+        given: 'a payload file name in which .json occurs before the extension'
+        resetFixture()
+        write('src/main/groovy/fixture/json/view/SegmentConfiguration.groovy', """
+            package fixture.json.view
+
+            import org.springframework.boot.context.properties.ConfigurationProperties
+
+            @ConfigurationProperties('fixture.segment')
+            class SegmentConfiguration {
+                String mimeType = 'application/json'
+            }
+        """.stripIndent())
+        write('src/main/groovy/fixture/view/SegmentConfiguration.groovy', """
+            package fixture.view
+
+            import org.springframework.boot.context.properties.ConfigurationProperties
+
+            @ConfigurationProperties('fixture.plain')
+            class SegmentConfiguration {
+                String encoding = 'UTF-8'
+            }
+        """.stripIndent())
+
+        when:
+        run('generateConfigurationMetadata')
+        Map metadata = readMetadata()
+
+        then: 'each class receives its own payload, of which the default value is the evidence'
+        projectDir.resolve("build/classes/groovy/main/${PAYLOADS}/fixture.json.view.SegmentConfiguration.json").toFile().isFile()
+        property(metadata, 'fixture.segment.mimeType').defaultValue == 'application/json'
+        property(metadata, 'fixture.segment.mimeType').sourceType == 'fixture.json.view.SegmentConfiguration'
+        property(metadata, 'fixture.plain.encoding').defaultValue == 'UTF-8'
+        property(metadata, 'fixture.plain.encoding').sourceType == 'fixture.view.SegmentConfiguration'
+        metadata.properties*.name == ['fixture.plain.encoding', 'fixture.segment.mimeType']
+    }
+
+    def "binds the constructor of a Java class that is joint-compiled from the Groovy source directory"() {
+        given:
+        resetFixture()
+        write('src/main/groovy/fixture/JointConfiguration.java', '''
+            package fixture;
+
+            import java.util.List;
+            import org.springframework.boot.context.properties.ConfigurationProperties;
+
+            @ConfigurationProperties("fixture.joint")
+            public class JointConfiguration {
+                private final String host;
+                private final List<String> aliases;
+                public JointConfiguration(String host, List<String> aliases) {
+                    this.host = host;
+                    this.aliases = aliases;
+                }
+            }
+        '''.stripIndent())
+        write('src/main/groovy/fixture/JointCompanion.groovy', 'package fixture\n\nclass JointCompanion { }\n')
+
+        when:
+        run('generateConfigurationMetadata')
+        Map metadata = readMetadata()
+
+        then:
+        property(metadata, 'fixture.joint.host').type == 'java.lang.String'
+        property(metadata, 'fixture.joint.aliases').type == 'java.util.List<java.lang.String>'
     }
 
     def "types the constructor parameters of an inner class from its generic signature"() {
