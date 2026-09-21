@@ -149,11 +149,10 @@ dependencies {
         // test: GenericWebApplicationContext requires ServletContext on the classpath
     }
 
-    testImplementation 'ch.qos.logback:logback-classic', {
-        // test: a real SLF4J binding, so that the log a test asserts on is actually emitted.
-        // Quietened to WARN by src/test/resources/logback-test.xml; a test raises the level of the
-        // one logger it is interested in.
-    }
+    // test: a real SLF4J binding, so that the log a test asserts on is actually emitted.
+    // Quietened to WARN by src/test/resources/logback-test.xml; a test raises the level of the
+    // one logger it is interested in.
+    testImplementation 'ch.qos.logback:logback-classic'
     testImplementation 'org.testcontainers:testcontainers'
     testImplementation 'org.testcontainers:testcontainers-mongodb'
     testImplementation 'org.testcontainers:testcontainers-spock'
