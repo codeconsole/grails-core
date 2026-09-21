@@ -27,11 +27,12 @@ import org.grails.datastore.mapping.mongo.MongoDatastore
 import org.grails.datastore.mapping.mongo.config.MongoSettings
 
 /**
- * Verifies that with {@code grails.mongodb.buildIndexes = false} GORM issues no index commands: the
- * indexes declared in the mapping block are neither created nor reconciled, so whatever indexes are
+ * Verifies that with {@code grails.mongodb.buildIndexes = false} GORM issues no index commands of its own:
+ * the indexes declared in the mapping block are neither created nor reconciled, so whatever indexes are
  * already on the server are left untouched. Persistence and querying are unaffected.
  *
  * @see BuildIndexesEnabledByDefaultSpec for the default behavior with the same mapping declarations
+ * @see BuildIndexesOnDemandSpec for the application building them when it chooses
  */
 class BuildIndexesDisabledSpec extends AutoStartedMongoSpec {
 
@@ -70,14 +71,6 @@ class BuildIndexesDisabledSpec extends AutoStartedMongoSpec {
         }
 
         then: "only the implicit _id index is present - neither the property index nor the compound index was created"
-        declaredIndexKeys() == [[_id: 1]]
-    }
-
-    void "test an explicit index build is a no-op while disabled"() {
-        when: "index building is requested directly"
-        datastore.buildIndex()
-
-        then: "no index was created"
         declaredIndexKeys() == [[_id: 1]]
     }
 

@@ -267,7 +267,9 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
         this.transactionsEnabled = settings.isTransactional();
         this.buildIndexes = settings.isBuildIndexes();
         this.buildIndexesAsync = settings.isBuildIndexesAsync();
-        this.indexBuildExecutor = this.buildIndexes && this.buildIndexesAsync ?
+        // Whenever builds are asynchronous, not only when GORM builds by itself: an explicit buildIndex() runs
+        // on it too. Until a build is submitted it holds no thread.
+        this.indexBuildExecutor = this.buildIndexesAsync ?
                 newIndexBuildExecutor(defaultConnectionSource.getName()) :
                 null;
         codecRegistry = CodecRegistries.fromRegistries(
@@ -296,7 +298,7 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
                 }
                 datastoresByConnectionSource.put(connectionSource.getName(), childDatastore);
                 if (childDatastore != this) {
-                    childDatastore.buildIndex();
+                    childDatastore.buildIndexAutomatically();
                 }
             }
 
@@ -309,7 +311,7 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
                     // Registered first and then checked: either close() has not started, and will find this
                     // child when it walks the map, or it has, and the build is never started.
                     if (!closed) {
-                        childDatastore.buildIndex();
+                        childDatastore.buildIndexAutomatically();
                     }
                 }
             });
@@ -638,22 +640,20 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
     }
 
     /**
-     * Builds the MongoDB index for this datastore.
+     * Creates and reconciles the indexes declared by the domain classes mapped to this datastore's connection.
+     *
+     * <p>GORM calls this itself when the datastore starts, unless {@code grails.mongodb.buildIndexes} is
+     * {@code false}; that setting only stops GORM building by itself, so an application that leaves indexes
+     * alone at startup can call this when it chooses to build them. Each named connection builds its own
+     * domain classes: call it on {@link #getDatastoreForConnection(String)} for those.
      *
      * <p>Each index is created by a command that the server answers only once the index has been built,
-     * so with the default settings this blocks whoever creates the datastore — in an application, the
-     * startup thread — for as long as MongoDB takes to build every declared index. Enabling
-     * {@code grails.mongodb.buildIndexesAsync} hands the work to a background thread and returns
-     * immediately instead.
+     * so this blocks the calling thread for as long as MongoDB takes to build every declared index. With
+     * {@code grails.mongodb.buildIndexesAsync} enabled the work goes to a background thread and this
+     * returns immediately instead.
      */
     public void buildIndex() {
         String connection = connectionName();
-        if (!buildIndexes) {
-            LOG.info("Index creation is disabled for connection [{}] by [{} = false]. The indexes declared by the " +
-                    "domain classes will not be created or reconciled; the indexes already present on the server are " +
-                    "left untouched.", connection, buildIndexesSettingName());
-            return;
-        }
         // Before either mode: a build on the calling thread would otherwise run against the client close() is closing.
         if (closed) {
             LOG.warn("An index build was requested for connection [{}] after the datastore was closed, so it was not started.",
@@ -687,6 +687,20 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
             LOG.info("An index build was requested for connection [{}] while the datastore is stopped; it will run when " +
                     "the datastore is restarted.", connection);
         }
+    }
+
+    /**
+     * The builds GORM starts by itself - at startup, and for a connection added at runtime - which
+     * {@code grails.mongodb.buildIndexes = false} turns off. An explicit {@link #buildIndex()} is not affected.
+     */
+    private void buildIndexAutomatically() {
+        if (!buildIndexes) {
+            LOG.info("Index creation on startup is disabled for connection [{}] by [{} = false]. The indexes already " +
+                    "present on the server are left untouched; call buildIndex() to create the declared ones.",
+                    connectionName(), buildIndexesSettingName());
+            return;
+        }
+        buildIndex();
     }
 
     private String connectionName() {
@@ -1203,11 +1217,12 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
     }
 
     /**
-     * Whether GORM creates and reconciles the indexes declared in the domain class mapping blocks when
-     * the datastore starts. Disabled with {@code grails.mongodb.buildIndexes = false}, which leaves the
-     * indexes on the server exactly as they are.
+     * Whether GORM creates and reconciles the indexes declared in the domain class mapping blocks by itself:
+     * when the datastore starts, and for connections and domain classes added later. Disabled with
+     * {@code grails.mongodb.buildIndexes = false}, which leaves the indexes on the server as they are until
+     * {@link #buildIndex()} is called.
      *
-     * @return {@code true} if declared indexes are created on startup
+     * @return {@code true} if GORM builds the declared indexes by itself
      * @since 8.0
      */
     public boolean isBuildIndexes() {
@@ -1215,8 +1230,9 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
     }
 
     /**
-     * Whether the startup index build runs on a background thread instead of blocking the thread that
-     * creates the datastore. Enabled with {@code grails.mongodb.buildIndexesAsync = true}.
+     * Whether index builds run on a background thread instead of blocking the thread that starts them - the
+     * one GORM starts on startup, and any {@link #buildIndex()} the application calls. Enabled with
+     * {@code grails.mongodb.buildIndexesAsync = true}.
      *
      * @return {@code true} if declared indexes are built asynchronously
      * @since 8.0
@@ -1316,7 +1332,7 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
             }
         });
 
-        buildIndex();
+        buildIndexAutomatically();
 
         return new MongoGormEnhancer(this, transactionManager, settings) {
             @Override
@@ -1403,11 +1419,6 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
     }
 
     private void initializeIndices(final PersistentEntity entity, final IndexBuildSummary summary) {
-        if (!buildIndexes) {
-            LOG.debug("Index creation is disabled for connection [{}] by [{} = false]. Skipping the indexes declared " +
-                    "by entity [{}].", connectionName(), buildIndexesSettingName(), entity.getName());
-            return;
-        }
         final com.mongodb.client.MongoCollection<Document> collection = getCollection(entity);
         final ExistingIndexes existingIndexes = summary.existingIndexesOf(collection);
         final ClassMapping<MongoCollection> classMapping = entity.getMapping();
@@ -1694,6 +1705,12 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
     }
 
     public void persistentEntityAdded(PersistentEntity entity) {
+        // GORM indexing a domain class registered after startup by itself, so it follows the setting.
+        if (!buildIndexes) {
+            LOG.debug("Index creation is disabled for connection [{}] by [{} = false]. Skipping the indexes declared " +
+                    "by entity [{}].", connectionName(), buildIndexesSettingName(), entity.getName());
+            return;
+        }
         initializeIndices(entity);
     }
 
