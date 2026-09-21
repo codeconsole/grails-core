@@ -22,6 +22,9 @@ import com.mongodb.ReadPreference
 import org.grails.datastore.mapping.core.DatastoreUtils
 import org.grails.datastore.mapping.mongo.connections.MongoConnectionSourceSettings
 import org.grails.datastore.mapping.mongo.connections.MongoConnectionSourceSettingsBuilder
+import org.springframework.boot.context.properties.source.ConfigurationPropertySources
+import org.springframework.core.env.MapPropertySource
+import org.springframework.core.env.StandardEnvironment
 import spock.lang.Specification
 /**
  * Created by graemerocher on 29/06/16.
@@ -106,6 +109,29 @@ class MongoConnectionSourceSettingsSpec extends Specification {
         settings.databaseName == 'configuredDb'
         !settings.buildIndexes
         settings.buildIndexesAsync
+    }
+
+    void "test a kebab-case setting name is not relaxed-bound under Spring Boot either"() {
+        given: "the environment a Spring Boot application hands GORM, with Boot's relaxed-binding source attached"
+        def environment = new StandardEnvironment()
+        environment.propertySources.addLast(new MapPropertySource('application.yml', [
+                'grails.mongodb.database-name'      : 'kebabDb',
+                'grails.mongodb.build-indexes'      : 'false',
+                'grails.mongodb.build-indexes-async': 'true'
+        ] as Map<String, Object>))
+        ConfigurationPropertySources.attach(environment)
+
+        expect: "the value is there under the name it was written with, but not under the one GORM asks for"
+        environment.getProperty('grails.mongodb.database-name') == 'kebabDb'
+        environment.getProperty('grails.mongodb.databaseName') == null
+
+        when:
+        def settings = new MongoConnectionSourceSettingsBuilder(environment).build()
+
+        then: "the settings are looked up by their camel case names, which Boot's source does not answer"
+        settings.databaseName == new MongoConnectionSourceSettings().databaseName
+        settings.buildIndexes
+        !settings.buildIndexesAsync
     }
 
     void "test mongo client settings builder with URL"() {
