@@ -19,14 +19,11 @@
 package org.grails.datastore.gorm.mongo
 
 import ch.qos.logback.classic.Level
-import ch.qos.logback.classic.Logger
 import ch.qos.logback.classic.spi.ILoggingEvent
-import ch.qos.logback.core.read.ListAppender
 import com.mongodb.client.MongoClient
 import com.mongodb.client.MongoClients
 import grails.gorm.annotation.Entity
 import org.bson.Document
-import org.slf4j.LoggerFactory
 import spock.lang.AutoCleanup
 import spock.lang.Shared
 
@@ -50,13 +47,7 @@ class BuildIndexesFailureSummarySpec extends AutoStartedMongoSpec {
     MongoClient setupClient
 
     @Shared
-    Logger datastoreLogger
-
-    @Shared
-    ListAppender<ILoggingEvent> logged = new ListAppender<>()
-
-    @Shared
-    Level previousLevel
+    CapturedLog log
 
     @Override
     boolean shouldInitializeDatastore() {
@@ -75,23 +66,18 @@ class BuildIndexesFailureSummarySpec extends AutoStartedMongoSpec {
 
         database.getCollection('rejectedThing').insertOne(new Document('code', 'first'))
 
-        datastoreLogger = LoggerFactory.getLogger('org.grails.datastore.mapping') as Logger
-        previousLevel = datastoreLogger.level
-        datastoreLogger.level = Level.INFO
-        logged.start()
-        datastoreLogger.addAppender(logged)
+        log = new CapturedLog('org.grails.datastore.mapping', Level.INFO)
 
         datastore = new MongoDatastore(['grails.mongodb.url': url] as Map, ConflictingThing, RejectedThing)
     }
 
     void cleanupSpec() {
-        datastoreLogger?.detachAppender(logged)
-        datastoreLogger?.level = previousLevel
+        log?.close()
         setupClient?.close()
     }
 
     private List<ILoggingEvent> eventsForThisDatabase() {
-        logged.list.findAll { it.formattedMessage.contains("database [$DATABASE]") }
+        log.events.findAll { it.formattedMessage.contains("database [$DATABASE]") }
     }
 
     void "test an index declaration the server refuses does not stop the datastore from starting"() {
@@ -121,8 +107,8 @@ class BuildIndexesFailureSummarySpec extends AutoStartedMongoSpec {
         summary.formattedMessage.contains('2 failed')
 
         and: "the failures themselves were reported individually, naming the entity each came from"
-        logged.list.any { it.level == Level.ERROR && it.formattedMessage.contains('ConflictingThing') }
-        logged.list.any { it.level == Level.ERROR && it.formattedMessage.contains('RejectedThing') }
+        log.events.any { it.level == Level.ERROR && it.formattedMessage.contains('ConflictingThing') }
+        log.events.any { it.level == Level.ERROR && it.formattedMessage.contains('RejectedThing') }
     }
 }
 

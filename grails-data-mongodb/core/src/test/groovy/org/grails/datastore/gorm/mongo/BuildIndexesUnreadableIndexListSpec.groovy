@@ -21,16 +21,12 @@ package org.grails.datastore.gorm.mongo
 import java.util.concurrent.TimeUnit
 
 import ch.qos.logback.classic.Level
-import ch.qos.logback.classic.Logger
-import ch.qos.logback.classic.spi.ILoggingEvent
-import ch.qos.logback.core.read.ListAppender
 import com.mongodb.MongoException
 import com.mongodb.client.MongoClient
 import com.mongodb.client.MongoClients
 import grails.gorm.annotation.Entity
 import com.mongodb.client.model.IndexOptions
 import org.bson.Document
-import org.slf4j.LoggerFactory
 import spock.lang.AutoCleanup
 import spock.lang.Shared
 
@@ -56,13 +52,7 @@ class BuildIndexesUnreadableIndexListSpec extends AutoStartedMongoSpec {
     MongoClient realClient
 
     @Shared
-    Logger datastoreLogger
-
-    @Shared
-    ListAppender<ILoggingEvent> logged = new ListAppender<>()
-
-    @Shared
-    Level previousLevel
+    CapturedLog log
 
     @Override
     boolean shouldInitializeDatastore() {
@@ -77,11 +67,7 @@ class BuildIndexesUnreadableIndexListSpec extends AutoStartedMongoSpec {
         realClient.getDatabase(DATABASE).getCollection('unlistableConflictThing')
                 .createIndex(new Document('created', 1), new IndexOptions().expireAfter(999L, TimeUnit.SECONDS))
 
-        datastoreLogger = LoggerFactory.getLogger('org.grails.datastore.mapping') as Logger
-        previousLevel = datastoreLogger.level
-        datastoreLogger.level = Level.INFO
-        logged.start()
-        datastoreLogger.addAppender(logged)
+        log = new CapturedLog('org.grails.datastore.mapping', Level.INFO)
 
         MongoClient cannotList = FailingMongoClient.wrap(realClient, 'listIndexes') {
             throw new MongoException('not authorized on unlistableIndexDb to execute command listIndexes')
@@ -92,8 +78,7 @@ class BuildIndexesUnreadableIndexListSpec extends AutoStartedMongoSpec {
     }
 
     void cleanupSpec() {
-        datastoreLogger?.detachAppender(logged)
-        datastoreLogger?.level = previousLevel
+        log?.close()
         realClient?.close()
     }
 
@@ -104,7 +89,7 @@ class BuildIndexesUnreadableIndexListSpec extends AutoStartedMongoSpec {
 
     void "test the summary falls back to reporting how many declarations were applied"() {
         given:
-        def summary = logged.list.find { it.formattedMessage.contains("database [$DATABASE]") }
+        def summary = log.events.find { it.formattedMessage.contains("database [$DATABASE]") }
 
         expect: "the build reported itself"
         summary != null
@@ -119,7 +104,7 @@ class BuildIndexesUnreadableIndexListSpec extends AutoStartedMongoSpec {
 
     void "test a conflict that cannot be reconciled without the index list is reported, not swallowed"() {
         expect:
-        logged.list.any {
+        log.events.any {
             it.level == Level.ERROR &&
                     it.formattedMessage.contains('could not inspect existing indexes') &&
                     it.formattedMessage.contains('UnlistableConflictThing')

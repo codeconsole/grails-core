@@ -23,17 +23,14 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
 
 import ch.qos.logback.classic.Level
-import ch.qos.logback.classic.Logger
-import ch.qos.logback.classic.spi.ILoggingEvent
-import ch.qos.logback.core.read.ListAppender
 import com.mongodb.client.MongoClient
 import grails.gorm.annotation.Entity
-import org.slf4j.LoggerFactory
 import spock.lang.AutoCleanup
 import spock.lang.Shared
 
 import org.apache.grails.testing.mongo.AutoStartedMongoSpec
 import org.grails.datastore.gorm.events.DefaultApplicationEventPublisher
+import org.grails.datastore.gorm.mongo.CapturedLog
 import org.grails.datastore.gorm.mongo.FailingMongoClient
 import org.grails.datastore.mapping.core.DatastoreUtils
 import org.grails.datastore.mapping.core.connections.ConnectionSource
@@ -81,12 +78,7 @@ class BuildIndexesPerConnectionSpec extends AutoStartedMongoSpec {
         def buildReached = new CountDownLatch(1)
         def releaseBuild = new CountDownLatch(1)
         def worker = new AtomicReference<Thread>()
-        Logger logger = LoggerFactory.getLogger('org.grails.datastore.mapping') as Logger
-        Level previousLevel = logger.level
-        def logged = new ListAppender<ILoggingEvent>()
-        logger.level = Level.DEBUG
-        logged.start()
-        logger.addAppender(logged)
+        def log = new CapturedLog('org.grails.datastore.mapping', Level.DEBUG)
         def factory = new MongoConnectionSourceFactory() {
             @Override
             ConnectionSource<MongoClient, MongoConnectionSourceSettings> create(String name, MongoConnectionSourceSettings settings) {
@@ -130,11 +122,11 @@ class BuildIndexesPerConnectionSpec extends AutoStartedMongoSpec {
         !worker.get().alive
 
         and: "the abandoned build is classified as shutdown rather than an error"
-        logged.list.any {
+        log.events.any {
             it.threadName == worker.get().name && it.level == Level.DEBUG &&
                     it.formattedMessage.contains('abandoned because the datastore is shutting down')
         }
-        !logged.list.any {
+        !log.events.any {
             it.threadName == worker.get().name && it.level == Level.ERROR
         }
 
@@ -142,9 +134,7 @@ class BuildIndexesPerConnectionSpec extends AutoStartedMongoSpec {
         releaseBuild.countDown()
         parent?.close()
         worker.get()?.join(10000)
-        logger.detachAppender(logged)
-        logger.level = previousLevel
-        logged.stop()
+        log.close()
 
         where:
         addedAtRuntime << [false, true]

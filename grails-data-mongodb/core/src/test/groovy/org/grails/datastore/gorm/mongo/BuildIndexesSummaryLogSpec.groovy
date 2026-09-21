@@ -19,11 +19,7 @@
 package org.grails.datastore.gorm.mongo
 
 import ch.qos.logback.classic.Level
-import ch.qos.logback.classic.Logger
-import ch.qos.logback.classic.spi.ILoggingEvent
-import ch.qos.logback.core.read.ListAppender
 import grails.gorm.annotation.Entity
-import org.slf4j.LoggerFactory
 import spock.lang.AutoCleanup
 import spock.lang.Shared
 
@@ -45,13 +41,7 @@ class BuildIndexesSummaryLogSpec extends AutoStartedMongoSpec {
     MongoDatastore datastore
 
     @Shared
-    Logger datastoreLogger
-
-    @Shared
-    ListAppender<ILoggingEvent> logged = new ListAppender<>()
-
-    @Shared
-    Level previousLevel
+    CapturedLog log
 
     @Shared
     List<String> startupMessages
@@ -63,11 +53,7 @@ class BuildIndexesSummaryLogSpec extends AutoStartedMongoSpec {
 
     void setupSpec() {
         // Capture both inherited and MongoDatastore-specific logging categories.
-        datastoreLogger = LoggerFactory.getLogger('org.grails.datastore.mapping') as Logger
-        previousLevel = datastoreLogger.level
-        datastoreLogger.level = Level.INFO
-        logged.start()
-        datastoreLogger.addAppender(logged)
+        log = new CapturedLog('org.grails.datastore.mapping', Level.INFO)
 
         datastore = new MongoDatastore(
                 ['grails.mongodb.url': dbContainer.getReplicaSetUrl(DATABASE)] as Map,
@@ -78,8 +64,7 @@ class BuildIndexesSummaryLogSpec extends AutoStartedMongoSpec {
     }
 
     void cleanupSpec() {
-        datastoreLogger?.detachAppender(logged)
-        datastoreLogger?.level = previousLevel
+        log?.close()
     }
 
     /**
@@ -87,7 +72,7 @@ class BuildIndexesSummaryLogSpec extends AutoStartedMongoSpec {
      * the database this specification uses rather than by being the only messages logged.
      */
     private List<String> messagesForThisDatabase() {
-        logged.list.collect { it.formattedMessage }.findAll { it.contains("database [$DATABASE]") }
+        log.events.collect { it.formattedMessage }.findAll { it.contains("database [$DATABASE]") }
     }
 
     void "test a successful index build logs one summary of what it applied and what it cost"() {

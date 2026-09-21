@@ -22,14 +22,10 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 import ch.qos.logback.classic.Level
-import ch.qos.logback.classic.Logger
-import ch.qos.logback.classic.spi.ILoggingEvent
-import ch.qos.logback.core.read.ListAppender
 import com.mongodb.MongoException
 import com.mongodb.client.MongoClient
 import com.mongodb.client.MongoClients
 import grails.gorm.annotation.Entity
-import org.slf4j.LoggerFactory
 import spock.lang.Shared
 import spock.util.concurrent.PollingConditions
 
@@ -49,13 +45,7 @@ class BuildIndexesBackgroundFailureSpec extends AutoStartedMongoSpec {
     MongoClient realClient
 
     @Shared
-    Logger datastoreLogger
-
-    @Shared
-    ListAppender<ILoggingEvent> logged = new ListAppender<>()
-
-    @Shared
-    Level previousLevel
+    CapturedLog log
 
     @Override
     boolean shouldInitializeDatastore() {
@@ -64,16 +54,11 @@ class BuildIndexesBackgroundFailureSpec extends AutoStartedMongoSpec {
 
     void setupSpec() {
         realClient = MongoClients.create(dbContainer.getReplicaSetUrl('backgroundFailureDb'))
-        datastoreLogger = LoggerFactory.getLogger('org.grails.datastore.mapping') as Logger
-        previousLevel = datastoreLogger.level
-        datastoreLogger.level = Level.DEBUG
-        logged.start()
-        datastoreLogger.addAppender(logged)
+        log = new CapturedLog('org.grails.datastore.mapping', Level.DEBUG)
     }
 
     void cleanupSpec() {
-        datastoreLogger?.detachAppender(logged)
-        datastoreLogger?.level = previousLevel
+        log?.close()
         realClient?.close()
     }
 
@@ -99,7 +84,7 @@ class BuildIndexesBackgroundFailureSpec extends AutoStartedMongoSpec {
 
         and: "the failure is reported at error level, since nothing else would surface it"
         conditions.eventually {
-            assert logged.list.any {
+            assert log.events.any {
                 it.level == Level.ERROR && it.formattedMessage.contains('The background index build failed')
             }
         }
@@ -131,7 +116,7 @@ class BuildIndexesBackgroundFailureSpec extends AutoStartedMongoSpec {
 
         then: "the interruption is reported as the shutdown it is, not as a failure"
         conditions.eventually {
-            assert logged.list.any {
+            assert log.events.any {
                 it.level == Level.DEBUG && it.formattedMessage.contains('abandoned because the datastore is shutting down')
             }
         }
@@ -141,7 +126,7 @@ class BuildIndexesBackgroundFailureSpec extends AutoStartedMongoSpec {
     }
 
     private int backgroundBuildFailures() {
-        logged.list.count {
+        log.events.count {
             it.level == Level.ERROR && it.formattedMessage.contains('The background index build failed')
         }
     }
