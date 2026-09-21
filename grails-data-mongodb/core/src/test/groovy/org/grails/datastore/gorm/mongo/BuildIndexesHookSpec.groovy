@@ -18,13 +18,17 @@
  */
 package org.grails.datastore.gorm.mongo
 
+import com.mongodb.client.MongoClient
+import com.mongodb.client.MongoClients
 import grails.gorm.annotation.Entity
 import org.bson.Document
 import spock.util.concurrent.PollingConditions
 
 import org.apache.grails.testing.mongo.AutoStartedMongoSpec
+import org.grails.datastore.mapping.core.DatastoreUtils
 import org.grails.datastore.mapping.model.PersistentEntity
 import org.grails.datastore.mapping.mongo.MongoDatastore
+import org.springframework.core.env.PropertyResolver
 
 class BuildIndexesHookSpec extends AutoStartedMongoSpec {
 
@@ -61,6 +65,47 @@ class BuildIndexesHookSpec extends AutoStartedMongoSpec {
 
         where:
         async << [false, true]
+    }
+
+    void "test a checked exception from the hook reaches the caller of a synchronous build unchanged"() {
+        given:
+        MongoClient client = MongoClients.create(dbContainer.getReplicaSetUrl('hookFailureDb'))
+
+        when: "an override throws a checked exception it does not declare, as Groovy allows"
+        new InterruptedHookDatastore(client,
+                DatastoreUtils.createPropertyResolver(['grails.mongodb.databaseName': 'hookFailureDb']), HookFailureThing)
+
+        then: "the caller gets that exception, not a wrapper around it"
+        def e = thrown(InterruptedException)
+        e.message == 'interrupted in the hook'
+
+        and: "the interrupt it stands for is not lost"
+        Thread.interrupted()
+
+        cleanup:
+        Thread.interrupted()
+        client?.close()
+    }
+}
+
+class InterruptedHookDatastore extends MongoDatastore {
+
+    InterruptedHookDatastore(MongoClient client, PropertyResolver configuration, Class... classes) {
+        super(client, configuration, classes)
+    }
+
+    @Override
+    protected void initializeIndices(PersistentEntity entity) {
+        throw new InterruptedException('interrupted in the hook')
+    }
+}
+
+@Entity
+class HookFailureThing {
+    String name
+
+    static mapping = {
+        name index: true
     }
 }
 

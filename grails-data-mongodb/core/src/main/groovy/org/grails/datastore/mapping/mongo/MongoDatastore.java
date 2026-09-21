@@ -31,7 +31,6 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 
 import groovy.lang.Closure;
 
@@ -40,6 +39,7 @@ import jakarta.persistence.FlushModeType;
 
 import com.mongodb.MongoClientSettings;
 import com.mongodb.MongoCommandException;
+import com.mongodb.MongoNamespace;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoIterable;
 import com.mongodb.client.model.IndexOptions;
@@ -188,11 +188,21 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
      */
     private volatile ExecutorService indexBuildExecutor;
 
-    /** Background builds submitted and not yet finished, which is how {@link #stop()} knows it cut one short. */
-    private final AtomicInteger indexBuildsInFlight = new AtomicInteger();
-
-    /** Set when a build was cut short by {@link #stop()} or requested while stopped, for {@link #start()} to run. */
+    /**
+     * Set when a build did not run to the end because the datastore was stopping, or was requested while it
+     * was stopped, for {@link #start()} to run again. A build interrupted by {@link #stop()} sets it itself
+     * as it exits, so a build that finished in the meantime is not run twice.
+     */
     private volatile boolean indexBuildPending;
+
+    /**
+     * Set first thing in {@link #close()}. A connection added at runtime starts its index build only while
+     * this is clear, and only after it is registered, so a close cannot miss a build that has started.
+     */
+    private volatile boolean closed;
+
+    /** How long {@link #start()} waits for a build that {@link #stop()} interrupted to finish exiting. */
+    private static final long INDEX_BUILD_EXIT_TIMEOUT_SECONDS = 10;
 
     /** The summary for the current build, scoped to its thread so the protected index hook is preserved. */
     private final ThreadLocal<IndexBuildSummary> indexBuildSummary = new ThreadLocal<>();
@@ -278,6 +288,9 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
                     childDatastore = createChildDatastore(mappingContext, eventPublisher, parent, singletonConnectionSources);
                 }
                 datastoresByConnectionSource.put(connectionSource.getName(), childDatastore);
+                if (childDatastore != this) {
+                    childDatastore.buildIndex();
+                }
             }
 
             connectionSources.addListener(new ConnectionSourcesListener<>() {
@@ -286,6 +299,11 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
                     MongoDatastore childDatastore = createChildDatastore(mappingContext, eventPublisher, parent, singletonConnectionSources);
                     datastoresByConnectionSource.put(connectionSource.getName(), childDatastore);
                     registerAllEntitiesWithEnhancer();
+                    // Registered first and then checked: either close() has not started, and will find this
+                    // child when it walks the map, or it has, and the build is never started.
+                    if (!closed) {
+                        childDatastore.buildIndex();
+                    }
                 }
             });
         }
@@ -324,7 +342,7 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
         return new MongoDatastore(singletonConnectionSources, mappingContext, eventPublisher) {
             @Override
             protected MongoGormEnhancer initialize(final MongoConnectionSourceSettings settings) {
-                super.buildIndex();
+                // The parent starts the index build once this child is registered, where close() can reach it.
                 return null;
             }
 
@@ -637,24 +655,15 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
             LOG.info("Building the indexes declared by the domain classes on a background thread ([{} = true]). " +
                     "Startup does not wait for them, so a query issued before its index exists is served without it.",
                     MongoSettings.SETTING_BUILD_INDEXES_ASYNC);
-            indexBuildsInFlight.incrementAndGet();
             try {
-                executor.execute(() -> {
-                    try {
-                        runIndexBuild(executor);
-                    }
-                    finally {
-                        indexBuildsInFlight.decrementAndGet();
-                    }
-                });
+                executor.execute(() -> runIndexBuild(executor));
                 return;
             }
             catch (RejectedExecutionException e) {
                 // Shut down between the check and the submission.
-                indexBuildsInFlight.decrementAndGet();
             }
         }
-        if (running) {
+        if (closed) {
             LOG.warn("An index build was requested after the datastore was closed, so it was not started.");
         }
         else {
@@ -674,12 +683,17 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
         // Telling a created index from one that was already there costs a listIndexes per indexed
         // collection, and its only product is the summary, so it is skipped when that would not be logged.
         IndexBuildSummary summary = new IndexBuildSummary(LOG.isInfoEnabled());
-        Throwable failure = null;
+        Exception failure = null;
         try {
             buildDeclaredIndexes(summary);
         }
-        catch (Throwable e) {
+        catch (Exception e) {
+            // An Error is left to propagate as it is, without the summary.
             failure = e;
+            if (e instanceof InterruptedException) {
+                // Caught here rather than by whoever interrupted, so the flag it cleared is put back.
+                Thread.currentThread().interrupt();
+            }
         }
         long elapsedMillis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt);
         if (failure == null) {
@@ -688,18 +702,15 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
         }
         if (executor == null) {
             logUnfinishedIndexBuild(summary, elapsedMillis, false);
-            if (failure instanceof RuntimeException) {
-                throw (RuntimeException) failure;
-            }
-            if (failure instanceof Error) {
-                throw (Error) failure;
-            }
-            throw new IllegalStateException(failure);
+            // Unchanged, checked or not: an initializeIndices override may throw one without declaring it.
+            MongoDatastore.<RuntimeException>rethrow(failure);
+            return;
         }
         // Nothing is waiting on this thread, so an error that would have failed startup has to be
         // reported here or it is lost entirely.
         boolean abandoned = executor.isShutdown() || Thread.currentThread().isInterrupted();
         if (abandoned) {
+            indexBuildPending = true;
             // toString rather than the message: an interrupted driver call can arrive wrapped in
             // an exception that carries no message of its own.
             LOG.debug("The background index build was abandoned because the datastore is shutting down: {}",
@@ -710,6 +721,11 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
                     "indexes that were not created.", failure.getMessage(), failure);
         }
         logUnfinishedIndexBuild(summary, elapsedMillis, abandoned);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static <E extends Exception> void rethrow(Exception failure) throws E {
+        throw (E) failure;
     }
 
     private void logFinishedIndexBuild(IndexBuildSummary summary, long elapsedMillis) {
@@ -798,6 +814,9 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
 
         private boolean listed;
 
+        /** Why the last listing failed, for the conflict it leaves unreconciled to report. */
+        private RuntimeException listingFailure;
+
         private ExistingIndexes(com.mongodb.client.MongoCollection<Document> collection, IndexBuildSummary summary) {
             this.collection = collection;
             this.summary = summary;
@@ -819,12 +838,14 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
             listed = true;
             try {
                 indexes = collection.listIndexes().into(new ArrayList<>());
+                listingFailure = null;
             } catch (RuntimeException e) {
                 // Not fatal: the build can still create indexes, it just cannot report which of them
                 // were new. Losing the breakdown is not worth failing a startup over.
                 LOG.debug("Could not list the existing indexes of collection [{}]: {}",
                         collection.getNamespace().getCollectionName(), e.getMessage(), e);
                 indexes = null;
+                listingFailure = e;
                 summary.classified = false;
             }
             return indexes;
@@ -883,8 +904,19 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
          */
         private boolean classified;
 
+        /**
+         * One listing per collection rather than per entity: every class in an inheritance hierarchy maps
+         * to its root's collection, and several classes can name the same one. Sharing it also keeps them
+         * consistent, so a second class declaring keys the first has just created sees them as present.
+         */
+        private final Map<MongoNamespace, ExistingIndexes> existingIndexes = new HashMap<>();
+
         private IndexBuildSummary(boolean classified) {
             this.classified = classified;
+        }
+
+        private ExistingIndexes existingIndexesOf(com.mongodb.client.MongoCollection<Document> collection) {
+            return existingIndexes.computeIfAbsent(collection.getNamespace(), namespace -> new ExistingIndexes(collection, this));
         }
 
         /** Declarations applied other than by a drop and recreate. */
@@ -1307,7 +1339,7 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
             return;
         }
         final com.mongodb.client.MongoCollection<Document> collection = getCollection(entity);
-        final ExistingIndexes existingIndexes = new ExistingIndexes(collection, summary);
+        final ExistingIndexes existingIndexes = summary.existingIndexesOf(collection);
         final ClassMapping<MongoCollection> classMapping = entity.getMapping();
         if (classMapping != null) {
             final MongoCollection mappedForm = classMapping.getMappedForm();
@@ -1404,7 +1436,9 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
             else {
                 summary.created++;
             }
-            LOG.debug("{} index for entity [{}] {} in {}ms", present ? "Confirmed" : "Created",
+            // Unclassified, nothing says whether the index was new, so the line does not claim either.
+            String applied = !summary.classified ? "Applied" : present ? "Confirmed" : "Created";
+            LOG.debug("{} index for entity [{}] {} in {}ms", applied,
                     entity.getName(), descriptor, TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt));
         } catch (MongoCommandException e) {
             if (e.getErrorCode() == INDEX_OPTIONS_CONFLICT_CODE) {
@@ -1446,8 +1480,10 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
         // first listed - another instance or another connection can have created it since.
         List<Document> indexes = existingIndexes.refresh();
         if (indexes == null) {
+            // The reason the listing failed, which is what an operator can act on - often a missing
+            // listIndexes privilege - with the conflict that made it matter attached.
             LOG.error("Failed to create index for entity [{}] {} and could not inspect existing indexes: {}",
-                entity.getName(), descriptor, original.getMessage(), original);
+                entity.getName(), descriptor, existingIndexes.listingFailure.getMessage(), original);
             return Reconciliation.FAILED;
         }
         Document existing = findIndexByKeyPattern(indexes, keys);
@@ -1609,16 +1645,16 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
      * created it, and this datastore stays {@link #isRunning() running} so that
      * {@link #start()} does not later replace something it does not own.
      *
-     * <p>A background index build still running is interrupted first, rather than failing against the
-     * closed client, and {@link #start()} runs it again.
+     * <p>A background index build still running, on this connection or any other, is interrupted first
+     * rather than left to fail against a closed client, and {@link #start()} runs it again.
      */
     @Override
     public void stop() {
         if (!this.running || !ownsClient()) {
             return;
         }
-        if (shutDownIndexBuild()) {
-            indexBuildPending = true;
+        for (MongoDatastore datastore : datastoresAndChildren()) {
+            datastore.stopIndexBuild();
         }
         this.mongo.close();
         this.running = false;
@@ -1628,7 +1664,7 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
      * Builds a replacement {@link MongoClient} after a restore, using the same factory and
      * configuration the original was built from, so settings applied at startup still apply.
      * A background index build that {@link #stop()} cut short, or that was requested while stopped,
-     * runs again on a fresh executor.
+     * runs again on a fresh executor, on every connection.
      */
     @Override
     public void start() {
@@ -1638,10 +1674,54 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
         this.mongo = connectionSources.getFactory()
                 .create(ConnectionSource.DEFAULT, connectionSources.getBaseConfiguration())
                 .getSource();
-        if (this.buildIndexes && this.buildIndexesAsync) {
-            this.indexBuildExecutor = newIndexBuildExecutor(connectionSources.getDefaultConnectionSource().getName());
-        }
         this.running = true;
+        for (MongoDatastore datastore : datastoresAndChildren()) {
+            datastore.resumeIndexBuild();
+        }
+    }
+
+    /**
+     * This datastore followed by the per-connection children, which have no lifecycle of their own.
+     */
+    private List<MongoDatastore> datastoresAndChildren() {
+        List<MongoDatastore> datastores = new ArrayList<>();
+        datastores.add(this);
+        for (MongoDatastore datastore : datastoresByConnectionSource.values()) {
+            if (datastore != this) {
+                datastores.add(datastore);
+            }
+        }
+        return datastores;
+    }
+
+    private void stopIndexBuild() {
+        if (shutDownIndexBuild()) {
+            indexBuildPending = true;
+        }
+    }
+
+    /**
+     * Replaces the executor {@link #stop()} shut down and runs any build it cut short. A build that was
+     * running when it was interrupted records that it was cut short as it exits, so this waits for it to
+     * have exited before deciding.
+     */
+    private void resumeIndexBuild() {
+        ExecutorService stopped = this.indexBuildExecutor;
+        if (stopped == null) {
+            return;
+        }
+        try {
+            if (!stopped.awaitTermination(INDEX_BUILD_EXIT_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+                // Still running: it may yet finish, but assuming it will not costs only a repeat of work
+                // that is idempotent.
+                indexBuildPending = true;
+            }
+        }
+        catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            indexBuildPending = true;
+        }
+        this.indexBuildExecutor = newIndexBuildExecutor(connectionSources.getDefaultConnectionSource().getName());
         if (indexBuildPending) {
             indexBuildPending = false;
             buildIndex();
@@ -1671,11 +1751,11 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
     @PreDestroy
     public void close() {
         MongoClient current = this.mongo;
-        shutDownIndexBuild();
-        for (MongoDatastore datastore : datastoresByConnectionSource.values()) {
-            if (datastore != this) {
-                datastore.shutDownIndexBuild();
-            }
+        // Set before the children are walked; see the connection sources listener.
+        closed = true;
+        for (MongoDatastore datastore : datastoresAndChildren()) {
+            datastore.closed = true;
+            datastore.shutDownIndexBuild();
         }
         try {
             super.destroy();
@@ -1709,17 +1789,15 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
      * Interrupts the background index build, if there is one. A build can run for minutes, so shutdown
      * must not wait for it; the server carries on building what it was asked for.
      *
-     * @return whether a build was running or queued, and so was cut short
+     * @return whether a build was still queued, and so never ran
      */
     private boolean shutDownIndexBuild() {
         ExecutorService executor = this.indexBuildExecutor;
         if (executor == null) {
             return false;
         }
-        boolean cutShort = indexBuildsInFlight.get() > 0;
-        // A build still queued never runs, so it never takes itself off the count.
-        indexBuildsInFlight.addAndGet(-executor.shutdownNow().size());
-        return cutShort;
+        // A build already running reports for itself whether it was cut short; one still queued never runs.
+        return !executor.shutdownNow().isEmpty();
     }
 
     /**

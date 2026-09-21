@@ -36,9 +36,9 @@ import org.grails.datastore.mapping.core.DatastoreUtils
 import org.grails.datastore.mapping.mongo.MongoDatastore
 
 /**
- * Telling a created index from one that was already there costs a {@code listIndexes} per indexed
- * collection, and the only thing it feeds is the summary line. An application that does not log that line
- * does not pay for it.
+ * Telling a created index from one that was already there costs a {@code listIndexes} per collection that
+ * declares indexes, and the only thing it feeds is the summary line. It is paid once per collection
+ * however many domain classes map to it, and not at all when the summary is not logged.
  */
 class BuildIndexesClassificationCostSpec extends AutoStartedMongoSpec {
 
@@ -53,6 +53,12 @@ class BuildIndexesClassificationCostSpec extends AutoStartedMongoSpec {
 
     @Shared
     AtomicInteger listings = new AtomicInteger()
+
+    @Shared
+    int startupListings
+
+    @Shared
+    String startupSummary
 
     @Override
     boolean shouldInitializeDatastore() {
@@ -71,32 +77,60 @@ class BuildIndexesClassificationCostSpec extends AutoStartedMongoSpec {
                     }
                 })
                 .build())
+
+        def log = new CapturedLog('org.grails.datastore.mapping.mongo', Level.INFO)
+        datastore = new MongoDatastore(countingClient,
+                DatastoreUtils.createPropertyResolver(['grails.mongodb.databaseName': DATABASE]),
+                ClassifiedThing, FirstSharedCollectionThing, SecondSharedCollectionThing)
+        startupListings = listings.get()
+        startupSummary = log.events*.formattedMessage.find { it.contains("database [$DATABASE]") }
+        log.close()
     }
 
     void cleanupSpec() {
         countingClient?.close()
     }
 
-    void "test the existing indexes are listed only when the summary will be logged"() {
-        when: "the datastore builds its indexes with the summary not logged"
+    void "test a collection shared by several domain classes is listed once"() {
+        expect: "one listing for each of the two collections, not one for each of the three classes"
+        startupListings == 2
+    }
+
+    void "test classes sharing a collection see each other's indexes"() {
+        expect: "the second class declaring the keys the first has just created finds them already there"
+        startupSummary.contains('2 created, 1 already present')
+    }
+
+    void "test the existing indexes are not listed when the summary will not be logged"() {
+        given:
+        int before = listings.get()
         def quiet = new CapturedLog('org.grails.datastore.mapping.mongo', Level.WARN)
-        datastore = new MongoDatastore(countingClient,
-                DatastoreUtils.createPropertyResolver(['grails.mongodb.databaseName': DATABASE]), ClassifiedThing)
-        quiet.close()
 
-        then: "nothing was listed"
-        listings.get() == 0
-
-        when: "the same build runs with the summary logged"
-        def logged = new CapturedLog('org.grails.datastore.mapping.mongo', Level.INFO)
+        when:
         datastore.buildIndex()
 
-        then: "the collection is listed so the summary can say what was already there"
-        listings.get() == 1
-        logged.events*.formattedMessage.find { it.contains("database [$DATABASE]") }.contains('0 created, 1 already present')
+        then:
+        listings.get() == before
 
         cleanup:
-        logged?.close()
+        quiet?.close()
+    }
+
+    void "test an index applied outside a build is logged as applied, without being classified"() {
+        given:
+        int before = listings.get()
+        def debug = new CapturedLog('org.grails.datastore.mapping.mongo', Level.DEBUG)
+
+        when: "a domain class is registered after startup, when no summary will report the counts"
+        datastore.persistentEntityAdded(datastore.mappingContext.getPersistentEntity(ClassifiedThing.name))
+
+        then: "nothing is listed, and the per-index line does not claim the index was created"
+        listings.get() == before
+        debug.events*.formattedMessage.any { it.startsWith("Applied index for entity [${ClassifiedThing.name}]") }
+        !debug.events*.formattedMessage.any { it.startsWith("Created index for entity [${ClassifiedThing.name}]") }
+
+        cleanup:
+        debug?.close()
     }
 }
 
@@ -108,5 +142,27 @@ class ClassifiedThing {
         version false
         collection 'classifiedThing'
         name index: true
+    }
+}
+
+@Entity
+class FirstSharedCollectionThing {
+    String code
+
+    static mapping = {
+        version false
+        collection 'sharedCollection'
+        code index: true
+    }
+}
+
+@Entity
+class SecondSharedCollectionThing {
+    String code
+
+    static mapping = {
+        version false
+        collection 'sharedCollection'
+        code index: true
     }
 }

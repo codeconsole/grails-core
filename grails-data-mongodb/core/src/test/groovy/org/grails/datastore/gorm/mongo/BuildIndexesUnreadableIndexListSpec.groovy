@@ -103,11 +103,12 @@ class BuildIndexesUnreadableIndexListSpec extends AutoStartedMongoSpec {
     }
 
     void "test a conflict that cannot be reconciled without the index list is reported, not swallowed"() {
-        expect:
+        expect: "the error names the entity and says why the listing failed, which is what can be acted on"
         log.events.any {
             it.level == Level.ERROR &&
                     it.formattedMessage.contains('could not inspect existing indexes') &&
-                    it.formattedMessage.contains('UnlistableConflictThing')
+                    it.formattedMessage.contains('UnlistableConflictThing') &&
+                    it.formattedMessage.contains('not authorized on unlistableIndexDb to execute command listIndexes')
         }
     }
 }

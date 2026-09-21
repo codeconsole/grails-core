@@ -20,13 +20,16 @@ package org.grails.datastore.gorm.mongo.connections
 
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 
 import ch.qos.logback.classic.Level
 import com.mongodb.client.MongoClient
+import com.mongodb.client.MongoClients
 import grails.gorm.annotation.Entity
 import spock.lang.AutoCleanup
 import spock.lang.Shared
+import spock.util.concurrent.PollingConditions
 
 import org.apache.grails.testing.mongo.AutoStartedMongoSpec
 import org.grails.datastore.gorm.events.DefaultApplicationEventPublisher
@@ -138,6 +141,92 @@ class BuildIndexesPerConnectionSpec extends AutoStartedMongoSpec {
 
         where:
         addedAtRuntime << [false, true]
+    }
+
+    void "test stop() and start() interrupt and resume a named connection's build"() {
+        given:
+        def conditions = new PollingConditions(timeout: 30)
+        def log = new CapturedLog('org.grails.datastore.mapping', Level.DEBUG)
+        def buildReached = new CountDownLatch(1)
+        def releaseBuild = new CountDownLatch(1)
+        def blockOnce = new AtomicBoolean(true)
+        def factory = new MongoConnectionSourceFactory() {
+            @Override
+            ConnectionSource<MongoClient, MongoConnectionSourceSettings> create(String name, MongoConnectionSourceSettings settings) {
+                def source = super.create(name, settings)
+                if (name != 'checkpointedChild') {
+                    return source
+                }
+                MongoClient blocking = FailingMongoClient.wrap(source.source, 'createIndex') { Closure proceed ->
+                    if (blockOnce.compareAndSet(true, false)) {
+                        buildReached.countDown()
+                        releaseBuild.await()
+                    }
+                    proceed()
+                }
+                new DefaultConnectionSource<MongoClient, MongoConnectionSourceSettings>(name, blocking, settings)
+            }
+        }
+        MongoClient inspector = MongoClients.create(dbContainer.getReplicaSetUrl('checkpointedChildDb'))
+        def childIndexes = { -> inspector.getDatabase('checkpointedChildDb').getCollection('asyncPerConnectionThing').listIndexes()*.key }
+
+        when: "the named connection's build is under way when the datastore is stopped for a checkpoint"
+        def parent = new MongoDatastore(DatastoreUtils.createPropertyResolver([
+                'grails.mongodb.url'              : dbContainer.getReplicaSetUrl('checkpointedParentDb'),
+                'grails.mongodb.buildIndexes'     : false,
+                'grails.mongodb.buildIndexesAsync': true,
+                'grails.mongodb.connections'      : [checkpointedChild: [url: dbContainer.getReplicaSetUrl('checkpointedChildDb'), buildIndexes: true]]
+        ]), factory, new DefaultApplicationEventPublisher(), AsyncPerConnectionThing)
+        buildReached.await(30, TimeUnit.SECONDS)
+        parent.stop()
+
+        then: "the child's build is abandoned as a shutdown, not reported as a failure"
+        conditions.eventually {
+            assert log.events.any {
+                it.level == Level.DEBUG && it.formattedMessage.contains('database [checkpointedChildDb] did not finish')
+            }
+        }
+        !log.events.any { it.level == Level.ERROR && it.threadName.startsWith('gorm-mongo-index-build-checkpointedChild-') }
+        !([name: 1] in childIndexes())
+
+        when: "the datastore is restarted"
+        parent.start()
+
+        then: "the child's build runs again and completes"
+        conditions.eventually {
+            assert [name: 1] in childIndexes()
+        }
+
+        cleanup:
+        releaseBuild.countDown()
+        parent?.close()
+        inspector?.close()
+        log?.close()
+    }
+
+    void "test a connection added after close() starts no index build"() {
+        given:
+        def log = new CapturedLog('org.grails.datastore.mapping', Level.INFO)
+        String caller = Thread.currentThread().name
+        def parent = new MongoDatastore(DatastoreUtils.createPropertyResolver([
+                'grails.mongodb.url'              : dbContainer.getReplicaSetUrl('closedParentDb'),
+                'grails.mongodb.buildIndexes'     : false,
+                'grails.mongodb.buildIndexesAsync': true
+        ]), AsyncPerConnectionThing)
+        parent.close()
+
+        when:
+        parent.connectionSources.addConnectionSource('addedAfterClose',
+                [url: dbContainer.getReplicaSetUrl('addedAfterCloseDb'), buildIndexes: true])
+
+        then: "a build would have announced itself on this thread before returning; none did"
+        !log.events.any {
+            it.threadName == caller && it.formattedMessage.startsWith('Building the indexes declared by the domain classes')
+        }
+
+        cleanup:
+        parent?.connectionSources?.getConnectionSource('addedAfterClose')?.close()
+        log?.close()
     }
 
     void "test a connection can override the global setting"() {

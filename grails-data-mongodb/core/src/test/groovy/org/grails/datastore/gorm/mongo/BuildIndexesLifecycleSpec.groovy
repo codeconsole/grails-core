@@ -108,6 +108,72 @@ class BuildIndexesLifecycleSpec extends AutoStartedMongoSpec {
         log?.close()
     }
 
+    void "test a build that finishes despite stop() is not run again on start()"() {
+        given:
+        def log = new CapturedLog('org.grails.datastore.mapping', Level.INFO)
+        SlowToStopDatastore.REACHED = new CountDownLatch(1)
+        SlowToStopDatastore.RELEASE = new CountDownLatch(1)
+        String caller = Thread.currentThread().name
+        def buildsStartedHere = { ->
+            log.events.count {
+                it.threadName == caller && it.formattedMessage.startsWith('Building the indexes declared by the domain classes')
+            }
+        }
+
+        when: "the build has applied every index and is on its way out when the datastore is stopped"
+        def datastore = new SlowToStopDatastore(asyncConfig('slowToStopDb'), SlowToStopThing)
+        SlowToStopDatastore.REACHED.await(30, TimeUnit.SECONDS)
+        int before = buildsStartedHere()
+        datastore.stop()
+        SlowToStopDatastore.RELEASE.countDown()
+
+        and: "restarted"
+        datastore.start()
+
+        then: "the build finished, so the restart does not run it again"
+        buildsStartedHere() == before
+        log.events.any { it.formattedMessage.contains('Index build for database [slowToStopDb] finished') }
+
+        cleanup:
+        SlowToStopDatastore.RELEASE?.countDown()
+        datastore?.close()
+        log?.close()
+    }
+
+    void "test a build requested while stopped runs when the datastore is restarted"() {
+        given:
+        def conditions = new PollingConditions(timeout: 30)
+        def log = new CapturedLog('org.grails.datastore.mapping', Level.INFO)
+        def collection = realClient.getDatabase('deferredDb').getCollection('deferredBuildThing')
+        def datastore = new MongoDatastore(asyncConfig('deferredDb'), DeferredBuildThing)
+        conditions.eventually {
+            assert [name: 1] in collection.listIndexes()*.key
+        }
+
+        when: "the datastore is stopped, and a build is requested while it is"
+        datastore.stop()
+        datastore.buildIndex()
+
+        then: "the request is deferred, not refused"
+        notThrown(Exception)
+        log.events.any {
+            it.level == Level.INFO && it.formattedMessage.contains('will run when the datastore is restarted')
+        }
+
+        when: "the index is dropped on the server and the datastore restarted"
+        collection.dropIndex('name_1')
+        datastore.start()
+
+        then: "the deferred build runs and puts it back"
+        conditions.eventually {
+            assert [name: 1] in collection.listIndexes()*.key
+        }
+
+        cleanup:
+        datastore?.close()
+        log?.close()
+    }
+
     void "test a build requested after close() is refused with a warning rather than an exception"() {
         given:
         def log = new CapturedLog('org.grails.datastore.mapping', Level.INFO)
@@ -152,6 +218,58 @@ class CheckpointedDatastore extends MongoDatastore {
             RELEASE.await()
         }
         super.initializeIndices(entity)
+    }
+}
+
+/**
+ * Holds the build up after it has applied every index, and does not respond to being interrupted: the
+ * build then finishes normally even though {@link MongoDatastore#stop()} ran while it was under way.
+ */
+class SlowToStopDatastore extends MongoDatastore {
+
+    static volatile CountDownLatch REACHED
+
+    static volatile CountDownLatch RELEASE
+
+    SlowToStopDatastore(Map<String, Object> configuration, Class... classes) {
+        super(configuration, classes)
+    }
+
+    @Override
+    protected void initializeIndices(PersistentEntity entity) {
+        super.initializeIndices(entity)
+        REACHED.countDown()
+        while (true) {
+            try {
+                RELEASE.await()
+                return
+            }
+            catch (InterruptedException ignored) {
+                // A step that does not respond to interruption, as a blocking call may not
+            }
+        }
+    }
+}
+
+@Entity
+class SlowToStopThing {
+    String name
+
+    static mapping = {
+        version false
+        collection 'slowToStopThing'
+        name index: true
+    }
+}
+
+@Entity
+class DeferredBuildThing {
+    String name
+
+    static mapping = {
+        version false
+        collection 'deferredBuildThing'
+        name index: true
     }
 }
 
