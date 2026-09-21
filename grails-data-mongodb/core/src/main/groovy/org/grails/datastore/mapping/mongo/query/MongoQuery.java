@@ -133,6 +133,9 @@ public class MongoQuery extends BsonQuery implements QueryArgumentsAware {
     public static final String NEAR_SPHERE_OPERATOR = "$nearSphere";
 
     static {
+        // Geospatial criteria carry shape documents by design and are exempt from criterion value validation.
+        VALUE_VALIDATION_EXEMPT_CRITERIA.add(GeoCriterion.class);
+
         queryHandlers.put(IdEquals.class, new QueryHandler<IdEquals>() {
             public void handle(EmbeddedQueryEncoder queryEncoder, IdEquals criterion, Document query, PersistentEntity entity) {
                 Object value = criterion.getValue();
@@ -686,6 +689,8 @@ public class MongoQuery extends BsonQuery implements QueryArgumentsAware {
                     dbo = new Document();
                     subList.add(dbo);
                 }
+
+                validateCriterionValues(criterion, entity);
 
                 if (criterion instanceof PropertyCriterion && !(criterion instanceof GeoCriterion)) {
                     PropertyCriterion pc = (PropertyCriterion) criterion;
