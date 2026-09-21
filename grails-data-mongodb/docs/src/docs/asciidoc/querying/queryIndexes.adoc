@@ -196,7 +196,7 @@ grails:
         buildIndexesAsync: true
 ----
 
-Startup then continues without waiting. The indexes are still built one at a time per connection, on a daemon thread named `gorm-mongo-index-build-<connection>`. Different connections can build indexes concurrently, including when they use the same MongoDB server. The thread is released after the build finishes and it has been idle for one second.
+Startup then continues without waiting. The indexes are still built one at a time per connection, on a daemon thread named `gorm-mongo-index-build-<connection>-<n>`, where `<n>` counts the workers started for that connection. Different connections can build indexes concurrently, including when they use the same MongoDB server. The thread is released after the build finishes and it has been idle for one second.
 
 Two consequences are worth planning for:
 
@@ -205,7 +205,7 @@ Two consequences are worth planning for:
 
 The setting is ignored when `buildIndexes` is `false`, and it applies only to the index build performed when the datastore starts — a domain class registered after startup is indexed on the thread registering it.
 
-NOTE: If the application shuts down while a background build is still running, GORM stops waiting for it, but the server carries on building the index it was asked for.
+NOTE: If the application shuts down while a background build is still running, GORM stops waiting for it, but the server carries on building the index it was asked for. A datastore stopped for a checkpoint and restored (with CRaC) runs a build it cut short again once it is restarted.
 
 ==== What the Index Build Reports
 
@@ -220,7 +220,19 @@ The domain class count includes every class considered for indexing, including c
 
 The elapsed time is what the caller actually spent waiting — startup with the default settings, or the background thread when `buildIndexesAsync` is enabled, where this line is also the only signal that the build has finished.
 
-The split between created and already present is what makes that time interpretable. MongoDB answers a `createIndex` for an index it already has immediately and without building anything, so a restart that changed no mappings reports everything as already present and costs milliseconds; a line reporting indexes created is the one that accounts for a slow start. If any declaration failed, the summary is logged at `WARN` instead and reports how many; the failures themselves are logged individually as they happen.
+The split between created and already present is what makes that time interpretable. MongoDB answers a `createIndex` for an index it already has immediately and without building anything, so a restart that changed no mappings reports everything as already present and costs milliseconds; a line reporting indexes created is the one that accounts for a slow start. An index that `recreateOnConflict` dropped and built again costs as much as a new one, and is counted apart as recreated:
+
+----
+Index build for database [myDb] finished in 9315ms: 0 created, 1 recreated, 6 already present, from 3 domain class(es)
+----
+
+If any declaration failed, the summary is logged at `WARN` instead and reports how many; the failures themselves are logged individually as they happen. A build that stops partway — a lost connection or a timeout — reports how far it got before stopping, also at `WARN`:
+
+----
+Index build for database [myDb] did not finish, stopping after 812ms at 1 of 3 domain class(es): 1 created, 0 already present
+----
+
+Telling a created index from one that was already there takes one `listIndexes` command per collection that declares indexes. It is only issued when the summary will be logged, that is when `INFO` is enabled for `org.grails.datastore.mapping.mongo`; with that logger at `WARN` the build skips it, and a summary for a build with failures reports how many declarations were applied instead.
 
 To find which index is the slow one, enable `DEBUG` logging for `org.grails.datastore.mapping.mongo`, which adds a line per index with its own elapsed time:
 

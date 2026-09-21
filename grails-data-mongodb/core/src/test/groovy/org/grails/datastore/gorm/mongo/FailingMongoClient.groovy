@@ -43,7 +43,9 @@ class FailingMongoClient {
     /**
      * @param delegate the real client to pass everything else through to
      * @param failingMethod the driver method to intercept, by name
-     * @param onCall what to do in its place — throw, or block until released
+     * @param onCall what to do in its place — throw, block until released, or decide call by call. It
+     *               receives a closure that makes the real call, for an interception that lets some calls
+     *               through.
      */
     static MongoClient wrap(MongoClient delegate, String failingMethod, Closure<?> onCall) {
         (MongoClient) proxy(MongoClient, delegate, failingMethod, onCall)
@@ -55,15 +57,9 @@ class FailingMongoClient {
             @Override
             Object invoke(Object proxyInstance, Method method, Object[] args) {
                 if (method.name == failingMethod) {
-                    return onCall.call()
+                    return onCall.call({ -> invokeTarget(target, method, args) })
                 }
-                Object result
-                try {
-                    result = method.invoke(target, args)
-                }
-                catch (InvocationTargetException e) {
-                    throw e.cause
-                }
+                Object result = invokeTarget(target, method, args)
                 if (result instanceof MongoDatabase) {
                     return proxy(MongoDatabase, result, failingMethod, onCall)
                 }
@@ -73,5 +69,14 @@ class FailingMongoClient {
                 return result
             }
         })
+    }
+
+    private static Object invokeTarget(Object target, Method method, Object[] args) {
+        try {
+            return method.invoke(target, args)
+        }
+        catch (InvocationTargetException e) {
+            throw e.cause
+        }
     }
 }

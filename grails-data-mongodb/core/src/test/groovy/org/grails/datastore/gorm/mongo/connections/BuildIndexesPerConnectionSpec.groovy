@@ -112,7 +112,7 @@ class BuildIndexesPerConnectionSpec extends AutoStartedMongoSpec {
         then:
         parent.getDatastoreForConnection('indexedAsync').isBuildIndexesAsync()
         buildReached.await(30, TimeUnit.SECONDS)
-        worker.get().name == 'gorm-mongo-index-build-indexedAsync'
+        worker.get().name.startsWith('gorm-mongo-index-build-indexedAsync-')
 
         when: "the parent closes while its child is still building"
         parent.close()

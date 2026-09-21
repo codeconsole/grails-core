@@ -129,7 +129,7 @@ class BuildIndexesAsyncSpec extends AutoStartedMongoSpec {
 
         then: "the command was issued by the datastore's own index build thread"
         asyncRecorder.threads.size() == 1
-        asyncRecorder.threads.first().startsWith('gorm-mongo-index-build')
+        asyncRecorder.threads.first().startsWith('gorm-mongo-index-build-default-')
 
         and: "not by the thread that created the datastore, which did not wait for it"
         asyncRecorder.threads.first() != creatingThread
