@@ -28,7 +28,9 @@ import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.file.FileSystemOperations
 import org.gradle.api.file.RegularFileProperty
 import org.gradle.api.plugins.JavaPluginExtension
+import org.gradle.api.provider.MapProperty
 import org.gradle.api.tasks.CacheableTask
+import org.gradle.api.tasks.Input
 import org.gradle.api.tasks.InputFile
 import org.gradle.api.tasks.InputFiles
 import org.gradle.api.tasks.Optional
@@ -126,6 +128,13 @@ abstract class GenerateConfigurationMetadataTask extends DefaultTask {
     @PathSensitive(PathSensitivity.RELATIVE)
     abstract ConfigurableFileCollection getClassesDirs()
 
+    @InputFiles
+    @PathSensitive(PathSensitivity.RELATIVE)
+    abstract ConfigurableFileCollection getDslConfigurationFiles()
+
+    @Input
+    abstract MapProperty<String, String> getDslRootPrefixes()
+
     @InputFile
     @Optional
     @PathSensitive(PathSensitivity.RELATIVE)
@@ -137,10 +146,17 @@ abstract class GenerateConfigurationMetadataTask extends DefaultTask {
     @Inject
     abstract FileSystemOperations getFileSystemOperations()
 
+    GenerateConfigurationMetadataTask() {
+        dslRootPrefixes.convention([:])
+    }
+
     @TaskAction
     void generate() {
         Map<String, ClassModel> models = readModels()
+        List<Map<String, Object>> dslProperties = GroovyDslConfigurationMetadataParser.parse(
+                dslConfigurationFiles.files, dslRootPrefixes.get())
         Map overlay = readOverlay()
+        GenerateConfigurationMetadataTask.rejectRestatedDslDefaults(dslProperties, overlay)
         List<Map<String, Object>> groups = []
         List<Map<String, Object>> properties = []
         models.values().findAll { ClassModel model -> model.prefix != null }.sort { ClassModel model -> model.name }.each {
@@ -166,7 +182,7 @@ abstract class GenerateConfigurationMetadataTask extends DefaultTask {
             }
         }
 
-        Map<String, Object> metadata = merge(groups, properties, overlay)
+        Map<String, Object> metadata = merge([], dslProperties, groups, properties, overlay)
         File output = outputDirectory.get().asFile
         fileSystemOperations.delete { it.delete(output) }
         File target = new File(output, 'META-INF/spring-configuration-metadata.json')
@@ -244,6 +260,27 @@ abstract class GenerateConfigurationMetadataTask extends DefaultTask {
                         "of type '${delegate.type}', which is not entirely compiled by this project. " +
                         'Add metadata for the delegated properties to additional-spring-configuration-metadata.json.')
             }
+        }
+    }
+
+    /**
+     * The overlay always wins, so a default it merely repeats would hide every later change to the DSL
+     * source. Only a default that deliberately differs from the DSL source belongs in the overlay.
+     */
+    private static void rejectRestatedDslDefaults(List<Map<String, Object>> dslProperties, Map overlay) {
+        Map<String, Object> overlayByName = ((overlay.get('properties') ?: []) as List).findAll { Object entry ->
+            entry instanceof Map
+        }.collectEntries { Object entry -> [(((Map) entry).name as String): entry] }
+        List<String> restated = dslProperties.findAll { Map<String, Object> property ->
+            Map curated = overlayByName[property.name as String] as Map
+            property.containsKey('defaultValue') && curated?.containsKey('defaultValue') &&
+                    JsonOutput.toJson(canonical(curated.defaultValue)) == JsonOutput.toJson(canonical(property.defaultValue))
+        }*.name.sort() as List<String>
+        if (restated) {
+            throw new IllegalArgumentException('additional-spring-configuration-metadata.json restates the default ' +
+                    "that the Groovy DSL source already declares for ${restated.size()} propert" +
+                    "${restated.size() == 1 ? 'y' : 'ies'}; remove 'defaultValue' from these entries so the DSL source " +
+                    "stays the single source of truth: ${restated.join(', ')}")
         }
     }
 
@@ -464,11 +501,15 @@ abstract class GenerateConfigurationMetadataTask extends DefaultTask {
         file?.isFile() ? new JsonSlurper().parse(file, StandardCharsets.UTF_8.name()) as Map : [:]
     }
 
-    private static Map<String, Object> merge(List<Map<String, Object>> groups,
-                                             List<Map<String, Object>> properties, Map overlay) {
+    private static Map<String, Object> merge(List<Map<String, Object>> dslGroups,
+                                              List<Map<String, Object>> dslProperties,
+                                              List<Map<String, Object>> typedGroups,
+                                              List<Map<String, Object>> typedProperties,
+                                              Map overlay) {
         Map<String, Object> result = [:]
-        result['groups'] = mergeSourced(groups, (overlay.get('groups') ?: []) as List, 'groups')
-        result['properties'] = mergeSourced(properties, (overlay.get('properties') ?: []) as List, 'properties')
+        result['groups'] = mergeSourced(dslGroups + typedGroups, (overlay.get('groups') ?: []) as List, 'groups')
+        result['properties'] = mergeSourced(layerDsl(dslProperties, typedProperties),
+                (overlay.get('properties') ?: []) as List, 'properties')
         if (overlay.containsKey('hints')) {
             result['hints'] = mergeNamed([], overlay.get('hints') as List, 'hints')
         }
@@ -486,6 +527,21 @@ abstract class GenerateConfigurationMetadataTask extends DefaultTask {
             result['ignored'] = ignored
         }
         result
+    }
+
+    /**
+     * A DSL property carries no provenance, so it sits underneath every typed property of the same name, whose
+     * own fields win. A DSL property that no configuration class declares stands on its own.
+     */
+    private static List<Map<String, Object>> layerDsl(List<Map<String, Object>> dslProperties,
+                                                      List<Map<String, Object>> typedProperties) {
+        Map<String, Object> dslByName = indexByName(dslProperties, 'properties', 'DSL')
+        Set<String> typedNames = typedProperties*.name as Set<String>
+        List<Map<String, Object>> layered = typedProperties.collect { Map<String, Object> typed ->
+            Map dsl = dslByName[typed.name as String] as Map
+            dsl == null ? typed : (new LinkedHashMap<String, Object>(dsl) + typed) as Map<String, Object>
+        }
+        layered + dslProperties.findAll { Map<String, Object> dsl -> !(dsl.name in typedNames) }
     }
 
     private static List<Object> mergeNamed(List generated, List overlay, String category) {
