@@ -44,6 +44,7 @@ class Hibernate5RefreshLockSpec extends HibernateGormDatastoreSpec {
 
     void setupSpec() {
         manager.registerDomainClasses(Hibernate5RefreshLockBook, Hibernate5RefreshLockRoutedBook,
+                Hibernate5RefreshLockSecondaryBook,
                 Hibernate5RefreshLockNonversionedBook, Hibernate5RefreshLockEmbeddedBook,
                 Hibernate5RefreshLockCascadeParent, Hibernate5RefreshLockCascadeChild,
                 Hibernate5RefreshLockCollectionParent, Hibernate5RefreshLockEmbeddedOwner, Hibernate5RefreshLockJoinedRoot, Hibernate5RefreshLockJoinedSub,
@@ -271,6 +272,38 @@ class Hibernate5RefreshLockSpec extends HibernateGormDatastoreSpec {
         Hibernate5RefreshLockRoutedBook.withNewSession {
             Hibernate5RefreshLockRoutedBook.findAllByTitle('via static secondary').isEmpty()
         }
+    }
+
+    void 'an entity mapped to one named datasource saves on that connection through #description'() {
+        given: 'no session open for the default connection, so only the named one can serve the save'
+        manager.transactionManager.commit(manager.transactionStatus)
+        manager.transactionStatus = null
+
+        when: 'the entity is mapped only to secondary, so every route has to resolve that connection'
+        Long id = Hibernate5RefreshLockSecondaryBook.secondary.withNewSession {
+            Hibernate5RefreshLockSecondaryBook.secondary.withTransaction {
+                def book = new Hibernate5RefreshLockSecondaryBook(title: title)
+                saveCall(book)
+                book.id
+            }
+        }
+
+        then:
+        id != null
+
+        and: 'the row is on that connection'
+        Hibernate5RefreshLockSecondaryBook.secondary.withNewSession {
+            Hibernate5RefreshLockSecondaryBook.secondary.get(id)?.title == title
+        }
+
+        where:
+        description               | saveCall
+        'the instance itself'     | { book -> book.save(flush: true, failOnError: true) }
+        'the default static api'  | { book ->
+            Hibernate5RefreshLockSecondaryBook.'default'.save(book, [flush: true, failOnError: true])
+        }
+
+        title = "mapped to secondary via ${description}"
     }
 
     void 'ordinary lock rejects a stale committed version'() {
@@ -1785,6 +1818,17 @@ class Hibernate5RefreshLockRoutedBook {
 
     static mapping = {
         datasource 'ALL'
+    }
+}
+
+@Entity
+class Hibernate5RefreshLockSecondaryBook {
+    Long id
+    Long version
+    String title
+
+    static mapping = {
+        datasource 'secondary'
     }
 }
 
