@@ -26,8 +26,10 @@ import spock.lang.AutoCleanup
 import spock.lang.Shared
 
 import org.apache.grails.testing.mongo.AutoStartedMongoSpec
+import org.grails.datastore.gorm.events.DefaultApplicationEventPublisher
 import org.grails.datastore.mapping.core.DatastoreUtils
 import org.grails.datastore.mapping.mongo.MongoDatastore
+import org.grails.datastore.mapping.mongo.config.MongoMappingContext
 import org.grails.datastore.mapping.mongo.config.MongoSettings
 import org.grails.datastore.mapping.multitenancy.MultiTenancySettings.MultiTenancyMode
 
@@ -71,6 +73,24 @@ class SuppliedMongoClientSettingsSpec extends AutoStartedMongoSpec {
 
         and: "so is any other datastore setting"
         datastore.isTransactionsEnabled()
+    }
+
+    void "test the database of a supplied mapping context is not overridden by a configured URL"() {
+        given: "a mapping context the caller built for one database, and configuration whose URL names another"
+        def mappingContext = new MongoMappingContext('mappingContextDb')
+        def configuration = DatastoreUtils.createPropertyResolver([
+                'grails.mongodb.url': 'mongodb://localhost/urlDb'
+        ])
+
+        when: "the datastore is built on the supplied client"
+        def contextDatastore = new MongoDatastore(mongoClient, configuration, mappingContext,
+                new DefaultApplicationEventPublisher())
+
+        then: "the connection details in the configuration go unused, the database name among them"
+        contextDatastore.defaultDatabase == 'mappingContextDb'
+
+        cleanup:
+        contextDatastore?.close()
     }
 
     void "test a supplied client applies #prefix multi-tenancy mode #mode"() {

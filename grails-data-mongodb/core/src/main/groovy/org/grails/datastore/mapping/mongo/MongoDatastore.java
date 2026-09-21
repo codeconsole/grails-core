@@ -1581,8 +1581,10 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
         // the settings that describe how the datastore behaves (multiTenancy, stateless, transactional,
         // buildIndexes, engine, flush mode) still come from grails.mongodb with grails.gorm fallbacks,
         // exactly as they do when GORM creates the client itself. The connection details in them are
-        // unused - this client is already connected.
+        // unused - this client is already connected - so a configured URL is dropped: its database would
+        // otherwise take precedence over the mapping context's, which is the one this path always used.
         MongoConnectionSourceSettings settings = buildConnectionSourceSettings(configuration);
+        settings.url(null);
         settings.setDatabaseName(mappingContext.getDefaultDatabaseName());
         ConnectionSource<MongoClient, MongoConnectionSourceSettings> defaultConnectionSource = new DefaultConnectionSource<>(ConnectionSource.DEFAULT, mongoClient, settings, closeable);
         return new InMemoryConnectionSources<>(defaultConnectionSource, new MongoConnectionSourceFactory(), configuration);
