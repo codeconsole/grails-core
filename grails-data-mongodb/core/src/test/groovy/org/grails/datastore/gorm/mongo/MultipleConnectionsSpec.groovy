@@ -88,6 +88,48 @@ class MultipleConnectionsSpec extends AutoStartedMongoSpec {
         CompanyA.withConnection("test2") { count() == 1 }
     }
 
+    void "Test instance operations reached through the named-connection static api"() {
+        setup:
+        CompanyA.DB.drop()
+        CompanyA.test2.DB.drop()
+
+        when:"An instance operation is reached through the named-connection static api itself"
+        def company = new CompanyA(name: "Four")
+        CompanyA.test2.save(company, [flush: true])
+
+        then:"It is written to that connection and not to the entity's own default one"
+        company.id != null
+        CompanyA.test2.count() == 1
+        CompanyA.count() == 0
+
+        when:"The same handle deletes it"
+        CompanyA.test2.delete(company, [flush: true])
+
+        then:
+        CompanyA.test2.count() == 0
+
+        cleanup:
+        CompanyA.DB.drop()
+        CompanyA.test2.DB.drop()
+    }
+
+    void "Test instance operations stay on the entity's own connection by default"() {
+        setup:
+        CompanyA.DB.drop()
+        CompanyA.test2.DB.drop()
+
+        when:"An instance is saved the ordinary way"
+        new CompanyA(name: "Five").save(flush: true)
+
+        then:"It lands on the entity's first mapped connection, and nothing reaches the other one"
+        CompanyA.count() == 1
+        CompanyA.test2.count() == 0
+
+        cleanup:
+        CompanyA.DB.drop()
+        CompanyA.test2.DB.drop()
+    }
+
     List getDomainClasses() {
         [CompanyA]
     }

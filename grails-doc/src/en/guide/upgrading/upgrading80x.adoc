@@ -792,6 +792,13 @@ The Spring annotations still work, so this is non-blocking, but new code should 
 * **Namespaced link generation is namespace-aware.**
 When a link, form action, pagination link, sortable column link, redirect, chain, or include targets a controller without an explicit `namespace`, Grails now resolves the namespace automatically. In the normal case, where only one controller has the target name, `controller` and `action` generate the correct namespaced or non-namespaced URL. Ambiguity only occurs when multiple controllers share the same name. In that case, specify `namespace` to choose the target explicitly. Pass `namespace: null` from Groovy code or `namespace=""` in a GSP tag to target the non-namespaced controller explicitly.
 
+* **A read-only transaction no longer flushes the session.**
+A read-only transaction (`@ReadOnly`, `@Transactional(readOnly = true)`) commits without flushing the session on every GORM datastore. Hibernate, Neo4j and the simple map datastore already behaved this way; GORM for MongoDB flushed the session when a read-only transaction committed, and no longer does.
++
+So on MongoDB, a write saved without `flush: true` before read-only code ran in the same session used to be persisted as a side effect of the read. It is now left queued in a session whose flush mode is `COMMIT`: later queries in that session do not see it, and it is discarded when the session closes. Flush such writes explicitly with `save(flush: true)`, or perform them in a read-write transaction. To make this discoverable, a read-only transaction that commits while its session holds pending inserts, updates or deletes now logs a warning from `org.grails.datastore.mapping.transactions.DatastoreTransactionManager` naming the session. See link:{mongodb5Guide}index.html#readOnlyTransactions[Read-Only Transactions] in the GORM for MongoDB guide.
++
+A GORM datastore implementation outside the Grails repository inherits this if it uses `SessionOnlyTransaction`; one that supplies its own `Transaction` can honour `readOnly` by overriding the new `AbstractSession.beginTransactionInternal(TransactionDefinition)`, which now receives the transaction definition instead of discarding it.
+
 * **`bindData` can clear omitted included fields.**
 `bindData(target, source, [include: [...], clearMissing: true])` now clears included properties that are absent from the binding source. The behavior is opt-in, requires an `include` list, and does not apply globally. Existing `bindData` calls without `clearMissing: true` keep omitted fields unchanged.
 
@@ -1620,6 +1627,7 @@ Now the framework bean simply backs off.
 
 NOTE: The clean back-off applies to beans that are registered before auto-configuration conditions are evaluated: `@Bean` methods in application configuration classes, and — as of the retimed plugin lifecycle (see _Plugin Beans Now Register Before Spring Boot Auto-Configuration_ below) — beans contributed through a plugin's `doWithSpring` or `beanRegistrar()`.
 Beans contributed through the application's `resources.groovy` or `resources.xml` register later and continue to take effect through bean-definition overriding, exactly as in previous releases.
+The one exception is a `@Configuration` class registered there, which is no longer processed — see <<resources-groovy-configuration-classes,`@Configuration` classes registered in `resources.groovy`>> below.
 
 [[plugin-beans-before-autoconfiguration]]
 ==== 33. Plugin Beans Now Register Before Spring Boot Auto-Configuration
@@ -1685,6 +1693,34 @@ class MyGrailsPlugin extends Plugin {
 Both hooks may be used on the same plugin during migration; when a registrar and the DSL register a bean under the same name, the registrar's definition wins.
 
 **Bean-definition overriding edge case.** Grails defaults `spring.main.allow-bean-definition-overriding` to `true`, and under that default nothing changes: an application bean (from the application class, `resources.groovy` or `resources.xml`) that uses the same name as a plugin bean still replaces the plugin's bean. However, because plugin beans now register earlier and application beans register in a separate, later step, an application that explicitly sets `spring.main.allow-bean-definition-overriding` to `false` will see a `BeanDefinitionOverrideException` for an application bean that shadows a plugin bean — in previous releases the two definitions were merged before a single registry write, so the shadowing was silent even with overriding disabled.
+
+[[resources-groovy-configuration-classes]]
+**`@Configuration` classes registered in `resources.groovy` are no longer processed.** In Grails 7 and earlier, a class annotated with `@Configuration` could be registered as a bean in the application's `resources.groovy` or `resources.xml`, or in the `doWithSpring` of the `Application` class, and its `@Bean` methods, `@Import` and `@Enable...` annotations were still honored. This is a breaking change in Grails 8: those bean definitions register after Spring has finished parsing configuration classes, so such a class is now created as a plain bean and none of the beans it declares are registered. No error or warning is reported — the beans are simply missing. The same applies to the application's `beanRegistrar()`.
+
+`@Configuration` classes contributed by a plugin's `doWithSpring` or `beanRegistrar()` are not affected, because plugin beans now register before configuration classes are parsed.
+
+`resources.groovy` and `resources.xml` are for defining beans. Register a configuration class with Spring directly instead, either by importing it from the `Application` class:
+
+[source,groovy]
+----
+import org.springframework.context.annotation.Import
+
+import grails.boot.GrailsApp
+import grails.boot.config.GrailsAutoConfiguration
+
+@Import(MyConfiguration)
+class Application extends GrailsAutoConfiguration {
+
+    static void main(String[] args) {
+        GrailsApp.run(Application, args)
+    }
+}
+----
+
+or by annotating the `Application` class with `@ComponentScan` so that configuration classes in the application's packages are discovered.
+Alternatively, declare the beans themselves — in `resources.groovy`, or in a `beans` block on the `Application` class (see link:spring.html#springdslAdditional[Configuring Additional Beans]).
+
+Plugin authors who previously told users to replace a plugin-provided `@Configuration` class through `resources.groovy` should ship that class as a Spring Boot auto-configuration and let users customize it through `@ConditionalOnMissingBean`-guarded beans or configuration properties instead.
 
 
 ==== 34. Compile-Time GORM Query Safety Check
@@ -3827,3 +3863,178 @@ The FutureTask-based promise implementations, `PromiseFactoryBean`, `AsyncContro
 Both eager web promises and returned promises now honor `spring.mvc.async.request-timeout`; the Servlet container default applies when unset (normally 30 seconds on Tomcat), rather than an infinite timeout for eager web promises. Timeouts return HTTP 503 and can use a `503` URL mapping. Set a timeout explicitly if your application requires long-running responses. With the default and virtual-thread factories, single and aggregate error callbacks receive the original failure, while both direct and chained `get()` methods use the `Future` contract's `ExecutionException` wrapper.
 
 The `grails.async.promiseFactory=virtual-thread` opt-in now uses the same CompletableFuture implementation with its own decorated executor; it no longer relies on the deprecated FutureTask classes. Its default event bus remains asynchronous and its web tasks propagate request context. Its aggregate `onComplete` resolves to the callback's result, and aggregate `onError` observes the original failure while leaving the returned promise failed, rather than recovering to an empty list.
+
+==== 67. GORM for Hibernate 7 Tracks Changes From Persist, Not From Insert
+
+GORM for Hibernate 7 now activates its dirty-check tracking when an entity is persisted or merged rather
+than after its row has been inserted. Two observable behaviours change for existing applications on
+Hibernate 7. Applications on Hibernate 5 are unaffected.
+
+===== 67.1 A New Entity Starts at Version 0
+
+An entity whose identifier is generated before the insert, for example one mapped with
+`id generator: 'increment'` or `'assigned'`, or any member of a `tablePerConcreteClass` hierarchy, was
+written with an `INSERT` immediately followed by an `UPDATE` of the same row, so it started at `version` 1.
+It now starts at `version` 0 and costs a single statement, as on Hibernate 5 and as entities using the
+default `identity` generator always did.
+
+Code that compared such a version against 1, or that counted statements or update events for a new entity,
+needs to expect the value it would have had on Hibernate 5:
+
+[source,groovy]
+----
+def book = new Book(title: 'Grails').save(flush: true)   // id generator: 'increment'
+assert book.version == 0                                  // was 1 before Grails 8.0
+----
+
+===== 67.2 Persistence Listeners Receive Persist and Merge Events
+
+An `AbstractPersistenceEventListener` on Hibernate 7 now receives a `PersistEvent` (`eventType` `Persist`)
+for every explicit or flush-time cascaded persist, and a `MergeEvent` (`eventType` `Merge`) for every
+merge. Neither can be cancelled. Hibernate 5 publishes `SaveOrUpdateEvent` when an entity is saved and
+publishes no event for a merge.
+
+A listener that switches over `event.eventType` and throws in its default branch must handle the new
+values:
+
+[source,groovy]
+----
+@Override
+protected void onPersistenceEvent(AbstractPersistenceEvent event) {
+    switch (event.eventType) {
+        case Persist:                      // new on Hibernate 7
+        case Merge:                        // new on Hibernate 7
+        case PreInsert:
+            // ...
+            break
+        default:
+            throw new IllegalStateException("Unhandled ${event.eventType}")
+    }
+}
+----
+
+==== 68. `lock(id)` Applies the Multi-Tenancy Filter
+
+`DomainClass.lock(id)` loaded the row by identifier, and Hibernate's tenant filter does not apply to a load
+by identifier. A `MultiTenant` entity could therefore be locked, and returned, by a tenant that does not own
+it, even though `get(id)` correctly returned `null` for the same identifier.
+
+The lock now loads a multi-tenant entity through a query, as `get(id)` does, so it resolves within the bound
+tenant and returns `null` for a row that belongs to another one. Entities that are not multi-tenant are
+unaffected, and so is the statement issued for them.
+
+Code that relied on `lock(id)` reaching across tenants has to bind the owning tenant explicitly:
+
+[source,groovy]
+----
+Tenants.withId('tenant1') {
+    Book.lock(id)
+}
+----
+
+==== 69. Instance Operations on a Named-Connection Static API Use That Connection
+
+Reaching an instance operation through a named-connection static API - `Book.secondary.save(book)`,
+`Book.secondary.delete(book)` and so on - resolved the instance API for the *default* connection rather than
+for `secondary`. With only the named connection's session open, which is the normal arrangement, the call
+failed with `No Session found for current thread`:
+
+[source,groovy]
+----
+Book.secondary.withNewSession {
+    Book.secondary.withTransaction {
+        Book.secondary.save(book)     // threw: resolved the default connection
+    }
+}
+----
+
+Every such operation now resolves the connection the handle was obtained for: `save`, `insert`, `merge`,
+`delete`, `attach`, `isAttached`, `discard`, `ident`, `lock`, `mutex`, `refresh` and `instanceOf`. The example
+above now saves to `secondary`.
+
+GORM for Hibernate 5 needed a second fix for this to take effect. Its static API discarded the connection
+qualifier it was created with and reported `DEFAULT` for every connection, so a named-connection handle could
+not resolve anything but the default one. It now records its own qualifier, as GORM for Hibernate 7 already
+did. Anything that reads the qualifier of a Hibernate 5 named-connection static API therefore sees the real
+connection name where it previously saw `default`.
+
+Applications using a single datasource are unaffected, and so is the instance form `book.secondary.save()`,
+which already resolved the named connection.
+
+==== 70. `mutex` Reloads the Instance Under the Lock
+
+`entity.mutex { }` took an exclusive lock on the instance's already-loaded state and ran the closure. Because
+that lock is version-checked, a transaction that committed to the row between the load and the `mutex` call
+made it fail with an optimistic locking failure - the closure never ran.
+
+Where the datastore supports it, GORM for Hibernate 5 and 7 included, `mutex` now acquires the lock without a
+version check and reloads the row under it, so it waits for a competing writer and the closure runs on the
+committed state. The lock stays exclusive; there is no argument to weaken it, since a shared or optimistic
+lock would not give the closure mutual exclusion.
+
+Three consequences for existing code:
+
+* **Unflushed changes to the instance are discarded**, as they are for `refresh`. Apply changes inside the
+closure, not before the `mutex` call:
++
+[source,groovy]
+----
+book.title = 'new title'
+book.mutex { book.save() }        // the pending title is discarded by the reload
+
+book.mutex {                      // apply the change inside instead
+    book.title = 'new title'
+    book.save()
+}
+----
+* **An active transaction is required.** Without one the call now throws
+`jakarta.persistence.TransactionRequiredException`.
+* **The instance must be attached** to the current session; a detached one throws `IllegalArgumentException`.
+Re-attach it with `attach()` first.
+
+Code that relied on `mutex` failing fast on a stale version should check the version itself, or use
+`entity.lock()`, which is unchanged.
+
+Datastores that cannot reload under a lock keep their previous behaviour.
+
+==== 71. `id generator: 'sequence'` Derives Its Name From the Table on Hibernate 7
+
+On GORM for Hibernate 7, mapping an identifier with `id generator: 'sequence'` and no `params: [sequence:
+'...']` failed at session factory bootstrap:
+
+[source,groovy]
+----
+static mapping = {
+    id generator: 'sequence'   // threw: Unable to determine implicit sequence name for target table 'null'
+}
+----
+
+Hibernate's own generator-creation path supplies the target table so it can derive an implicit sequence name
+when none is given; the Grails-specific path that constructs the generator directly did not. The table name
+is now supplied the same way, so the mapping above starts the application.
+
+The derived name is not the one Grails 7 used. Hibernate 7 names the sequence after the entity's table with
+its own `_SEQ` suffix, where Grails 7 on Hibernate 5 gave every such mapping the same `hibernate_sequence`:
+
+[cols="2,2",options="header"]
+|===
+| `id generator: 'sequence'` on table `book` | Sequence
+
+| Grails 7, on Hibernate 5
+| `hibernate_sequence`
+
+| Grails 8, on Hibernate 7
+| `book_SEQ`
+|===
+
+An application whose schema is created at startup is unaffected. One that upgrades against an existing
+database has to either add the new sequences to that schema or keep the old name explicitly:
+
+[source,groovy]
+----
+static mapping = {
+    id generator: 'sequence', params: [sequence: 'hibernate_sequence']
+}
+----
+
+Mappings that already name a sequence are unaffected, and so is GORM for Hibernate 5.
