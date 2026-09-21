@@ -192,7 +192,11 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
     protected final GormEnhancer gormEnhancer;
     protected final ConnectionSources<MongoClient, MongoConnectionSourceSettings> connectionSources;
     protected final FlushModeType defaultFlushMode;
-    protected final Map<String, MongoDatastore> datastoresByConnectionSource = new LinkedHashMap<>();
+    /**
+     * Concurrent because it is written by the connection sources listener, which can add a child for a
+     * connection registered at runtime, while {@link #close()} may be iterating it.
+     */
+    protected final Map<String, MongoDatastore> datastoresByConnectionSource = new ConcurrentHashMap<>();
     protected final MultiTenancySettings.MultiTenancyMode multiTenancyMode;
     protected final TenantResolver tenantResolver;
     protected final AutoTimestampEventListener autoTimestampEventListener;
@@ -1499,9 +1503,7 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
     public void close() {
         MongoClient current = this.mongo;
         shutDownIndexBuild();
-        // Over a snapshot: the connection sources listener can still add a child while this runs, and a
-        // ConcurrentModificationException here would escape before anything below had a chance to close.
-        for (MongoDatastore datastore : new ArrayList<>(datastoresByConnectionSource.values())) {
+        for (MongoDatastore datastore : datastoresByConnectionSource.values()) {
             if (datastore != this) {
                 datastore.shutDownIndexBuild();
             }
