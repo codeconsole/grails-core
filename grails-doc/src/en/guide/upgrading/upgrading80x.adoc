@@ -802,6 +802,9 @@ A GORM datastore implementation outside the Grails repository inherits this if i
 * **`bindData` can clear omitted included fields.**
 `bindData(target, source, [include: [...], clearMissing: true])` now clears included properties that are absent from the binding source. The behavior is opt-in, requires an `include` list, and does not apply globally. Existing `bindData` calls without `clearMissing: true` keep omitted fields unchanged.
 
+* **GORM for MongoDB rejects Map criterion values that contain `$` keys.**
+`findWhere`, `findAllWhere`, criteria queries, the `where` DSL and dynamic finders now throw `InvalidDataAccessResourceUsageException` when a `Map` passed as a criterion value contains a key starting with `$` at any level, on any property type including enums. MongoDB interprets such a value document as an operator expression rather than as a value. Maps without such keys are still sent as literal subdocument comparisons, so exact matches on `Map` properties, dotted paths and array elements are unchanged, and geospatial criteria are exempt. Code that deliberately passed an operator document through a criteria value should use the native `find(Bson)` API instead.
+
 ==== 21. Tag Library Test Cleanup Changes
 
 Grails 8 removes the `purgeTagLibMetaClass` test hook used by some web and TagLib unit tests.
