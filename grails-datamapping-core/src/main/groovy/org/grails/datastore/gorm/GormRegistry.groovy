@@ -554,6 +554,14 @@ class GormRegistry {
     }
 
     /**
+     * @return whether a {@link #withConnectionScope} block is running on this thread, for any entity
+     */
+    static boolean insideConnectionScope() {
+        Deque<ConnectionScope> scopes = CONNECTION_SCOPES.get()
+        return scopes != null && !scopes.isEmpty()
+    }
+
+    /**
      * @return the connection that the innermost {@link #withConnectionScope} block applying to the entity routes
      * its unqualified operations to, or {@code null} when none is running for it on this thread
      */

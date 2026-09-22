@@ -222,8 +222,27 @@ class MultipleConnectionsSpec extends AutoStartedMongoSpec {
         ScopedCompany.test2.DB.drop()
     }
 
+    void "Test a class a withConnection block does not name keeps its own connection"() {
+        setup:
+        BystanderCompany.DB.drop()
+        BystanderCompany.test2.DB.drop()
+
+        when: "a class the block does not name is saved inside a block for another one"
+        CompanyA.withConnection("test2") {
+            new BystanderCompany(name: "Bystander").save(flush: true)
+        }
+
+        then: "it is written to its own first connection, not the block's"
+        BystanderCompany.count() == 1
+        BystanderCompany.test2.count() == 0
+
+        cleanup:
+        BystanderCompany.DB.drop()
+        BystanderCompany.test2.DB.drop()
+    }
+
     List getDomainClasses() {
-        [CompanyA, ScopedCompany]
+        [CompanyA, ScopedCompany, BystanderCompany]
     }
 }
 
@@ -232,6 +251,15 @@ class MultipleConnectionsSpec extends AutoStartedMongoSpec {
  */
 @Entity
 class CompanyA implements MongoEntity<CompanyA> {
+    ObjectId id
+    String name
+    static mapping = {
+        connections "test1", "test2"
+    }
+}
+
+@Entity
+class BystanderCompany implements MongoEntity<BystanderCompany> {
     ObjectId id
     String name
     static mapping = {
