@@ -170,7 +170,7 @@ GORM takes part in the Spring lifecycle, so an application can be checkpointed w
 
 Everything that reaches MongoDB through GORM uses the replacements, including multi-tenancy and the <<springDataInterop,Spring Data MongoDB integration>>. A `MongoClient` that application code obtained before the checkpoint, for example from `MongoDatastore.getMongoClient()`, is one of the closed ones: obtain it again after the restore rather than keeping it.
 
-A client the application supplied to GORM is neither closed nor replaced. It belongs to whoever created it, and that code has to close it before the checkpoint for the checkpoint to succeed.
+A client the application supplied to GORM is neither closed nor replaced. It belongs to whoever created it, and that code has to close it before the checkpoint for the checkpoint to succeed. The client that Spring Boot's settings produce, which GORM builds itself when the application declares no `MongoClient` bean of its own, is GORM's and is closed and built again like the rest.
 
 ==== Multi-Document Transactions
 

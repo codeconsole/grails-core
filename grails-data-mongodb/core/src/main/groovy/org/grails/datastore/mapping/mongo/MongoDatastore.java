@@ -31,6 +31,7 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Supplier;
 
 import groovy.lang.Closure;
 
@@ -410,6 +411,38 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
      */
     public MongoDatastore(MongoClient mongoClient, PropertyResolver configuration, ConfigurableApplicationEventPublisher eventPublisher, Class... classes) {
         this(mongoClient, configuration, createMappingContext(configuration, classes), eventPublisher);
+    }
+
+    /**
+     * Configures a new {@link MongoDatastore} around the clients a supplier builds, which GORM owns: it builds one
+     * now, closes it when the datastore is stopped for a checkpoint, and builds the replacement the restore needs
+     * from the same supplier. Use this where the client cannot be rebuilt from {@code grails.mongodb} settings,
+     * such as one built from Spring Boot's own {@code MongoClientSettings}.
+     *
+     * @param clientSupplier Builds a {@link MongoClient}, whenever the datastore needs one
+     * @param configuration The configuration
+     * @param eventPublisher The Spring ApplicationContext
+     * @param packages The packages to scan
+     * @since 8.0
+     */
+    public MongoDatastore(Supplier<MongoClient> clientSupplier, PropertyResolver configuration, ConfigurableApplicationEventPublisher eventPublisher, Package... packages) {
+        this(clientSupplier, configuration, createMappingContext(configuration, new ClasspathEntityScanner().scan(packages)), eventPublisher);
+    }
+
+    /**
+     * Configures a new {@link MongoDatastore} around the clients a supplier builds; see
+     * {@link #MongoDatastore(Supplier, PropertyResolver, ConfigurableApplicationEventPublisher, Package...)}.
+     *
+     * @param clientSupplier Builds a {@link MongoClient}, whenever the datastore needs one
+     * @param configuration The configuration
+     * @param mappingContext The mapping context
+     * @param eventPublisher The Spring ApplicationContext
+     * @since 8.0
+     */
+    public MongoDatastore(Supplier<MongoClient> clientSupplier, PropertyResolver configuration, MongoMappingContext mappingContext, ConfigurableApplicationEventPublisher eventPublisher) {
+        // GORM builds the client from the supplier, so it owns it and must close it (closeable = true).
+        this(createDefaultConnectionSources(clientSupplier.get(), configuration, mappingContext, true), mappingContext, eventPublisher);
+        this.defaultClientSupplier = clientSupplier;
     }
 
     /**
@@ -1777,6 +1810,12 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
     private volatile MongoClientSettings.Builder defaultClientOptions;
 
     /**
+     * What builds the default connection's client, when the constructor was given a supplier rather than settings,
+     * so that {@link #start()} builds its replacement the same way; {@code null} otherwise.
+     */
+    private volatile Supplier<MongoClient> defaultClientSupplier;
+
+    /**
      * Closes the {@link MongoClient} of every connection, so the process can be checkpointed.
      *
      * <p>CRaC refuses to checkpoint a process holding open sockets, and a connected driver
@@ -1857,10 +1896,14 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
     }
 
     /**
-     * Builds the default connection's client from the configuration again, as at startup, and with the client
-     * options passed to the constructor if there were any.
+     * Builds the default connection's client as it was built at startup: from the supplier the constructor was
+     * given, or from the configuration again and with the client options passed to the constructor if any.
      */
     private MongoClient createReplacementDefaultClient(ConnectionSourceFactory<MongoClient, MongoConnectionSourceSettings> factory) {
+        Supplier<MongoClient> clientSupplier = this.defaultClientSupplier;
+        if (clientSupplier != null) {
+            return clientSupplier.get();
+        }
         MongoClientSettings.Builder clientOptions = this.defaultClientOptions;
         if (clientOptions != null) {
             return createMongoClient(connectionSources.getBaseConfiguration(), clientOptions, getMappingContext());
