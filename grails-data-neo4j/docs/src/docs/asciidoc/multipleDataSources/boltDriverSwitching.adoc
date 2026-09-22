@@ -27,3 +27,5 @@ Book.withConnection("moreBooks") {
 ----
 
 Every operation on `Book` in the closure uses the alternate connection: the methods the closure calls without naming the class, as above, static methods called on the class, such as `Book.list()` or a dynamic finder, and instance methods such as `book.save()`. An operation that names its own connection keeps it, so ``Book.'default'.list()`` inside the block still reads from the default connection. Once the closure finishes, including by throwing an exception, GORM switches back to the default connection automatically.
+
+A session or transaction opened through a connection covers its block in the same way. Inside `Book.moreBooks.withTransaction { }` or `Book.moreBooks.withNewSession { }`, `Book.list()` and `book.save()` use `moreBooks`, whose session and transaction are the ones open.

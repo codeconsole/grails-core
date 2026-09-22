@@ -503,7 +503,8 @@ class GormRegistry {
      * static call such as {@code Book.list()}, an instance call such as {@code book.save()}, and a query built by
      * either. This is what a {@code withConnection} block promises; the closure's delegate only covers the calls
      * that do not name the class. An operation that names its own connection, and every other entity, is
-     * unaffected. Blocks nest, and the previous connection applies again when an inner one ends.
+     * unaffected. Blocks nest, and the previous connection applies again when an inner one ends. A block for
+     * the default connection undoes any enclosing one for its duration, and outside every block it costs nothing.
      *
      * @param entity The entity whose operations follow the connection
      * @param connectionName The connection
@@ -512,12 +513,17 @@ class GormRegistry {
      */
     static <T> T withConnectionScope(Class entity, String connectionName, Closure<T> callable) {
         String entityKey = instance.normalizeEntityKey(entity)
+        String qualifier = instance.normalizeQualifier(connectionName)
         Map<String, String> scopes = CONNECTION_SCOPES.get()
+        if (ConnectionSource.DEFAULT == qualifier && (scopes == null || !scopes.containsKey(entityKey))) {
+            // Nothing to undo: outside every block the entity's operations are on its default connection already.
+            return callable.call()
+        }
         if (scopes == null) {
             scopes = new HashMap<String, String>()
             CONNECTION_SCOPES.set(scopes)
         }
-        String previous = scopes.put(entityKey, instance.normalizeQualifier(connectionName))
+        String previous = scopes.put(entityKey, qualifier)
         try {
             return callable.call()
         }
@@ -536,11 +542,13 @@ class GormRegistry {
 
     /**
      * @return the connection a {@link #withConnectionScope} block routes the entity's unqualified operations to,
-     * or {@code null} when none is running for it on this thread
+     * or {@code null} when none is running for it on this thread, or the innermost one is for the default
+     * connection and so leaves them to the ordinary resolution
      */
     private static String scopedConnection(String normalizedClassName) {
         Map<String, String> scopes = CONNECTION_SCOPES.get()
-        return scopes == null ? null : scopes.get(normalizedClassName)
+        String scoped = scopes == null ? null : scopes.get(normalizedClassName)
+        return ConnectionSource.DEFAULT == scoped ? null : scoped
     }
 
     GormStaticApi resolveStaticApi(Class entityClass) {

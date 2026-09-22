@@ -101,6 +101,35 @@ class MultipleDataSourceSpec extends Specification {
         Player.count() == 1
     }
 
+    void 'test an instance saved inside a named connection\'s own session or transaction is written to that connection'() {
+        when:
+        Player.one.withNewSession {
+            new Player(name: 'Scholes').save(flush: true)
+        }
+        Player.one.withTransaction {
+            new Player(name: 'Butt').save(flush: true)
+        }
+
+        then:
+        Player.one.count() == 2
+        Player.count() == 0
+
+        and: 'the class\'s own calls inside that connection\'s session read from it'
+        Player.one.withNewSession { Player.count() } == 2
+    }
+
+    void 'test a default connection block inside a named connection\'s block uses the default connection'() {
+        given: 'one player on the default connection and two on the other'
+        new Player(name: 'Giggs').save(flush: true)
+        Player.one.save(new Player(name: 'Neville'), [flush: true])
+        Player.one.save(new Player(name: 'Irwin'), [flush: true])
+
+        expect: 'the class\'s own calls follow the innermost block, and the outer one again after it'
+        Player.one.withTransaction {
+            [Player.'default'.withTransaction { Player.count() }, Player.count()]
+        } == [1, 2]
+    }
+
     void 'test delete on data service'() {
         given:
         def dataService = datastore.getService(IPlayerService)

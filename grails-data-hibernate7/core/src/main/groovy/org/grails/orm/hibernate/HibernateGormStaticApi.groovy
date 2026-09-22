@@ -156,26 +156,30 @@ class HibernateGormStaticApi<D> extends GormStaticApi<D> {
 
     @Override
     <T> T withNewSession(Closure<T> callable) {
-        if (persistentEntity.isMultiTenant()) {
-            return ((HibernateDatastore) datastore).withNewSession(callable)
+        inConnectionScope {
+            if (persistentEntity.isMultiTenant()) {
+                return ((HibernateDatastore) datastore).withNewSession(callable)
+            }
+            String q = getQualifier()
+            if (q != null && q != ConnectionSource.DEFAULT) {
+                return ((HibernateDatastore) datastore).withNewSession(q, callable)
+            }
+            ((HibernateDatastore) datastore).withNewSession(callable)
         }
-        String q = getQualifier()
-        if (q != null && q != ConnectionSource.DEFAULT) {
-            return ((HibernateDatastore) datastore).withNewSession(q, callable)
-        }
-        ((HibernateDatastore) datastore).withNewSession(callable)
     }
 
     @Override
     <T> T withSession(Closure<T> callable) {
-        if (persistentEntity.isMultiTenant()) {
-            return ((HibernateDatastore) datastore).withSession(callable)
+        inConnectionScope {
+            if (persistentEntity.isMultiTenant()) {
+                return ((HibernateDatastore) datastore).withSession(callable)
+            }
+            String q = getQualifier()
+            if (q != null && q != ConnectionSource.DEFAULT) {
+                return ((HibernateDatastore) datastore).withSession(q, callable)
+            }
+            ((HibernateDatastore) datastore).withSession(callable)
         }
-        String q = getQualifier()
-        if (q != null && q != ConnectionSource.DEFAULT) {
-            return ((HibernateDatastore) datastore).withSession(q, callable)
-        }
-        ((HibernateDatastore) datastore).withSession(callable)
     }
 
     @Override

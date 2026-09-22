@@ -97,6 +97,20 @@ class NamedConnectionsSpec extends Specification {
         RoutedCompany.withConnection('other') { RoutedCompany.count() } == 1
         RoutedCompany.withConnection('other') { RoutedCompany.'default'.count() } == 0
     }
+
+    void "test an instance saved inside a named connection's own transaction is written to that connection"() {
+        when:
+        RoutedCompany.other.withTransaction {
+            new RoutedCompany(name: 'In transaction').save(flush: true)
+        }
+
+        then: "it reaches that connection's server, not the default one"
+        RoutedCompany.other.count() == 1
+        RoutedCompany.count() == 0
+
+        and: "the class's own calls inside that connection's session read from it"
+        RoutedCompany.other.withNewSession { RoutedCompany.count() } == 1
+    }
 }
 
 @Entity

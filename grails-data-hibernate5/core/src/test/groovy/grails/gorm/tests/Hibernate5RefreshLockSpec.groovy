@@ -718,7 +718,8 @@ class Hibernate5RefreshLockSpec extends HibernateGormDatastoreSpec {
             assert session.isOpen()
             assert session.contains(book)
             assert !session.getTransaction().isActive()
-            Hibernate5RefreshLockRoutedBook.withSession { Session defaultSession ->
+            // Named, because inside the secondary connection's session the class's own calls follow it.
+            Hibernate5RefreshLockRoutedBook.'default'.withSession { Session defaultSession ->
                 assert defaultSession.getTransaction().isActive()
             }
             book.title = 'pending'

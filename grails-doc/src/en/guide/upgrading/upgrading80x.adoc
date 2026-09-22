@@ -4038,3 +4038,32 @@ static mapping = {
 ----
 
 Mappings that already name a sequence are unaffected, and so is GORM for Hibernate 5.
+
+==== 72. Calls on a Class Inside a Named Connection's Session or Transaction Use That Connection
+
+Inside a session or transaction opened through a named connection - `Book.secondary.withTransaction { }`,
+`Book.secondary.withNewSession { }` and the like - the calls on `Book` itself, such as `Book.get(id)` or
+`book.save()`, used the *default* connection. With only the named connection's session open, a save failed
+with `No Session found for current thread`, and a read went to the default database:
+
+[source,groovy]
+----
+Book.secondary.withTransaction {
+    def book = Book.get(42)     // read from the default database
+    book.save()                 // threw: No Session found for current thread
+}
+----
+
+They now use the connection whose session or transaction the block opened, as they do inside
+`withConnection`, and the example above reads and saves through `secondary`. An operation that names a
+connection keeps it. Code that reached the default connection from inside such a block by calling the class
+directly has to name it now:
+
+[source,groovy]
+----
+Book.secondary.withTransaction {
+    Book.'default'.withSession { Book.count() }    // counts the default database
+}
+----
+
+Applications using a single datasource are unaffected.

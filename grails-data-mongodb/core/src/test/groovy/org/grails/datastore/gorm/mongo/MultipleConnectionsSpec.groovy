@@ -182,6 +182,31 @@ class MultipleConnectionsSpec extends AutoStartedMongoSpec {
         ScopedCompany.test2.DB.drop()
     }
 
+    void "Test an instance saved inside a named connection's own session or transaction is written to that connection"() {
+        setup:
+        ScopedCompany.DB.drop()
+        ScopedCompany.test2.DB.drop()
+
+        when:
+        ScopedCompany.test2.withNewSession {
+            new ScopedCompany(name: "In session").save(flush: true)
+        }
+        ScopedCompany.test2.withTransaction {
+            new ScopedCompany(name: "In transaction").save(flush: true)
+        }
+
+        then: "both are in that connection's database, not the entity's default one"
+        ScopedCompany.test2.count() == 2
+        ScopedCompany.count() == 0
+
+        and: "the class's own calls inside that connection's session read from it"
+        ScopedCompany.test2.withNewSession { ScopedCompany.list()*.name.sort() } == ["In session", "In transaction"]
+
+        cleanup:
+        ScopedCompany.DB.drop()
+        ScopedCompany.test2.DB.drop()
+    }
+
     List getDomainClasses() {
         [CompanyA, ScopedCompany]
     }
