@@ -31,6 +31,7 @@ import grails.gorm.transactions.GrailsTransactionTemplate
 import grails.gorm.transactions.TransactionService
 import org.grails.datastore.gorm.ConnectionSourceNameResolver
 import org.grails.datastore.mapping.core.Datastore
+import org.grails.datastore.mapping.core.connections.ConnectionSource
 import org.grails.datastore.mapping.services.Service
 import org.grails.datastore.mapping.transactions.CustomizableRollbackTransactionAttribute
 import org.grails.datastore.mapping.transactions.TransactionCapableDatastore
@@ -123,13 +124,18 @@ class DefaultTransactionService implements TransactionService, Service {
 
     /**
      * A template for the datastore's transaction manager that routes, as the connection's own {@code withTransaction}
-     * does, the calls on the domain classes of the datastore's connection to it.
+     * does, the calls on the domain classes of the datastore's connection to it. Only for a named connection: the
+     * root datastore's service leaves the routing of an enclosing block alone, as an unqualified
+     * {@code @Transactional} does.
      */
     private GrailsTransactionTemplate newTemplate(PlatformTransactionManager transactionManager, TransactionDefinition definition = null) {
         GrailsTransactionTemplate template = definition == null ?
                 new GrailsTransactionTemplate(transactionManager) :
                 new GrailsTransactionTemplate(transactionManager, definition)
-        template.connectionName = ConnectionSourceNameResolver.resolveDefaultConnectionSourceName(datastore)
+        String connectionName = ConnectionSourceNameResolver.resolveDefaultConnectionSourceName(datastore)
+        if (ConnectionSource.DEFAULT != connectionName) {
+            template.connectionName = connectionName
+        }
         return template
     }
 

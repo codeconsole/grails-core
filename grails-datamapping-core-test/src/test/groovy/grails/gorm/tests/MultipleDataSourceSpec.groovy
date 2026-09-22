@@ -177,6 +177,22 @@ class MultipleDataSourceSpec extends Specification {
         datastore.getService(TransactionService).withTransaction { Player.count() } == 1
     }
 
+    void 'test the transaction service of the default datastore leaves an enclosing block alone'() {
+        given:
+        new Player(name: 'Giggs').save(flush: true)
+        Player.one.save(new Player(name: 'Neville'), [flush: true])
+        Player.one.save(new Player(name: 'Irwin'), [flush: true])
+
+        expect: "the block's connection, as an unqualified @Transactional in the same place keeps"
+        Player.one.withTransaction {
+            datastore.getService(TransactionService).withTransaction { Player.count() }
+        } == 2
+
+        and: "while the service of a named connection's datastore routes to that connection"
+        datastore.getDatastoreForConnection('one').getService(TransactionService).withTransaction { Player.count() } == 2
+        datastore.getService(TransactionService).withTransaction { Player.count() } == 1
+    }
+
     void 'test delete on data service'() {
         given:
         def dataService = datastore.getService(IPlayerService)
