@@ -36,7 +36,7 @@ limitations under the License.
 ./gradlew codeStyle
 
 # Out of memory? Set:
-export GRADLE_OPTS="-Xms2G -Xmx5G"
+export GRADLE_OPTS="-Xms1G -Xmx4G"
 ```
 
 ## Critical Rules
@@ -290,7 +290,7 @@ See `CONTRIBUTING.md` for full details.
 
 | Problem | Solution |
 |---------|----------|
-| Out of memory | `export GRADLE_OPTS="-Xms2G -Xmx5G"` |
+| Out of memory | `export GRADLE_OPTS="-Xms1G -Xmx4G"` |
 | Container missing | Use `-PskipTests` or install Docker/Podman |
 | Flaky tests | Check static state pollution, ensure proper cleanup in tests |
 | Cache issues | `./gradlew --rerun-tasks` |

@@ -18,15 +18,14 @@
  */
 package grails.doc.gradle
 
-import java.nio.file.Files
-
 import javax.inject.Inject
 
-import org.gradle.api.AntBuilder
 import org.gradle.api.DefaultTask
 import org.gradle.api.Project
 import org.gradle.api.file.ConfigurableFileCollection
+import org.gradle.api.file.Directory
 import org.gradle.api.file.DirectoryProperty
+import org.gradle.api.file.FileCollection
 import org.gradle.api.model.ObjectFactory
 import org.gradle.api.provider.ListProperty
 import org.gradle.api.provider.MapProperty
@@ -41,12 +40,15 @@ import org.gradle.api.tasks.OutputDirectory
 import org.gradle.api.tasks.PathSensitive
 import org.gradle.api.tasks.PathSensitivity
 import org.gradle.api.tasks.TaskAction
-
-import grails.doc.DocPublisher
-import grails.doc.macros.HiddenMacro
+import org.gradle.workers.WorkQueue
+import org.gradle.workers.WorkerExecutor
 
 /**
  * Gradle task for generating a gdoc-based HTML user guide.
+ *
+ * <p>The guide is rendered in a forked worker process: AsciidoctorJ boots a JRuby runtime,
+ * which is by far the largest single allocation in the build and would otherwise land in the
+ * Gradle daemon on top of everything else the build is holding.</p>
  */
 @CacheableTask
 class PublishGuideTask extends DefaultTask {
@@ -89,18 +91,26 @@ class PublishGuideTask extends DefaultTask {
     @PathSensitive(PathSensitivity.RELATIVE)
     final DirectoryProperty resourcesDir
 
+    /**
+     * Fully qualified names of extra Radeox macros to register. Names rather than instances,
+     * because the guide is rendered in a separate process.
+     */
     @Optional
     @Input
-    final ListProperty<Object> macros
+    final ListProperty<String> macros
 
     @OutputDirectory
     final DirectoryProperty targetDir
 
-    private final AntBuilder ant
+    /** Maximum heap of the worker process the guide is rendered in. */
+    @Internal
+    final Property<String> maxHeapSize
+
+    private final WorkerExecutor workerExecutor
 
     @Inject
-    PublishGuideTask(ObjectFactory objects, Project project) {
-        this.ant = project.ant
+    PublishGuideTask(ObjectFactory objects, Project project, WorkerExecutor workerExecutor) {
+        this.workerExecutor = workerExecutor
         language = objects.property(String).convention(null as String)
         sourceRepo = objects.property(String)
         properties = objects.mapProperty(String, Object).convention([:])
@@ -110,8 +120,9 @@ class PublishGuideTask extends DefaultTask {
         propertiesFiles = objects.fileCollection()
         sourceDir = objects.directoryProperty().convention(project.layout.projectDirectory.dir('src'))
         resourcesDir = objects.directoryProperty().convention(project.layout.projectDirectory.dir('resources'))
-        macros = objects.listProperty(Object).convention([])
+        macros = objects.listProperty(String).convention([])
         targetDir = objects.directoryProperty().convention(project.layout.buildDirectory.dir('docs'))
+        maxHeapSize = objects.property(String).convention('1g')
         group = 'documentation'
     }
 
@@ -124,81 +135,37 @@ class PublishGuideTask extends DefaultTask {
     }
 
     @TaskAction
-    def publishGuide() {
-        Properties combinedProperties = new Properties()
+    void publishGuide() {
+        // Everything is read into locals first. Both the fork options and the work parameters
+        // have members of their own named like this task's properties - maxHeapSize,
+        // properties - and inside the configuration closures those would win.
+        String workerHeap = this.maxHeapSize.get()
+        String languageValue = this.language.getOrNull()
+        String sourceRepoValue = this.sourceRepo.getOrNull()
+        Boolean asciidocValue = this.asciidoc.get()
+        Map<String, Object> engineProperties = this.properties.get()
+        Map<String, File> filePathProperties = this.propertiesWithFilePaths.get()
+        FileCollection propertiesFileValues = this.propertiesFiles
+        Directory sourceDirValue = this.sourceDir.get()
+        Directory resourcesDirValue = this.resourcesDir.get()
+        Directory targetDirValue = this.targetDir.get()
+        List<String> macroNames = this.macros.get()
 
-        File workingDir = Files.createTempDirectory('grails-doc-publish-guide').toFile()
-
-        File resources = resourcesDir.get().asFile
-        File docProperties = new File(resources, 'doc.properties')
-        if (docProperties.exists()) {
-            docProperties.withInputStream { input ->
-                combinedProperties.load(input)
-            }
+        WorkQueue queue = workerExecutor.processIsolation { spec ->
+            spec.forkOptions { options -> options.setMaxHeapSize(workerHeap) }
         }
-
-        // Add properties from any optional properties files too.
-        for (File f : propertiesFiles) {
-            f.withInputStream { input ->
-                combinedProperties.load(input)
-            }
+        queue.submit(PublishGuideWorkAction) { PublishGuideWorkParameters params ->
+            params.language.set(languageValue)
+            params.sourceRepo.set(sourceRepoValue)
+            params.asciidoc.set(asciidocValue)
+            params.properties.set(engineProperties)
+            params.propertiesWithFilePaths.set(filePathProperties)
+            params.propertiesFiles.from(propertiesFileValues)
+            params.sourceDir.set(sourceDirValue)
+            params.resourcesDir.set(resourcesDirValue)
+            params.targetDir.set(targetDirValue)
+            params.macroClassNames.set(macroNames)
         }
-        combinedProperties.putAll(properties.get())
-        combinedProperties.putAll(propertiesWithFilePaths.get())
-
-        File apiDir = targetDir.get().asFile
-        apiDir.deleteDir()
-        apiDir.mkdirs()
-
-        def publisher = new DocPublisher(sourceDir.get().asFile, apiDir)
-        publisher.ant = ant
-        publisher.asciidoc = asciidoc
-        publisher.workDir = workingDir
-        publisher.apiDir = apiDir
-        publisher.language = language.getOrElse('')
-        publisher.sourceRepo = sourceRepo.getOrElse('')
-        publisher.images = new File(resources, 'img')
-        publisher.css = new File(resources, 'css')
-        publisher.fonts = new File(resources, 'fonts')
-        publisher.js = new File(resources, 'js')
-        publisher.style = new File(resources, 'style')
-        publisher.version = combinedProperties['grails.version']
-
-        // Override doc.properties properties with their language-specific counterparts (if
-        // those are defined). You just need to add entries like es.title or pt_PT.subtitle.
-        if (language.isPresent()) {
-            String lang = language.get()
-            def pos = lang.size() + 1
-            def languageProps = combinedProperties.findAll { k, v -> k.startsWith("${lang}.") }
-            languageProps.each { k, v -> combinedProperties[k[pos..-1]] = v }
-        }
-
-        // Aliases and other doc.properties entries are passed in as engine properties. This
-        // is how the doc title, subtitle, etc. are set.
-        publisher.engineProperties = combinedProperties
-
-        // Add custom macros.
-
-        // {hidden} macro for enabling translations.
-        publisher.registerMacro(new HiddenMacro())
-
-        for (m in macros) {
-            publisher.registerMacro(m)
-        }
-
-        // Radeox loads its bundles off the context class loader, which
-        // unfortunately doesn't contain the grails-docs JAR. So, we
-        // temporarily switch the DocPublisher class loader into the
-        // thread so that the Radeox bundles can be found.
-        def oldClassLoader = Thread.currentThread().contextClassLoader
-        Thread.currentThread().contextClassLoader = publisher.getClass().classLoader
-
-        publisher.publish()
-
-        // Restore the old context class loader.
-        Thread.currentThread().contextClassLoader = oldClassLoader
-
-        workingDir.deleteDir()
     }
 }
 

@@ -183,7 +183,8 @@ Also keep `gradlew.bat` LF line endings on this line (PR #15709). Comment at top
 | `org.gradle.daemon` | `true` |
 | `org.gradle.configuration-cache` | **`false`** until #15497 resolved - do not enable casually |
 | `org.gradle.configureondemand` | **commented off** - Gradle issue #9489 |
-| `org.gradle.jvmargs` | `-Xmx5G` (raise only with reason; groovydoc is hungry) |
+| `org.gradle.jvmargs` | `-Xmx3G` (daemon only; groovydoc and the guide run in their own JVMs) |
+| `groovydocMaxHeapSize` | `1g` - heap of the JVM each groovydoc task forks into; the aggregates raise it per task |
 | `javaVersion` | `21` (CompilePlugin reads this for `--release`) |
 | `projectVersion` | framework version |
 | `slf4jPreventExclusion` | `true` - Grails Gradle plugin POM behavior |
@@ -555,7 +556,7 @@ DO_NOT_CACHE_TESTS=1 ./gradlew :module:test
 ./gradlew :module:test -PtestBisect
 
 # Memory
-export GRADLE_OPTS='-Xms2G -Xmx5G'
+export GRADLE_OPTS='-Xms1G -Xmx4G'
 ```
 
 Work in `grails-gradle` or `grails-forge` only with **that** directory's `./gradlew`.

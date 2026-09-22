@@ -88,6 +88,8 @@ class GroovydocEnhancerPlugin implements Plugin<Project> {
 
     @CompileDynamic
     private static void configureAntBuilderExecution(Project project, GroovydocEnhancerExtension extension) {
+        GroovydocRunner runner = project.objects.newInstance(GroovydocRunner)
+
         project.tasks.withType(Groovydoc).configureEach { gdoc ->
             if (!extension.useAntBuilder.get()) {
                 return
@@ -124,12 +126,6 @@ class GroovydocEnhancerPlugin implements Plugin<Project> {
                 // those types into external javadoc URLs.
                 def antClasspath = gdoc.classpath ? classpath.plus(gdoc.classpath) : classpath
 
-                project.ant.taskdef(
-                        name: 'groovydoc',
-                        classname: 'org.codehaus.groovy.ant.Groovydoc',
-                        classpath: antClasspath.asPath
-                )
-
                 def links = resolveLinks(gdoc)
                 def sourcepath = sourceDirs
                         .collect { it.absolutePath }
@@ -154,11 +150,13 @@ class GroovydocEnhancerPlugin implements Plugin<Project> {
                     antArgs.put('javaVersion', extension.javaVersion.get())
                 }
 
-                project.ant.groovydoc(antArgs) {
-                    for (var l in links) {
-                        link(packages: l.packages, href: l.href)
-                    }
-                }
+                runner.run(
+                        antClasspath,
+                        resolveMaxHeapSize(gdoc, extension),
+                        gdoc.temporaryDir,
+                        antArgs,
+                        links
+                )
             }
         }
     }
@@ -181,6 +179,21 @@ class GroovydocEnhancerPlugin implements Plugin<Project> {
             }
         }
         sourceDirs.unique()
+    }
+
+    /**
+     * A per-task {@code groovydocMaxHeapSize} wins over the project-wide default: the
+     * aggregates document every module at once and need more than a single module does.
+     */
+    @CompileDynamic
+    private static String resolveMaxHeapSize(Groovydoc gdoc, GroovydocEnhancerExtension extension) {
+        if (gdoc.ext.has('groovydocMaxHeapSize')) {
+            def taskValue = resolveGroovydocProperty(gdoc.ext.groovydocMaxHeapSize)
+            if (taskValue) {
+                return taskValue as String
+            }
+        }
+        extension.maxHeapSize.get()
     }
 
     @CompileDynamic

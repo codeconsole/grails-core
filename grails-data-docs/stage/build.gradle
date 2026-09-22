@@ -26,6 +26,10 @@ combinedGroovydoc.configure { Groovydoc task ->
     task.windowTitle = "Grails Data Mapping API - ${projectVersion}"
     task.docTitle = "Grails Data Mapping API - ${projectVersion}"
 
+    // Documents the whole data-mapping stack in one run, so it needs more than the
+    // per-module default.
+    task.ext.groovydocMaxHeapSize = '2g'
+
     Set<Project> docProjects = rootProject.subprojects.findAll {
         it.name in [
                 'grails-datastore-async',

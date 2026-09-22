@@ -30,10 +30,11 @@ import org.gradle.api.provider.Property
  * Extension for configuring the Groovydoc Enhancer convention plugin.
  *
  * <p>This plugin replaces Gradle's built-in Groovydoc task execution with
- * a direct AntBuilder invocation of the Groovy {@code org.codehaus.groovy.ant.Groovydoc}
- * Ant task. This enables the {@code javaVersion} parameter (added in Groovy 4.0.27,
- * GROOVY-11668) which controls the JavaParser language level used when parsing
- * Java source files.</p>
+ * an AntBuilder invocation of the Groovy {@code org.codehaus.groovy.ant.Groovydoc}
+ * Ant task, run in a JVM of its own. This enables the {@code javaVersion}
+ * parameter (added in Groovy 4.0.27, GROOVY-11668) which controls the JavaParser
+ * language level used when parsing Java source files, and keeps groovydoc's heap
+ * off the Gradle daemon - see {@link #maxHeapSize}.</p>
  *
  * <p>When Gradle natively supports the {@code javaVersion} property
  * (see <a href="https://github.com/gradle/gradle/issues/33659">gradle#33659</a>),
@@ -67,10 +68,11 @@ class GroovydocEnhancerExtension {
 
     /**
      * Whether to replace Gradle's built-in Groovydoc task execution with
-     * AntBuilder invocation. When {@code true} (default), the plugin clears
-     * the task's actions and replaces them with a {@code doLast} that uses
-     * AntBuilder. When {@code false}, the plugin only applies property
-     * defaults (footer, etc.) and lets Gradle's built-in task run normally.
+     * AntBuilder invocation in a forked JVM. When {@code true} (default), the
+     * plugin clears the task's actions and replaces them with a {@code doLast}
+     * that hands the run to {@link GroovydocRunner}. When {@code false}, the
+     * plugin only applies property defaults (footer, etc.) and lets Gradle's
+     * built-in task run normally - in the daemon.
      *
      * <p>Set to {@code false} when Gradle adds native {@code javaVersion}
      * support (gradle/gradle#33659).</p>
@@ -86,6 +88,20 @@ class GroovydocEnhancerExtension {
      * <p>Defaults to an empty string (no footer).</p>
      */
     final Property<String> footer
+
+    /**
+     * Maximum heap of the JVM each groovydoc run is forked into.
+     *
+     * <p>Groovydoc keeps a model of every parsed class in memory until the last page is
+     * written, so this is the dominant memory cost of a documentation build. Running it in a
+     * JVM of its own keeps that peak out of the Gradle daemon and gives it back to the OS as
+     * soon as the run ends.</p>
+     *
+     * <p>Defaults to {@code 1g}, which covers a single module. The aggregates over every
+     * module need more and raise it themselves; the {@code groovydocMaxHeapSize} project
+     * property overrides it globally.</p>
+     */
+    final Property<String> maxHeapSize
 
     @Inject
     GroovydocEnhancerExtension(ObjectFactory objects, Project project) {
@@ -104,5 +120,10 @@ class GroovydocEnhancerExtension {
         javaVersionEnabled = objects.property(Boolean).convention(true)
         useAntBuilder = objects.property(Boolean).convention(true)
         footer = objects.property(String).convention('')
+        maxHeapSize = objects.property(String).convention(
+                project.provider {
+                    GradleUtils.findProperty(project, 'groovydocMaxHeapSize')?.toString() ?: '1g'
+                }
+        )
     }
 }

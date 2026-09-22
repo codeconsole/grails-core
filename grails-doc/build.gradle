@@ -70,6 +70,11 @@ combinedGroovydoc.configure { Groovydoc gdoc ->
     gdoc.windowTitle = "Grails $projectVersion"
     gdoc.docTitle = "Grails $projectVersion"
 
+    // This one run documents every module at once and holds the whole model until the last
+    // page is written, so it needs far more than the per-module default. It settles around
+    // 1.9 GB resident today; the rest is headroom for the modules still to come.
+    gdoc.ext.groovydocMaxHeapSize = '3g'
+
     def docProjects = rootProject.subprojects
             .findAll { it.findProperty('includeInApiDocs') }
 
