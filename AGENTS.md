@@ -35,8 +35,8 @@ limitations under the License.
 # Style check
 ./gradlew codeStyle
 
-# Out of memory? Set:
-export GRADLE_OPTS="-Xms2G -Xmx5G"
+# Out of memory? Raise the daemon heap (a bare -Xmx in GRADLE_OPTS is ignored):
+export GRADLE_OPTS="-Dorg.gradle.jvmargs=-Xmx4G"
 ```
 
 ## Critical Rules
@@ -290,7 +290,7 @@ See `CONTRIBUTING.md` for full details.
 
 | Problem | Solution |
 |---------|----------|
-| Out of memory | `export GRADLE_OPTS="-Xms2G -Xmx5G"` |
+| Out of memory | `export GRADLE_OPTS="-Dorg.gradle.jvmargs=-Xmx4G"` (a bare `-Xmx` there is ignored; `org.gradle.jvmargs` sizes the daemon) |
 | Container missing | Use `-PskipTests` or install Docker/Podman |
 | Flaky tests | Check static state pollution, ensure proper cleanup in tests |
 | Cache issues | `./gradlew --rerun-tasks` |

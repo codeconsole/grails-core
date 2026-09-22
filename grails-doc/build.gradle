@@ -66,6 +66,13 @@ dependencies {
 def combinedGroovydoc = tasks.register('aggregateGroovydoc', Groovydoc)
 apply from: rootProject.layout.projectDirectory.file('gradle/docs-dependencies.gradle')
 
+// aggregateGroovydoc documents every module in one run and holds the whole model until the
+// last page is written, so it needs far more than a single module does. It settles around
+// 1.9 GB resident today; the rest is headroom for the modules still to come.
+groovydocEnhancer {
+    maxHeapSize = '3g'
+}
+
 combinedGroovydoc.configure { Groovydoc gdoc ->
     gdoc.windowTitle = "Grails $projectVersion"
     gdoc.docTitle = "Grails $projectVersion"
