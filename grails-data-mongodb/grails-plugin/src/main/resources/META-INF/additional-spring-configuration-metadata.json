@@ -67,6 +67,18 @@
             "defaultValue": false
         },
         {
+            "name": "grails.mongodb.buildIndexes",
+            "type": "java.lang.Boolean",
+            "description": "Whether GORM creates the indexes declared in domain class mapping blocks by itself when the datastore starts. When false, the indexes already on the server are left untouched until MongoDatastore.buildIndex() is called.",
+            "defaultValue": true
+        },
+        {
+            "name": "grails.mongodb.buildIndexesAsync",
+            "type": "java.lang.Boolean",
+            "description": "Whether index builds, the one on startup and any started with MongoDatastore.buildIndex(), run on a background thread instead of blocking the thread that starts them.",
+            "defaultValue": false
+        },
+        {
             "name": "grails.mongodb.codecs",
             "type": "java.util.List",
             "description": "List of custom MongoDB Codec classes to register for BSON serialization.",
