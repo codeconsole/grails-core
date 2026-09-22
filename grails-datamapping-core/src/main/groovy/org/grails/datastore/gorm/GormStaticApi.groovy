@@ -32,6 +32,7 @@ import grails.gorm.DetachedCriteria
 import grails.gorm.api.GormAllOperations
 import grails.gorm.api.GormInstanceOperations
 import grails.gorm.api.GormStaticOperations
+import grails.gorm.multitenancy.CurrentTenantHolder
 import grails.gorm.multitenancy.Tenants
 import grails.gorm.transactions.GrailsTransactionTemplate
 import org.grails.datastore.gorm.finders.FinderMethod
@@ -1049,15 +1050,17 @@ class GormStaticApi<D> extends AbstractGormApi<D> implements GormAllOperations<D
             @Override Datastore resolve() { registry.apiResolver.findDatastore(persistentClass, tenantId.toString()) }
         }
         Datastore tenantDatastore = resolver.resolve()
-        Closure<T1> inNewSession = { ->
+        Closure<T1> inNewSession = { Serializable boundTenantId ->
             DatastoreUtils.executeWithNewSession(tenantDatastore, { Session session ->
                 return (T1) callable.call(session)
             } as SessionCallback<T1>)
         }
         Datastore defaultDatastore = registry.getDatastore(persistentClass.name, ConnectionSource.DEFAULT)
         if (defaultDatastore instanceof MultiTenantCapableDatastore) {
-            return (T1) Tenants.withId((MultiTenantCapableDatastore) defaultDatastore, tenantId, inNewSession)
+            // Bound rather than entered through Tenants.withId, which would open a session of its own for the
+            // tenant in the modes that give it a connection, leaving the one opened here unused.
+            return (T1) CurrentTenantHolder.withTenant(defaultDatastore, tenantId, inNewSession)
         }
-        return inNewSession.call()
+        return inNewSession.call(tenantId)
     }
 }
