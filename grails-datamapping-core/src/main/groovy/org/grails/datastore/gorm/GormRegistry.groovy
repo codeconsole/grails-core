@@ -502,8 +502,11 @@ class GormRegistry {
      * Runs the callable with the unqualified operations on the entity routed to the named connection: an explicit
      * static call such as {@code Book.list()}, an instance call such as {@code book.save()}, and a query built by
      * either. This is what a {@code withConnection} block promises; the closure's delegate only covers the calls
-     * that do not name the class. An operation that names its own connection, and every other entity, is
-     * unaffected. Blocks nest, and the previous connection applies again when an inner one ends.
+     * that do not name the class. Such a lookup resolves exactly as if it had named the connection, so for a
+     * multi-tenant entity the block's connection takes precedence over the current tenant, as an explicitly
+     * named connection does. An operation that names its own connection, and every other entity, is unaffected.
+     * The scope belongs to the calling thread. Blocks nest, and the previous connection applies again when an
+     * inner one ends.
      *
      * @param entity The entity whose operations follow the connection
      * @param connectionName The connection
@@ -549,13 +552,8 @@ class GormRegistry {
 
     GormStaticApi resolveStaticApi(Class entityClass, String qualifier) {
         String normalizedClassName = normalizeEntityKey(entityClass)
-        // Only a lookup that names no connection follows a scope; asking for DEFAULT by name still gets it.
-        String scoped = qualifier == null ? scopedConnection(normalizedClassName) : null
-        if (scoped != null) {
-            GormStaticApi api = staticApiRegistry.getDirect(normalizedClassName, scoped)
-            if (api != null) return api
-        }
-        String normalizedQualifier = normalizeQualifier(qualifier)
+        // A lookup that names no connection follows the scope exactly as if it had named that connection.
+        String normalizedQualifier = normalizeQualifier(qualifier != null ? qualifier : scopedConnection(normalizedClassName))
 
         if (MultiTenant.isAssignableFrom(entityClass)) {
             // Priority 1: Explicit qualifier that doesn't match default is likely a tenant ID
@@ -602,12 +600,7 @@ class GormRegistry {
 
     GormInstanceApi resolveInstanceApi(Class entityClass, String qualifier) {
         String normalizedClassName = normalizeEntityKey(entityClass)
-        String scoped = qualifier == null ? scopedConnection(normalizedClassName) : null
-        if (scoped != null) {
-            GormInstanceApi api = instanceApiRegistry.getDirect(normalizedClassName, scoped)
-            if (api != null) return api
-        }
-        String normalizedQualifier = normalizeQualifier(qualifier)
+        String normalizedQualifier = normalizeQualifier(qualifier != null ? qualifier : scopedConnection(normalizedClassName))
 
         if (MultiTenant.isAssignableFrom(entityClass)) {
             if (!ConnectionSource.DEFAULT.equals(normalizedQualifier)) {
@@ -658,12 +651,7 @@ class GormRegistry {
      */
     GormValidationApi resolveValidationApi(Class entityClass, String qualifier) {
         String normalizedClassName = normalizeEntityKey(entityClass)
-        String scoped = qualifier == null ? scopedConnection(normalizedClassName) : null
-        if (scoped != null) {
-            GormValidationApi api = validationApiRegistry.getDirect(normalizedClassName, scoped)
-            if (api != null) return api
-        }
-        String normalizedQualifier = normalizeQualifier(qualifier)
+        String normalizedQualifier = normalizeQualifier(qualifier != null ? qualifier : scopedConnection(normalizedClassName))
 
         if (MultiTenant.isAssignableFrom(entityClass)) {
             if (!ConnectionSource.DEFAULT.equals(normalizedQualifier)) {
