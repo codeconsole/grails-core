@@ -4054,10 +4054,24 @@ Book.secondary.withTransaction {
 }
 ----
 
+Whether the save threw depended on what else was open. With a default-connection session open further out,
+as the open-session-in-view interceptor or an outer `@Transactional` provides, it succeeded and wrote the
+instance to the default database, silently.
+
 They now use the connection whose session or transaction the block opened, as they do inside
-`withConnection`, and the example above reads and saves through `secondary`. An operation that names a
-connection keeps it. Code that reached the default connection from inside such a block by calling the class
-directly has to name it now:
+`withConnection`, and the example above reads and saves through `secondary`. Other domain classes are not
+affected, and an operation that names a connection keeps it. Code that relied on the old routing changes
+behaviour without failing, so look for it: a copy between connections written as
+
+[source,groovy]
+----
+Book.legacy.withTransaction {
+    Book.legacy.list().each { new Book(name: it.name).save() }    // meant for the default database
+}
+----
+
+used to write the copies to the default database, and now writes them back into `legacy`. Code that reached
+the default connection from inside such a block by calling the class directly has to name it now:
 
 [source,groovy]
 ----

@@ -209,7 +209,7 @@ ZipCode.auditing.withTransaction {
 }
 ----
 
-An operation inside the block that names a `DataSource`, such as `ZipCode.lookup.count()`, uses the one it names.
+Other domain classes are not affected, and an operation inside the block that names a `DataSource`, such as `ZipCode.lookup.count()`, uses the one it names. The routing comes from the namespace's own `withTransaction`, `withNewTransaction`, `withSession` and `withNewSession`: a method annotated `@Transactional(connection = 'auditing')` opens the same transaction without it, so the calls on `ZipCode` inside such a method still use its default `DataSource`.
 
 
 ==== Hibernate Mapped Domain Classes

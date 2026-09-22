@@ -130,6 +130,17 @@ class MultipleDataSourceSpec extends Specification {
         } == [1, 2]
     }
 
+    void 'test the class\'s own calls inside a named connection\'s current session read from it'() {
+        given:
+        new Player(name: 'Giggs').save(flush: true)
+        Player.one.save(new Player(name: 'Neville'), [flush: true])
+        Player.one.save(new Player(name: 'Irwin'), [flush: true])
+
+        expect:
+        Player.one.withSession { Player.count() } == 2
+        Player.count() == 1
+    }
+
     void 'test delete on data service'() {
         given:
         def dataService = datastore.getService(IPlayerService)

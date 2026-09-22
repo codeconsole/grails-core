@@ -207,6 +207,21 @@ class MultipleConnectionsSpec extends AutoStartedMongoSpec {
         ScopedCompany.test2.DB.drop()
     }
 
+    void "Test the class's own calls inside a named connection's stateless session read from it"() {
+        setup:
+        ScopedCompany.DB.drop()
+        ScopedCompany.test2.DB.drop()
+        ScopedCompany.test2.save(new ScopedCompany(name: "Stateless"), [flush: true])
+
+        expect:
+        ScopedCompany.test2.withStatelessSession { ScopedCompany.count() } == 1
+        ScopedCompany.count() == 0
+
+        cleanup:
+        ScopedCompany.DB.drop()
+        ScopedCompany.test2.DB.drop()
+    }
+
     List getDomainClasses() {
         [CompanyA, ScopedCompany]
     }
