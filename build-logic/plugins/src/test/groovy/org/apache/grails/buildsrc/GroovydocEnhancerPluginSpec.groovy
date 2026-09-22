@@ -74,11 +74,11 @@ class GroovydocEnhancerPluginSpec extends Specification {
             ext.javaVersion = 21
             repositories { mavenCentral() }
             dependencies {
-                implementation 'org.apache.groovy:groovy:6.0.0-RC-2'
+                implementation 'org.apache.groovy:groovy:6.0.0-RC-3'
                 runtimeOnly 'org.spockframework:spock-core:2.4-groovy-5.0'
-                documentation 'org.apache.groovy:groovy-groovydoc:6.0.0-RC-2'
-                documentation 'org.apache.groovy:groovy-ant:6.0.0-RC-2'
-                documentation 'org.apache.groovy:groovy-templates:6.0.0-RC-2'
+                documentation 'org.apache.groovy:groovy-groovydoc:6.0.0-RC-3'
+                documentation 'org.apache.groovy:groovy-ant:6.0.0-RC-3'
+                documentation 'org.apache.groovy:groovy-templates:6.0.0-RC-3'
                 documentation 'com.github.javaparser:javaparser-core:3.28.2'
             }
             groovydocEnhancer.footer = '<strong>Docs &amp; examples</strong>'
