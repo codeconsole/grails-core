@@ -22,13 +22,13 @@
             "name": "grails.mongodb.url",
             "type": "java.lang.String",
             "description": "The MongoDB connection URL. Supports the full MongoDB connection string format.",
-            "defaultValue": "mongodb://localhost/test"
+            "defaultValue": "mongodb://127.0.0.1:27017/test"
         },
         {
             "name": "grails.mongodb.host",
             "type": "java.lang.String",
             "description": "The MongoDB server hostname. Ignored when `url` or `connectionString` is set.",
-            "defaultValue": "localhost"
+            "defaultValue": "127.0.0.1"
         },
         {
             "name": "grails.mongodb.port",
@@ -64,7 +64,7 @@
             "name": "grails.mongodb.decimalType",
             "type": "java.lang.Boolean",
             "description": "Whether to use Decimal128 for BigDecimal values instead of Double.",
-            "defaultValue": false
+            "defaultValue": true
         },
         {
             "name": "grails.mongodb.buildIndexes",
