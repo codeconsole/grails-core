@@ -20,6 +20,7 @@ package org.grails.datastore.gorm.mongo
 
 import java.util.concurrent.ConcurrentLinkedQueue
 
+import ch.qos.logback.classic.Level
 import com.mongodb.ConnectionString
 import com.mongodb.MongoClientSettings
 import com.mongodb.client.MongoClient
@@ -158,6 +159,35 @@ class BuildIndexesAsyncSpec extends AutoStartedMongoSpec {
         then:
         !subsequentWorker.alive
     }
+
+    void "test a background build is announced by its own thread, ahead of everything it logs"() {
+        given:
+        def conditions = new PollingConditions(timeout: 30)
+        def log = new CapturedLog('org.grails.datastore.mapping', Level.INFO)
+        def isAnnouncement = {
+            it.formattedMessage.startsWith('Building the indexes declared by the domain classes for connection [default] on a background thread')
+        }
+        def isSummary = { it.formattedMessage.startsWith('Index build for database [announcedIndexDb] finished') }
+
+        when:
+        def datastore = new MongoDatastore(['grails.mongodb.url'                       : dbContainer.getReplicaSetUrl('announcedIndexDb'),
+                                            (MongoSettings.SETTING_BUILD_INDEXES_ASYNC): true] as Map,
+                AnnouncedIndexThing)
+        conditions.eventually {
+            assert log.events.any(isSummary)
+        }
+        def events = log.events
+        def announcement = events.find(isAnnouncement)
+        def summary = events.find(isSummary)
+
+        then: "said by the thread that goes on to build, so it cannot trail the summary a fast build logs"
+        announcement.threadName == summary.threadName
+        events.indexOf(announcement) < events.indexOf(summary)
+
+        cleanup:
+        datastore?.close()
+        log?.close()
+    }
 }
 
 /**
@@ -201,6 +231,17 @@ class AsyncIndexThing {
     static mapping = {
         version false
         collection 'asyncIndexThing'
+        name index: true
+    }
+}
+
+@Entity
+class AnnouncedIndexThing {
+    String name
+
+    static mapping = {
+        version false
+        collection 'announcedIndexThing'
         name index: true
     }
 }

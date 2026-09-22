@@ -97,7 +97,12 @@ class BuildIndexesLifecycleSpec extends AutoStartedMongoSpec {
         when: "the datastore is restarted"
         datastore.start()
 
-        then: "the build that was cut short runs again and completes"
+        then: "the build that was cut short is resumed"
+        log.events.any {
+            it.level == Level.INFO && it.formattedMessage.contains('Resuming the index build for connection [default]')
+        }
+
+        and: "runs again and completes"
         conditions.eventually {
             assert [name: 1] in indexes()
         }
@@ -113,17 +118,10 @@ class BuildIndexesLifecycleSpec extends AutoStartedMongoSpec {
         def log = new CapturedLog('org.grails.datastore.mapping', Level.INFO)
         SlowToStopDatastore.REACHED = new CountDownLatch(1)
         SlowToStopDatastore.RELEASE = new CountDownLatch(1)
-        String caller = Thread.currentThread().name
-        def buildsStartedHere = { ->
-            log.events.count {
-                it.threadName == caller && it.formattedMessage.startsWith('Building the indexes declared by the domain classes')
-            }
-        }
 
         when: "the build has applied every index and is on its way out when the datastore is stopped"
         def datastore = new SlowToStopDatastore(asyncConfig('slowToStopDb'), SlowToStopThing)
         SlowToStopDatastore.REACHED.await(30, TimeUnit.SECONDS)
-        int before = buildsStartedHere()
         datastore.stop()
         SlowToStopDatastore.RELEASE.countDown()
 
@@ -131,8 +129,8 @@ class BuildIndexesLifecycleSpec extends AutoStartedMongoSpec {
         datastore.start()
 
         then: "the build finished, so the restart does not run it again"
-        buildsStartedHere() == before
         log.events.any { it.formattedMessage.contains('Index build for database [slowToStopDb] finished') }
+        !log.events.any { it.formattedMessage.startsWith('Resuming the index build') }
 
         cleanup:
         SlowToStopDatastore.RELEASE?.countDown()
@@ -165,6 +163,7 @@ class BuildIndexesLifecycleSpec extends AutoStartedMongoSpec {
         datastore.start()
 
         then: "the deferred build runs and puts it back"
+        log.events.any { it.formattedMessage.contains('Resuming the index build for connection [default]') }
         conditions.eventually {
             assert [name: 1] in collection.listIndexes()*.key
         }

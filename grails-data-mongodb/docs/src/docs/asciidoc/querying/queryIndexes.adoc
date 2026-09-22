@@ -233,7 +233,7 @@ Two consequences are worth planning for:
 
 The setting also applies with `buildIndexes` set to `false`, to the builds the application starts with `buildIndex()`. A domain class registered after startup is indexed on the thread registering it.
 
-NOTE: If the application shuts down while a background build is still running, GORM stops waiting for it, but the server carries on building the index it was asked for. A datastore stopped for a checkpoint and restored (with CRaC) runs a build it cut short again once it is restarted, on every connection.
+NOTE: If the application shuts down while a background build is still running, GORM stops waiting for it, but the server carries on building the index it was asked for. A datastore stopped for a checkpoint and restored (with CRaC) runs a build it cut short again once it is restarted, on every connection, and logs that it is resuming it.
 
 ==== What the Index Build Reports
 
@@ -260,7 +260,19 @@ If any declaration failed, the summary is logged at `WARN` instead and reports h
 Index build for database [myDb] did not finish, stopping after 812ms at 1 of 3 domain class(es): 1 created, 0 already present
 ----
 
-Telling a created index from one that was already there takes one `listIndexes` command per collection that declares indexes. It is only issued when the summary will be logged, that is when `INFO` is enabled for `org.grails.datastore.mapping.mongo`; with that logger at `WARN` the build skips it, and a summary for a build with failures reports how many declarations were applied instead.
+Telling a created index from one that was already there takes one `listIndexes` command per collection that declares indexes. It is only issued when the summary will be logged, that is when `INFO` is enabled for `org.grails.datastore.mapping.mongo`.
+
+A collection whose indexes cannot be listed still has its declarations applied; only the split between created and already present is missing for it. The summary counts those declarations separately, and the other collections keep their split:
+
+----
+Index build for database [myDb] finished in 412ms: 2 created, 5 already present, 3 applied without a listing, from 3 domain class(es)
+----
+
+When nothing could be classified — the logger is at `WARN`, so the build skips `listIndexes` and a summary is logged only for a build that failed or did not finish, or no collection's indexes could be listed — the summary reports how many declarations were applied instead:
+
+----
+Index build for database [myDb] finished in 412ms: 10 index declaration(s) applied, 1 failed, from 3 domain class(es)
+----
 
 To find which index is the slow one, enable `DEBUG` logging for `org.grails.datastore.mapping.mongo`, which adds a line per index with its own elapsed time:
 

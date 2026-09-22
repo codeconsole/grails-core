@@ -667,11 +667,14 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
         }
         if (!executor.isShutdown()) {
             try {
-                executor.execute(() -> runIndexBuild(executor));
-                // Once submitted, so that it is only ever said of a build that is under way.
-                LOG.info("Building the indexes declared by the domain classes for connection [{}] on a background " +
-                        "thread. Startup does not wait for them, so a query issued before its index exists is served " +
-                        "without it.", connection);
+                executor.execute(() -> {
+                    // The first thing the build does: said only of a build that is under way, and ahead of
+                    // everything it logs, which it would not be if the submitting thread said it.
+                    LOG.info("Building the indexes declared by the domain classes for connection [{}] on a " +
+                            "background thread. Startup does not wait for them, so a query issued before its index " +
+                            "exists is served without it.", connection);
+                    runIndexBuild(executor);
+                });
                 return;
             }
             catch (RejectedExecutionException e) {
@@ -1816,6 +1819,8 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
         this.indexBuildExecutor = newIndexBuildExecutor(connectionSources.getDefaultConnectionSource().getName());
         if (indexBuildPending) {
             indexBuildPending = false;
+            LOG.info("Resuming the index build for connection [{}] that was pending while the datastore was stopped.",
+                    connectionName());
             buildIndex();
         }
     }

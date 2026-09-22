@@ -128,7 +128,6 @@ class BuildIndexesOnDemandSpec extends AutoStartedMongoSpec {
     void "test a restart does not build what the setting says GORM should not build by itself"() {
         given:
         def log = new CapturedLog('org.grails.datastore.mapping', Level.INFO)
-        String caller = Thread.currentThread().name
         def datastore = new MongoDatastore(config('onDemandRestartDb', [(MongoSettings.SETTING_BUILD_INDEXES_ASYNC): true]),
                 OnDemandRestartThing)
 
@@ -136,8 +135,8 @@ class BuildIndexesOnDemandSpec extends AutoStartedMongoSpec {
         datastore.stop()
         datastore.start()
 
-        then:
-        !log.events.any { it.threadName == caller && it.formattedMessage.startsWith('Building the indexes declared') }
+        then: "start() says so before returning when it resumes a build; it did not"
+        !log.events.any { it.formattedMessage.startsWith('Resuming the index build') }
         !([name: 1] in indexKeys('onDemandRestartDb', 'onDemandRestartThing'))
 
         cleanup:

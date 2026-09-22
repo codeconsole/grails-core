@@ -199,7 +199,8 @@ class BuildIndexesPerConnectionSpec extends AutoStartedMongoSpec {
         when: "the datastore is restarted"
         parent.start()
 
-        then: "the child's build runs again and completes"
+        then: "the child's build is resumed, runs again and completes"
+        log.events.any { it.formattedMessage.contains('Resuming the index build for connection [checkpointedChild]') }
         conditions.eventually {
             assert [name: 1] in childIndexes()
         }
@@ -215,7 +216,6 @@ class BuildIndexesPerConnectionSpec extends AutoStartedMongoSpec {
         given:
         def conditions = new PollingConditions(timeout: 30)
         def log = new CapturedLog('org.grails.datastore.mapping', Level.INFO)
-        String caller = Thread.currentThread().name
         def parent = new MongoDatastore(DatastoreUtils.createPropertyResolver([
                 'grails.mongodb.url'              : dbContainer.getReplicaSetUrl('stoppedParentDb'),
                 'grails.mongodb.buildIndexes'     : false,
@@ -227,19 +227,12 @@ class BuildIndexesPerConnectionSpec extends AutoStartedMongoSpec {
         conditions.eventually {
             assert log.events.any { it.formattedMessage.contains('database [addedWhileStoppedDb] finished') }
         }
-        def announced = { ->
-            log.events.count {
-                it.threadName == caller &&
-                        it.formattedMessage.startsWith('Building the indexes declared by the domain classes for connection [addedWhileStopped]')
-            }
-        }
-        int before = announced()
 
         when: "the datastore is restarted"
         parent.start()
 
-        then: "that connection's build was never interrupted, so start() starts no second one"
-        announced() == before
+        then: "that connection's build was never interrupted, so start() resumes no second one"
+        !log.events.any { it.formattedMessage.startsWith('Resuming the index build for connection [addedWhileStopped]') }
 
         cleanup:
         parent?.close()
@@ -248,8 +241,6 @@ class BuildIndexesPerConnectionSpec extends AutoStartedMongoSpec {
 
     void "test a connection added after close() starts no index build"() {
         given:
-        def log = new CapturedLog('org.grails.datastore.mapping', Level.INFO)
-        String caller = Thread.currentThread().name
         def parent = new MongoDatastore(DatastoreUtils.createPropertyResolver([
                 'grails.mongodb.url'              : dbContainer.getReplicaSetUrl('closedParentDb'),
                 'grails.mongodb.buildIndexes'     : false,
@@ -261,14 +252,11 @@ class BuildIndexesPerConnectionSpec extends AutoStartedMongoSpec {
         parent.connectionSources.addConnectionSource('addedAfterClose',
                 [url: dbContainer.getReplicaSetUrl('addedAfterCloseDb'), buildIndexes: true])
 
-        then: "a build would have announced itself on this thread before returning; none did"
-        !log.events.any {
-            it.threadName == caller && it.formattedMessage.startsWith('Building the indexes declared by the domain classes')
-        }
+        then: "a build would have started its thread before returning, and kept it for a second after finishing; none did"
+        !Thread.getAllStackTraces().keySet().any { it.name.startsWith('gorm-mongo-index-build-addedAfterClose-') }
 
         cleanup:
         parent?.connectionSources?.getConnectionSource('addedAfterClose')?.close()
-        log?.close()
     }
 
     void "test a connection can override the global setting"() {
