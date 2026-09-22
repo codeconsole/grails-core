@@ -139,6 +139,20 @@ class Person {
 
 WARNING: Dropping and recreating an index rebuilds it from scratch, during which queries that rely on the index are not served by it. Enable `recreateOnConflict` deliberately, and prefer applying it during a maintenance window for large collections.
 
+A declared index whose `name` is already held by an index on different keys is the same kind of conflict, reported by MongoDB as an `IndexKeySpecsConflict`, and `recreateOnConflict` resolves it the same way:
+
+[source,groovy]
+----
+class Person {
+    String name
+    static mapping = {
+        name index:true, indexAttributes: [name:'byName', recreateOnConflict:true]
+    }
+}
+----
+
+Without it, GORM says which name is taken, leaves the index that holds it alone, and counts the declaration as failed.
+
 A change to a TTL index's `expireAfterSeconds` is handled automatically and does not require `recreateOnConflict`, because GORM updates the expiry in place rather than rebuilding the index.
 
 

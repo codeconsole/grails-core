@@ -155,13 +155,17 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
 
     /**
      * Opt-in index attribute: when an index already exists on the same keys with conflicting
-     * options that cannot be reconciled in place (i.e. anything other than a TTL change), drop the
-     * existing index and recreate it with the declared options instead of just logging the conflict.
+     * options that cannot be reconciled in place (i.e. anything other than a TTL change), or the
+     * declared name is taken by an index on other keys, drop the existing index and recreate it with
+     * the declared options instead of just logging the conflict.
      */
     public static final String INDEX_RECREATE_ON_CONFLICT = "recreateOnConflict";
 
     /** MongoDB server error code for {@code IndexOptionsConflict}. */
     private static final int INDEX_OPTIONS_CONFLICT_CODE = 85;
+
+    /** MongoDB server error code for {@code IndexKeySpecsConflict}: the name is taken by an index on other keys. */
+    private static final int INDEX_KEY_SPECS_CONFLICT_CODE = 86;
     public static final String CODEC_ENGINE = MongoConstants.CODEC_ENGINE;
 
     private static final Logger LOG = LoggerFactory.getLogger(MongoDatastore.class);
@@ -1534,7 +1538,7 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
             LOG.debug("{} index for entity [{}] {} in {}ms", applied,
                     entity.getName(), descriptor, TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt));
         } catch (MongoCommandException e) {
-            if (e.getErrorCode() == INDEX_OPTIONS_CONFLICT_CODE) {
+            if (e.getErrorCode() == INDEX_OPTIONS_CONFLICT_CODE || e.getErrorCode() == INDEX_KEY_SPECS_CONFLICT_CODE) {
                 Reconciliation reconciliation = reconcileIndexConflict(entity, collection, existingIndexes, keys,
                         indexOptions, expireAfterSeconds, recreateOnConflict, descriptor, e);
                 if (reconciliation == Reconciliation.UPDATED) {
@@ -1557,8 +1561,9 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
     }
 
     /**
-     * Reconcile an {@code IndexOptionsConflict}: an index already exists on the same keys with
-     * different options. A TTL difference is the common, safe case (e.g. a configurable retention
+     * Reconcile an {@code IndexOptionsConflict}, where an index already exists on the same keys with
+     * different options, or an {@code IndexKeySpecsConflict}, where the declared name is taken by an
+     * index on other keys. A TTL difference is the common, safe case (e.g. a configurable retention
      * changed between restarts) and is updated in place via {@code collMod}; anything else needs an
      * explicit {@code recreateOnConflict:true} to authorise the drop-and-recreate.
      *
@@ -1580,6 +1585,12 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
             return Reconciliation.FAILED;
         }
         Document existing = findIndexByKeyPattern(indexes, keys);
+        // An IndexKeySpecsConflict names no index on these keys: the declared name belongs to one on other keys.
+        boolean nameTaken = false;
+        if (existing == null && desired.getName() != null) {
+            existing = findIndexByName(indexes, desired.getName());
+            nameTaken = existing != null;
+        }
         if (existing == null) {
             LOG.error("Failed to create index for entity [{}] {}: {}",
                 entity.getName(), descriptor, original.getMessage(), original);
@@ -1590,8 +1601,9 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
         Object existingTtl = existing.get(INDEX_EXPIRE_AFTER_SECONDS);
         Long existingTtlSeconds = existingTtl instanceof Number ? ((Number) existingTtl).longValue() : null;
 
-        // TTL change on an existing index — update in place, no rebuild, no gap.
-        boolean ttlChange = expireAfterSeconds != null && !expireAfterSeconds.equals(existingTtlSeconds);
+        // TTL change on an existing index — update in place, no rebuild, no gap. An index that merely holds the
+        // name is a different index, so its expiry is not the declared one to update.
+        boolean ttlChange = !nameTaken && expireAfterSeconds != null && !expireAfterSeconds.equals(existingTtlSeconds);
         if (ttlChange) {
             try {
                 getMongoClient().getDatabase(getDatabaseName(entity))
@@ -1624,11 +1636,32 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
             }
         }
 
-        LOG.error(
-            "Index conflict for entity [{}] {}: an index [{}] already exists on the same keys with different options. " +
-                "Declare indexAttributes:[recreateOnConflict:true] to drop and recreate it. Original error: {}",
-            entity.getName(), descriptor, existingName, original.getMessage());
+        if (nameTaken) {
+            LOG.error(
+                "Index conflict for entity [{}] {}: the name [{}] is taken by an index on different keys. " +
+                    "Declare indexAttributes:[recreateOnConflict:true] to drop and recreate it, or declare another " +
+                    "name. Original error: {}",
+                entity.getName(), descriptor, existingName, original.getMessage());
+        }
+        else {
+            LOG.error(
+                "Index conflict for entity [{}] {}: an index [{}] already exists on the same keys with different options. " +
+                    "Declare indexAttributes:[recreateOnConflict:true] to drop and recreate it. Original error: {}",
+                entity.getName(), descriptor, existingName, original.getMessage());
+        }
         return Reconciliation.FAILED;
+    }
+
+    /**
+     * Find an existing index by name, or {@code null} if none has it.
+     */
+    private static Document findIndexByName(Iterable<Document> indexes, String name) {
+        for (Document index : indexes) {
+            if (name.equals(index.getString("name"))) {
+                return index;
+            }
+        }
+        return null;
     }
 
     /**
