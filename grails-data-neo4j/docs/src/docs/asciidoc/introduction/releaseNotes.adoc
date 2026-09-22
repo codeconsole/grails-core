@@ -19,7 +19,7 @@ under the License.
 
 ==== 8.0.x
 
-* A connection declared under `grails.neo4j.connections` can be used: a datastore with one no longer fails to start, and an entity saved or deleted through it, as with `Book.moreBooks.save(book)`, reaches that connection rather than the default one
+* A connection declared under `grails.neo4j.connections` can be used: a datastore with one no longer fails to start with `The event loop thread may not be smaller than 1, but was 0`, and an entity saved or deleted through it, as with `Book.moreBooks.save(book)`, reaches that connection rather than the default one, where it could also fail with `Cannot flush write operations without an active transaction!`
 * Inside a `withConnection` block, static methods called on the class and instance methods such as `save()` use the block's connection, not only the methods called without naming the class. See <<upgrading,Upgrading>>.
 * The same holds inside a session or transaction opened through a connection, such as `Book.moreBooks.withTransaction { }`, where `book.save()` went to the default connection
 
