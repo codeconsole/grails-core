@@ -184,12 +184,16 @@ Also keep `gradlew.bat` LF line endings on this line (PR #15709). Comment at top
 | `org.gradle.configuration-cache` | **`false`** until #15497 resolved - do not enable casually |
 | `org.gradle.configureondemand` | **commented off** - Gradle issue #9489 |
 | `org.gradle.jvmargs` | `-Xmx3G` (daemon only; groovydoc and the guide run in their own JVMs) |
-| `groovydocMaxHeapSize` | `1g` - heap of the JVM each groovydoc task forks into; the aggregates raise it per task |
 | `javaVersion` | `21` (CompilePlugin reads this for `--release`) |
 | `projectVersion` | framework version |
 | `slf4jPreventExclusion` | `true` - Grails Gradle plugin POM behavior |
 
 CI vs local behavior is branched on `System.getenv('CI')` and `SOURCE_DATE_EPOCH` (reproducible builds disable remote cache).
+
+`groovydocMaxHeapSize` and `guideMaxHeapSize` are **not** keys in `gradle.properties` - do not add
+them. Each documentation JVM carries its own default (1g per groovydoc task, raised to 3g/2g by the
+two aggregates; 1500m for the guide), and these exist only as `-P` overrides that beat the build
+script when a documentation run will not fit.
 
 ---
 

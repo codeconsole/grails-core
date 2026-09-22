@@ -89,6 +89,9 @@ class GroovydocEnhancerPlugin implements Plugin<Project> {
     @CompileDynamic
     private static void configureAntBuilderExecution(Project project, GroovydocEnhancerExtension extension) {
         GroovydocRunner runner = project.objects.newInstance(GroovydocRunner)
+        // Same form as PublishGuideTask uses for guideMaxHeapSize, and the one that survives
+        // the configuration cache if gradle/gradle#15497 is ever closed.
+        Provider<String> maxHeapSizeOverride = project.providers.gradleProperty('groovydocMaxHeapSize')
 
         project.tasks.withType(Groovydoc).configureEach { gdoc ->
             if (!extension.useAntBuilder.get()) {
@@ -152,7 +155,7 @@ class GroovydocEnhancerPlugin implements Plugin<Project> {
 
                 runner.run(
                         antClasspath,
-                        resolveMaxHeapSize(project, extension),
+                        maxHeapSizeOverride.getOrElse(extension.maxHeapSize.get()),
                         gdoc.temporaryDir,
                         antArgs,
                         links,
@@ -180,16 +183,6 @@ class GroovydocEnhancerPlugin implements Plugin<Project> {
             }
         }
         sourceDirs.unique()
-    }
-
-    /**
-     * A {@code groovydocMaxHeapSize} project property beats whatever the build script set, so
-     * a documentation run that will not fit can be got moving from the command line. The
-     * aggregates document every module at once and set the extension to more than the default.
-     */
-    private static String resolveMaxHeapSize(Project project, GroovydocEnhancerExtension extension) {
-        Object override = GradleUtils.findProperty(project, 'groovydocMaxHeapSize')
-        override ? override.toString() : extension.maxHeapSize.get()
     }
 
     @CompileDynamic
