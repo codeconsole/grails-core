@@ -80,6 +80,23 @@ class NamedConnectionsSpec extends Specification {
         RoutedCompany.other.count() == 1
         RoutedCompany.count() == 0
     }
+
+    void "test the operations that name the class inside withConnection use that connection"() {
+        when: "an instance is saved inside the block"
+        RoutedCompany.withConnection('other') {
+            RoutedCompany.withTransaction {
+                new RoutedCompany(name: 'Routed').save(flush: true)
+            }
+        }
+
+        then: "it reaches that connection's server, not the default one"
+        RoutedCompany.other.count() == 1
+        RoutedCompany.count() == 0
+
+        and: "a static call on the class inside the block reads from it, and one naming its connection keeps it"
+        RoutedCompany.withConnection('other') { RoutedCompany.count() } == 1
+        RoutedCompany.withConnection('other') { RoutedCompany.'default'.count() } == 0
+    }
 }
 
 @Entity

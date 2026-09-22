@@ -17,6 +17,10 @@ specific language governing permissions and limitations
 under the License.
 ////
 
+==== 8.0.x
+
+* Inside a `withConnection` block, static methods called on the class and instance methods such as `save()` use the block's connection, not only the methods called without naming the class. See <<upgrading,Upgrading>>.
+
 ==== 7.1.x
 
 * Support Apache Groovy 3, and Java 14
