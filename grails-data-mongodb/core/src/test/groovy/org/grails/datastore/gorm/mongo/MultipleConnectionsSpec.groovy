@@ -22,6 +22,7 @@ import grails.gorm.annotation.Entity
 import grails.mongodb.MongoEntity
 import org.apache.grails.testing.mongo.AutoStartedMongoSpec
 import org.bson.types.ObjectId
+import org.grails.datastore.mapping.core.connections.ConnectionSource
 import org.grails.datastore.mapping.mongo.MongoDatastore
 import org.grails.datastore.mapping.mongo.config.MongoSettings
 import spock.lang.Shared
@@ -130,8 +131,59 @@ class MultipleConnectionsSpec extends AutoStartedMongoSpec {
         CompanyA.test2.DB.drop()
     }
 
+    void "Test the operations that name the class inside withConnection use that connection"() {
+        setup:
+        ScopedCompany.DB.drop()
+        ScopedCompany.test2.DB.drop()
+
+        when: "an instance is saved inside the block, as the guide shows it"
+        ScopedCompany.withConnection("test2") {
+            new ScopedCompany(name: "Six").save(flush: true)
+        }
+
+        then: "it reaches that connection, not the entity's default one"
+        ScopedCompany.test2.count() == 1
+        ScopedCompany.count() == 0
+
+        and: "static calls on the class, finders and queries inside the block read from it"
+        ScopedCompany.withConnection("test2") { ScopedCompany.count() } == 1
+        ScopedCompany.withConnection("test2") { ScopedCompany.list()*.name } == ["Six"]
+        ScopedCompany.withConnection("test2") { ScopedCompany.findByName("Six")?.name } == "Six"
+        ScopedCompany.withConnection("test2") { ScopedCompany.where { name == "Six" }.count() } == 1
+
+        cleanup:
+        ScopedCompany.DB.drop()
+        ScopedCompany.test2.DB.drop()
+    }
+
+    void "Test withConnection leaves an operation that names its connection, and later calls, alone"() {
+        setup:
+        ScopedCompany.DB.drop()
+        ScopedCompany.test2.DB.drop()
+        new ScopedCompany(name: "Seven").save(flush: true)
+
+        expect: "a connection named inside the block is the one used"
+        ScopedCompany.withConnection("test2") {
+            [named: ScopedCompany.'default'.count(), scoped: ScopedCompany.count()]
+        } == [named: 1, scoped: 0]
+
+        and: "after the block the entity is back on its default connection"
+        ScopedCompany.count() == 1
+
+        when: "a block fails"
+        ScopedCompany.withConnection("test2") { throw new IllegalStateException("failed inside the block") }
+
+        then: "the default connection applies again after it too"
+        thrown(IllegalStateException)
+        ScopedCompany.count() == 1
+
+        cleanup:
+        ScopedCompany.DB.drop()
+        ScopedCompany.test2.DB.drop()
+    }
+
     List getDomainClasses() {
-        [CompanyA]
+        [CompanyA, ScopedCompany]
     }
 }
 
@@ -144,6 +196,15 @@ class CompanyA implements MongoEntity<CompanyA> {
     String name
     static mapping = {
         connections "test1", "test2"
+    }
+}
+
+@Entity
+class ScopedCompany implements MongoEntity<ScopedCompany> {
+    ObjectId id
+    String name
+    static mapping = {
+        connections ConnectionSource.DEFAULT, "test2"
     }
 }
 

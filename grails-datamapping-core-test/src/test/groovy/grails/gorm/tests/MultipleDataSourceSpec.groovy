@@ -25,6 +25,7 @@ import grails.gorm.DetachedCriteria
 import grails.gorm.annotation.Entity
 import grails.gorm.services.Service
 import grails.gorm.transactions.Transactional
+import org.grails.datastore.gorm.GormRegistry
 import org.grails.datastore.mapping.core.connections.ConnectionSource
 import org.grails.datastore.mapping.simple.SimpleMapDatastore
 
@@ -52,6 +53,52 @@ class MultipleDataSourceSpec extends Specification {
         service.countPlayers() == 2
         service.countPlayersOne() == 1
         dataService.countPlayers() == 1
+    }
+
+    void 'test the operations that name the entity follow a connection scope'() {
+        given: 'two players on the default connection and one on the other'
+        new Player(name: 'Giggs').save(flush: true)
+        new Player(name: 'Keane').save(flush: true)
+        Player.one.save(new Player(name: 'Neville'), [flush: true])
+
+        expect: 'a static call on the class uses the scope\'s connection'
+        GormRegistry.withConnectionScope(Player, 'one') { Player.count() } == 1
+        GormRegistry.withConnectionScope(Player, 'one') { Player.list()*.name } == ['Neville']
+
+        and: 'one that names its connection keeps it'
+        GormRegistry.withConnectionScope(Player, 'one') { Player.'default'.count() } == 2
+
+        when: 'an instance is saved inside the scope'
+        GormRegistry.withConnectionScope(Player, 'one') {
+            new Player(name: 'Irwin').save(flush: true)
+        }
+
+        then: 'it reaches the scope\'s connection, and outside the scope the default applies again'
+        Player.one.count() == 2
+        Player.count() == 2
+    }
+
+    void 'test connection scopes nest and are undone by an exception'() {
+        given:
+        new Player(name: 'Giggs').save(flush: true)
+        Player.one.save(new Player(name: 'Neville'), [flush: true])
+        Player.one.save(new Player(name: 'Irwin'), [flush: true])
+
+        expect: 'an inner scope applies inside it, and the outer one again after it'
+        GormRegistry.withConnectionScope(Player, 'one') {
+            [GormRegistry.withConnectionScope(Player, ConnectionSource.DEFAULT) { Player.count() }, Player.count()]
+        } == [1, 2]
+
+        when: 'a scope ends with an exception'
+        GormRegistry.withConnectionScope(Player, 'one') {
+            throw new IllegalStateException('failed inside the scope')
+        }
+
+        then:
+        thrown(IllegalStateException)
+
+        and: 'it no longer applies'
+        Player.count() == 1
     }
 
     void 'test delete on data service'() {

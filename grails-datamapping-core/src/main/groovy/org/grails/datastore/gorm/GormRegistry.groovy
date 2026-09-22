@@ -59,6 +59,12 @@ import org.grails.datastore.mapping.transactions.TransactionCapableDatastore
 class GormRegistry {
 
     private static final GormRegistry instance = new GormRegistry()
+
+    /**
+     * The connection that the unqualified operations on an entity follow on this thread, by normalized entity name,
+     * while a {@link #withConnectionScope} block for it is running; {@code null} outside every such block.
+     */
+    private static final ThreadLocal<Map<String, String>> CONNECTION_SCOPES = new ThreadLocal<>()
     private final GormApiFactory defaultApiFactory = new DefaultGormApiFactory()
     final GormApiResolver apiResolver = new GormApiResolver(this)
     final GormStaticApiRegistry staticApiRegistry = new GormStaticApiRegistry(this)
@@ -492,12 +498,63 @@ class GormRegistry {
         return validationApiRegistry.get(normalizeEntityKey(entityClass), normalizeQualifier(qualifier))
     }
 
+    /**
+     * Runs the callable with the unqualified operations on the entity routed to the named connection: an explicit
+     * static call such as {@code Book.list()}, an instance call such as {@code book.save()}, and a query built by
+     * either. This is what a {@code withConnection} block promises; the closure's delegate only covers the calls
+     * that do not name the class. An operation that names its own connection, and every other entity, is
+     * unaffected. Blocks nest, and the previous connection applies again when an inner one ends.
+     *
+     * @param entity The entity whose operations follow the connection
+     * @param connectionName The connection
+     * @param callable What to run
+     * @return What the callable returns
+     */
+    static <T> T withConnectionScope(Class entity, String connectionName, Closure<T> callable) {
+        String entityKey = instance.normalizeEntityKey(entity)
+        Map<String, String> scopes = CONNECTION_SCOPES.get()
+        if (scopes == null) {
+            scopes = new HashMap<String, String>()
+            CONNECTION_SCOPES.set(scopes)
+        }
+        String previous = scopes.put(entityKey, instance.normalizeQualifier(connectionName))
+        try {
+            return callable.call()
+        }
+        finally {
+            if (previous != null) {
+                scopes.put(entityKey, previous)
+            }
+            else {
+                scopes.remove(entityKey)
+                if (scopes.isEmpty()) {
+                    CONNECTION_SCOPES.remove()
+                }
+            }
+        }
+    }
+
+    /**
+     * @return the connection a {@link #withConnectionScope} block routes the entity's unqualified operations to,
+     * or {@code null} when none is running for it on this thread
+     */
+    private static String scopedConnection(String normalizedClassName) {
+        Map<String, String> scopes = CONNECTION_SCOPES.get()
+        return scopes == null ? null : scopes.get(normalizedClassName)
+    }
+
     GormStaticApi resolveStaticApi(Class entityClass) {
         return resolveStaticApi(entityClass, (String) null)
     }
 
     GormStaticApi resolveStaticApi(Class entityClass, String qualifier) {
         String normalizedClassName = normalizeEntityKey(entityClass)
+        // Only a lookup that names no connection follows a scope; asking for DEFAULT by name still gets it.
+        String scoped = qualifier == null ? scopedConnection(normalizedClassName) : null
+        if (scoped != null) {
+            GormStaticApi api = staticApiRegistry.getDirect(normalizedClassName, scoped)
+            if (api != null) return api
+        }
         String normalizedQualifier = normalizeQualifier(qualifier)
 
         if (MultiTenant.isAssignableFrom(entityClass)) {
@@ -545,6 +602,11 @@ class GormRegistry {
 
     GormInstanceApi resolveInstanceApi(Class entityClass, String qualifier) {
         String normalizedClassName = normalizeEntityKey(entityClass)
+        String scoped = qualifier == null ? scopedConnection(normalizedClassName) : null
+        if (scoped != null) {
+            GormInstanceApi api = instanceApiRegistry.getDirect(normalizedClassName, scoped)
+            if (api != null) return api
+        }
         String normalizedQualifier = normalizeQualifier(qualifier)
 
         if (MultiTenant.isAssignableFrom(entityClass)) {
@@ -596,6 +658,11 @@ class GormRegistry {
      */
     GormValidationApi resolveValidationApi(Class entityClass, String qualifier) {
         String normalizedClassName = normalizeEntityKey(entityClass)
+        String scoped = qualifier == null ? scopedConnection(normalizedClassName) : null
+        if (scoped != null) {
+            GormValidationApi api = validationApiRegistry.getDirect(normalizedClassName, scoped)
+            if (api != null) return api
+        }
         String normalizedQualifier = normalizeQualifier(qualifier)
 
         if (MultiTenant.isAssignableFrom(entityClass)) {

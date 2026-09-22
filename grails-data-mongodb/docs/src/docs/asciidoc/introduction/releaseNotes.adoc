@@ -28,6 +28,7 @@ Below are the details of the changes across releases:
 * Index creation on startup can be switched off with `grails.mongodb.buildIndexes = false`, and run on demand with `MongoDatastore.buildIndex()`, or moved off the startup thread with `grails.mongodb.buildIndexesAsync = true`
 * `grails.gorm` and `grails.mongodb` settings are now applied when GORM is given an existing `MongoClient`, such as the one contributed by Spring Boot. Configuration that was previously ignored on this path — `failOnError`, the default mapping and constraints, flush behaviour and multi-tenancy — now takes effect. See <<upgradeNotes,Upgrade Notes>> before upgrading an application that supplies its own client.
 * The index build reports what it created, what was already present and how long it took, in one summary line per build
+* Inside a `withConnection` block, static methods called on the class and instance methods such as `save()` now use the block's connection, as documented; previously only the methods called without naming the class did
 * An application can be checkpointed and restored with CRaC: GORM closes every `MongoClient` it created, on every connection, before the checkpoint and builds replacements after the restore. See <<advancedConfig,Advanced Configuration>>.
 
 ==== 7.1
