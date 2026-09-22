@@ -1886,6 +1886,15 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
             if (own instanceof MongoConnectionSource) {
                 ((MongoConnectionSource) own).replaceSource(replacement);
             }
+            else {
+                // Only the connection source the factory creates can be given the replacement. A custom factory's
+                // own kind cannot, so whatever reads the client from it, rather than from the datastore, would go on
+                // using the one that was closed.
+                LOG.warn("The connection source for [{}] is a {}, which cannot be given the client built for the " +
+                        "restore, so it still hands out the one that was closed. A connection source factory whose " +
+                        "clients outlive a restore should return a {}.", own.getName(),
+                        own.getClass().getSimpleName(), MongoConnectionSource.class.getSimpleName());
+            }
             datastore.mongo = replacement;
             datastore.clientStopped = false;
         }

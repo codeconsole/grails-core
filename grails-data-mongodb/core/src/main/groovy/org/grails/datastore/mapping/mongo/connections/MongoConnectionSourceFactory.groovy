@@ -96,6 +96,12 @@ class MongoConnectionSourceFactory extends AbstractConnectionSourceFactory<Mongo
         return settings
     }
 
+    /**
+     * Creates the connection and its client. A subclass that builds the client itself should return a
+     * {@link MongoConnectionSource}, whose client a datastore can replace: it closes the clients when it is stopped
+     * for a CRaC checkpoint, and puts the ones it builds for the restore where the closed ones were, so that
+     * whatever reads a client from the connection source gets the one in use.
+     */
     @Override
     ConnectionSource<MongoClient, MongoConnectionSourceSettings> create(String name, MongoConnectionSourceSettings settings) {
         MongoClientSettings.Builder builder = settings.options

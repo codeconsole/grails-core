@@ -20,11 +20,13 @@ package org.grails.datastore.mapping.mongo
 
 import java.util.concurrent.TimeUnit
 
+import ch.qos.logback.classic.Level
 import com.mongodb.MongoClientSettings
 import com.mongodb.MongoTimeoutException
 import com.mongodb.client.MongoClient
 
 import org.grails.datastore.gorm.events.DefaultApplicationEventPublisher
+import org.grails.datastore.gorm.mongo.CapturedLog
 import org.grails.datastore.mapping.core.DatastoreUtils
 import org.grails.datastore.mapping.core.connections.ConnectionSource
 import org.grails.datastore.mapping.core.connections.DefaultConnectionSource
@@ -240,6 +242,9 @@ class MongoDatastoreLifecycleSpec extends Specification {
                 factory, new DefaultApplicationEventPublisher())
         Map<String, MongoClient> originals = clientsByConnection(datastore)
 
+        and:
+        def log = new CapturedLog('org.grails.datastore.mapping', Level.WARN)
+
         when: 'it is checkpointed and restored'
         datastore.stop()
         datastore.start()
@@ -248,11 +253,22 @@ class MongoDatastoreLifecycleSpec extends Specification {
         then: 'the datastore still hands out the replacements'
         restored.every { String name, MongoClient client -> !client.is(originals[name]) && !closed(client) }
 
+        and: 'and says which connection sources are left handing out the closed ones'
+        restored.keySet().every { String name ->
+            log.events.any {
+                it.level == Level.WARN &&
+                        it.formattedMessage.contains("The connection source for [${name}] is a DefaultConnectionSource")
+            }
+        }
+
         when: 'the connection sources close only the clients they were built with, which stop already closed'
         datastore.close()
 
         then: 'the replacements are closed as well, rather than left holding sockets'
         restored.values().every { closed(it) }
+
+        cleanup:
+        log?.close()
     }
 
     void 'the replacement of the default client is built with the client options the datastore was given'() {
