@@ -63,8 +63,15 @@ class ConnectionScopeMultiTenancySpec extends Specification {
         expect: 'naming the default connection reaches the current tenant, foo'
         ScopedTenantBook.'default'.count() == 2
 
-        and: 'so does a scope for it, rather than the default connection itself'
-        GormRegistry.withConnectionScope(ScopedTenantBook, ConnectionSource.DEFAULT) { ScopedTenantBook.count() } == 2
+        and: 'so does a block for it inside a block for another connection, rather than the default connection itself'
+        ScopedTenantBook.bar.withTransaction {
+            ScopedTenantBook.'default'.withTransaction { ScopedTenantBook.count() }
+        } == 2
+
+        and: 'the same through the registry, where the scope is pushed inside an enclosing one'
+        GormRegistry.withConnectionScope(ScopedTenantBook, 'bar') {
+            GormRegistry.withConnectionScope(ScopedTenantBook, ConnectionSource.DEFAULT) { ScopedTenantBook.count() }
+        } == 2
     }
 
     void 'test a new session for a tenant runs the calls on the class for that tenant'() {
