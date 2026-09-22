@@ -36,11 +36,7 @@ class Application extends GrailsAutoConfiguration {
     def beans = {
         bean('auditorAware', AuditorAware, SpringSecurityAuditorAware)
 
-        // Spring Boot's default chain, with the static resources the browser fetches on its own
-        // (the favicon, the assets) permitted. Left to the default, a browser's background
-        // favicon fetch is bounced through the login page, which starts a session of its own
-        // whenever the cookie it carries is stale (a login just changed the session id, a logout
-        // just invalidated it) and so overwrites the session the user has just signed in to.
+        // Spring Security's login page declares no icon, so the browser falls back to /favicon.ico
         bean('securityFilterChain', SecurityFilterChain) { HttpSecurity http ->
             http.authorizeHttpRequests { requests ->
                 requests.requestMatchers('/favicon.ico', '/assets/**').permitAll()
