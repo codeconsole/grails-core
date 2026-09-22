@@ -131,6 +131,22 @@ class MultipleDataSourceConnectionsSpec extends Specification {
         Author.books.withNewTransaction { Author.countByName(name) } == 1
     }
 
+    void "the class's own calls inside a method annotated @Transactional with a connection use that connection"() {
+        given:
+        String name = "Saved through the books transaction ${UUID.randomUUID()}"
+        TestService testService = datastore.getDatastoreForConnection("books").getService(TestService)
+
+        when:
+        testService.saveAuthor(name)
+
+        then: "it is in that connection's database, not the entity's default one"
+        Author.books.withTransaction { Author.books.findByName(name) } != null
+        Author.withTransaction { Author.findByName(name) } == null
+
+        and:
+        testService.countAuthors(name) == 1
+    }
+
     void "static GORM operations use first non-default datasource for multi datasource entity"() {
         given: "a unique book name"
         def uniqueName = "The Stand ${UUID.randomUUID()}"
@@ -245,6 +261,14 @@ class Author {
 @Service
 @Transactional(connection = "books")
 class TestService {
+
+    Author saveAuthor(String name) {
+        new Author(name: name).save(flush: true)
+    }
+
+    Number countAuthors(String name) {
+        Author.countByName(name)
+    }
 }
 
 @Entity

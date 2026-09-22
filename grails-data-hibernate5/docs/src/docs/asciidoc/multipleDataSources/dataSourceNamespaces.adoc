@@ -54,7 +54,7 @@ ZipCode.auditing.withTransaction {
 }
 ----
 
-Other domain classes are not affected, and an operation inside the block that names a `DataSource`, such as `ZipCode.lookup.count()`, uses the one it names. The routing comes from the namespace's own `withTransaction`, `withNewTransaction`, `withSession` and `withNewSession`: a method annotated `@Transactional(connection = 'auditing')` opens the same transaction without it, so the calls on `ZipCode` inside such a method still use its default `DataSource`.
+Other domain classes are not affected, and an operation inside the block that names a `DataSource`, such as `ZipCode.lookup.count()`, uses the one it names. A method annotated `@Transactional(connection = 'auditing')` routes in the same way, for every domain class mapped to the 'auditing' `DataSource`; a class that is not mapped to it keeps its own.
 
 You can use `Where` queries:
 

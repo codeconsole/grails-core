@@ -61,10 +61,9 @@ class GormRegistry {
     private static final GormRegistry instance = new GormRegistry()
 
     /**
-     * The connection that the unqualified operations on an entity follow on this thread, by normalized entity name,
-     * while a {@link #withConnectionScope} block for it is running; {@code null} outside every such block.
+     * The {@link #withConnectionScope} blocks running on this thread, innermost first; {@code null} outside every one.
      */
-    private static final ThreadLocal<Map<String, String>> CONNECTION_SCOPES = new ThreadLocal<>()
+    private static final ThreadLocal<Deque<ConnectionScope>> CONNECTION_SCOPES = new ThreadLocal<>()
     private final GormApiFactory defaultApiFactory = new DefaultGormApiFactory()
     final GormApiResolver apiResolver = new GormApiResolver(this)
     final GormStaticApiRegistry staticApiRegistry = new GormStaticApiRegistry(this)
@@ -515,41 +514,92 @@ class GormRegistry {
      * @return What the callable returns
      */
     static <T> T withConnectionScope(Class entity, String connectionName, Closure<T> callable) {
-        String entityKey = instance.normalizeEntityKey(entity)
-        String qualifier = instance.normalizeQualifier(connectionName)
-        Map<String, String> scopes = CONNECTION_SCOPES.get()
-        if (ConnectionSource.DEFAULT == qualifier && (scopes == null || !scopes.containsKey(entityKey))) {
-            // Nothing to undo: outside every block the entity's operations are on its default connection already.
+        return runInScope(instance.normalizeEntityKey(entity), instance.normalizeQualifier(connectionName), callable)
+    }
+
+    /**
+     * Runs the callable with the unqualified operations on every entity mapped to the named connection routed to
+     * it, as {@link #withConnectionScope(Class, String, Closure)} does for one entity. An entity that is not mapped
+     * to the connection keeps its own. This is what a transaction opened for a connection, as a method annotated
+     * {@code @Transactional(connection = 'books')} opens one, promises for the calls made inside it.
+     *
+     * @param connectionName The connection
+     * @param callable What to run
+     * @return What the callable returns
+     */
+    static <T> T withConnectionScope(String connectionName, Closure<T> callable) {
+        return runInScope(null, instance.normalizeQualifier(connectionName), callable)
+    }
+
+    private static <T> T runInScope(String entityKey, String qualifier, Closure<T> callable) {
+        Deque<ConnectionScope> scopes = CONNECTION_SCOPES.get()
+        if (ConnectionSource.DEFAULT == qualifier && scopes == null) {
+            // Nothing to undo: outside every block the operations are on their default connections already.
             return callable.call()
         }
         if (scopes == null) {
-            scopes = new HashMap<String, String>()
+            scopes = new ArrayDeque<ConnectionScope>()
             CONNECTION_SCOPES.set(scopes)
         }
-        String previous = scopes.put(entityKey, qualifier)
+        scopes.push(new ConnectionScope(entityKey, qualifier))
         try {
             return callable.call()
         }
         finally {
-            if (previous != null) {
-                scopes.put(entityKey, previous)
-            }
-            else {
-                scopes.remove(entityKey)
-                if (scopes.isEmpty()) {
-                    CONNECTION_SCOPES.remove()
-                }
+            scopes.pop()
+            if (scopes.isEmpty()) {
+                CONNECTION_SCOPES.remove()
             }
         }
     }
 
     /**
-     * @return the connection a {@link #withConnectionScope} block routes the entity's unqualified operations to,
-     * or {@code null} when none is running for it on this thread
+     * @return the connection that the innermost {@link #withConnectionScope} block applying to the entity routes
+     * its unqualified operations to, or {@code null} when none is running for it on this thread
      */
     private static String scopedConnection(String normalizedClassName) {
-        Map<String, String> scopes = CONNECTION_SCOPES.get()
-        return scopes == null ? null : scopes.get(normalizedClassName)
+        Deque<ConnectionScope> scopes = CONNECTION_SCOPES.get()
+        if (scopes == null) {
+            return null
+        }
+        for (ConnectionScope scope : scopes) {
+            boolean applies = scope.entityKey == null ?
+                    instance.isMappedToConnection(normalizedClassName, scope.qualifier) :
+                    scope.entityKey == normalizedClassName
+            if (applies) {
+                return scope.qualifier
+            }
+        }
+        return null
+    }
+
+    /**
+     * Whether a block for every entity on the connection covers this one. A block for the default connection undoes
+     * an enclosing one for every entity; any other covers only the entities mapped to its connection, so that none
+     * is sent to a connection it has no mapping for.
+     */
+    private boolean isMappedToConnection(String normalizedClassName, String qualifier) {
+        if (ConnectionSource.DEFAULT == qualifier) {
+            return true
+        }
+        Map<String, Datastore> mapped = entityDatastores.get(normalizedClassName)
+        return mapped != null && mapped.containsKey(qualifier)
+    }
+
+    /**
+     * One {@link #withConnectionScope} block: the entity it routes, by normalized name, or {@code null} for every
+     * entity mapped to its connection.
+     */
+    private static final class ConnectionScope {
+
+        final String entityKey
+
+        final String qualifier
+
+        ConnectionScope(String entityKey, String qualifier) {
+            this.entityKey = entityKey
+            this.qualifier = qualifier
+        }
     }
 
     GormStaticApi resolveStaticApi(Class entityClass) {

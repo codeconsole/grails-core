@@ -169,7 +169,8 @@ public @interface Transactional {
     Class<? extends ConnectionSourcesProvider>[] datastore() default {};
 
     /**
-     * The connection to use by default
+     * The connection to use by default. For a connection other than the default, the calls made in the method on
+     * the domain classes mapped to that connection, such as {@code Book.list()} or {@code book.save()}, use it too.
      */
     String connection() default ConnectionSource.DEFAULT;
 

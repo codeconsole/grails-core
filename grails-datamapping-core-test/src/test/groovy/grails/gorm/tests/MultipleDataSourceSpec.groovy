@@ -24,6 +24,7 @@ import spock.lang.Specification
 import grails.gorm.DetachedCriteria
 import grails.gorm.annotation.Entity
 import grails.gorm.services.Service
+import grails.gorm.transactions.TransactionService
 import grails.gorm.transactions.Transactional
 import org.grails.datastore.gorm.GormRegistry
 import org.grails.datastore.mapping.core.connections.ConnectionSource
@@ -34,7 +35,7 @@ class MultipleDataSourceSpec extends Specification {
     @AutoCleanup
     SimpleMapDatastore datastore = new SimpleMapDatastore(
             [ConnectionSource.DEFAULT, 'one'],
-            Player
+            Player, Coach
     )
 
     void 'test multiple datasource support with in-memory GORM'() {
@@ -141,6 +142,41 @@ class MultipleDataSourceSpec extends Specification {
         Player.count() == 1
     }
 
+    void 'test the class\'s own calls inside a method annotated @Transactional with a connection use it'() {
+        given:
+        new Player(name: 'Giggs').save(flush: true)
+        Player.one.save(new Player(name: 'Neville'), [flush: true])
+        def service = new PlayerService()
+
+        when:
+        service.savePlayerInOne('Irwin')
+
+        then:
+        Player.one.count() == 2
+        Player.count() == 1
+        service.countPlayersInOne() == 2
+    }
+
+    void 'test a class not mapped to the connection keeps its own inside such a method'() {
+        given:
+        Player.one.save(new Player(name: 'Neville'), [flush: true])
+        new Coach(name: 'Ferguson').save(flush: true)
+
+        expect:
+        new PlayerService().countPlayersAndCoachesInOne() == [1, 1]
+    }
+
+    void 'test the class\'s own calls inside the transaction service of a named connection use it'() {
+        given:
+        new Player(name: 'Giggs').save(flush: true)
+        Player.one.save(new Player(name: 'Neville'), [flush: true])
+        Player.one.save(new Player(name: 'Irwin'), [flush: true])
+
+        expect:
+        datastore.getDatastoreForConnection('one').getService(TransactionService).withTransaction { Player.count() } == 2
+        datastore.getService(TransactionService).withTransaction { Player.count() } == 1
+    }
+
     void 'test delete on data service'() {
         given:
         def dataService = datastore.getService(IPlayerService)
@@ -170,6 +206,12 @@ class Player {
     }
 }
 
+@Entity
+class Coach {
+
+    String name
+}
+
 @Transactional
 class PlayerService {
 
@@ -185,6 +227,21 @@ class PlayerService {
                 .backingMap[Player.name]
                 .size() == 1
         Player.one.count()
+    }
+
+    @Transactional('one')
+    Player savePlayerInOne(String name) {
+        new Player(name: name).save(flush: true)
+    }
+
+    @Transactional('one')
+    Number countPlayersInOne() {
+        Player.count()
+    }
+
+    @Transactional('one')
+    List<Number> countPlayersAndCoachesInOne() {
+        [Player.count(), Coach.count()]
     }
 
     Number countPlayers() {

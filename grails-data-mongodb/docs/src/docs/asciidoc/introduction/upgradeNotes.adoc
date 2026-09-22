@@ -112,7 +112,7 @@ The connection details are the exception, since the supplied client is already c
 
 ==== Calls on a Class Inside a Named Connection's Session or Transaction Use That Connection
 
-Inside `Book.moreBooks.withTransaction { }`, `Book.moreBooks.withNewSession { }` or a `withConnection` block, the calls on `Book` itself, such as `Book.list()` or `book.save()`, now use that connection. Previously they used the default connection, so a document saved there was written to the default database. Code that reached the default connection from inside such a block by calling the class directly should name it, as in ``Book.'default'.list()``.
+Inside `Book.moreBooks.withTransaction { }`, `Book.moreBooks.withNewSession { }`, a `withConnection` block or a method annotated `@Transactional(connection = 'moreBooks')`, the calls on `Book` itself, such as `Book.list()` or `book.save()`, now use that connection. Previously they used the default connection, so a document saved there was written to the default database. Code that reached the default connection from inside such a block by calling the class directly should name it, as in ``Book.'default'.list()``.
 
 ==== MongoClient Lifecycle for an Externally-Supplied Client
 
