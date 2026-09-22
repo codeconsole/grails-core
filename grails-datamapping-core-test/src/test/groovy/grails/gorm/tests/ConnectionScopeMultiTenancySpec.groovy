@@ -66,6 +66,12 @@ class ConnectionScopeMultiTenancySpec extends Specification {
         GormRegistry.withConnectionScope(ScopedTenantBook, ConnectionSource.DEFAULT) { ScopedTenantBook.count() } == 2
     }
 
+    void 'test a new session for a tenant runs the calls on the class for that tenant'() {
+        expect: 'the tenant named here, not the one the resolver reports'
+        GormRegistry.findStaticApi(ScopedTenantBook).withNewSession('bar') { ScopedTenantBook.count() } == 1
+        ScopedTenantBook.count() == 2
+    }
+
     void 'test a scope takes precedence over a tenant switched to inside it, as a named connection does'() {
         expect:
         GormRegistry.withConnectionScope(ScopedTenantBook, 'bar') {

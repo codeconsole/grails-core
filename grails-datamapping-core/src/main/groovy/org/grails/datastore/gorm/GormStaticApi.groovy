@@ -1036,13 +1036,28 @@ class GormStaticApi<D> extends AbstractGormApi<D> implements GormAllOperations<D
         withId(ConnectionSource.DEFAULT, callable)
     }
 
+    /**
+     * Runs the callable in a new session for the tenant, with the tenant bound, so that the calls it makes on the
+     * class reach the tenant named here rather than the one that resolving would find.
+     *
+     * @param tenantId The tenant
+     * @param callable What to run
+     * @return What the callable returns
+     */
     def <T1> T1 withNewSession(Serializable tenantId, Closure<T1> callable) {
         DatastoreResolver resolver = new DatastoreResolver() {
             @Override Datastore resolve() { registry.apiResolver.findDatastore(persistentClass, tenantId.toString()) }
         }
         Datastore tenantDatastore = resolver.resolve()
-        DatastoreUtils.executeWithNewSession(tenantDatastore, { Session session ->
-            return (T1) callable.call(session)
-        } as SessionCallback<T1>)
+        Closure<T1> inNewSession = { ->
+            DatastoreUtils.executeWithNewSession(tenantDatastore, { Session session ->
+                return (T1) callable.call(session)
+            } as SessionCallback<T1>)
+        }
+        Datastore defaultDatastore = registry.getDatastore(persistentClass.name, ConnectionSource.DEFAULT)
+        if (defaultDatastore instanceof MultiTenantCapableDatastore) {
+            return (T1) Tenants.withId((MultiTenantCapableDatastore) defaultDatastore, tenantId, inNewSession)
+        }
+        return inNewSession.call()
     }
 }
