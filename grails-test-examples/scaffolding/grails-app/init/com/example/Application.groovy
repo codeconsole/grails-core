@@ -24,6 +24,9 @@ import grails.boot.config.GrailsAutoConfiguration
 import groovy.transform.CompileStatic
 import org.grails.datastore.gorm.timestamp.AuditorAware
 import org.springframework.context.annotation.Bean
+import org.springframework.security.config.Customizer
+import org.springframework.security.config.annotation.web.builders.HttpSecurity
+import org.springframework.security.web.SecurityFilterChain
 
 @CompileStatic
 class Application extends GrailsAutoConfiguration {
@@ -34,5 +37,23 @@ class Application extends GrailsAutoConfiguration {
     @Bean
     AuditorAware<String> auditorAware() {
         return new SpringSecurityAuditorAware()
+    }
+
+    /**
+     * Spring Boot's default chain, with the static resources the browser fetches on its own
+     * (the favicon, the assets) permitted. Left to the default, a browser's background
+     * favicon fetch is bounced through the login page, which starts a session of its own
+     * whenever the cookie it carries is stale (a login just changed the session id, a logout
+     * just invalidated it) and so overwrites the session the user has just signed in to.
+     */
+    @Bean
+    SecurityFilterChain securityFilterChain(HttpSecurity http) {
+        http.authorizeHttpRequests { requests ->
+            requests.requestMatchers('/favicon.ico', '/assets/**').permitAll()
+                    .anyRequest().authenticated()
+        }
+        http.formLogin(Customizer.withDefaults())
+        http.httpBasic(Customizer.withDefaults())
+        return http.build()
     }
 }
