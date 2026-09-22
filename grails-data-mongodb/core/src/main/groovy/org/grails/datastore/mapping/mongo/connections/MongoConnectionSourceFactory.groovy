@@ -34,7 +34,6 @@ import org.springframework.core.env.PropertyResolver
 import org.grails.datastore.mapping.core.connections.AbstractConnectionSourceFactory
 import org.grails.datastore.mapping.core.connections.ConnectionSource
 import org.grails.datastore.mapping.core.connections.ConnectionSourceSettings
-import org.grails.datastore.mapping.core.connections.DefaultConnectionSource
 import org.grails.datastore.mapping.mongo.config.MongoSettings
 
 /**
@@ -111,7 +110,7 @@ class MongoConnectionSourceFactory extends AbstractConnectionSourceFactory<Mongo
             customizer.customize(builder)
         }
         MongoClient client = MongoClients.create(builder.build())
-        return new DefaultConnectionSource<MongoClient, MongoConnectionSourceSettings>(name, client, settings)
+        return new MongoConnectionSource(name, client, settings)
     }
 
     @Override
