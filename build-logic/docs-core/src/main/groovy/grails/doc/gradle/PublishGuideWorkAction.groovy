@@ -25,10 +25,11 @@ import grails.doc.UserGuideBuilder
 /**
  * Renders the HTML user guide in the worker process {@link PublishGuideTask} forks.
  *
- * <p>Rendering starts a JRuby runtime for AsciidoctorJ, which allocates well over a gigabyte
- * before the first page is written. That belongs in a short-lived JVM rather than in the
- * Gradle daemon, which by this point in the build is already holding everything the rest of
- * the build produced.</p>
+ * <p>Rendering starts a JRuby runtime for AsciidoctorJ, which settles under a gigabyte
+ * resident for the English guide. That belongs in a worker process rather than in the Gradle
+ * daemon, which by this point in the build is already holding everything the rest of the
+ * build produced. The worker is stopped when the build session ends, not when the task
+ * finishes - see {@link PublishGuideTask}.</p>
  */
 abstract class PublishGuideWorkAction implements WorkAction<PublishGuideWorkParameters> {
 

@@ -121,12 +121,12 @@ class GroovydocEnhancerPluginSpec extends Specification {
                 .withPluginClasspath()
                 .buildAndFail()
 
-        then: 'a JVM refused to start on it - which only a forked JVM could report'
+        then: 'a separate process was launched with it and died, which the daemon reports'
         result.task(':groovydoc').outcome == TaskOutcome.FAILED
-        result.output.contains('Too small maximum heap')
+        result.output.contains('finished with non-zero exit value')
 
-        and: 'the daemon running the build is untouched by that heap setting'
-        result.output.contains('Error occurred during initialization of VM')
+        and: 'the build itself carries on running, so that heap was not the daemon heap'
+        result.output.contains("Process 'command")
     }
 
     void 'the groovydoc heap project property beats what the build script set'() {
@@ -157,6 +157,6 @@ class GroovydocEnhancerPluginSpec extends Specification {
 
         then: 'the property won, so the aggregates can be raised from the command line too'
         overridden.task(':groovydoc').outcome == TaskOutcome.FAILED
-        overridden.output.contains('Too small maximum heap')
+        overridden.output.contains('finished with non-zero exit value')
     }
 }

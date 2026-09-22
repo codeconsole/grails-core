@@ -30,6 +30,7 @@ import org.gradle.api.model.ObjectFactory
 import org.gradle.api.provider.ListProperty
 import org.gradle.api.provider.MapProperty
 import org.gradle.api.provider.Property
+import org.gradle.api.provider.Provider
 import org.gradle.api.tasks.CacheableTask
 import org.gradle.api.tasks.Input
 import org.gradle.api.tasks.InputDirectory
@@ -49,6 +50,12 @@ import org.gradle.workers.WorkerExecutor
  * <p>The guide is rendered in a forked worker process: AsciidoctorJ boots a JRuby runtime,
  * whose burst of allocation would otherwise land in the Gradle daemon on top of everything
  * else the build is holding.</p>
+ *
+ * <p>A process-isolation worker is pooled, so it is stopped when the build session ends, not
+ * when this task's action returns - it can still be resident while the aggregate groovydoc
+ * runs. It is out of the daemon, which is the point, and it is not carried over into the next
+ * build. A worker rather than a plain forked JVM because the guide is build logic: it runs on
+ * the Groovy that Gradle embeds, which a worker inherits and a bare JVM would have to pin.</p>
  */
 @CacheableTask
 class PublishGuideTask extends DefaultTask {
@@ -105,8 +112,9 @@ class PublishGuideTask extends DefaultTask {
     /**
      * Maximum heap of the worker process the guide is rendered in. The English guide settles
      * under a gigabyte resident; the default leaves room for it to grow. A
-     * {@code guideMaxHeapSize} project property beats whatever is set here, so a guide that
-     * will not fit can be got moving from the command line.
+     * {@code guideMaxHeapSize} project property beats whatever is set here - see
+     * {@link #resolveMaxHeapSize} - so a guide that will not fit can be got moving from the
+     * command line.
      */
     @Internal
     final Property<String> maxHeapSize
@@ -120,10 +128,12 @@ class PublishGuideTask extends DefaultTask {
     final Property<Boolean> verboseAnt
 
     private final WorkerExecutor workerExecutor
+    private final Provider<String> maxHeapSizeOverride
 
     @Inject
     PublishGuideTask(ObjectFactory objects, Project project, WorkerExecutor workerExecutor) {
         this.workerExecutor = workerExecutor
+        maxHeapSizeOverride = project.providers.gradleProperty('guideMaxHeapSize')
         language = objects.property(String).convention(null as String)
         sourceRepo = objects.property(String)
         properties = objects.mapProperty(String, Object).convention([:])
@@ -135,8 +145,7 @@ class PublishGuideTask extends DefaultTask {
         resourcesDir = objects.directoryProperty().convention(project.layout.projectDirectory.dir('resources'))
         macros = objects.listProperty(String).convention([])
         targetDir = objects.directoryProperty().convention(project.layout.buildDirectory.dir('docs'))
-        maxHeapSize = objects.property(String)
-                .convention(project.providers.gradleProperty('guideMaxHeapSize').orElse('1500m'))
+        maxHeapSize = objects.property(String).convention('1500m')
         verboseAnt = objects.property(Boolean).convention(project.provider { logger.infoEnabled })
         group = 'documentation'
     }
@@ -149,12 +158,21 @@ class PublishGuideTask extends DefaultTask {
         }
     }
 
+    /**
+     * A {@code guideMaxHeapSize} project property beats whatever the build script set, the
+     * same way {@code groovydocMaxHeapSize} does for groovydoc. A convention would be the
+     * other way round: it only applies while nothing has been set explicitly.
+     */
+    protected String resolveMaxHeapSize() {
+        maxHeapSizeOverride.getOrElse(maxHeapSize.get())
+    }
+
     @TaskAction
     void publishGuide() {
         // Everything is read into locals first. Both the fork options and the work parameters
         // have members of their own named like this task's properties - maxHeapSize,
         // properties - and inside the configuration closures those would win.
-        String workerHeap = this.maxHeapSize.get()
+        String workerHeap = resolveMaxHeapSize()
         String languageValue = this.language.getOrNull()
         String sourceRepoValue = this.sourceRepo.getOrNull()
         Boolean asciidocValue = this.asciidoc.get()
