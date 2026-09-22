@@ -26,4 +26,4 @@ Book.withConnection("moreBooks") {
 }
 ----
 
-Every operation on `Book` in the closure uses the alternate connection: static methods called on the class, such as `Book.list()` or a dynamic finder, instance methods such as `book.save()`, and the methods the closure calls without naming the class. An operation that names its own connection, such as `Book.moreBooks.count()`, keeps it. Once the closure finishes, including by throwing an exception, GORM switches back to the default connection automatically.
+Every operation on `Book` in the closure, on the thread that calls `withConnection`, uses the alternate connection: static methods called on the class, such as `Book.list()` or a dynamic finder, instance methods such as `book.save()`, and the methods the closure calls without naming the class. An operation that names its own connection, such as `Book.moreBooks.count()`, keeps it. For a multi-tenant domain class the block's connection takes precedence over the current tenant, as a connection named explicitly does. Once the closure finishes, including by throwing an exception, GORM switches back to the default connection automatically.

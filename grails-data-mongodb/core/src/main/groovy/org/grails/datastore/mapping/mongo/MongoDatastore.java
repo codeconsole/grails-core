@@ -1998,7 +1998,7 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
         MongoConnectionSourceSettings settings = buildConnectionSourceSettings(configuration);
         settings.url(null);
         settings.setDatabaseName(mappingContext.getDefaultDatabaseName());
-        // One GORM owns can be replaced after a restore; see start().
+        // One that GORM owns can be replaced after a restore; see start().
         ConnectionSource<MongoClient, MongoConnectionSourceSettings> defaultConnectionSource = closeable ?
                 new MongoConnectionSource(ConnectionSource.DEFAULT, mongoClient, settings) :
                 new DefaultConnectionSource<>(ConnectionSource.DEFAULT, mongoClient, settings, false);
