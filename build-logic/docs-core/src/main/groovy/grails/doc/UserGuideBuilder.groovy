@@ -20,6 +20,11 @@ package grails.doc
 
 import java.nio.file.Files
 
+import groovy.ant.AntBuilder
+
+import org.apache.tools.ant.BuildLogger
+import org.apache.tools.ant.Project
+
 import grails.doc.macros.HiddenMacro
 
 /**
@@ -64,6 +69,12 @@ class UserGuideBuilder {
      */
     List<String> macroClassNames = []
 
+    /**
+     * Whether Ant's own INFO messages - every mkdir, copy and unjar the publisher does - are
+     * printed. Gradle routed them to its hidden INFO level when this ran in the daemon.
+     */
+    boolean verboseAnt = false
+
     void build() {
         Properties combinedProperties = new Properties()
 
@@ -90,6 +101,7 @@ class UserGuideBuilder {
         apiDir.mkdirs()
 
         def publisher = new DocPublisher(sourceDir, apiDir)
+        publisher.ant = antBuilder()
         publisher.asciidoc = asciidoc
         publisher.workDir = workingDir
         publisher.apiDir = apiDir
@@ -139,5 +151,19 @@ class UserGuideBuilder {
             Thread.currentThread().contextClassLoader = oldClassLoader
             workingDir.deleteDir()
         }
+    }
+
+    /**
+     * DocPublisher makes its own AntBuilder when given none, and a bare one logs at INFO.
+     */
+    private AntBuilder antBuilder() {
+        AntBuilder ant = new AntBuilder()
+        int level = verboseAnt ? Project.MSG_INFO : Project.MSG_WARN
+        ant.antProject.buildListeners.each { listener ->
+            if (listener instanceof BuildLogger) {
+                listener.messageOutputLevel = level
+            }
+        }
+        ant
     }
 }

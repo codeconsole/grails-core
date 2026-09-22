@@ -53,4 +53,7 @@ interface PublishGuideWorkParameters extends WorkParameters {
      * Macro instances themselves cannot be handed to another process.
      */
     ListProperty<String> getMacroClassNames()
+
+    /** Whether Ant's own INFO messages are printed. */
+    Property<Boolean> getVerboseAnt()
 }

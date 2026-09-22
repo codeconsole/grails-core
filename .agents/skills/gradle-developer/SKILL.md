@@ -555,8 +555,8 @@ DO_NOT_CACHE_TESTS=1 ./gradlew :module:test
 ./gradlew :module:test -PmaxTestParallel=1
 ./gradlew :module:test -PtestBisect
 
-# Memory
-export GRADLE_OPTS='-Xms1G -Xmx4G'
+# Memory - org.gradle.jvmargs sizes the daemon, so a bare -Xmx here is ignored
+export GRADLE_OPTS='-Dorg.gradle.jvmargs=-Xmx4G'
 ```
 
 Work in `grails-gradle` or `grails-forge` only with **that** directory's `./gradlew`.

@@ -121,8 +121,42 @@ class GroovydocEnhancerPluginSpec extends Specification {
                 .withPluginClasspath()
                 .buildAndFail()
 
-        then: 'the groovydoc task fails on that heap while the build itself keeps running'
+        then: 'a JVM refused to start on it - which only a forked JVM could report'
         result.task(':groovydoc').outcome == TaskOutcome.FAILED
-        result.output.contains('Process')
+        result.output.contains('Too small maximum heap')
+
+        and: 'the daemon running the build is untouched by that heap setting'
+        result.output.contains('Error occurred during initialization of VM')
+    }
+
+    void 'the groovydoc heap project property beats what the build script set'() {
+        given: 'a build script that asks for a heap any JVM can start with'
+        writeGroovydocProject()
+        new File(projectDir, 'build.gradle') << '''
+            groovydocEnhancer {
+                maxHeapSize = '512m'
+            }
+        '''
+
+        when: 'the build script value is used'
+        def configured = GradleRunner.create()
+                .withProjectDir(projectDir)
+                .withArguments('groovydoc')
+                .withPluginClasspath()
+                .build()
+
+        then: 'groovydoc runs on it'
+        configured.task(':groovydoc').outcome == TaskOutcome.SUCCESS
+
+        when: 'the project property asks for one no JVM can start with'
+        def overridden = GradleRunner.create()
+                .withProjectDir(projectDir)
+                .withArguments('groovydoc', '--rerun-tasks', '-PgroovydocMaxHeapSize=1m')
+                .withPluginClasspath()
+                .buildAndFail()
+
+        then: 'the property won, so the aggregates can be raised from the command line too'
+        overridden.task(':groovydoc').outcome == TaskOutcome.FAILED
+        overridden.output.contains('Too small maximum heap')
     }
 }

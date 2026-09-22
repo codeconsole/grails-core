@@ -47,8 +47,8 @@ import org.gradle.workers.WorkerExecutor
  * Gradle task for generating a gdoc-based HTML user guide.
  *
  * <p>The guide is rendered in a forked worker process: AsciidoctorJ boots a JRuby runtime,
- * which is by far the largest single allocation in the build and would otherwise land in the
- * Gradle daemon on top of everything else the build is holding.</p>
+ * whose burst of allocation would otherwise land in the Gradle daemon on top of everything
+ * else the build is holding.</p>
  */
 @CacheableTask
 class PublishGuideTask extends DefaultTask {
@@ -102,9 +102,22 @@ class PublishGuideTask extends DefaultTask {
     @OutputDirectory
     final DirectoryProperty targetDir
 
-    /** Maximum heap of the worker process the guide is rendered in. */
+    /**
+     * Maximum heap of the worker process the guide is rendered in. The English guide settles
+     * under a gigabyte resident; the default leaves room for it to grow. A
+     * {@code guideMaxHeapSize} project property beats whatever is set here, so a guide that
+     * will not fit can be got moving from the command line.
+     */
     @Internal
     final Property<String> maxHeapSize
+
+    /**
+     * Whether Ant's own INFO messages are printed. Gradle routed them to its hidden INFO level
+     * when the guide ran in the daemon; nothing routes them from a worker process, so they are
+     * off unless the build asked for INFO logging.
+     */
+    @Internal
+    final Property<Boolean> verboseAnt
 
     private final WorkerExecutor workerExecutor
 
@@ -122,7 +135,9 @@ class PublishGuideTask extends DefaultTask {
         resourcesDir = objects.directoryProperty().convention(project.layout.projectDirectory.dir('resources'))
         macros = objects.listProperty(String).convention([])
         targetDir = objects.directoryProperty().convention(project.layout.buildDirectory.dir('docs'))
-        maxHeapSize = objects.property(String).convention('1g')
+        maxHeapSize = objects.property(String)
+                .convention(project.providers.gradleProperty('guideMaxHeapSize').orElse('1500m'))
+        verboseAnt = objects.property(Boolean).convention(project.provider { logger.infoEnabled })
         group = 'documentation'
     }
 
@@ -150,6 +165,7 @@ class PublishGuideTask extends DefaultTask {
         Directory resourcesDirValue = this.resourcesDir.get()
         Directory targetDirValue = this.targetDir.get()
         List<String> macroNames = this.macros.get()
+        Boolean verboseAntValue = this.verboseAnt.get()
 
         WorkQueue queue = workerExecutor.processIsolation { spec ->
             spec.forkOptions { options -> options.setMaxHeapSize(workerHeap) }
@@ -165,6 +181,7 @@ class PublishGuideTask extends DefaultTask {
             params.resourcesDir.set(resourcesDirValue)
             params.targetDir.set(targetDirValue)
             params.macroClassNames.set(macroNames)
+            params.verboseAnt.set(verboseAntValue)
         }
     }
 }

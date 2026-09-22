@@ -31,6 +31,7 @@
 //   arg.<name>          one attribute of the groovydoc Ant task
 //   link.<n>.packages   package prefix of the nth external javadoc mapping
 //   link.<n>.href       and the site it maps to, in declaration order
+//   verbose             whether Ant prints its own INFO messages
 
 Properties params = new Properties()
 new File(args[0]).withInputStream { input -> params.load(input) }
@@ -51,11 +52,15 @@ for (int index = 0; params.containsKey("link.${index}.packages".toString()); ind
 
 groovy.ant.AntBuilder ant = new groovy.ant.AntBuilder()
 
-// Gradle routes Ant's INFO messages to its own INFO level, which is hidden unless the build
-// asks for it. Nothing routes them here, so drop to WARN to keep the console as it was.
+// Gradle routed Ant's INFO messages to its own INFO level, hidden unless the build asked for
+// it. Nothing routes them out of this JVM, so mirror that: quiet by default, and INFO when
+// the build is running at INFO or finer, which is where those diagnostics used to show up.
+int messageLevel = Boolean.parseBoolean(params.getProperty('verbose'))
+        ? org.apache.tools.ant.Project.MSG_INFO
+        : org.apache.tools.ant.Project.MSG_WARN
 ant.antProject.buildListeners.each { listener ->
     if (listener instanceof org.apache.tools.ant.BuildLogger) {
-        listener.messageOutputLevel = org.apache.tools.ant.Project.MSG_WARN
+        listener.messageOutputLevel = messageLevel
     }
 }
 

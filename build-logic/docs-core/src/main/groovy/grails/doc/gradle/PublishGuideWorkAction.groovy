@@ -46,7 +46,8 @@ abstract class PublishGuideWorkAction implements WorkAction<PublishGuideWorkPara
                 propertiesFiles: params.propertiesFiles.files.toList(),
                 properties: params.properties.get(),
                 propertiesWithFilePaths: params.propertiesWithFilePaths.get(),
-                macroClassNames: params.macroClassNames.get()
+                macroClassNames: params.macroClassNames.get(),
+                verboseAnt: params.verboseAnt.getOrElse(false)
         ).build()
     }
 }

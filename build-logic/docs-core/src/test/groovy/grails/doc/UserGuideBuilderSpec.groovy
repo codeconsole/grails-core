@@ -111,6 +111,61 @@ class UserGuideBuilderSpec extends Specification {
         new File(targetDir, 'guide/introduction.html').exists()
     }
 
+    void 'keeps Ant quiet unless asked, so a worker process does not flood the console'() {
+        given: 'a guide whose publisher will mkdir, copy and unjar its resources'
+        File sourceDir = writeGuideSource()
+        File resourcesDir = writeResources()
+        File targetDir = new File(workspace, 'guide-output')
+        PrintStream realOut = System.out
+        ByteArrayOutputStream captured = new ByteArrayOutputStream()
+
+        when:
+        System.out = new PrintStream(captured, true)
+        try {
+            new UserGuideBuilder(
+                    sourceDir: sourceDir,
+                    resourcesDir: resourcesDir,
+                    targetDir: targetDir
+            ).build()
+        }
+        finally {
+            System.out = realOut
+        }
+
+        then: "Ant's own INFO chatter stays out of the build output"
+        !captured.toString().contains('[mkdir]')
+        !captured.toString().contains('[copy]')
+
+        and: 'the guide was still written'
+        new File(targetDir, 'index.html').exists()
+    }
+
+    void 'prints Ant INFO messages when the build asked for them'() {
+        given: 'the same guide, with verbose Ant logging'
+        File sourceDir = writeGuideSource()
+        File resourcesDir = writeResources()
+        File targetDir = new File(workspace, 'guide-output')
+        PrintStream realOut = System.out
+        ByteArrayOutputStream captured = new ByteArrayOutputStream()
+
+        when:
+        System.out = new PrintStream(captured, true)
+        try {
+            new UserGuideBuilder(
+                    sourceDir: sourceDir,
+                    resourcesDir: resourcesDir,
+                    targetDir: targetDir,
+                    verboseAnt: true
+            ).build()
+        }
+        finally {
+            System.out = realOut
+        }
+
+        then: 'the diagnostics are available when they are wanted'
+        captured.toString().contains('[mkdir]')
+    }
+
     void 'empties the target directory before writing'() {
         given: 'a target directory holding output from an earlier build'
         File sourceDir = writeGuideSource()

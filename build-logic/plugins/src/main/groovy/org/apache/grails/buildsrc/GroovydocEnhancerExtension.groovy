@@ -97,9 +97,10 @@ class GroovydocEnhancerExtension {
      * JVM of its own keeps that peak out of the Gradle daemon and gives it back to the OS as
      * soon as the run ends.</p>
      *
-     * <p>Defaults to {@code 1g}, which covers a single module. The aggregates over every
-     * module need more and raise it themselves; the {@code groovydocMaxHeapSize} project
-     * property overrides it globally.</p>
+     * <p>Defaults to {@code 1g}, which covers a single module; the aggregates over every
+     * module raise it. A {@code groovydocMaxHeapSize} project property beats whatever is set
+     * here, so a documentation run that will not fit can be got moving from the command line
+     * without editing a build script.</p>
      */
     final Property<String> maxHeapSize
 
@@ -120,10 +121,6 @@ class GroovydocEnhancerExtension {
         javaVersionEnabled = objects.property(Boolean).convention(true)
         useAntBuilder = objects.property(Boolean).convention(true)
         footer = objects.property(String).convention('')
-        maxHeapSize = objects.property(String).convention(
-                project.provider {
-                    GradleUtils.findProperty(project, 'groovydocMaxHeapSize')?.toString() ?: '1g'
-                }
-        )
+        maxHeapSize = objects.property(String).convention('1g')
     }
 }

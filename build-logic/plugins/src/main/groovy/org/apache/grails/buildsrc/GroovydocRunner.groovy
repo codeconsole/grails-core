@@ -43,23 +43,31 @@ import org.gradle.process.ExecOperations
 @CompileStatic
 abstract class GroovydocRunner {
 
+    private static final String SCRIPT_NAME = 'groovydoc-runner.groovy'
+
     @Inject
     abstract ExecOperations getExecOperations()
 
     /**
      * @param classpath the groovydoc tooling and the documented module's own classpath
      * @param workingDir a directory this run may write its parameter and script files to
+     * @param verbose whether the forked Ant prints its own INFO messages
      */
     void run(FileCollection classpath, String maxHeapSize, File workingDir,
-             Map<String, String> antArgs, List<Map<String, String>> links) {
+             Map<String, String> antArgs, List<Map<String, String>> links, boolean verbose) {
         workingDir.mkdirs()
 
-        File scriptFile = new File(workingDir, 'groovydoc-runner.groovy')
-        scriptFile.withOutputStream { output ->
-            output << GroovydocRunner.getResourceAsStream('groovydoc-runner.groovy')
+        File scriptFile = new File(workingDir, SCRIPT_NAME)
+        InputStream script = GroovydocRunner.getResourceAsStream(SCRIPT_NAME)
+        if (script == null) {
+            throw new IllegalStateException("${SCRIPT_NAME} is missing from the plugin classpath")
+        }
+        script.withStream { input ->
+            scriptFile.withOutputStream { output -> output << input }
         }
 
         Properties params = new Properties()
+        params.setProperty('verbose', String.valueOf(verbose))
         antArgs.each { String name, String value -> params.setProperty("arg.${name}".toString(), value) }
         links.eachWithIndex { Map<String, String> link, int index ->
             params.setProperty("link.${index}.packages".toString(), link.get('packages'))
