@@ -25,6 +25,7 @@ import spock.util.environment.RestoreSystemProperties
 import grails.gorm.MultiTenant
 import grails.gorm.annotation.Entity
 import grails.gorm.multitenancy.Tenants
+import grails.gorm.transactions.Transactional
 import org.grails.datastore.gorm.GormRegistry
 import org.grails.datastore.mapping.config.Settings
 import org.grails.datastore.mapping.core.DatastoreUtils
@@ -72,6 +73,14 @@ class ConnectionScopeMultiTenancySpec extends Specification {
         ScopedTenantBook.count() == 2
     }
 
+    void 'test a transaction opened for a connection leaves a multi-tenant class to its tenant'() {
+        expect: 'the current tenant, foo, not the connection the transaction was opened for'
+        new TenantBookService().countInTransactionForBar() == 2
+
+        and: 'naming the connection on the class still routes it'
+        ScopedTenantBook.bar.count() == 1
+    }
+
     void 'test a scope takes precedence over a tenant switched to inside it, as a named connection does'() {
         expect:
         GormRegistry.withConnectionScope(ScopedTenantBook, 'bar') {
@@ -86,4 +95,12 @@ class ConnectionScopeMultiTenancySpec extends Specification {
 @Entity
 class ScopedTenantBook implements MultiTenant<ScopedTenantBook> {
     String title
+}
+
+class TenantBookService {
+
+    @Transactional('bar')
+    Number countInTransactionForBar() {
+        ScopedTenantBook.count()
+    }
 }

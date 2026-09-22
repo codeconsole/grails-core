@@ -585,13 +585,22 @@ class GormRegistry {
      * Whether a block for every entity on the connection covers this one. A block for the default connection undoes
      * an enclosing one for every entity; any other covers only the entities mapped to its connection, so that none
      * is sent to a connection it has no mapping for.
+     *
+     * <p>A multi-tenant entity is never covered: which tenant its operations belong to is what the tenant context
+     * says, and a transaction opened for a connection, or for a tenant's own schema or database, does not answer
+     * that. Naming the connection on the entity still routes it, as it always did.
      */
     private boolean isMappedToConnection(String normalizedClassName, String qualifier) {
         if (ConnectionSource.DEFAULT == qualifier) {
             return true
         }
         Map<String, Datastore> mapped = entityDatastores.get(normalizedClassName)
-        return mapped != null && mapped.containsKey(qualifier)
+        if (mapped == null || !mapped.containsKey(qualifier)) {
+            return false
+        }
+        Datastore defaultDatastore = getDatastoreByString(normalizedClassName, ConnectionSource.DEFAULT)
+        PersistentEntity entity = defaultDatastore?.mappingContext?.getPersistentEntity(normalizedClassName)
+        return entity == null || !entity.isMultiTenant()
     }
 
     /**
