@@ -19,6 +19,7 @@
 package grails.gorm.tests
 
 import grails.gorm.annotation.Entity
+import grails.gorm.transactions.Transactional
 import grails.neo4j.Neo4jEntity
 import org.neo4j.harness.ServerControls
 import spock.lang.AutoCleanup
@@ -110,6 +111,31 @@ class NamedConnectionsSpec extends Specification {
 
         and: "the class's own calls inside that connection's session read from it"
         RoutedCompany.other.withNewSession { RoutedCompany.count() } == 1
+    }
+
+    void "test the class's own calls inside a method annotated @Transactional with a connection use it"() {
+        given:
+        def service = new RoutedCompanyService()
+
+        when:
+        service.saveCompany('Annotated')
+
+        then: "it reaches that connection's server, and is read back through it"
+        RoutedCompany.other.count() == 1
+        RoutedCompany.count() == 0
+        service.countCompanies() == 1
+    }
+}
+
+@Transactional(connection = 'other')
+class RoutedCompanyService {
+
+    RoutedCompany saveCompany(String name) {
+        new RoutedCompany(name: name).save(flush: true)
+    }
+
+    Number countCompanies() {
+        RoutedCompany.count()
     }
 }
 

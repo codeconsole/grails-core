@@ -19,6 +19,7 @@
 package org.grails.datastore.gorm.mongo
 
 import grails.gorm.annotation.Entity
+import grails.gorm.transactions.Transactional
 import grails.mongodb.MongoEntity
 import org.apache.grails.testing.mongo.AutoStartedMongoSpec
 import org.bson.types.ObjectId
@@ -241,6 +242,25 @@ class MultipleConnectionsSpec extends AutoStartedMongoSpec {
         BystanderCompany.test2.DB.drop()
     }
 
+    void "Test the class's own calls inside a method annotated @Transactional with a connection use it"() {
+        setup:
+        ScopedCompany.DB.drop()
+        ScopedCompany.test2.DB.drop()
+        def service = new ScopedCompanyService()
+
+        when:
+        service.saveCompany("Eight")
+
+        then: "it is written to that connection, and read back through it"
+        ScopedCompany.test2.count() == 1
+        ScopedCompany.count() == 0
+        service.countCompanies() == 1
+
+        cleanup:
+        ScopedCompany.DB.drop()
+        ScopedCompany.test2.DB.drop()
+    }
+
     List getDomainClasses() {
         [CompanyA, ScopedCompany, BystanderCompany]
     }
@@ -255,6 +275,18 @@ class CompanyA implements MongoEntity<CompanyA> {
     String name
     static mapping = {
         connections "test1", "test2"
+    }
+}
+
+@Transactional(connection = "test2")
+class ScopedCompanyService {
+
+    ScopedCompany saveCompany(String name) {
+        new ScopedCompany(name: name).save(flush: true)
+    }
+
+    Number countCompanies() {
+        ScopedCompany.count()
     }
 }
 
