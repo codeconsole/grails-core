@@ -312,8 +312,11 @@ class GspCompileStaticConfigSpec extends Specification {
     }
 
     void 'a quote inside an expression in a meta tag does not run the compile out of stack'() {
-        given: 'a page shaped like the one that stopped an application compiling'
-        GroovyPagesTemplateEngine engine = engineFor('grails.views.gsp.compileStatic': true)
+        given: 'a page shaped like the one that stopped an application compiling, under strict so that a name ' +
+                'the scan missed would be reported as undeclared'
+        GroovyPagesTemplateEngine engine = engineFor(
+                'grails.views.gsp.compileStatic': true,
+                'grails.views.gsp.compileStaticConfig.strict': true)
         String source = '''<html><head><meta property="og:title" content="${'Untitled'.replaceAll('"','\\'')}" /></head><body>''' +
                 ('<p class="c" data-x=\'y\'>text with "quotes" and \'more\'</p>\n' * 5000) +
                 '<g:set var="total" value="${1}"/>${total}</body></html>'
