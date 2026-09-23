@@ -41,6 +41,9 @@ class SpringDataSourceConnectionSourceFactorySpec extends Specification {
 
         then:
         connectionSource.source.is(springDataSource)
+
+        cleanup:
+        context.close()
     }
 
     void "create returns the Spring-managed 'dataSource_<name>' bean for a named connection source"() {
@@ -58,6 +61,9 @@ class SpringDataSourceConnectionSourceFactorySpec extends Specification {
 
         then:
         connectionSource.source.is(springDataSource)
+
+        cleanup:
+        context.close()
     }
 
     void "create falls back to building its own DataSource when no matching Spring bean exists"() {
@@ -78,5 +84,6 @@ class SpringDataSourceConnectionSourceFactorySpec extends Specification {
 
         cleanup:
         connectionSource?.close()
+        context.close()
     }
 }

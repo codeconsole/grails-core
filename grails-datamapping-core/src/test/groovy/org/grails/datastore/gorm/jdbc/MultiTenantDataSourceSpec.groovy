@@ -18,6 +18,8 @@
  */
 package org.grails.datastore.gorm.jdbc
 
+import java.sql.Connection
+
 import javax.sql.DataSource
 
 import spock.lang.Specification
@@ -39,7 +41,7 @@ class MultiTenantDataSourceSpec extends Specification {
     void "getConnection delegates to the target data source"() {
         given:
         def target = Mock(DataSource)
-        def connection = Mock(java.sql.Connection)
+        def connection = Mock(Connection)
         def dataSource = new MultiTenantDataSource(target, 'tenantA')
 
         when:
