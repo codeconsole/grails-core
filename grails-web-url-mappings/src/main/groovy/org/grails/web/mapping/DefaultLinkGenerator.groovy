@@ -423,7 +423,7 @@ class DefaultLinkGenerator implements LinkGenerator, PluginManagerAware {
      * @return the controller's logical name, falling back to the domain class name when no single
      *         controller declares it
      */
-    protected String controllerNameForResource(PersistentEntity entity) {
+    private String controllerNameForResource(PersistentEntity entity) {
         String derivedName = entity.getDecapitalizedName()
         if (getControllerNamespacesByName().containsKey(derivedName)) {
             return derivedName
