@@ -4082,4 +4082,11 @@ Book.secondary.withTransaction {
 }
 ----
 
+A method annotated `@Transactional` without a connection, called from inside such a block, does not reset the
+routing. Its transaction is the default connection's, but the calls it makes on a class the block routes still
+reach the block's connection, so those writes join the transaction the block opened rather than the one the
+method began - including under `propagation = REQUIRES_NEW`, whose separate transaction then covers none of
+them. Name the connection, as in `@Transactional(connection = 'secondary')`, where the method's own transaction
+has to cover its writes.
+
 Applications using a single datasource are unaffected.
