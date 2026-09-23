@@ -20,6 +20,7 @@ package org.grails.web.errors
 
 import grails.config.Config
 import grails.core.GrailsApplication
+import grails.web.mapping.UrlMappingInfo
 import grails.web.mapping.UrlMappingsHolder
 import grails.web.mapping.exceptions.UrlMappingException
 import org.apache.grails.core.testing.support.LogCapture
@@ -30,11 +31,54 @@ import org.springframework.beans.factory.BeanNotOfRequiredTypeException
 import org.springframework.beans.factory.NoSuchBeanDefinitionException
 import org.springframework.context.ApplicationContext
 import org.springframework.mock.web.MockHttpServletRequest
+import org.springframework.mock.web.MockHttpServletResponse
+import org.springframework.mock.web.MockServletContext
+import org.springframework.web.context.request.async.AsyncRequestTimeoutException
+import org.springframework.web.util.WebUtils
+import org.springframework.web.context.WebApplicationContext
+import org.springframework.web.context.support.StaticWebApplicationContext
+import org.springframework.web.servlet.ModelAndView
 import spock.lang.Specification
 
 import jakarta.servlet.http.HttpServletRequest
+import jakarta.servlet.http.HttpServletResponse
 
 class GrailsExceptionResolverSpec extends Specification {
+
+    void 'async timeouts resolve as 503 without an error stack trace'() {
+        given:
+        def resolverLog = new LogCapture(GrailsExceptionResolver)
+        def stackLog = new LogCapture(DefaultStackTraceFilterer.STACK_LOG_NAME)
+        def resolver = new GrailsExceptionResolver()
+        def context = new StaticWebApplicationContext()
+        context.beanFactory.registerSingleton(GrailsApplication.APPLICATION_ID, Stub(GrailsApplication))
+        def mappings = Mock(UrlMappingsHolder)
+        context.beanFactory.registerSingleton(UrlMappingsHolder.BEAN_ID, mappings)
+        context.refresh()
+        def servletContext = new MockServletContext()
+        servletContext.setAttribute(WebApplicationContext.ROOT_WEB_APPLICATION_CONTEXT_ATTRIBUTE, context)
+        resolver.servletContext = servletContext
+        resolver.defaultErrorView = '/error'
+        def request = new MockHttpServletRequest('GET', '/slow')
+        def response = new MockHttpServletResponse()
+
+        when:
+        def result = resolver.resolveException(request, response, null, new AsyncRequestTimeoutException())
+
+        then:
+        response.status == 503
+        request.getAttribute(WebUtils.ERROR_STATUS_CODE_ATTRIBUTE) == 503
+        result.viewName == '/error'
+        !resolverLog.events.any { it.level.toString() == 'ERROR' || it.throwableProxy != null }
+        stackLog.events.empty
+        2 * mappings.matchStatusCode(503, _ as Throwable) >> null
+        1 * mappings.matchStatusCode(503) >> null
+
+        cleanup:
+        resolverLog.close()
+        stackLog.close()
+        context.close()
+    }
 
     def "exception not thrown if an UrlMappingException is thrown while trying to match a request uri with a UrlMappingInfo "() {
         given:
@@ -429,5 +473,76 @@ class GrailsExceptionResolverSpec extends Specification {
         then: 'a name collision degrades to the default rather than failing the context'
         noExceptionThrown()
         resolver.stackFilterer instanceof DefaultStackTraceFilterer
+    }
+
+    void "an error handler that fails inside its own forward is not forwarded to again"() {
+        given: 'a "500" mapping onto a controller action'
+        def info = Mock(UrlMappingInfo)
+        info.getViewName() >> null
+        info.getControllerName() >> 'errors'
+        def urlMappings = Mock(UrlMappingsHolder)
+        urlMappings.match(_ as String) >> null
+        urlMappings.matchStatusCode(500, _ as Throwable) >> null
+        urlMappings.matchStatusCode(500) >> info
+
+        and: 'an error handler that fails again inside the dispatch it was forwarded to'
+        def forwards = []
+        def resolver = new GrailsExceptionResolver() {
+
+            @Override
+            protected void forwardRequest(UrlMappingInfo forwarded, HttpServletRequest req,
+                    HttpServletResponse res, ModelAndView mv, String uri) {
+                forwards << uri
+                if (forwards.size() < 10) {
+                    resolveViewOrForward(new RuntimeException('boom again'), urlMappings, req, res,
+                            new ModelAndView())
+                }
+            }
+        }
+        def request = new MockHttpServletRequest('POST', '/upload/upload')
+        def response = new MockHttpServletResponse()
+
+        when:
+        def result = resolver.resolveViewOrForward(new RuntimeException('boom'), urlMappings, request, response,
+                new ModelAndView())
+
+        then: 'the forwarded dispatch does not forward again, so it cannot recurse'
+        forwards.size() == 1
+
+        and: 'the outer attempt reports the error handler as having run'
+        result.viewName == null
+        result.model.isEmpty()
+    }
+
+    void "a later error on the same request can still be forwarded to the error handler"() {
+        given: 'a "500" mapping onto a controller action, and an error handler that renders normally'
+        def info = Mock(UrlMappingInfo)
+        info.getViewName() >> null
+        info.getControllerName() >> 'errors'
+        def urlMappings = Mock(UrlMappingsHolder)
+        urlMappings.match(_ as String) >> null
+        urlMappings.matchStatusCode(500, _ as Throwable) >> null
+        urlMappings.matchStatusCode(500) >> info
+
+        def forwards = []
+        def resolver = new GrailsExceptionResolver() {
+
+            @Override
+            protected void forwardRequest(UrlMappingInfo forwarded, HttpServletRequest req,
+                    HttpServletResponse res, ModelAndView mv, String uri) {
+                forwards << uri
+            }
+        }
+        def request = new MockHttpServletRequest('POST', '/upload/upload')
+        def response = new MockHttpServletResponse()
+
+        when: 'two errors are resolved in sequence, as an include and its enclosing request would'
+        resolver.resolveViewOrForward(new RuntimeException('boom'), urlMappings, request, response,
+                new ModelAndView())
+        resolver.resolveViewOrForward(new RuntimeException('boom'), urlMappings, request, response,
+                new ModelAndView())
+
+        then: 'the guard only suppresses re-entry, so both are forwarded'
+        forwards.size() == 2
     }
 }

@@ -25,6 +25,7 @@ plugins {
 	id 'org.apache.grails.buildsrc.properties'
 	id 'org.apache.grails.buildsrc.dependency-validator'
 	id 'org.apache.grails.buildsrc.compile'
+	id 'org.apache.grails.buildsrc.configuration-metadata'
 	id 'org.apache.grails.buildsrc.publish'
 	id 'org.apache.grails.buildsrc.sbom'
 	id 'org.apache.grails.gradle.grails-code-style'
@@ -57,7 +58,8 @@ dependencies {
 	}
 	// GrailsConsole (used by the s2-* commands) needs jline at compile time
 	cliImplementation 'org.jline:jline'
-	cliImplementation 'org.fusesource.jansi:jansi'
+
+    cliCompileOnly 'org.slf4j:slf4j-nop' // Prevents warning about missing slf4j implementation during compilation
 
 	api project(':grails-spring-security-compat')
 	api project(':grails-async') // AsyncGrailsWebRequest is used in public API
@@ -91,7 +93,6 @@ dependencies {
 
 	compileOnly 'jakarta.servlet:jakarta.servlet-api' // Provided
 	compileOnly 'org.jline:jline' // for shell commands
-	compileOnly 'org.fusesource.jansi:jansi' // required for Groovy static type checking of groovysh (Ansi) references
 	compileOnly project(':grails-core') // Provided as this is a Grails Plugin
 	compileOnly 'org.apache.groovy:groovy' // Compile-time annotations
 	compileOnly 'org.slf4j:slf4j-nop' // Prevents warnings about missing slf4j implementation during compilation
@@ -102,6 +103,8 @@ dependencies {
 	testFixturesImplementation(platform(project(':grails-bom')))
 	testFixturesImplementation 'org.springframework.security:spring-security-core'
 	testFixturesImplementation 'org.springframework.security:spring-security-config'
+
+    testFixturesCompileOnly 'org.slf4j:slf4j-nop' // Prevents warning about missing slf4j implementation during compilation
 
 	testImplementation project(':grails-testing-support-datamapping')
 	testImplementation project(':grails-testing-support-web')
@@ -118,4 +121,9 @@ apply {
     from rootProject.layout.projectDirectory.file('gradle/grails-extension-gradle-config.gradle')
 	from rootProject.layout.projectDirectory.file('gradle/docs-config.gradle')
 	from rootProject.layout.projectDirectory.file('gradle/spring-security-test-config.gradle')
+}
+
+tasks.named('generateConfigurationMetadata') {
+    dslConfigurationFiles.from(file('grails-app/conf/DefaultSecurityConfig.groovy'))
+    dslRootPrefixes.put('security', 'grails.plugin.springsecurity')
 }

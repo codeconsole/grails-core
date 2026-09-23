@@ -24,13 +24,13 @@ import groovy.transform.CompileStatic
 import org.gradle.api.GradleException
 import org.gradle.api.Plugin
 import org.gradle.api.Project
-import org.gradle.api.Task
 import org.gradle.api.artifacts.Configuration
 import org.gradle.api.artifacts.Dependency
 import org.gradle.api.artifacts.DependencyConstraint
 import org.gradle.api.artifacts.VersionConstraint
 import org.gradle.api.artifacts.component.ModuleComponentIdentifier
 import org.gradle.api.artifacts.result.ResolvedComponentResult
+import org.gradle.api.provider.Provider
 
 /**
  * Validates that transitive dependencies do not replace versions what the
@@ -47,6 +47,15 @@ import org.gradle.api.artifacts.result.ResolvedComponentResult
 class GrailsDependencyValidatorPlugin implements Plugin<Project> {
 
     static final String VALIDATE_TASK_NAME = 'validateDependencyVersions'
+
+    static final String VALIDATE_RUNTIME_TASK_NAME = 'validateProductionClasspath'
+
+    /**
+     * Project ext property holding {@code "group:name"} keys (name may be {@code *}) that must never
+     * appear on the project's {@code runtimeClasspath}. Used to keep developer-only tooling - the
+     * console, the shell and their terminal libraries - out of what an application ships.
+     */
+    static final String FORBIDDEN_RUNTIME_EXT = 'forbiddenRuntimeCoordinates'
     /**
      * Project ext property name that holds a collection of {@code "group:name"} keys
      * to exempt from version validation. Use this when a deliberate override is applied
@@ -55,7 +64,7 @@ class GrailsDependencyValidatorPlugin implements Plugin<Project> {
      */
     static final String ALLOWED_OVERRIDES_EXT = 'allowedBomOverrides'
 
-    private static final Set<String> BOM_PROJECT_NAMES = ['grails-bom', 'grails-gradle-bom', 'grails-base-bom', 'grails-hibernate5-bom', 'grails-hibernate7-bom', 'grails-micronaut-bom', 'grails-hibernate5-micronaut-bom', 'grails-hibernate7-micronaut-bom'].toSet()
+    private static final Set<String> BOM_PROJECT_NAMES = ['grails-bom', 'grails-gradle-bom', 'grails-base-bom', 'grails-hibernate5-bom', 'grails-hibernate7-bom', 'grails-neo4j-bom'].toSet()
 
     /**
      * Configuration names that pull in a Grails BOM purely as build tooling rather than as part
@@ -63,7 +72,7 @@ class GrailsDependencyValidatorPlugin implements Plugin<Project> {
      * project's single Grails BOM. The shared {@code gradle/docs-dependencies.gradle} script adds
      * {@code platform(grails-bom)} to the {@code documentation} configuration only to resolve the
      * groovydoc tooling versions; a project that selects a non-default BOM variant (e.g.
-     * {@code grails-micronaut-bom} or {@code grails-hibernate7-bom}) for its real configurations
+     * {@code grails-hibernate7-bom}) for its real configurations
      * still receives {@code grails-bom} here, which must not be misreported as a second,
      * conflicting BOM.
      */
@@ -72,12 +81,95 @@ class GrailsDependencyValidatorPlugin implements Plugin<Project> {
     @Override
     void apply(Project project) {
         project.plugins.withId('java') {
-            project.tasks.register(VALIDATE_TASK_NAME) { Task task ->
+            registerDependencyVersionValidation(project)
+            registerProductionClasspathValidation(project)
+        }
+    }
+
+    /**
+     * Registers {@link #VALIDATE_TASK_NAME}, wired entirely from providers.
+     *
+     * <p>Inspecting the dependency graph needs the project, so it happens while the task's inputs are
+     * computed - after the build scripts have run, and before any task executes - rather than from a
+     * {@code doLast} block. The task itself then only compares the two version maps it was given.</p>
+     *
+     * <p>Every provider short-circuits when the project opts out, so a skipped project never pays for
+     * the resolution or the BOM probing.</p>
+     */
+    private static void registerDependencyVersionValidation(Project project) {
+        Provider<String> bomPath = project.provider {
+            if (shouldSkip(project)) {
+                return ''
+            }
+            String detected = detectBomPath(project)
+            if (detected == null) {
+                return ''
+            }
+            // no BOM-bearing configuration means there is nothing to compare against
+            String bomName = detected.substring(detected.lastIndexOf(':') + 1)
+            findBomConfigurations(project, bomName).isEmpty() ? '' : detected
+        }
+
+        Provider<Map<String, String>> bomVersions = bomPath.map { String path ->
+            if (!path) {
+                return Collections.<String, String> emptyMap()
+            }
+            String bomName = path.substring(path.lastIndexOf(':') + 1)
+            collectBomVersions(project, path, findBomConfigurations(project, bomName))
+        }
+
+        Provider<Map<String, String>> resolvedVersions = bomPath.map { String path ->
+            if (!path) {
+                return Collections.<String, String> emptyMap()
+            }
+            String bomName = path.substring(path.lastIndexOf(':') + 1)
+            collectResolvedVersions(findBomConfigurations(project, bomName))
+        }
+
+        project.tasks.register(VALIDATE_TASK_NAME, ValidateDependencyVersionsTask) {
+            ValidateDependencyVersionsTask task ->
                 task.group = 'verification'
                 task.description = 'Validates that no transitive dependency upgrades a version beyond what the BOM manages.'
-                task.onlyIf { Task t -> !shouldSkip(t.project) }
-                task.doLast { Task t -> validateDependencies(project) }
-            }
+                task.projectName.set(project.name)
+                task.bomPath.set(bomPath)
+                task.bomVersions.set(bomVersions)
+                task.resolvedVersions.set(resolvedVersions)
+                task.allowedOverrides.set(project.provider { resolveAllowedOverrides(project) })
+        }
+    }
+
+    /**
+     * Registers {@link #VALIDATE_RUNTIME_TASK_NAME}. Like {@link #VALIDATE_TASK_NAME}, it is invoked
+     * explicitly by CI rather than hung off {@code check}.
+     *
+     * <p>Both inputs are providers, so the ext property a project declares in its own build script is
+     * read when the value is needed rather than at plugin-apply time, and nothing reaches back to the
+     * project once the task runs. The task skips itself when the project declares no forbidden
+     * coordinates or has no resolvable {@code runtimeClasspath}.</p>
+     */
+    private static void registerProductionClasspathValidation(Project project) {
+        Provider<Set<String>> forbiddenCoordinates = project.provider {
+            Object configured = project.findProperty(FORBIDDEN_RUNTIME_EXT)
+            configured == null
+                    ? Collections.<String> emptySet()
+                    : ((Collection<?>) configured).collect { it.toString() }.toSet()
+        }
+
+        Provider<ResolvedComponentResult> rootComponent = project.provider {
+            Configuration runtimeClasspath = project.configurations.findByName('runtimeClasspath')
+            runtimeClasspath?.canBeResolved ? runtimeClasspath : null
+        }.flatMap { Configuration it -> it.incoming.resolutionResult.rootComponent }
+
+        project.tasks.register(VALIDATE_RUNTIME_TASK_NAME, ValidateProductionClasspathTask) {
+            ValidateProductionClasspathTask task ->
+                task.group = 'verification'
+                task.description = 'Fails if developer-only tooling reaches the production runtime classpath.'
+                task.projectPath.set(project.path)
+                task.forbiddenCoordinates.set(forbiddenCoordinates)
+                task.rootComponent.set(rootComponent)
+                task.onlyIf {
+                    !task.forbiddenCoordinates.get().isEmpty() && task.rootComponent.present
+                }
         }
     }
 
@@ -86,7 +178,7 @@ class GrailsDependencyValidatorPlugin implements Plugin<Project> {
      * {@code skipDependencyValidation} project property (any non-null, non-false value)
      * and an {@code ext.skipDependencyValidation} extra property. This lets specific
      * projects opt out via {@code ext.skipDependencyValidation = true} when they have
-     * unresolvable BOM conflicts (e.g. Micronaut platform overrides).
+     * unresolvable BOM conflicts.
      */
     private static boolean shouldSkip(Project project) {
         if (!project.hasProperty('skipDependencyValidation')) {
@@ -98,49 +190,6 @@ class GrailsDependencyValidatorPlugin implements Plugin<Project> {
             return true
         }
         return Boolean.parseBoolean(value.toString())
-    }
-
-    private static void validateDependencies(Project project) {
-        String bomPath = detectBomPath(project)
-        if (bomPath == null) {
-            return
-        }
-
-        String bomName = bomPath.substring(bomPath.lastIndexOf(':') + 1)
-        Set<Configuration> bomConfigurations = findBomConfigurations(project, bomName)
-        if (bomConfigurations.isEmpty()) {
-            return
-        }
-
-        Map<String, String> bomVersions = collectBomVersions(project, bomPath, bomConfigurations)
-        if (bomVersions.isEmpty()) {
-            project.logger.warn('No BOM versions collected for project \'{}\'. Skipping validation.', project.name)
-            return
-        }
-
-        Set<String> allowedOverrides = resolveAllowedOverrides(project)
-        Map<String, String> resolvedVersions = collectResolvedVersions(bomConfigurations)
-        List<String> violations = new ArrayList<>()
-
-        for (Map.Entry<String, String> entry : resolvedVersions.entrySet()) {
-            if (allowedOverrides.contains(entry.key)) {
-                continue
-            }
-            String bomVersion = bomVersions.get(entry.key)
-            if (bomVersion != null && bomVersion != entry.value) {
-                violations.add("  ${entry.key} - resolved ${entry.value}, expected ${bomVersion}" as String)
-            }
-        }
-
-        if (!violations.isEmpty()) {
-            String message = "Dependency version validation failed for project '${project.name}'.\n" +
-                    "The following dependencies resolved to versions different from the BOM (${bomPath}):\n\n" +
-                    violations.join('\n') + '\n\n' +
-                    'A transitive dependency is upgrading these versions.\n' +
-                    'To fix, update the dependency version in dependencies.gradle or add an exclusion in the build file.\n' +
-                    "For intentional overrides, add the coordinate to project.ext.${ALLOWED_OVERRIDES_EXT} (e.g. as a Set<String> of 'group:name' keys)."
-            throw new GradleException(message)
-        }
     }
 
     /**
@@ -173,11 +222,11 @@ class GrailsDependencyValidatorPlugin implements Plugin<Project> {
      * Scans the project's configurations to find which BOM project is in use.
      *
      * <p>Exactly one Grails BOM is expected on a project: the BOMs are split by
-     * integration (default / hibernate5 / micronaut), so a project selects a single
+     * integration, so a project selects a single
      * variant. This method returns the path of the one declared Grails BOM, {@code null}
      * when none is declared, and fails the build when more than one distinct Grails BOM
      * is found (which indicates a misconfiguration - e.g. layering grails-bom and
-     * grails-micronaut-bom on the same project).</p>
+     * grails-hibernate7-bom on the same project).</p>
      *
      * <p>Build-tooling configurations that pull in a BOM purely to resolve their own tool
      * versions (see {@link #BOM_DETECTION_EXCLUDED_CONFIGURATIONS}) are skipped, so the shared
@@ -209,8 +258,8 @@ class GrailsDependencyValidatorPlugin implements Plugin<Project> {
         if (bomPaths.size() > 1) {
             throw new GradleException(
                     "Project '${project.name}' declares more than one Grails BOM (${bomPaths.join(', ')}). " +
-                            'Exactly one Grails BOM may be applied; the BOMs are split by integration ' +
-                            '(default / hibernate5 / micronaut), so a project must select a single variant.'
+                            'Exactly one Grails BOM may be applied; the BOMs are split by integration, ' +
+                            'so a project must select a single variant.'
             )
         }
 
