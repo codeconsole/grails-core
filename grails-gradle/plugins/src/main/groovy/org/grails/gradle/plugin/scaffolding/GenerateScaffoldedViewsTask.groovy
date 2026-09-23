@@ -42,6 +42,8 @@ import org.gradle.api.tasks.PathSensitive
 import org.gradle.api.tasks.PathSensitivity
 import org.gradle.api.tasks.TaskAction
 
+import org.grails.gradle.plugin.views.gsp.GroovyPagePlugin
+
 /**
  * Writes the views a scaffolded controller would otherwise generate on its first request.
  *
@@ -72,6 +74,12 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
 
     /** Path within an artifact holding the scaffolding templates. */
     private static final String TEMPLATE_PATH = 'META-INF/templates/scaffolding/'
+
+    /**
+     * Where a plugin's compiled-view index is read from, in the order {@code BinaryGrailsPlugin}
+     * tries them: beside the plugin descriptor first, then the location the GSP compiler writes.
+     */
+    private static final List<String> VIEW_INDEXES = ['META-INF/views.properties', 'gsp/views.properties']
 
     /** The views scaffolding knows how to produce. */
     private static final List<String> VIEW_NAMES = ['index', 'create', 'edit', 'show']
@@ -139,7 +147,7 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
                     logger.info('Skipping {}/{}.gsp, the application declares it', controller.key, viewName)
                     continue
                 }
-                if (pluginViews.contains("/WEB-INF/grails-app/views/${controller.key}/${viewName}.gsp".toString())) {
+                if (pluginViews.contains("${GroovyPagePlugin.VIEWS_SERVER_PATH}${controller.key}/${viewName}.gsp".toString())) {
                     logger.info('Skipping {}/{}.gsp, a plugin declares it', controller.key, viewName)
                     continue
                 }
@@ -201,20 +209,21 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
         templates
     }
 
-    /** Compiled plugin pages win over runtime scaffolding, so they must also win at build time. */
+    /**
+     * Compiled plugin pages win over runtime scaffolding, so they must also win at build time. Each
+     * artifact contributes the first index it carries, as the runtime reads only one per plugin.
+     */
     private Set<String> findPluginViews() {
         Set<String> views = []
         for (File entry : viewClasspath.files) {
             Properties index = new Properties()
             if (entry.isDirectory()) {
-                File resource = new File(entry, 'gsp/views.properties')
-                if (resource.isFile()) {
-                    resource.withInputStream { InputStream input -> index.load(input) }
-                }
+                File resource = VIEW_INDEXES.collect { new File(entry, it) }.find { it.isFile() }
+                resource?.withInputStream { InputStream input -> index.load(input) }
             }
             else if (entry.name.endsWith('.jar') && entry.isFile()) {
                 new JarFile(entry).withCloseable { JarFile jar ->
-                    JarEntry resource = jar.getJarEntry('gsp/views.properties')
+                    JarEntry resource = VIEW_INDEXES.collect { jar.getJarEntry(it) }.find { it != null }
                     if (resource != null) {
                         jar.getInputStream(resource).withCloseable { InputStream input -> index.load(input) }
                     }

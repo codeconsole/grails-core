@@ -63,6 +63,12 @@ import org.grails.gradle.plugin.util.SourceSets
 class GroovyPagePlugin implements Plugin<Project> {
 
     /**
+     * The server path application views are compiled under, and so the prefix of every key in a
+     * compiled-view index. {@link GenerateScaffoldedViewsTask} matches plugin index keys against it.
+     */
+    public static final String VIEWS_SERVER_PATH = '/WEB-INF/grails-app/views/'
+
+    /**
      * The test source sets a Grails project may define, each of which renders pages.
      */
     private static final List<String> TEST_SOURCE_SET_NAMES = ['test', 'integrationTest']
@@ -383,7 +389,7 @@ class GroovyPagePlugin implements Plugin<Project> {
             // the setter takes a directory rather than a provider: it has to set both srcDir
             // and the SourceTask inputs, and setting srcDir alone compiles nothing
             it.source = viewsToCompile
-            it.serverpath.set('/WEB-INF/grails-app/views/')
+            it.serverpath.set(VIEWS_SERVER_PATH)
             it.classpath = allClasspath
             it.javaLauncher.convention(launcher)
             it.compileStatic.set(false)

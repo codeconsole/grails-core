@@ -501,18 +501,59 @@ class GenerateScaffoldedViewsTaskSpec extends Specification {
             generated(task, 'event/show.gsp').exists()
     }
 
-    private File pluginViews(String location, String index) {
+    void 'a plugin view indexed beside its descriptor in a #location takes precedence'() {
+        given:
+            writeController('EventController', 'Event')
+            def task = task()
+            task.viewClasspath.from(pluginViews(location, '/WEB-INF/grails-app/views/event/show.gsp=custom_event_show\n',
+                    'META-INF/views.properties'))
+
+        when:
+            task.generate()
+
+        then:
+            !generated(task, 'event/show.gsp').exists()
+            generated(task, 'event/index.gsp').exists()
+
+        where:
+            location << ['directory', 'jar']
+    }
+
+    void 'the index beside the descriptor is read instead of the compiled one, as the runtime reads it'() {
+        given: 'a plugin carrying both indexes'
+            writeController('EventController', 'Event')
+            File dependency = new File(projectDir, 'plugin.jar')
+            new JarOutputStream(dependency.newOutputStream()).withCloseable { out ->
+                out.putNextEntry(new JarEntry('META-INF/views.properties'))
+                out.write('/WEB-INF/grails-app/views/event/show.gsp=descriptor_show\n'.getBytes('ISO-8859-1'))
+                out.closeEntry()
+                out.putNextEntry(new JarEntry('gsp/views.properties'))
+                out.write('/WEB-INF/grails-app/views/event/index.gsp=compiled_index\n'.getBytes('ISO-8859-1'))
+                out.closeEntry()
+            }
+            def task = task()
+            task.viewClasspath.from(dependency)
+
+        when:
+            task.generate()
+
+        then: 'the runtime never serves the second index, so it must not suppress anything here'
+            !generated(task, 'event/show.gsp').exists()
+            generated(task, 'event/index.gsp').exists()
+    }
+
+    private File pluginViews(String location, String index, String indexPath = 'gsp/views.properties') {
         File dependency = new File(projectDir, "plugin-${location}")
         if (location == 'jar') {
             dependency = new File(projectDir, 'plugin.jar')
             new JarOutputStream(dependency.newOutputStream()).withCloseable { out ->
-                out.putNextEntry(new JarEntry('gsp/views.properties'))
+                out.putNextEntry(new JarEntry(indexPath))
                 out.write(index.getBytes('ISO-8859-1'))
                 out.closeEntry()
             }
         }
         else {
-            File registry = new File(dependency, 'gsp/views.properties')
+            File registry = new File(dependency, indexPath)
             registry.parentFile.mkdirs()
             registry.text = index
         }
