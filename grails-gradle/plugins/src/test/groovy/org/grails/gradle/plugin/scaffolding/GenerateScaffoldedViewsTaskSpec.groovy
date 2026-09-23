@@ -417,15 +417,16 @@ class GenerateScaffoldedViewsTaskSpec extends Specification {
             generated(task, 'book/show.gsp').exists()
     }
 
-    void 'a superclass the bundled ASM cannot read is taken to declare no namespace'() {
-        given: 'a dependency base class compiled for a class-file version newer than ASM supports'
+    void 'a superclass with #damage bytecode is taken to declare no namespace'() {
+        given: 'a dependency base class that ASM cannot read'
             ClassWriter writer = new ClassWriter(0)
-            writer.visit(200, Opcodes.ACC_PUBLIC, 'com/example/FutureBase', null, 'java/lang/Object', null)
+            writer.visit(damage == 'future' ? 200 : Opcodes.V21, Opcodes.ACC_PUBLIC, 'com/example/FutureBase', null, 'java/lang/Object', null)
             writer.visitEnd()
             File dependency = new File(projectDir, 'future.jar')
             new JarOutputStream(dependency.newOutputStream()).withCloseable { out ->
                 out.putNextEntry(new JarEntry('com/example/FutureBase.class'))
-                out.write(writer.toByteArray())
+                byte[] bytes = writer.toByteArray()
+                out.write(damage == 'empty' ? new byte[0] : damage == 'truncated' ? Arrays.copyOf(bytes, 12) : bytes)
                 out.closeEntry()
             }
             writeNamespacedClass('com/example/EventController', null, 'com/example/FutureBase')
@@ -437,6 +438,30 @@ class GenerateScaffoldedViewsTaskSpec extends Specification {
 
         then: 'the build carries on and the controller is precompiled'
             generated(task, 'event/show.gsp').exists()
+
+        where:
+            damage << ['future', 'truncated', 'empty']
+    }
+
+    void 'an I/O failure reading a superclass is taken to declare no namespace'() {
+        given:
+            InputStream damaged = new InputStream() {
+                @Override
+                int read() throws IOException {
+                    throw new IOException('Damaged dependency entry')
+                }
+            }
+            ClassLoader resources = new ClassLoader((ClassLoader) null) {
+                @Override
+                InputStream getResourceAsStream(String name) {
+                    name == 'com/example/Base.class' ? damaged : null
+                }
+            }
+            def method = GenerateScaffoldedViewsTask.getDeclaredMethod('ancestorHasNamespace', String, ClassLoader, Map)
+            method.accessible = true
+
+        expect:
+            !method.invoke(task(), 'com/example/Base', resources, [:])
     }
 
     void 'an acronym-prefixed controller writes the view directory the runtime resolves'() {
@@ -585,6 +610,9 @@ class GenerateScaffoldedViewsTaskSpec extends Specification {
             writeController('EventController', 'Event')
             File dependency = new File(projectDir, 'plugin.jar')
             new JarOutputStream(dependency.newOutputStream()).withCloseable { out ->
+                out.putNextEntry(new JarEntry('META-INF/grails-plugin.xml'))
+                out.write('<plugin name="calendar" version="1.0"/>'.getBytes('UTF-8'))
+                out.closeEntry()
                 out.putNextEntry(new JarEntry('META-INF/views.properties'))
                 out.write('/WEB-INF/grails-app/views/event/show.gsp=descriptor_show\n'.getBytes('ISO-8859-1'))
                 out.closeEntry()
@@ -603,11 +631,38 @@ class GenerateScaffoldedViewsTaskSpec extends Specification {
             generated(task, 'event/index.gsp').exists()
     }
 
-    private File pluginViews(String location, String index, String indexPath = 'gsp/views.properties') {
+    void 'a #indexPath index without a descriptor in a #location suppresses scaffolding only for directory outputs'() {
+        given:
+            writeController('EventController', 'Event')
+            def task = task()
+            task.viewClasspath.from(pluginViews(location, '/WEB-INF/grails-app/views/event/show.gsp=custom_show\n',
+                    indexPath, false))
+
+        when:
+            task.generate()
+
+        then:
+            generated(task, 'event/show.gsp').exists() == (location == 'jar')
+            generated(task, 'event/index.gsp').exists()
+
+        where:
+            location    | indexPath
+            'jar'       | 'gsp/views.properties'
+            'jar'       | 'META-INF/views.properties'
+            'directory' | 'gsp/views.properties'
+            'directory' | 'META-INF/views.properties'
+    }
+
+    private File pluginViews(String location, String index, String indexPath = 'gsp/views.properties', boolean descriptor = true) {
         File dependency = new File(projectDir, "plugin-${location}")
         if (location == 'jar') {
             dependency = new File(projectDir, 'plugin.jar')
             new JarOutputStream(dependency.newOutputStream()).withCloseable { out ->
+                if (descriptor) {
+                    out.putNextEntry(new JarEntry('META-INF/grails-plugin.xml'))
+                    out.write('<plugin name="calendar" version="1.0"/>'.getBytes('UTF-8'))
+                    out.closeEntry()
+                }
                 out.putNextEntry(new JarEntry(indexPath))
                 out.write(index.getBytes('ISO-8859-1'))
                 out.closeEntry()

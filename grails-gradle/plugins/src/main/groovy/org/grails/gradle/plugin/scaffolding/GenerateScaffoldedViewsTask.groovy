@@ -219,7 +219,9 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
 
     /**
      * Compiled plugin pages win over runtime scaffolding, so they must also win at build time. Each
-     * artifact contributes the first index it carries, as the runtime reads only one per plugin.
+     * plugin JAR contributes the first index it carries, as the runtime reads only one per plugin.
+     * JARs without a plugin descriptor do not expose views at runtime. Directories are not gated:
+     * project dependencies can put the descriptor and compiled index in separate output directories.
      */
     private Set<String> findPluginViews() {
         Set<String> views = []
@@ -231,6 +233,9 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
             }
             else if (entry.name.endsWith('.jar') && entry.isFile()) {
                 new JarFile(entry).withCloseable { JarFile jar ->
+                    if (jar.getJarEntry('META-INF/grails-plugin.xml') == null) {
+                        return
+                    }
                     JarEntry resource = VIEW_INDEXES.collect { jar.getJarEntry(it) }.find { it != null }
                     if (resource != null) {
                         jar.getInputStream(resource).withCloseable { InputStream input -> index.load(input) }
@@ -306,7 +311,7 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
                 logger.warn("Not precompiling the views of ${controllerName}: " +
                         "${distinct.size()} controllers with the view directory ${controllerName} " +
                         "scaffold different domains (${distinct.join(', ')}) and share the one view " +
-                        'directory. They are expanded per request instead, as they were before.')
+                        'directory. They are expanded per request instead; native images require concrete GSP views.')
             }
         }
         found
@@ -314,6 +319,10 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
 
     /**
      * Read declarations, including inherited ones, without evaluating application code.
+     *
+     * <p>Groovy traits rename their namespace fields but emit a static {@code getNamespace()}
+     * accessor on the implementing class. Checking that accessor covers trait-supplied namespaces
+     * without walking interfaces; only superclass declarations require an ancestor walk.</p>
      *
      * <p>A declaration is all this can see, not its value, so {@code static namespace = null}
      * still counts even though the runtime, which tests the value, gives that controller no
@@ -355,23 +364,23 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
 
     /**
      * Superclasses can come from dependencies, whose class files may be newer than the bundled ASM
-     * reads. One that cannot be read is taken to declare no namespace rather than failing the build.
+     * reads, or whose bytecode may be damaged or unreadable. One that cannot be read is taken to
+     * declare no namespace rather than failing the build.
      */
     private boolean ancestorHasNamespace(String internalName, ClassLoader resources, Map<String, Boolean> ancestors) {
-        InputStream parent = resources.getResourceAsStream("${internalName}.class")
-        if (parent == null) {
-            return false
-        }
-        ClassReader reader
         try {
-            reader = parent.withCloseable { InputStream input -> new ClassReader(input) }
+            InputStream parent = resources.getResourceAsStream("${internalName}.class")
+            if (parent == null) {
+                return false
+            }
+            ClassReader reader = parent.withCloseable { InputStream input -> new ClassReader(input) }
+            return hasNamespace(reader, resources, ancestors)
         }
-        catch (IllegalArgumentException e) {
+        catch (IllegalArgumentException | IOException | IndexOutOfBoundsException e) {
             logger.info('Could not read {} to look for an inherited namespace; treating it as declaring none: {}',
                     internalName.replace('/', '.'), e.message)
             return false
         }
-        hasNamespace(reader, resources, ancestors)
     }
 
     /**

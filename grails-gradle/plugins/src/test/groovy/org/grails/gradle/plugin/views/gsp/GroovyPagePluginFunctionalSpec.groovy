@@ -155,6 +155,13 @@ class GroovyPagePluginFunctionalSpec extends GradleSpecification {
                 @Scaffold(String)
                 class EventController { static namespace = 'admin' }
             ''',
+            'grails-app/controllers/admin/TraitController.groovy': '''
+                package admin
+                import grails.plugin.scaffolding.annotation.Scaffold
+                trait AdminNamespace { static String namespace = 'admin' }
+                @Scaffold(String)
+                class TraitController implements AdminNamespace { }
+            ''',
             'grails-app/controllers/admin/DashboardController.groovy': '''
                 package admin
                 class DashboardController { static namespace = 'admin' }
@@ -189,12 +196,14 @@ class GroovyPagePluginFunctionalSpec extends GradleSpecification {
         then: 'the GSP compiler never receives an application page that would shadow a plugin'
         assertTaskSuccess('stageGroovyPages', result)
         !new File(staged, 'event/show.gsp').exists()
+        !new File(staged, 'trait/show.gsp').exists()
         !new File(staged, 'person/show.gsp').exists()
         new File(staged, 'book/show.gsp').text == 'scaffold String'
         new File(staged, 'person/index.gsp').text == 'handwritten index'
 
         and: 'only skipped scaffold views warn about the native-image requirement'
         result.output.contains('Not precompiling the views of event:')
+        result.output.contains('Not precompiling the views of trait:')
         result.output.contains('native images require concrete GSP views')
         !result.output.contains('Not precompiling the views of dashboard:')
 
@@ -206,6 +215,7 @@ class GroovyPagePluginFunctionalSpec extends GradleSpecification {
         assertTaskSuccess('stageGroovyPages', rebuild)
         new File(staged, 'person/show.gsp').text == 'scaffold String'
         !new File(staged, 'event/show.gsp').exists()
+        !new File(staged, 'trait/show.gsp').exists()
     }
 
 }
