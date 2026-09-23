@@ -20,7 +20,7 @@ package org.grails.datastore.gorm.mongodb.springdata
 
 import grails.gorm.annotation.Entity
 
-import org.apache.grails.testing.mongo.AutoStartedMongoSpec
+import org.apache.grails.testing.mongo.EmbeddedReplicaSetSpec
 import org.grails.datastore.mapping.mongo.MongoDatastore
 import org.springframework.data.mongodb.MongoDatabaseFactory
 import org.springframework.data.mongodb.core.MongoTemplate
@@ -44,7 +44,7 @@ import spock.lang.Shared
  * both a GORM {@code save()} and a Spring Data {@code MongoTemplate} write atomically on one shared
  * {@link com.mongodb.client.ClientSession}.
  */
-class UnifiedMongoTransactionSpec extends AutoStartedMongoSpec {
+class UnifiedMongoTransactionSpec extends EmbeddedReplicaSetSpec {
 
     @Shared
     @AutoCleanup
@@ -59,14 +59,9 @@ class UnifiedMongoTransactionSpec extends AutoStartedMongoSpec {
     @Shared
     TransactionTemplate transactionTemplate
 
-    @Override
-    boolean shouldInitializeDatastore() {
-        false
-    }
-
     void setupSpec() {
         Map config = [
-                'grails.mongodb.url'          : dbContainer.getReplicaSetUrl('myDb'),
+                'grails.mongodb.url'          : mongoUrl,
                 'grails.mongodb.transactional': true
         ]
         datastore = new MongoDatastore(config, GormThing)
@@ -126,6 +121,39 @@ class UnifiedMongoTransactionSpec extends AutoStartedMongoSpec {
         and: "neither write was persisted - they shared one aborted MongoDB transaction"
         gormCount() == 0
         springDataCount() == 0
+    }
+
+    void "test a read-only unified transaction drops the unflushed GORM write and commits the Spring Data one"() {
+        given: "a read-only transaction on the same unified manager"
+        TransactionTemplate readOnlyTemplate = new TransactionTemplate(
+                new GormSharedSessionMongoTransactionManager(datastore, factory))
+        readOnlyTemplate.readOnly = true
+
+        when: "it queues a GORM write and issues a Spring Data write"
+        readOnlyTemplate.execute {
+            new GormThing(name: "gorm").save()
+            mongoTemplate.insert(new SpringDataThing(name: "springData"))
+            return null
+        }
+
+        then: "the GORM write is discarded, because a read-only transaction commits without flushing"
+        gormCount() == 0
+
+        and: "the Spring Data write commits, having gone into the shared session rather than through the flush"
+        springDataCount() == 1
+    }
+
+    void "test a read-write unified transaction commits an unflushed GORM write"() {
+        when: "the same sequence runs without the read-only flag"
+        transactionTemplate.execute {
+            new GormThing(name: "gorm").save()
+            mongoTemplate.insert(new SpringDataThing(name: "springData"))
+            return null
+        }
+
+        then: "the commit flushes the session, so both writes are persisted"
+        gormCount() == 1
+        springDataCount() == 1
     }
 
     void "test Spring Data reads a document written by GORM on the shared connection"() {
