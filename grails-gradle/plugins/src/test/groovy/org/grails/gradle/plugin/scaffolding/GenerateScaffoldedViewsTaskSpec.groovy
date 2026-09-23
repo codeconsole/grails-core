@@ -332,4 +332,156 @@ class GenerateScaffoldedViewsTaskSpec extends Specification {
             !generated(task, 'user/index.gsp').exists()
             generated(task, 'book/index.gsp').text == 'list of book for Book'
     }
+    void 'a static namespace #declaration is left to the runtime resolver'() {
+        given:
+            writeNamespacedClass('com/example/EventController', declaration)
+            writeController('BookController', 'Book')
+            def task = task()
+
+        when:
+            task.generate()
+
+        then:
+            !generated(task, 'event').exists()
+            !generated(task, 'admin/event').exists()
+            generated(task, 'book/show.gsp').text == 'show Book'
+
+        where:
+            declaration << ['field', 'getter']
+    }
+
+    void 'an inherited namespace from a #location also prevents shared views'() {
+        given:
+            writeNamespacedClass('com/example/AdminBase', 'field')
+            File parent = new File(classesDir, 'com/example/AdminBase.class')
+            def task = task()
+            if (location == 'jar') {
+                File dependency = new File(projectDir, 'base.jar')
+                new JarOutputStream(dependency.newOutputStream()).withCloseable { out ->
+                    out.putNextEntry(new JarEntry('com/example/AdminBase.class'))
+                    out.write(parent.bytes)
+                    out.closeEntry()
+                }
+                parent.delete()
+                task.templateClasspath.from(dependency)
+            }
+            writeNamespacedClass('com/example/EventController', null, 'com/example/AdminBase')
+
+        when:
+            task.generate()
+
+        then:
+            !generated(task, 'event').exists()
+
+        where:
+            location << ['directory', 'jar']
+    }
+
+    void 'a namespaced claimant prevents another controller from filling the shared directory'() {
+        given:
+            writeControllerIn('com/example', 'EventController', 'com/example/Event')
+            writeNamespacedClass('com/example/admin/EventController', 'field')
+            def task = task()
+
+        when:
+            task.generate()
+
+        then: 'even the same domain can use different namespace-specific templates'
+            !generated(task, 'event').exists()
+    }
+
+    void 'an instance namespace property does not opt out of precompilation'() {
+        given:
+            writeNamespacedClass('com/example/EventController', 'instance')
+            def task = task()
+
+        when:
+            task.generate()
+
+        then:
+            generated(task, 'event/show.gsp').exists()
+    }
+
+    void 'a plugin view in a #location takes precedence over scaffold generation'() {
+        given:
+            writeController('EventController', 'Event')
+            def task = task()
+            task.generate()
+            assert generated(task, 'event/show.gsp').exists()
+            File dependency = pluginViews(location, '/WEB-INF/grails-app/views/event/show.gsp=custom_event_show\n')
+            task.viewClasspath.from(dependency)
+
+        when:
+            task.generate()
+
+        then: 'a stale generated view must also disappear when a plugin starts providing it'
+            !generated(task, 'event/show.gsp').exists()
+            generated(task, 'event/index.gsp').exists()
+
+        when: 'the plugin stops providing that view'
+            task.viewClasspath.setFrom([])
+            task.generate()
+
+        then:
+            generated(task, 'event/show.gsp').exists()
+
+        where:
+            location << ['directory', 'jar']
+    }
+
+    void 'a namespaced plugin page does not suppress an unrelated unqualified view'() {
+        given:
+            writeController('EventController', 'Event')
+            def task = task()
+            task.viewClasspath.from(pluginViews('jar', '/WEB-INF/grails-app/views/admin/event/show.gsp=admin_show\n'))
+
+        when:
+            task.generate()
+
+        then:
+            generated(task, 'event/show.gsp').exists()
+    }
+
+    private File pluginViews(String location, String index) {
+        File dependency = new File(projectDir, "plugin-${location}")
+        if (location == 'jar') {
+            dependency = new File(projectDir, 'plugin.jar')
+            new JarOutputStream(dependency.newOutputStream()).withCloseable { out ->
+                out.putNextEntry(new JarEntry('gsp/views.properties'))
+                out.write(index.getBytes('ISO-8859-1'))
+                out.closeEntry()
+            }
+        }
+        else {
+            File registry = new File(dependency, 'gsp/views.properties')
+            registry.parentFile.mkdirs()
+            registry.text = index
+        }
+        dependency
+    }
+
+    private void writeNamespacedClass(String name, String declaration, String superclass = 'java/lang/Object') {
+        ClassWriter writer = new ClassWriter(0)
+        writer.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, name, null, superclass, null)
+        AnnotationVisitor annotation = writer.visitAnnotation('Lgrails/plugin/scaffolding/annotation/Scaffold;', true)
+        annotation.visit('domain', Type.getObjectType('com/example/Event'))
+        annotation.visitEnd()
+        if (declaration == 'field' || declaration == 'instance') {
+            int access = declaration == 'field' ? Opcodes.ACC_STATIC : Opcodes.ACC_PUBLIC
+            writer.visitField(access, 'namespace', 'Ljava/lang/String;', null, null).visitEnd()
+        }
+        if (declaration == 'getter') {
+            def method = writer.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, 'getNamespace', '()Ljava/lang/String;', null, null)
+            method.visitCode()
+            method.visitLdcInsn('admin')
+            method.visitInsn(Opcodes.ARETURN)
+            method.visitMaxs(1, 0)
+            method.visitEnd()
+        }
+        writer.visitEnd()
+        File target = new File(classesDir, "${name}.class")
+        target.parentFile.mkdirs()
+        target.bytes = writer.toByteArray()
+    }
+
 }

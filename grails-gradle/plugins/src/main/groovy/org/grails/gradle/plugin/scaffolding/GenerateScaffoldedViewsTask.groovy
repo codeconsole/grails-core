@@ -24,6 +24,8 @@ import groovy.transform.CompileStatic
 import groovyjarjarasm.asm.AnnotationVisitor
 import groovyjarjarasm.asm.ClassReader
 import groovyjarjarasm.asm.ClassVisitor
+import groovyjarjarasm.asm.FieldVisitor
+import groovyjarjarasm.asm.MethodVisitor
 import groovyjarjarasm.asm.Opcodes
 import groovyjarjarasm.asm.Type
 
@@ -85,6 +87,11 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
     @PathSensitive(PathSensitivity.RELATIVE)
     abstract ConfigurableFileCollection getTemplateClasspath()
 
+    /** Dependency views, including plugins used only at runtime. */
+    @InputFiles
+    @PathSensitive(PathSensitivity.RELATIVE)
+    abstract ConfigurableFileCollection getViewClasspath()
+
     /** Application template overrides, normally {@code src/main/templates/scaffolding}. */
     @InputFiles
     @Optional
@@ -114,6 +121,7 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
         }
 
         Set<File> declared = applicationViews.files
+        Set<String> pluginViews = findPluginViews()
         int written = 0
         for (Map.Entry<String, String> controller : findScaffoldedControllers()) {
             String fullName = controller.value
@@ -129,6 +137,10 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
                 // keeps build-time and runtime resolution agreeing
                 if (declared.any { it.path.endsWith("views/${controller.key}/${viewName}.gsp".toString()) }) {
                     logger.info("Skipping ${controller.key}/${viewName}.gsp, the application declares it")
+                    continue
+                }
+                if (pluginViews.contains("/WEB-INF/grails-app/views/${controller.key}/${viewName}.gsp".toString())) {
+                    logger.info("Skipping ${controller.key}/${viewName}.gsp, a plugin declares it")
                     continue
                 }
                 File target = new File(outputDir, "${controller.key}/${viewName}.gsp")
@@ -189,40 +201,73 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
         templates
     }
 
+    /** Compiled plugin pages win over runtime scaffolding, so they must also win at build time. */
+    private Set<String> findPluginViews() {
+        Set<String> views = []
+        for (File entry : viewClasspath.files) {
+            Properties index = new Properties()
+            if (entry.isDirectory()) {
+                File resource = new File(entry, 'gsp/views.properties')
+                if (resource.isFile()) {
+                    resource.withInputStream { InputStream input -> index.load(input) }
+                }
+            }
+            else if (entry.name.endsWith('.jar') && entry.isFile()) {
+                new JarFile(entry).withCloseable { JarFile jar ->
+                    JarEntry resource = jar.getJarEntry('gsp/views.properties')
+                    if (resource != null) {
+                        jar.getInputStream(resource).withCloseable { InputStream input -> index.load(input) }
+                    }
+                }
+            }
+            views.addAll(index.stringPropertyNames())
+        }
+        views
+    }
+
     /**
      * Maps view directory name to the fully qualified domain class, for every {@code @Scaffold}
      * controller. Qualified rather than simple because a view declaring the type of its model has to
      * name a type that resolves.
      *
-     * <p>A view directory is named for the controller alone - {@code getDeployedViewURI} builds
-     * {@code /WEB-INF/grails-app/views/<controller>/<view>.gsp} and never consults the namespace -
-     * so two controllers of the same simple name in different packages share one directory whatever
-     * their namespaces are. Where they scaffold different domains, no single page can serve both:
-     * whichever was written would declare one domain as its model and be rendered by the controller
-     * of the other. Both are left out rather than one of them guessed at, and the resolver goes on
-     * expanding a template per request for them, which is what it did before any of this and is the
-     * one thing that gets each controller its own domain. Everything else in the project is still
-     * precompiled.</p>
+     * <p>Namespaced controllers are left to the runtime resolver, which can evaluate the namespace
+     * and select namespace-specific templates. Emitting their pages into a shared, unqualified
+     * directory would make them visible to unrelated controllers. The entire shared directory is
+     * left out, including when an unqualified controller also claims it.</p>
+     *
+     * <p>Likewise, controllers sharing a name but scaffolding different domains cannot share a
+     * precompiled page. The runtime resolver expands a template for the appropriate domain.</p>
      */
     private Map<String, String> findScaffoldedControllers() {
         Map<String, String> found = [:]
         Map<String, List<String>> claimants = [:]
-        for (File dir : classesDirs.files) {
-            if (!dir.isDirectory()) {
-                continue
-            }
-            dir.eachFileRecurse { File f ->
-                if (!f.name.endsWith('Controller.class')) {
-                    return
+        Set<String> namespaced = []
+        URL[] classpath = (classesDirs.files + templateClasspath.files).collect { it.toURI().toURL() } as URL[]
+        new URLClassLoader(classpath, (ClassLoader) null).withCloseable { URLClassLoader resources ->
+            for (File dir : classesDirs.files) {
+                if (!dir.isDirectory()) {
+                    continue
                 }
-                String domain = readScaffoldDomain(f)
-                if (domain == null) {
-                    return
+                dir.eachFileRecurse { File f ->
+                    if (!f.name.endsWith('Controller.class')) {
+                        return
+                    }
+                    String controllerName = decapitalize(f.name - 'Controller.class')
+                    if (hasNamespace(new ClassReader(f.bytes), resources)) {
+                        namespaced.add(controllerName)
+                    }
+                    String domain = readScaffoldDomain(f)
+                    if (domain == null) {
+                        return
+                    }
+                    claimants.computeIfAbsent(controllerName) { [] }.add(domain)
+                    found.put(controllerName, domain)
                 }
-                String controllerName = decapitalize(f.name - 'Controller.class')
-                claimants.computeIfAbsent(controllerName) { [] }.add(domain)
-                found.put(controllerName, domain)
             }
+        }
+        namespaced.each { String controllerName ->
+            found.remove(controllerName)
+            logger.info("Not precompiling ${controllerName}: its namespace is resolved at runtime")
         }
         claimants.each { String controllerName, List<String> domains ->
             List<String> distinct = domains.unique(false)
@@ -235,6 +280,33 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
             }
         }
         found
+    }
+
+    /** Read declarations, including inherited ones, without evaluating application code. */
+    private boolean hasNamespace(ClassReader reader, ClassLoader resources) {
+        boolean declared = false
+        reader.accept(new ClassVisitor(Opcodes.ASM9) {
+            @Override
+            FieldVisitor visitField(int access, String name, String descriptor, String signature, Object value) {
+                if (name == 'namespace' && (access & Opcodes.ACC_STATIC) != 0) {
+                    declared = true
+                }
+                null
+            }
+
+            @Override
+            MethodVisitor visitMethod(int access, String name, String descriptor, String signature, String[] exceptions) {
+                if (name == 'getNamespace' && descriptor.startsWith('()') && (access & Opcodes.ACC_STATIC) != 0) {
+                    declared = true
+                }
+                null
+            }
+        }, ClassReader.SKIP_CODE | ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES)
+        if (declared || reader.superName == null || reader.superName == 'java/lang/Object') {
+            return declared
+        }
+        InputStream parent = resources.getResourceAsStream("${reader.superName}.class")
+        parent == null ? false : parent.withCloseable { InputStream input -> hasNamespace(new ClassReader(input), resources) }
     }
 
     /**
