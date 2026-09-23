@@ -114,6 +114,10 @@ class CompilePlugin implements Plugin<Project> {
                 it.groovyOptions.encoding = StandardCharsets.UTF_8.name()
                 // Preserve method parameter names in Groovy/Java classes for IDE parameter hints & bean reflection metadata.
                 it.groovyOptions.parameters = true
+                // groovyOptions only covers Groovy sources; joint-compiled Java sources take their javac flags from here
+                if (!it.options.compilerArgs.contains('-parameters')) {
+                    it.options.compilerArgs.add('-parameters')
+                }
                 // Grails 8 keeps invokedynamic off for published artifacts. Groovy 5's
                 // compiler default is indy=true, which is a large runtime regression for
                 // dynamic Groovy (see #15293). Unpublished build-logic uses Gradle's

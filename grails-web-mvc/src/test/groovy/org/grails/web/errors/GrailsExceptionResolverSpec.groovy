@@ -32,6 +32,11 @@ import org.springframework.beans.factory.NoSuchBeanDefinitionException
 import org.springframework.context.ApplicationContext
 import org.springframework.mock.web.MockHttpServletRequest
 import org.springframework.mock.web.MockHttpServletResponse
+import org.springframework.mock.web.MockServletContext
+import org.springframework.web.context.request.async.AsyncRequestTimeoutException
+import org.springframework.web.util.WebUtils
+import org.springframework.web.context.WebApplicationContext
+import org.springframework.web.context.support.StaticWebApplicationContext
 import org.springframework.web.servlet.ModelAndView
 import spock.lang.Specification
 
@@ -39,6 +44,41 @@ import jakarta.servlet.http.HttpServletRequest
 import jakarta.servlet.http.HttpServletResponse
 
 class GrailsExceptionResolverSpec extends Specification {
+
+    void 'async timeouts resolve as 503 without an error stack trace'() {
+        given:
+        def resolverLog = new LogCapture(GrailsExceptionResolver)
+        def stackLog = new LogCapture(DefaultStackTraceFilterer.STACK_LOG_NAME)
+        def resolver = new GrailsExceptionResolver()
+        def context = new StaticWebApplicationContext()
+        context.beanFactory.registerSingleton(GrailsApplication.APPLICATION_ID, Stub(GrailsApplication))
+        def mappings = Mock(UrlMappingsHolder)
+        context.beanFactory.registerSingleton(UrlMappingsHolder.BEAN_ID, mappings)
+        context.refresh()
+        def servletContext = new MockServletContext()
+        servletContext.setAttribute(WebApplicationContext.ROOT_WEB_APPLICATION_CONTEXT_ATTRIBUTE, context)
+        resolver.servletContext = servletContext
+        resolver.defaultErrorView = '/error'
+        def request = new MockHttpServletRequest('GET', '/slow')
+        def response = new MockHttpServletResponse()
+
+        when:
+        def result = resolver.resolveException(request, response, null, new AsyncRequestTimeoutException())
+
+        then:
+        response.status == 503
+        request.getAttribute(WebUtils.ERROR_STATUS_CODE_ATTRIBUTE) == 503
+        result.viewName == '/error'
+        !resolverLog.events.any { it.level.toString() == 'ERROR' || it.throwableProxy != null }
+        stackLog.events.empty
+        2 * mappings.matchStatusCode(503, _ as Throwable) >> null
+        1 * mappings.matchStatusCode(503) >> null
+
+        cleanup:
+        resolverLog.close()
+        stackLog.close()
+        context.close()
+    }
 
     def "exception not thrown if an UrlMappingException is thrown while trying to match a request uri with a UrlMappingInfo "() {
         given:
