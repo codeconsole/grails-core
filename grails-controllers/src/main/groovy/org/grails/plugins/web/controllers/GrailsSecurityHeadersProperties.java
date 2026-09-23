@@ -25,6 +25,8 @@ public class GrailsSecurityHeadersProperties {
 
     private boolean enabled = true;
 
+    private Defaults defaults = Defaults.AUTO;
+
     private Header contentTypeOptions = new Header(true, "nosniff");
 
     private Header frameOptions = new Header(true, "SAMEORIGIN");
@@ -43,6 +45,14 @@ public class GrailsSecurityHeadersProperties {
 
     public void setEnabled(boolean enabled) {
         this.enabled = enabled;
+    }
+
+    public Defaults getDefaults() {
+        return defaults;
+    }
+
+    public void setDefaults(Defaults defaults) {
+        this.defaults = defaults;
     }
 
     public Header getContentTypeOptions() {
@@ -93,11 +103,37 @@ public class GrailsSecurityHeadersProperties {
         this.contentSecurityPolicy = contentSecurityPolicy;
     }
 
+    /**
+     * Controls when the built-in default header values are applied. Headers the
+     * application configured explicitly (any {@code grails.security.headers.<header>.*}
+     * key) are always applied, whatever this setting says.
+     */
+    public enum Defaults {
+
+        /**
+         * Apply the defaults unless the request is detected as having come through a
+         * reverse proxy, in which case only explicitly configured headers are sent.
+         */
+        AUTO,
+
+        /**
+         * Apply the defaults on every response, even behind a reverse proxy.
+         */
+        ALWAYS,
+
+        /**
+         * Never apply the defaults; only explicitly configured headers are sent.
+         */
+        NEVER
+    }
+
     public static class Header {
 
         private boolean enabled;
 
         private String value;
+
+        private boolean explicit;
 
         public Header() {
         }
@@ -113,6 +149,7 @@ public class GrailsSecurityHeadersProperties {
 
         public void setEnabled(boolean enabled) {
             this.enabled = enabled;
+            this.explicit = true;
         }
 
         public String getValue() {
@@ -121,6 +158,16 @@ public class GrailsSecurityHeadersProperties {
 
         public void setValue(String value) {
             this.value = value;
+            this.explicit = true;
+        }
+
+        /**
+         * Whether the application configured this header itself rather than relying on
+         * the built-in default. Explicitly configured headers are applied regardless of
+         * {@link Defaults} and reverse proxy detection.
+         */
+        public boolean isExplicit() {
+            return explicit;
         }
     }
 }

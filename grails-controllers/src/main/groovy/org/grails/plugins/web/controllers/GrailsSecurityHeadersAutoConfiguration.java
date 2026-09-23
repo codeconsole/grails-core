@@ -25,37 +25,49 @@ import jakarta.servlet.DispatcherType;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBooleanProperty;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
+import org.springframework.boot.cloud.CloudPlatform;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
+import org.springframework.core.env.Environment;
 
 import org.grails.web.config.http.GrailsFilters;
 
 /**
  * Registers {@link GrailsSecurityHeadersFilter} to apply baseline browser-hardening
- * response headers.
- *
- * <p>Backs off entirely when Spring Security's header-writing infrastructure
- * ({@code HeaderWriterFilter}) is on the classpath: that filter chain runs after this
- * one would and only writes a header when it is still absent, so an eagerly-applied
- * Grails default would silently win over an application's explicit Spring Security
- * header configuration. Spring Security already ships secure header defaults of its
- * own, so this auto-configuration only fills the gap for applications that don't have
- * it.</p>
+ * response headers. The filter writes at response commit time and only fills headers
+ * that are still absent, so it coexists with Spring Security's header writers and any
+ * other filter or controller that sets these headers itself.
  */
 @AutoConfiguration
 @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
 @ConditionalOnBooleanProperty(name = "grails.security.headers.enabled", matchIfMissing = true)
-@ConditionalOnMissingClass("org.springframework.security.web.header.HeaderWriterFilter")
 @EnableConfigurationProperties(GrailsSecurityHeadersProperties.class)
 public class GrailsSecurityHeadersAutoConfiguration {
 
+    static final String FORWARD_HEADERS_STRATEGY = "server.forward-headers-strategy";
+
     @Bean
     @ConditionalOnMissingBean(value = GrailsSecurityHeadersFilter.class, name = "grailsSecurityHeadersFilter")
-    public GrailsSecurityHeadersFilter securityHeadersFilter(GrailsSecurityHeadersProperties properties) {
-        return new GrailsSecurityHeadersFilter(properties);
+    public GrailsSecurityHeadersFilter securityHeadersFilter(GrailsSecurityHeadersProperties properties,
+            Environment environment) {
+        return new GrailsSecurityHeadersFilter(properties, isReverseProxyConfigured(environment));
+    }
+
+    /**
+     * Whether the deployment declares itself to be behind a reverse proxy: either a
+     * forwarded-headers strategy is configured (in which case the forwarding filter or
+     * valve strips the forwarded request headers before this filter could see them), or
+     * Spring Boot detected a cloud platform, where ingress through a proxy is the norm.
+     */
+    static boolean isReverseProxyConfigured(Environment environment) {
+        String strategy = environment.getProperty(FORWARD_HEADERS_STRATEGY);
+        if (strategy != null && !"none".equalsIgnoreCase(strategy.trim())) {
+            return true;
+        }
+        CloudPlatform platform = CloudPlatform.getActive(environment);
+        return platform != null && platform != CloudPlatform.NONE;
     }
 
     @Bean
