@@ -45,6 +45,11 @@ class Sitemesh3AutoConfigurationSpec extends Specification {
         Sitemesh3AutoConfiguration.siteMeshViewResolverBeanPostProcessor() instanceof GrailsSiteMeshViewResolverBeanPostProcessor
     }
 
+    void "the definition post processor bean rewrites jspViewResolver at the registry level"() {
+        expect:
+        Sitemesh3AutoConfiguration.siteMeshViewResolverPostProcessor() instanceof Sitemesh3ViewResolverDefinitionPostProcessor
+    }
+
     void "the decoratorSelector bean is created even when no groovyPageLocator is available"() {
         given: "an empty locator provider, as in a context without GSP support"
         ObjectProvider<GrailsConventionGroovyPageLocator> provider = Mock(ObjectProvider) {
@@ -88,7 +93,7 @@ class Sitemesh3AutoConfigurationSpec extends Specification {
     }
 
     void "the decoratorSelector bean falls back to grails.views.layout.default"() {
-        given: "no SiteMesh 3 default, but a SiteMesh 2 style default layout"
+        given: "no grails.sitemesh.default.layout, but the legacy default layout key"
         GrailsConventionGroovyPageLocator locator = Mock(GrailsConventionGroovyPageLocator) {
             findViewByPath('/layouts/legacy') >> Mock(GroovyPageScriptSource)
         }
@@ -111,5 +116,58 @@ class Sitemesh3AutoConfigurationSpec extends Specification {
 
         then:
         paths == ['/layouts/legacy'] as String[]
+    }
+
+    void "the decoratorSelector bean falls back to SiteMesh's own sitemesh.decorator.default"() {
+        given: "neither Grails key set, and the default layout configured the SiteMesh way"
+        GrailsConventionGroovyPageLocator locator = Mock(GrailsConventionGroovyPageLocator) {
+            findViewByPath('/layouts/main') >> Mock(GroovyPageScriptSource)
+        }
+        ObjectProvider<GrailsConventionGroovyPageLocator> provider = Mock(ObjectProvider) {
+            getIfAvailable() >> locator
+        }
+        Config config = Mock(Config) {
+            getProperty('grails.sitemesh.default.layout') >> null
+            getProperty('grails.views.layout.default') >> null
+            getProperty('sitemesh.decorator.default') >> 'main'
+            getProperty('grails.gsp.enable.reload', _, _) >> false
+            getProperty('grails.sitemesh.layout.cache.interval', _, _) >> 5000L
+        }
+        GrailsApplication grailsApplication = Stub(GrailsApplication) {
+            getConfig() >> config
+        }
+
+        when:
+        Sitemesh3LayoutFinder finder = autoConfiguration.decoratorSelector(provider, grailsApplication)
+        String[] paths = finder.selectDecoratorPaths(Mock(Content), Mock(SiteMeshContext))
+
+        then:
+        paths == ['/layouts/main'] as String[]
+    }
+
+    void "a Grails configured default layout wins over the SiteMesh key"() {
+        given: "both keys set, as in a Grails application whose environment post processor derived the SiteMesh one"
+        GrailsConventionGroovyPageLocator locator = Mock(GrailsConventionGroovyPageLocator) {
+            findViewByPath('/layouts/grailsLayout') >> Mock(GroovyPageScriptSource)
+        }
+        ObjectProvider<GrailsConventionGroovyPageLocator> provider = Mock(ObjectProvider) {
+            getIfAvailable() >> locator
+        }
+        Config config = Mock(Config) {
+            getProperty('grails.sitemesh.default.layout') >> 'grailsLayout'
+            getProperty('sitemesh.decorator.default') >> 'somethingElse'
+            getProperty('grails.gsp.enable.reload', _, _) >> false
+            getProperty('grails.sitemesh.layout.cache.interval', _, _) >> 5000L
+        }
+        GrailsApplication grailsApplication = Stub(GrailsApplication) {
+            getConfig() >> config
+        }
+
+        when:
+        Sitemesh3LayoutFinder finder = autoConfiguration.decoratorSelector(provider, grailsApplication)
+        String[] paths = finder.selectDecoratorPaths(Mock(Content), Mock(SiteMeshContext))
+
+        then:
+        paths == ['/layouts/grailsLayout'] as String[]
     }
 }
