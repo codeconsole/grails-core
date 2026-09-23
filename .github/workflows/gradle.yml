@@ -880,7 +880,6 @@ jobs:
     name: "Neo4j Functional Tests (Java ${{ matrix.java }}, indy=${{ matrix.indy }})"
     timeout-minutes: 180 # slowest run: 90 min
     runs-on: ubuntu-24.04
-    timeout-minutes: 105
     strategy:
       fail-fast: false
       matrix:
