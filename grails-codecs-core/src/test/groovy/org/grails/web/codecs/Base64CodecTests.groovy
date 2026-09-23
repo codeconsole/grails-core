@@ -83,9 +83,12 @@ class Base64CodecTests {
     }
 
     @Test
-    void testEncodeDecodeAsBase64WithCharset() {
+    void testEncodeAsBase64WithCharset() {
         assertEquals '6Q==', 'é'.encodeAsBase64(StandardCharsets.ISO_8859_1)
-        assertEquals 'é', new String('6Q=='.decodeBase64(StandardCharsets.ISO_8859_1), StandardCharsets.ISO_8859_1)
+        assertEquals 'é', new String('6Q=='.decodeBase64(), StandardCharsets.ISO_8859_1)
         assertEquals '/v///g==', '￾'.encodeAsBase64(StandardCharsets.UTF_16)
+        //the charset only applies to the source string; UTF-8 remains the default
+        assertEquals 'w6k=', 'é'.encodeAsBase64(StandardCharsets.UTF_8)
+        assertEquals 'é'.encodeAsBase64(), 'é'.encodeAsBase64(StandardCharsets.UTF_8)
     }
 }

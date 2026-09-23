@@ -23,6 +23,7 @@ import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 
 import groovy.transform.CompileStatic
+import groovy.transform.PackageScope
 import org.codehaus.groovy.runtime.typehandling.DefaultTypeTransformation
 
 @CompileStatic
@@ -40,7 +41,8 @@ abstract class DigestUtils {
         return md.digest()
     }
 
-    protected static byte[] toByteArray(Object data) {
+    @PackageScope
+    static byte[] toByteArray(Object data) {
         if (data instanceof byte[]) {
             return (byte[]) data
         }

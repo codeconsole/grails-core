@@ -47,7 +47,7 @@ class Base64CodecExtensionMethods {
         return new String(Base64.encodeBase64(theTarget.toString().getBytes(charset)), StandardCharsets.UTF_8)
     }
 
-    static Object decodeBase64(Object theTarget, Charset charset = StandardCharsets.UTF_8) {
+    static Object decodeBase64(Object theTarget) {
         if (theTarget == null || theTarget instanceof NullObject) {
             return null
         }

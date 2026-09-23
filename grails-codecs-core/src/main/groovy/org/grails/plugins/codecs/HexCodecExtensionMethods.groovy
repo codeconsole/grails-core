@@ -48,6 +48,7 @@ class HexCodecExtensionMethods {
     }
 
     static Object decodeHex(Object theTarget) {
+        // an empty hex string decodes to zero bytes, matching Groovy's own String.decodeHex()
         if (theTarget instanceof CharSequence && theTarget.length() == 0) return new byte[0]
         if (!DefaultTypeTransformation.castToBoolean(theTarget)) return null
 

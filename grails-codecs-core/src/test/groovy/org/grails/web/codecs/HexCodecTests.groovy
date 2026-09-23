@@ -49,8 +49,11 @@ class HexCodecTests {
         //make sure decoding null returns null
         assertEquals(null.decodeHex(), null)
 
-        //make sure decoding Groovy-falsy values returns null
-        assertIterableEquals([], ''.decodeHex().toList())
+        //an empty CharSequence decodes to zero bytes, matching Groovy's own String.decodeHex()
+        assertIterableEquals([], new StringBuilder().decodeHex().toList())
+        assertIterableEquals([], "${''}".decodeHex().toList())
+
+        //every other Groovy-falsy value decodes to null
         assertEquals(null, 0.decodeHex())
         assertEquals(null, false.decodeHex())
         assertEquals(null, [].decodeHex())
@@ -68,5 +71,7 @@ class HexCodecTests {
     void testEncodeIterableCoercion() {
         assertEquals('4142', ['A' as char, 'B' as char].encodeAsHex())
         assertEquals('4142', new LinkedHashSet<Integer>([65, 66]).encodeAsHex())
+        assertEquals('4142', [65, 66].iterator().encodeAsHex())
+        assertEquals('4142', ([65, 66] as int[]).encodeAsHex())
     }
 }
