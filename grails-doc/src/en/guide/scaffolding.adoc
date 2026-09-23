@@ -59,7 +59,7 @@ With this configured, when you start your application the actions and views will
 
 A CRUD interface will also be generated. To access this open `http://localhost:8080/book` in a browser.
 
-Scaffold views may be precompiled when building a deployment archive. Handwritten views in the application or supplied by a plugin still take precedence over generated scaffold views.
+During `compileGroovyPages`, the Gradle plugin expands scaffold templates and compiles the resulting GSP views so packaged applications and native images do not need to generate them on the first request. Handwritten views in the application or supplied by a plugin still take precedence over generated scaffold views.
 
 Controllers that declare or inherit a static `namespace` keep runtime view generation, so namespace-specific templates and fallback views are resolved as they are during development. If another controller shares the same simple name, its scaffold views also remain runtime-generated to avoid introducing a shared view that changes the namespaced controller's fallback. For native images, provide concrete GSP views for these controllers instead of relying on runtime scaffold generation.
 

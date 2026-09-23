@@ -33,6 +33,7 @@ import org.gradle.api.DefaultTask
 import org.gradle.api.file.ConfigurableFileCollection
 import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.tasks.CacheableTask
+import org.gradle.api.tasks.Classpath
 import org.gradle.api.tasks.InputFiles
 import org.gradle.api.tasks.Optional
 import org.gradle.api.tasks.OutputDirectory
@@ -83,13 +84,11 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
      * The classpath the scaffolding templates are read from. The application's own
      * {@code src/main/templates/scaffolding} takes precedence, matching the runtime lookup.
      */
-    @InputFiles
-    @PathSensitive(PathSensitivity.RELATIVE)
+    @Classpath
     abstract ConfigurableFileCollection getTemplateClasspath()
 
     /** Dependency views, including plugins used only at runtime. */
-    @InputFiles
-    @PathSensitive(PathSensitivity.RELATIVE)
+    @Classpath
     abstract ConfigurableFileCollection getViewClasspath()
 
     /** Application template overrides, normally {@code src/main/templates/scaffolding}. */
@@ -136,11 +135,11 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
                 // a view the application wrote itself already wins at runtime, so leaving it out
                 // keeps build-time and runtime resolution agreeing
                 if (declared.any { it.path.endsWith("views/${controller.key}/${viewName}.gsp".toString()) }) {
-                    logger.info("Skipping ${controller.key}/${viewName}.gsp, the application declares it")
+                    logger.info('Skipping {}/{}.gsp, the application declares it', controller.key, viewName)
                     continue
                 }
                 if (pluginViews.contains("/WEB-INF/grails-app/views/${controller.key}/${viewName}.gsp".toString())) {
-                    logger.info("Skipping ${controller.key}/${viewName}.gsp, a plugin declares it")
+                    logger.info('Skipping {}/{}.gsp, a plugin declares it', controller.key, viewName)
                     continue
                 }
                 File target = new File(outputDir, "${controller.key}/${viewName}.gsp")
@@ -149,7 +148,7 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
                 written++
             }
         }
-        logger.info("Generated ${written} scaffolded view(s)")
+        logger.info('Generated {} scaffolded view(s)', written)
     }
 
     /**
@@ -253,10 +252,11 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
                         return
                     }
                     String controllerName = decapitalize(f.name - 'Controller.class')
-                    if (hasNamespace(new ClassReader(f.bytes), resources)) {
+                    ClassReader reader = new ClassReader(f.bytes)
+                    if (hasNamespace(reader, resources)) {
                         namespaced.add(controllerName)
                     }
-                    String domain = readScaffoldDomain(f)
+                    String domain = readScaffoldDomain(reader)
                     if (domain == null) {
                         return
                     }
@@ -266,8 +266,10 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
             }
         }
         namespaced.each { String controllerName ->
-            found.remove(controllerName)
-            logger.info("Not precompiling ${controllerName}: its namespace is resolved at runtime")
+            if (found.remove(controllerName) != null) {
+                logger.warn('Not precompiling the views of {}: a controller with this name declares or inherits a namespace. ' +
+                        'These scaffold views are expanded at runtime; native images require concrete GSP views.', controllerName)
+            }
         }
         claimants.each { String controllerName, List<String> domains ->
             List<String> distinct = domains.unique(false)
@@ -323,39 +325,37 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
      * controller superclass as the domain. The precedence matters rather than merely tidying,
      * because the two attributes are written in no guaranteed order.</p>
      */
-    private String readScaffoldDomain(File classFile) {
+    private String readScaffoldDomain(ClassReader reader) {
         boolean scaffolded = false
         String fromValue = null
         String fromDomain = null
-        classFile.withInputStream { InputStream input ->
-            new ClassReader(input).accept(new ClassVisitor(Opcodes.ASM9) {
-                @Override
-                AnnotationVisitor visitAnnotation(String descriptor, boolean visible) {
-                    if (descriptor != SCAFFOLD_ANNOTATION) {
-                        return null
-                    }
-                    scaffolded = true
-                    return new AnnotationVisitor(Opcodes.ASM9) {
-                        @Override
-                        void visit(String name, Object value) {
-                            if (!(value instanceof Type)) {
-                                return
-                            }
-                            String candidate = ((Type) value).className
-                            if (candidate.tokenize('.').last() == 'Void') {
-                                return
-                            }
-                            if (name == 'domain') {
-                                fromDomain = candidate
-                            }
-                            else if (name == 'value') {
-                                fromValue = candidate
-                            }
+        reader.accept(new ClassVisitor(Opcodes.ASM9) {
+            @Override
+            AnnotationVisitor visitAnnotation(String descriptor, boolean visible) {
+                if (descriptor != SCAFFOLD_ANNOTATION) {
+                    return null
+                }
+                scaffolded = true
+                return new AnnotationVisitor(Opcodes.ASM9) {
+                    @Override
+                    void visit(String name, Object value) {
+                        if (!(value instanceof Type)) {
+                            return
+                        }
+                        String candidate = ((Type) value).className
+                        if (candidate.tokenize('.').last() == 'Void') {
+                            return
+                        }
+                        if (name == 'domain') {
+                            fromDomain = candidate
+                        }
+                        else if (name == 'value') {
+                            fromValue = candidate
                         }
                     }
                 }
-            }, ClassReader.SKIP_CODE | ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES)
-        }
+            }
+        }, ClassReader.SKIP_CODE | ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES)
         scaffolded ? (fromDomain ?: fromValue) : null
     }
 

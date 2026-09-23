@@ -332,6 +332,7 @@ class GenerateScaffoldedViewsTaskSpec extends Specification {
             !generated(task, 'user/index.gsp').exists()
             generated(task, 'book/index.gsp').text == 'list of book for Book'
     }
+
     void 'a static namespace #declaration is left to the runtime resolver'() {
         given:
             writeNamespacedClass('com/example/EventController', declaration)

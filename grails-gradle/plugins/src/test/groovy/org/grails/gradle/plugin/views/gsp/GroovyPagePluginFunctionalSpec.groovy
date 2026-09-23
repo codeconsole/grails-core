@@ -128,6 +128,7 @@ class GroovyPagePluginFunctionalSpec extends GradleSpecification {
         and: 'so its test task is not put behind compiling pages it does not read'
         result.output.contains('TEST_WAITS_FOR_PAGE_COMPILATION=false')
     }
+
     def "staged scaffold views preserve namespaces and runtime plugin pages"() {
         given:
         def runner = setupTestResourceProject('gsp-compile-classpath')
@@ -153,6 +154,10 @@ class GroovyPagePluginFunctionalSpec extends GradleSpecification {
                 import grails.plugin.scaffolding.annotation.Scaffold
                 @Scaffold(String)
                 class EventController { static namespace = 'admin' }
+            ''',
+            'grails-app/controllers/admin/DashboardController.groovy': '''
+                package admin
+                class DashboardController { static namespace = 'admin' }
             ''',
             'grails-app/controllers/PersonController.groovy': '''
                 import grails.plugin.scaffolding.annotation.Scaffold
@@ -187,6 +192,11 @@ class GroovyPagePluginFunctionalSpec extends GradleSpecification {
         !new File(staged, 'person/show.gsp').exists()
         new File(staged, 'book/show.gsp').text == 'scaffold String'
         new File(staged, 'person/index.gsp').text == 'handwritten index'
+
+        and: 'only skipped scaffold views warn about the native-image requirement'
+        result.output.contains('Not precompiling the views of event:')
+        result.output.contains('native images require concrete GSP views')
+        !result.output.contains('Not precompiling the views of dashboard:')
 
         when: 'a runtime dependency no longer provides a page, invalidating the generation task'
         new File(projectDir, 'calendar-plugin/gsp/views.properties').text = ''
