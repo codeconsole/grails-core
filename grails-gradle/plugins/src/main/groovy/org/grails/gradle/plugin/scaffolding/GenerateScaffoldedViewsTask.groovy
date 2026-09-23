@@ -96,6 +96,14 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
     @Classpath
     abstract ConfigurableFileCollection getTemplateClasspath()
 
+    /**
+     * The classpath a controller's superclasses are read from, to find a namespace it inherits.
+     * Kept apart from {@link #getTemplateClasspath()} so that narrowing where templates are read
+     * from cannot quietly stop inherited namespaces being seen.
+     */
+    @Classpath
+    abstract ConfigurableFileCollection getControllerClasspath()
+
     /** Dependency views, including plugins used only at runtime. */
     @Classpath
     abstract ConfigurableFileCollection getViewClasspath()
@@ -244,6 +252,15 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
      * directory would make them visible to unrelated controllers. The entire shared directory is
      * left out, including when an unqualified controller also claims it.</p>
      *
+     * <p>This is deliberately broader than it needs to be for a namespaced controller that has no
+     * namespace-specific template, whose page would come out identical to the plain one. Narrowing
+     * it needs to know whether {@code <namespace>/<view>.gsp} exists, and neither half is available
+     * here: the namespace value is assigned in {@code <clinit>} for the usual Groovy declarations,
+     * so the bytecode carries no constant for it, and the runtime also finds namespace templates in
+     * places this task does not read - the application's own resources beside the controller class,
+     * {@code src/main/templates/scaffolding} in development, and a template-override plugin.
+     * Guessing wrong would precompile a plain page over a namespace-specific one, silently.</p>
+     *
      * <p>Likewise, controllers sharing a name but scaffolding different domains cannot share a
      * precompiled page. The runtime resolver expands a template for the appropriate domain.</p>
      */
@@ -251,7 +268,8 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
         Map<String, String> found = [:]
         Map<String, List<String>> claimants = [:]
         Set<String> namespaced = []
-        URL[] classpath = (classesDirs.files + templateClasspath.files).collect { it.toURI().toURL() } as URL[]
+        Map<String, Boolean> ancestors = [:]
+        URL[] classpath = (classesDirs.files + controllerClasspath.files).collect { it.toURI().toURL() } as URL[]
         new URLClassLoader(classpath, (ClassLoader) null).withCloseable { URLClassLoader resources ->
             for (File dir : classesDirs.files) {
                 if (!dir.isDirectory()) {
@@ -263,7 +281,7 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
                     }
                     String controllerName = viewDirectory(f.name - '.class')
                     ClassReader reader = new ClassReader(f.bytes)
-                    if (hasNamespace(reader, resources)) {
+                    if (hasNamespace(reader, resources, ancestors)) {
                         namespaced.add(controllerName)
                     }
                     String domain = readScaffoldDomain(reader)
@@ -294,8 +312,16 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
         found
     }
 
-    /** Read declarations, including inherited ones, without evaluating application code. */
-    private boolean hasNamespace(ClassReader reader, ClassLoader resources) {
+    /**
+     * Read declarations, including inherited ones, without evaluating application code.
+     *
+     * <p>A declaration is all this can see, not its value, so {@code static namespace = null}
+     * still counts even though the runtime, which tests the value, gives that controller no
+     * namespace. The value lives in {@code <clinit>} for the usual Groovy forms and code is not
+     * read here, so the difference cannot be recovered; the controller is only expanded at runtime
+     * rather than precompiled.</p>
+     */
+    private boolean hasNamespace(ClassReader reader, ClassLoader resources, Map<String, Boolean> ancestors) {
         boolean declared = false
         reader.accept(new ClassVisitor(Opcodes.ASM9) {
             @Override
@@ -317,8 +343,35 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
         if (declared || reader.superName == null || reader.superName == 'java/lang/Object') {
             return declared
         }
-        InputStream parent = resources.getResourceAsStream("${reader.superName}.class")
-        parent == null ? false : parent.withCloseable { InputStream input -> hasNamespace(new ClassReader(input), resources) }
+        String superName = reader.superName
+        Boolean known = ancestors.get(superName)
+        if (known != null) {
+            return known
+        }
+        boolean inherited = ancestorHasNamespace(superName, resources, ancestors)
+        ancestors.put(superName, inherited)
+        inherited
+    }
+
+    /**
+     * Superclasses can come from dependencies, whose class files may be newer than the bundled ASM
+     * reads. One that cannot be read is taken to declare no namespace rather than failing the build.
+     */
+    private boolean ancestorHasNamespace(String internalName, ClassLoader resources, Map<String, Boolean> ancestors) {
+        InputStream parent = resources.getResourceAsStream("${internalName}.class")
+        if (parent == null) {
+            return false
+        }
+        ClassReader reader
+        try {
+            reader = parent.withCloseable { InputStream input -> new ClassReader(input) }
+        }
+        catch (IllegalArgumentException e) {
+            logger.info('Could not read {} to look for an inherited namespace; treating it as declaring none: {}',
+                    internalName.replace('/', '.'), e.message)
+            return false
+        }
+        hasNamespace(reader, resources, ancestors)
     }
 
     /**

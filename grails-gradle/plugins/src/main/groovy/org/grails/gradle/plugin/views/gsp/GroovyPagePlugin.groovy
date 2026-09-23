@@ -362,6 +362,7 @@ class GroovyPagePlugin implements Plugin<Project> {
                 }
                 it.classesDirs.from(classesDirs)
                 it.templateClasspath.from(project.configurations.named('compileClasspath'))
+                it.controllerClasspath.from(project.configurations.named('compileClasspath'))
                 it.viewClasspath.from(project.configurations.named('runtimeClasspath'))
                 it.templateOverrides.from(
                         project.fileTree(project.layout.projectDirectory.dir('src/main/templates/scaffolding'))

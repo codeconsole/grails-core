@@ -364,7 +364,7 @@ class GenerateScaffoldedViewsTaskSpec extends Specification {
                     out.closeEntry()
                 }
                 parent.delete()
-                task.templateClasspath.from(dependency)
+                task.controllerClasspath.from(dependency)
             }
             writeNamespacedClass('com/example/EventController', null, 'com/example/AdminBase')
 
@@ -376,6 +376,67 @@ class GenerateScaffoldedViewsTaskSpec extends Specification {
 
         where:
             location << ['directory', 'jar']
+    }
+
+    void 'a superclass on the template classpath alone is not searched for a namespace'() {
+        given: 'the base class is reachable only where templates are read from'
+            writeNamespacedClass('com/example/AdminBase', 'field')
+            File parent = new File(classesDir, 'com/example/AdminBase.class')
+            File dependency = new File(projectDir, 'base.jar')
+            new JarOutputStream(dependency.newOutputStream()).withCloseable { out ->
+                out.putNextEntry(new JarEntry('com/example/AdminBase.class'))
+                out.write(parent.bytes)
+                out.closeEntry()
+            }
+            parent.delete()
+            writeNamespacedClass('com/example/EventController', null, 'com/example/AdminBase')
+            def task = task()
+            task.templateClasspath.from(dependency)
+
+        when:
+            task.generate()
+
+        then: 'class resolution reads its own classpath, so the two inputs can be scoped separately'
+            generated(task, 'event/show.gsp').exists()
+    }
+
+    void 'every controller extending one namespaced base is left to the runtime resolver'() {
+        given:
+            writeNamespacedClass('com/example/AdminBase', 'field')
+            writeNamespacedClass('com/example/EventController', null, 'com/example/AdminBase')
+            writeNamespacedClass('com/example/VenueController', null, 'com/example/AdminBase')
+            writeController('BookController', 'Book')
+            def task = task()
+
+        when:
+            task.generate()
+
+        then:
+            !generated(task, 'event').exists()
+            !generated(task, 'venue').exists()
+            generated(task, 'book/show.gsp').exists()
+    }
+
+    void 'a superclass the bundled ASM cannot read is taken to declare no namespace'() {
+        given: 'a dependency base class compiled for a class-file version newer than ASM supports'
+            ClassWriter writer = new ClassWriter(0)
+            writer.visit(200, Opcodes.ACC_PUBLIC, 'com/example/FutureBase', null, 'java/lang/Object', null)
+            writer.visitEnd()
+            File dependency = new File(projectDir, 'future.jar')
+            new JarOutputStream(dependency.newOutputStream()).withCloseable { out ->
+                out.putNextEntry(new JarEntry('com/example/FutureBase.class'))
+                out.write(writer.toByteArray())
+                out.closeEntry()
+            }
+            writeNamespacedClass('com/example/EventController', null, 'com/example/FutureBase')
+            def task = task()
+            task.controllerClasspath.from(dependency)
+
+        when:
+            task.generate()
+
+        then: 'the build carries on and the controller is precompiled'
+            generated(task, 'event/show.gsp').exists()
     }
 
     void 'an acronym-prefixed controller writes the view directory the runtime resolves'() {
