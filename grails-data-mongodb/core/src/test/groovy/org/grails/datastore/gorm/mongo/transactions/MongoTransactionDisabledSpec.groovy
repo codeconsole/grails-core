@@ -20,8 +20,9 @@ package org.grails.datastore.gorm.mongo.transactions
 
 import grails.gorm.annotation.Entity
 
-import org.apache.grails.testing.mongo.AutoStartedMongoSpec
+import org.apache.grails.testing.mongo.EmbeddedReplicaSetSpec
 import org.grails.datastore.mapping.mongo.MongoDatastore
+import org.springframework.transaction.support.TransactionTemplate
 import spock.lang.AutoCleanup
 import spock.lang.Shared
 
@@ -30,20 +31,15 @@ import spock.lang.Shared
  * the legacy client-side flush behavior: server-side transactions are not used, so writes already
  * flushed within a transaction are not rolled back. This is the non-breaking fallback contract.
  */
-class MongoTransactionDisabledSpec extends AutoStartedMongoSpec {
+class MongoTransactionDisabledSpec extends EmbeddedReplicaSetSpec {
 
     @Shared
     @AutoCleanup
     MongoDatastore datastore
 
-    @Override
-    boolean shouldInitializeDatastore() {
-        false
-    }
-
     void setupSpec() {
         // No grails.mongodb.transactional => default false
-        datastore = new MongoDatastore(['grails.mongodb.url': dbContainer.getReplicaSetUrl('myDb')] as Map, LegacyThing)
+        datastore = new MongoDatastore(['grails.mongodb.url': mongoUrl] as Map, LegacyThing)
     }
 
     void setup() {
@@ -67,6 +63,35 @@ class MongoTransactionDisabledSpec extends AutoStartedMongoSpec {
 
         and: "the already-flushed write remains, because there was no server-side transaction to abort"
         LegacyThing.withNewSession { LegacyThing.count() } == 1
+    }
+
+    void "a read-only transaction commits without flushing the surrounding session"() {
+        when: "a read-only transaction commits while the session holds an unflushed write"
+        int written = LegacyThing.withNewSession {
+            new LegacyThing(name: "queued").save()
+            TransactionTemplate txTemplate = new TransactionTemplate(datastore.transactionManager)
+            txTemplate.readOnly = true
+            txTemplate.execute {}
+            LegacyThing.withNewSession { LegacyThing.count() }
+        }
+
+        then: "the read did not persist the queued write"
+        written == 0
+
+        and: "the write is dropped when its session closes, as it would be on Hibernate"
+        LegacyThing.withNewSession { LegacyThing.count() } == 0
+    }
+
+    void "a read-write transaction still flushes the surrounding session"() {
+        when: "the same sequence runs without the read-only flag"
+        int written = LegacyThing.withNewSession {
+            new LegacyThing(name: "queued").save()
+            new TransactionTemplate(datastore.transactionManager).execute {}
+            LegacyThing.withNewSession { LegacyThing.count() }
+        }
+
+        then: "the flush on commit is unchanged"
+        written == 1
     }
 }
 

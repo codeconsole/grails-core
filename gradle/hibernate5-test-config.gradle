@@ -36,6 +36,7 @@ tasks.withType(Test).configureEach {
                 'onlyHibernate7Tests',
                 'skipHibernate5Tests',
                 'onlyMongodbTests',
+                'onlyNeo4jTests',
                 'onlyRedisTests',
                 'onlySpringSecurityTests',
                 'onlyCoreTests',
@@ -67,16 +68,18 @@ tasks.withType(Test).configureEach {
         info.events = debug.events
         info.exceptionFormat = debug.exceptionFormat
     }
-    afterTest { desc, result ->
-        logger.quiet(' -- Executed test {} [{}] with result: {}', desc.name, desc.className, result.resultType)
-    }
-    afterSuite { desc, result ->
-        if (!desc.parent) { // will match the outermost suite
-            def output = "Results: ${result.resultType} (${result.testCount} tests, ${result.successfulTestCount} successes, ${result.failedTestCount} failures, ${result.skippedTestCount} skipped)"
-            def startItem = '|  ', endItem = '  |'
-            def repeatLength = startItem.length() + output.length() + endItem.length()
-            def dashes = '-' * repeatLength
-            logger.quiet('\n{}\n{}{}{}\n{}', dashes, startItem, output, endItem, dashes)
+    addTestListener([
+        afterTest: { desc, result ->
+            logger.quiet(' -- Executed test {} [{}] with result: {}', desc.name, desc.className, result.resultType)
+        },
+        afterSuite: { desc, result ->
+            if (!desc.parent) { // will match the outermost suite
+                def output = "Results: ${result.resultType} (${result.testCount} tests, ${result.successfulTestCount} successes, ${result.failedTestCount} failures, ${result.skippedTestCount} skipped)"
+                def startItem = '|  ', endItem = '  |'
+                def repeatLength = startItem.length() + output.length() + endItem.length()
+                def dashes = '-' * repeatLength
+                logger.quiet('\n{}\n{}{}{}\n{}', dashes, startItem, output, endItem, dashes)
+            }
         }
-    }
+    ] as TestListener)
 }
