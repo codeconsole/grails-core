@@ -26,6 +26,7 @@ import org.grails.datastore.mapping.multitenancy.MultiTenancySettings.MultiTenan
 import org.springframework.core.convert.ConversionFailedException
 import org.springframework.core.convert.ConverterNotFoundException
 import org.springframework.core.convert.TypeDescriptor
+import org.grails.datastore.mapping.multitenancy.TenantResolver
 import org.grails.datastore.mapping.multitenancy.resolvers.FixedTenantResolver
 import org.springframework.core.env.PropertyResolver
 import org.springframework.util.ReflectionUtils
@@ -439,6 +440,126 @@ class ConfigurationBuilderSpec extends Specification {
         fallback.strictNested.nested.inherited == 'retained'
     }
 
+    void "Test nested map conversion binds values the resolver does not expose as dotted properties"() {
+
+        given: "a resolver that exposes the nested map but not the entries below it"
+        PropertyResolver config = Mock()
+        String propertyPath = Settings.PREFIX + '.strictNested'
+        config.getProperty(propertyPath, StrictNestedSettings, _) >> {
+            throw new ConverterNotFoundException(TypeDescriptor.valueOf(Map), TypeDescriptor.valueOf(StrictNestedSettings))
+        }
+        config.getProperty(propertyPath, Object) >> [value: 'configured', enabled: true]
+
+        when: "The configuration is built"
+        StrictNestedConfig configuration = new StrictNestedConfigurationBuilder(config).build()
+
+        then: "The entries are bound from the map instead of being silently dropped"
+        configuration.strictNested.value == 'configured'
+        configuration.strictNested.enabled
+    }
+
+    void "Test nested map conversion reports a primitive property that resolves to null"() {
+
+        given: "a nested map whose primitive entry resolves to null"
+        PropertyResolver config = Mock()
+        String propertyPath = Settings.PREFIX + '.strictNested'
+        config.getProperty(propertyPath, StrictNestedSettings, _) >> {
+            throw new ConverterNotFoundException(TypeDescriptor.valueOf(Map), TypeDescriptor.valueOf(StrictNestedSettings))
+        }
+        config.getProperty(propertyPath, Object) >> [enabled: null]
+
+        when: "The configuration is built"
+        new StrictNestedConfigurationBuilder(config).build()
+
+        then: "The failure names the setting rather than surfacing a reflection error"
+        def e = thrown(ConfigurationException)
+        e.message.contains('strictNested.enabled')
+        e.message.contains('boolean')
+    }
+
+    void "Test nested map conversion resolves a Class property from a class name"() {
+
+        given: "A nested map naming a class"
+        def config = DatastoreUtils.createPropertyResolver(
+                (Settings.PREFIX + '.strictNested'): [resolverClass: FixedTenantResolver.name]
+        )
+
+        when: "The configuration is built"
+        StrictNestedConfig configuration = new StrictNestedConfigurationBuilder(config).build()
+
+        then: "The class is resolved through the thread context class loader"
+        configuration.strictNested.resolverClass == FixedTenantResolver
+    }
+
+    void "Test nested map conversion resolves a Class property from a class literal"() {
+
+        given: "A nested map holding a class literal"
+        PropertyResolver config = Mock()
+        String propertyPath = Settings.PREFIX + '.strictNested'
+        config.getProperty(propertyPath, StrictNestedSettings, _) >> {
+            throw new ConverterNotFoundException(TypeDescriptor.valueOf(Map), TypeDescriptor.valueOf(StrictNestedSettings))
+        }
+        config.getProperty(propertyPath, Object) >> [resolverClass: FixedTenantResolver]
+
+        when: "The configuration is built"
+        StrictNestedConfig configuration = new StrictNestedConfigurationBuilder(config).build()
+
+        then: "The literal is used as is"
+        configuration.strictNested.resolverClass == FixedTenantResolver
+    }
+
+    void "Test nested map conversion rejects an unknown class name for a Class property"() {
+
+        given: "A nested map naming a class that does not exist"
+        def config = DatastoreUtils.createPropertyResolver(
+                (Settings.PREFIX + '.strictNested'): [resolverClass: 'com.example.NoSuchResolver']
+        )
+
+        when: "The configuration is built"
+        new StrictNestedConfigurationBuilder(config).build()
+
+        then: "The invalid class name is reported"
+        def e = thrown(ConfigurationException)
+        e.message.contains('com.example.NoSuchResolver')
+        e.message.contains('resolverClass')
+    }
+
+    void "Test nested map conversion retains an inherited Class when no class is configured"() {
+
+        given: "A fallback class and a nested map whose Class entry names nothing"
+        PropertyResolver config = Mock()
+        String propertyPath = Settings.PREFIX + '.strictNested'
+        config.getProperty(propertyPath, StrictNestedSettings, _) >> {
+            throw new ConverterNotFoundException(TypeDescriptor.valueOf(Map), TypeDescriptor.valueOf(StrictNestedSettings))
+        }
+        config.getProperty(propertyPath, Object) >> [resolverClass: ' ']
+        def fallback = new StrictNestedConfig(strictNested: new StrictNestedSettings(resolverClass: FixedTenantResolver))
+
+        when: "The configuration is built"
+        StrictNestedConfig configuration = new StrictNestedConfigurationBuilder(config, fallback).build()
+
+        then: "The inherited class is not cleared"
+        configuration.strictNested.resolverClass == FixedTenantResolver
+    }
+
+    void "Test nested map conversion keeps map-backed keys addressable by String"() {
+
+        given: "A map-backed nested type configured with a non-String key"
+        PropertyResolver config = Mock()
+        String propertyPath = Settings.PREFIX + '.mapBacked'
+        config.getProperty(propertyPath, MapBackedSettings, _) >> {
+            throw new ConverterNotFoundException(TypeDescriptor.valueOf(Map), TypeDescriptor.valueOf(MapBackedSettings))
+        }
+        config.getProperty(propertyPath, Object) >> [("hibernate.hbm2ddl.${'auto'}"): 'update']
+
+        when: "The configuration is built"
+        MapBackedConfig configuration = new MapBackedConfigurationBuilder(config).build()
+
+        then: "The entry is stored under a String key"
+        configuration.mapBacked['hibernate.hbm2ddl.auto'] == 'update'
+        configuration.mapBacked.keySet().every { it instanceof String }
+    }
+
     static class TestConfigurationBuilder extends ConfigurationBuilder<ConnectionSourceSettings, ConnectionSourceSettings> {
 
         TestConfigurationBuilder(PropertyResolver propertyResolver) {
@@ -497,7 +618,11 @@ class ConfigurationBuilderSpec extends Specification {
 
         String inherited
 
+        boolean enabled
+
         MultiTenancyMode mode
+
+        Class<? extends TenantResolver> resolverClass
 
         NestedStrictSettings nested
 

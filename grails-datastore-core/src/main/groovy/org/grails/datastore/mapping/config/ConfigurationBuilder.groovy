@@ -399,9 +399,12 @@ abstract class ConfigurationBuilder<B, C> {
                         } catch (ConversionFailedException e) {
                             value = handleConversionException(e, argType, propertyPathForArg, fallBackValue)
                         } catch (ConverterNotFoundException e) {
-                            // Spring 7 nested-map conversion fallback: handle types with
-                            // @Builder(builderStrategy = SimpleStrategy) where Spring cannot
-                            // auto-convert from Map. Independent of the Groovy version.
+                            // Spring 7 no longer converts a configuration Map into an arbitrary
+                            // settings type, so a nested settings type the conversion service does
+                            // not know about has to be populated from the Map here. Types carrying
+                            // a runtime @Builder annotation never reach this point - they are built
+                            // by the recursion above - so this covers the plain settings beans, such
+                            // as the Hibernate hibernateEventListeners tree.
                             value = handleConverterNotFoundException(e, argType, propertyPathForArg, fallBackValue)
                         }
                         if (value != null) {
@@ -494,10 +497,11 @@ abstract class ConfigurationBuilder<B, C> {
     }
 
     /**
-     * Handle ConverterNotFoundException - for nested configuration types,
-     * try to instantiate and populate from Map. This handles Spring 7 compatibility where
-     * Spring can't auto-convert from LinkedHashMap to these types. This is independent of the
-     * Groovy version and is required regardless of @Builder annotation retention.
+     * Handle ConverterNotFoundException by instantiating the target type and populating it from
+     * the configured Map. Spring 7 removed the conversion that previously turned a configuration
+     * Map into a settings type, so nested settings beans the conversion service does not know
+     * about - the Hibernate hibernateEventListeners tree, for example - no longer bind without
+     * this. Independent of the Groovy version.
      */
     @CompileDynamic
     private Object handleConverterNotFoundException(ConverterNotFoundException e, Class argType, String propertyPathForArg, Object fallBackValue, Object rawValue = null) {
@@ -532,7 +536,7 @@ abstract class ConfigurationBuilder<B, C> {
                     writableProperties.values().each { PropertyDescriptor property ->
                         if (property.readMethod != null && property.readMethod.parameterCount == 0) {
                             Object fallbackPropertyValue = property.readMethod.invoke(fallBackValue)
-                            property.writeMethod.invoke(instance, [fallbackPropertyValue] as Object[])
+                            writeProperty(instance, property, fallbackPropertyValue, "$propertyPathForArg.$property.name")
                         }
                     }
                 }
@@ -545,7 +549,7 @@ abstract class ConfigurationBuilder<B, C> {
                     if (property != null) {
                         Object fallBackPropertyValue = getFallBackValue(fallBackValue, propertyName)
                         Object value = resolveMapValue(property.propertyType, "$propertyPathForArg.$propertyName", fallBackPropertyValue, val)
-                        property.writeMethod.invoke(instance, [value] as Object[])
+                        writeProperty(instance, property, value, "$propertyPathForArg.$propertyName")
                         resolvedProperties.add(propertyName)
                         return
                     }
@@ -556,8 +560,11 @@ abstract class ConfigurationBuilder<B, C> {
                         if (nestedProperty != null) {
                             if (resolvedProperties.add(nestedPropertyName)) {
                                 Object fallBackPropertyValue = getFallBackValue(fallBackValue, nestedPropertyName)
-                                Object value = resolveMapValue(nestedProperty.propertyType, "$propertyPathForArg.$nestedPropertyName", fallBackPropertyValue, val)
-                                nestedProperty.writeMethod.invoke(instance, [value] as Object[])
+                                // The entry value belongs to a descendant of this property, not to
+                                // the property itself, so it is resolved from the path rather than
+                                // bound from the value in hand.
+                                Object value = resolveMapValue(nestedProperty.propertyType, "$propertyPathForArg.$nestedPropertyName", fallBackPropertyValue, null)
+                                writeProperty(instance, nestedProperty, value, "$propertyPathForArg.$nestedPropertyName")
                             }
                             return
                         }
@@ -567,7 +574,7 @@ abstract class ConfigurationBuilder<B, C> {
                     // so an entry that is not a declared bean property belongs in the map rather than
                     // being rejected. Only types with a fixed set of properties reject unknown keys.
                     if (mapBacked) {
-                        ((Map) instance).put(key, val)
+                        ((Map) instance).put(propertyName, val)
                         return
                     }
                     throw new ConfigurationException("Unknown setting [$propertyPathForArg.$propertyName]")
@@ -604,14 +611,29 @@ abstract class ConfigurationBuilder<B, C> {
         return null
     }
 
-    private Object resolveClassValue(String propertyPath) {
-        Object rawValue = propertyResolver.getProperty(propertyPath, Object)
-        if (rawValue instanceof Class) {
-            return rawValue
+    /**
+     * Invoke a property setter with an explicit single-element argument array so that a null value
+     * is passed as the argument rather than being read as an absent varargs array.
+     */
+    private static void writeProperty(Object instance, PropertyDescriptor property, Object value, String propertyPath) {
+        try {
+            property.writeMethod.invoke(instance, [value] as Object[])
+        } catch (IllegalArgumentException e) {
+            throw new ConfigurationException(
+                    "Invalid value for setting [$propertyPath]: cannot assign [$value] to a property of type [$property.propertyType.name]", e)
         }
-        String className = rawValue instanceof CharSequence ? rawValue.toString().trim() : null
+    }
+
+    private Object resolveClassValue(String propertyPath, Object rawValue, Object fallBackValue) {
+        Object value = rawValue instanceof Class || rawValue instanceof CharSequence ? rawValue : propertyResolver.getProperty(propertyPath, Object)
+        if (value instanceof Class) {
+            return value
+        }
+        String className = value instanceof CharSequence ? value.toString().trim() : null
         if (!className) {
-            return null
+            // Matches the top-level Class handling: a value that names no class must leave an
+            // inherited one in place rather than clear it.
+            return fallBackValue
         }
         ClassLoader classLoader = Thread.currentThread().contextClassLoader ?: getClass().classLoader
         try {
@@ -627,25 +649,34 @@ abstract class ConfigurationBuilder<B, C> {
         // resolves against the framework class loader and silently leaves an
         // application-defined class (hibernate.configClass, for example) unbound.
         if (propertyType == Class) {
-            return resolveClassValue(propertyPath)
+            return resolveClassValue(propertyPath, rawValue, fallBackValue)
         }
         if (rawValue instanceof Map && !propertyType.isInstance(rawValue)) {
             return handleConverterNotFoundException(null, propertyType, propertyPath, fallBackValue, rawValue)
         }
+        Object value
         try {
-            Object value = propertyResolver.getProperty(propertyPath, propertyType)
-            Object rawPropertyValue = propertyResolver.getProperty(propertyPath, Object)
-            if (value == null && rawPropertyValue instanceof Map) {
-                if (propertyType.isInstance(rawPropertyValue)) {
-                    return rawPropertyValue
-                }
-                return handleConverterNotFoundException(null, propertyType, propertyPath, fallBackValue, rawPropertyValue)
-            }
-            return value
+            value = propertyResolver.getProperty(propertyPath, propertyType)
         } catch (ConversionFailedException e) {
             return handleConversionException(e, propertyType, propertyPath, fallBackValue)
         } catch (ConverterNotFoundException e) {
             return handleConverterNotFoundException(e, propertyType, propertyPath, fallBackValue)
         }
+        if (value != null) {
+            return value
+        }
+        // The resolver exposes the Map for this level but does not necessarily expose everything
+        // below it as a dotted property, so an entry the caller already holds is bound from that
+        // value instead of being dropped. Only an already-assignable value is taken directly;
+        // anything needing conversion has been resolved by the branches above.
+        Object nestedValue = propertyResolver.getProperty(propertyPath, Object)
+        if (nestedValue == null) {
+            nestedValue = rawValue
+        }
+        if (nestedValue instanceof Map) {
+            return propertyType.isInstance(nestedValue) ? nestedValue :
+                    handleConverterNotFoundException(null, propertyType, propertyPath, fallBackValue, nestedValue)
+        }
+        return ClassUtils.isAssignableValue(propertyType, nestedValue) ? nestedValue : null
     }
 }
