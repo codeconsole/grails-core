@@ -378,6 +378,64 @@ class GenerateScaffoldedViewsTaskSpec extends Specification {
             location << ['directory', 'jar']
     }
 
+    void 'an acronym-prefixed controller writes the view directory the runtime resolves'() {
+        given:
+            writeController('APIController', 'Widget')
+            def task = task()
+
+        when:
+            task.generate()
+
+        then: 'Grails keeps a name beginning with two capitals unchanged'
+            generated(task, 'API/index.gsp').text == 'list of widget for Widget'
+
+        and: 'by its listed name, which a case-insensitive file system would not tell apart by lookup'
+            task.outputDirectory.get().asFile.list() as List == ['API']
+    }
+
+    void 'an acronym-prefixed domain is bound under the property name the runtime binds'() {
+        given:
+            writeController('MappingController', 'URLMapping')
+            def task = task()
+
+        when:
+            task.generate()
+
+        then:
+            generated(task, 'mapping/index.gsp').text == 'list of URLMapping for URLMapping'
+    }
+
+    void 'an acronym-prefixed controller respects a view the application declares'() {
+        given:
+            writeController('APIController', 'Widget')
+            File views = new File(projectDir, 'grails-app/views/API')
+            views.mkdirs()
+            File declared = new File(views, 'index.gsp')
+            declared.text = 'hand written'
+            def task = task([], [declared])
+
+        when:
+            task.generate()
+
+        then:
+            !generated(task, 'API/index.gsp').exists()
+            generated(task, 'API/show.gsp').exists()
+    }
+
+    void 'an acronym-prefixed controller respects a view a plugin declares'() {
+        given:
+            writeController('APIController', 'Widget')
+            def task = task()
+            task.viewClasspath.from(pluginViews('jar', '/WEB-INF/grails-app/views/API/show.gsp=api_show\n'))
+
+        when:
+            task.generate()
+
+        then:
+            !generated(task, 'API/show.gsp').exists()
+            generated(task, 'API/index.gsp').exists()
+    }
+
     void 'a namespaced claimant prevents another controller from filling the shared directory'() {
         given:
             writeControllerIn('com/example', 'EventController', 'com/example/Event')

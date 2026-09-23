@@ -19,6 +19,7 @@ package org.grails.gradle.plugin.scaffolding
 import java.util.jar.JarEntry
 import java.util.jar.JarFile
 
+import grails.util.GrailsNameUtils
 import groovy.text.GStringTemplateEngine
 import groovy.transform.CompileStatic
 import groovyjarjarasm.asm.AnnotationVisitor
@@ -125,7 +126,7 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
         for (Map.Entry<String, String> controller : findScaffoldedControllers()) {
             String fullName = controller.value
             String className = fullName.tokenize('.').last()
-            String propertyName = decapitalize(className)
+            String propertyName = GrailsNameUtils.getPropertyName(className)
             String packageName = fullName.contains('.') ? fullName[0..<fullName.lastIndexOf('.')] : ''
             for (String viewName : VIEW_NAMES) {
                 String template = templates.get(viewName)
@@ -251,7 +252,7 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
                     if (!f.name.endsWith('Controller.class')) {
                         return
                     }
-                    String controllerName = decapitalize(f.name - 'Controller.class')
+                    String controllerName = viewDirectory(f.name - '.class')
                     ClassReader reader = new ClassReader(f.bytes)
                     if (hasNamespace(reader, resources)) {
                         namespaced.add(controllerName)
@@ -276,7 +277,7 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
             if (distinct.size() > 1) {
                 found.remove(controllerName)
                 logger.warn("Not precompiling the views of ${controllerName}: " +
-                        "${distinct.size()} controllers named ${capitalize(controllerName)}Controller " +
+                        "${distinct.size()} controllers with the view directory ${controllerName} " +
                         "scaffold different domains (${distinct.join(', ')}) and share the one view " +
                         'directory. They are expanded per request instead, as they were before.')
             }
@@ -363,11 +364,12 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
         fileName.endsWith('.gsp') ? fileName[0..<fileName.length() - 4] : fileName
     }
 
-    private static String decapitalize(String name) {
-        name ? name[0].toLowerCase() + name.substring(1) : name
-    }
-
-    private static String capitalize(String name) {
-        name ? name[0].toUpperCase() + name.substring(1) : name
+    /**
+     * The directory the runtime resolves a controller's views from, derived the way
+     * {@code AbstractGrailsClass} derives it, so {@code APIController} maps to {@code API}.
+     */
+    private static String viewDirectory(String controllerClassName) {
+        String logicalName = GrailsNameUtils.getLogicalName(controllerClassName, 'Controller')
+        GrailsNameUtils.getPropertyNameRepresentation(logicalName ?: controllerClassName)
     }
 }
