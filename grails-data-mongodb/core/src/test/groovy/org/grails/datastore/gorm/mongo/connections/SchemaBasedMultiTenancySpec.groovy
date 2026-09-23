@@ -18,6 +18,8 @@
  */
 package org.grails.datastore.gorm.mongo.connections
 
+import org.bson.Document
+
 import org.apache.grails.testing.mongo.AutoStartedMongoSpec
 import org.grails.datastore.gorm.mongo.City
 import org.grails.datastore.mapping.core.Session
@@ -122,6 +124,27 @@ class SchemaBasedMultiTenancySpec extends AutoStartedMongoSpec {
         companyCount['admin'] == 0
         companyCount['test1'] == 2
         companyCount['test2'] == 1
+    }
+
+    void "Test each tenant is still resolved after the datastore is checkpointed and restored"() {
+        given: "a tenant database on the server"
+        datastore.mongoClient.getDatabase('test1').getCollection('restoreMarker').insertOne(new Document('marker', true))
+
+        when: "the datastore is stopped for a checkpoint, which closes its client, and started again after the restore"
+        datastore.stop()
+        datastore.start()
+
+        and: "each tenant is iterated over, which lists every database on the server"
+        List<String> tenantIds = []
+        CompanyB.eachTenant { String tenantId ->
+            tenantIds << tenantId
+        }
+
+        then: "they are listed through the replacement client rather than the one the checkpoint closed"
+        'test1' in tenantIds
+
+        cleanup:
+        datastore.mongoClient.getDatabase('test1').getCollection('restoreMarker').drop()
     }
 
     List getDomainClasses() {

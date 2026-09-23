@@ -31,6 +31,7 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Supplier;
 
 import groovy.lang.Closure;
 
@@ -88,6 +89,7 @@ import org.grails.datastore.mapping.core.DatastoreUtils;
 import org.grails.datastore.mapping.core.Session;
 import org.grails.datastore.mapping.core.StatelessDatastore;
 import org.grails.datastore.mapping.core.connections.ConnectionSource;
+import org.grails.datastore.mapping.core.connections.ConnectionSourceFactory;
 import org.grails.datastore.mapping.core.connections.ConnectionSourceSettingsBuilder;
 import org.grails.datastore.mapping.core.connections.ConnectionSources;
 import org.grails.datastore.mapping.core.connections.ConnectionSourcesInitializer;
@@ -108,6 +110,7 @@ import org.grails.datastore.mapping.mongo.config.MongoAttribute;
 import org.grails.datastore.mapping.mongo.config.MongoCollection;
 import org.grails.datastore.mapping.mongo.config.MongoMappingContext;
 import org.grails.datastore.mapping.mongo.config.MongoSettings;
+import org.grails.datastore.mapping.mongo.connections.MongoConnectionSource;
 import org.grails.datastore.mapping.mongo.connections.MongoConnectionSourceFactory;
 import org.grails.datastore.mapping.mongo.connections.MongoConnectionSourceSettings;
 import org.grails.datastore.mapping.mongo.connections.MongoConnectionSourceSettingsBuilder;
@@ -153,13 +156,17 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
 
     /**
      * Opt-in index attribute: when an index already exists on the same keys with conflicting
-     * options that cannot be reconciled in place (i.e. anything other than a TTL change), drop the
-     * existing index and recreate it with the declared options instead of just logging the conflict.
+     * options that cannot be reconciled in place (i.e. anything other than a TTL change), or the
+     * declared name is taken by an index on other keys, drop the existing index and recreate it with
+     * the declared options instead of just logging the conflict.
      */
     public static final String INDEX_RECREATE_ON_CONFLICT = "recreateOnConflict";
 
     /** MongoDB server error code for {@code IndexOptionsConflict}. */
     private static final int INDEX_OPTIONS_CONFLICT_CODE = 85;
+
+    /** MongoDB server error code for {@code IndexKeySpecsConflict}: the name is taken by an index on other keys. */
+    private static final int INDEX_KEY_SPECS_CONFLICT_CODE = 86;
     public static final String CODEC_ENGINE = MongoConstants.CODEC_ENGINE;
 
     private static final Logger LOG = LoggerFactory.getLogger(MongoDatastore.class);
@@ -323,7 +330,9 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
                 @Override
                 public Iterable<Serializable> resolveTenantIds() {
                     List<Serializable> ids = new ArrayList<>();
-                    MongoIterable<String> databaseNames = defaultConnectionSource.getSource().listDatabaseNames();
+                    // Through the datastore rather than the connection source, which may still hold the client
+                    // a checkpoint closed.
+                    MongoIterable<String> databaseNames = MongoDatastore.this.getMongoClient().listDatabaseNames();
                     for (String databaseName : databaseNames) {
                         ids.add(databaseName);
                     }
@@ -405,6 +414,38 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
     }
 
     /**
+     * Configures a new {@link MongoDatastore} around the clients a supplier builds, which GORM owns: it builds one
+     * now, closes it when the datastore is stopped for a checkpoint, and builds the replacement the restore needs
+     * from the same supplier. Use this where the client cannot be rebuilt from {@code grails.mongodb} settings,
+     * such as one built from Spring Boot's own {@code MongoClientSettings}.
+     *
+     * @param clientSupplier Builds a {@link MongoClient}, whenever the datastore needs one
+     * @param configuration The configuration
+     * @param eventPublisher The Spring ApplicationContext
+     * @param packages The packages to scan
+     * @since 8.0
+     */
+    public MongoDatastore(Supplier<MongoClient> clientSupplier, PropertyResolver configuration, ConfigurableApplicationEventPublisher eventPublisher, Package... packages) {
+        this(clientSupplier, configuration, createMappingContext(configuration, new ClasspathEntityScanner().scan(packages)), eventPublisher);
+    }
+
+    /**
+     * Configures a new {@link MongoDatastore} around the clients a supplier builds; see
+     * {@link #MongoDatastore(Supplier, PropertyResolver, ConfigurableApplicationEventPublisher, Package...)}.
+     *
+     * @param clientSupplier Builds a {@link MongoClient}, whenever the datastore needs one
+     * @param configuration The configuration
+     * @param mappingContext The mapping context
+     * @param eventPublisher The Spring ApplicationContext
+     * @since 8.0
+     */
+    public MongoDatastore(Supplier<MongoClient> clientSupplier, PropertyResolver configuration, MongoMappingContext mappingContext, ConfigurableApplicationEventPublisher eventPublisher) {
+        // GORM builds the client from the supplier, so it owns it and must close it (closeable = true).
+        this(createDefaultConnectionSources(clientSupplier.get(), configuration, mappingContext, true), mappingContext, eventPublisher);
+        this.defaultClientSupplier = clientSupplier;
+    }
+
+    /**
      * Configures a new {@link MongoDatastore} for the given arguments
      *
      * @param mongoClient The {@link MongoClient} instance
@@ -456,6 +497,7 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
     public MongoDatastore(MongoClientSettings.Builder clientOptions, PropertyResolver configuration, MongoMappingContext mappingContext, ConfigurableApplicationEventPublisher eventPublisher) {
         // GORM builds the client from the supplied options, so it owns it and must close it (closeable = true).
         this(createDefaultConnectionSources(createMongoClient(configuration, clientOptions, mappingContext), configuration, mappingContext, true), mappingContext, eventPublisher);
+        this.defaultClientOptions = clientOptions;
     }
 
     /**
@@ -468,6 +510,7 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
     public MongoDatastore(MongoClientSettings.Builder clientOptions, PropertyResolver configuration, MongoMappingContext mappingContext) {
         // GORM builds the client from the supplied options, so it owns it and must close it (closeable = true).
         this(createDefaultConnectionSources(createMongoClient(configuration, clientOptions, mappingContext), configuration, mappingContext, true), mappingContext, new DefaultApplicationEventPublisher());
+        this.defaultClientOptions = clientOptions;
     }
 
     /**
@@ -1528,7 +1571,7 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
             LOG.debug("{} index for entity [{}] {} in {}ms", applied,
                     entity.getName(), descriptor, TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt));
         } catch (MongoCommandException e) {
-            if (e.getErrorCode() == INDEX_OPTIONS_CONFLICT_CODE) {
+            if (e.getErrorCode() == INDEX_OPTIONS_CONFLICT_CODE || e.getErrorCode() == INDEX_KEY_SPECS_CONFLICT_CODE) {
                 Reconciliation reconciliation = reconcileIndexConflict(entity, collection, existingIndexes, keys,
                         indexOptions, expireAfterSeconds, recreateOnConflict, descriptor, e);
                 if (reconciliation == Reconciliation.UPDATED) {
@@ -1551,8 +1594,9 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
     }
 
     /**
-     * Reconcile an {@code IndexOptionsConflict}: an index already exists on the same keys with
-     * different options. A TTL difference is the common, safe case (e.g. a configurable retention
+     * Reconcile an {@code IndexOptionsConflict}, where an index already exists on the same keys with
+     * different options, or an {@code IndexKeySpecsConflict}, where the declared name is taken by an
+     * index on other keys. A TTL difference is the common, safe case (e.g. a configurable retention
      * changed between restarts) and is updated in place via {@code collMod}; anything else needs an
      * explicit {@code recreateOnConflict:true} to authorise the drop-and-recreate.
      *
@@ -1574,6 +1618,12 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
             return Reconciliation.FAILED;
         }
         Document existing = findIndexByKeyPattern(indexes, keys);
+        // An IndexKeySpecsConflict names no index on these keys: the declared name belongs to one on other keys.
+        boolean nameTaken = false;
+        if (existing == null && desired.getName() != null) {
+            existing = findIndexByName(indexes, desired.getName());
+            nameTaken = existing != null;
+        }
         if (existing == null) {
             LOG.error("Failed to create index for entity [{}] {}: {}",
                 entity.getName(), descriptor, original.getMessage(), original);
@@ -1584,8 +1634,9 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
         Object existingTtl = existing.get(INDEX_EXPIRE_AFTER_SECONDS);
         Long existingTtlSeconds = existingTtl instanceof Number ? ((Number) existingTtl).longValue() : null;
 
-        // TTL change on an existing index — update in place, no rebuild, no gap.
-        boolean ttlChange = expireAfterSeconds != null && !expireAfterSeconds.equals(existingTtlSeconds);
+        // TTL change on an existing index — update in place, no rebuild, no gap. An index that merely holds the
+        // name is a different index, so its expiry is not the declared one to update.
+        boolean ttlChange = !nameTaken && expireAfterSeconds != null && !expireAfterSeconds.equals(existingTtlSeconds);
         if (ttlChange) {
             try {
                 getMongoClient().getDatabase(getDatabaseName(entity))
@@ -1618,11 +1669,32 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
             }
         }
 
-        LOG.error(
-            "Index conflict for entity [{}] {}: an index [{}] already exists on the same keys with different options. " +
-                "Declare indexAttributes:[recreateOnConflict:true] to drop and recreate it. Original error: {}",
-            entity.getName(), descriptor, existingName, original.getMessage());
+        if (nameTaken) {
+            LOG.error(
+                "Index conflict for entity [{}] {}: the name [{}] is taken by an index on different keys. " +
+                    "Declare indexAttributes:[recreateOnConflict:true] to drop and recreate it, or declare another " +
+                    "name. Original error: {}",
+                entity.getName(), descriptor, existingName, original.getMessage());
+        }
+        else {
+            LOG.error(
+                "Index conflict for entity [{}] {}: an index [{}] already exists on the same keys with different options. " +
+                    "Declare indexAttributes:[recreateOnConflict:true] to drop and recreate it. Original error: {}",
+                entity.getName(), descriptor, existingName, original.getMessage());
+        }
         return Reconciliation.FAILED;
+    }
+
+    /**
+     * Find an existing index by name, or {@code null} if none has it.
+     */
+    private static Document findIndexByName(Iterable<Document> indexes, String name) {
+        for (Document index : indexes) {
+            if (name.equals(index.getString("name"))) {
+                return index;
+            }
+        }
+        return null;
     }
 
     /**
@@ -1727,36 +1799,71 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
     private volatile boolean running = true;
 
     /**
-     * Closes the {@link MongoClient} so the process can be checkpointed.
+     * Set on each datastore whose client {@link #stop()} closed, so that {@link #start()} replaces exactly those.
+     */
+    private volatile boolean clientStopped;
+
+    /**
+     * The client options the default connection's client was built with, when they were passed to the constructor
+     * rather than configured, so that {@link #start()} builds its replacement with them too; {@code null} otherwise.
+     */
+    private volatile MongoClientSettings.Builder defaultClientOptions;
+
+    /**
+     * What builds the default connection's client, when the constructor was given a supplier rather than settings,
+     * so that {@link #start()} builds its replacement the same way; {@code null} otherwise.
+     */
+    private volatile Supplier<MongoClient> defaultClientSupplier;
+
+    /**
+     * Closes the {@link MongoClient} of every connection, so the process can be checkpointed.
      *
      * <p>CRaC refuses to checkpoint a process holding open sockets, and a connected driver
      * holds one per pooled connection plus its server monitors. Closing the client shuts the
      * monitor threads down and releases every socket, which nothing else in the driver
-     * offers: draining the pool leaves the monitors connected.
+     * offers: draining the pool leaves the monitors connected. Each connection declared under
+     * {@code grails.mongodb.connections}, or added at runtime, has a client of its own, and
+     * each is closed.
      *
      * <p>A client the application supplied is left alone. Its lifecycle belongs to whoever
-     * created it, and this datastore stays {@link #isRunning() running} so that
-     * {@link #start()} does not later replace something it does not own.
+     * created it, and {@link #start()} does not replace it. A datastore that owns none of its
+     * clients stays {@link #isRunning() running}.
      *
      * <p>A background index build still running, on this connection or any other, is interrupted first
      * rather than left to fail against a closed client, and {@link #start()} runs it again.
      */
     @Override
     public void stop() {
-        if (!this.running || !ownsClient()) {
+        if (!this.running) {
             return;
         }
-        for (MongoDatastore datastore : datastoresAndChildren()) {
+        List<MongoDatastore> datastores = datastoresAndChildren();
+        List<MongoDatastore> owningTheirClient = new ArrayList<>();
+        for (MongoDatastore datastore : datastores) {
+            if (datastore.ownsClient()) {
+                owningTheirClient.add(datastore);
+            }
+        }
+        if (owningTheirClient.isEmpty()) {
+            return;
+        }
+        for (MongoDatastore datastore : datastores) {
             datastore.stopIndexBuild();
         }
-        this.mongo.close();
+        for (MongoDatastore datastore : owningTheirClient) {
+            datastore.mongo.close();
+            datastore.clientStopped = true;
+        }
         this.running = false;
     }
 
     /**
-     * Builds a replacement {@link MongoClient} after a restore, using the same factory and
-     * configuration the original was built from, so settings applied at startup still apply.
-     * A background index build that {@link #stop()} cut short, or that was requested while stopped,
+     * Builds a replacement for each {@link MongoClient} that {@link #stop()} closed, using the
+     * same factory the original was built with, so settings applied at startup still apply. The
+     * replacement is handed out by the connection's {@link ConnectionSource} as well as by this
+     * datastore, when that is the {@link MongoConnectionSource} the factory creates.
+     *
+     * <p>A background index build that {@link #stop()} cut short, or that was requested while stopped,
      * runs again on a fresh executor, on every connection.
      */
     @Override
@@ -1764,13 +1871,53 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
         if (this.running) {
             return;
         }
-        this.mongo = connectionSources.getFactory()
-                .create(ConnectionSource.DEFAULT, connectionSources.getBaseConfiguration())
-                .getSource();
+        ConnectionSourceFactory<MongoClient, MongoConnectionSourceSettings> factory = connectionSources.getFactory();
+        for (MongoDatastore datastore : datastoresAndChildren()) {
+            if (!datastore.clientStopped) {
+                continue;
+            }
+            ConnectionSource<MongoClient, MongoConnectionSourceSettings> own =
+                    datastore.connectionSources.getDefaultConnectionSource();
+            MongoClient replacement = datastore == this ?
+                    createReplacementDefaultClient(factory) :
+                    // Its settings are reused rather than built again: a connection added at runtime was never part
+                    // of the configuration.
+                    factory.create(own.getName(), own.getSettings()).getSource();
+            if (own instanceof MongoConnectionSource) {
+                ((MongoConnectionSource) own).replaceSource(replacement);
+            }
+            else {
+                // Only the connection source the factory creates can be given the replacement. A custom factory's
+                // own kind cannot, so whatever reads the client from it, rather than from the datastore, would go on
+                // using the one that was closed.
+                LOG.warn("The connection source for [{}] is a {}, which cannot be given the client built for the " +
+                        "restore, so it still hands out the one that was closed. A connection source factory whose " +
+                        "clients outlive a restore should return a {}.", own.getName(),
+                        own.getClass().getSimpleName(), MongoConnectionSource.class.getSimpleName());
+            }
+            datastore.mongo = replacement;
+            datastore.clientStopped = false;
+        }
         this.running = true;
         for (MongoDatastore datastore : datastoresAndChildren()) {
             datastore.resumeIndexBuild();
         }
+    }
+
+    /**
+     * Builds the default connection's client as it was built at startup: from the supplier the constructor was
+     * given, or from the configuration again and with the client options passed to the constructor if any.
+     */
+    private MongoClient createReplacementDefaultClient(ConnectionSourceFactory<MongoClient, MongoConnectionSourceSettings> factory) {
+        Supplier<MongoClient> clientSupplier = this.defaultClientSupplier;
+        if (clientSupplier != null) {
+            return clientSupplier.get();
+        }
+        MongoClientSettings.Builder clientOptions = this.defaultClientOptions;
+        if (clientOptions != null) {
+            return createMongoClient(connectionSources.getBaseConfiguration(), clientOptions, getMappingContext());
+        }
+        return factory.create(ConnectionSource.DEFAULT, connectionSources.getBaseConfiguration()).getSource();
     }
 
     /**
@@ -1847,7 +1994,12 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
     @Override
     @PreDestroy
     public void close() {
-        MongoClient current = this.mongo;
+        List<MongoClient> inUse = new ArrayList<>();
+        for (MongoDatastore datastore : datastoresAndChildren()) {
+            if (datastore.ownsClient()) {
+                inUse.add(datastore.mongo);
+            }
+        }
         // Set before the children are walked; see the connection sources listener.
         closed = true;
         for (MongoDatastore datastore : datastoresAndChildren()) {
@@ -1863,10 +2015,10 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
             if (connectionSources != null) {
                 connectionSources.close();
             }
-            // connectionSources closes the client it was built with, which is no longer the
-            // one in use once a restore has replaced it.
-            if (current != null && ownsClient()) {
-                current.close();
+            // A connection source other than a MongoConnectionSource closes the client it was built with,
+            // which is no longer the one in use once a restore has replaced it. Closing one twice is harmless.
+            for (MongoClient client : inUse) {
+                client.close();
             }
         } catch (IOException e) {
             LOG.error("There was an error shutting down GORM for an entity: " + e.getMessage(), e);
@@ -1931,7 +2083,10 @@ public class MongoDatastore extends AbstractDatastore implements MappingContext.
         MongoConnectionSourceSettings settings = buildConnectionSourceSettings(configuration);
         settings.url(null);
         settings.setDatabaseName(mappingContext.getDefaultDatabaseName());
-        ConnectionSource<MongoClient, MongoConnectionSourceSettings> defaultConnectionSource = new DefaultConnectionSource<>(ConnectionSource.DEFAULT, mongoClient, settings, closeable);
+        // One that GORM owns can be replaced after a restore; see start().
+        ConnectionSource<MongoClient, MongoConnectionSourceSettings> defaultConnectionSource = closeable ?
+                new MongoConnectionSource(ConnectionSource.DEFAULT, mongoClient, settings) :
+                new DefaultConnectionSource<>(ConnectionSource.DEFAULT, mongoClient, settings, false);
         return new InMemoryConnectionSources<>(defaultConnectionSource, new MongoConnectionSourceFactory(), configuration);
     }
 

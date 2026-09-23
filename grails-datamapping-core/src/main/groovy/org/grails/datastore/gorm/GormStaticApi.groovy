@@ -32,6 +32,7 @@ import grails.gorm.DetachedCriteria
 import grails.gorm.api.GormAllOperations
 import grails.gorm.api.GormInstanceOperations
 import grails.gorm.api.GormStaticOperations
+import grails.gorm.multitenancy.CurrentTenantHolder
 import grails.gorm.multitenancy.Tenants
 import grails.gorm.transactions.GrailsTransactionTemplate
 import org.grails.datastore.gorm.finders.FinderMethod
@@ -722,11 +723,35 @@ class GormStaticApi<D> extends AbstractGormApi<D> implements GormAllOperations<D
         return instance
     }
 
+    /**
+     * Runs the callable with the entity's unqualified operations routed to this API's connection, when this API
+     * belongs to a named connection, as {@code Book.moreBooks} does. Inside
+     * {@code Book.moreBooks.withTransaction { }} a {@code book.save()} or a {@code Book.list()} then reaches
+     * {@code moreBooks}, whose session and transaction are the ones open, rather than the default connection.
+     * The default connection's API undoes an enclosing block for another connection in the same way. A qualifier
+     * that names no connection, such as a DISCRIMINATOR tenant id, is left alone.
+     *
+     * @param callable What to run
+     * @return What the callable returns
+     */
+    protected <T1> T1 inConnectionScope(Closure<T1> callable) {
+        String currentQualifier = getQualifier()
+        if (currentQualifier == null || ConnectionSource.DEFAULT == currentQualifier) {
+            return GormRegistry.withConnectionScope(persistentClass, ConnectionSource.DEFAULT, callable)
+        }
+        if (!ConnectionSourceNameResolver.isConnectionSourceName(getDatastore(), currentQualifier)) {
+            return callable.call()
+        }
+        return GormRegistry.withConnectionScope(persistentClass, currentQualifier, callable)
+    }
+
     @Override
     def <T1> T1 withSession(Closure<T1> callable) {
-        execute({ Session session ->
-            callable.call(session)
-        } as SessionCallback<T1>)
+        inConnectionScope {
+            execute({ Session session ->
+                callable.call(session)
+            } as SessionCallback<T1>)
+        }
     }
 
     @Override
@@ -742,7 +767,9 @@ class GormStaticApi<D> extends AbstractGormApi<D> implements GormAllOperations<D
 
     @Override
     def <T1> T1 withTransaction(Closure<T1> callable) {
-        createTransactionTemplate().execute(callable)
+        inConnectionScope {
+            createTransactionTemplate().execute(callable)
+        }
     }
 
     @Override
@@ -787,7 +814,9 @@ class GormStaticApi<D> extends AbstractGormApi<D> implements GormAllOperations<D
 
     @Override
     def <T1> T1 withTransaction(org.springframework.transaction.TransactionDefinition definition, Closure<T1> callable) {
-        createTransactionTemplate(definition).execute(callable)
+        inConnectionScope {
+            createTransactionTemplate(definition).execute(callable)
+        }
     }
 
     protected GrailsTransactionTemplate createTransactionTemplate() {
@@ -805,9 +834,11 @@ class GormStaticApi<D> extends AbstractGormApi<D> implements GormAllOperations<D
     @Override
     def <T1> T1 withNewSession(Closure<T1> callable) {
         Datastore ds = getDatastore()
-        DatastoreUtils.executeWithNewSession(ds, { Session session ->
-            callable.call(session)
-        } as SessionCallback<T1>)
+        inConnectionScope {
+            DatastoreUtils.executeWithNewSession(ds, { Session session ->
+                callable.call(session)
+            } as SessionCallback<T1>)
+        }
     }
 
     @Override
@@ -816,7 +847,7 @@ class GormStaticApi<D> extends AbstractGormApi<D> implements GormAllOperations<D
         if (ds instanceof StatelessDatastore) {
             Session session = DatastoreUtils.bindNewSession(ds.connectStateless())
             try {
-                return callable.call(session)
+                return inConnectionScope { callable.call(session) }
             }
             finally {
                 DatastoreUtils.unbindSession(session)
@@ -1006,13 +1037,30 @@ class GormStaticApi<D> extends AbstractGormApi<D> implements GormAllOperations<D
         withId(ConnectionSource.DEFAULT, callable)
     }
 
+    /**
+     * Runs the callable in a new session for the tenant, with the tenant bound, so that the calls it makes on the
+     * class reach the tenant named here rather than the one that resolving would find.
+     *
+     * @param tenantId The tenant
+     * @param callable What to run
+     * @return What the callable returns
+     */
     def <T1> T1 withNewSession(Serializable tenantId, Closure<T1> callable) {
         DatastoreResolver resolver = new DatastoreResolver() {
             @Override Datastore resolve() { registry.apiResolver.findDatastore(persistentClass, tenantId.toString()) }
         }
         Datastore tenantDatastore = resolver.resolve()
-        DatastoreUtils.executeWithNewSession(tenantDatastore, { Session session ->
-            return (T1) callable.call(session)
-        } as SessionCallback<T1>)
+        Closure<T1> inNewSession = { Serializable boundTenantId ->
+            DatastoreUtils.executeWithNewSession(tenantDatastore, { Session session ->
+                return (T1) callable.call(session)
+            } as SessionCallback<T1>)
+        }
+        Datastore defaultDatastore = registry.getDatastore(persistentClass.name, ConnectionSource.DEFAULT)
+        if (defaultDatastore instanceof MultiTenantCapableDatastore) {
+            // Bound rather than entered through Tenants.withId, which would open a session of its own for the
+            // tenant in the modes that give it a connection, leaving the one opened here unused.
+            return (T1) CurrentTenantHolder.withTenant(defaultDatastore, tenantId, inNewSession)
+        }
+        return inNewSession.call(tenantId)
     }
 }

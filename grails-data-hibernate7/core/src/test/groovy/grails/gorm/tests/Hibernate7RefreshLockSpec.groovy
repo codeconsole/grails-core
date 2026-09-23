@@ -659,8 +659,9 @@ class Hibernate7RefreshLockSpec extends HibernateGormDatastoreSpec {
                 book.secondary.save(flush: true, failOnError: true)
                 Long secondaryId = book.id
                 // Each database generates identity independently, so the databases are told apart by
-                // what the default connection holds rather than by assuming the ids coincide.
-                Hibernate7RefreshLockRoutedBook.withSession {
+                // what the default connection holds rather than by assuming the ids coincide. Named, because
+                // inside the secondary connection's session the class's own calls follow it.
+                Hibernate7RefreshLockRoutedBook.'default'.withSession {
                     assert Hibernate7RefreshLockRoutedBook.get(secondaryId)?.title != 'secondary'
                     assert Hibernate7RefreshLockRoutedBook.findByTitle('secondary') == null
                 }
@@ -702,7 +703,8 @@ class Hibernate7RefreshLockSpec extends HibernateGormDatastoreSpec {
             assert session.isOpen()
             assert session.contains(book)
             assert !session.transaction.isActive()
-            Hibernate7RefreshLockRoutedBook.withSession { Session defaultSession ->
+            // Named, because inside the secondary connection's session the class's own calls follow it.
+            Hibernate7RefreshLockRoutedBook.'default'.withSession { Session defaultSession ->
                 assert defaultSession.transaction.isActive()
             }
             book.title = 'pending'

@@ -4041,3 +4041,55 @@ static mapping = {
 ----
 
 Mappings that already name a sequence are unaffected, and so is GORM for Hibernate 5.
+
+==== 72. Calls on a Class Inside a Named Connection's Session or Transaction Use That Connection
+
+Inside a session or transaction opened through a named connection - `Book.secondary.withTransaction { }`,
+`Book.secondary.withNewSession { }` and the like - the calls on `Book` itself, such as `Book.get(id)` or
+`book.save()`, used the *default* connection. With only the named connection's session open, a save failed
+with `No Session found for current thread`, and a read went to the default database:
+
+[source,groovy]
+----
+Book.secondary.withTransaction {
+    def book = Book.get(42)     // read from the default database
+    book.save()                 // threw: No Session found for current thread
+}
+----
+
+Whether the save threw depended on what else was open. With a default-connection session open further out,
+as the open-session-in-view interceptor or an outer `@Transactional` provides, it succeeded and wrote the
+instance to the default database, silently.
+
+They now use the connection whose session or transaction the block opened, as they do inside
+`withConnection`, and the example above reads and saves through `secondary`. Other domain classes are not
+affected, and an operation that names a connection keeps it. The same holds inside a method annotated
+`@Transactional(connection = 'secondary')`, for every domain class mapped to `secondary`; a class that is not
+mapped to it keeps its own connection, and a multi-tenant class is left to its tenant, as it was before. Code that relied on the old routing changes
+behaviour without failing, so look for it: a copy between connections written as
+
+[source,groovy]
+----
+Book.legacy.withTransaction {
+    Book.legacy.list().each { new Book(name: it.name).save() }    // meant for the default database
+}
+----
+
+used to write the copies to the default database, and now writes them back into `legacy`. Code that reached
+the default connection from inside such a block by calling the class directly has to name it now:
+
+[source,groovy]
+----
+Book.secondary.withTransaction {
+    Book.'default'.withSession { Book.count() }    // counts the default database
+}
+----
+
+A method annotated `@Transactional` without a connection, called from inside such a block, does not reset the
+routing. Its transaction is the default connection's, but the calls it makes on a class the block routes still
+reach the block's connection, so those writes join the transaction the block opened rather than the one the
+method began - including under `propagation = REQUIRES_NEW`, whose separate transaction then covers none of
+them. Name the connection, as in `@Transactional(connection = 'secondary')`, where the method's own transaction
+has to cover its writes.
+
+Applications using a single datasource are unaffected.
