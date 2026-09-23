@@ -382,17 +382,18 @@ class TransactionalTransform extends AbstractDatastoreMethodDecoratingTransforma
         )
 
         // GrailsTransactionTemplate $transactionTemplate
-        //           = new GrailsTransactionTemplate($transactionManager, $transactionAttribute )
+        //           = new GrailsTransactionTemplate($transactionManager, $transactionAttribute[, connection])
+        // Given the connection, the template routes the calls made on its domain classes inside the method to it.
         final ClassNode transactionTemplateClassNode = make(GrailsTransactionTemplate)
         final VariableExpression transactionTemplateVar = varX('$transactionTemplate', transactionTemplateClassNode)
+        Expression transactionTemplateArgs = hasDataSourceProperty ?
+                args(transactionManagerVar, transactionAttributeVar, castX(make(String), connectionName)) :
+                args(transactionManagerVar, transactionAttributeVar)
 
         newMethodBody.addStatement(
             declS(
                 transactionTemplateVar,
-                ctorX(transactionTemplateClassNode, args(
-                    transactionManagerVar,
-                    transactionAttributeVar
-                ))
+                ctorX(transactionTemplateClassNode, transactionTemplateArgs)
             )
         )
 
