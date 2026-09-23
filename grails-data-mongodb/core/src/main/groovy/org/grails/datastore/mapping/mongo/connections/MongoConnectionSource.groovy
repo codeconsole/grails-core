@@ -31,7 +31,7 @@ import org.grails.datastore.mapping.core.connections.DefaultConnectionSource
  * <p>A closed {@code MongoClient} cannot be reopened, so a datastore that closes its clients when it is stopped for
  * a checkpoint builds new ones when it is started again after the restore. Putting each replacement here, where
  * the original was, means that anything reading the client from the connection source rather than from the
- * datastore gets the one in use, and that closing the connection source closes it.
+ * datastore gets the one in use, and that closing the connection source closes it when it is GORM's to close.
  *
  * @since 8.0
  */
@@ -40,8 +40,29 @@ class MongoConnectionSource extends DefaultConnectionSource<MongoClient, MongoCo
 
     private volatile MongoClient client
 
+    /**
+     * A connection source for a client GORM created, which {@link #close()} closes.
+     *
+     * @param name the name of the connection source
+     * @param client the client
+     * @param settings the settings
+     */
     MongoConnectionSource(String name, MongoClient client, MongoConnectionSourceSettings settings) {
-        super(name, client, settings)
+        this(name, client, settings, true)
+    }
+
+    /**
+     * A connection source that optionally owns its client, for a factory that hands GORM one the application
+     * supplied. The client is still replaceable, so a datastore that reads it from here after a restore gets
+     * the one in use, but {@code closeable = false} leaves closing it to whoever created it.
+     *
+     * @param name the name of the connection source
+     * @param client the client
+     * @param settings the settings
+     * @param closeable whether {@link #close()} should close the client
+     */
+    MongoConnectionSource(String name, MongoClient client, MongoConnectionSourceSettings settings, boolean closeable) {
+        super(name, client, settings, closeable)
         this.client = client
     }
 
@@ -65,6 +86,10 @@ class MongoConnectionSource extends DefaultConnectionSource<MongoClient, MongoCo
 
     @Override
     void close() throws IOException {
+        if (!closeable) {
+            closed = true
+            return
+        }
         try {
             client.close()
         }

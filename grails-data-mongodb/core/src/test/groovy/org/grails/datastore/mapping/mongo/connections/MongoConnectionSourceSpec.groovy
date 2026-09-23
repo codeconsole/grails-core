@@ -65,6 +65,46 @@ class MongoConnectionSourceSpec extends Specification {
         0 * original.close()
     }
 
+    void 'one built around a client the application supplied reports that it does not own it'() {
+        given:
+        MongoClient client = Mock(MongoClient)
+
+        when:
+        def source = new MongoConnectionSource('reporting', client, new MongoConnectionSourceSettings(), false)
+
+        then:
+        source.source.is(client)
+        !source.closeable
+    }
+
+    void 'closing one that does not own its client leaves the client open'() {
+        given:
+        MongoClient client = Mock(MongoClient)
+        def source = new MongoConnectionSource('reporting', client, new MongoConnectionSourceSettings(), false)
+
+        when:
+        source.close()
+
+        then:
+        0 * client.close()
+    }
+
+    void 'a replacement is handed out by one that does not own its client, and is not closed either'() {
+        given:
+        MongoClient original = Mock(MongoClient)
+        MongoClient replacement = Mock(MongoClient)
+        def source = new MongoConnectionSource('reporting', original, new MongoConnectionSourceSettings(), false)
+        source.replaceSource(replacement)
+
+        when:
+        source.close()
+
+        then:
+        source.source.is(replacement)
+        0 * replacement.close()
+        0 * original.close()
+    }
+
     void 'a missing replacement is refused'() {
         given:
         MongoClient client = Mock(MongoClient)
