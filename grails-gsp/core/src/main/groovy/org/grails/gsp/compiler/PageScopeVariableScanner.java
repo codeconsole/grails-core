@@ -102,7 +102,7 @@ final class PageScopeVariableScanner {
         while (end < length && isWordChar(source.charAt(end))) {
             end++;
         }
-        String name = source.substring(from, end).toString();
+        String name = source.substring(from, end);
         if (!name.equals("var") && !name.equals("status")) {
             return end;
         }
@@ -123,7 +123,7 @@ final class PageScopeVariableScanner {
             }
             char closing = identifierEnd < length ? source.charAt(identifierEnd) : 0;
             if (closing == '"' || closing == '\'') {
-                names.add(source.substring(identifierStart, identifierEnd).toString());
+                names.add(source.substring(identifierStart, identifierEnd));
             }
         }
         return end;
