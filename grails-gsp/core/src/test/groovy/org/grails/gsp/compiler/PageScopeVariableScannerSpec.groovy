@@ -80,6 +80,17 @@ class PageScopeVariableScannerSpec extends Specification {
         scan('<g:each in="${items.findAll { it.x > 1 && it.y != "}" }}" var="item">x</g:each>') == ['item'] as Set
     }
 
+    void 'a triple quoted string holding a lone quote does not end the expression holding it'() {
+        expect:
+        scan(source) == ['total'] as Set
+
+        where:
+        source << [
+                """<g:set value="\${x ?: '''it's fine'''}" var="total"/>""",
+                """<g:set value="\${x ?: \"\"\"say "hi" now\"\"\"}" var="total"/>""",
+        ]
+    }
+
     void 'a page far longer than the stack is deep is scanned without recursing through it'() {
         given: 'a namespaced tag holding a quote-bearing expression, a long page, then a name at its very end'
         String unbalancing = '''<grailsLayout:captureMeta content="${t ?: 'Untitled'.replaceAll('"', '\\'')}" />\n'''

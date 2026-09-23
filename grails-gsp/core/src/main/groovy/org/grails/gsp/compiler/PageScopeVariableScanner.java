@@ -30,7 +30,8 @@ import java.util.Set;
  * already been written. Matching a name that turns out not to be a page scope variable costs only
  * that the name resolves dynamically, so the scan errs towards matching.</p>
  *
- * <p>One forward pass that steps over a {@code ${...}} expression as a unit. A regular expression
+ * <p>One forward pass that steps over each expression and attribute value as a unit, ending it where
+ * {@link GroovyPageExpressionParser} ends it when the page is compiled. A regular expression
  * cannot: it pairs the quotes of an attribute without knowing what an expression is, so a quote
  * inside one &mdash; {@code content="${t ?: 'Untitled'.replaceAll('"', '\'')}"} &mdash; ends the
  * attribute as far as it can tell, the page's later quotes pair up across tags and swallow the
@@ -47,7 +48,7 @@ final class PageScopeVariableScanner {
      * Adds to {@code names} every identifier named by a {@code var} or {@code status} attribute of a
      * namespaced tag in {@code source}.
      */
-    static void collect(CharSequence source, Set<String> names) {
+    static void collect(String source, Set<String> names) {
         int length = source.length();
         int i = 0;
         while (i < length) {
@@ -57,7 +58,7 @@ final class PageScopeVariableScanner {
     }
 
     /** The index just past {@code \w+:} starting at {@code from}, or -1 when there is none there. */
-    private static int namespaceEnd(CharSequence source, int from) {
+    private static int namespaceEnd(String source, int from) {
         int i = from;
         while (i < source.length() && isWordChar(source.charAt(i))) {
             i++;
@@ -69,7 +70,7 @@ final class PageScopeVariableScanner {
      * Reads the rest of one tag, recording each {@code var} or {@code status} it carries, and returns
      * the index just past its closing {@code >}, or the end of the source when it has none.
      */
-    private static int scanTag(CharSequence source, int from, Set<String> names) {
+    private static int scanTag(String source, int from, Set<String> names) {
         int length = source.length();
         int i = from;
         while (i < length) {
@@ -95,13 +96,13 @@ final class PageScopeVariableScanner {
      * its value is a quoted identifier, records the identifier. Returns the index just past the name,
      * leaving the value to be stepped over as any other quoted value is.
      */
-    private static int readAttributeName(CharSequence source, int from, Set<String> names) {
+    private static int readAttributeName(String source, int from, Set<String> names) {
         int length = source.length();
         int end = from;
         while (end < length && isWordChar(source.charAt(end))) {
             end++;
         }
-        String name = source.subSequence(from, end).toString();
+        String name = source.substring(from, end).toString();
         if (!name.equals("var") && !name.equals("status")) {
             return end;
         }
@@ -122,77 +123,38 @@ final class PageScopeVariableScanner {
             }
             char closing = identifierEnd < length ? source.charAt(identifierEnd) : 0;
             if (closing == '"' || closing == '\'') {
-                names.add(source.subSequence(identifierStart, identifierEnd).toString());
+                names.add(source.substring(identifierStart, identifierEnd).toString());
             }
         }
         return end;
     }
 
     /**
-     * Steps over a quoted attribute value whose opening quote is just before {@code from}. An
-     * expression inside it is stepped over whole, so a quote within the expression does not end the
-     * value. Returns the index just past the closing quote, or the end of the source.
+     * Steps over a quoted attribute value whose opening quote is just before {@code from}, finding its
+     * end exactly as {@link GroovyPageParser} does when it reads the attribute, so a quote inside an
+     * expression does not end the value. Returns the index just past the closing quote, or the end of
+     * the source.
      */
-    private static int skipAttributeValue(CharSequence source, int from, char quote) {
-        int length = source.length();
-        int i = from;
-        while (i < length) {
-            char c = source.charAt(i);
-            if (c == quote) {
-                return i + 1;
-            }
-            i = isExpressionStart(source, i) ? skipExpression(source, i + 2) : i + 1;
-        }
-        return length;
+    private static int skipAttributeValue(String source, int from, char quote) {
+        int end = new GroovyPageExpressionParser(source, from, quote, (char) 0, false).parse();
+        return end < 0 ? source.length() : end + 1;
     }
 
     /**
      * Steps over the body of a {@code ${...}} expression starting at {@code from}, just past its
-     * opening brace, and returns the index just past the brace that closes it, or the end of the
-     * source. Braces are counted and Groovy string literals are stepped over, so neither a nested
-     * closure nor a brace or quote inside a string ends the expression early.
+     * opening brace, finding its end exactly as {@link GroovyPageScanner} does. Returns the index just
+     * past the closing brace, or the end of the source.
      */
-    private static int skipExpression(CharSequence source, int from) {
-        int length = source.length();
-        int depth = 1;
-        int i = from;
-        while (i < length) {
-            char c = source.charAt(i);
-            if (c == '{') {
-                depth++;
-            } else if (c == '}' && --depth == 0) {
-                return i + 1;
-            } else if (c == '"' || c == '\'') {
-                i = skipStringLiteral(source, i + 1, c);
-                continue;
-            }
-            i++;
-        }
-        return length;
+    private static int skipExpression(String source, int from) {
+        int end = new GroovyPageExpressionParser(source, from, '}', (char) 0, true).parse();
+        return end < 0 ? source.length() : end + 1;
     }
 
-    /** Steps over a Groovy string literal inside an expression, honouring backslash escapes. */
-    private static int skipStringLiteral(CharSequence source, int from, char quote) {
-        int length = source.length();
-        int i = from;
-        while (i < length) {
-            char c = source.charAt(i);
-            if (c == '\\') {
-                i += 2;
-            } else if (c == quote) {
-                return i + 1;
-            } else {
-                i++;
-            }
-        }
-        return length;
-    }
-
-    private static boolean isExpressionStart(CharSequence source, int i) {
+    private static boolean isExpressionStart(String source, int i) {
         return source.charAt(i) == '$' && i + 1 < source.length() && source.charAt(i + 1) == '{';
     }
 
-    private static int skipWhitespace(CharSequence source, int from) {
+    private static int skipWhitespace(String source, int from) {
         int i = from;
         while (i < source.length() && Character.isWhitespace(source.charAt(i))) {
             i++;

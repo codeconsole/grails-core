@@ -591,6 +591,26 @@ class GspCompileStaticConfigSpec extends Specification {
         template.metaInfo.compilationException == null
     }
 
+    void 'a string literal in a tag attribute does not hide the name the tag introduces'() {
+        given:
+        GroovyPagesTemplateEngine engine = engineFor(
+                'grails.views.gsp.compileStatic': true,
+                'grails.views.gsp.compileStaticConfig.strict': true)
+
+        when: 'the quotes and braces inside the literal belong to the value, and var is read after it'
+        GroovyPageTemplate template = compile(engine, source)
+
+        then:
+        template.metaInfo.compilationException == null
+
+        where:
+        source << [
+                """<g:set value="\${null ?: '''it's fine'''}" var="total"/>\${total}""",
+                """<g:set value="\${null ?: \"\"\"say "hi" now\"\"\"}" var="total"/>\${total}""",
+                """<g:set value="\${'}{'}" var="total"/>\${total}""",
+        ]
+    }
+
     void 'every operator on a value of no known type is reported, not only the first'() {
         given:
         GroovyPagesTemplateEngine engine = engineFor('grails.views.gsp.compileStatic': true)
