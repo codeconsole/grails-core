@@ -429,6 +429,7 @@ public class DefaultPluginDiscovery implements PluginDiscovery {
         for (var name : plugin.getDependsOnNames()) {
             var requiredVersion = plugin.getMetadata().getDependentVersion(name);
             var dependency = findPlugin(name);
+            var delayedDependency = dependency == null ? findDelayedPlugin(name) : null;
             if (dependency != null) {
                 if (!GrailsVersionUtils.isValidVersion(dependency.getPluginVersion(), requiredVersion)) {
                     unresolvedDependencies.add(
@@ -440,10 +441,11 @@ public class DefaultPluginDiscovery implements PluginDiscovery {
                 unresolvedDependencies.add(
                         "dependency [" + name + "] with required version [" + requiredVersion + "] failed to load"
                 );
-            } else if (isDelayed(name)) {
+            } else if (delayedDependency != null) {
                 unresolvedDependencies.add(
                         "dependency [" + name + "] with required version [" + requiredVersion +
-                                "] is still pending load"
+                                "] is still pending load and only version [" + delayedDependency.getPluginVersion() +
+                                "] was found"
                 );
             } else {
                 unresolvedDependencies.add(
@@ -460,19 +462,19 @@ public class DefaultPluginDiscovery implements PluginDiscovery {
     }
 
     /**
-     * Checks whether a plugin of the given name is still waiting to be resolved.
+     * Finds a plugin of the given name that is still waiting to be resolved.
      *
      * @param name the plugin name to look for
-     * @return {@code true} if a plugin with this name is currently in {@link #delayedLoadPlugins}
+     * @return the matching plugin currently in {@link #delayedLoadPlugins}, or {@code null} if there is none
      */
-    private boolean isDelayed(String name) {
+    private PluginInfo findDelayedPlugin(String name) {
         var normalizedName = PluginUtils.normalizePluginName(name);
         for (var delayed : delayedLoadPlugins) {
             if (PluginUtils.normalizePluginName(delayed.getName()).equals(normalizedName)) {
-                return true;
+                return delayed;
             }
         }
-        return false;
+        return null;
     }
 
     /**

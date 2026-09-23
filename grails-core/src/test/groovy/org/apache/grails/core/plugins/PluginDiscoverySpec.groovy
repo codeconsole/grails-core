@@ -419,92 +419,146 @@ class PluginDiscoverySpec extends Specification {
         given: 'a discovery bean with one available and one unresolved plugin'
         def gcl = new GroovyClassLoader()
         def availableDependencyClass = gcl.parseClass('''
-class AvailableDependencyGrailsPlugin {
-    def version = "1.0.0"
-}
-''')
+            class AvailableDependencyGrailsPlugin {
+                def version = "1.0.0"
+            }
+        ''')
         def unresolvedDependenciesClass = gcl.parseClass('''
-class UnresolvedDependenciesGrailsPlugin {
-    def version = "4.0.0"
-    def dependsOn = [missingDependency: "1.0.0", availableDependency: "2.0.0"]
-}
-''')
+            class UnresolvedDependenciesGrailsPlugin {
+                def version = "4.0.0"
+                def dependsOn = [missingDependency: "1.0.0", availableDependency: "2.0.0"]
+            }
+        ''')
         def discovery = new DefaultPluginDiscovery(
                 [availableDependencyClass, unresolvedDependenciesClass] as Class<?>[]
-        )
-        discovery.loadPluginsFromClasspath = false
+        ).tap {
+            loadPluginsFromClasspath = false
+        }
 
-        and: 'standard error is captured to observe slf4j-simple output'
-        def originalErr = System.err
-        def captured = new ByteArrayOutputStream()
-        System.setErr(new PrintStream(captured, true))
+        and: 'configure a logback appender to capture log messages'
+        def logCapture = new LogCapture(DefaultPluginDiscovery)
 
         when: 'the public discovery API initializes the plugin set'
         discovery.init(new StandardEnvironment())
 
         then: 'the unresolved plugin remains failed and is not loaded'
-        discovery.hasFailedPlugin('unresolvedDependencies')
-        !discovery.hasPlugin('unresolvedDependencies')
-        discovery.getPluginsInLoadOrder()*.name == ['availableDependency']
+        with(discovery) {
+            hasFailedPlugin('unresolvedDependencies')
+            !hasPlugin('unresolvedDependencies')
+            pluginsInLoadOrder*.name == ['availableDependency']
+        }
 
-        and: 'one concise message at ERROR identifies the failed plugin and every unresolved dependency'
-        def errors = captured.toString().readLines().findAll { it.contains('unresolvedDependencies') }
+        and: 'one message at ERROR identifies the failed plugin and every unresolved dependency'
+        def errors = logCapture.events.findAll { it.formattedMessage.contains('unresolvedDependencies') }
         errors.size() == 1
-        errors[0].contains('ERROR')
-        errors[0].contains('Grails plug-in [unresolvedDependencies] with version [4.0.0] cannot be loaded')
-        errors[0].contains('dependency [missingDependency] with required version [1.0.0] is missing')
-        errors[0].contains('dependency [availableDependency] has version [1.0.0] but requires [2.0.0]')
-
-        and: 'normal verbosity does not include a stack trace'
-        !captured.toString().contains('at org.apache.grails.core.plugins.DefaultPluginDiscovery')
+        with(errors[0]) {
+            level == Level.ERROR
+            formattedMessage.contains('Grails plug-in [unresolvedDependencies] with version [4.0.0] cannot be loaded')
+            formattedMessage.contains('dependency [missingDependency] with required version [1.0.0] is missing')
+            formattedMessage.contains('dependency [availableDependency] has version [1.0.0] but requires [2.0.0]')
+            throwableProxy == null
+        }
 
         cleanup:
-        System.setErr(originalErr)
+        logCapture.close()
     }
 
     def 'reports a dependency that failed to load as failed rather than missing'() {
         given: 'a plugin whose only dependency itself fails to load due to a genuinely missing dependency'
         def gcl = new GroovyClassLoader()
         def failingDependencyClass = gcl.parseClass('''
-class FailingDependencyGrailsPlugin {
-    def version = "1.0.0"
-    def dependsOn = [reallyMissing: "1.0.0"]
-}
-''')
+            class FailingDependencyGrailsPlugin {
+                def version = "1.0.0"
+                def dependsOn = [reallyMissing: "1.0.0"]
+            }
+        ''')
         def dependentClass = gcl.parseClass('''
-class DependentOnFailedGrailsPlugin {
-    def version = "1.0.0"
-    def dependsOn = [failingDependency: "1.0.0"]
-}
-''')
+            class DependentOnFailedGrailsPlugin {
+                def version = "1.0.0"
+                def dependsOn = [failingDependency: "1.0.0"]
+            }
+        ''')
         def discovery = new DefaultPluginDiscovery(
                 [failingDependencyClass, dependentClass] as Class<?>[]
-        )
-        discovery.loadPluginsFromClasspath = false
+        ).tap {
+            loadPluginsFromClasspath = false
+        }
 
-        and: 'standard error is captured to observe slf4j-simple output'
-        def originalErr = System.err
-        def captured = new ByteArrayOutputStream()
-        System.setErr(new PrintStream(captured, true))
+        and: 'configure a logback appender to capture log messages'
+        def logCapture = new LogCapture(DefaultPluginDiscovery)
 
         when:
         discovery.init(new StandardEnvironment())
 
         then: 'both plugins end up failed'
-        discovery.hasFailedPlugin('failingDependency')
-        discovery.hasFailedPlugin('dependentOnFailed')
+        with(discovery) {
+            hasFailedPlugin('failingDependency')
+            hasFailedPlugin('dependentOnFailed')
+        }
 
         and: 'the missing root cause is reported as missing'
-        def rootCause = captured.toString().readLines().find { it.contains('[failingDependency]') }
-        rootCause.contains('dependency [reallyMissing] with required version [1.0.0] is missing')
+        def rootCause = logCapture.events.find { it.formattedMessage.contains('[failingDependency]') }
+        rootCause.level == Level.ERROR
+        rootCause.formattedMessage.contains('dependency [reallyMissing] with required version [1.0.0] is missing')
 
         and: 'the plugin depending on the failed plugin reports it as failed, not missing'
-        def dependent = captured.toString().readLines().find { it.contains('[dependentOnFailed]') }
-        dependent.contains('dependency [failingDependency] with required version [1.0.0] failed to load')
-        !dependent.contains('is missing')
+        def dependent = logCapture.events.find { it.formattedMessage.contains('[dependentOnFailed]') }
+        dependent.level == Level.ERROR
+        dependent.formattedMessage.contains(
+                'dependency [failingDependency] with required version [1.0.0] failed to load'
+        )
+        !dependent.formattedMessage.contains('is missing')
 
         cleanup:
-        System.setErr(originalErr)
+        logCapture.close()
+    }
+
+    def 'reports a dependency that is still pending load together with the version that was found'() {
+        given: 'a plugin that requires a newer version of a dependency which is itself still waiting on a missing plugin'
+        def gcl = new GroovyClassLoader()
+        def dependentClass = gcl.parseClass('''
+            class NeedsNewerPendingGrailsPlugin {
+                def version = "1.0.0"
+                def dependsOn = [pendingDependency: "2.0.0"]
+            }
+        ''')
+        def pendingDependencyClass = gcl.parseClass('''
+            class PendingDependencyGrailsPlugin {
+                def version = "1.0.0"
+                def dependsOn = [reallyMissing: "1.0.0"]
+            }
+        ''')
+
+        and: 'the dependent plugin is processed before the pending dependency gives up'
+        def discovery = new DefaultPluginDiscovery(
+                [dependentClass, pendingDependencyClass] as Class<?>[]
+        ).tap {
+            loadPluginsFromClasspath = false
+        }
+
+        and: 'configure a logback appender to capture log messages'
+        def logCapture = new LogCapture(DefaultPluginDiscovery)
+
+        when:
+        discovery.init(new StandardEnvironment())
+
+        then: 'both plugins end up failed'
+        with(discovery) {
+            hasFailedPlugin('needsNewerPending')
+            hasFailedPlugin('pendingDependency')
+        }
+
+        and: 'the dependent plugin reports the pending dependency with the version it found'
+        def dependent = logCapture.events.find { it.formattedMessage.contains('[needsNewerPending]') }
+        dependent.level == Level.ERROR
+        dependent.formattedMessage.contains(
+                'dependency [pendingDependency] with required version [2.0.0] is still pending load ' +
+                        'and only version [1.0.0] was found'
+        )
+        !dependent.formattedMessage.contains('is missing')
+
+        cleanup:
+        logCapture.close()
     }
 }
 
