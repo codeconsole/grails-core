@@ -53,10 +53,11 @@ class DefaultFieldTemplateSpec extends Specification implements TagLibUnitTest<F
         Element root = renderRoot()
 
         then:
-        root.hasClass('fieldcontain')
+        root.is('div.fieldcontain')
 
         and:
         Element label = root.selectFirst('label')
+        label != null
         label.text() == 'label'
         label.attr('for') == 'property'
 
@@ -84,6 +85,7 @@ class DefaultFieldTemplateSpec extends Specification implements TagLibUnitTest<F
 
         and:
         Element indicator = root.selectFirst('label .required-indicator')
+        indicator != null
         indicator.text() == '*'
     }
 
