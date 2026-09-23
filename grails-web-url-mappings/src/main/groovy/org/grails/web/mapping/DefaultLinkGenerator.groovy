@@ -91,11 +91,8 @@ class DefaultLinkGenerator implements LinkGenerator, PluginManagerAware {
     @Autowired(required = false)
     GrailsApplication grailsApplication
 
-    private volatile Map<String, Set<String>> controllerNamespacesByName
-    private volatile GrailsClass[] cachedControllers
-
-    private volatile Map<String, Set<String>> controllerNamesByDomainClass
-    private volatile GrailsClass[] cachedDomainIndexControllers
+    private volatile ControllerIndex controllerNamespacesByName
+    private volatile ControllerIndex controllerNamesByDomainClass
 
     @Value('${grails.resources.pattern:/static/**}')
     String resourcePattern = Settings.DEFAULT_RESOURCE_PATTERN
@@ -361,13 +358,12 @@ class DefaultLinkGenerator implements LinkGenerator, PluginManagerAware {
         // edit). Comparing the array identity rebuilds the index on any such change while staying O(1)
         // on the common path where nothing changed.
         GrailsClass[] controllers = application.getArtefacts(ControllerArtefactHandler.TYPE)
-        Map<String, Set<String>> index = controllerNamespacesByName
-        if (index == null || !controllers.is(cachedControllers)) {
-            index = buildControllerNamespaceIndex(controllers)
+        ControllerIndex index = controllerNamespacesByName
+        if (index == null || !index.isFor(controllers)) {
+            index = new ControllerIndex(controllers, buildControllerNamespaceIndex(controllers))
             controllerNamespacesByName = index
-            cachedControllers = controllers
         }
-        return index
+        return index.entries
     }
 
     /**
@@ -411,9 +407,7 @@ class DefaultLinkGenerator implements LinkGenerator, PluginManagerAware {
      */
     void resetControllerNamespaceCache() {
         controllerNamespacesByName = null
-        cachedControllers = null
         controllerNamesByDomainClass = null
-        cachedDomainIndexControllers = null
     }
 
     /**
@@ -447,13 +441,12 @@ class DefaultLinkGenerator implements LinkGenerator, PluginManagerAware {
         // new instance whenever the set of controllers changes, so comparing the array identity rebuilds
         // the index on any such change while staying O(1) on the common path.
         GrailsClass[] controllers = application.getArtefacts(ControllerArtefactHandler.TYPE)
-        Map<String, Set<String>> index = controllerNamesByDomainClass
-        if (index == null || !controllers.is(cachedDomainIndexControllers)) {
-            index = buildDomainClassControllerIndex(controllers, mappingContext)
+        ControllerIndex index = controllerNamesByDomainClass
+        if (index == null || !index.isFor(controllers)) {
+            index = new ControllerIndex(controllers, buildDomainClassControllerIndex(controllers, mappingContext))
             controllerNamesByDomainClass = index
-            cachedDomainIndexControllers = controllers
         }
-        return index
+        return index.entries
     }
 
     private Map<String, Set<String>> buildDomainClassControllerIndex(GrailsClass[] controllers, MappingContext context) {
@@ -678,5 +671,28 @@ class DefaultLinkGenerator implements LinkGenerator, PluginManagerAware {
 
     void setPluginManager(GrailsPluginManager pluginManager) {
         this.pluginManager = pluginManager
+    }
+
+    /**
+     * An index over the registered controllers, paired with the artefact array it was built from.
+     *
+     * <p>The two are published together through a single volatile reference. Publishing them as two
+     * separate fields let a request that raced a controller reload store an index built from the old
+     * controllers next to the new array, after which the identity check passed and the stale index was
+     * served until the controllers changed again.</p>
+     */
+    private static final class ControllerIndex {
+
+        final GrailsClass[] controllers
+        final Map<String, Set<String>> entries
+
+        ControllerIndex(GrailsClass[] controllers, Map<String, Set<String>> entries) {
+            this.controllers = controllers
+            this.entries = entries
+        }
+
+        boolean isFor(GrailsClass[] current) {
+            current.is(controllers)
+        }
     }
 }
