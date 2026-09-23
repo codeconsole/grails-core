@@ -200,9 +200,10 @@ class GroovyPagePluginFunctionalSpec extends GradleSpecification {
 
         when: 'a runtime dependency no longer provides a page, invalidating the generation task'
         new File(projectDir, 'calendar-plugin/gsp/views.properties').text = ''
-        executeTask('stageGroovyPages')
+        def rebuild = executeTask('stageGroovyPages')
 
         then:
+        assertTaskSuccess('stageGroovyPages', rebuild)
         new File(staged, 'person/show.gsp').text == 'scaffold String'
         !new File(staged, 'event/show.gsp').exists()
     }
