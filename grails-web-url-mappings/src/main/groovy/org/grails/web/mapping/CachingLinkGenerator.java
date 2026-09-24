@@ -18,7 +18,6 @@
  */
 package org.grails.web.mapping;
 
-import java.util.LinkedHashMap;
 import java.util.Map;
 
 import org.codehaus.groovy.runtime.DefaultGroovyMethods;
@@ -27,7 +26,6 @@ import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 
 import grails.util.GrailsMetaClassUtils;
-import grails.util.GrailsStringUtils;
 import grails.web.mapping.LinkGenerator;
 import grails.web.mapping.UrlMapping;
 import grails.web.servlet.mvc.GrailsParameterMap;
@@ -52,10 +50,6 @@ public class CachingLinkGenerator extends DefaultLinkGenerator {
     private static final String COMMA_SEPARATOR = ", ";
     private static final String KEY_VALUE_SEPARATOR = ":";
     private static final String THIS_MAP = "(this Map)";
-    // Synthetic cache-key entries that capture the request context namespace inference depends on for
-    // resource links, whose target controller this class does not resolve.
-    private static final String REQUEST_CONTROLLER_KEY = "__grailsRequestController";
-    private static final String REQUEST_NAMESPACE_KEY = "__grailsRequestNamespace";
 
     private Cache<String, Object> linkCache;
 
@@ -106,55 +100,8 @@ public class CachingLinkGenerator extends DefaultLinkGenerator {
             buffer.append(OPENING_BRACKET);
         } else {
             buffer.append(OPENING_BRACKET);
-            Map map = new LinkedHashMap<>(params);
-            final String requestControllerName = getRequestStateLookupStrategy().getControllerName();
-            if (map.get(UrlMapping.ACTION) != null && map.get(UrlMapping.CONTROLLER) == null && map.get(RESOURCE_PREFIX) == null) {
-                Object action = map.remove(UrlMapping.ACTION);
-                map.put(UrlMapping.CONTROLLER, requestControllerName);
-                map.put(UrlMapping.ACTION, action);
-            }
-            // Fold the effective namespace into the cache key whenever none was supplied explicitly,
-            // so an inferred namespace (not just the current-controller case) is part of the key and
-            // links generated from different request namespaces never collide. The target controller
-            // may be supplied at the top level or nested in a url attribute map (for example
-            // <g:link url="[controller:'book']"/>); the plugin, like link(), is read from the top
-            // level. For these shapes we fold the precisely resolved namespace, which keeps the key
-            // tight and the cache hit rate high.
-            Object controllerValue = map.get(UrlMapping.CONTROLLER);
-            Object resourceValue = map.get(RESOURCE_PREFIX);
-            Object urlValue = map.get(ATTRIBUTE_URL);
-            if (controllerValue == null && urlValue instanceof Map) {
-                controllerValue = ((Map) urlValue).get(UrlMapping.CONTROLLER);
-                if (resourceValue == null) {
-                    resourceValue = ((Map) urlValue).get(RESOURCE_PREFIX);
-                }
-            }
-            if (controllerValue != null) {
-                if (!map.containsKey(UrlMapping.NAMESPACE)) {
-                    Object pluginValue = map.get(UrlMapping.PLUGIN);
-                    String namespace = getDefaultNamespace(controllerValue.toString(),
-                            pluginValue == null ? null : pluginValue.toString());
-                    if (GrailsStringUtils.isNotEmpty(namespace)) {
-                        map.put(UrlMapping.NAMESPACE, namespace);
-                    }
-                }
-            }
-            else if (resourceValue != null) {
-                // A resource link resolves its controller from the request context when more than one
-                // controller serves the domain class, preferring the controller handling the request.
-                // That holds even with an explicit namespace, which every controller redirect carries.
-                // The resolution is not duplicated here, so fold the request context it depends on into
-                // the key, and a resource link rendered by one controller is never served to another.
-                String requestNamespace = getRequestStateLookupStrategy().getControllerNamespace();
-                if (GrailsStringUtils.isNotEmpty(requestControllerName)) {
-                    map.put(REQUEST_CONTROLLER_KEY, requestControllerName);
-                }
-                if (GrailsStringUtils.isNotEmpty(requestNamespace)) {
-                    map.put(REQUEST_NAMESPACE_KEY, requestNamespace);
-                }
-            }
             boolean first = true;
-            for (Object o : map.entrySet()) {
+            for (Object o : params.entrySet()) {
                 Map.Entry entry = (Map.Entry) o;
                 Object value = entry.getValue();
                 if (value == null) continue;
@@ -163,7 +110,7 @@ public class CachingLinkGenerator extends DefaultLinkGenerator {
                 if (RESOURCE_PREFIX.equals(key)) {
                     value = getCacheKeyValueForResource(value);
                 }
-                appendKeyValue(buffer, map, key, value);
+                appendKeyValue(buffer, params, key, value);
             }
         }
         buffer.append(CLOSING_BRACKET);
@@ -225,6 +172,11 @@ public class CachingLinkGenerator extends DefaultLinkGenerator {
             }
         }
         appendMapKey(sb, attrs);
+        if (LINK_PREFIX.equals(prefix)) {
+            // What the link resolves to can depend on the request it is generated in, so key on the
+            // resolution itself rather than on whichever parts of the request it happens to read.
+            sb.append(resolvedLinkKey(attrs));
+        }
         return sb.toString();
     }
 

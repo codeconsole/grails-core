@@ -20,6 +20,7 @@ package org.grails.web.mapping
 
 import grails.core.DefaultGrailsApplication
 import grails.core.GrailsApplication
+import grails.util.GrailsWebMockUtil
 import grails.web.CamelCaseUrlConverter
 import grails.web.mapping.LinkGenerator
 import grails.web.mapping.UrlMappingsHolder
@@ -121,6 +122,24 @@ class UrlMappingsWithHttpMethodSpec extends Specification{
 
         and: 'a GET link with a slug uses the more specific GET mapping'
         generator.link(controller: 'book', action: 'list', method: 'GET', params: [slug: 'x']) == 'http://localhost/books/featured/x'
+    }
+
+    void "a cached link naming no method uses the mapping for the method of the request it is generated in"() {
+        given: 'a caching link generator over mappings for one action under POST and under PUT'
+        def generator = new CachingLinkGenerator('http://localhost', null)
+        generator.grailsUrlConverter = new CamelCaseUrlConverter()
+        generator.urlMappingsHolder = urlMappingsHolder
+        def webRequest = GrailsWebMockUtil.bindMockWebRequest()
+
+        when: 'the same link is generated during a POST request and then during a PUT request'
+        webRequest.currentRequest.method = 'POST'
+        def duringPost = generator.link(controller: 'bar', action: 'save')
+        webRequest.currentRequest.method = 'PUT'
+        def duringPut = generator.link(controller: 'bar', action: 'save')
+
+        then: 'each uses the mapping for its own method rather than the URL cached for the first'
+        duringPost == '/foo'
+        duringPut == '/foo2'
     }
 
     private LinkGenerator linkGeneratorFor(Closure urlMappings) {

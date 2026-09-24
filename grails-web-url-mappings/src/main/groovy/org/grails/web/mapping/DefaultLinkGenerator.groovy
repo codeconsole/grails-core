@@ -22,6 +22,7 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.regex.Pattern
 
 import groovy.transform.CompileStatic
+import groovy.transform.PackageScope
 import groovy.transform.TypeCheckingMode
 import groovy.util.logging.Slf4j
 
@@ -170,91 +171,25 @@ class DefaultLinkGenerator implements LinkGenerator, PluginManagerAware {
                 urlAttrs = (Map) urlAttribute
             }
             if (!urlAttribute || urlAttribute instanceof Map) {
-                final controllerAttribute = urlAttrs.get(ATTRIBUTE_CONTROLLER)
-                final resourceAttribute = urlAttrs.get(ATTRIBUTE_RESOURCE)
-                String controller
-                ResourceTarget resourceTarget = null
-                String action = urlAttrs.get(ATTRIBUTE_ACTION)?.toString()
-                def id = urlAttrs.get(ATTRIBUTE_ID)
-                String httpMethod
-                final methodAttribute = urlAttrs.get(ATTRIBUTE_METHOD)
+                LinkTarget target = resolveLinkTarget(attrs, urlAttrs)
+                String controller = target.controller
+                String action = target.action
+                String namespace = target.namespace
+                String httpMethod = target.httpMethod
+                boolean isDefaultAction = target.defaultAction
                 final paramsAttribute = urlAttrs.get(ATTRIBUTE_PARAMS)
                 Map params = paramsAttribute instanceof Map ? (Map) paramsAttribute : [:]
-
-                if (resourceAttribute) {
-                    String resource
-                    if (resourceAttribute instanceof CharSequence)
-                        resource = resourceAttribute.toString()
-                    else {
-                        PersistentEntity persistentEntity = (mappingContext != null) ? mappingContext.getPersistentEntity(resourceAttribute.getClass().getName()) : null
-                        boolean hasId = false
-                        if (persistentEntity != null) {
-                            resourceTarget = resolveResourceTarget(persistentEntity, attrs)
-                            resource = resourceTarget.controller
-                            hasId = true
-                        } else if (DomainClassArtefactHandler.isDomainClass(resourceAttribute.getClass(), true)) {
-                            resource = GrailsNameUtils.getPropertyName(resourceAttribute.getClass())
-                            hasId = true
-                        } else if (resourceAttribute instanceof Class) {
-                            // A domain class rather than an instance, used where loading the instance would
-                            // defeat the point, such as an uninitialised association rendered from its proxy.
-                            PersistentEntity classEntity = (mappingContext != null) ?
-                                    mappingContext.getPersistentEntity(((Class) resourceAttribute).name) : null
-                            if (classEntity != null) {
-                                resourceTarget = resolveResourceTarget(classEntity, attrs)
-                                resource = resourceTarget.controller
-                            } else {
-                                resource = GrailsNameUtils.getPropertyName(resourceAttribute)
-                            }
-                        } else {
-                            resource = resourceAttribute.toString()
-                        }
-                        if (!id && hasId) {
-                            id = getResourceId(resourceAttribute)
-                        }
+                for (String parent in target.parentResources) {
+                    final key = "${parent}Id".toString()
+                    final attr = urlAttrs.remove(key)
+                    // the params value might not be null
+                    // only overwrite if urlAttrs actually had the key
+                    if (attr) {
+                        params[key] = attr
                     }
-                    List tokens = resource.contains('/') ? resource.tokenize('/') : [resource]
-                    controller = controllerAttribute ?: tokens[-1]
-                    if (tokens.size() > 1) {
-                        for (t in tokens[0..-2]) {
-                            final key = "${t}Id".toString()
-                            final attr = urlAttrs.remove(key)
-                            // the params value might not be null
-                            // only overwrite if urlAttrs actually had the key
-                            if (attr) {
-                                params[key] = attr
-                            }
-                        }
-                    }
-                    if (!methodAttribute && action) {
-                        httpMethod =  REST_RESOURCE_ACTION_TO_HTTP_METHOD_MAP.get(action.toString())
-                        if (!httpMethod) {
-                            httpMethod = HttpMethod.GET.toString()
-                        }
-                    }
-                    else if (methodAttribute && !action) {
-                        def method = methodAttribute.toString().toUpperCase()
-                        httpMethod = method
-                        if (method == 'GET' && id) method = "${method}_ID".toString()
-                        action = REST_RESOURCE_HTTP_METHOD_TO_ACTION_MAP[method]
-                    }
-                    else {
-                        httpMethod = methodAttribute == null ? requestStateLookupStrategy.getHttpMethod() ?: UrlMapping.ANY_HTTP_METHOD : methodAttribute.toString()
-                    }
-
-                }
-                else {
-                    controller = controllerAttribute == null ? requestStateLookupStrategy.getControllerName() : controllerAttribute.toString()
-                    httpMethod = methodAttribute == null ? requestStateLookupStrategy.getHttpMethod() ?: UrlMapping.ANY_HTTP_METHOD : methodAttribute.toString()
                 }
 
                 String convertedControllerName = grailsUrlConverter.toUrlElement(controller)
-
-                boolean isDefaultAction = false
-                if (controller && !action) {
-                    action = requestStateLookupStrategy.getActionName(convertedControllerName)
-                    isDefaultAction = true
-                }
                 String convertedActionName = action
                 if (action) {
                     convertedActionName = grailsUrlConverter.toUrlElement(action)
@@ -267,15 +202,10 @@ class DefaultLinkGenerator implements LinkGenerator, PluginManagerAware {
                     params.mappingName = mappingName
                 }
                 def url
-                if (id != null) {
-                    params.put(ATTRIBUTE_ID, id)
+                if (target.id != null) {
+                    params.put(ATTRIBUTE_ID, target.id)
                 }
                 def pluginName = attrs.get(UrlMapping.PLUGIN)?.toString()
-                // A resource link resolved from the request context carries the namespace that chose it,
-                // unless the caller named the controller itself.
-                String namespace = resourceTarget != null && resourceTarget.pinsNamespace && controllerAttribute == null ?
-                        resourceTarget.namespace :
-                        resolveNamespace(controller, pluginName, attrs)
                 UrlCreator mapping = urlMappingsHolder.getReverseMappingNoDefault(controller, action, namespace, pluginName, httpMethod, params)
                 if (mapping == null && isDefaultAction) {
                     mapping = urlMappingsHolder.getReverseMappingNoDefault(controller, null, namespace, pluginName, httpMethod, params)
@@ -309,6 +239,114 @@ class DefaultLinkGenerator implements LinkGenerator, PluginManagerAware {
             }
         }
         return writer.toString()
+    }
+
+    /**
+     * Resolves what a link built from the given attributes targets, without changing them: the controller,
+     * action and namespace, the HTTP method its reverse mapping is chosen for, and the id and parent
+     * resources a {@code resource} contributes. Each can depend on the request the link is generated in.
+     */
+    private LinkTarget resolveLinkTarget(Map attrs, Map urlAttrs) {
+        final controllerAttribute = urlAttrs.get(ATTRIBUTE_CONTROLLER)
+        final resourceAttribute = urlAttrs.get(ATTRIBUTE_RESOURCE)
+        String controller
+        ResourceTarget resourceTarget = null
+        String action = urlAttrs.get(ATTRIBUTE_ACTION)?.toString()
+        def id = urlAttrs.get(ATTRIBUTE_ID)
+        String httpMethod
+        final methodAttribute = urlAttrs.get(ATTRIBUTE_METHOD)
+        List<String> parentResources = Collections.emptyList()
+
+        if (resourceAttribute) {
+            String resource
+            if (resourceAttribute instanceof CharSequence)
+                resource = resourceAttribute.toString()
+            else {
+                PersistentEntity persistentEntity = (mappingContext != null) ? mappingContext.getPersistentEntity(resourceAttribute.getClass().getName()) : null
+                boolean hasId = false
+                if (persistentEntity != null) {
+                    resourceTarget = resolveResourceTarget(persistentEntity, attrs)
+                    resource = resourceTarget.controller
+                    hasId = true
+                } else if (DomainClassArtefactHandler.isDomainClass(resourceAttribute.getClass(), true)) {
+                    resource = GrailsNameUtils.getPropertyName(resourceAttribute.getClass())
+                    hasId = true
+                } else if (resourceAttribute instanceof Class) {
+                    // A domain class rather than an instance, used where loading the instance would
+                    // defeat the point, such as an uninitialised association rendered from its proxy.
+                    PersistentEntity classEntity = (mappingContext != null) ?
+                            mappingContext.getPersistentEntity(((Class) resourceAttribute).name) : null
+                    if (classEntity != null) {
+                        resourceTarget = resolveResourceTarget(classEntity, attrs)
+                        resource = resourceTarget.controller
+                    } else {
+                        resource = GrailsNameUtils.getPropertyName(resourceAttribute)
+                    }
+                } else {
+                    resource = resourceAttribute.toString()
+                }
+                if (!id && hasId) {
+                    id = getResourceId(resourceAttribute)
+                }
+            }
+            List<String> tokens = resource.contains('/') ? resource.tokenize('/') : [resource]
+            controller = controllerAttribute ?: tokens[-1]
+            if (tokens.size() > 1) {
+                parentResources = tokens[0..-2]
+            }
+            if (!methodAttribute && action) {
+                httpMethod =  REST_RESOURCE_ACTION_TO_HTTP_METHOD_MAP.get(action.toString())
+                if (!httpMethod) {
+                    httpMethod = HttpMethod.GET.toString()
+                }
+            }
+            else if (methodAttribute && !action) {
+                def method = methodAttribute.toString().toUpperCase()
+                httpMethod = method
+                if (method == 'GET' && id) method = "${method}_ID".toString()
+                action = REST_RESOURCE_HTTP_METHOD_TO_ACTION_MAP[method]
+            }
+            else {
+                httpMethod = methodAttribute == null ? requestStateLookupStrategy.getHttpMethod() ?: UrlMapping.ANY_HTTP_METHOD : methodAttribute.toString()
+            }
+
+        }
+        else {
+            controller = controllerAttribute == null ? requestStateLookupStrategy.getControllerName() : controllerAttribute.toString()
+            httpMethod = methodAttribute == null ? requestStateLookupStrategy.getHttpMethod() ?: UrlMapping.ANY_HTTP_METHOD : methodAttribute.toString()
+        }
+
+        boolean defaultAction = false
+        if (controller && !action) {
+            action = requestStateLookupStrategy.getActionName(grailsUrlConverter.toUrlElement(controller))
+            defaultAction = true
+        }
+        String pluginName = attrs.get(UrlMapping.PLUGIN)?.toString()
+        // A resource link resolved from the request context carries the namespace that chose it,
+        // unless the caller named the controller itself.
+        String namespace = resourceTarget != null && resourceTarget.pinsNamespace && controllerAttribute == null ?
+                resourceTarget.namespace :
+                resolveNamespace(controller, pluginName, attrs)
+        return new LinkTarget(controller, action, defaultAction, namespace, httpMethod, id, parentResources)
+    }
+
+    /**
+     * Describes what a link built from the given attributes resolves to, for a cache of generated links to
+     * key on alongside the attributes themselves: the controller, namespace, action and HTTP method the
+     * link targets, any of which can depend on the request it is generated in. Links that target a URI
+     * rather than a controller resolve to nothing.
+     */
+    @PackageScope
+    String resolvedLinkKey(Map attrs) {
+        if (attrs.get(ATTRIBUTE_URI) != null || attrs.get(ATTRIBUTE_RELATIVE_URI) != null) {
+            return ''
+        }
+        def urlAttribute = attrs.get(ATTRIBUTE_URL)
+        if (urlAttribute && !(urlAttribute instanceof Map)) {
+            return ''
+        }
+        LinkTarget target = resolveLinkTarget(attrs, urlAttribute instanceof Map ? (Map) urlAttribute : attrs)
+        "target[controller:${target.controller}, namespace:${target.namespace}, action:${target.action}, method:${target.httpMethod}]".toString()
     }
 
     /**
@@ -842,6 +880,31 @@ class DefaultLinkGenerator implements LinkGenerator, PluginManagerAware {
             this.controller = controller
             this.namespace = namespace
             this.pinsNamespace = pinsNamespace
+        }
+    }
+
+    /**
+     * What a link resolves to from its attributes and the request it is generated in.
+     */
+    private static final class LinkTarget {
+
+        final String controller
+        final String action
+        final boolean defaultAction
+        final String namespace
+        final String httpMethod
+        final Object id
+        final List<String> parentResources
+
+        LinkTarget(String controller, String action, boolean defaultAction, String namespace, String httpMethod,
+                   Object id, List<String> parentResources) {
+            this.controller = controller
+            this.action = action
+            this.defaultAction = defaultAction
+            this.namespace = namespace
+            this.httpMethod = httpMethod
+            this.id = id
+            this.parentResources = parentResources
         }
     }
 }

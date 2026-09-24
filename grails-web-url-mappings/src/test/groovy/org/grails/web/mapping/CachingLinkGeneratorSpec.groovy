@@ -56,14 +56,14 @@ class CachingLinkGeneratorSpec extends Specification {
         request.setControllerName("foo")
         key = linkGenerator.makeKey([action: "bar"])
 
-        then: "its in the key"
-        key == "link[controller:foo, action:bar]"
+        then: "the controller the link resolves to is in the key"
+        key == "link[action:bar]target[controller:foo, namespace:null, action:bar, method:*]"
 
         when: "its in the params"
         key = linkGenerator.makeKey([controller: "foo", action: "bar"])
 
         then: "its in the key"
-        key == "link[controller:foo, action:bar]"
+        key == "link[controller:foo, action:bar]target[controller:foo, namespace:null, action:bar, method:*]"
     }
 
     void "test namespace"() {
@@ -73,37 +73,37 @@ class CachingLinkGeneratorSpec extends Specification {
         when: "not in the request or params"
         key = linkGenerator.makeKey([controller: "foo", action: "bar"])
 
-        then: "its not in the key"
-        key == "link[controller:foo, action:bar]"
+        then: "no namespace is resolved"
+        key == "link[controller:foo, action:bar]target[controller:foo, namespace:null, action:bar, method:*]"
 
         when: "its in the params"
         key = linkGenerator.makeKey([controller: "foo", action: "bar", namespace: "foo"])
 
         then: "its in the key"
-        key == "link[controller:foo, action:bar, namespace:foo]"
+        key == "link[controller:foo, action:bar, namespace:foo]target[controller:foo, namespace:foo, action:bar, method:*]"
 
         when: "its in the request but the controller doesn't match"
         request.setControllerNamespace("fooReq")
         request.setControllerName("x")
         key = linkGenerator.makeKey([controller: "foo", action: "bar"])
 
-        then: "its not in the key"
-        key == "link[controller:foo, action:bar]"
+        then: "no namespace is resolved"
+        key == "link[controller:foo, action:bar]target[controller:foo, namespace:null, action:bar, method:*]"
 
         when: "its in the request and the controller matches"
         request.setControllerNamespace("fooReq")
         request.setControllerName("foo")
         key = linkGenerator.makeKey([controller: "foo", action: "bar"])
 
-        then: "its in the key"
-        key == "link[controller:foo, action:bar, namespace:fooReq]"
+        then: "the resolved namespace is in the key"
+        key == "link[controller:foo, action:bar]target[controller:foo, namespace:fooReq, action:bar, method:*]"
 
         when: "its in the request and the params"
         request.setControllerNamespace("fooReq")
         key = linkGenerator.makeKey([controller: "foo", action: "bar", namespace: "fooParam"])
 
         then: "params wins"
-        key == "link[controller:foo, action:bar, namespace:fooParam]"
+        key == "link[controller:foo, action:bar, namespace:fooParam]target[controller:foo, namespace:fooParam, action:bar, method:*]"
     }
 
     void "test resource with action"() {
@@ -115,8 +115,8 @@ class CachingLinkGeneratorSpec extends Specification {
         request.setControllerName("foo")
         key = linkGenerator.makeKey([resource: new Resource(id: 1), action: "bar"])
 
-        then: "the request context is folded under its own keys, never as the target controller or namespace"
-        key == "link[resource:org.grails.web.mapping.CachingLinkGeneratorSpec\$Resource->1, action:bar, __grailsRequestController:foo, __grailsRequestNamespace:fooReq]"
+        then: "the key holds the controller the resource resolves to, never the one handling the request"
+        key == "link[resource:org.grails.web.mapping.CachingLinkGeneratorSpec\$Resource->1, action:bar]target[controller:widget, namespace:null, action:bar, method:GET]"
     }
 
 
@@ -135,6 +135,10 @@ class CachingLinkGeneratorSpec extends Specification {
 
         Long ident() {
             id
+        }
+
+        String toString() {
+            'widget'
         }
     }
 }
