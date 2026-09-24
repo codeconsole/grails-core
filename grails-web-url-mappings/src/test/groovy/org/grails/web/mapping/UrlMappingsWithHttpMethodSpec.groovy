@@ -105,6 +105,33 @@ class UrlMappingsWithHttpMethodSpec extends Specification{
 
     }
 
+    void "an explicit mapping wins over the wildcard when a method-specific mapping for the action needs other parameters"() {
+        given: 'an explicit mapping for any method, and a GET mapping for the same action that needs a slug'
+        def generator = linkGeneratorFor {
+            "/$controller/$action?/$id?"()
+            "/book-list/$page"(controller: 'book', action: 'list')
+            get "/books/featured/$slug"(controller: 'book', action: 'list')
+        }
+
+        expect: 'a GET link without a slug uses the explicit mapping rather than the wildcard'
+        generator.link(controller: 'book', action: 'list', method: 'GET', params: [page: 2]) == 'http://localhost/book-list/2'
+
+        and: 'as a link naming no method does'
+        generator.link(controller: 'book', action: 'list', params: [page: 2]) == 'http://localhost/book-list/2'
+
+        and: 'a GET link with a slug uses the more specific GET mapping'
+        generator.link(controller: 'book', action: 'list', method: 'GET', params: [slug: 'x']) == 'http://localhost/books/featured/x'
+    }
+
+    private LinkGenerator linkGeneratorFor(Closure urlMappings) {
+        def ctx = new MockApplicationContext()
+        ctx.registerMockBean(GrailsApplication.APPLICATION_ID, new DefaultGrailsApplication())
+        def generator = new DefaultLinkGenerator('http://localhost', null)
+        generator.grailsUrlConverter = new CamelCaseUrlConverter()
+        generator.urlMappingsHolder = new DefaultUrlMappingsHolder(new DefaultUrlMappingEvaluator(ctx).evaluateMappings(urlMappings))
+        generator
+    }
+
     LinkGenerator getLinkGenerator() {
         def generator = new DefaultLinkGenerator("http://localhost", null)
         generator.grailsUrlConverter = new CamelCaseUrlConverter()
