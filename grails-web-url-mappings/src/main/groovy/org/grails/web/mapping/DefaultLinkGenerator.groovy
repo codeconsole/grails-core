@@ -18,6 +18,7 @@
  */
 package org.grails.web.mapping
 
+import java.util.concurrent.ConcurrentHashMap
 import java.util.regex.Pattern
 
 import groovy.transform.CompileStatic
@@ -93,6 +94,7 @@ class DefaultLinkGenerator implements LinkGenerator, PluginManagerAware {
 
     private volatile ControllerIndex<String> controllerNamespacesByName
     private volatile ControllerIndex<ControllerRef> controllersByDomainClass
+    private final Set<String> ambiguousControllersReported = ConcurrentHashMap.newKeySet()
 
     @Value('${grails.resources.pattern:/static/**}')
     String resourcePattern = Settings.DEFAULT_RESOURCE_PATTERN
@@ -318,10 +320,11 @@ class DefaultLinkGenerator implements LinkGenerator, PluginManagerAware {
             return null
         }
         String currentControllerName = requestStateLookupStrategy.controllerName
+        String currentNamespace = requestStateLookupStrategy.controllerNamespace
         // Preserve the historical behaviour of reusing the current request namespace when the link
         // targets the controller currently handling the request.
         if (controller == currentControllerName) {
-            return requestStateLookupStrategy.controllerNamespace
+            return currentNamespace
         }
 
         // A plugin-provided target is resolved within that plugin, so do not infer a namespace from
@@ -335,26 +338,33 @@ class DefaultLinkGenerator implements LinkGenerator, PluginManagerAware {
             return null
         }
 
-        // The normal case: exactly one controller has this name, so use its namespace (which may be
-        // the non-namespaced/default one). Links therefore "just work" from controller and action
-        // alone, with no namespace attribute required.
-        if (namespaces.size() == 1) {
-            return namespaces.iterator().next()
+        // Resolve the name the way code resolves a name, nearest scope first: the request's own
+        // namespace, then the default namespace, then the only namespace defining the controller. A
+        // link to "user" rendered in the admin namespace therefore reaches the admin UserController
+        // when there is one, and a controller defined in a single namespace needs no namespace
+        // attribute at all.
+        if (namespaces.contains(currentNamespace)) {
+            return currentNamespace
         }
-
-        // Otherwise the same controller name is defined in more than one namespace - a discouraged
-        // design that the caller is expected to disambiguate with an explicit namespace. Fall back to
-        // a sensible default rather than guessing: prefer the non-namespaced controller when one
-        // exists, then a controller in the current request namespace; leave anything still ambiguous
-        // to the existing reverse-mapping default.
         if (namespaces.contains(null)) {
             return null
         }
-        String currentNamespace = requestStateLookupStrategy.controllerNamespace
-        if (currentNamespace != null && namespaces.contains(currentNamespace)) {
-            return currentNamespace
+        if (namespaces.size() == 1) {
+            return namespaces.iterator().next()
         }
+        reportAmbiguousNamespace(controller, namespaces)
         return null
+    }
+
+    /**
+     * Warns, once per controller name, that a link named a controller defined in several namespaces
+     * without saying which, from outside all of them, so no namespace could be inferred.
+     */
+    private void reportAmbiguousNamespace(String controller, Set<String> namespaces) {
+        if (ambiguousControllersReported.add(controller)) {
+            log.warn('A link to controller [{}] names no namespace, but the controller is defined in the namespaces {} and in neither the default namespace nor the namespace of the current request. No namespace was inferred; pass a namespace attribute to choose one.',
+                    controller, new TreeSet<String>(namespaces))
+        }
     }
 
     private Map<String, Set<String>> getControllerNamespacesByName() {
@@ -401,6 +411,7 @@ class DefaultLinkGenerator implements LinkGenerator, PluginManagerAware {
     void resetControllerNamespaceCache() {
         controllerNamespacesByName = null
         controllersByDomainClass = null
+        ambiguousControllersReported.clear()
     }
 
     /**
