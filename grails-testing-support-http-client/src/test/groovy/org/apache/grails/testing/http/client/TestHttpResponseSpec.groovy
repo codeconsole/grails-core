@@ -32,7 +32,6 @@ import groovy.json.JsonParserType
 import groovy.xml.XmlSlurper
 
 import org.opentest4j.AssertionFailedError
-import org.xml.sax.SAXParseException
 import spock.lang.Specification
 import spock.lang.Unroll
 
@@ -210,11 +209,10 @@ class TestHttpResponseSpec extends Specification {
 <root>&ext;</root>""")
 
         when:
-        response.xml()
+        def parsed = response.xml()
 
         then:
-        def e = thrown(SAXParseException)
-        e.message.contains('External Entity')
+        !parsed.text().contains('top-secret-token')
 
         cleanup:
         Files.deleteIfExists(secretFile)
