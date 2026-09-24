@@ -31,7 +31,7 @@ import org.grails.web.servlet.mvc.GrailsWebRequest
 import org.grails.web.servlet.view.GroovyPageView
 import org.springframework.core.io.ByteArrayResource
 import org.springframework.core.io.Resource
-import org.springframework.core.io.support.ResourcePatternResolver
+import org.springframework.core.io.ResourceLoader
 import org.springframework.web.context.request.RequestContextHolder
 import org.springframework.web.context.support.StaticWebApplicationContext
 import spock.lang.Specification
@@ -97,15 +97,12 @@ class ScaffoldingViewResolverSpec extends Specification {
         new ByteArrayResource(text.getBytes(StandardCharsets.UTF_8))
     }
 
-    /** Serves each classpath template location from {@code templates}, and every copy of one from {@code copies}. */
-    ResourcePatternResolver templates(Map<String, String> templates, Map<String, List<String>> copies = [:]) {
-        Stub(ResourcePatternResolver) {
+    /** Serves each classpath template location from {@code templates}. */
+    ResourceLoader templates(Map<String, String> templates) {
+        Stub(ResourceLoader) {
             getResource(_ as String) >> { String location ->
                 String text = templates[location - 'classpath:META-INF/templates/scaffolding/' - '.gsp']
                 text != null ? template(text) : Stub(Resource) { exists() >> false }
-            }
-            getResources(_ as String) >> { String pattern ->
-                (copies[pattern - 'classpath*:META-INF/templates/scaffolding/' - '.gsp'] ?: []).collect { template(it) } as Resource[]
             }
         }
     }
@@ -118,14 +115,11 @@ class ScaffoldingViewResolverSpec extends Specification {
         ScaffoldedPages.uri(templatePath, resolver.model(domain).asMap(), text.getBytes(StandardCharsets.UTF_8))
     }
 
-    /** A resolver as a production application or a native image has one, where compiled pages are used. */
-    ScaffoldingViewResolver resolverUsingCompiledPages(boolean nativeImage = false) {
+    /** A resolver as a production application has one, where compiled pages are used. */
+    ScaffoldingViewResolver resolverUsingCompiledPages() {
         ScaffoldingViewResolver compiled = new ScaffoldingViewResolver() {
             @Override
             protected boolean precompiledPagesInUse() { true }
-
-            @Override
-            protected boolean inNativeImage() { nativeImage }
         }
         compiled.groovyPageLocator = mockPageLocator
         compiled.templateEngine = mockTemplateEngine
@@ -461,46 +455,6 @@ class ScaffoldingViewResolverSpec extends Specification {
 
         then:
         developing.reportedPages.isEmpty()
-    }
-
-    void "a native image with no page for its template is served the one compiled from another copy of it"() {
-        given: 'the application resolves its override, but the build compiled the stock template'
-        def image = resolverUsingCompiledPages(true)
-        setupScaffoldController(TestScaffoldController, TestDomain)
-        mockPageLocator.resolveViewFormat(LIST_VIEW_NAME) >> LIST_VIEW_NAME
-        String override = 'override list ${className}'
-        image.resourceLoader = templates([list: override], [list: [override, LIST_TEMPLATE]])
-        def stockPage = Stub(GroovyPageScriptSource)
-
-        when:
-        def view = image.tryGenerateScaffoldedView(LIST_VIEW_NAME, mockControllerClass) { String name -> [name] }
-
-        then: 'a native image cannot expand a template, so the compiled copy is served'
-        1 * mockPageLocator.findPage(pageFor('list', override)) >> null
-        1 * mockPageLocator.findPage(pageFor('list', LIST_TEMPLATE)) >> stockPage
-        0 * mockTemplateEngine.createTemplate(_ as Resource, _)
-        (view as GroovyPageView).url == pageFor('list', LIST_TEMPLATE)
-
-        and: 'and the substitution is reported'
-        image.reportedPages == ["${TestDomain.name}:list".toString()] as Set
-    }
-
-    void "on the JVM a template with no page of its own is expanded, never served another copy's page"() {
-        given:
-        def jvm = resolverUsingCompiledPages(false)
-        setupScaffoldController(TestScaffoldController, TestDomain)
-        mockPageLocator.resolveViewFormat(LIST_VIEW_NAME) >> LIST_VIEW_NAME
-        mockTemplateEngine.gspEncoding >> 'UTF-8'
-        String override = 'override list ${className}'
-        jvm.resourceLoader = templates([list: override], [list: [override, LIST_TEMPLATE]])
-
-        when:
-        jvm.tryGenerateScaffoldedView(LIST_VIEW_NAME, mockControllerClass) { String name -> [name] }
-
-        then:
-        1 * mockPageLocator.findPage(pageFor('list', override)) >> null
-        0 * mockPageLocator.findPage(pageFor('list', LIST_TEMPLATE))
-        1 * mockTemplateEngine.createTemplate({ Resource expanded -> expanded.inputStream.text == "override list ${className()}".toString() }, true) >> Stub(GroovyPageTemplate)
     }
 
     // Test domain class for annotation testing

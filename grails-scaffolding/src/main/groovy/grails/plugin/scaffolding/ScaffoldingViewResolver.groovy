@@ -27,13 +27,11 @@ import org.slf4j.LoggerFactory
 
 import org.springframework.aot.AotDetector
 import org.springframework.context.ResourceLoaderAware
-import org.springframework.core.NativeDetector
 import org.springframework.core.io.ByteArrayResource
 import org.springframework.core.io.FileSystemResource
 import org.springframework.core.io.Resource
 import org.springframework.core.io.ResourceLoader
 import org.springframework.core.io.UrlResource
-import org.springframework.core.io.support.ResourcePatternUtils
 import org.springframework.web.servlet.View
 
 import grails.codegen.model.ModelBuilder
@@ -259,44 +257,22 @@ class ScaffoldingViewResolver extends GroovyPageViewResolver implements Resource
      * <p>Every decision about which template to use has been made by the time this is asked, the
      * same way whether or not anything was compiled, so this only replaces the expansion. The page
      * is found by the template and the model together: a template the build did not see finds
-     * nothing and is expanded as it would be otherwise.</p>
-     *
-     * <p>A native image cannot expand a template. There, a template with no page of its own is
-     * served the page compiled from another copy of the same template on the classpath, the one the
-     * build chose, which is what the image would have served had the build written its pages among
-     * the application's views.</p>
+     * nothing and is expanded as it would be otherwise. The build compiles every copy of every
+     * template it can see, so whichever copy was chosen has its page.</p>
      */
     private View findPrecompiledView(String templatePath, Map<String, Object> model, byte[] template) {
         View view = findPage(ScaffoldedPages.uri(templatePath, model, template))
         if (view != null) {
             return view
         }
-        if (inNativeImage()) {
-            for (Resource copy : templateCopies(templatePath)) {
-                byte[] other = read(copy)
-                if (!Arrays.equals(other, template)) {
-                    view = findPage(ScaffoldedPages.uri(templatePath, model, other))
-                    if (view != null) {
-                        report(templatePath, model, 'no page was compiled from the template this application resolves, so the page ' +
-                                "compiled from ${copy.description} is served instead: a native image cannot expand a template")
-                        return view
-                    }
-                }
-            }
-        }
         report(templatePath, model, 'no page was compiled from it, so it is expanded now. A native image cannot do that; ' +
-                'the build compiles a page for each template in src/main/templates/scaffolding and on the classpath')
+                'the build compiles a page for each template in src/main/templates/scaffolding and on the runtime classpath')
         return null
     }
 
     private View findPage(String uri) {
         GroovyPageScriptSource page = groovyPageLocator.findPage(uri)
         return page == null ? null : createGroovyPageView(uri, page)
-    }
-
-    private List<Resource> templateCopies(String templatePath) {
-        ResourcePatternUtils.getResourcePatternResolver(resourceLoader)
-                .getResources("classpath*:META-INF/templates/scaffolding/${templatePath}.gsp").toList()
     }
 
     /**
@@ -316,11 +292,6 @@ class ScaffoldingViewResolver extends GroovyPageViewResolver implements Resource
     /** Whether pages compiled by the build are used, which is when the page locator uses them. */
     protected boolean precompiledPagesInUse() {
         return !Environment.isDevelopmentMode() || AotDetector.useGeneratedArtifacts()
-    }
-
-    /** Whether this is running as a native image, which cannot define a class and so cannot expand a template. */
-    protected boolean inNativeImage() {
-        return NativeDetector.inNativeImage()
     }
 
     private View expandTemplate(Map<String, Object> model, byte[] template, String cacheKey) {
