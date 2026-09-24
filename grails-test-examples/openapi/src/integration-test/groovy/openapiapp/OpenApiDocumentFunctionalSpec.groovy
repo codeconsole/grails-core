@@ -181,10 +181,26 @@ class OpenApiDocumentFunctionalSpec extends Specification implements HttpClientS
         properties.version.readOnly
     }
 
+    void 'classes sharing a simple name are each described under their package'() {
+        given:
+        Map schemas = document.components.schemas
+
+        expect: 'neither takes the name they share'
+        !schemas.containsKey('Note')
+
+        and: 'each action binds the one it declares'
+        document.paths['/notes/review'].post.requestBody.content['application/json'].schema.$ref ==
+                '#/components/schemas/openapiapp.reviews.Note'
+        document.paths['/notes/draft'].post.requestBody.content['application/json'].schema.$ref ==
+                '#/components/schemas/openapiapp.drafts.Note'
+        ((Map) schemas['openapiapp.reviews.Note'].get('properties')).keySet() == ['text'] as Set
+        ((Map) schemas['openapiapp.drafts.Note'].get('properties')).keySet() == ['body', 'revision'] as Set
+    }
+
     void 'every reference in the document resolves'() {
         given:
         Set defined = (document.components?.schemas ?: [:]).keySet()
-        Set referenced = (document.toString() =~ /#\/components\/schemas\/(\w+)/).collect { it[1] } as Set
+        Set referenced = (document.toString() =~ /#\/components\/schemas\/([\w.\-]+)/).collect { it[1] } as Set
 
         expect:
         (referenced - defined).isEmpty()

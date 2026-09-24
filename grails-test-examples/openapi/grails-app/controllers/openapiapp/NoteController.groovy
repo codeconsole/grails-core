@@ -18,17 +18,18 @@
  */
 package openapiapp
 
-class UrlMappings {
+import openapiapp.drafts.Note as DraftNote
+import openapiapp.reviews.Note as ReviewNote
 
-    static mappings = {
-        '/books'(resources: 'book')
-        '/authors'(resources: 'author')
-        '/publishers'(resources: 'publisher')
-        post '/notes/review'(controller: 'note', action: 'review')
-        post '/notes/draft'(controller: 'note', action: 'draft')
-        "/$controller/$action?/$id?(.$format)?" {}
-        '/'(view: '/index')
-        '500'(view: '/error')
-        '404'(view: '/notFound')
+class NoteController {
+
+    static responseFormats = ['json']
+
+    def review(ReviewNote note) {
+        respond note
+    }
+
+    def draft(DraftNote note) {
+        respond note
     }
 }

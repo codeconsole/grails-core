@@ -16,19 +16,16 @@
  *  specific language governing permissions and limitations
  *  under the License.
  */
-package openapiapp
+package grails.openapi.names.v2
 
-class UrlMappings {
+import grails.validation.Validateable
 
-    static mappings = {
-        '/books'(resources: 'book')
-        '/authors'(resources: 'author')
-        '/publishers'(resources: 'publisher')
-        post '/notes/review'(controller: 'note', action: 'review')
-        post '/notes/draft'(controller: 'note', action: 'draft')
-        "/$controller/$action?/$id?(.$format)?" {}
-        '/'(view: '/index')
-        '500'(view: '/error')
-        '404'(view: '/notFound')
+class Label implements Validateable {
+    String code
+    Integer width
+
+    static constraints = {
+        code nullable: false
+        width nullable: true
     }
 }

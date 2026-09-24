@@ -23,6 +23,7 @@ import java.lang.reflect.Type
 
 import groovy.transform.CompileStatic
 
+import com.fasterxml.jackson.databind.JavaType
 import com.fasterxml.jackson.databind.type.TypeFactory
 import io.swagger.v3.core.converter.AnnotatedType
 import io.swagger.v3.core.converter.ModelConverter
@@ -80,6 +81,8 @@ class GrailsModelConverter implements ModelConverter {
 
     private static final ThreadLocal<Collection<MappingContext>> MAPPING_CONTEXTS = new ThreadLocal<>()
 
+    private static final ThreadLocal<SchemaNames> SCHEMA_NAMES = new ThreadLocal<>()
+
     private static final ThreadLocal<Deque<Class<?>>> RESOLVING = ThreadLocal.<Deque<Class<?>>> withInitial {
         (Deque<Class<?>>) new ArrayDeque<Class<?>>()
     }
@@ -108,6 +111,21 @@ class GrailsModelConverter implements ModelConverter {
         }
         finally {
             MAPPING_CONTEXTS.set(previous)
+        }
+    }
+
+    /**
+     * Resolves with every class named apart from the others sharing its name, through the names
+     * of the document being described.
+     */
+    static <T> T withSchemaNames(SchemaNames names, Closure<T> work) {
+        SchemaNames previous = SCHEMA_NAMES.get()
+        SCHEMA_NAMES.set(names)
+        try {
+            return work.call()
+        }
+        finally {
+            SCHEMA_NAMES.set(previous)
         }
     }
 
@@ -147,6 +165,7 @@ class GrailsModelConverter implements ModelConverter {
         if (type == null) {
             return chain.next().resolve(annotatedType, context, chain)
         }
+        nameApart(annotatedType)
 
         Deque<Class<?>> resolving = RESOLVING.get()
         resolving.push(type)
@@ -163,6 +182,26 @@ class GrailsModelConverter implements ModelConverter {
             describe(type, model)
         }
         resolved
+    }
+
+    /**
+     * Names a class that shares its name with another apart from it, before swagger-core names the
+     * class and refers to it.
+     */
+    private static void nameApart(AnnotatedType annotatedType) {
+        SchemaNames names = SCHEMA_NAMES.get()
+        if (names == null || annotatedType.name) {
+            return
+        }
+        JavaType type = javaType(annotatedType.type)
+        if (type == null || !SchemaNames.isNamed(type)) {
+            return
+        }
+        String natural = SchemaNames.naturalName(annotatedType, type)
+        String name = names.claim(type, natural)
+        if (name != natural) {
+            annotatedType.setName(name)
+        }
     }
 
     /**
@@ -371,11 +410,15 @@ class GrailsModelConverter implements ModelConverter {
     }
 
     private static Class<?> rawClass(Type type) {
+        javaType(type)?.rawClass
+    }
+
+    private static JavaType javaType(Type type) {
         if (type == null) {
             return null
         }
         try {
-            return TypeFactory.defaultInstance().constructType(type).rawClass
+            return TypeFactory.defaultInstance().constructType(type)
         }
         catch (IllegalArgumentException ignored) {
             return null

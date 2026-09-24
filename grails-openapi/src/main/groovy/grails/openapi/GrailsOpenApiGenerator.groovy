@@ -69,6 +69,8 @@ import org.grails.datastore.mapping.model.PersistentEntity
 import org.grails.openapi.ActionAnnotations
 import org.grails.openapi.GrailsModelConverter
 import org.grails.openapi.RestfulControllerActions
+import org.grails.openapi.SchemaNames
+import org.grails.openapi.SchemaReferences
 import org.grails.openapi.UrlMappingPaths
 import org.grails.web.mapping.ResponseCodeMappingData
 
@@ -207,6 +209,9 @@ class GrailsOpenApiGenerator {
         private final Map<String, GrailsControllerClass> controllersByKey = [:]
         private final Map<String, List<GrailsControllerClass>> controllersByName = [:]
         private final Map<Class<?>, Object> controllerInstances = [:]
+        private final SchemaNames schemaNames = new SchemaNames()
+        private final Set<String> addedSchemas = [] as Set
+        private final Map<String, String> patchSchemas = [:]
 
         Contribution(OpenAPI openApi, OpenApiSelection selection) {
             this.openApi = openApi
@@ -220,16 +225,22 @@ class GrailsOpenApiGenerator {
         void contribute() {
             mergeBaseDocument()
 
-            for (UrlMapping mapping : urlMappingsHolder.urlMappings) {
-                describe("URL mapping [${mapping.urlData?.urlPattern}]".toString()) {
-                    addMappedOperations(mapping)
+            // The validation errors are derived rather than resolved, so a class of the same name
+            // is named apart from them.
+            schemaNames.derive(VALIDATION_ERRORS_SCHEMA)
+            GrailsModelConverter.withSchemaNames(schemaNames) {
+                for (UrlMapping mapping : urlMappingsHolder.urlMappings) {
+                    describe("URL mapping [${mapping.urlData?.urlPattern}]".toString()) {
+                        addMappedOperations(mapping)
+                    }
                 }
+                addExpandedMappings()
             }
-            addExpandedMappings()
             disambiguateOperationIds()
 
             openApi.setPaths(paths)
             openApi.setComponents(components)
+            SchemaReferences.rename(openApi, schemaRenames())
             registerTags()
             dropUnresolvedReferences()
             if (!components.schemas && !components.securitySchemes && !components.responses
@@ -661,12 +672,13 @@ class GrailsOpenApiGenerator {
             if (full == null || !full.required) {
                 return reference
             }
-            String patchName = name + PATCH_SUFFIX
+            String patchName = patchSchemas.computeIfAbsent(name) { String base -> schemaNames.derive(base + PATCH_SUFFIX) }
             if (!components.schemas.containsKey(patchName)) {
                 Schema<?> patch = new ObjectSchema()
                 patch.setProperties(new LinkedHashMap<String, Schema>(full.properties ?: [:]))
                 patch.setDescription(full.description)
                 components.addSchemas(patchName, patch)
+                addedSchemas << patchName
             }
             new Schema<>().$ref(REFERENCE_PREFIX + patchName)
         }
@@ -689,9 +701,27 @@ class GrailsOpenApiGenerator {
             resolved.referencedSchemas?.each { String name, Schema schema ->
                 if (!components.schemas?.containsKey(name)) {
                     components.addSchemas(name, schema)
+                    addedSchemas << name
                 }
             }
             resolved.schema.$ref ? new Schema<>().$ref(resolved.schema.$ref) : resolved.schema
+        }
+
+        /**
+         * The names to move the schemas this contribution added to, now that every class described
+         * is known: a class holding a name another class also claims moves to its qualified name,
+         * and a patch schema follows the schema it is a patch of. A schema the base document or
+         * springdoc supplied keeps its name.
+         */
+        private Map<String, String> schemaRenames() {
+            Map<String, String> renames = schemaNames.renames().findAll { String from, String to -> from in addedSchemas }
+            patchSchemas.each { String base, String patch ->
+                String moved = renames[base]
+                if (moved != null && patch in addedSchemas) {
+                    renames[patch] = moved + PATCH_SUFFIX
+                }
+            }
+            renames
         }
 
         /**
