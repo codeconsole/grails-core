@@ -19,11 +19,14 @@
 
 package grails.plugin.scaffolding
 
+import java.nio.charset.Charset
 import java.util.concurrent.ConcurrentHashMap
 
 import groovy.text.GStringTemplateEngine
 import groovy.text.Template
 import groovy.transform.CompileStatic
+import org.slf4j.Logger
+import org.slf4j.LoggerFactory
 
 import org.springframework.context.ResourceLoaderAware
 import org.springframework.core.io.ByteArrayResource
@@ -39,7 +42,9 @@ import grails.io.IOUtils
 import grails.plugin.scaffolding.annotation.Scaffold
 import grails.util.BuildSettings
 import grails.util.Environment
+import org.apache.grails.scaffolding.ScaffoldedPages
 import org.grails.buffer.FastStringWriter
+import org.grails.gsp.io.GroovyPageScriptSource
 import org.grails.web.servlet.mvc.GrailsWebRequest
 import org.grails.web.servlet.view.GroovyPageView
 import org.grails.web.servlet.view.GroovyPageViewResolver
@@ -84,6 +89,8 @@ class ScaffoldingViewResolver extends GroovyPageViewResolver implements Resource
     ScaffoldingViewResolver(Class templateOverridePluginDescriptor) {
         this.templateOverridePluginDescriptor = templateOverridePluginDescriptor
     }
+
+    private static final Logger LOG = LoggerFactory.getLogger(ScaffoldingViewResolver)
 
     private static final Object NULL_SCAFFOLD_VALUE = new Object()
 
@@ -236,21 +243,48 @@ class ScaffoldingViewResolver extends GroovyPageViewResolver implements Resource
     }
 
     private View generateScaffoldedView(Class scaffoldValue, Resource res, String cacheKey) {
-        def model = model((Class) scaffoldValue)
+        Map<String, Object> model = model((Class) scaffoldValue).asMap()
+        byte[] template = res.inputStream.withCloseable { InputStream input -> input.bytes }
+        View view = enableReload ? null : findPrecompiledView(model, template)
+        if (view == null) {
+            view = expandTemplate(model, template, cacheKey)
+        }
+        generatedViewCache.put(cacheKey, view)
+        return view
+    }
+
+    /**
+     * The page the build compiled from this template and model, if it compiled one.
+     *
+     * <p>Every decision about which template to use has been made by the time this is asked, the
+     * same way whether or not anything was compiled, so this only replaces the expansion. The page
+     * is found by the template and the model together: a template the build did not see, or a model
+     * it bound differently, finds nothing and is expanded as it would be otherwise.</p>
+     */
+    private View findPrecompiledView(Map<String, Object> model, byte[] template) {
+        String uri = ScaffoldedPages.uri(model, template)
+        GroovyPageScriptSource page = groovyPageLocator.findPage(uri)
+        if (page == null) {
+            LOG.debug('No page compiled at {} for {}; expanding its template', uri, model.fullName)
+            return null
+        }
+        return createGroovyPageView(uri, page)
+    }
+
+    private View expandTemplate(Map<String, Object> model, byte[] template, String cacheKey) {
         def viewGenerator = new GStringTemplateEngine()
-        Template t = viewGenerator.createTemplate(res.URL)
+        Template t = viewGenerator.createTemplate(new String(template, Charset.defaultCharset()))
 
         def contents = new FastStringWriter()
-        t.make(model.asMap()).writeTo(contents)
+        t.make(model).writeTo(contents)
 
-        def template = templateEngine.createTemplate(new ByteArrayResource(contents.toString().getBytes(templateEngine.gspEncoding), "view:$cacheKey"), !enableReload)
+        def compiled = templateEngine.createTemplate(new ByteArrayResource(contents.toString().getBytes(templateEngine.gspEncoding), "view:$cacheKey"), !enableReload)
         def view = new GroovyPageView()
         view.setServletContext(getServletContext())
-        view.setTemplate(template)
+        view.setTemplate(compiled)
         view.setApplicationContext(getApplicationContext())
         view.setTemplateEngine(templateEngine)
         view.afterPropertiesSet()
-        generatedViewCache.put(cacheKey, view)
         return view
     }
 
