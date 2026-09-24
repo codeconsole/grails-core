@@ -23,17 +23,24 @@ import java.util.function.Predicate
 
 import groovy.transform.CompileStatic
 
+import io.swagger.v3.oas.models.Components
+import io.swagger.v3.oas.models.Operation
+import org.springdoc.core.customizers.GlobalOperationComponentsCustomizer
+import org.springdoc.core.customizers.GlobalOperationCustomizer
+import org.springdoc.core.customizers.OperationCustomizer
 import org.springdoc.core.customizers.SpringDocCustomizers
 import org.springdoc.core.filters.GlobalOpenApiMethodFilter
 import org.springdoc.core.filters.OpenApiMethodFilter
 import org.springdoc.core.models.GroupedOpenApi
 import org.springframework.beans.factory.BeanFactory
+import org.springframework.web.method.HandlerMethod
 
+import grails.openapi.ActionOperationCustomizer
 import grails.openapi.OpenApiSelection
 
 /**
- * What a document springdoc serves selects: its criteria, and the method filters springdoc applies
- * to its handler methods, applied to the Grails actions too.
+ * What a document springdoc serves selects: its criteria, and the method filters and operation
+ * customizers springdoc applies to its handler methods, applied to the Grails actions too.
  */
 @CompileStatic
 class SpringdocSelections {
@@ -45,6 +52,7 @@ class SpringdocSelections {
     static OpenApiSelection defaultSelection(OpenApiSelection criteria, SpringDocCustomizers customizers) {
         OpenApiSelection selection = criteria.copy()
         selection.actionFilters.addAll(actionFilters(customizers?.methodFilters?.orElse(null)))
+        selection.operationCustomizers.addAll(operationCustomizers(customizers?.operationCustomizers?.orElse(null)))
         selection
     }
 
@@ -65,6 +73,16 @@ class SpringdocSelections {
             filters.addAll(group.openApiMethodFilters)
         }
         selection.actionFilters.addAll(actionFilters(filters))
+
+        Set<OperationCustomizer> groupCustomizers = new LinkedHashSet<>()
+        Set<GlobalOperationCustomizer> globalCustomizers = customizers?.globalOperationCustomizers?.orElse(null)
+        if (globalCustomizers) {
+            groupCustomizers.addAll(globalCustomizers)
+        }
+        if (group.operationCustomizers) {
+            groupCustomizers.addAll(group.operationCustomizers)
+        }
+        selection.operationCustomizers.addAll(operationCustomizers(groupCustomizers))
         selection
     }
 
@@ -73,6 +91,24 @@ class SpringdocSelections {
      */
     static SpringDocCustomizers customizers(BeanFactory beanFactory) {
         beanFactory?.getBeanProvider(SpringDocCustomizers)?.getIfAvailable()
+    }
+
+    /**
+     * A customizer is given the handler method springdoc would give it for a Spring MVC endpoint:
+     * the controller, and the method the action is declared as.
+     */
+    private static List<ActionOperationCustomizer> operationCustomizers(Collection<? extends OperationCustomizer> customizers) {
+        (customizers ?: []).collect { OperationCustomizer customizer ->
+            { Operation operation, Components components, Object controller, Method action ->
+                if (controller == null || action == null) {
+                    return operation
+                }
+                HandlerMethod handlerMethod = new HandlerMethod(controller, action)
+                customizer instanceof GlobalOperationComponentsCustomizer
+                        ? ((GlobalOperationComponentsCustomizer) customizer).customize(operation, components, handlerMethod)
+                        : customizer.customize(operation, handlerMethod)
+            } as ActionOperationCustomizer
+        }
     }
 
     private static List<Predicate<Method>> actionFilters(Collection<? extends OpenApiMethodFilter> filters) {

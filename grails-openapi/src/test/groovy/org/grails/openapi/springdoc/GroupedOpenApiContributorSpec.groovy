@@ -20,13 +20,18 @@ package org.grails.openapi.springdoc
 
 import java.lang.reflect.Method
 
+import io.swagger.v3.oas.models.Components
 import io.swagger.v3.oas.models.OpenAPI
+import io.swagger.v3.oas.models.Operation
+import org.springdoc.core.customizers.GlobalOperationComponentsCustomizer
+import org.springdoc.core.customizers.OperationCustomizer
 import org.springdoc.core.customizers.SpringDocCustomizers
 import org.springdoc.core.filters.GlobalOpenApiMethodFilter
 import org.springdoc.core.filters.OpenApiMethodFilter
 import org.springdoc.core.models.GroupedOpenApi
 import org.springdoc.webmvc.api.MultipleOpenApiWebMvcResource
 import org.springframework.beans.factory.support.DefaultListableBeanFactory
+import org.springframework.web.method.HandlerMethod
 
 import grails.openapi.GrailsOpenApiGenerator
 import grails.openapi.OpenApiSelection
@@ -87,6 +92,54 @@ class GroupedOpenApiContributorSpec extends Specification {
         then:
         openApi.paths['/widgets/{id}'].get
         openApi.paths['/widgets/{id}'].delete == null
+    }
+
+    void 'applies the operation customizers of a group, and the global ones, to the Grails operations'() {
+        given:
+        def beanFactory = new DefaultListableBeanFactory()
+        beanFactory.registerSingleton('generator', generator(true))
+        beanFactory.registerSingleton('springDocCustomizers', customizers(globalOperationCustomizers: [
+                new GlobalOperationComponentsCustomizer() {
+                    Operation customize(Operation operation, Components components, HandlerMethod handlerMethod) {
+                        operation.addExtension('x-components', components != null)
+                        operation
+                    }
+
+                    Operation customize(Operation operation, HandlerMethod handlerMethod) {
+                        operation
+                    }
+                }]))
+        beanFactory.registerSingleton('widgets', GroupedOpenApi.builder().group('widgets').pathsToMatch('/widgets/**')
+                .addOperationCustomizer { Operation operation, HandlerMethod handlerMethod ->
+                    operation.operationId("${handlerMethod.beanType.simpleName}_${handlerMethod.method.name}".toString())
+                }.build())
+        def contributor = new GroupedOpenApiContributor()
+        contributor.beanFactory = beanFactory
+
+        when:
+        contributor.postProcessBeforeInitialization(resource(beanFactory), 'multipleOpenApiResource')
+        def openApi = document(beanFactory.getBean('widgets', GroupedOpenApi))
+
+        then: 'each is given the handler method of the action: the controller, and the method it is declared as'
+        openApi.paths['/widgets'].get.operationId == 'WidgetController_index'
+        openApi.paths['/widgets/{id}'].delete.operationId == 'WidgetController_delete'
+
+        and: 'a customizer of the components is given them'
+        openApi.paths['/widgets'].get.extensions['x-components'] == true
+    }
+
+    void 'applies the operation customizers springdoc applies to its default document'() {
+        given:
+        def customizers = customizers(operationCustomizers: [{ Operation operation, HandlerMethod handlerMethod ->
+            operation.summary(handlerMethod.method.name)
+        } as OperationCustomizer])
+
+        when:
+        def openApi = generator(true).generate(SpringdocSelections.defaultSelection(new OpenApiSelection(), customizers))
+
+        then:
+        openApi.paths['/widgets/{id}'].get.summary == 'show'
+        openApi.paths['/gate'].get.summary == 'index'
     }
 
     void 'leaves every other bean alone'() {
@@ -178,10 +231,13 @@ class GroupedOpenApiContributorSpec extends Specification {
                 null, null, null, null, null, null, null)
     }
 
-    private static GrailsOpenApiGenerator generator() {
+    private static GrailsOpenApiGenerator generator(boolean withControllers = false) {
+        def application = withControllers
+                ? OpenApiFixture.application([WidgetController, GateController], [new WidgetController(), new GateController()])
+                : OpenApiFixture.application([WidgetController, GateController])
         OpenApiFixture.generator(OpenApiFixture.holder {
             '/widgets'(resources: 'widget')
             '/gate'(controller: 'gate', action: 'index', namespace: 'v1')
-        }, OpenApiFixture.application([WidgetController, GateController]), OpenApiFixture.context([Widget, Crate]))
+        }, application, OpenApiFixture.context([Widget, Crate]))
     }
 }

@@ -20,9 +20,12 @@ package openapiapp
 
 import java.lang.reflect.Method
 
+import io.swagger.v3.oas.models.Operation
+import org.springdoc.core.customizers.GlobalOperationCustomizer
 import org.springdoc.core.filters.OpenApiMethodFilter
 import org.springdoc.core.models.GroupedOpenApi
 import org.springframework.context.annotation.Bean
+import org.springframework.web.method.HandlerMethod
 
 import grails.boot.GrailsApp
 import grails.boot.config.GrailsAutoConfiguration
@@ -42,6 +45,17 @@ class Application extends GrailsAutoConfiguration {
     }
 
     /**
+     * Names, on every operation, the action that serves it.
+     */
+    @Bean
+    GlobalOperationCustomizer actionNameCustomizer() {
+        { Operation operation, HandlerMethod handlerMethod ->
+            operation.addExtension('x-action', "${handlerMethod.beanType.simpleName}.${handlerMethod.method.name}".toString())
+            operation
+        } as GlobalOperationCustomizer
+    }
+
+    /**
      * A group of the books API that only reads.
      */
     @Bean
@@ -50,6 +64,10 @@ class Application extends GrailsAutoConfiguration {
                 .group('book-reads')
                 .pathsToMatch('/books/**')
                 .addOpenApiMethodFilter { Method action -> !(action.name in ['save', 'update', 'patch', 'delete']) }
+                .addOperationCustomizer { Operation operation, HandlerMethod handlerMethod ->
+                    operation.addExtension('x-group', 'book-reads')
+                    operation
+                }
                 .build()
     }
 }

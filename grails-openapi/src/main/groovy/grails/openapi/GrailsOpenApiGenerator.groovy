@@ -18,6 +18,7 @@
  */
 package grails.openapi
 
+import java.lang.reflect.Method as ReflectedMethod
 import java.lang.reflect.Parameter as ReflectedParameter
 
 import groovy.transform.CompileStatic
@@ -474,8 +475,8 @@ class GrailsOpenApiGenerator {
         private void addOperation(String path, PathItem.HttpMethod method, GrailsControllerClass controller,
                                   Class<?> controllerType, String controllerName, String actionName,
                                   String operationId) {
-            if (!selection.selects(path, controllerType)
-                    || !selection.selectsAction(ActionAnnotations.actionMethod(controllerType, actionName))) {
+            ReflectedMethod action = ActionAnnotations.actionMethod(controllerType, actionName)
+            if (!selection.selects(path, controllerType) || !selection.selectsAction(action)) {
                 return
             }
             PathItem pathItem = paths.get(path) ?: new PathItem()
@@ -491,6 +492,11 @@ class GrailsOpenApiGenerator {
             Operation operation = buildOperation(path, method, controller, controllerType, controllerName,
                     actionName, operationId)
             ActionAnnotations.apply(operation, controllerType, actionName, components, openapi31)
+            operation = selection.customize(operation, components,
+                    controller != null ? controllerInstance(controller) : null, action)
+            if (operation == null) {
+                return
+            }
             pathItem.operation(method, operation)
             paths.addPathItem(path, pathItem)
         }

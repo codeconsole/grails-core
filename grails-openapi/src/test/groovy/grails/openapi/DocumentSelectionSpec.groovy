@@ -21,8 +21,10 @@ package grails.openapi
 import java.lang.reflect.Method
 import java.util.function.Predicate
 
-import io.swagger.v3.oas.annotations.Operation
+import io.swagger.v3.oas.annotations.Operation as OperationAnnotation
 import io.swagger.v3.oas.annotations.tags.Tag
+import io.swagger.v3.oas.models.Components
+import io.swagger.v3.oas.models.Operation
 import io.swagger.v3.oas.models.OpenAPI
 import io.swagger.v3.oas.models.PathItem
 
@@ -146,6 +148,33 @@ class DocumentSelectionSpec extends Specification {
                 [[Integer] as Class[]]
     }
 
+    void 'customizes each operation with the controller and the action serving it'() {
+        given:
+        def selection = new OpenApiSelection(operationCustomizers: [
+                { Operation operation, Components components, Object controller, Method action ->
+                    operation.summary("${controller.getClass().simpleName}.${action.name}(${action.parameterCount})".toString())
+                } as ActionOperationCustomizer,
+                { Operation operation, Components components, Object controller, Method action ->
+                    action.name == 'delete' ? null : operation
+                } as ActionOperationCustomizer])
+        def application = OpenApiFixture.application([CrateStackController, PalletController],
+                [new CrateStackController(), new PalletController()])
+
+        when:
+        def openApi = OpenApiFixture.generator(OpenApiFixture.holder {
+            '/crates'(resources: 'crateStack')
+            '/pallets'(resources: 'pallet')
+        }, application, OpenApiFixture.context([CrateStack, Pallet])).generate(selection)
+
+        then: 'after the annotations, with the method each action is declared as'
+        openApi.paths['/crates'].get.summary == 'CrateStackController.index(1)'
+        openApi.paths['/pallets/{id}'].get.summary == 'PalletController.show(0)'
+
+        and: 'a customizer that returns nothing leaves the operation out'
+        openApi.paths['/crates/{id}'].delete == null
+        openApi.paths['/crates/{id}'].get
+    }
+
     void 'describes only what is annotated when asked to'() {
         when:
         def openApi = document('grails.openapi.annotated-only': true)
@@ -236,7 +265,7 @@ class CrateStackController extends RestfulController<CrateStack> {
 
     CrateStackController() { super(CrateStack) }
 
-    @Operation(summary = 'List the crates')
+    @OperationAnnotation(summary = 'List the crates')
     @Override
     Object index(Integer max) { null }
 }

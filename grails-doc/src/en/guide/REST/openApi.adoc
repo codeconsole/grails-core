@@ -555,6 +555,23 @@ class OrderController extends RestfulController<OrderCommand> {
 }
 ----
 
+Where springdoc is used, its operation customizers are given each Grails operation too, once the
+annotations are applied, with a `HandlerMethod` of the controller and the method the action is
+declared as: an `OperationCustomizer` bean for the default document, a `GlobalOperationCustomizer`
+bean for every document, and a customizer a `GroupedOpenApi` adds for that group. A customizer that
+returns `null` leaves the operation out. The `generate-open-api` command applies them the same way:
+
+[source,groovy]
+----
+@Bean
+GlobalOperationCustomizer actionNameCustomizer() {
+    { Operation operation, HandlerMethod handlerMethod ->
+        operation.addExtension('x-action', "${handlerMethod.beanType.simpleName}.${handlerMethod.method.name}")
+        operation
+    } as GlobalOperationCustomizer
+}
+----
+
 ==== Controllers a Mapping Reaches Without Naming
 
 A REST application maps its controllers without naming them, either by naming the action and leaving

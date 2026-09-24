@@ -23,6 +23,8 @@ import java.util.function.Predicate
 
 import groovy.transform.CompileStatic
 
+import io.swagger.v3.oas.models.Components
+import io.swagger.v3.oas.models.Operation
 import org.springframework.util.AntPathMatcher
 
 /**
@@ -89,6 +91,11 @@ class OpenApiSelection {
     List<Predicate<Method>> actionFilters = []
 
     /**
+     * Customize, in order, each operation the document describes.
+     */
+    List<ActionOperationCustomizer> operationCustomizers = []
+
+    /**
      * @return a selection with the same criteria, which can be added to without changing these
      */
     OpenApiSelection copy() {
@@ -102,7 +109,8 @@ class OpenApiSelection {
                 producesToMatch: new ArrayList<String>(producesToMatch),
                 consumesToMatch: new ArrayList<String>(consumesToMatch),
                 headersToMatch: new ArrayList<String>(headersToMatch),
-                actionFilters: new ArrayList<Predicate<Method>>(actionFilters))
+                actionFilters: new ArrayList<Predicate<Method>>(actionFilters),
+                operationCustomizers: new ArrayList<ActionOperationCustomizer>(operationCustomizers))
     }
 
     /**
@@ -120,6 +128,22 @@ class OpenApiSelection {
      */
     boolean selectsAction(Method action) {
         action == null || actionFilters.every { Predicate<Method> filter -> filter.test(action) }
+    }
+
+    /**
+     * Applies the operation customizers to an operation the document describes.
+     *
+     * @return the operation to describe, or {@code null} where a customizer leaves it out
+     */
+    Operation customize(Operation operation, Components components, Object controller, Method action) {
+        Operation customized = operation
+        for (ActionOperationCustomizer customizer : operationCustomizers) {
+            if (customized == null) {
+                break
+            }
+            customized = customizer.customize(customized, components, controller, action)
+        }
+        customized
     }
 
     /**

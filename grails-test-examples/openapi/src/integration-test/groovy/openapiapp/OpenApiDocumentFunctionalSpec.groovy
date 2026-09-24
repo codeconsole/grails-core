@@ -158,6 +158,22 @@ class OpenApiDocumentFunctionalSpec extends Specification implements HttpClientS
                 ['get /books', 'get /books/{id}'] as Set
     }
 
+    void 'a springdoc operation customizer is given the handler method of each action'() {
+        expect: 'the controller, and the method the action is declared as'
+        document.paths['/books'].get['x-action'] == 'BookController.index'
+        document.paths['/books/{id}'].get['x-action'] == 'BookController.show'
+        document.paths['/notes/review'].post['x-action'] == 'NoteController.review'
+    }
+
+    void 'a group applies its operation customizers, and the global ones, to the Grails operations'() {
+        when:
+        Map group = http('/v3/api-docs/book-reads').json()
+
+        then:
+        group.paths['/books'].get['x-group'] == 'book-reads'
+        group.paths['/books'].get['x-action'] == 'BookController.index'
+    }
+
     void 'a group selects the operations that consume the media types it asks for'() {
         when:
         Map group = http('/v3/api-docs/author-changes').json()
