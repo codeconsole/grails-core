@@ -99,6 +99,17 @@ class OpenApiDocumentFunctionalSpec extends Specification implements HttpClientS
         !document.paths.containsKey('/book/create')
     }
 
+    void 'a read-only controller is described with only what it serves'() {
+        expect: 'the reads, and none of the writes'
+        document.paths['/publishers'].keySet() == ['get'] as Set
+        document.paths['/publishers/{id}'].keySet() == ['get'] as Set
+        document.paths.keySet().findAll { String path -> path.startsWith('/publisher/') } ==
+                ['/publisher/index', '/publisher/show/{id}'] as Set
+
+        and: 'a write the document leaves out is one the controller refuses'
+        httpPostJson('/publishers', '{"name":"Ace"}').assertStatus(405)
+    }
+
     void 'the routes of the default mapping are described'() {
         expect:
         document.paths['/book/show/{id}'].get

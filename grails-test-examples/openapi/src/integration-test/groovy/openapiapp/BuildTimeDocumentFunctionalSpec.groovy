@@ -47,7 +47,7 @@ class BuildTimeDocumentFunctionalSpec extends Specification implements HttpClien
         Map served = http('/v3/api-docs').json()
 
         expect:
-        generated.paths.keySet() == served.paths.keySet()
+        operations(generated) == operations(served)
         generated.components.schemas.keySet() == served.components.schemas.keySet()
         generated.info == served.info
     }
@@ -58,7 +58,11 @@ class BuildTimeDocumentFunctionalSpec extends Specification implements HttpClien
         Map served = http('/v3/api-docs/catalogue').json()
 
         expect:
-        generated.paths.keySet() == served.paths.keySet()
+        operations(generated) == operations(served)
+    }
+
+    private static Map<String, Set<String>> operations(Map document) {
+        document.paths.collectEntries { String path, Map item -> [(path): item.keySet()] }
     }
 
     private Map read(String name) {

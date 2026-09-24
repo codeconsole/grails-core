@@ -18,7 +18,11 @@
  */
 package org.grails.openapi
 
+import java.lang.reflect.Method
+
 import groovy.transform.CompileStatic
+
+import grails.rest.RestfulController
 
 /**
  * The shape of the actions {@link grails.rest.RestfulController} declares, used to describe a
@@ -43,6 +47,17 @@ class RestfulControllerActions {
     private static final Set<String> COLLECTION_ACTIONS = ['index'].toSet().asImmutable()
 
     private static final Set<String> VALIDATING_ACTIONS = ['save', 'update', 'patch'].toSet().asImmutable()
+
+    /**
+     * The write actions RestfulController refuses when it is read only.
+     */
+    private static final Set<String> WRITE_ACTIONS = ['create', 'save', 'edit', 'update', 'patch', 'delete']
+            .toSet().asImmutable()
+
+    /**
+     * The action another action is served through: patch delegates to update.
+     */
+    private static final Map<String, String> DELEGATES = [patch: 'update'].asImmutable()
 
     private static final Map<String, String> SUCCESS_CODES = [
             save: '201',
@@ -115,6 +130,24 @@ class RestfulControllerActions {
 
     static boolean takesId(String actionName) {
         actionName in ID_ACTIONS
+    }
+
+    /**
+     * Whether a RestfulController constructed read only refuses the action. RestfulController
+     * answers METHOD_NOT_ALLOWED from its write actions, so one the controller inherits is
+     * refused, while one it provides itself does whatever it provides.
+     */
+    static boolean refusedWhenReadOnly(Class<?> controllerClass, String actionName) {
+        if (!(actionName in WRITE_ACTIONS) || !isInherited(controllerClass, actionName)) {
+            return false
+        }
+        String delegate = DELEGATES[actionName]
+        delegate == null || isInherited(controllerClass, delegate)
+    }
+
+    private static boolean isInherited(Class<?> controllerClass, String actionName) {
+        controllerClass.methods.findAll { Method method -> method.name == actionName }
+                .every { Method method -> method.declaringClass.isAssignableFrom(RestfulController) }
     }
 
     /**

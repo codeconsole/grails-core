@@ -206,6 +206,7 @@ class GrailsOpenApiGenerator {
         private final Paths paths
         private final Map<String, GrailsControllerClass> controllersByKey = [:]
         private final Map<String, List<GrailsControllerClass>> controllersByName = [:]
+        private final Map<Class<?>, Object> controllerInstances = [:]
 
         Contribution(OpenAPI openApi, OpenApiSelection selection) {
             this.openApi = openApi
@@ -339,7 +340,7 @@ class GrailsOpenApiGenerator {
             // A mapping that names only the controller dispatches to its default action.
             String actionName = asStaticName(mapping.actionName) ?: controller?.defaultAction
             PathItem.HttpMethod method = toHttpMethod(mapping.httpMethod)
-            if (method == null || !isDescribed(controllerType, actionName)) {
+            if (method == null || !isDescribed(controller, controllerType, actionName)) {
                 return
             }
 
@@ -395,7 +396,8 @@ class GrailsOpenApiGenerator {
                                           String actionName, boolean expandsAction) {
             // A mapping that names the action reaches every controller; one that leaves the action to
             // the request only reaches the actions that controller declares.
-            if (!actionName || !controller.actions.contains(actionName) || !isDescribed(controller.clazz, actionName)) {
+            if (!actionName || !controller.actions.contains(actionName)
+                    || !isDescribed(controller, controller.clazz, actionName)) {
                 return
             }
 
@@ -428,7 +430,7 @@ class GrailsOpenApiGenerator {
             }
         }
 
-        private boolean isDescribed(Class<?> controllerType, String actionName) {
+        private boolean isDescribed(GrailsControllerClass controller, Class<?> controllerType, String actionName) {
             if (ActionAnnotations.isHidden(controllerType)
                     || (actionName && ActionAnnotations.isHidden(controllerType, actionName))) {
                 return false
@@ -437,7 +439,20 @@ class GrailsOpenApiGenerator {
             if (restful && !settings.includeFormActions && RestfulControllerActions.isFormAction(actionName)) {
                 return false
             }
+            if (restful && RestfulControllerActions.refusedWhenReadOnly(controllerType, actionName)
+                    && isReadOnly(controller)) {
+                return false
+            }
             !settings.annotatedOnly || ActionAnnotations.isAnnotated(controllerType, actionName)
+        }
+
+        /**
+         * Whether a RestfulController was constructed read only, which is decided by its
+         * constructor rather than declared on the class, so is read from the controller itself.
+         */
+        private boolean isReadOnly(GrailsControllerClass controller) {
+            Object instance = controller != null ? controllerInstance(controller) : null
+            instance instanceof RestfulController && ((RestfulController) instance).readOnly
         }
 
         private void addOperation(String path, PathItem.HttpMethod method, GrailsControllerClass controller,
@@ -514,9 +529,23 @@ class GrailsOpenApiGenerator {
             if (declared != null && declared != Object) {
                 return declared
             }
+            Object instance = controllerInstance(controller)
+            instance instanceof RestfulController ? ((RestfulController) instance).resource : null
+        }
+
+        /**
+         * The controller the application context serves requests with, if it holds one.
+         */
+        private Object controllerInstance(GrailsControllerClass controller) {
+            if (!controllerInstances.containsKey(controller.clazz)) {
+                controllerInstances[controller.clazz] = lookUpController(controller.clazz)
+            }
+            controllerInstances[controller.clazz]
+        }
+
+        private Object lookUpController(Class<?> controllerType) {
             try {
-                Object bean = grailsApplication?.mainContext?.getBean(controller.clazz)
-                return bean instanceof RestfulController ? ((RestfulController) bean).resource : null
+                return grailsApplication?.mainContext?.getBean(controllerType)
             }
             catch (RuntimeException ignored) {
                 return null

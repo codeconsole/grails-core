@@ -18,15 +18,13 @@
  */
 package openapiapp
 
-class UrlMappings {
+import grails.rest.RestfulController
 
-    static mappings = {
-        '/books'(resources: 'book')
-        '/authors'(resources: 'author')
-        '/publishers'(resources: 'publisher')
-        "/$controller/$action?/$id?(.$format)?" {}
-        '/'(view: '/index')
-        '500'(view: '/error')
-        '404'(view: '/notFound')
+class PublisherController extends RestfulController<Publisher> {
+
+    static responseFormats = ['json']
+
+    PublisherController() {
+        super(Publisher, true)
     }
 }

@@ -18,15 +18,11 @@
  */
 package openapiapp
 
-class UrlMappings {
+class Publisher {
 
-    static mappings = {
-        '/books'(resources: 'book')
-        '/authors'(resources: 'author')
-        '/publishers'(resources: 'publisher')
-        "/$controller/$action?/$id?(.$format)?" {}
-        '/'(view: '/index')
-        '500'(view: '/error')
-        '404'(view: '/notFound')
+    String name
+
+    static constraints = {
+        name blank: false, nullable: false
     }
 }

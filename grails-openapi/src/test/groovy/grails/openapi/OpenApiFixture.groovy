@@ -25,6 +25,7 @@ import org.springframework.core.env.StandardEnvironment
 
 import grails.core.DefaultGrailsApplication
 import grails.core.GrailsApplication
+import grails.util.GrailsNameUtils
 import grails.web.mapping.UrlMappingsHolder
 import org.grails.datastore.gorm.validation.constraints.registry.DefaultValidatorRegistry
 import org.grails.datastore.mapping.core.connections.ConnectionSourceSettings
@@ -63,6 +64,15 @@ class OpenApiFixture {
 
     static GrailsApplication application(List<Class<?>> controllers) {
         new DefaultGrailsApplication(controllers as Class[]).tap { it.initialise() }
+    }
+
+    /**
+     * An application whose context holds the given controllers, as a running application's does.
+     */
+    static GrailsApplication application(List<Class<?>> controllers, List<Object> instances) {
+        def ctx = new MockApplicationContext()
+        instances.each { ctx.registerMockBean(GrailsNameUtils.getPropertyName(it.getClass()), it) }
+        application(controllers).tap { it.mainContext = ctx }
     }
 
     static UrlMappingsHolder holder(Closure mappings) {
