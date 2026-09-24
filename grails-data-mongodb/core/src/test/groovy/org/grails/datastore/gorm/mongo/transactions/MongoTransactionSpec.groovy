@@ -21,7 +21,7 @@ package org.grails.datastore.gorm.mongo.transactions
 import grails.gorm.annotation.Entity
 
 import com.mongodb.client.model.Filters
-import org.apache.grails.testing.mongo.AutoStartedMongoSpec
+import org.apache.grails.testing.mongo.EmbeddedReplicaSetSpec
 import org.grails.datastore.mapping.mongo.MongoDatastore
 import org.springframework.transaction.CannotCreateTransactionException
 import org.springframework.transaction.TransactionDefinition
@@ -34,20 +34,15 @@ import spock.lang.Shared
  * Tests that GORM uses real MongoDB multi-document transactions (a server-side ClientSession) when
  * {@code grails.mongodb.transactional} is enabled.
  */
-class MongoTransactionSpec extends AutoStartedMongoSpec {
+class MongoTransactionSpec extends EmbeddedReplicaSetSpec {
 
     @Shared
     @AutoCleanup
     MongoDatastore datastore
 
-    @Override
-    boolean shouldInitializeDatastore() {
-        false
-    }
-
     void setupSpec() {
         Map config = [
-                'grails.mongodb.url'          : dbContainer.getReplicaSetUrl('myDb'),
+                'grails.mongodb.url'          : mongoUrl,
                 'grails.mongodb.transactional': true
         ]
         datastore = new MongoDatastore(config, TxPerson, TxPet, TxCounter)
@@ -181,6 +176,23 @@ class MongoTransactionSpec extends AutoStartedMongoSpec {
 
         and: "the document was rolled back even though the id counter is not enrolled in the transaction"
         TxCounter.withNewSession { TxCounter.count() } == 0
+    }
+
+    void "a read-only transaction commits without flushing the surrounding session"() {
+        when: "a read-only transaction commits while the session holds an unflushed write"
+        int written = TxPerson.withNewSession {
+            new TxPerson(name: "Queued").save()
+            TransactionTemplate txTemplate = new TransactionTemplate(datastore.transactionManager)
+            txTemplate.readOnly = true
+            txTemplate.execute {}
+            TxPerson.withNewSession { TxPerson.count() }
+        }
+
+        then: "the read did not persist the queued write"
+        written == 0
+
+        and: "the write is dropped when its session closes, as it would be on Hibernate"
+        TxPerson.withNewSession { TxPerson.count() } == 0
     }
 
     void "test a per-transaction timeout is rejected rather than silently ignored"() {
