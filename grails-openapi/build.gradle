@@ -20,6 +20,7 @@
 plugins {
     id 'groovy'
     id 'java-library'
+    id 'org.apache.grails.gradle.grails-plugin-cli'
     id 'project-report'
     id 'org.apache.grails.buildsrc.properties'
     id 'org.apache.grails.buildsrc.dependency-validator'
@@ -34,6 +35,12 @@ plugins {
 version = projectVersion
 group = 'org.apache.grails'
 
+cliArtifact {
+    automaticModuleName = 'org.apache.grails.openapi.cli'
+    // this framework module wires its cli dependencies with project dependencies below
+    defaultDependencies = false
+}
+
 dependencies {
 
     implementation platform(project(':grails-bom'))
@@ -47,9 +54,24 @@ dependencies {
     api project(':grails-validation')
     api 'org.apache.groovy:groovy'
 
-    // Exposes the OpenAPI model and the /v3/api-docs endpoint. Applications add
-    // springdoc-openapi-starter-webmvc-ui themselves when they also want Swagger UI.
-    api 'org.springdoc:springdoc-openapi-starter-webmvc-api'
+    // The OpenAPI model, and the resolution of types and annotations into it
+    api 'io.swagger.core.v3:swagger-core-jakarta'
+
+    // Optional: when an application adds springdoc, the description is contributed to the
+    // documents springdoc serves
+    compileOnly 'org.springdoc:springdoc-openapi-starter-webmvc-api'
+
+    // the cli tier - published separately as org.apache.grails:grails-openapi-cli, carrying the
+    // generate-open-api command
+    cliImplementation platform(project(':grails-bom'))
+    cliApi project(project.path)
+    cliApi(project(':grails-core')) {
+        capabilities {
+            requireCapability('org.apache.grails:grails-core-cli')
+        }
+    }
+    cliCompileOnly 'org.springdoc:springdoc-openapi-starter-webmvc-api'
+    cliCompileOnly 'org.slf4j:slf4j-nop' // Prevents warning about missing slf4j implementation during compilation
 
     api 'org.slf4j:slf4j-api'
 
@@ -61,6 +83,7 @@ dependencies {
     testImplementation 'org.junit.jupiter:junit-jupiter-api'
     testImplementation 'org.spockframework:spock-core'
     testImplementation 'org.springframework:spring-test'
+    testImplementation 'org.springdoc:springdoc-openapi-starter-webmvc-api'
     testImplementation 'org.slf4j:slf4j-simple'
 
     testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine'

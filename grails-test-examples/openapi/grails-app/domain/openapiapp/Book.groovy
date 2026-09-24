@@ -22,9 +22,11 @@ class Book {
 
     String title
     String genre
+    Author author
 
     static constraints = {
         title blank: false, nullable: false, maxSize: 120
         genre nullable: true, inList: ['scifi', 'history']
+        author nullable: true
     }
 }

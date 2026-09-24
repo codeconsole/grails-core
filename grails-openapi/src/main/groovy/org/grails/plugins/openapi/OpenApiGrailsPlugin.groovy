@@ -23,27 +23,54 @@ import groovy.transform.CompileStatic
 import org.springframework.beans.factory.BeanRegistrar
 import org.springframework.beans.factory.BeanRegistry
 import org.springframework.core.env.Environment
+import org.springframework.util.ClassUtils
 
-import grails.openapi.UrlMappingsOpenApiCustomizer
+import grails.core.GrailsApplication
+import grails.openapi.GrailsOpenApiGenerator
+import grails.openapi.OpenApiSettings
 import grails.plugins.Plugin
 import grails.util.GrailsUtil
+import grails.web.mapping.UrlMappingsHolder
+import org.grails.datastore.mapping.model.MappingContext
+import org.grails.openapi.springdoc.SpringdocRegistrations
 
 /**
- * Registers the customizer that contributes Grails URL mappings to the springdoc OpenAPI document.
- *
- * @author Scott Murphy Heiberg
- * @since 8.0
+ * Registers the generator that describes the application, and - when springdoc is on the
+ * classpath - contributes that description to the documents springdoc serves.
  */
 @CompileStatic
 class OpenApiGrailsPlugin extends Plugin {
+
+    static final String GENERATOR_BEAN_NAME = 'grailsOpenApiGenerator'
+
+    private static final String SPRINGDOC_CUSTOMIZER = 'org.springdoc.core.customizers.OpenApiCustomizer'
 
     def version = GrailsUtil.grailsVersion
     def dependsOn = [urlMappings: version]
 
     @Override
     BeanRegistrar beanRegistrar() {
-        return { BeanRegistry registry, Environment ignored ->
-            registry.registerBean('grailsUrlMappingsOpenApiCustomizer', UrlMappingsOpenApiCustomizer)
+        return { BeanRegistry registry, Environment environment ->
+            OpenApiSettings settings = OpenApiSettings.from(environment)
+            if (!settings.enabled) {
+                return
+            }
+
+            registry.registerBean(GENERATOR_BEAN_NAME, GrailsOpenApiGenerator) {
+                it.lazyInit().supplier { context ->
+                    new GrailsOpenApiGenerator(
+                            context.bean(GrailsApplication.APPLICATION_ID, GrailsApplication),
+                            context.bean('grailsUrlMappingsHolder', UrlMappingsHolder),
+                            context.beanProvider(MappingContext).orderedStream().toList(),
+                            settings)
+                }
+            }
+
+            // The adapter is only loaded when springdoc is present, so an application that
+            // generates its description at build time does not need springdoc at all.
+            if (ClassUtils.isPresent(SPRINGDOC_CUSTOMIZER, OpenApiGrailsPlugin.classLoader)) {
+                SpringdocRegistrations.register(registry, settings, GENERATOR_BEAN_NAME)
+            }
         }
     }
 }

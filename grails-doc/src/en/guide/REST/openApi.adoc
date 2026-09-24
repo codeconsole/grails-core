@@ -16,37 +16,95 @@ KIND, either express or implied.  See the License for the
 specific language governing permissions and limitations
 under the License.
 ////
-
 Grails applications can publish an https://www.openapis.org/[OpenAPI] description of their REST
-endpoints and browse it with Swagger UI.
+endpoints. The optional `grails-openapi` module derives it from the application itself - its URL
+mappings, its controllers, its domain classes and command objects, and their constraints - and
+lets the standard OpenAPI annotations correct or enrich what is derived.
 
-springdoc-openapi builds its document from Spring MVC handler methods. Grails dispatches through its
-own URL mappings instead, so springdoc on its own produces a document with no paths. The optional
-`grails-openapi` module supplies those paths from the application's URL mappings.
+The description can be produced two ways, from the same configuration:
+
+* At build time, by the `generate-open-api` command, which writes it to a file. The file can be
+  packaged and served as a static resource, reviewed in a change, or handed to a client code
+  generator, and the running application exposes nothing it does not choose to serve.
+* At runtime, by https://springdoc.org[springdoc-openapi], which serves it at `/v3/api-docs` and
+  can serve Swagger UI beside it. springdoc builds its document from Spring MVC handler methods,
+  which Grails does not use, so the module contributes the Grails endpoints to it.
 
 ==== Getting Started
-
-The module produces the document. Swagger UI is a separate choice, because the document is equally
-useful to a code generator or a contract test, and because it is not the only viewer that reads it:
 
 [source,groovy]
 ----
 dependencies {
-    // the OpenAPI document, served at /v3/api-docs
     implementation 'org.apache.grails:grails-openapi'
+}
+----
 
-    // optional: Swagger UI, served at /swagger-ui/index.html
+That is all the build-time command needs. To serve the description at runtime as well, add
+springdoc, and optionally Swagger UI:
+
+[source,groovy]
+----
+dependencies {
+    // the document, served at /v3/api-docs
+    implementation 'org.springdoc:springdoc-openapi-starter-webmvc-api'
+
+    // or the document and Swagger UI, served at /swagger-ui/index.html
     implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui'
 }
 ----
 
-No further configuration is required. springdoc registers its own resource handlers, so Swagger UI
-is served even though Grails leaves Spring Boot's catch-all resource handler disabled, and the
-springdoc paths fall through the Grails URL mappings because they resolve to no controller.
+==== Generating the Description at Build Time
 
-An application whose URL mappings include a catch-all that resolves to a view or a URI - a
-single page application forwarding unmatched paths to an index view, for example - does need to let
-the springdoc paths through:
+[source,shell]
+----
+./gradlew generateOpenApi
+----
+
+The command starts the application context, without a web server, and writes the default document
+to `build/openapi/openapi.yaml` and each <<openApiGroups,group>> to `build/openapi/openapi-<group>.yaml`.
+The `--output-directory` and `--format` options, or the `grails.openapi.output-directory` and
+`grails.openapi.output-format` settings, choose where and whether YAML or JSON is written:
+
+[source,shell]
+----
+./gradlew runCommand -Pargs="generate-open-api --format=json --output-directory=build/api"
+----
+
+Because the command starts the application, it needs whatever the application needs to start in
+the environment it runs in, such as a datasource.
+
+To package the description and serve it as a static file, include it in the application's
+static resources when the application is assembled:
+
+[source,groovy]
+----
+def openApi = layout.buildDirectory.dir('openapi')
+
+tasks.named('bootJar') {
+    dependsOn 'generateOpenApi'
+    from(openApi) { into 'BOOT-INF/classes/static/api' }
+}
+----
+
+It is then served at `/static/api/openapi.yaml`, and any viewer can render it. For example,
+https://github.com/Redocly/redoc[Redoc] needs only a page that points at the file:
+
+[source,html]
+----
+<redoc spec-url="/static/api/openapi.yaml"></redoc>
+<script src="https://cdn.redoc.ly/redoc/latest/bundles/redoc.standalone.js"></script>
+----
+
+==== Serving the Description at Runtime
+
+With springdoc on the classpath no further configuration is required. springdoc registers its own
+resource handlers, so Swagger UI is served even though Grails leaves Spring Boot's catch-all
+resource handler disabled, and the springdoc paths fall through the Grails URL mappings because
+they resolve to no controller.
+
+An application whose URL mappings include a catch-all that resolves to a view or a controller - a
+single page application forwarding unmatched paths to an index view, or an API answering unmatched
+paths with a `404` of its own - does need to let the springdoc paths through:
 
 [source,groovy]
 ----
@@ -55,7 +113,131 @@ class UrlMappings {
 }
 ----
 
-The document is then served from `/v3/api-docs` and the UI from `/swagger-ui/index.html`.
+WARNING: The runtime description is served to anyone who can reach the application, and describes
+every endpoint, resource and constraint it documents. Secure `/v3/api-docs/**` and
+`/swagger-ui/**` the way the application secures anything else, or disable them where they should
+not be served, for example in production with `springdoc.api-docs.enabled: false` and
+`springdoc.swagger-ui.enabled: false`. An application that only needs the description as a file
+can generate it at build time and leave springdoc out altogether. With the Spring Security plugin,
+whose default is to reject a request no rule matches, the paths need a rule of their own, such as
+an entry in `grails.plugin.springsecurity.controllerAnnotations.staticRules`.
+
+==== Configuration
+
+[cols="2,1,4"]
+|===
+| Setting | Default | Meaning
+
+| `grails.openapi.enabled` | `true` | Whether the description is generated at all
+| `grails.openapi.base-document` | | A YAML or JSON document the description starts from, see <<openApiBaseDocument,The Base Document>>
+| `grails.openapi.annotated-only` | `false` | Whether only annotated actions are described, see <<openApiSelecting,Choosing What Is Described>>
+| `grails.openapi.include-form-actions` | `false` | Whether the `create` and `edit` actions of a `RestfulController` are described
+| `grails.openapi.paths-to-match`, `grails.openapi.paths-to-exclude` | | Ant patterns of the paths the default document describes, or leaves out
+| `grails.openapi.packages-to-scan`, `grails.openapi.packages-to-exclude` | | The packages of the controllers the default document describes, or leaves out
+| `grails.openapi.groups.<name>.*` | | A group and what it selects, see <<openApiGroups,Groups>>
+| `grails.openapi.output-directory` | `build/openapi` | Where `generate-open-api` writes
+| `grails.openapi.output-format` | `yaml` | Whether `generate-open-api` writes `yaml` or `json`
+|===
+
+Where springdoc is used, its own `springdoc.paths-to-match`, `springdoc.paths-to-exclude`,
+`springdoc.packages-to-scan` and `springdoc.packages-to-exclude` apply to the Grails endpoints of the
+default document too, and `springdoc.api-docs.version` chooses between OpenAPI 3.1, the default,
+and 3.0 for both the build-time and the runtime description.
+
+[[openApiSelecting]]
+==== Choosing What Is Described
+
+By default every action a URL mapping reaches is described. An application whose published API is
+only part of what it serves can narrow that down:
+
+* `@Hidden` on a controller or an action, or `@Operation(hidden = true)`, withholds it.
+* `grails.openapi.annotated-only: true` describes only an action that declares `@Operation`, or
+  whose controller declares `@Tag`, so the published API is exactly what the application annotated.
+* The path and package settings above select by where an endpoint is served and which controller
+  serves it:
+
+[source,yaml]
+----
+grails:
+    openapi:
+        paths-to-match: /api/**
+        packages-to-exclude: com.example.internal
+----
+
+The `create` and `edit` actions of a `RestfulController` answer the forms an HTML client renders,
+so they are left out unless `grails.openapi.include-form-actions` is set.
+
+[[openApiGroups]]
+==== Groups
+
+A group is a document of its own, describing part of the application for one audience:
+
+[source,yaml]
+----
+grails:
+    openapi:
+        groups:
+            sales:
+                display-name: Sales API
+                paths-to-match: /api/v1/**
+            depots:
+                display-name: Depot Lifecycle API
+                paths-to-match: /api/v2/**
+----
+
+Each group takes the same `paths-to-match`, `paths-to-exclude`, `packages-to-scan` and
+`packages-to-exclude` settings as the default document, and `display-name` titles it. The
+`generate-open-api` command writes each group to a file of its own, and at runtime springdoc serves
+each at `/v3/api-docs/<name>`, applying the same criteria to any Spring MVC endpoints the
+application also has. A springdoc `GroupedOpenApi` bean the application declares is honored the same
+way, both at runtime and by the command.
+
+NOTE: Declare groups under `grails.openapi.groups` rather than springdoc's `springdoc.group-configs`.
+That property is a list of objects, which springdoc cannot read from the configuration Grails loads
+from `application.yml`.
+
+[[openApiBaseDocument]]
+==== The Base Document
+
+What describes the API as a whole - its title and description, its servers, how it is secured,
+the descriptions of its tags, vendor extensions for a viewer, and endpoints the application does
+not map itself, such as a login endpoint a security plugin provides - is written once, in a base
+document the description starts from:
+
+[source,yaml]
+----
+grails:
+    openapi:
+        base-document: classpath:openapi-base.yml
+----
+
+[source,yaml]
+.src/main/resources/openapi-base.yml
+----
+openapi: 3.1.0
+info:
+  title: Sales API
+  description: |
+    Inventory, orders and invoices for sales customers.
+servers:
+  - url: https://api.example.com
+security:
+  - Bearer: []
+tags:
+  - name: orders
+    description: Retrieving and creating orders
+components:
+  securitySchemes:
+    Bearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+----
+
+The information, servers, security and external documentation of the base document are used as they
+are. Its tags, extensions, paths and components are kept beside what is derived. Where the base
+document declares no version, the application's `info.app.version` is used, and without a base
+document the description is titled with `info.app.name`.
 
 ==== What Is Documented
 
@@ -75,13 +257,27 @@ produces `GET` and `POST` on `/books`, and `GET`, `PUT`, `PATCH` and `DELETE` on
 
 URL variables become OpenAPI path parameters, so `"/books/$id"` is documented as `/books/{id}`. The
 optional `.format` extension Grails appends to REST mappings is omitted, because OpenAPI describes
-response formats through content types rather than the path.
+response formats through content types rather than the path. An OpenAPI path parameter is always
+required, so a mapping with an optional variable, such as `"/photos/$id?"`, is documented at both
+`/photos/{id}` and `/photos`. A mapping with a wildcard that captures nothing, such as a catch-all
+`"/**"`, cannot be written as an OpenAPI path and is not documented.
 
-==== Domain Schemas
+A mapping that names a controller but no action is documented as the controller's default action.
+A mapping that names a namespace is documented with that namespace's controller, so versioned
+controllers of the same name are each described at their own routes.
 
-A domain class served by a documented path is described in `components/schemas`. The type is
-resolved through swagger-core, so the classes it is associated with are described too, and a
-`@Schema` annotation on the class or on one of its properties is honored:
+==== Resource Schemas
+
+A `RestfulController` is described as serving the type it declares: `BookController extends
+RestfulController<Book>` responds with, and accepts, a `Book`, whatever the controller is named.
+The type may be a domain class or any other class, such as a command object the controller renders
+in place of the domain class. A controller that is not a `RestfulController` declares no response
+type, so its responses are described without a body unless an annotation declares one.
+
+A type is described in `components/schemas` through swagger-core, so a `@Schema` or Jackson
+annotation on the class or on one of its properties is honored, including one that renames the
+property. The `metaClass` every Groovy object has and the `errors` a validateable object has are
+not part of it.
 
 [source,groovy]
 ----
@@ -99,9 +295,9 @@ class Book {
 }
 ----
 
-The declared GORM constraints are then applied over that result, because swagger-core cannot see
-them. The two combine, so the annotation above supplies the prose and the constraints block the
-validation:
+The declared constraints of a domain class or a `Validateable` class are applied over that result,
+because swagger-core cannot see them. The two combine, so the annotation above supplies the prose
+and the constraints block the validation:
 
 [source,json]
 ----
@@ -112,10 +308,6 @@ validation:
   "maxLength": 255
 }
 ----
-
-The identifier and the version are marked `readOnly`, because the server assigns them. Tools that
-understand OpenAPI leave a read-only property out of a request body, so one schema describes both
-directions.
 
 The constraints are carried across as follows:
 
@@ -131,15 +323,29 @@ The constraints are carried across as follows:
 | `email` / `url` | `format`
 |===
 
-A domain class without a constraints block still produces a schema; it simply carries no
-validation facets.
+The identifier and the version of a domain class are marked `readOnly`, because the server assigns
+them, as is a property a command object can only read. Tools that understand OpenAPI leave a
+read-only property out of a request body, so one schema describes both directions.
 
-Operations addressed by an identifier also document a `404` response.
+An association to another domain class is described by the associated identifier, which is what
+Grails renders for it and what it binds it from:
+
+[source,json]
+----
+"author": {
+  "type": "object",
+  "properties": { "id": { "type": "integer", "format": "int64" } },
+  "required": ["id"]
+}
+----
+
+A to-many association is an array of those references, and an embedded association is described in
+full.
 
 ==== Request Bodies
 
 An operation that accepts a body describes the type the action binds. Where the action takes a
-command object that is the command, in preference to the resource the controller is named for:
+command object that is the command, in preference to the resource the controller serves:
 
 [source,groovy]
 ----
@@ -147,24 +353,12 @@ class OrdersController {
 
     def submit(OrderCommand cmd) { }
 }
-
-class OrderCommand implements Validateable {
-    String customerEmail
-    Integer quantity
-
-    static constraints = {
-        customerEmail email: true, nullable: false
-        quantity min: 1, nullable: true
-    }
-}
 ----
 
-`POST /orders/submit` is described as accepting an `OrderCommand`, and the constraints the command
-declares are carried across the same way a domain class's are. Only the properties the command
-declares are described.
-
-Where an action takes no command object, as on a `RestfulController`, the body is the domain class
-the controller serves.
+Where an action takes no command object, as on a `RestfulController`, the body is the resource the
+controller serves. A `patch` binds only what it is sent, so its body is a copy of the resource's
+schema, named for it with a `Patch` suffix, that requires nothing. An action that binds something
+else declares it with `@RequestBody`, which replaces what is derived.
 
 ==== Responses
 
@@ -183,23 +377,11 @@ it answers with rather than a uniform `200`:
 | `delete` | 204, 404 | none
 |===
 
-`422` appears on the actions that validate what they bind, and `delete` carries no response body
-because the controller renders none.
+A `422` answers with the validation errors Grails renders for a request that cannot be bound,
+described once as the `ValidationErrors` schema. An application rendering its errors differently
+describes them with `@ApiResponse`.
 
-Any other controller is described as responding with the resource it is named for, which is a
-convention rather than something the framework can determine: an action's return type is not
-declared. Where an action responds with something else, name it:
-
-[source,groovy]
-----
-@ApiResponse(responseCode = '200',
-        content = @Content(schema = @Schema(implementation = BookSummary)))
-def summary() { }
-----
-
-The declared type replaces the convention and its schema is described alongside the others.
-
-==== Paging a Listing
+==== Parameters
 
 A listing accepts the paging and sorting `RestfulController` passes to GORM, so those are described
 on it:
@@ -214,54 +396,70 @@ on it:
 | `order` | `asc` or `desc`
 |===
 
-An action that addresses one resource takes only its identifier.
+An action parameter of a simple type is bound from the request by name, so it is described as a
+query parameter of that type:
+
+[source,groovy]
+----
+def lookup(String query, Integer limit) { }
+----
+
+This needs the parameter names, which Grails keeps by default through the `preserveParameterNames`
+setting of the Grails Gradle plugin. A parameter an action reads from `params` rather than declaring
+is described with `@Parameter`.
 
 ==== Correcting What Is Derived
 
-What this module derives from the URL mappings can be corrected or enriched with the standard
-OpenAPI annotations on a controller action:
+What is derived can be corrected or enriched with the standard OpenAPI annotations. They are read
+by swagger-core, so they mean what they mean on any other endpoint:
+
+[cols="1,3"]
+|===
+| Annotation | Effect
+
+| `@Operation` | the summary, description, operation id, tags, deprecation, external documentation, parameters, responses, request body and security of an action
+| `@ApiResponse` | a response of an action, or, on the controller, of each of its actions; one declared for a status the operation already describes replaces it
+| `@Parameter` | a parameter of an action, declared on the action or on one of its parameters; one the operation already describes, such as a path variable, is refined
+| `@RequestBody` | the body an action binds
+| `@SecurityRequirement` | the security of an action, or, on the controller, of each of its actions
+| `@Tag` | the groups a controller's operations appear under, and their descriptions
+| `@Hidden` | withholds a controller or an action
+|===
 
 [source,groovy]
 ----
-import io.swagger.v3.oas.annotations.Hidden
 import io.swagger.v3.oas.annotations.Operation
-import io.swagger.v3.oas.annotations.responses.ApiResponse
-
-class BookController extends RestfulController<Book> {
-
-    @Operation(summary = 'List the catalogue', tags = ['Catalogue'])
-    def index() { }
-
-    @ApiResponse(responseCode = '403', description = 'Not your book')
-    def show() { }
-
-    @Hidden
-    def delete() { }
-}
-----
-
-`@Operation` supplies the summary, description, operation id, tags, and whether the operation is
-deprecated. A value the annotation does not set is left as derived, so an action can be given a
-summary without restating anything else. `@ApiResponse` adds a response alongside the derived ones
-rather than replacing them.
-
-`@Hidden` withholds an action from the document, and on the controller withholds all of it, which is
-how an endpoint that is reachable but not part of the published API is kept out. `@Operation(hidden
-= true)` does the same.
-
-`@Tag` on the controller names and describes the group its operations appear under, and `@Parameter`
-on an action describes a parameter the module derived:
-
-[source,groovy]
-----
 import io.swagger.v3.oas.annotations.Parameter
+import io.swagger.v3.oas.annotations.enums.ParameterIn
+import io.swagger.v3.oas.annotations.media.Content
+import io.swagger.v3.oas.annotations.media.Schema
+import io.swagger.v3.oas.annotations.responses.ApiResponse
 import io.swagger.v3.oas.annotations.tags.Tag
 
-@Tag(name = 'Catalogue', description = 'Everything on the shelves')
-class BookController extends RestfulController<Book> {
+@Tag(name = 'orders', description = 'Retrieving and creating orders')
+@ApiResponse(responseCode = '401', description = 'Invalid API token')
+@ApiResponse(responseCode = '403', description = 'Permission denied')
+class OrderController extends RestfulController<OrderCommand> {
 
-    @Parameter(name = 'id', description = 'The identifier of the book', example = '42')
-    def show() { }
+    OrderController() {
+        super(OrderCommand)
+    }
+
+    @Operation(summary = 'Fetch all orders')
+    @Parameter(name = 'profile', in = ParameterIn.QUERY,
+            description = 'The customer profile to act for',
+            schema = @Schema(implementation = Long))
+    @Override
+    Object index(Integer max) {
+        // ...
+    }
+
+    @ApiResponse(responseCode = '200', description = 'The CSC letter',
+            content = @Content(mediaType = 'application/pdf',
+                    schema = @Schema(type = 'string', format = 'binary')))
+    def cscLetter() {
+        // ...
+    }
 }
 ----
 
@@ -292,16 +490,14 @@ controllers.
 
 A controller a `resources` mapping names and a mapping that does not name it are described at both,
 because both answer. Where that gives two operations the same identifier the second is qualified by
-the path it is reached at, so no two operations in the document share one.
-
-A mapping is expanded at the URL it serves, so a mapping declared under a `group` prefix is described
-under that prefix, and a variable other than the identifier is described as the parameter it is.
+the path it is reached at, so no two operations in the document share one. An application wanting
+only the first form removes the default mapping from its `UrlMappings`.
 
 Only `RestfulController` subclasses are described this way, so a controller rendering GSP views does
 not appear in the document. This includes controllers generated by scaffolding, which extend
 `RestfulController`.
 
-Some mappings are not documented in full:
+==== Limitations
 
 * A mapping that accepts any HTTP method is documented as `GET`, because OpenAPI requires a
   concrete operation.
@@ -311,20 +507,6 @@ Some mappings are not documented in full:
   described; annotate them with `@Hidden` to withhold them.
 * A class that cannot be introspected is left out of the document and logged, rather than failing
   the document. An operation that referred to it is described without a shape rather than with a
-  reference that does not resolve. Two controllers sharing a name across namespaces, or two domain
-  classes sharing a simple name across packages, resolve to one schema.
-
-==== Customizing the Document
-
-The module contributes paths through the springdoc `OpenApiCustomizer` interface, and applications
-can register further customizers of their own. Document level information is configured the usual
-springdoc way:
-
-[source,yaml]
-----
-springdoc:
-    api-docs:
-        path: /v3/api-docs
-    swagger-ui:
-        path: /swagger-ui.html
-----
+  reference that does not resolve.
+* Two classes sharing a simple name across packages resolve to one schema. Name one of them with
+  `@Schema(name = ...)`.

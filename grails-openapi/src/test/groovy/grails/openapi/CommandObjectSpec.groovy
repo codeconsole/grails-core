@@ -47,7 +47,7 @@ class CommandObjectSpec extends Specification {
         def openApi = new OpenAPI()
 
         when:
-        customizer().customise(openApi)
+        customizer().contribute(openApi, null)
 
         then: 'not the domain class the controller is named for'
         openApi.paths['/orders/submit'].post.requestBody
@@ -59,7 +59,7 @@ class CommandObjectSpec extends Specification {
         def openApi = new OpenAPI()
 
         when:
-        customizer().customise(openApi)
+        customizer().contribute(openApi, null)
 
         then:
         openApi.components.schemas.containsKey('OrderCommand')
@@ -73,7 +73,7 @@ class CommandObjectSpec extends Specification {
         def openApi = new OpenAPI()
 
         when:
-        customizer().customise(openApi)
+        customizer().contribute(openApi, null)
 
         then:
         with(openApi.components.schemas['OrderCommand']) {
@@ -88,7 +88,7 @@ class CommandObjectSpec extends Specification {
         def openApi = new OpenAPI()
 
         when:
-        customizer().customise(openApi)
+        customizer().contribute(openApi, null)
 
         then: 'the command schema carries only what it declares'
         openApi.components.schemas['OrderCommand'].properties.keySet() == ['customerEmail', 'quantity'] as Set
@@ -104,7 +104,7 @@ class CommandObjectSpec extends Specification {
         def openApi = new OpenAPI()
 
         when:
-        customizer().customise(openApi)
+        customizer().contribute(openApi, null)
 
         then: 'a RestfulController binds the domain class itself'
         openApi.paths['/order/save'].post.requestBody
@@ -116,7 +116,7 @@ class CommandObjectSpec extends Specification {
         def openApi = new OpenAPI()
 
         when:
-        nestedCustomizer().customise(openApi)
+        nestedCustomizer().contribute(openApi, null)
 
         then: 'the nested command is described'
         openApi.components.schemas.containsKey('AddressCommand')
@@ -134,7 +134,7 @@ class CommandObjectSpec extends Specification {
         def openApi = new OpenAPI()
 
         when:
-        nestedCustomizer().customise(openApi)
+        nestedCustomizer().contribute(openApi, null)
 
         then:
         openApi.components.schemas['NestedOrderCommand'].properties.lines.items.$ref ==
@@ -142,17 +142,17 @@ class CommandObjectSpec extends Specification {
         openApi.components.schemas.containsKey('LineCommand')
     }
 
-    private static UrlMappingsOpenApiCustomizer nestedCustomizer() {
+    private static GrailsOpenApiGenerator nestedCustomizer() {
         def application = new DefaultGrailsApplication(NestedOrdersController).tap { it.initialise() }
         def ctx = new MockApplicationContext()
         ctx.registerMockBean(GrailsApplication.APPLICATION_ID, application)
         def holder = new DefaultUrlMappingsHolder(new DefaultUrlMappingEvaluator(ctx).evaluateMappings {
             post '/nested/submit'(controller: 'nestedOrders', action: 'submit')
         })
-        new UrlMappingsOpenApiCustomizer(holder).tap { grailsApplication = application }
+        OpenApiFixture.generator(holder, application)
     }
 
-    private static UrlMappingsOpenApiCustomizer customizer() {
+    private static GrailsOpenApiGenerator customizer() {
         def application = new DefaultGrailsApplication(OrdersController, OrderController).tap {
             it.initialise()
         }
@@ -167,10 +167,7 @@ class CommandObjectSpec extends Specification {
         context.addPersistentEntity(Order)
         context.setValidatorRegistry(new DefaultValidatorRegistry(context, new ConnectionSourceSettings()))
 
-        new UrlMappingsOpenApiCustomizer(holder).tap {
-            grailsApplication = application
-            mappingContext = context
-        }
+        OpenApiFixture.generator(holder, application, context)
     }
 }
 

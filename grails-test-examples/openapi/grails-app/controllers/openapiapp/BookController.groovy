@@ -18,13 +18,26 @@
  */
 package openapiapp
 
+import io.swagger.v3.oas.annotations.Operation
+import io.swagger.v3.oas.annotations.Parameter
+import io.swagger.v3.oas.annotations.enums.ParameterIn
+import io.swagger.v3.oas.annotations.responses.ApiResponse
+
 import grails.rest.RestfulController
 
+@ApiResponse(responseCode = '401', description = 'Not signed in')
 class BookController extends RestfulController<Book> {
 
     static responseFormats = ['json']
 
     BookController() {
         super(Book)
+    }
+
+    @Operation(summary = 'List the catalogue')
+    @Parameter(name = 'genre', in = ParameterIn.QUERY, description = 'Only books of this genre')
+    @Override
+    Object index(Integer max) {
+        super.index(max)
     }
 }

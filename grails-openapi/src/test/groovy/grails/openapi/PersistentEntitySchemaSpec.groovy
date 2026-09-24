@@ -22,9 +22,11 @@ import io.swagger.v3.oas.models.OpenAPI
 import io.swagger.v3.oas.models.SpecVersion
 import io.swagger.v3.oas.annotations.media.Schema as SchemaAnnotation
 
+import grails.artefact.Artefact
 import grails.core.DefaultGrailsApplication
 import grails.core.GrailsApplication
 import grails.gorm.annotation.Entity
+import grails.rest.RestfulController
 import org.grails.datastore.gorm.validation.constraints.registry.DefaultValidatorRegistry
 import org.grails.datastore.mapping.core.connections.ConnectionSourceSettings
 import org.grails.datastore.mapping.keyvalue.mapping.config.KeyValueMappingContext
@@ -47,21 +49,47 @@ class PersistentEntitySchemaSpec extends Specification {
         def openApi = new OpenAPI()
 
         when:
-        customizer().customise(openApi)
+        customizer().contribute(openApi, null)
 
         then:
         openApi.components.schemas.containsKey('Widget')
     }
 
-    void 'defines a domain class reached only through an association'() {
+    void 'describes an association by the identifier Grails binds and renders'() {
         given:
         def openApi = new OpenAPI()
 
-        when: 'only widgets are mapped, and Crate is reached from Widget'
-        customizer().customise(openApi)
+        when:
+        customizer().contribute(openApi, null)
+
+        then: 'a to-one association is a reference by identifier, which a client can send'
+        with(openApi.components.schemas['Widget'].properties.crate) {
+            $ref == null
+            type == 'object'
+            properties.keySet() == ['id'] as Set
+            properties.id.type == 'integer'
+            properties.id.format == 'int64'
+            !properties.id.readOnly
+            required == ['id']
+        }
+
+        and: 'a to-many association is an array of such references'
+        with(openApi.components.schemas['Crate'].properties.widgets) {
+            type == 'array'
+            items.properties.keySet() == ['id'] as Set
+        }
+    }
+
+    void 'does not describe an entity reached only through an association'() {
+        given:
+        def openApi = new OpenAPI()
+
+        when: 'Crate is referenced from Widget but no mapping serves it'
+        OpenApiFixture.generator(holder(false), application(), context()).contribute(openApi, null)
 
         then:
-        openApi.components.schemas.containsKey('Crate')
+        openApi.components.schemas.containsKey('Widget')
+        !openApi.components.schemas.containsKey('Crate')
     }
 
     void 'omits an unreferenced domain class entirely'() {
@@ -74,7 +102,7 @@ class PersistentEntitySchemaSpec extends Specification {
         context.setValidatorRegistry(new DefaultValidatorRegistry(context, new ConnectionSourceSettings()))
 
         when: 'Orphan has no mapping and nothing references it'
-        new UrlMappingsOpenApiCustomizer(holder()).tap { mappingContext = context }.customise(openApi)
+        OpenApiFixture.generator(holder(), application(), context).contribute(openApi, null)
 
         then:
         !openApi.components.schemas.containsKey('Orphan')
@@ -85,7 +113,7 @@ class PersistentEntitySchemaSpec extends Specification {
         def openApi = new OpenAPI()
 
         when:
-        customizer().customise(openApi)
+        customizer().contribute(openApi, null)
 
         then:
         with(openApi.components.schemas['Widget'].properties) {
@@ -97,29 +125,12 @@ class PersistentEntitySchemaSpec extends Specification {
         }
     }
 
-    void 'references the associated schema rather than inlining it'() {
-        given:
-        def openApi = new OpenAPI()
-
-        when:
-        customizer().customise(openApi)
-
-        then: 'a to-one association is a direct reference'
-        openApi.components.schemas['Widget'].properties.crate.$ref == '#/components/schemas/Crate'
-
-        and: 'a to-many association is an array of references'
-        with(openApi.components.schemas['Crate'].properties.widgets) {
-            type == 'array'
-            items.$ref == '#/components/schemas/Widget'
-        }
-    }
-
     void 'derives required members from the constraints block'() {
         given:
         def openApi = new OpenAPI()
 
         when:
-        customizer().customise(openApi)
+        customizer().contribute(openApi, null)
 
         then: 'a property the constraints declare non-nullable is required'
         'name' in openApi.components.schemas['Widget'].required
@@ -136,7 +147,7 @@ class PersistentEntitySchemaSpec extends Specification {
         def openApi = new OpenAPI()
 
         when:
-        customizer().customise(openApi)
+        customizer().contribute(openApi, null)
 
         then:
         with(openApi.components.schemas['Widget'].properties) {
@@ -152,7 +163,7 @@ class PersistentEntitySchemaSpec extends Specification {
         def openApi = new OpenAPI()
 
         when:
-        customizer().customise(openApi)
+        customizer().contribute(openApi, null)
 
         then: 'the identifier and version are present but not for a client to send'
         with(openApi.components.schemas['Widget'].properties) {
@@ -172,7 +183,7 @@ class PersistentEntitySchemaSpec extends Specification {
         def openApi = new OpenAPI()
 
         when:
-        customizer().customise(openApi)
+        customizer().contribute(openApi, null)
 
         then: 'an instance operation can miss'
         openApi.paths['/widgets/{id}'].get.responses['404']
@@ -186,7 +197,7 @@ class PersistentEntitySchemaSpec extends Specification {
         def openApi = new OpenAPI()
 
         when:
-        customizer().customise(openApi)
+        customizer().contribute(openApi, null)
 
         then: 'index returns an array of the resource'
         with(openApi.paths['/widgets'].get.responses['200'].content['application/json'].schema) {
@@ -204,7 +215,7 @@ class PersistentEntitySchemaSpec extends Specification {
         def openApi = new OpenAPI()
 
         when:
-        customizer().customise(openApi)
+        customizer().contribute(openApi, null)
 
         then:
         openApi.paths['/widgets'].post.requestBody
@@ -214,20 +225,20 @@ class PersistentEntitySchemaSpec extends Specification {
         openApi.paths['/widgets'].get.requestBody == null
     }
 
-    void 'omits schemas when the application has no mapping context'() {
+    void 'describes the resource as a plain type when the application has no mapping context'() {
         given:
         def openApi = new OpenAPI()
-        def customizer = new UrlMappingsOpenApiCustomizer(holder())
 
         when:
-        customizer.customise(openApi)
+        OpenApiFixture.generator(holder(), application()).contribute(openApi, null)
 
-        then: 'paths are still documented'
+        then: 'paths and the resource are still documented'
         openApi.paths['/widgets'].get
+        openApi.components.schemas['Widget']
 
-        and: 'but nothing claims a schema'
-        openApi.components?.schemas == null
-        openApi.paths['/widgets'].get.responses['200'].content['application/json'].schema == null
+        and: 'but without what only GORM knows'
+        openApi.components.schemas['Widget'].required == null
+        !openApi.components.schemas['Widget'].properties.id?.readOnly
     }
 
     void 'honors a Schema annotation on the domain class'() {
@@ -235,7 +246,7 @@ class PersistentEntitySchemaSpec extends Specification {
         def openApi = new OpenAPI()
 
         when:
-        customizer().customise(openApi)
+        customizer().contribute(openApi, null)
 
         then:
         openApi.components.schemas['Widget'].description == 'A widget in the catalogue'
@@ -246,7 +257,7 @@ class PersistentEntitySchemaSpec extends Specification {
         def openApi = new OpenAPI()
 
         when:
-        customizer().customise(openApi)
+        customizer().contribute(openApi, null)
 
         then:
         with(openApi.components.schemas['Widget'].properties.name) {
@@ -260,7 +271,7 @@ class PersistentEntitySchemaSpec extends Specification {
         def openApi = new OpenAPI()
 
         when:
-        customizer().customise(openApi)
+        customizer().contribute(openApi, null)
 
         then: 'the annotation supplies the prose'
         openApi.components.schemas['Widget'].properties.name.description == 'The name shown to a customer'
@@ -275,7 +286,7 @@ class PersistentEntitySchemaSpec extends Specification {
         def openApi = new OpenAPI()
 
         when:
-        customizer().customise(openApi)
+        customizer().contribute(openApi, null)
 
         then: 'the association describes the relationship'
         openApi.components.schemas['Widget'].properties.containsKey('crate')
@@ -289,7 +300,7 @@ class PersistentEntitySchemaSpec extends Specification {
         def openApi = new OpenAPI()
 
         when:
-        customizer().customise(openApi)
+        customizer().contribute(openApi, null)
 
         then:
         with(openApi.components.schemas['Widget'].properties.version) {
@@ -305,8 +316,8 @@ class PersistentEntitySchemaSpec extends Specification {
         def second = new OpenAPI()
 
         when:
-        customizer.customise(first)
-        customizer.customise(second)
+        customizer.contribute(first, null)
+        customizer.contribute(second, null)
 
         then: 'the constraints are applied once, not accumulated on a shared schema object'
         second.components.schemas['Widget'].properties.color.enum.toList() == ['red', 'green']
@@ -322,7 +333,7 @@ class PersistentEntitySchemaSpec extends Specification {
         def openApi = new OpenAPI()
 
         when:
-        customizer().customise(openApi)
+        customizer().contribute(openApi, null)
 
         then: 'a min of zero is a real lower bound rather than an absent one'
         openApi.components.schemas['Widget'].properties.weight.minimum == 0G
@@ -336,7 +347,7 @@ class PersistentEntitySchemaSpec extends Specification {
         def openApi = new OpenAPI(SpecVersion.V31)
 
         when:
-        customizer().customise(openApi)
+        customizer().contribute(openApi, null)
 
         then: 'the schemas are still described, through the 3.1 converter'
         openApi.specVersion == SpecVersion.V31
@@ -344,23 +355,44 @@ class PersistentEntitySchemaSpec extends Specification {
         'name' in openApi.components.schemas['Widget'].required
     }
 
-    private static UrlMappingsOpenApiCustomizer customizer() {
+    private static GrailsOpenApiGenerator customizer() {
+        OpenApiFixture.generator(holder(), application(), context())
+    }
+
+    private static MappingContext context() {
         MappingContext context = new KeyValueMappingContext('test')
         context.addPersistentEntity(Widget)
         context.addPersistentEntity(Crate)
         // Constraints are only available once a validator registry has evaluated them.
         context.setValidatorRegistry(new DefaultValidatorRegistry(context, new ConnectionSourceSettings()))
-        new UrlMappingsOpenApiCustomizer(holder()).tap { mappingContext = context }
+        context
     }
 
-    private static DefaultUrlMappingsHolder holder() {
+    private static GrailsApplication application() {
+        new DefaultGrailsApplication(WidgetController, CrateController).tap { it.initialise() }
+    }
+
+    private static DefaultUrlMappingsHolder holder(boolean crates = true) {
         def ctx = new MockApplicationContext()
         ctx.registerMockBean(GrailsApplication.APPLICATION_ID, new DefaultGrailsApplication())
         def evaluator = new DefaultUrlMappingEvaluator(ctx)
         new DefaultUrlMappingsHolder(evaluator.evaluateMappings {
             '/widgets'(resources: 'widget')
+            if (crates) {
+                '/crates'(resources: 'crate')
+            }
         })
     }
+}
+
+@Artefact('Controller')
+class WidgetController extends RestfulController<Widget> {
+    WidgetController() { super(Widget) }
+}
+
+@Artefact('Controller')
+class CrateController extends RestfulController<Crate> {
+    CrateController() { super(Crate) }
 }
 
 @SchemaAnnotation(description = 'A widget in the catalogue')

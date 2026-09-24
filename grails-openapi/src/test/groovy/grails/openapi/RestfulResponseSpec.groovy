@@ -50,7 +50,7 @@ class RestfulResponseSpec extends Specification {
         def openApi = new OpenAPI()
 
         when:
-        customizer().customise(openApi)
+        customizer().contribute(openApi, null)
 
         then:
         openApi.paths['/notes'].post.responses.keySet().contains('201')
@@ -62,7 +62,7 @@ class RestfulResponseSpec extends Specification {
         def openApi = new OpenAPI()
 
         when:
-        customizer().customise(openApi)
+        customizer().contribute(openApi, null)
 
         then:
         with(openApi.paths['/notes/{id}'].delete.responses) {
@@ -77,7 +77,7 @@ class RestfulResponseSpec extends Specification {
         def openApi = new OpenAPI()
 
         when:
-        customizer().customise(openApi)
+        customizer().contribute(openApi, null)
 
         then:
         openApi.paths['/notes'].post.responses['422']
@@ -92,7 +92,7 @@ class RestfulResponseSpec extends Specification {
         def openApi = new OpenAPI()
 
         when:
-        customizer().customise(openApi)
+        customizer().contribute(openApi, null)
 
         then: 'reached through the resources mapping'
         openApi.paths['/notes'].post.responses.keySet().contains('201')
@@ -107,7 +107,7 @@ class RestfulResponseSpec extends Specification {
         def openApi = new OpenAPI()
 
         when:
-        customizer().customise(openApi)
+        customizer().contribute(openApi, null)
 
         then: 'the declared view replaces the resource convention'
         openApi.paths['/note/summary'].get.responses['200']
@@ -122,7 +122,7 @@ class RestfulResponseSpec extends Specification {
         def openApi = new OpenAPI()
 
         when:
-        customizer().customise(openApi)
+        customizer().contribute(openApi, null)
 
         then: 'a client can page, which it could not learn from the path alone'
         openApi.paths['/notes'].get.parameters*.name as Set == ['max', 'offset', 'sort', 'order'] as Set
@@ -142,13 +142,13 @@ class RestfulResponseSpec extends Specification {
         def openApi = new OpenAPI()
 
         when:
-        customizer().customise(openApi)
+        customizer().contribute(openApi, null)
 
         then:
         openApi.paths['/notes/{id}'].get.parameters*.name == ['id']
     }
 
-    private static UrlMappingsOpenApiCustomizer customizer() {
+    private static GrailsOpenApiGenerator customizer() {
         def application = new DefaultGrailsApplication(NoteController).tap { it.initialise() }
         def ctx = new MockApplicationContext()
         ctx.registerMockBean(GrailsApplication.APPLICATION_ID, application)
@@ -161,10 +161,7 @@ class RestfulResponseSpec extends Specification {
         context.addPersistentEntity(Note)
         context.setValidatorRegistry(new DefaultValidatorRegistry(context, new ConnectionSourceSettings()))
 
-        new UrlMappingsOpenApiCustomizer(holder).tap {
-            grailsApplication = application
-            mappingContext = context
-        }
+        OpenApiFixture.generator(holder, application, context)
     }
 }
 

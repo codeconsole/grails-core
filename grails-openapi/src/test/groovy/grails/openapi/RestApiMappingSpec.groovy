@@ -51,7 +51,7 @@ class RestApiMappingSpec extends Specification {
         def openApi = new OpenAPI()
 
         when:
-        restApiCustomizer().customise(openApi)
+        restApiCustomizer().contribute(openApi, null)
 
         then: 'the collection routes the mapping serves'
         openApi.paths['/gadget'].get
@@ -71,7 +71,7 @@ class RestApiMappingSpec extends Specification {
         def openApi = new OpenAPI()
 
         when:
-        restApiCustomizer().customise(openApi)
+        restApiCustomizer().contribute(openApi, null)
 
         then: 'there is no controller/action/id mapping, so no such path is described'
         openApi.paths.keySet().every { !it.startsWith('/gadget/show') && !it.startsWith('/gadget/save') }
@@ -83,7 +83,7 @@ class RestApiMappingSpec extends Specification {
         def openApi = new OpenAPI()
 
         when:
-        restApiCustomizer().customise(openApi)
+        restApiCustomizer().contribute(openApi, null)
 
         then: 'save is reached by POST on the collection path'
         openApi.paths['/gadget'].post.responses.keySet().contains('201')
@@ -99,7 +99,7 @@ class RestApiMappingSpec extends Specification {
         when: 'an application whose mappings name neither the controller nor a dynamic one'
         customizerFor {
             '/'(view: '/index')
-        }.customise(openApi)
+        }.contribute(openApi, null)
 
         then:
         openApi.paths == null || openApi.paths.isEmpty()
@@ -113,7 +113,7 @@ class RestApiMappingSpec extends Specification {
         customizerFor {
             '/gadgets'(resources: 'gadget')
             "/$controller/$action?/$id?(.$format)?" {}
-        }.customise(openApi)
+        }.contribute(openApi, null)
 
         then: 'no two operations share an identifier'
         def ids = openApi.paths.values().collectMany { it.readOperationsMap().values() }*.operationId
@@ -129,7 +129,7 @@ class RestApiMappingSpec extends Specification {
             group('/api/v1') {
                 "/$controller/$action?/$id?(.$format)?"()
             }
-        }.customise(openApi)
+        }.contribute(openApi, null)
 
         then: 'the paths are the ones the group serves, not the ones the convention would build'
         openApi.paths.keySet().every { it.startsWith('/api/v1/gadget') }
@@ -144,7 +144,7 @@ class RestApiMappingSpec extends Specification {
         when: 'a mapping carrying a variable other than the identifier'
         customizerFor {
             get "/api/$apiVersion/$controller"(action: 'index')
-        }.customise(openApi)
+        }.contribute(openApi, null)
 
         then:
         openApi.paths.containsKey('/api/{apiVersion}/gadget')
@@ -163,14 +163,14 @@ class RestApiMappingSpec extends Specification {
         customizerFor {
             '/gadgets'(resources: 'gadget')
             get "/$controller(.$format)?"(action: 'index')
-        }.customise(openApi)
+        }.contribute(openApi, null)
 
         then:
         def ids = openApi.paths.values().collectMany { it.readOperationsMap().values() }*.operationId
         ids.size() == ids.toSet().size()
     }
 
-    private static UrlMappingsOpenApiCustomizer restApiCustomizer() {
+    private static GrailsOpenApiGenerator restApiCustomizer() {
         customizerFor {
             delete "/$controller/$id(.$format)?"(action: 'delete')
             get "/$controller(.$format)?"(action: 'index')
@@ -181,7 +181,7 @@ class RestApiMappingSpec extends Specification {
         }
     }
 
-    private static UrlMappingsOpenApiCustomizer customizerFor(Closure mappings) {
+    private static GrailsOpenApiGenerator customizerFor(Closure mappings) {
         def application = new DefaultGrailsApplication(GadgetController).tap { it.initialise() }
         def ctx = new MockApplicationContext()
         ctx.registerMockBean(GrailsApplication.APPLICATION_ID, application)
@@ -191,10 +191,7 @@ class RestApiMappingSpec extends Specification {
         context.addPersistentEntity(Gadget)
         context.setValidatorRegistry(new DefaultValidatorRegistry(context, new ConnectionSourceSettings()))
 
-        new UrlMappingsOpenApiCustomizer(holder).tap {
-            grailsApplication = application
-            mappingContext = context
-        }
+        OpenApiFixture.generator(holder, application, context)
     }
 }
 

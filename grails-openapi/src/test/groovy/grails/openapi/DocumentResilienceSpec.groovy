@@ -42,7 +42,7 @@ class DocumentResilienceSpec extends Specification {
         def openApi = new OpenAPI()
 
         when: 'one command object throws while its constraints are read'
-        customizer().customise(openApi)
+        customizer().contribute(openApi, null)
 
         then: 'the document is still served'
         noExceptionThrown()
@@ -65,7 +65,7 @@ class DocumentResilienceSpec extends Specification {
         def openApi = new OpenAPI()
 
         when:
-        customizer().customise(openApi)
+        customizer().contribute(openApi, null)
 
         then: 'across the paths as well as the schemas, which is where a dropped type shows'
         Set defined = openApi.components?.schemas?.keySet() ?: [] as Set
@@ -79,7 +79,7 @@ class DocumentResilienceSpec extends Specification {
         def openApi = new OpenAPI()
 
         when:
-        customizer().customise(openApi)
+        customizer().contribute(openApi, null)
 
         then: 'a generic argument is followed, so no reference is left undefined'
         openApi.components.schemas.containsKey('InnerCommand')
@@ -91,7 +91,7 @@ class DocumentResilienceSpec extends Specification {
         (referenced - defined).isEmpty()
     }
 
-    private static UrlMappingsOpenApiCustomizer customizer() {
+    private static GrailsOpenApiGenerator customizer() {
         def application = new DefaultGrailsApplication(ExplodingController, SoundController).tap { it.initialise() }
         def ctx = new MockApplicationContext()
         ctx.registerMockBean(GrailsApplication.APPLICATION_ID, application)
@@ -99,7 +99,7 @@ class DocumentResilienceSpec extends Specification {
             post '/exploding'(controller: 'exploding', action: 'submit')
             post '/sound'(controller: 'sound', action: 'submit')
         })
-        new UrlMappingsOpenApiCustomizer(holder).tap { grailsApplication = application }
+        OpenApiFixture.generator(holder, application)
     }
 }
 

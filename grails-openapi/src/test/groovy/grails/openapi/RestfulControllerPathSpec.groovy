@@ -48,7 +48,7 @@ class RestfulControllerPathSpec extends Specification {
         def openApi = new OpenAPI()
 
         when:
-        customizer().customise(openApi)
+        customizer().contribute(openApi, null)
 
         then: 'the collection actions carry no id'
         openApi.paths['/memo/index'].get
@@ -66,7 +66,7 @@ class RestfulControllerPathSpec extends Specification {
         def openApi = new OpenAPI()
 
         when:
-        customizer().customise(openApi)
+        customizer().contribute(openApi, null)
 
         then: 'save is a POST rather than the GET a read action gets'
         openApi.paths['/memo/save'].readOperationsMap().keySet() == [PathItem.HttpMethod.POST] as Set
@@ -86,7 +86,7 @@ class RestfulControllerPathSpec extends Specification {
         customizer {
             '/memos'(resources: 'memo')
             "/$controller/$action?/$id?(.$format)?" {}
-        }.customise(openApi)
+        }.contribute(openApi, null)
 
         then: 'the declared mapping is documented'
         openApi.paths['/memos'].get
@@ -101,7 +101,7 @@ class RestfulControllerPathSpec extends Specification {
         def openApi = new OpenAPI()
 
         when:
-        customizer().customise(openApi)
+        customizer().contribute(openApi, null)
 
         then: 'index responds with a collection'
         with(openApi.paths['/memo/index'].get.responses['200'].content['application/json'].schema) {
@@ -122,13 +122,13 @@ class RestfulControllerPathSpec extends Specification {
         def openApi = new OpenAPI()
 
         when:
-        customizer().customise(openApi)
+        customizer().contribute(openApi, null)
 
         then:
         openApi.paths.keySet().every { !it.startsWith('/plain') }
     }
 
-    private static UrlMappingsOpenApiCustomizer customizer(Closure mappings = {
+    private static GrailsOpenApiGenerator customizer(Closure mappings = {
         "/$controller/$action?/$id?(.$format)?" {}
     }) {
         def application = new DefaultGrailsApplication(MemoController, PlainController, Memo).tap {
@@ -145,10 +145,7 @@ class RestfulControllerPathSpec extends Specification {
         context.addPersistentEntity(Memo)
         context.setValidatorRegistry(new DefaultValidatorRegistry(context, new ConnectionSourceSettings()))
 
-        new UrlMappingsOpenApiCustomizer(holder).tap {
-            grailsApplication = application
-            mappingContext = context
-        }
+        OpenApiFixture.generator(holder, application, context)
     }
 }
 

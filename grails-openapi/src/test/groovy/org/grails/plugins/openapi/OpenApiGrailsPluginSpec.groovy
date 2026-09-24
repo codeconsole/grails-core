@@ -18,13 +18,17 @@
  */
 package org.grails.plugins.openapi
 
+import io.swagger.v3.oas.models.OpenAPI
+import org.springdoc.core.customizers.OpenApiCustomizer
+import org.springdoc.core.models.GroupedOpenApi
 import org.springframework.beans.factory.support.BeanRegistryAdapter
 import org.springframework.beans.factory.support.DefaultListableBeanFactory
+import org.springframework.core.env.MapPropertySource
 import org.springframework.core.env.StandardEnvironment
 
 import grails.core.DefaultGrailsApplication
 import grails.core.GrailsApplication
-import grails.openapi.UrlMappingsOpenApiCustomizer
+import grails.openapi.GrailsOpenApiGenerator
 import grails.web.mapping.UrlMappingsHolder
 import org.grails.support.MockApplicationContext
 import org.grails.web.mapping.DefaultUrlMappingEvaluator
@@ -34,17 +38,47 @@ import spock.lang.Specification
 
 class OpenApiGrailsPluginSpec extends Specification {
 
-    void 'registers the OpenAPI customizer wired to the application URL mappings'() {
+    void 'registers the generator wired to the application URL mappings'() {
         given:
-        def beanFactory = new DefaultListableBeanFactory()
-        beanFactory.registerSingleton('grailsUrlMappingsHolder', urlMappingsHolder())
-        def registrar = new OpenApiGrailsPlugin().beanRegistrar()
+        def beanFactory = register()
 
         when:
-        new BeanRegistryAdapter(beanFactory, new StandardEnvironment(), registrar.class).register(registrar)
+        def openApi = beanFactory.getBean(OpenApiGrailsPlugin.GENERATOR_BEAN_NAME, GrailsOpenApiGenerator).generate()
 
         then:
-        beanFactory.getBean('grailsUrlMappingsOpenApiCustomizer', UrlMappingsOpenApiCustomizer)
+        openApi.paths.containsKey('/books')
+    }
+
+    void 'contributes the description to the document springdoc serves'() {
+        given:
+        def beanFactory = register()
+        def openApi = new OpenAPI()
+
+        when:
+        beanFactory.getBean('grailsOpenApiCustomizer', OpenApiCustomizer).customise(openApi)
+
+        then:
+        openApi.paths.containsKey('/books')
+    }
+
+    void 'serves each configured group through springdoc, with the same criteria'() {
+        when:
+        def beanFactory = register('grails.openapi.groups.catalogue.paths-to-match': '/books/**',
+                'grails.openapi.groups.catalogue.display-name': 'Catalogue')
+        def group = beanFactory.getBeansOfType(GroupedOpenApi).values().find { it.group == 'catalogue' }
+
+        then:
+        group.pathsToMatch == ['/books/**']
+        group.displayName == 'Catalogue'
+    }
+
+    void 'registers nothing when the document is disabled'() {
+        when:
+        def beanFactory = register('grails.openapi.enabled': false)
+
+        then:
+        !beanFactory.containsBean(OpenApiGrailsPlugin.GENERATOR_BEAN_NAME)
+        !beanFactory.containsBean('grailsOpenApiCustomizer')
     }
 
     void 'declares a dependency on the URL mappings plugin'() {
@@ -52,9 +86,21 @@ class OpenApiGrailsPluginSpec extends Specification {
         new OpenApiGrailsPlugin().dependsOn.containsKey('urlMappings')
     }
 
-    private static UrlMappingsHolder urlMappingsHolder() {
+    private static DefaultListableBeanFactory register(Map<String, Object> config = [:]) {
+        def application = new DefaultGrailsApplication()
+        def beanFactory = new DefaultListableBeanFactory()
+        beanFactory.registerSingleton(GrailsApplication.APPLICATION_ID, application)
+        beanFactory.registerSingleton('grailsUrlMappingsHolder', urlMappingsHolder(application))
+        def environment = new StandardEnvironment()
+        environment.propertySources.addFirst(new MapPropertySource('test', config))
+        def registrar = new OpenApiGrailsPlugin().beanRegistrar()
+        new BeanRegistryAdapter(beanFactory, environment, registrar.class).register(registrar)
+        beanFactory
+    }
+
+    private static UrlMappingsHolder urlMappingsHolder(GrailsApplication application) {
         def ctx = new MockApplicationContext()
-        ctx.registerMockBean(GrailsApplication.APPLICATION_ID, new DefaultGrailsApplication())
+        ctx.registerMockBean(GrailsApplication.APPLICATION_ID, application)
         def evaluator = new DefaultUrlMappingEvaluator(ctx)
         new DefaultUrlMappingsHolder(evaluator.evaluateMappings {
             '/books'(controller: 'book', action: 'index', method: 'GET')

@@ -51,7 +51,7 @@ class PropertyTypeSchemaSpec extends Specification {
         def openApi = new OpenAPI()
 
         when:
-        customizer().customise(openApi)
+        customizer().contribute(openApi, null)
 
         then: 'the schema is present rather than dropped'
         openApi.components.schemas.containsKey('Record')
@@ -66,7 +66,7 @@ class PropertyTypeSchemaSpec extends Specification {
         def openApi = new OpenAPI()
 
         when:
-        customizer().customise(openApi)
+        customizer().contribute(openApi, null)
 
         then:
         Set defined = openApi.components?.schemas?.keySet() ?: [] as Set
@@ -80,7 +80,7 @@ class PropertyTypeSchemaSpec extends Specification {
         def openApi = new OpenAPI()
 
         when:
-        customizer().customise(openApi)
+        customizer().contribute(openApi, null)
 
         then:
         openApi.components.schemas['Record'].properties.label.maxLength == 30
@@ -89,7 +89,7 @@ class PropertyTypeSchemaSpec extends Specification {
         openApi.components.schemas['Record'].properties.size.minimum == 1G
     }
 
-    private static UrlMappingsOpenApiCustomizer customizer() {
+    private static GrailsOpenApiGenerator customizer() {
         def application = new DefaultGrailsApplication(RecordController).tap { it.initialise() }
         def ctx = new MockApplicationContext()
         ctx.registerMockBean(GrailsApplication.APPLICATION_ID, application)
@@ -101,10 +101,7 @@ class PropertyTypeSchemaSpec extends Specification {
         context.addPersistentEntity(Record)
         context.setValidatorRegistry(new DefaultValidatorRegistry(context, new ConnectionSourceSettings()))
 
-        new UrlMappingsOpenApiCustomizer(holder).tap {
-            grailsApplication = application
-            mappingContext = context
-        }
+        OpenApiFixture.generator(holder, application, context)
     }
 }
 

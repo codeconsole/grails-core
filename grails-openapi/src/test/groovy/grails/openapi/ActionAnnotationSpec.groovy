@@ -52,7 +52,7 @@ class ActionAnnotationSpec extends Specification {
         def openApi = new OpenAPI()
 
         when:
-        customizer().customise(openApi)
+        customizer().contribute(openApi, null)
 
         then:
         with(openApi.paths['/annotated/index'].get) {
@@ -66,7 +66,7 @@ class ActionAnnotationSpec extends Specification {
         def openApi = new OpenAPI()
 
         when:
-        customizer().customise(openApi)
+        customizer().contribute(openApi, null)
 
         then:
         with(openApi.paths['/annotated/index'].get) {
@@ -80,7 +80,7 @@ class ActionAnnotationSpec extends Specification {
         def openApi = new OpenAPI()
 
         when:
-        customizer().customise(openApi)
+        customizer().contribute(openApi, null)
 
         then:
         openApi.paths['/annotated/show/{id}'].get.responses['403'].description == 'Not your widget'
@@ -95,7 +95,7 @@ class ActionAnnotationSpec extends Specification {
         def openApi = new OpenAPI()
 
         when:
-        customizer().customise(openApi)
+        customizer().contribute(openApi, null)
 
         then: 'the annotated action is absent'
         !openApi.paths.containsKey('/annotated/delete/{id}')
@@ -109,7 +109,7 @@ class ActionAnnotationSpec extends Specification {
         def openApi = new OpenAPI()
 
         when:
-        customizer().customise(openApi)
+        customizer().contribute(openApi, null)
 
         then:
         openApi.paths.keySet().every { !it.startsWith('/internal') }
@@ -120,12 +120,12 @@ class ActionAnnotationSpec extends Specification {
         def openApi = new OpenAPI()
 
         when:
-        customizer().customise(openApi)
+        customizer().contribute(openApi, null)
 
         then:
-        with(openApi.paths['/annotated/create'].get) {
+        with(openApi.paths['/annotated/save'].post) {
             summary == null
-            operationId == 'annotated_create_get_byAction'
+            operationId == 'annotated_save_post_byAction'
             tags == ['Widgets']
         }
     }
@@ -135,7 +135,7 @@ class ActionAnnotationSpec extends Specification {
         def openApi = new OpenAPI()
 
         when:
-        mappedCustomizer().customise(openApi)
+        mappedCustomizer().contribute(openApi, null)
 
         then: 'the summary and tags come from the annotation'
         with(openApi.paths['/catalogue'].get) {
@@ -150,7 +150,7 @@ class ActionAnnotationSpec extends Specification {
         def openApi = new OpenAPI()
 
         when:
-        mappedCustomizer().customise(openApi)
+        mappedCustomizer().contribute(openApi, null)
 
         then:
         !openApi.paths.containsKey('/catalogue/{id}')
@@ -159,7 +159,7 @@ class ActionAnnotationSpec extends Specification {
         openApi.paths['/catalogue']
     }
 
-    private static UrlMappingsOpenApiCustomizer mappedCustomizer() {
+    private static GrailsOpenApiGenerator mappedCustomizer() {
         def application = new DefaultGrailsApplication(AnnotatedController).tap { it.initialise() }
         def ctx = new MockApplicationContext()
         ctx.registerMockBean(GrailsApplication.APPLICATION_ID, application)
@@ -172,10 +172,7 @@ class ActionAnnotationSpec extends Specification {
         context.addPersistentEntity(AnnotatedWidget)
         context.setValidatorRegistry(new DefaultValidatorRegistry(context, new ConnectionSourceSettings()))
 
-        new UrlMappingsOpenApiCustomizer(holder).tap {
-            grailsApplication = application
-            mappingContext = context
-        }
+        OpenApiFixture.generator(holder, application, context)
     }
 
     void 'describes a tag a controller declares'() {
@@ -183,7 +180,7 @@ class ActionAnnotationSpec extends Specification {
         def openApi = new OpenAPI()
 
         when:
-        customizer().customise(openApi)
+        customizer().contribute(openApi, null)
 
         then: 'the grouping carries its description, not only its name'
         with(openApi.tags.find { it.name == 'Widgets' }) {
@@ -192,7 +189,7 @@ class ActionAnnotationSpec extends Specification {
         }
 
         and: 'and the operations appear under it, rather than under the controller name'
-        openApi.paths['/annotated/create'].get.tags == ['Widgets']
+        openApi.paths['/annotated/save'].post.tags == ['Widgets']
     }
 
     void 'describes a path parameter an action declares'() {
@@ -200,16 +197,16 @@ class ActionAnnotationSpec extends Specification {
         def openApi = new OpenAPI()
 
         when:
-        customizer().customise(openApi)
+        customizer().contribute(openApi, null)
 
         then:
         with(openApi.paths['/annotated/show/{id}'].get.parameters.find { it.name == 'id' }) {
             description == 'The identifier of the widget'
-            example == '42'
+            example.toString() == '42'
         }
     }
 
-    private static UrlMappingsOpenApiCustomizer customizer() {
+    private static GrailsOpenApiGenerator customizer() {
         def application = new DefaultGrailsApplication(AnnotatedController, InternalController).tap {
             it.initialise()
         }
@@ -223,10 +220,7 @@ class ActionAnnotationSpec extends Specification {
         context.addPersistentEntity(AnnotatedWidget)
         context.setValidatorRegistry(new DefaultValidatorRegistry(context, new ConnectionSourceSettings()))
 
-        new UrlMappingsOpenApiCustomizer(holder).tap {
-            grailsApplication = application
-            mappingContext = context
-        }
+        OpenApiFixture.generator(holder, application, context)
     }
 }
 

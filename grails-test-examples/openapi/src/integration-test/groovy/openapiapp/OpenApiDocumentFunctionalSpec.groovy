@@ -70,9 +70,78 @@ class OpenApiDocumentFunctionalSpec extends Specification implements HttpClientS
         document.paths['/books/{id}'].get.responses.containsKey('404')
     }
 
-    void 'the listing describes the paging it accepts'() {
+    void 'the listing describes the paging it accepts, and the parameter the action declares'() {
         expect:
-        document.paths['/books'].get.parameters*.name as Set == ['max', 'offset', 'sort', 'order'] as Set
+        document.paths['/books'].get.parameters*.name as Set == ['max', 'offset', 'sort', 'order', 'genre'] as Set
+    }
+
+    void 'the document starts from the configured base document'() {
+        expect:
+        document.info.title == 'Catalogue API'
+        document.info.version == '2.0.0'
+        document.security == [[Bearer: []]]
+        document.components.securitySchemes.Bearer.scheme == 'bearer'
+    }
+
+    void 'a response the controller declares applies to each of its actions'() {
+        expect:
+        document.paths['/books'].get.responses['401'].description == 'Not signed in'
+        document.paths['/books/{id}'].delete.responses['401']
+
+        and: 'but not to another controller'
+        !document.paths['/authors'].get.responses.containsKey('401')
+    }
+
+    void 'the form actions an HTML client uses are not described'() {
+        expect:
+        !document.paths.containsKey('/books/create')
+        !document.paths.containsKey('/books/{id}/edit')
+        !document.paths.containsKey('/book/create')
+    }
+
+    void 'the routes of the default mapping are described'() {
+        expect:
+        document.paths['/book/show/{id}'].get
+        document.paths['/book/save'].post
+    }
+
+    void 'a group describes only what it selects'() {
+        when:
+        Map group = http('/v3/api-docs/catalogue').json()
+
+        then:
+        group.paths.keySet() == ['/books', '/books/{id}'] as Set
+    }
+
+    void 'an association is described the way Grails renders and binds it'() {
+        given:
+        Map reference = (Map) ((Map) document.components.schemas.Book.get('properties')).author
+
+        when: 'an author is created, and a book bound to it by the described reference'
+        Map author = httpPostJson('/authors', '{"name":"Le Guin"}').assertStatus(201).json()
+        Map book = httpPostJson('/books', "{\"title\":\"The Dispossessed\",\"author\":{\"id\":${author.id}}}")
+                .assertStatus(201).json()
+
+        then: 'the book renders the association as the described reference'
+        book.author == [id: author.id]
+        ((Map) reference.get('properties')).keySet() == ['id'] as Set
+        reference.required == ['id']
+    }
+
+    void 'a failed validation answers with the described errors'() {
+        given:
+        Map described = (Map) document.components.schemas.ValidationErrors
+        Map item = (Map) ((Map) ((Map) described.get('properties')).errors).items
+
+        when:
+        Map errors = httpPostJson('/books', '{"genre":"poetry"}').assertStatus(422).json()
+
+        then:
+        errors.keySet() == ((Map) described.get('properties')).keySet()
+        errors.errors
+        errors.errors.every { Map error ->
+            ((Map) item.get('properties')).keySet().containsAll(error.keySet()) && error.keySet().containsAll(item.required)
+        }
     }
 
     void 'the domain class is described from its constraints'() {

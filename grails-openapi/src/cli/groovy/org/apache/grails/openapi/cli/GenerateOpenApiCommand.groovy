@@ -1,0 +1,101 @@
+/*
+ *  Licensed to the Apache Software Foundation (ASF) under one
+ *  or more contributor license agreements.  See the NOTICE file
+ *  distributed with this work for additional information
+ *  regarding copyright ownership.  The ASF licenses this file
+ *  to you under the Apache License, Version 2.0 (the
+ *  "License"); you may not use this file except in compliance
+ *  with the License.  You may obtain a copy of the License at
+ *
+ *    https://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing,
+ *  software distributed under the License is distributed on an
+ *  "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ *  KIND, either express or implied.  See the License for the
+ *  specific language governing permissions and limitations
+ *  under the License.
+ */
+package org.apache.grails.openapi.cli
+
+import groovy.transform.CompileStatic
+import groovy.util.logging.Slf4j
+
+import io.swagger.v3.oas.models.OpenAPI
+import org.springframework.util.ClassUtils
+
+import grails.openapi.GrailsOpenApiGenerator
+import grails.openapi.OpenApiSelection
+import grails.openapi.OpenApiSettings
+import org.apache.grails.core.cli.ApplicationCommand
+import org.apache.grails.core.cli.ExecutionContext
+import org.grails.openapi.springdoc.GroupedOpenApiContributor
+
+/**
+ * Writes the application's OpenAPI description to files, so the description can be packaged,
+ * served as a static file, reviewed in a change, or handed to a code generator without running
+ * the application.
+ *
+ * <p>The default document is written to {@code openapi.yaml}, and each group - configured under
+ * {@code grails.openapi.groups}, or declared to springdoc as a {@code GroupedOpenApi} - to
+ * {@code openapi-<group>.yaml}. The directory and format come
+ * from {@code grails.openapi.output-directory} and {@code grails.openapi.output-format}, and can be
+ * overridden with the {@code --output-directory} and {@code --format} options.</p>
+ */
+@Slf4j
+@CompileStatic
+class GenerateOpenApiCommand implements ApplicationCommand {
+
+    private static final String SPRINGDOC_GROUP = 'org.springdoc.core.models.GroupedOpenApi'
+
+    final String description = 'Writes the OpenAPI description of the application to files'
+
+    @Override
+    boolean handle(ExecutionContext executionContext) {
+        GrailsOpenApiGenerator generator = applicationContext.getBean(GrailsOpenApiGenerator)
+        OpenApiSettings settings = generator.settings
+
+        String format = (option(executionContext, 'format') ?: settings.outputFormat).toLowerCase(Locale.ENGLISH)
+        if (!(format in ['yaml', 'json'])) {
+            log.error('Unsupported OpenAPI format [{}]: use yaml or json', format)
+            return false
+        }
+        File directory = outputDirectory(executionContext, option(executionContext, 'output-directory') ?: settings.outputDirectory)
+        if (!directory.directory && !directory.mkdirs()) {
+            log.error('Could not create the OpenAPI output directory [{}]', directory)
+            return false
+        }
+
+        write(generator.generate(), new File(directory, "openapi.${format}"), format)
+        for (OpenApiSelection group : groups(settings)) {
+            write(generator.generate(group), new File(directory, "openapi-${group.group}.${format}"), format)
+        }
+        true
+    }
+
+    private Collection<OpenApiSelection> groups(OpenApiSettings settings) {
+        Map<String, OpenApiSelection> byName = [:]
+        settings.groups.each { OpenApiSelection group -> byName[group.group] = group }
+        if (ClassUtils.isPresent(SPRINGDOC_GROUP, GenerateOpenApiCommand.classLoader)) {
+            GroupedOpenApiContributor.declaredGroups(applicationContext).each { OpenApiSelection group ->
+                byName.putIfAbsent(group.group, group)
+            }
+        }
+        byName.values()
+    }
+
+    private static void write(OpenAPI openApi, File file, String format) {
+        file.setText(GrailsOpenApiGenerator.serialize(openApi, format), 'UTF-8')
+        println "Wrote ${file}"
+    }
+
+    private static File outputDirectory(ExecutionContext executionContext, String path) {
+        File directory = new File(path)
+        directory.absolute ? directory : new File(executionContext.baseDir ?: new File('.'), path)
+    }
+
+    private static String option(ExecutionContext executionContext, String name) {
+        Object value = executionContext.commandLine?.optionValue(name)
+        value instanceof CharSequence && value ? value.toString() : null
+    }
+}

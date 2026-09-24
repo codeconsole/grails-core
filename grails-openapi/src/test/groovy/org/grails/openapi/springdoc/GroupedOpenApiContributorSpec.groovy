@@ -1,0 +1,102 @@
+/*
+ *  Licensed to the Apache Software Foundation (ASF) under one
+ *  or more contributor license agreements.  See the NOTICE file
+ *  distributed with this work for additional information
+ *  regarding copyright ownership.  The ASF licenses this file
+ *  to you under the Apache License, Version 2.0 (the
+ *  "License"); you may not use this file except in compliance
+ *  with the License.  You may obtain a copy of the License at
+ *
+ *    https://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing,
+ *  software distributed under the License is distributed on an
+ *  "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ *  KIND, either express or implied.  See the License for the
+ *  specific language governing permissions and limitations
+ *  under the License.
+ */
+package org.grails.openapi.springdoc
+
+import io.swagger.v3.oas.models.OpenAPI
+import org.springdoc.core.models.GroupedOpenApi
+import org.springdoc.webmvc.api.MultipleOpenApiWebMvcResource
+import org.springframework.beans.factory.support.DefaultListableBeanFactory
+
+import grails.openapi.GrailsOpenApiGenerator
+import grails.openapi.OpenApiFixture
+import grails.openapi.WidgetController
+import grails.openapi.Widget
+import grails.openapi.Crate
+import grails.openapi.namespaced.v1.GateController
+
+import spock.lang.Specification
+
+class GroupedOpenApiContributorSpec extends Specification {
+
+    void 'contributes to each springdoc group what the group selects'() {
+        given: 'a group declared as a bean, and one springdoc created from its properties'
+        def beanFactory = new DefaultListableBeanFactory()
+        beanFactory.registerSingleton('generator', generator())
+        beanFactory.registerSingleton('gates', GroupedOpenApi.builder().group('gates').pathsToMatch('/gate/**').build())
+        beanFactory.registerSingleton('widgets', GroupedOpenApi.builder().group('widgets')
+                .packagesToScan('grails.openapi').pathsToExclude('/gate/**').build())
+        def contributor = new GroupedOpenApiContributor()
+        contributor.beanFactory = beanFactory
+
+        when: 'springdoc prepares its grouped documents'
+        contributor.postProcessBeforeInitialization(resource(beanFactory), 'multipleOpenApiResource')
+
+        then:
+        paths(beanFactory.getBean('gates', GroupedOpenApi)) == ['/gate'] as Set
+        paths(beanFactory.getBean('widgets', GroupedOpenApi)) == ['/widgets', '/widgets/{id}'] as Set
+    }
+
+    void 'leaves every other bean alone'() {
+        given:
+        def contributor = new GroupedOpenApiContributor()
+        contributor.beanFactory = new DefaultListableBeanFactory()
+        def bean = new Object()
+
+        expect:
+        contributor.postProcessBeforeInitialization(bean, 'other').is(bean)
+    }
+
+    void 'reads the groups an application declares, so they are generated at build time too'() {
+        given:
+        def context = new org.springframework.context.support.GenericApplicationContext()
+        context.beanFactory.registerSingleton('gates', GroupedOpenApi.builder().group('gates').displayName('Gates')
+                .pathsToMatch('/gate/**').packagesToExclude('com.example').build())
+        context.refresh()
+
+        when:
+        def groups = GroupedOpenApiContributor.declaredGroups(context)
+
+        then:
+        groups*.group == ['gates']
+        groups[0].displayName == 'Gates'
+        groups[0].pathsToMatch == ['/gate/**']
+        groups[0].packagesToExclude == ['com.example']
+
+        cleanup:
+        context.close()
+    }
+
+    private static Set<String> paths(GroupedOpenApi group) {
+        def openApi = new OpenAPI()
+        group.openApiCustomizers.each { it.customise(openApi) }
+        openApi.paths.keySet()
+    }
+
+    private static MultipleOpenApiWebMvcResource resource(DefaultListableBeanFactory beanFactory) {
+        new MultipleOpenApiWebMvcResource(beanFactory.getBeansOfType(GroupedOpenApi).values().toList(),
+                null, null, null, null, null, null, null)
+    }
+
+    private static GrailsOpenApiGenerator generator() {
+        OpenApiFixture.generator(OpenApiFixture.holder {
+            '/widgets'(resources: 'widget')
+            '/gate'(controller: 'gate', action: 'index', namespace: 'v1')
+        }, OpenApiFixture.application([WidgetController, GateController]), OpenApiFixture.context([Widget, Crate]))
+    }
+}

@@ -16,7 +16,7 @@
  *  specific language governing permissions and limitations
  *  under the License.
  */
-package grails.openapi
+package org.grails.openapi
 
 import groovy.transform.CompileStatic
 
@@ -24,9 +24,6 @@ import groovy.transform.CompileStatic
  * The shape of the actions {@link grails.rest.RestfulController} declares, used to describe a
  * controller reached through the default {@code "/$controller/$action?/$id?"} mapping rather than
  * through a mapping that names it.
- *
- * @author Scott Murphy Heiberg
- * @since 8.0
  */
 @CompileStatic
 class RestfulControllerActions {
@@ -36,12 +33,12 @@ class RestfulControllerActions {
      */
     private static final Set<String> ID_ACTIONS = ['show', 'edit', 'update', 'patch', 'delete'].toSet().asImmutable()
 
-    /**
-     * The method each action answers when the controller does not declare otherwise. Mirrors the
-     * {@code allowedMethods} RestfulController declares; a subclass that overrides it is read
-     * directly instead.
-     */
     private static final String DEFAULT_SUCCESS_CODE = '200'
+
+    /**
+     * The actions that answer the forms an HTML client renders rather than an API client.
+     */
+    private static final Set<String> FORM_ACTIONS = ['create', 'edit'].toSet().asImmutable()
 
     private static final Set<String> COLLECTION_ACTIONS = ['index'].toSet().asImmutable()
 
@@ -52,6 +49,11 @@ class RestfulControllerActions {
             delete: '204',
     ].asImmutable()
 
+    /**
+     * The method each action answers when the controller does not declare otherwise. Mirrors the
+     * {@code allowedMethods} RestfulController declares; a subclass that overrides it is read
+     * directly instead.
+     */
     private static final Map<String, String> DEFAULT_METHODS = [
             save: 'POST',
             update: 'PUT',
@@ -105,6 +107,10 @@ class RestfulControllerActions {
      */
     static boolean paginates(String actionName) {
         actionName in COLLECTION_ACTIONS
+    }
+
+    static boolean isFormAction(String actionName) {
+        actionName in FORM_ACTIONS
     }
 
     static boolean takesId(String actionName) {

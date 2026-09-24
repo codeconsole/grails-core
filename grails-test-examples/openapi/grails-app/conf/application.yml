@@ -20,6 +20,11 @@ grails:
     profile: web
     codegen:
         defaultPackage: openapiapp
+    openapi:
+        base-document: classpath:openapi-base.yml
+        groups:
+            catalogue:
+                paths-to-match: /books/**
 
 dataSource:
     pooled: true

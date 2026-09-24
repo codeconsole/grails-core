@@ -1,0 +1,136 @@
+/*
+ *  Licensed to the Apache Software Foundation (ASF) under one
+ *  or more contributor license agreements.  See the NOTICE file
+ *  distributed with this work for additional information
+ *  regarding copyright ownership.  The ASF licenses this file
+ *  to you under the Apache License, Version 2.0 (the
+ *  "License"); you may not use this file except in compliance
+ *  with the License.  You may obtain a copy of the License at
+ *
+ *    https://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing,
+ *  software distributed under the License is distributed on an
+ *  "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ *  KIND, either express or implied.  See the License for the
+ *  specific language governing permissions and limitations
+ *  under the License.
+ */
+package org.apache.grails.openapi.cli
+
+import io.swagger.v3.core.util.Json31
+import io.swagger.v3.core.util.Yaml31
+import org.springdoc.core.models.GroupedOpenApi
+import org.springframework.context.support.GenericApplicationContext
+import org.springframework.core.env.MapPropertySource
+import org.springframework.core.env.StandardEnvironment
+
+import grails.artefact.Artefact
+import grails.core.DefaultGrailsApplication
+import grails.core.GrailsApplication
+import grails.openapi.GrailsOpenApiGenerator
+import grails.openapi.OpenApiSettings
+import org.apache.grails.core.cli.ExecutionContext
+import org.grails.build.parsing.CommandLineParser
+import org.grails.support.MockApplicationContext
+import org.grails.web.mapping.DefaultUrlMappingEvaluator
+import org.grails.web.mapping.DefaultUrlMappingsHolder
+
+import spock.lang.AutoCleanup
+import spock.lang.Specification
+import spock.lang.TempDir
+
+class GenerateOpenApiCommandSpec extends Specification {
+
+    @TempDir
+    File directory
+
+    @AutoCleanup
+    GenericApplicationContext applicationContext = new GenericApplicationContext()
+
+    void 'writes the default document and each group'() {
+        given:
+        def command = command(['grails.openapi.groups.reports.paths-to-match': '/reports/**'])
+        applicationContext.beanFactory.registerSingleton('ledgers',
+                GroupedOpenApi.builder().group('ledgers').pathsToMatch('/ledgers/**').build())
+
+        when:
+        boolean handled = command.handle(context("--output-directory=${directory.absolutePath}"))
+
+        then:
+        handled
+        directory.list() as Set == ['openapi.yaml', 'openapi-reports.yaml', 'openapi-ledgers.yaml'] as Set
+
+        and: 'each document describes what it selects'
+        read('openapi.yaml').paths.keySet() == ['/reports', '/ledgers'] as Set
+        read('openapi-reports.yaml').paths.keySet() == ['/reports'] as Set
+        read('openapi-ledgers.yaml').paths.keySet() == ['/ledgers'] as Set
+    }
+
+    void 'writes JSON when asked to'() {
+        given:
+        def command = command([:])
+
+        when:
+        command.handle(context("--output-directory=${directory.absolutePath}", '--format=json'))
+
+        then:
+        Json31.mapper().readValue(new File(directory, 'openapi.json'), Map).paths.containsKey('/reports')
+    }
+
+    void 'writes where and how the configuration says without options'() {
+        given:
+        File configured = new File(directory, 'configured')
+        def command = command(['grails.openapi.output-directory': configured.absolutePath,
+                               'grails.openapi.output-format'   : 'json'])
+
+        when:
+        command.handle(context())
+
+        then:
+        new File(configured, 'openapi.json').file
+    }
+
+    void 'refuses a format it cannot write'() {
+        given:
+        def command = command([:])
+
+        expect:
+        !command.handle(context("--output-directory=${directory.absolutePath}", '--format=xml'))
+        !directory.list()
+    }
+
+    private GenerateOpenApiCommand command(Map<String, Object> config) {
+        def environment = new StandardEnvironment()
+        environment.propertySources.addFirst(new MapPropertySource('test', config))
+        def application = new DefaultGrailsApplication(ReportController, LedgerController).tap { it.initialise() }
+        def mappingContext = new MockApplicationContext()
+        mappingContext.registerMockBean(GrailsApplication.APPLICATION_ID, application)
+        def holder = new DefaultUrlMappingsHolder(new DefaultUrlMappingEvaluator(mappingContext).evaluateMappings {
+            '/reports'(controller: 'report', action: 'index')
+            '/ledgers'(controller: 'ledger', action: 'index')
+        })
+        applicationContext.beanFactory.registerSingleton('grailsOpenApiGenerator',
+                new GrailsOpenApiGenerator(application, holder, [], OpenApiSettings.from(environment)))
+        applicationContext.refresh()
+        new GenerateOpenApiCommand().tap { it.applicationContext = this.applicationContext }
+    }
+
+    private static ExecutionContext context(String... options) {
+        new ExecutionContext(new CommandLineParser().parse((['generate-open-api'] + options.toList()) as String[]))
+    }
+
+    private Map read(String name) {
+        Yaml31.mapper().readValue(new File(directory, name), Map)
+    }
+}
+
+@Artefact('Controller')
+class ReportController {
+    def index() { }
+}
+
+@Artefact('Controller')
+class LedgerController {
+    def index() { }
+}
