@@ -373,7 +373,9 @@ class DefaultLinkGenerator implements LinkGenerator, PluginManagerAware {
 
         Set<ControllerRef> candidates = controllersNamed(controller)
         if (candidates.isEmpty()) {
-            return null
+            // No registered controller has the name, so nothing is nearer than the namespace the link is
+            // made from: stay in it, as an unqualified reference resolves against where it is made.
+            return currentNamespace
         }
         ControllerRef nearest = nearestController(candidates, controller, currentNamespace, false)
         if (nearest == null) {

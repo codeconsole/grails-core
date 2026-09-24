@@ -93,7 +93,9 @@ So `controller` and `action` are enough to generate the correct URL. When the sa
 
 A name defined only in namespaces other than the default one and the current request's, such as `v1` and `v2` from a page outside both, is ambiguous. Grails infers no namespace, logs a warning the first time, and the link must specify `namespace` explicitly.
 
-A `redirect` naming no `namespace` is resolved the same way, starting from the namespace of the controller issuing it, so it reaches a controller defined in another namespace rather than being forced into its own. A redirect to the issuing controller itself, or to a controller the application does not define, stays in the issuing controller's namespace.
+A name no registered controller has stays in the namespace the link is made from, as a relative reference resolves against where it is made.
+
+A `redirect` naming no `namespace` is resolved exactly as a link is, starting from the namespace of the controller issuing it, so it reaches a controller defined in another namespace rather than being forced into its own.
 
 An explicit `namespace` always wins. Use `namespace="reports"` in GSP markup, or `namespace: 'reports'` in Groovy code, to target a specific namespace. Use `namespace=""` in GSP markup, or `namespace: null` in Groovy code, to target a non-namespaced controller.
 

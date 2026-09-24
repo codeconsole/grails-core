@@ -49,12 +49,10 @@ import grails.databinding.DataBindingSource
 import grails.databinding.SimpleMapDataBindingSource
 import grails.util.GrailsClassUtils
 import grails.util.GrailsMetaClassUtils
-import grails.util.GrailsNameUtils
 import grails.web.api.ServletAttributes
 import grails.web.api.WebAttributes
 import grails.web.databinding.DataBinder
 import grails.web.databinding.DataBindingUtils
-import grails.web.mapping.LinkGenerator
 import org.grails.compiler.web.ControllerActionTransformer
 import org.grails.core.artefact.ControllerArtefactHandler
 import org.grails.core.artefact.DomainClassArtefactHandler
@@ -257,13 +255,8 @@ trait Controller implements ResponseRenderer, ResponseRedirector, RequestForward
                 argMap.put(GrailsControllerClass.ACTION, action.toString())
             }
             if (!argMap.containsKey(GrailsControllerClass.NAMESPACE_PROPERTY)) {
+                resolveFromIssuingNamespace = true
                 issuingNamespace = resolveNamespace(controller.getClass())
-                if (staysInIssuingNamespace(argMap, controller.getClass())) {
-                    argMap.put(GrailsControllerClass.NAMESPACE_PROPERTY, issuingNamespace)
-                }
-                else {
-                    resolveFromIssuingNamespace = true
-                }
             }
         }
 
@@ -271,9 +264,10 @@ trait Controller implements ResponseRenderer, ResponseRedirector, RequestForward
             super.redirect(argMap)
             return
         }
-        // Resolve the target from the redirecting controller's namespace rather than forcing the link into
-        // it: a target that namespace defines is found there, as before, and one it does not define is found
-        // where it is defined. The namespace is set on the request only while the redirect is issued.
+        // Resolve the target the way a link is resolved, from the redirecting controller's namespace rather
+        // than forcing the link into it: the controller itself, a target that namespace defines, and one the
+        // application does not define all stay in it, as before, and a target defined only elsewhere is
+        // found there. The namespace is set on the request only while the redirect is issued.
         HttpServletRequest request = webRequest.currentRequest
         Object previousNamespace = request.getAttribute(GrailsApplicationAttributes.CONTROLLER_NAMESPACE_ATTRIBUTE)
         request.setAttribute(GrailsApplicationAttributes.CONTROLLER_NAMESPACE_ATTRIBUTE, issuingNamespace)
@@ -283,34 +277,6 @@ trait Controller implements ResponseRenderer, ResponseRedirector, RequestForward
         finally {
             request.setAttribute(GrailsApplicationAttributes.CONTROLLER_NAMESPACE_ATTRIBUTE, previousNamespace)
         }
-    }
-
-    /**
-     * Whether a redirect naming no namespace stays in the namespace of the controller issuing it. A
-     * redirect to that controller itself, or to a controller the application does not define, does, as it
-     * always has. A redirect to any other controller, or to a domain instance, is instead resolved the way
-     * a link is, starting from the issuing controller's namespace, so it reaches a target defined in
-     * another namespace rather than being forced into the issuing one.
-     *
-     * @param argMap The redirect arguments
-     * @param controllerClass The class of the controller issuing the redirect
-     * @return {@code true} to pass the issuing controller's namespace explicitly
-     */
-    private boolean staysInIssuingNamespace(Map argMap, Class<?> controllerClass) {
-        if (argMap.containsKey(LinkGenerator.ATTRIBUTE_RESOURCE)) {
-            return false
-        }
-        Object target = argMap.get(GrailsControllerClass.CONTROLLER)
-        if (target == null) {
-            return true
-        }
-        String targetName = target.toString()
-        if (targetName == GrailsNameUtils.getLogicalPropertyName(controllerClass.getName(), ControllerArtefactHandler.TYPE)) {
-            return true
-        }
-        GrailsApplication application = getGrailsApplication()
-        return application == null ||
-                application.getArtefactByLogicalPropertyName(ControllerArtefactHandler.TYPE, targetName) == null
     }
 
     /**

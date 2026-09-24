@@ -176,6 +176,7 @@ public interface LinkGenerator {
      *    <li>Otherwise the name is resolved nearest scope first: the current request namespace if a
      *        controller with the name is defined there, then the default namespace ({@code null}) if one
      *        is defined there, then the namespace of the only controller with the name.</li>
+     *    <li>A name no registered controller has resolves to the current request namespace.</li>
      *    <li>A name defined in several namespaces, none of them the current request namespace or the
      *        default one, is ambiguous: {@code null} is returned and the namespace must be specified
      *        explicitly.</li>

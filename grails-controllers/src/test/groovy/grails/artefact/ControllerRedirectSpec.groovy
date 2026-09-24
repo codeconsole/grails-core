@@ -91,9 +91,9 @@ class ControllerRedirectSpec extends Specification {
         bindRequest()
         namespaced.redirectToIndex()
 
-        then: 'each redirect carries the namespace of its own class'
-        linkArguments[0].namespace == null
-        linkArguments[1].namespace == 'admin'
+        then: 'each redirect is resolved from the namespace of its own class'
+        namespacesInScope[0] == null
+        namespacesInScope[1] == 'admin'
 
         when: 'the same two controller classes redirect again'
         bindRequest()
@@ -104,9 +104,12 @@ class ControllerRedirectSpec extends Specification {
         new NamespacedRedirectController().redirectToIndex()
 
         then: 'the value is still the one declared by each class, never shared between them'
-        linkArguments[2].namespace == 'admin'
-        linkArguments[3].namespace == null
-        linkArguments[4].namespace == 'admin'
+        namespacesInScope[2] == 'admin'
+        namespacesInScope[3] == null
+        namespacesInScope[4] == 'admin'
+
+        and: 'no namespace is forced onto any of the links'
+        linkArguments.every { !it.containsKey('namespace') }
     }
 
     void 'the namespace is taken from the artefact registered for the controller issuing the redirect'() {
@@ -127,7 +130,7 @@ class ControllerRedirectSpec extends Specification {
         new NamespacedRedirectController().redirectToIndex()
 
         then: 'the namespace is the one declared by the redirecting controller, not the executing one'
-        linkArguments[0].namespace == 'admin'
+        namespacesInScope[0] == 'admin'
     }
 
     void 'a redirect to another controller the application defines is resolved from the issuing namespace'() {
@@ -148,13 +151,14 @@ class ControllerRedirectSpec extends Specification {
         request.getAttribute(GrailsApplicationAttributes.CONTROLLER_NAMESPACE_ATTRIBUTE) == 'reporting'
     }
 
-    void 'a redirect to a controller the application does not define keeps the issuing namespace'() {
+    void 'a redirect to a controller the application does not define is resolved from the issuing namespace too'() {
         when:
         bindRequest()
         new NamespacedRedirectController().redirectToUndefined()
 
-        then: 'the issuing namespace is passed explicitly, as it always has been'
-        linkArguments[0].namespace == 'admin'
+        then: 'no namespace is forced onto the link, which is resolved from the issuing namespace as any other'
+        !linkArguments[0].containsKey('namespace')
+        namespacesInScope[0] == 'admin'
     }
 
     void 'a controller that is not a registered artefact still resolves its declared namespace'() {
@@ -167,7 +171,7 @@ class ControllerRedirectSpec extends Specification {
         new UnregisteredRedirectController().redirectToIndex()
 
         then: 'the namespace declared on the class is used'
-        linkArguments[0].namespace == 'reporting'
+        namespacesInScope[0] == 'reporting'
     }
 
     void 'an explicit namespace argument is never overwritten by the declared one'() {

@@ -86,13 +86,13 @@ class CachingLinkGeneratorSpec extends Specification {
         then: "its in the key"
         key == "link[controller:foo, action:bar, namespace:foo]target[controller:foo, namespace:foo, action:bar, method:*]"
 
-        when: "its in the request but the controller doesn't match"
+        when: "its in the request and the target is a controller the application does not define"
         request.setControllerNamespace("fooReq")
         request.setControllerName("x")
         key = linkGenerator.makeKey([controller: "foo", action: "bar"])
 
-        then: "no namespace is resolved"
-        key == "link[controller:foo, action:bar]target[controller:foo, namespace:null, action:bar, method:*]"
+        then: "the request namespace is resolved"
+        key == "link[controller:foo, action:bar]target[controller:foo, namespace:fooReq, action:bar, method:*]"
 
         when: "its in the request and the controller matches"
         request.setControllerNamespace("fooReq")
@@ -120,7 +120,7 @@ class CachingLinkGeneratorSpec extends Specification {
         key = linkGenerator.makeKey([resource: new Resource(id: 1), action: "bar"])
 
         then: "the key holds the controller the resource resolves to, never the one handling the request"
-        key == "link[resource:org.grails.web.mapping.CachingLinkGeneratorSpec\$Resource->1, action:bar]target[controller:widget, namespace:null, action:bar, method:GET]"
+        key == "link[resource:org.grails.web.mapping.CachingLinkGeneratorSpec\$Resource->1, action:bar]target[controller:widget, namespace:fooReq, action:bar, method:GET]"
     }
 
 
