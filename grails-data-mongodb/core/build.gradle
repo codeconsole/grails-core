@@ -25,6 +25,7 @@ plugins {
     id 'org.apache.grails.buildsrc.compile'
     id 'org.apache.grails.buildsrc.publish'
     id 'org.apache.grails.buildsrc.sbom'
+    id 'org.apache.grails.buildsrc.vulnerability-scan'
     id 'org.apache.grails.gradle.grails-code-style'
 }
 
@@ -125,6 +126,9 @@ dependencies {
         // comp: RemovalCause, this should perhaps be api in data-mapping as it is needed for compilation downstream
     }
 
+    testImplementation 'com.github.docker-java:docker-java-api', {
+        // test: Ulimit, version follows org.testcontainers:testcontainers
+    }
     testImplementation 'jakarta.validation:jakarta.validation-api'
     testImplementation 'junit:junit' // JUnit 4
     testImplementation 'org.apache.grails.testing:grails-testing-support-core'

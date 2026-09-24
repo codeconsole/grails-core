@@ -62,3 +62,4 @@ tmp/
 !etc/bin
 etc/bin/results
 .vscode/
+/scratch/

@@ -23,7 +23,7 @@ in [Appendix: Release Setup Requirements & History](#appendix-release-setup-requ
 
 ## Prerequisites
 
-Prior to starting the release process, ensure that any other dependent library is set to a non-snapshot version in `dependencies.gradle`. Per the [Apache Release Policy](https://www.apache.org/legal/release-policy.html), all dependencies must be official releases and cannot be snapshots. The build will fail if any snapshot dependencies are present. The verification process will also now check for SNAPSHOT versions.
+Prior to starting the release process, ensure that any other dependent library is set to a non-snapshot version in `dependencies.gradle`. Per the [Apache Release Policy](https://www.apache.org/legal/release-policy.html), all dependencies must be official releases and cannot be snapshots. The build will fail if any snapshot dependencies are present. The verification process will also now check for SNAPSHOT versions. Additionally, `./gradlew validateDependencyVersions` is run during the release workflow and verification to ensure all BOM dependency versions resolve correctly.
 
 Due to a limitation with GitHub, private groups cannot be used as approvers for an environment.  For this reason, prior to performing the release, add GitHub username to asf.yaml in the environment section for approvers. Only 6 approvers may exist on a given environment.
 
@@ -156,6 +156,14 @@ The license audit can be triggered by running the gradle task `rat`. This will e
 
     ./gradlew rat
 
+### Manual Verification: Validating Dependency Versions
+
+To ensure that all dependencies declared in the BOM resolve correctly and no version mismatches exist, run:
+
+    ./gradlew validateDependencyVersions
+
+This task is also run automatically during the `publish` job of the release workflow, so any dependency resolution issues will fail the build before artifacts are staged.
+
 ### Manual Verification: Binary Distribution Verification
 
 Grails has 2 binary distributions:
@@ -184,6 +192,10 @@ Verifies the wrapper distribution signature via the command:
 Extracts the zip file and verifies the contents:
 * Ensure the `LICENSE` & `NOTICE` files are present to ensure license compliance.
 
+Generates applications using the wrapper and verifies all dependencies resolve:
+* Creates a shell app and a forge app against the staging repository.
+* Runs `./gradlew dependencies` in each generated app to confirm all dependencies resolve successfully. The build will fail if any dependency is marked as `FAILED`.
+
 #### Manual Verification: Verify Grails Delegating CLI Binary Distribution
 
 The following are the Grails distribution artifacts:
@@ -205,6 +217,10 @@ Verifies the cli distribution signature via the command:
 
 Extracts the zip file and verifies the contents:
 * Ensure the `LICENSE` & `NOTICE` files are present to ensure license compliance.
+
+Generates applications using the CLIs and verifies all dependencies resolve:
+* Creates a shell app via `grails-shell-cli` and a forge app via `grails-forge-cli` against the staging repository.
+* Runs `./gradlew dependencies` in each generated app to confirm all dependencies resolve successfully. The build will fail if any dependency is marked as `FAILED`.
 
 ## 3. Verifying the CLIs are Functional
 
@@ -293,18 +309,31 @@ the date you moved the distribution artifacts and report the release.
 
 ### Deploy the release to Grails Forge
 
-Publish the released version to [Grails Forge](https://start.grails.org) using one of the [GCP Deploy Actions](https://github.com/apache/grails-core/actions) available in the `grails-core` repository.
+Publish the released version to [Grails Forge](https://start.grails.org) using [Forge - AWS Elastic Beanstalk Deploy](https://github.com/apache/grails-core/actions/workflows/forge-deploy-aws.yml).
 
-Grails Forge organizes deployments into version slots as follows:
+There is one workflow and two choices: **Use workflow from** (the maintenance branch to build) and **slot**.
 
-- **RELEASE** - Full Final Releases - https://github.com/apache/grails-core/actions/workflows/forge-deploy-release.yml
-- **NEXT** - Milestones and Release Candidate for Next Release (also Next version snapshot prior to Milestone) - https://github.com/apache/grails-core/actions/workflows/forge-deploy-next.yml
-- **SNAPSHOT** - current or next version snapshot - https://github.com/apache/grails-core/actions/workflows/forge-deploy-snapshot.yml
-- **PREV** - previous release version - https://github.com/apache/grails-core/actions/workflows/forge-deploy-prev.yml
-- **PREV-SNAPSHOT** - previous version snapshot - https://github.com/apache/grails-core/actions/workflows/forge-deploy-prev-snapshot.yml
+GitHub registers `workflow_dispatch` inputs from the **default branch**. The new `next-snapshot` and `older` choices appear in that UI only after this change is merged up from `7.0.x` through `7.1.x` / `7.2.x` onto the default line. Until then, dispatch from a maintenance branch that already contains the updated workflow file, or package and upload locally as below.
 
-Use the action whose name matches the slot you want to deploy to.\
-In the **“Run workflow/Use workflow from”** dropdown, choose the release tag you just created.
+| Slot | Host | Typical branch |
+| --- | --- | --- |
+| `latest` | `latest.grails.org` | current release line, for example `7.2.x` |
+| `snapshot` | `snapshot.grails.org` | current snapshot line, for example `8.0.x` |
+| `next` | `next.grails.org` | milestone / RC line |
+| `next-snapshot` | `next-snapshot.grails.org` | next snapshot line, currently `8.0.0-SNAPSHOT` from `8.0.x` |
+| `prev` | `prev.grails.org` | previous release line |
+| `prev-snapshot` | `prev-snapshot.grails.org` | previous snapshot line |
+| `older` | `older.grails.org` | older release, currently `7.0.6` from `7.0.x` |
+
+Do not select a historical git tag in **Use workflow from**. The AWS workflow file is not on old tags. Snapshot slots can deploy from the maintenance branch.
+
+A tagged release that must match an exact tag is packaged locally, then uploaded to Elastic Beanstalk. From a checkout of that tag, copy `grails-forge/grails-forge-web-netty/aws/` from the matching maintenance branch, then from `grails-forge` run:
+
+```bash
+./gradlew grails-forge-web-netty:awsElasticBeanstalk
+```
+
+The bundle is `grails-forge-web-netty/build/distributions/grails-forge-web-netty-aws.zip`. See [AWS Elastic Beanstalk Deployment Runbook](grails-forge/docs/aws-elastic-beanstalk.md).
 
 (The `release` job in the `Release` workflow includes a step titled `🚀 MANUAL - Deploy Grails Forge` that serves as a reminder to perform the deployment described above.)
 
@@ -322,7 +351,7 @@ version from Maven Central.
 
 The last step in the `grails-core` release workflow is to run the `Close Release` step.  This will create a merge branch for the original tag with version number and then open a PR to merge back into the next branch.  You will need to merge this PR into the branch after correcting any merge conflict.
 
-After this PR is merged, deploy the new SNAPSHOT to Forge via: https://github.com/apache/grails-core/actions/workflows/forge-deploy-snapshot.yml
+After this PR is merged, deploy the new SNAPSHOT to Forge via https://github.com/apache/grails-core/actions/workflows/forge-deploy-aws.yml (Use workflow from the snapshot branch, slot `snapshot`).
 
 ### Update the `grails-static-website`
 

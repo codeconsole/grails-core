@@ -51,6 +51,8 @@ export GRADLE_OPTS="-Xms2G -Xmx5G"
 8. **No internal APIs in docs** - Only document public APIs; never reference internal or package-private classes and methods in user-facing documentation
 9. **Test via public APIs** - Tests must exercise behavior through the same APIs an end user calls; never invoke internal implementations, package-private methods, or bypass the public surface directly
 10. **Always review and extend tests** - Review existing unit and functional tests before making changes; every code change must include new or enhanced tests that cover the affected behavior
+11. **The BOM must manage the latest version** - `validateDependencyVersions` enforces that the BOM (`dependencies.gradle`) manages a version `>=` every transitively-resolved version. When it fails, **bump the version in `dependencies.gradle`** so the BOM wins — never silence it with `allowedBomOverrides` or an exclusion unless there is an explicit, documented conflict or an agreed-upon workaround. See [Dependency Management](#dependency-management).
+12. **GitHub Actions must use ASF-approved pins** - Every third-party action SHA must appear in the ASF allowlist. See [GitHub Actions](#github-actions).
 
 ## Available Skills
 
@@ -91,6 +93,15 @@ This repository contains multiple independent Gradle projects:
 | **grails-forge/** | Application generator (like Spring Initializr) | `cd grails-forge && ./gradlew build` |
 
 Each project has its own `settings.gradle` and independent build. When working on a specific project, run Gradle commands from that project's directory.
+
+## Dependency Management
+
+All managed dependency versions live in `dependencies.gradle` (the single source of truth for the BOM projects). The `validateDependencyVersions` task — run automatically in CI — enforces the rules below.
+
+- **The BOM must manage the latest (winning) version.** Validation fails when a transitive dependency resolves to a version *newer* than the BOM manages. The fix is to **bump the version in `dependencies.gradle`** so the BOM's version is `>=` everything on the classpath and stays authoritative. This is the *purpose* of the check — keeping the BOM ahead of its transitives.
+- **Do not suppress validation to work around a bump.** `allowedBomOverrides` (per-project ext) and dependency exclusions are reserved for an explicit, documented conflict or an agreed-upon workaround — never as a shortcut to silence a version the BOM should simply manage. Comment the reason when you must use one.
+- **A dependency managed in more than one BOM must use the *same* version everywhere.** Versions appear in `gradleBomDependencyVersions` (build tooling / `grails-gradle-bom`), `bomDependencyVersions` (`grails-bom`), and per-BOM `customBomVersions` blocks (e.g. `grails-micronaut-bom`). `grails-bom` re-declares the gradle-BOM constraints, and the Micronaut/Hibernate BOMs are consumed via `enforcedPlatform`. Declaring one coordinate (e.g. `org.ow2.asm:asm`) at two different versions across these maps produces irreconcilable strict constraints and breaks `enforcedPlatform` resolution. Pin it once, consistently.
+- **Prefer inheriting from the Spring Boot BOM.** Do not re-pin a coordinate that `spring-boot-dependencies` (3.5.x) already manages unless you are intentionally overriding it to a newer version (e.g. a security fix); note the reason inline.
 
 ## Key Modules
 
@@ -214,6 +225,21 @@ class MyService { }
 | Build docs | `./gradlew :grails-doc:publishGuide -x aggregateGroovydoc` |
 | Debug | `./gradlew bootRun --debug-jvm` |
 
+## GitHub Actions
+
+Apache GitHub Actions policy blocks third-party actions unless they are on the organization allowlist. A workflow that uses an unlisted `uses:` SHA fails at **startup** before any job runs.
+
+The allowlist source of truth is:
+
+https://github.com/apache/infrastructure-actions/blob/main/approved_patterns.yml
+
+Rules:
+
+- Pin every third-party action to a **full commit SHA** that appears in that file, with a trailing `# version` comment.
+- `actions/*`, `github/*`, and `apache/*` are allowed by namespace. Still SHA-pin them for supply-chain consistency.
+- Do not use a newer SHA, tag, or major version until it is on the allowlist. If you need a new pin, open a PR against `apache/infrastructure-actions` (`actions.yml`, not the generated `approved_patterns.yml`).
+- Before adding or bumping a `uses:` line, search `approved_patterns.yml` for that action and copy an approved SHA.
+
 ## Branch Naming (Auto-Labels PRs)
 
 | Prefix | Label |
@@ -261,7 +287,7 @@ Please see the page of the [ASF Security Team](https://www.apache.org/security/)
 ## Resources
 
 - **Grails 7 Guide**: https://grails.apache.org/docs/latest/guide/single.html
-- **Groovy 4 Docs**: https://docs.groovy-lang.org/docs/groovy-4.0.30/html/documentation/
+- **Groovy 4 Docs**: https://groovy-lang.org/documentation.html#all-versions (select latest 4.0.x)
 - **Spock 2.3 Docs**: https://spockframework.org/spock/docs/2.3/all_in_one.html
 - **GORM Docs**: https://grails.apache.org/docs/latest/grails-data/
 - **Issues**: https://github.com/apache/grails-core/issues
