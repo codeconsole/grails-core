@@ -137,6 +137,7 @@ class GroovyPagePluginFunctionalSpec extends GradleSpecification {
             dependencies {
                 implementation localGroovy()
                 runtimeOnly files('generator')
+                runtimeOnly files('theme')
             }
             sourceSets.main.groovy.srcDir('grails-app/controllers')
         """)
@@ -168,6 +169,8 @@ class GroovyPagePluginFunctionalSpec extends GradleSpecification {
             """,
             'src/main/templates/scaffolding/show.gsp': 'show ${className}',
             'src/main/templates/scaffolding/admin/show.gsp': 'admin show ${className}',
+            // a template from a dependency the application only has at runtime
+            'theme/META-INF/templates/scaffolding/list.gsp': 'theme list ${className}',
             'grails-app/views/book/index.gsp': 'handwritten index'
         ]
         sources.each { String path, String content ->
@@ -198,9 +201,11 @@ class GroovyPagePluginFunctionalSpec extends GradleSpecification {
         !new File(staged, 'book/show.gsp').exists()
         !new File(staged, 'event').exists()
 
-        and: 'every template, namespace-specific ones included, is expanded for every scaffolded domain class'
-        pagesOf('java.lang.String') == ['show.gsp': 'show ${className}', 'admin/show.gsp': 'admin show ${className}']
-        pagesOf('java.lang.Integer') == ['show.gsp': 'show ${className}', 'admin/show.gsp': 'admin show ${className}']
+        and: 'every template the application runs with, namespace-specific ones included, is expanded for every scaffolded domain class'
+        pagesOf('java.lang.String') == ['show.gsp': 'show ${className}', 'admin/show.gsp': 'admin show ${className}',
+                                        'list.gsp': 'theme list ${className}']
+        pagesOf('java.lang.Integer') == ['show.gsp': 'show ${className}', 'admin/show.gsp': 'admin show ${className}',
+                                         'list.gsp': 'theme list ${className}']
 
         when: 'a template override is edited'
         new File(projectDir, 'src/main/templates/scaffolding/show.gsp').text = 'edited show ${className}'
@@ -208,6 +213,7 @@ class GroovyPagePluginFunctionalSpec extends GradleSpecification {
 
         then: 'the pages expanded from it are replaced, not added to'
         assertTaskSuccess('stageGroovyPages', rebuild)
-        pagesOf('java.lang.String') == ['show.gsp': 'edited show ${className}', 'admin/show.gsp': 'admin show ${className}']
+        pagesOf('java.lang.String') == ['show.gsp': 'edited show ${className}', 'admin/show.gsp': 'admin show ${className}',
+                                        'list.gsp': 'theme list ${className}']
     }
 }

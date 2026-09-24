@@ -65,9 +65,10 @@ import org.gradle.process.JavaExecSpec
  * task did not see finds nothing and is expanded at runtime as before.</p>
  *
  * <p>This task finds the scaffolded domain classes, by reading the controllers with ASM so that no
- * application class is loaded, and chooses the templates: every one on the classpath, with the
- * application's {@code src/main/templates/scaffolding} winning over a dependency and an earlier
- * dependency over a later one, which is what the resolver finds for an application's controller.
+ * application class is loaded, and chooses the templates: every one on the application's runtime classpath, which the running
+ * application reads them from, with the application's {@code src/main/templates/scaffolding}
+ * winning over a dependency and an earlier dependency over a later one, which is what the resolver
+ * finds for an application's controller.
  * Namespace-specific templates such as {@code admin/show.gsp} are included, because which one a
  * controller uses depends on its namespace, which is only known when it is asked for. The pages
  * themselves are expanded and named by {@code org.apache.grails.scaffolding.ScaffoldedPagesGenerator},
@@ -94,11 +95,6 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
     @PathSensitive(PathSensitivity.RELATIVE)
     abstract ConfigurableFileCollection getClassesDirs()
 
-    /** The classpath the scaffolding templates are read from. */
-    @InputFiles
-    @PathSensitive(PathSensitivity.RELATIVE)
-    abstract ConfigurableFileCollection getTemplateClasspath()
-
     /**
      * Application template overrides, normally the tree of {@code src/main/templates/scaffolding}.
      * A template's path within the tree is its path as the resolver asks for it, so
@@ -110,12 +106,12 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
     abstract ConfigurableFileCollection getTemplateOverrides()
 
     /**
-     * The classpath the pages are expanded on, normally the application's runtime classpath: the
-     * scaffolding library that names them and the Groovy that expands them, as the running
-     * application has them.
+     * The application's runtime classpath. The templates are read from it, as the running
+     * application reads them, and the pages are expanded on it, by the scaffolding library and the
+     * Groovy the application runs with.
      */
     @Classpath
-    abstract ConfigurableFileCollection getGeneratorClasspath()
+    abstract ConfigurableFileCollection getRuntimeClasspath()
 
     /** The Java the pages are expanded with; the build's own when not set. */
     @Nested
@@ -169,7 +165,7 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
                 if (javaLauncher.present) {
                     spec.executable = javaLauncher.get().executablePath.asFile.absolutePath
                 }
-                spec.classpath = generatorClasspath
+                spec.classpath = runtimeClasspath
                 spec.mainClass.set(GENERATOR)
                 spec.args(templatesDir.absolutePath, domainList.absolutePath, outputDir.absolutePath)
             }
@@ -179,7 +175,7 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
     /** Whether the generator is on its classpath; a scaffolding library older than this plugin lacks it. */
     private boolean generatorAvailable() {
         String entry = GENERATOR.replace('.', '/') + '.class'
-        generatorClasspath.files.any { File file ->
+        runtimeClasspath.files.any { File file ->
             if (file.isDirectory()) {
                 return new File(file, entry).isFile()
             }
@@ -197,7 +193,7 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
      */
     private Map<String, byte[]> loadTemplates() {
         Map<String, byte[]> templates = new TreeMap<>()
-        for (File entry : templateClasspath.files) {
+        for (File entry : runtimeClasspath.files) {
             if (entry.isDirectory()) {
                 File dir = new File(entry, TEMPLATE_PATH)
                 if (dir.isDirectory()) {

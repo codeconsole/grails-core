@@ -146,13 +146,17 @@ class GenerateScaffoldedViewsTaskSpec extends Specification {
         project.tasks.register('generateScaffoldedViews', GenerateScaffoldedViewsTask) {
             GenerateScaffoldedViewsTask it ->
                 it.classesDirs.from(classesDir)
-                it.templateClasspath.from(templateJar)
+                it.runtimeClasspath.from(templateJar)
+                it.runtimeClasspath.from(testClasspath())
                 it.templateOverrides.from(overrides)
-                // this test's own classpath, which carries the stand-in generator
-                it.generatorClasspath.from(System.getProperty('java.class.path').split(File.pathSeparator))
                 it.outputDirectory.set(new File(projectDir, 'out'))
         }
         project.tasks.named('generateScaffoldedViews', GenerateScaffoldedViewsTask).get()
+    }
+
+    /** This test's own classpath, which carries the stand-in generator. */
+    private static List<String> testClasspath() {
+        System.getProperty('java.class.path').split(File.pathSeparator).toList()
     }
 
     /** What the generator was handed: each domain class and template path, with the template. */
@@ -299,7 +303,7 @@ class GenerateScaffoldedViewsTaskSpec extends Specification {
             new File(resources, 'META-INF/templates/scaffolding/admin/show.gsp').text = 'directory admin show'
             writeController('UserController', 'User')
             def task = task()
-            task.templateClasspath.setFrom(resources)
+            task.runtimeClasspath.setFrom([resources] + testClasspath())
 
         when:
             task.generate()
@@ -315,7 +319,7 @@ class GenerateScaffoldedViewsTaskSpec extends Specification {
             writeTemplateJar(templateJar, [show: 'show'])
             writeController('UserController', 'User')
             def task = task()
-            task.templateClasspath.from(later)
+            task.runtimeClasspath.from(later)
 
         when:
             task.generate()
@@ -344,7 +348,7 @@ class GenerateScaffoldedViewsTaskSpec extends Specification {
         given:
             writeController('UserController', 'User')
             def task = task()
-            task.generatorClasspath.setFrom([])
+            task.runtimeClasspath.setFrom(templateJar)
 
         when:
             task.generate()
