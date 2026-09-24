@@ -32,6 +32,7 @@ import grails.util.GrailsWebMockUtil
 import grails.web.mapping.LinkGenerator
 import grails.web.mapping.mvc.RedirectEventListener
 import org.grails.core.artefact.ControllerArtefactHandler
+import org.grails.web.servlet.mvc.GrailsWebRequest
 import org.grails.web.servlet.mvc.ParameterCreationListener
 import org.grails.web.util.GrailsApplicationAttributes
 
@@ -47,8 +48,8 @@ class ControllerRedirectSpec extends Specification {
         getServerBaseURL() >> 'http://localhost:8080'
         link(_) >> { Map arguments ->
             linkArguments << arguments
-            namespacesInScope << RequestContextHolder.currentRequestAttributes().currentRequest
-                    .getAttribute(GrailsApplicationAttributes.CONTROLLER_NAMESPACE_ATTRIBUTE)
+            // Read the namespace as link generation does
+            namespacesInScope << GrailsWebRequest.lookup().controllerNamespace
             "/${arguments.action}".toString()
         }
     }
@@ -174,6 +175,19 @@ class ControllerRedirectSpec extends Specification {
         namespacesInScope[0] == 'reporting'
     }
 
+    void 'a redirect from a controller declaring its namespace as a GString is resolved from that namespace'() {
+        given: 'a controller class the application does not register, declaring its namespace as a GString'
+        expect:
+        GStringNamespacedRedirectController.namespace instanceof GString
+
+        when:
+        bindRequest()
+        new GStringNamespacedRedirectController().redirectToIndex()
+
+        then: 'the link is resolved from that namespace'
+        namespacesInScope[0] == 'reporting'
+    }
+
     void 'an explicit namespace argument is never overwritten by the declared one'() {
         given:
         def namespaced = new NamespacedRedirectController()
@@ -266,6 +280,15 @@ class NamespacedRedirectController implements Controller {
 class UnregisteredRedirectController implements Controller {
 
     static namespace = 'reporting'
+
+    void redirectToIndex() {
+        redirect(action: 'index')
+    }
+}
+
+class GStringNamespacedRedirectController implements Controller {
+
+    static namespace = "${'report'}ing"
 
     void redirectToIndex() {
         redirect(action: 'index')

@@ -236,7 +236,7 @@ trait Controller implements ResponseRenderer, ResponseRedirector, RequestForward
 
         GrailsWebRequest webRequest = (GrailsWebRequest) RequestContextHolder.currentRequestAttributes()
         boolean resolveFromIssuingNamespace = false
-        Object issuingNamespace = null
+        String issuingNamespace = null
 
         if (this instanceof GroovyObject) {
             GroovyObject controller = (GroovyObject) this
@@ -291,7 +291,7 @@ trait Controller implements ResponseRenderer, ResponseRedirector, RequestForward
      * @param controllerClass The class of the controller issuing the redirect
      * @return The declared namespace, or null if the class declares none
      */
-    private Object resolveNamespace(Class<?> controllerClass) {
+    private String resolveNamespace(Class<?> controllerClass) {
         GrailsApplication application = getGrailsApplication()
         if (application != null) {
             GrailsClass controllerArtefact = application.getArtefact(ControllerArtefactHandler.TYPE, controllerClass.getName())
@@ -300,8 +300,8 @@ trait Controller implements ResponseRenderer, ResponseRedirector, RequestForward
             }
         }
         // A controller that was never registered as an artefact - one constructed directly, as a unit test may do -
-        // has no GrailsControllerClass to read, so fall back to the class itself.
-        GrailsClassUtils.getStaticFieldValue(controllerClass, GrailsControllerClass.NAMESPACE_PROPERTY)
+        // has no GrailsControllerClass to read, so fall back to the class itself, whose field may hold a GString.
+        GrailsClassUtils.getStaticFieldValue(controllerClass, GrailsControllerClass.NAMESPACE_PROPERTY)?.toString()
     }
 
     /**
