@@ -406,7 +406,7 @@ class DefaultLinkGenerator implements LinkGenerator, PluginManagerAware {
             return null
         }
 
-        ControllerIndex index = getControllerIndex()
+        ControllerIndex index = currentControllerIndex()
         Set<ControllerRef> candidates = index.named(controller)
         if (candidates.isEmpty()) {
             // No registered controller has the name, so nothing is nearer than the namespace the link is
@@ -443,7 +443,7 @@ class DefaultLinkGenerator implements LinkGenerator, PluginManagerAware {
      * tests, a development-mode reload, or a namespace edit), so comparing the array identity rebuilds the
      * index on any such change while staying O(1) on the common path where nothing changed.
      */
-    private ControllerIndex getControllerIndex() {
+    private ControllerIndex currentControllerIndex() {
         GrailsApplication application = grailsApplication
         if (application == null) {
             return ControllerIndex.EMPTY
@@ -523,7 +523,7 @@ class DefaultLinkGenerator implements LinkGenerator, PluginManagerAware {
      */
     private ResourceTarget resolveResourceTarget(PersistentEntity entity, Map attrs, String action) {
         String derivedName = entity.getDecapitalizedName()
-        ControllerIndex index = getControllerIndex()
+        ControllerIndex index = currentControllerIndex()
         Set<ControllerRef> serving = servingControllers(index, entity, derivedName, action)
         if (serving.isEmpty()) {
             return new ResourceTarget(derivedName, null, false)
@@ -936,8 +936,8 @@ class DefaultLinkGenerator implements LinkGenerator, PluginManagerAware {
          * @return the controllers with the given logical name, in every namespace
          */
         Set<ControllerRef> named(String name) {
-            Set<ControllerRef> named = byName.get(name)
-            named != null ? named : Collections.<ControllerRef>emptySet()
+            Set<ControllerRef> refs = byName.get(name)
+            refs != null ? refs : Collections.<ControllerRef>emptySet()
         }
 
         /**
