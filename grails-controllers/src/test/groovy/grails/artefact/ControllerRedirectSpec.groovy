@@ -176,11 +176,10 @@ class ControllerRedirectSpec extends Specification {
     }
 
     void 'a redirect from a controller declaring its namespace as a GString is resolved from that namespace'() {
-        given: 'a controller class the application does not register, declaring its namespace as a GString'
-        expect:
+        expect: 'a controller class the application does not register, declaring its namespace as a GString'
         GStringNamespacedRedirectController.namespace instanceof GString
 
-        when:
+        when: 'it redirects without naming a namespace'
         bindRequest()
         new GStringNamespacedRedirectController().redirectToIndex()
 

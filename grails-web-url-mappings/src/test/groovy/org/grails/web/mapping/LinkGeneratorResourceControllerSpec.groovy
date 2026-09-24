@@ -150,7 +150,7 @@ class LinkGeneratorResourceControllerSpec extends Specification {
         generator.link(resource: new Gadget(id: 4), action: 'show')
 
         then: 'the fallback is reported once, as a warning naming the controllers that tied'
-        def reports = warningsAbout(logCapture, "[${Gadget.name}]")
+        def reports = warningsAbout(logCapture, "[$Gadget.name]")
         reports.size() == 1
         reports[0].contains('[adminGadgets, gadgets]')
         reports[0].contains('[gadget]')
@@ -160,7 +160,7 @@ class LinkGeneratorResourceControllerSpec extends Specification {
         generator.link(resource: new Gadget(id: 5), action: 'show')
 
         then: 'it is reported again'
-        warningsAbout(logCapture, "[${Gadget.name}]").size() == 2
+        warningsAbout(logCapture, "[$Gadget.name]").size() == 2
 
         cleanup:
         logCapture.close()
@@ -177,7 +177,7 @@ class LinkGeneratorResourceControllerSpec extends Specification {
         generator.link(resource: new Gadget(id: 4), action: 'show')
 
         then: 'it is reported against the reloaded controllers too, without resetting the cache'
-        warningsAbout(logCapture, "[${Gadget.name}]").size() == 2
+        warningsAbout(logCapture, "[$Gadget.name]").size() == 2
 
         cleanup:
         logCapture.close()
@@ -193,7 +193,7 @@ class LinkGeneratorResourceControllerSpec extends Specification {
 
         then: 'the named controller is targeted and no ambiguity is reported'
         link == '/bar/gadgets/show/3'
-        warningsAbout(logCapture, "[${Gadget.name}]").isEmpty()
+        warningsAbout(logCapture, "[$Gadget.name]").isEmpty()
 
         cleanup:
         logCapture.close()
@@ -211,7 +211,7 @@ class LinkGeneratorResourceControllerSpec extends Specification {
     }
 
     def "an explicit namespace no controller serving the domain class is in is not reported"() {
-        given:
+        given: 'GadgetsController and AdminGadgetsController both declare Gadget, neither in the reports namespace'
         def generator = createGenerator()
         def logCapture = new LogCapture(DefaultLinkGenerator)
 
@@ -220,7 +220,7 @@ class LinkGeneratorResourceControllerSpec extends Specification {
 
         then: 'the namespace is honoured without a warning'
         link == '/bar/reports/gadget/show/6'
-        warningsAbout(logCapture, "[${Gadget.name}]").isEmpty()
+        warningsAbout(logCapture, "[$Gadget.name]").isEmpty()
 
         cleanup:
         logCapture.close()
