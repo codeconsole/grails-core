@@ -58,9 +58,9 @@ import org.grails.web.config.http.GrailsFilters;
  * receives the headers.</p>
  *
  * <p>Filters ordered ahead of {@link GrailsFilters#FIRST} run outside this one. Spring
- * Boot's forwarded-header, character-encoding and error-page filters are such filters,
- * as is a Spring Security chain whose {@code spring.security.filter.order} is set below
- * {@link GrailsFilters#FIRST}. In that arrangement Spring Security's writers run after the
+ * Boot's forwarded-header filter and, in a WAR deployment, its error-page filter are such
+ * filters, as is a Spring Security chain whose {@code spring.security.filter.order} is set
+ * below {@link GrailsFilters#FIRST}. In that arrangement Spring Security's writers run after the
  * Grails defaults have been written, and those of them that only fill absent headers
  * (every writer but {@code XFrameOptionsHeaderWriter}) leave the Grails value in place;
  * disable the corresponding {@code grails.security.headers.<header>} to let such a writer

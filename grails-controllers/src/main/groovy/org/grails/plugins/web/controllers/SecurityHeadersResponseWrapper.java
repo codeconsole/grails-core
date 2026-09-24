@@ -20,6 +20,9 @@ package org.grails.plugins.web.controllers;
 
 import java.io.IOException;
 import java.io.PrintWriter;
+import java.nio.CharBuffer;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 
 import jakarta.servlet.ServletOutputStream;
 import jakarta.servlet.WriteListener;
@@ -40,11 +43,15 @@ import jakarta.servlet.http.HttpServletResponseWrapper;
  * controller, an interceptor, Spring Security's header writers, another filter) set
  * its own value first; the callback only fills what is still missing.</p>
  *
- * <p>Body size is counted in the units written (bytes on the output stream, characters
- * on the writer), the same approximation Spring Security's
- * {@code OnCommittedResponseWrapper} makes. A multi-byte character encoding can
- * therefore reach the container buffer a little before the count does; the callback
- * still runs no later than the chain returning.</p>
+ * <p>Body size is counted in bytes, the unit of both the container's buffer and
+ * {@code Content-Length}. Output stream writes count as written. Writer output counts as
+ * its encoded length in the response's character encoding: exactly for UTF-8 and
+ * single-byte encodings, and at the encoding's maximum bytes per character for any
+ * other, so the count never falls behind the bytes the container holds. Spring Security's
+ * {@code OnCommittedResponseWrapper} counts writer output in characters instead, so for a
+ * multi-byte body large enough to fill the buffer this callback can run before Spring
+ * Security's, and a header Spring Security only writes when it is absent then keeps the
+ * value written here.</p>
  */
 final class SecurityHeadersResponseWrapper extends HttpServletResponseWrapper {
 
@@ -191,7 +198,8 @@ final class SecurityHeadersResponseWrapper extends HttpServletResponseWrapper {
 
     @Override
     public PrintWriter getWriter() throws IOException {
-        return new CommitAwareWriter(super.getWriter());
+        PrintWriter writer = super.getWriter();
+        return new CommitAwareWriter(writer, getCharacterEncoding());
     }
 
     private void trackContentLengthHeader(String name, String value) {
@@ -291,25 +299,34 @@ final class SecurityHeadersResponseWrapper extends HttpServletResponseWrapper {
 
     private final class CommitAwareWriter extends PrintWriter {
 
-        CommitAwareWriter(PrintWriter delegate) {
+        private final boolean utf8;
+
+        private final float maxBytesPerChar;
+
+        CommitAwareWriter(PrintWriter delegate, String characterEncoding) {
             super(delegate, false);
+            Charset charset = encodingCharset(characterEncoding);
+            this.utf8 = StandardCharsets.UTF_8.equals(charset);
+            this.maxBytesPerChar = this.utf8 ? 0 : charset.newEncoder().maxBytesPerChar();
         }
 
         @Override
         public void write(int c) {
-            trackWritten(1);
+            if (!fired) {
+                trackWritten(this.utf8 ? utf8Length((char) c) : (long) Math.ceil(this.maxBytesPerChar));
+            }
             super.write(c);
         }
 
         @Override
         public void write(char[] buf, int off, int len) {
-            trackWritten(len);
+            trackChars(CharBuffer.wrap(buf), off, len);
             super.write(buf, off, len);
         }
 
         @Override
         public void write(String s, int off, int len) {
-            trackWritten(len);
+            trackChars(s, off, len);
             super.write(s, off, len);
         }
 
@@ -320,7 +337,8 @@ final class SecurityHeadersResponseWrapper extends HttpServletResponseWrapper {
          */
         @Override
         public void println() {
-            trackWritten(System.lineSeparator().length());
+            String separator = System.lineSeparator();
+            trackChars(separator, 0, separator.length());
             super.println();
         }
 
@@ -335,5 +353,50 @@ final class SecurityHeadersResponseWrapper extends HttpServletResponseWrapper {
             beforeCommit();
             super.close();
         }
+
+        private void trackChars(CharSequence chars, int off, int len) {
+            if (fired) {
+                return;
+            }
+            if (!this.utf8) {
+                trackWritten((long) Math.ceil(len * (double) this.maxBytesPerChar));
+                return;
+            }
+            long bytes = 0;
+            for (int i = off; i < off + len; i++) {
+                bytes += utf8Length(chars.charAt(i));
+            }
+            trackWritten(bytes);
+        }
+    }
+
+    private static int utf8Length(char c) {
+        if (c < 0x80) {
+            return 1;
+        }
+        // Each half of a surrogate pair counts two bytes: four for the pair.
+        if (c < 0x800 || Character.isSurrogate(c)) {
+            return 2;
+        }
+        return 3;
+    }
+
+    /**
+     * The charset the container encodes writer output with. An encoding the JVM cannot
+     * encode to is counted as UTF-8; the container fails such a writer on its own.
+     */
+    private static Charset encodingCharset(String characterEncoding) {
+        if (characterEncoding != null) {
+            try {
+                Charset charset = Charset.forName(characterEncoding);
+                if (charset.canEncode()) {
+                    return charset;
+                }
+            }
+            catch (IllegalArgumentException unsupported) {
+                // Fall through to UTF-8.
+            }
+        }
+        return StandardCharsets.UTF_8;
     }
 }

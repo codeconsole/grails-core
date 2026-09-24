@@ -19,6 +19,7 @@
 package org.grails.plugins.web.controllers;
 
 import java.io.IOException;
+import java.net.URI;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -32,6 +33,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.server.ServletServerHttpRequest;
 import org.springframework.util.StringUtils;
 import org.springframework.web.filter.OncePerRequestFilter;
@@ -68,7 +70,7 @@ public class GrailsSecurityHeadersFilter extends OncePerRequestFilter {
      * Request headers whose presence indicates the request was relayed by a reverse
      * proxy or load balancer.
      */
-    public static final List<String> REVERSE_PROXY_REQUEST_HEADERS = List.of(
+    static final List<String> REVERSE_PROXY_REQUEST_HEADERS = List.of(
             "Forwarded", "X-Forwarded-For", "X-Forwarded-Proto", "X-Forwarded-Host", "Via", "X-Real-IP");
 
     private static final Logger logger = LoggerFactory.getLogger(GrailsSecurityHeadersFilter.class);
@@ -182,10 +184,13 @@ public class GrailsSecurityHeadersFilter extends OncePerRequestFilter {
         if (request.isSecure()) {
             return true;
         }
-        ServletServerHttpRequest httpRequest = new ServletServerHttpRequest(request);
+        HttpHeaders headers = new ServletServerHttpRequest(request).getHeaders();
         try {
-            String scheme = ForwardedHeaderUtils.adaptFromForwardedHeaders(httpRequest.getURI(), httpRequest.getHeaders())
-                    .build().getScheme();
+            // Only the scheme is needed, so the forwarded headers are applied to the request's
+            // scheme alone rather than to its URL: java.net.URI rejects request paths the
+            // container may accept, such as those allowed through Tomcat's relaxedPathChars.
+            URI base = URI.create(request.getScheme() + "://localhost");
+            String scheme = ForwardedHeaderUtils.adaptFromForwardedHeaders(base, headers).build().getScheme();
             return HTTPS.equalsIgnoreCase(scheme);
         }
         catch (IllegalArgumentException malformedForwardedHeaders) {

@@ -785,6 +785,66 @@ class GrailsSecurityHeadersAutoConfigurationSpec extends Specification {
     }
 
     @Unroll
+    void 'writer output fills the response buffer in encoded #encoding bytes: #description'() {
+        given: 'the container buffer is sized in bytes, so multi-byte text fills it before the character count does'
+        def request = new MockHttpServletRequest('GET', '/')
+        def response = new MockHttpServletResponse()
+        response.characterEncoding = encoding
+        response.bufferSize = bufferBytes
+        boolean headersPresentBeforeLastWrite = true
+        boolean headersPresentAfterLastWrite = false
+        FilterChain downstream = { downstreamRequest, downstreamResponse ->
+            def writer = downstreamResponse.writer
+            write(writer, head)
+            headersPresentBeforeLastWrite = DEFAULT_HEADER_NAMES.any { response.getHeader(it) != null }
+            write(writer, last)
+            headersPresentAfterLastWrite = DEFAULT_HEADER_NAMES.every { response.getHeader(it) != null }
+        } as FilterChain
+
+        when:
+        new GrailsSecurityHeadersFilter(new GrailsSecurityHeadersProperties()).doFilter(request, response, downstream)
+
+        then:
+        !headersPresentBeforeLastWrite
+        headersPresentAfterLastWrite
+
+        where:
+        encoding     | head   | last | bufferBytes | description                                   | write
+        'UTF-8'      | '日日日' | '日'  | 12          | 'three-byte characters through write(String)' | { PrintWriter w, String t -> w.write(t) }
+        'UTF-8'      | '日日日' | '日'  | 12          | 'three-byte characters through write(char[])' | { PrintWriter w, String t -> w.write(t.toCharArray()) }
+        'UTF-8'      | '日日日' | '日'  | 12          | 'three-byte characters through write(int)'    | { PrintWriter w, String t -> t.each { w.write((int) it.charAt(0)) } }
+        'UTF-8'      | 'жжж'  | 'ж'  | 8           | 'two-byte characters'                         | { PrintWriter w, String t -> w.write(t) }
+        'UTF-8'      | '😀'   | '😀' | 8           | 'surrogate pairs, four bytes each'            | { PrintWriter w, String t -> w.write(t) }
+        'UTF-8'      | 'abc'  | 'd'  | 4           | 'ASCII, one byte per character'               | { PrintWriter w, String t -> w.write(t) }
+        'ISO-8859-1' | 'éé'   | 'é'  | 3           | 'a single-byte encoding'                      | { PrintWriter w, String t -> w.write(t) }
+        'Shift_JIS'  | '日'    | '本'  | 4           | 'the maximum bytes per character of another encoding' | { PrintWriter w, String t -> w.write(t) }
+    }
+
+    void 'multi-byte writer output reaches a declared Content-Length in bytes'() {
+        given:
+        def request = new MockHttpServletRequest('GET', '/')
+        def response = new MockHttpServletResponse()
+        response.characterEncoding = 'UTF-8'
+        boolean headersPresentBeforeLastByte = true
+        boolean headersPresentAfterLastByte = false
+        FilterChain downstream = { downstreamRequest, downstreamResponse ->
+            downstreamResponse.setContentLength(6)
+            def writer = downstreamResponse.writer
+            writer.write('日')
+            headersPresentBeforeLastByte = DEFAULT_HEADER_NAMES.any { response.getHeader(it) != null }
+            writer.write('本')
+            headersPresentAfterLastByte = DEFAULT_HEADER_NAMES.every { response.getHeader(it) != null }
+        } as FilterChain
+
+        when:
+        new GrailsSecurityHeadersFilter(new GrailsSecurityHeadersProperties()).doFilter(request, response, downstream)
+
+        then:
+        !headersPresentBeforeLastByte
+        headersPresentAfterLastByte
+    }
+
+    @Unroll
     void 'HSTS honors the forwarded scheme behind a TLS-terminating proxy: #headerName=#headerValue -> #expected'() {
         given:
         def request = new MockHttpServletRequest('GET', '/')
@@ -832,6 +892,51 @@ class GrailsSecurityHeadersAutoConfigurationSpec extends Specification {
         then:
         response.getHeader('Strict-Transport-Security') == null
         response.getHeader('X-Content-Type-Options') == 'nosniff'
+    }
+
+    @Unroll
+    void 'HSTS resolves the forwarded scheme for a request path java.net.URI rejects: #path (#forwarded)'() {
+        given: 'Tomcat accepts such paths when relaxedPathChars allows them'
+        def request = new MockHttpServletRequest('GET', path)
+        request.secure = false
+        if (forwarded) {
+            request.addHeader('X-Forwarded-Proto', 'https')
+        }
+        def response = new MockHttpServletResponse()
+        def properties = new GrailsSecurityHeadersProperties()
+        properties.hsts.enabled = true
+
+        when:
+        new GrailsSecurityHeadersFilter(properties).doFilter(request, response, new MockFilterChain())
+
+        then:
+        (response.getHeader('Strict-Transport-Security') != null) == forwarded
+        response.getHeader('X-Content-Type-Options') == 'nosniff'
+
+        where:
+        path    | forwarded
+        '/p|x'  | true
+        '/p{x}' | true
+        '/p[x]' | true
+        '/p^x'  | true
+        '/p`x'  | true
+        '/p|x'  | false
+    }
+
+    void 'HSTS is sent when the container reports an https scheme on a connection it does not mark secure'() {
+        given: 'a connector configured with scheme="https" but not secure, as some proxy setups do'
+        def request = new MockHttpServletRequest('GET', '/')
+        request.secure = false
+        request.scheme = 'https'
+        def response = new MockHttpServletResponse()
+        def properties = new GrailsSecurityHeadersProperties()
+        properties.hsts.enabled = true
+
+        when:
+        new GrailsSecurityHeadersFilter(properties).doFilter(request, response, new MockFilterChain())
+
+        then:
+        response.getHeader('Strict-Transport-Security') == 'max-age=31536000'
     }
 
     void 'HSTS is not sent on an insecure request with no forwarded scheme'() {
@@ -887,7 +992,7 @@ class GrailsSecurityHeadersAutoConfigurationSpec extends Specification {
         response.getHeader('X-XSS-Protection') == null
 
         where:
-        headerName << GrailsSecurityHeadersFilter.REVERSE_PROXY_REQUEST_HEADERS
+        headerName << ['Forwarded', 'X-Forwarded-For', 'X-Forwarded-Proto', 'X-Forwarded-Host', 'Via', 'X-Real-IP']
     }
 
     void 'defaults=always applies the defaults even when a reverse proxy is detected'() {

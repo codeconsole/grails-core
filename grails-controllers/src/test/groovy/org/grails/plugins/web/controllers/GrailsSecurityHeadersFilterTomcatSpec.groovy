@@ -22,7 +22,7 @@ package org.grails.plugins.web.controllers
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
-import java.nio.file.Files
+import java.nio.file.Path
 
 import jakarta.servlet.DispatcherType
 import jakarta.servlet.FilterChain
@@ -41,19 +41,20 @@ import org.apache.tomcat.util.descriptor.web.FilterMap
 import spock.lang.AutoCleanup
 import spock.lang.Shared
 import spock.lang.Specification
+import spock.lang.TempDir
 import spock.lang.Unroll
 
 /**
  * Runs {@link GrailsSecurityHeadersFilter} in front of servlets on embedded Tomcat. The Spring
  * mocks accept header writes after the response has committed, so only a real container can
  * show that the headers are on the wire for every commit path: the body outgrowing the
- * response buffer, a declared Content-Length reached through println, redirects, errors,
- * and a filter that serves the response itself without continuing the chain.
+ * response buffer (including multi-byte text, which fills the byte-sized buffer before the
+ * character count does), a declared Content-Length reached through println, redirects,
+ * errors, and a filter that serves the response itself without continuing the chain.
  */
 class GrailsSecurityHeadersFilterTomcatSpec extends Specification {
 
-    private static final List<String> DEFAULT_HEADER_NAMES =
-            ['X-Content-Type-Options', 'X-Frame-Options', 'Referrer-Policy', 'X-XSS-Protection']
+    private static final String DEFAULT_REFERRER_POLICY = 'strict-origin-when-cross-origin'
 
     private static final int LINE_SEPARATOR_LENGTH = System.lineSeparator().length()
 
@@ -65,14 +66,22 @@ class GrailsSecurityHeadersFilterTomcatSpec extends Specification {
     int port
 
     @Shared
+    @TempDir
+    Path baseDir
+
+    @Shared
+    @TempDir
+    Path docBase
+
+    @Shared
     HttpClient client = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER).build()
 
     void setupSpec() {
         tomcat = new Tomcat()
-        tomcat.baseDir = Files.createTempDirectory('security-headers-tomcat').toString()
+        tomcat.baseDir = baseDir.toString()
         tomcat.setPort(0)
         tomcat.connector
-        Context context = tomcat.addContext('', Files.createTempDirectory('security-headers-docbase').toString())
+        Context context = tomcat.addContext('', docBase.toString())
 
         Tomcat.addServlet(context, 'smallStream', new BodyServlet(100, false))
         context.addServletMappingDecoded('/small-stream', 'smallStream')
@@ -80,6 +89,8 @@ class GrailsSecurityHeadersFilterTomcatSpec extends Specification {
         context.addServletMappingDecoded('/large-stream', 'largeStream')
         Tomcat.addServlet(context, 'largeWriter', new BodyServlet(50 * 1024, true))
         context.addServletMappingDecoded('/large-writer', 'largeWriter')
+        Tomcat.addServlet(context, 'multiByteWriter', new MultiByteWriterServlet())
+        context.addServletMappingDecoded('/multi-byte-writer', 'multiByteWriter')
         Tomcat.addServlet(context, 'println', new PrintlnServlet())
         context.addServletMappingDecoded('/println', 'println')
         Tomcat.addServlet(context, 'redirect', new RedirectServlet())
@@ -121,21 +132,23 @@ class GrailsSecurityHeadersFilterTomcatSpec extends Specification {
 
         then:
         response.statusCode() == status
-        DEFAULT_HEADER_NAMES.every { response.headers().firstValue(it).present }
-        response.headers().firstValue('X-Content-Type-Options').get() == 'nosniff'
-        response.headers().firstValue('X-Frame-Options').get() == 'SAMEORIGIN'
+        response.headers().firstValue('X-Content-Type-Options').orElse(null) == 'nosniff'
+        response.headers().firstValue('X-Frame-Options').orElse(null) == 'SAMEORIGIN'
+        response.headers().firstValue('Referrer-Policy').orElse(null) == referrerPolicy
+        response.headers().firstValue('X-XSS-Protection').orElse(null) == '0'
         bodyLength == null || response.body().length == bodyLength
 
         where:
-        path            | description                                             | status | bodyLength
-        '/small-stream' | 'body below the response buffer'                        | 200    | 100
-        '/large-stream' | 'output stream body outgrowing the buffer, no flush'    | 200    | 50 * 1024
-        '/large-writer' | 'writer body outgrowing the buffer, no flush'           | 200    | 50 * 1024
-        '/println'      | 'Content-Length reached by println'                     | 200    | 2 + LINE_SEPARATOR_LENGTH
-        '/redirect'     | 'redirect committed inside the chain'                   | 302    | null
-        '/error'        | 'sendError committed inside the chain'                  | 404    | null
-        '/reset'        | 'reset after the buffer filled but before it flushed'    | 500    | 5
-        '/assets/a.js'  | 'served by an inner filter that never continues the chain' | 200 | 14
+        path                 | description                                                     | status | bodyLength                | referrerPolicy
+        '/small-stream'      | 'body below the response buffer'                                | 200    | 100                       | DEFAULT_REFERRER_POLICY
+        '/large-stream'      | 'output stream body outgrowing the buffer, no flush'            | 200    | 50 * 1024                 | DEFAULT_REFERRER_POLICY
+        '/large-writer'      | 'writer body outgrowing the buffer, no flush'                   | 200    | 50 * 1024                 | DEFAULT_REFERRER_POLICY
+        '/multi-byte-writer' | 'three-byte UTF-8 text filling an enlarged buffer, no flush'    | 200    | 60_000                    | DEFAULT_REFERRER_POLICY
+        '/println'           | 'Content-Length reached by println'                             | 200    | 2 + LINE_SEPARATOR_LENGTH | 'no-referrer'
+        '/redirect'          | 'redirect committed inside the chain'                           | 302    | null                      | DEFAULT_REFERRER_POLICY
+        '/error'             | 'sendError committed inside the chain'                          | 404    | null                      | DEFAULT_REFERRER_POLICY
+        '/reset'             | 'reset after the buffer filled but before it flushed'           | 500    | 5                         | DEFAULT_REFERRER_POLICY
+        '/assets/a.js'       | 'served by an inner filter that never continues the chain'      | 200    | 14                        | DEFAULT_REFERRER_POLICY
     }
 
     void 'a header set by the servlet wins over the Grails default'() {
@@ -165,6 +178,21 @@ class GrailsSecurityHeadersFilterTomcatSpec extends Specification {
             else {
                 response.outputStream.write(('x' * size).bytes)
             }
+        }
+    }
+
+    /**
+     * The response buffer is sized in bytes, so three-byte characters fill it, and Tomcat
+     * commits it, at a third of the character count. At Tomcat's default buffer size this
+     * is masked by how it batches character conversion; an enlarged buffer exposes it.
+     */
+    private static class MultiByteWriterServlet extends HttpServlet {
+
+        @Override
+        protected void doGet(HttpServletRequest request, HttpServletResponse response) {
+            response.bufferSize = 32 * 1024
+            response.contentType = 'text/plain;charset=UTF-8'
+            400.times { response.writer.write('日' * 50) }
         }
     }
 

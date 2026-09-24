@@ -497,13 +497,6 @@ Spring Security is moving toward the fluent `HttpSecurity` configuration API for
 If your application references `DEFAULT_FILTER_ORDER` for custom filter positioning, replace it with the concrete value `-100` (computed as `OrderedFilter.REQUEST_WRAPPER_FILTER_MAX_ORDER - 100`).
 Longer term, consider migrating to the fluent `HttpSecurity` API for filter chain configuration.
 
-Grails 8 also registers a servlet filter that sends default browser hardening headers (`X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, `X-XSS-Protection`) for servlet web applications.
-The filter is registered at `GrailsFilters.FIRST`, ahead of the other Grails filters, and writes its headers when the response commits, only if nothing else has set them by then, so values set by your controllers, interceptors, custom filters, or Spring Security header writers at Spring Boot's default `spring.security.filter.order` are preserved.
-If you order the Spring Security chain ahead of `GrailsFilters.FIRST`, its header writers (other than the `X-Frame-Options` writer) find the Grails value already present and leave it; disable the corresponding `grails.security.headers.<header>` in that case.
-Filters ordered ahead of `GrailsFilters.FIRST`, such as Spring Boot's forwarded-header, character-encoding and error-page filters, run outside the Grails filter, so a response one of them serves itself receives no default headers.
-If a reverse proxy in front of the application already sends these headers (for example through nginx's `add_header`), set `grails.security.headers.defaults: auto` so requests that arrive through the proxy (detected from forwarded request headers, `server.forward-headers-strategy`, or an active cloud platform) receive only the headers you configure explicitly, or strip the application's copies at the proxy.
-To disable or customize the Grails defaults, configure `grails.security.headers.*`; see the Security guide's HTTP Security Headers section for the full list and the reverse-proxy guidance.
-
 ==== 14. Spring Dependency Management Plugin Replaced by Gradle Platforms
 
 Grails 8 standardizes on Gradle's native `platform()` dependency management and **no longer applies the `io.spring.dependency-management` plugin**.
@@ -4100,3 +4093,12 @@ them. Name the connection, as in `@Transactional(connection = 'secondary')`, whe
 has to cover its writes.
 
 Applications using a single datasource are unaffected.
+
+==== 73. Default Security Response Headers
+
+Grails 8 registers a servlet filter that sends default browser hardening headers (`X-Content-Type-Options: nosniff`, `X-Frame-Options: SAMEORIGIN`, `Referrer-Policy: strict-origin-when-cross-origin`, `X-XSS-Protection: 0`) on the responses of every servlet web application, so an upgraded application sends these headers without any change on your part.
+The filter is registered at `GrailsFilters.FIRST`, ahead of the other Grails filters, and writes its headers when the response commits, only if nothing else has set them by then, so values set by your controllers, interceptors, custom filters, or Spring Security header writers at Spring Boot's default `spring.security.filter.order` are preserved.
+If you order the Spring Security chain ahead of `GrailsFilters.FIRST`, its header writers (other than the `X-Frame-Options` writer) find the Grails value already present and leave it; disable the corresponding `grails.security.headers.<header>` in that case.
+Filters ordered ahead of `GrailsFilters.FIRST`, such as Spring Boot's forwarded-header filter and, in a WAR deployment, its `ErrorPageFilter`, run outside the Grails filter, so a response one of them serves itself receives no default headers.
+If a reverse proxy in front of the application already sends these headers (for example through nginx's `add_header`), set `grails.security.headers.defaults: auto` so requests that arrive through the proxy (detected from forwarded request headers, `server.forward-headers-strategy`, or an active cloud platform) receive only the headers you configure explicitly, or strip the application's copies at the proxy.
+To disable or customize the Grails defaults, configure `grails.security.headers.*`; see the Security guide's HTTP Security Headers section for the full list and the reverse-proxy guidance.

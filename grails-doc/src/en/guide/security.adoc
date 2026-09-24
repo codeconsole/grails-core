@@ -62,8 +62,9 @@ This also applies to responses committed by a redirect, an error page, a streame
 If a response is `reset()` after the headers were written, for example by an error handler that starts over, the replacement response receives them again.
 
 The filter is registered at `GrailsFilters.FIRST`, ahead of every other Grails-registered filter, so it also covers responses that those filters serve themselves without continuing the chain, such as the static assets the asset-pipeline plugin streams.
-Filters ordered ahead of `GrailsFilters.FIRST` run outside it: Spring Boot's forwarded-header, character-encoding and error-page filters, and any application filter you order below that value.
-A response such a filter serves itself, without continuing the chain, does not pass through the Grails filter and receives no default headers.
+Filters ordered ahead of `GrailsFilters.FIRST` run outside it: Spring Boot's forwarded-header filter (registered when `server.forward-headers-strategy` is `framework`), Spring Boot's `ErrorPageFilter` in a WAR deployment, and any application filter you order below that value.
+The character-encoding filter Grails registers runs inside the Grails filter.
+A response a filter outside it serves itself, without continuing the chain, does not pass through the Grails filter and receives no default headers.
 
 ===== Ordering relative to Spring Security
 
@@ -71,6 +72,10 @@ At Spring Boot's default `spring.security.filter.order` the Spring Security filt
 If you order the Spring Security chain ahead of `GrailsFilters.FIRST`, the Grails defaults are written before Spring Security's writers run.
 All of Spring Security's header writers except the `X-Frame-Options` writer leave a header alone once it is present, so in that arrangement they find the Grails value already in place and do not replace it.
 Disable the corresponding `grails.security.headers.<header>` to let Spring Security own that header, or leave the Spring Security chain at its default order.
+
+The same can happen at the default order for a large body written through the response writer in a multi-byte character encoding such as UTF-8.
+Grails measures the body in bytes, as the container's response buffer is sized, while Spring Security measures writer output in characters, so once such a body fills the buffer Grails can write its defaults before Spring Security's writers run.
+Disable the corresponding `grails.security.headers.<header>` if Spring Security must own a header on such responses.
 
 ===== HSTS behind a reverse proxy
 
@@ -94,7 +99,9 @@ A request is treated as proxied when any of the following holds:
 * Spring Boot detects that the application is running on a cloud platform such as Kubernetes or Cloud Foundry, where traffic normally enters through an ingress proxy.
 
 The first time a proxied request is seen in `auto` mode, Grails logs a message at `INFO` level explaining that the defaults are being withheld.
-Any header you configure explicitly (setting either its `enabled` or its `value` key) is always sent, whether or not a proxy is detected.
+Setting either the `enabled` or the `value` key of a header marks it as explicitly configured, and `defaults` does not apply to explicitly configured headers.
+An explicitly configured header that is enabled and has a value is sent whether or not a proxy is detected, so setting `enabled: true` on its own sends the built-in value through a proxy as well; one set to `enabled: false` is never sent.
+`Content-Security-Policy` and `Strict-Transport-Security` are disabled by default, so setting their `value` alone sends nothing: set `enabled: true` as well.
 
 Note that most load balancers, ingress controllers and platform routers add `X-Forwarded-For` to every request without adding any security headers of their own, and every Kubernetes pod is detected as a cloud platform.
 In `auto` mode such deployments send none of the defaults, which is why `always` is the default; choose `auto` only when the proxy really does own these headers.
