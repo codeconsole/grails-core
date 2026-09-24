@@ -70,13 +70,23 @@ public class CachingLinkGenerator extends DefaultLinkGenerator {
         }
 
         // The encoding decides how the link's parameters are escaped, so a link is cached per encoding.
-        final String key = makeKey(LINK_PREFIX, attrs) + "encoding[" + encoding + "]";
+        final String key = linkKey(attrs) + "encoding[" + encoding + "]";
         Object resourceLink = linkCache.getIfPresent(key);
         if (resourceLink == null) {
             resourceLink = super.link(attrs, encoding);
             linkCache.put(key, resourceLink);
         }
         return resourceLink.toString();
+    }
+
+    /**
+     * The key a link is cached under: its attributes, as {@link #makeKey} renders them, and what it resolves
+     * to, which can depend on the request it is generated in. The resolution is appended here rather than in
+     * {@code makeKey}, so a subclass that overrides {@code makeKey}, as the asset pipeline plugin's
+     * {@code AssetSupportingCachingLinkGenerator} does, still keys each link on it.
+     */
+    String linkKey(Map attrs) {
+        return makeKey(LINK_PREFIX, attrs) + resolvedLinkKey(attrs);
     }
 
     protected boolean isCacheable(Map attrs) {
@@ -173,11 +183,6 @@ public class CachingLinkGenerator extends DefaultLinkGenerator {
             }
         }
         appendMapKey(sb, attrs);
-        if (LINK_PREFIX.equals(prefix)) {
-            // What the link resolves to can depend on the request it is generated in, so key on the
-            // resolution itself rather than on whichever parts of the request it happens to read.
-            sb.append(resolvedLinkKey(attrs));
-        }
         return sb.toString();
     }
 
