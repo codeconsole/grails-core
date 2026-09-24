@@ -83,7 +83,7 @@ class ScaffoldedPagesGenerator implements ModelBuilder {
                             "expanded when it is first rendered instead, which a native image cannot do: ${e.cause ?: e}")
                     continue
                 }
-                File target = new File(outputDir, ScaffoldedPages.uri(model, template.value).substring(1))
+                File target = new File(outputDir, ScaffoldedPages.uri(template.key, model, template.value).substring(1))
                 target.parentFile.mkdirs()
                 target.setText(page, StandardCharsets.UTF_8.name())
                 written++

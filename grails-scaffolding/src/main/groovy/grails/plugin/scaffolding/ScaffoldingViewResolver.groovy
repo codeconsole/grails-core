@@ -157,7 +157,7 @@ class ScaffoldingViewResolver extends GroovyPageViewResolver implements Resource
                     // View is a fallback (non-namespaced), check for namespace-specific scaffolded template
                     return tryGenerateScaffoldedView(viewName, controllerClass) { String shortViewName ->
                         // Only check namespace-specific template
-                        resolveResource(controllerClass.clazz, "${controllerClass.namespace}/${shortViewName}")
+                        ["${controllerClass.namespace}/${shortViewName}".toString()]
                     } ?: view
                 }
             }
@@ -167,11 +167,9 @@ class ScaffoldingViewResolver extends GroovyPageViewResolver implements Resource
         def controllerClass = GrailsWebRequest.lookup()?.controllerClass
 
         return tryGenerateScaffoldedView(viewName, controllerClass) { String shortViewName ->
-            Resource res = controllerClass?.namespace ? resolveResource(controllerClass.clazz, "${controllerClass.namespace}/${shortViewName}") : null
-            if (!res?.exists()) {
-                res = resolveResource(controllerClass.clazz, shortViewName)
-            }
-            return res
+            controllerClass?.namespace ?
+                    ["${controllerClass.namespace}/${shortViewName}".toString(), shortViewName] :
+                    [shortViewName]
         }
     }
 
@@ -179,10 +177,10 @@ class ScaffoldingViewResolver extends GroovyPageViewResolver implements Resource
      * Attempts to generate a scaffolded view for the given controller
      * @param viewName The view name
      * @param controllerClass The controller class
-     * @param resourceResolver Closure that resolves the scaffold template resource given a short view name
+     * @param templatePaths Closure giving, for a short view name, the template paths to try in order
      * @return The generated scaffolded view, or null if not applicable
      */
-    private View tryGenerateScaffoldedView(String viewName, GrailsControllerClass controllerClass, Closure<Resource> resourceResolver) {
+    protected View tryGenerateScaffoldedView(String viewName, GrailsControllerClass controllerClass, Closure<List<String>> templatePaths) {
         def scaffoldValue = getScaffoldValue(controllerClass)
         if (!(scaffoldValue instanceof Class)) {
             return null
@@ -197,10 +195,11 @@ class ScaffoldingViewResolver extends GroovyPageViewResolver implements Resource
         }
 
         def shortViewName = viewName.substring(viewName.lastIndexOf('/') + 1)
-        Resource scaffoldResource = resourceResolver.call(shortViewName)
-
-        if (scaffoldResource?.exists()) {
-            return generateScaffoldedView(scaffoldValue, scaffoldResource, cacheKey)
+        for (String templatePath : templatePaths.call(shortViewName)) {
+            Resource template = resolveResource(controllerClass.clazz, templatePath)
+            if (template?.exists()) {
+                return generateScaffoldedView((Class) scaffoldValue, templatePath, template, cacheKey)
+            }
         }
 
         return null
@@ -238,10 +237,10 @@ class ScaffoldingViewResolver extends GroovyPageViewResolver implements Resource
         return scaffoldValue
     }
 
-    private View generateScaffoldedView(Class scaffoldValue, Resource res, String cacheKey) {
-        Map<String, Object> model = model((Class) scaffoldValue).asMap()
-        byte[] template = res.inputStream.withCloseable { InputStream input -> input.bytes }
-        View view = enableReload ? null : findPrecompiledView(model, template)
+    private View generateScaffoldedView(Class scaffoldValue, String templatePath, Resource res, String cacheKey) {
+        Map<String, Object> model = model(scaffoldValue).asMap()
+        byte[] template = read(res)
+        View view = enableReload ? null : findPrecompiledView(templatePath, model, template)
         if (view == null) {
             view = expandTemplate(model, template, cacheKey)
         }
@@ -254,17 +253,21 @@ class ScaffoldingViewResolver extends GroovyPageViewResolver implements Resource
      *
      * <p>Every decision about which template to use has been made by the time this is asked, the
      * same way whether or not anything was compiled, so this only replaces the expansion. The page
-     * is found by the template and the model together: a template the build did not see, or a model
-     * it bound differently, finds nothing and is expanded as it would be otherwise.</p>
+     * is found by the template and the model together: a template the build did not see finds
+     * nothing and is expanded as it would be otherwise.</p>
      */
-    private View findPrecompiledView(Map<String, Object> model, byte[] template) {
-        String uri = ScaffoldedPages.uri(model, template)
-        GroovyPageScriptSource page = groovyPageLocator.findPage(uri)
-        if (page == null) {
+    private View findPrecompiledView(String templatePath, Map<String, Object> model, byte[] template) {
+        String uri = ScaffoldedPages.uri(templatePath, model, template)
+        View view = findPage(uri)
+        if (view == null) {
             LOG.debug('No page compiled at {} for {}; expanding its template', uri, model.fullName)
-            return null
         }
-        return createGroovyPageView(uri, page)
+        return view
+    }
+
+    private View findPage(String uri) {
+        GroovyPageScriptSource page = groovyPageLocator.findPage(uri)
+        return page == null ? null : createGroovyPageView(uri, page)
     }
 
     private View expandTemplate(Map<String, Object> model, byte[] template, String cacheKey) {
@@ -277,6 +280,10 @@ class ScaffoldingViewResolver extends GroovyPageViewResolver implements Resource
         view.setTemplateEngine(templateEngine)
         view.afterPropertiesSet()
         return view
+    }
+
+    private static byte[] read(Resource resource) {
+        resource.inputStream.withCloseable { InputStream input -> input.bytes }
     }
 
     @Override

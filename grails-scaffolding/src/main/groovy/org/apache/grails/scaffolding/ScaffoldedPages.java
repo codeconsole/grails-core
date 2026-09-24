@@ -33,13 +33,14 @@ import groovy.text.GStringTemplateEngine;
  * Expands a scaffolding template into a page, and names the page the build compiles from it so
  * that the runtime resolver can find it.
  *
- * <p>A page is named for a digest of the template it was expanded from and of every name the model
- * binds. Two expansions share a name only when their inputs are identical, so a template the build
- * did not see, or a model derived differently from the one bound here, names a page that does not
- * exist rather than a different one.</p>
- *
  * <p>The build and the resolver both come here, so a page is expanded and named by the same code
- * whichever of them does it.</p>
+ * whichever of them does it. A page is named for the template's path, for readability, and for a
+ * digest of the template and of every name of the model the template mentions. Two expansions
+ * share a name only when their inputs are identical, so a template the build did not see names a
+ * page that does not exist rather than a different one. A name the template never mentions cannot
+ * change what it expands to, and is left out, so a value that differs between the machine that
+ * built the application and the one running it - {@code packagePath} follows the file separator -
+ * does not cost the page.</p>
  *
  * @since 8.0
  */
@@ -59,15 +60,16 @@ public final class ScaffoldedPages {
     }
 
     /**
-     * The URI, relative to the views root, of the page expanded from {@code template} with
-     * {@code model}.
+     * The URI, relative to the views root, of the page expanded from a template with a model.
      *
+     * @param templatePath the template's path under {@code templates/scaffolding}, without its
+     *     extension, such as {@code show} or {@code admin/show}
      * @param model the names the template is expanded with, including {@code fullName}
      * @param template the template exactly as it is read
      * @return the URI a page locator resolves the page by
      */
-    public static String uri(Map<String, ?> model, byte[] template) {
-        return "/" + DIRECTORY + "/" + model.get("fullName") + "/" + key(model, template) + ".gsp";
+    public static String uri(String templatePath, Map<String, ?> model, byte[] template) {
+        return "/" + DIRECTORY + "/" + model.get("fullName") + "/" + templatePath + "-" + key(model, template) + ".gsp";
     }
 
     /**
@@ -94,10 +96,14 @@ public final class ScaffoldedPages {
     }
 
     private static String key(Map<String, ?> model, byte[] template) {
+        String text = new String(template, StandardCharsets.UTF_8);
         MessageDigest digest = sha256();
         digest.update(template);
         digest.update((byte) 0);
         for (String name : new TreeSet<>(model.keySet())) {
+            if (!text.contains(name)) {
+                continue;
+            }
             digest.update(name.getBytes(StandardCharsets.UTF_8));
             digest.update((byte) 0);
             digest.update(String.valueOf(model.get(name)).getBytes(StandardCharsets.UTF_8));

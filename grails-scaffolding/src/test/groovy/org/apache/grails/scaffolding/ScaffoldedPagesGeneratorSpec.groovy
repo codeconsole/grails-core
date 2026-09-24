@@ -47,7 +47,7 @@ class ScaffoldedPagesGeneratorSpec extends Specification {
     /** Where the resolver looks for the page, which is where the generator must have written it. */
     File page(String templatePath, String domain, String text) {
         Map<String, Object> model = new ScaffoldedPagesGenerator().model(domain).asMap()
-        new File(output, ScaffoldedPages.uri(model, text.getBytes(StandardCharsets.UTF_8)).substring(1))
+        new File(output, ScaffoldedPages.uri(templatePath, model, text.getBytes(StandardCharsets.UTF_8)).substring(1))
     }
 
     void 'every template is expanded for every domain class, where the resolver looks for it'() {
@@ -72,7 +72,7 @@ class ScaffoldedPagesGeneratorSpec extends Specification {
         then:
         written == 2
         page('show', 'com.example.Book', 'show ${className}').exists()
-        new File(output, 'grails-scaffolded/com.example.Book').list().length == 2
+        !new File(output, 'grails-scaffolded/com.example.Book').list().any { it.startsWith('broken') }
     }
 
     void 'the command line reads the domain classes from a list'() {

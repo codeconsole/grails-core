@@ -24,7 +24,9 @@ import spock.lang.Specification
 
 class ScaffoldedPagesSpec extends Specification {
 
-    static final byte[] TEMPLATE = 'show ${className}'.getBytes(StandardCharsets.UTF_8)
+    /** Mentions every name the runtime model binds. */
+    static final String ALL_NAMES = '${className} ${fullName} ${propertyName} ${modelName} ${packageName} ' +
+            '${packagePath} ${simpleName} ${lowerCaseName}'
 
     static byte[] bytes(String text) {
         text.getBytes(StandardCharsets.UTF_8)
@@ -35,9 +37,14 @@ class ScaffoldedPagesSpec extends Specification {
          packageName: 'com.example', packagePath: 'com/example', simpleName: 'Book', lowerCaseName: 'book'] + changes
     }
 
-    void 'a page is kept under the directory of its domain class, apart from any controller view'() {
+    void 'a page is named for its template, under the directory of its domain class'() {
         expect:
-        ScaffoldedPages.uri(model(), TEMPLATE) ==~ /\/grails-scaffolded\/com\.example\.Book\/[0-9a-f]{32}\.gsp/
+        ScaffoldedPages.uri(templatePath, model(), bytes(ALL_NAMES)) ==~ expected
+
+        where:
+        templatePath | expected
+        'show'       | /\/grails-scaffolded\/com\.example\.Book\/show-[0-9a-f]{32}\.gsp/
+        'admin/show' | /\/grails-scaffolded\/com\.example\.Book\/admin\/show-[0-9a-f]{32}\.gsp/
     }
 
     void 'the same template and model always name the same page, whatever order the model is in'() {
@@ -46,30 +53,36 @@ class ScaffoldedPagesSpec extends Specification {
         model().keySet().toList().reverse().each { reversed[it] = model()[it] }
 
         expect:
-        ScaffoldedPages.uri(reversed, TEMPLATE) == ScaffoldedPages.uri(model(), TEMPLATE)
+        ScaffoldedPages.uri('show', reversed, bytes(ALL_NAMES)) == ScaffoldedPages.uri('show', model(), bytes(ALL_NAMES))
     }
 
     void 'a different template names a different page'() {
         expect:
-        ScaffoldedPages.uri(model(), 'show ${className} '.getBytes(StandardCharsets.UTF_8)) != ScaffoldedPages.uri(model(), TEMPLATE)
+        ScaffoldedPages.uri('show', model(), bytes(ALL_NAMES + ' ')) != ScaffoldedPages.uri('show', model(), bytes(ALL_NAMES))
     }
 
-    void 'a model differing only in #name names a different page'() {
+    void 'a model differing in #name, which the template mentions, names a different page'() {
         expect:
-        ScaffoldedPages.uri(model((name): 'x'), TEMPLATE) != ScaffoldedPages.uri(model(), TEMPLATE)
+        ScaffoldedPages.uri('show', model((name): 'x'), bytes(ALL_NAMES)) != ScaffoldedPages.uri('show', model(), bytes(ALL_NAMES))
 
         where:
         name << model().keySet().findAll { it != 'fullName' }
     }
 
-    void 'a name added to the model names a different page'() {
+    void 'a name the template does not mention cannot change the page, so it does not change its name'() {
+        given: 'the separator the machine running the application uses, rather than the one that built it'
+        byte[] template = bytes('show ${className}')
+
         expect:
-        ScaffoldedPages.uri(model(extra: ''), TEMPLATE) != ScaffoldedPages.uri(model(), TEMPLATE)
+        ScaffoldedPages.uri('show', model(packagePath: 'com\\example'), template) == ScaffoldedPages.uri('show', model(), template)
     }
 
     void 'where one entry ends and the next begins is part of the name'() {
+        given:
+        byte[] template = bytes('${a}${ab}')
+
         expect:
-        ScaffoldedPages.uri(model(a: 'bc'), TEMPLATE) != ScaffoldedPages.uri(model(ab: 'c'), TEMPLATE)
+        ScaffoldedPages.uri('show', model(a: 'bc', ab: ''), template) != ScaffoldedPages.uri('show', model(a: 'b', ab: 'c'), template)
     }
 
     void 'a template is expanded with the model'() {

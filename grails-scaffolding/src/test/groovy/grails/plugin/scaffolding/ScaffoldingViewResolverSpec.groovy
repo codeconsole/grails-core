@@ -31,6 +31,7 @@ import org.grails.web.servlet.mvc.GrailsWebRequest
 import org.grails.web.servlet.view.GroovyPageView
 import org.springframework.core.io.ByteArrayResource
 import org.springframework.core.io.Resource
+import org.springframework.core.io.support.ResourcePatternResolver
 import org.springframework.web.context.request.RequestContextHolder
 import org.springframework.web.context.support.StaticWebApplicationContext
 import spock.lang.Specification
@@ -39,14 +40,9 @@ class ScaffoldingViewResolverSpec extends Specification {
 
     static final String TEST_NAMESPACE = "admin"
     static final String TEST_VIEW_NAME = "/event/index"
-    static final String SHOW_TEMPLATE = 'show ${className}'
-
-    /**
-     * The page the build writes for {@link #SHOW_TEMPLATE} and a domain class {@code URLMapping} in the
-     * default package, where the model is the same on every platform. GenerateScaffoldedViewsTaskSpec
-     * in the Gradle plugin expects this same name, which is what keeps the two derivations together.
-     */
-    static final String URL_MAPPING_SHOW_PAGE = '/grails-scaffolded/URLMapping/90edd843a67c1f52a2400a029acfc69e.gsp'
+    /** A view whose template exists nowhere on disk, so the tests decide what the resolver finds. */
+    static final String LIST_VIEW_NAME = "/event/list"
+    static final String LIST_TEMPLATE = 'list ${className}'
 
     ScaffoldingViewResolver resolver
     GrailsConventionGroovyPageLocator mockPageLocator
@@ -97,13 +93,29 @@ class ScaffoldingViewResolverSpec extends Specification {
         mockControllerClass.namespace >> namespace
     }
 
-    /** A domain class in the default package, which a test source cannot declare and still be referenced. */
-    static Class urlMapping() {
-        new GroovyClassLoader().parseClass('class URLMapping {}')
-    }
-
     static Resource template(String text) {
         new ByteArrayResource(text.getBytes(StandardCharsets.UTF_8))
+    }
+
+    /** Serves each classpath template location from {@code templates}, and every copy of one from {@code copies}. */
+    ResourcePatternResolver templates(Map<String, String> templates, Map<String, List<String>> copies = [:]) {
+        Stub(ResourcePatternResolver) {
+            getResource(_ as String) >> { String location ->
+                String text = templates[location - 'classpath:META-INF/templates/scaffolding/' - '.gsp']
+                text != null ? template(text) : Stub(Resource) { exists() >> false }
+            }
+            getResources(_ as String) >> { String pattern ->
+                (copies[pattern - 'classpath*:META-INF/templates/scaffolding/' - '.gsp'] ?: []).collect { template(it) } as Resource[]
+            }
+        }
+    }
+
+    String className() {
+        resolver.model(TestDomain).className
+    }
+
+    String pageFor(String templatePath, String text, Class domain = TestDomain) {
+        ScaffoldedPages.uri(templatePath, resolver.model(domain).asMap(), text.getBytes(StandardCharsets.UTF_8))
     }
 
     GroovyPageView mockViewWithUrl(String url) {
@@ -196,8 +208,8 @@ class ScaffoldingViewResolverSpec extends Specification {
         setupScaffoldController(String)
 
         when:
-        def result = resolver.tryGenerateScaffoldedView(TEST_VIEW_NAME, mockControllerClass) { shortViewName ->
-            Mock(Resource)
+        def result = resolver.tryGenerateScaffoldedView(TEST_VIEW_NAME, mockControllerClass) { String shortViewName ->
+            [shortViewName]
         }
 
         then:
@@ -217,13 +229,12 @@ class ScaffoldingViewResolverSpec extends Specification {
     void "test tryGenerateScaffoldedView returns null when resource does not exist"() {
         given:
         setupScaffoldController(TestScaffoldController, TestDomain)
-        mockPageLocator.resolveViewFormat(TEST_VIEW_NAME) >> TEST_VIEW_NAME
+        mockPageLocator.resolveViewFormat(LIST_VIEW_NAME) >> LIST_VIEW_NAME
+        resolver.resourceLoader = templates([:])
 
         when:
-        def result = resolver.tryGenerateScaffoldedView(TEST_VIEW_NAME, mockControllerClass) { shortViewName ->
-            def resource = Mock(Resource)
-            resource.exists() >> false
-            return resource
+        def result = resolver.tryGenerateScaffoldedView(LIST_VIEW_NAME, mockControllerClass) { String shortViewName ->
+            [shortViewName]
         }
 
         then:
@@ -296,65 +307,86 @@ class ScaffoldingViewResolverSpec extends Specification {
 
     void "a scaffolded view is served by the page compiled from its template and model"() {
         given:
-        setupScaffoldController(TestScaffoldController, urlMapping())
-        mockPageLocator.resolveViewFormat(TEST_VIEW_NAME) >> TEST_VIEW_NAME
+        setupScaffoldController(TestScaffoldController, TestDomain)
+        mockPageLocator.resolveViewFormat(LIST_VIEW_NAME) >> LIST_VIEW_NAME
+        resolver.resourceLoader = templates(list: LIST_TEMPLATE)
+        String expected = pageFor('list', LIST_TEMPLATE)
         def page = Stub(GroovyPageScriptSource)
 
         when:
-        def view = resolver.tryGenerateScaffoldedView(TEST_VIEW_NAME, mockControllerClass) { String name -> template(SHOW_TEMPLATE) }
+        def view = resolver.tryGenerateScaffoldedView(LIST_VIEW_NAME, mockControllerClass) { String name -> [name] }
 
-        then: 'the page is found by the name the build gave it'
-        1 * mockPageLocator.findPage(URL_MAPPING_SHOW_PAGE) >> page
+        then: 'the page is found under its template and domain class'
+        expected.startsWith("/grails-scaffolded/${TestDomain.name}/list-")
+        1 * mockPageLocator.findPage(expected) >> page
 
         and: 'rendered from the compiled page, with nothing expanded'
         1 * mockTemplateEngine.createTemplate(page)
         0 * mockTemplateEngine.createTemplate(_ as Resource, _)
         view instanceof GroovyPageView
-        (view as GroovyPageView).url == URL_MAPPING_SHOW_PAGE
+        (view as GroovyPageView).url == expected
     }
 
     void "a template with no compiled page is expanded as before"() {
         given:
-        setupScaffoldController(TestScaffoldController, urlMapping())
-        mockPageLocator.resolveViewFormat(TEST_VIEW_NAME) >> TEST_VIEW_NAME
+        setupScaffoldController(TestScaffoldController, TestDomain)
+        mockPageLocator.resolveViewFormat(LIST_VIEW_NAME) >> LIST_VIEW_NAME
         mockTemplateEngine.gspEncoding >> 'UTF-8'
+        resolver.resourceLoader = templates(list: LIST_TEMPLATE)
 
         when:
-        def view = resolver.tryGenerateScaffoldedView(TEST_VIEW_NAME, mockControllerClass) { String name -> template(SHOW_TEMPLATE) }
+        def view = resolver.tryGenerateScaffoldedView(LIST_VIEW_NAME, mockControllerClass) { String name -> [name] }
 
         then:
-        1 * mockPageLocator.findPage(URL_MAPPING_SHOW_PAGE) >> null
-        1 * mockTemplateEngine.createTemplate({ Resource expanded -> expanded.inputStream.text == 'show URLMapping' }, true) >> Stub(GroovyPageTemplate)
+        1 * mockPageLocator.findPage(pageFor('list', LIST_TEMPLATE)) >> null
+        1 * mockTemplateEngine.createTemplate({ Resource expanded -> expanded.inputStream.text == "list ${className()}".toString() }, true) >> Stub(GroovyPageTemplate)
         view instanceof GroovyPageView
     }
 
-    void "a different template is looked for under its own page, never another template's"() {
+    void "a namespace-specific template is looked for under its own path"() {
         given:
-        setupScaffoldController(TestScaffoldController, urlMapping())
-        mockPageLocator.resolveViewFormat(TEST_VIEW_NAME) >> TEST_VIEW_NAME
-        mockTemplateEngine.gspEncoding >> 'UTF-8'
-        String customised = 'customised show ${className}'
-        String expected = ScaffoldedPages.uri(resolver.model(urlMapping()).asMap(), customised.getBytes(StandardCharsets.UTF_8))
+        setupScaffoldController(TestScaffoldController, TestDomain)
+        mockPageLocator.resolveViewFormat(LIST_VIEW_NAME) >> LIST_VIEW_NAME
+        resolver.resourceLoader = templates(list: LIST_TEMPLATE, 'admin/list': 'admin list ${className}')
+        String expected = pageFor('admin/list', 'admin list ${className}')
 
         when:
-        resolver.tryGenerateScaffoldedView(TEST_VIEW_NAME, mockControllerClass) { String name -> template(customised) }
+        resolver.tryGenerateScaffoldedView(LIST_VIEW_NAME, mockControllerClass) { String name -> ["admin/${name}".toString(), name] }
 
         then:
-        expected != URL_MAPPING_SHOW_PAGE
-        1 * mockPageLocator.findPage(expected) >> null
-        0 * mockPageLocator.findPage(URL_MAPPING_SHOW_PAGE)
+        expected.startsWith("/grails-scaffolded/${TestDomain.name}/admin/list-")
+        1 * mockPageLocator.findPage(expected) >> Stub(GroovyPageScriptSource)
+        0 * mockPageLocator.findPage(pageFor('list', LIST_TEMPLATE))
+    }
+
+    void "a customised template is looked for under its own page, never the stock template's"() {
+        given:
+        setupScaffoldController(TestScaffoldController, TestDomain)
+        mockPageLocator.resolveViewFormat(LIST_VIEW_NAME) >> LIST_VIEW_NAME
+        mockTemplateEngine.gspEncoding >> 'UTF-8'
+        String customised = 'customised list ${className}'
+        resolver.resourceLoader = templates(list: customised)
+
+        when:
+        resolver.tryGenerateScaffoldedView(LIST_VIEW_NAME, mockControllerClass) { String name -> [name] }
+
+        then:
+        pageFor('list', customised) != pageFor('list', LIST_TEMPLATE)
+        1 * mockPageLocator.findPage(pageFor('list', customised)) >> null
+        0 * mockPageLocator.findPage(pageFor('list', LIST_TEMPLATE))
         1 * mockTemplateEngine.createTemplate(_ as Resource, true) >> Stub(GroovyPageTemplate)
     }
 
     void "with reloading enabled the template is always expanded, so an edit to it shows"() {
         given:
         resolver.enableReload = true
-        setupScaffoldController(TestScaffoldController, urlMapping())
-        mockPageLocator.resolveViewFormat(TEST_VIEW_NAME) >> TEST_VIEW_NAME
+        setupScaffoldController(TestScaffoldController, TestDomain)
+        mockPageLocator.resolveViewFormat(LIST_VIEW_NAME) >> LIST_VIEW_NAME
         mockTemplateEngine.gspEncoding >> 'UTF-8'
+        resolver.resourceLoader = templates(list: LIST_TEMPLATE)
 
         when:
-        resolver.tryGenerateScaffoldedView(TEST_VIEW_NAME, mockControllerClass) { String name -> template(SHOW_TEMPLATE) }
+        resolver.tryGenerateScaffoldedView(LIST_VIEW_NAME, mockControllerClass) { String name -> [name] }
 
         then:
         0 * mockPageLocator.findPage(_)
@@ -363,16 +395,16 @@ class ScaffoldingViewResolverSpec extends Specification {
 
     void "a compiled page is looked for once and the view kept"() {
         given:
-        setupScaffoldController(TestScaffoldController, urlMapping())
-        mockPageLocator.resolveViewFormat(TEST_VIEW_NAME) >> TEST_VIEW_NAME
-        def page = Stub(GroovyPageScriptSource)
+        setupScaffoldController(TestScaffoldController, TestDomain)
+        mockPageLocator.resolveViewFormat(LIST_VIEW_NAME) >> LIST_VIEW_NAME
+        resolver.resourceLoader = templates(list: LIST_TEMPLATE)
 
         when:
-        def first = resolver.tryGenerateScaffoldedView(TEST_VIEW_NAME, mockControllerClass) { String name -> template(SHOW_TEMPLATE) }
-        def second = resolver.tryGenerateScaffoldedView(TEST_VIEW_NAME, mockControllerClass) { String name -> template(SHOW_TEMPLATE) }
+        def first = resolver.tryGenerateScaffoldedView(LIST_VIEW_NAME, mockControllerClass) { String name -> [name] }
+        def second = resolver.tryGenerateScaffoldedView(LIST_VIEW_NAME, mockControllerClass) { String name -> [name] }
 
         then:
-        1 * mockPageLocator.findPage(URL_MAPPING_SHOW_PAGE) >> page
+        1 * mockPageLocator.findPage(pageFor('list', LIST_TEMPLATE)) >> Stub(GroovyPageScriptSource)
         second.is(first)
     }
 
