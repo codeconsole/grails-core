@@ -3827,3 +3827,27 @@ The FutureTask-based promise implementations, `PromiseFactoryBean`, `AsyncContro
 Both eager web promises and returned promises now honor `spring.mvc.async.request-timeout`; the Servlet container default applies when unset (normally 30 seconds on Tomcat), rather than an infinite timeout for eager web promises. Timeouts return HTTP 503 and can use a `503` URL mapping. Set a timeout explicitly if your application requires long-running responses. With the default and virtual-thread factories, single and aggregate error callbacks receive the original failure, while both direct and chained `get()` methods use the `Future` contract's `ExecutionException` wrapper.
 
 The `grails.async.promiseFactory=virtual-thread` opt-in now uses the same CompletableFuture implementation with its own decorated executor; it no longer relies on the deprecated FutureTask classes. Its default event bus remains asynchronous and its web tasks propagate request context. Its aggregate `onComplete` resolves to the callback's result, and aggregate `onError` observes the original failure while leaving the returned promise failed, rather than recovering to an empty list.
+
+==== 67. A List of Objects in Configuration Binds to Its Declared Type
+
+A list of objects in `application.yml` or `application.groovy`, such as:
+
+[source,yaml]
+.application.yml
+----
+springdoc:
+    group-configs:
+        - group: sales
+          paths-to-match: /api/v1/**
+----
+
+is now presented to Spring element by element, under the indexed names Spring Boot binds a list from,
+such as `springdoc.group-configs[0].group`, the way Spring Boot's own YAML loader presents it. A
+`@ConfigurationProperties` class declaring a `List` of objects is bound with instances of that type.
+Previously the whole list was also presented under its own name, so Spring Boot bound it as a list of
+maps, and code reading the declared type failed with a `ClassCastException`. springdoc failed that
+way on `springdoc.group-configs` before the application could start.
+
+`Environment.getProperty('springdoc.group-configs')` now returns `null`, as it does in a Spring Boot
+application. Read such a list through `grailsApplication.config`, which is unchanged, or bind it. A
+list of plain values, such as `names: [a, b]`, is presented as before.

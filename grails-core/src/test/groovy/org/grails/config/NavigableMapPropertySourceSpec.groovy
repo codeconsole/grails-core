@@ -53,4 +53,28 @@ class NavigableMapPropertySourceSpec extends Specification {
         ps.getNavigableProperty('foo') instanceof NavigableMap
 
     }
+    def "Ensure a list of objects is presented element by element"() {
+        given: "A navigable map holding a list of objects, as application.groovy declares one"
+        def map = new NavigableMap()
+        map.merge([app: [rules: [[pattern: '/a', access: ['permitAll']], [pattern: '/b']], names: ['p', 'q']]], false)
+
+        when:
+        def ps = new NavigableMapPropertySource("test", map)
+
+        then: "Each element is presented under the indexed names Spring Boot binds"
+        ps.getProperty('app.rules[0].pattern') == '/a'
+        ps.getProperty('app.rules[0].access[0]') == 'permitAll'
+        ps.getProperty('app.rules[1].pattern') == '/b'
+        ps.getPropertyNames().toList().containsAll(['app.rules[0].pattern', 'app.rules[0].access[0]', 'app.rules[1].pattern'])
+
+        and: "The list itself is not"
+        ps.getProperty('app.rules') == null
+        !ps.containsProperty('app.rules')
+        !ps.getPropertyNames().contains('app.rules')
+        ps.getNavigableProperty('app.rules')*.pattern == ['/a', '/b']
+
+        and: "A list of plain values is presented as it is"
+        ps.getProperty('app.names') == ['p', 'q']
+        ps.containsProperty('app.names')
+    }
 }
