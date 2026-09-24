@@ -37,11 +37,11 @@ import io.swagger.v3.oas.annotations.media.Schema as SchemaAnnotation
  *
  * <p>swagger-core names a class by its simple name, so two classes sharing a simple name in
  * different packages would be described by one schema, and a class sharing the name of a schema
- * the document derives, such as the validation errors, would stand in for it.</p>
+ * the document already has or derives, such as the validation errors, would stand in for it.</p>
  *
  * <p>A name more than one class claims is taken by none of them: each is named by the package it
  * is declared in as well, whichever is described first, so the names do not depend on the order
- * the document is described in. A derived schema keeps its name, and a class claiming it is named
+ * the document is described in. A reserved name keeps its schema, and a class claiming it is named
  * by its package.</p>
  *
  * <p>While a document is described, the first to claim a name holds it and a later claimant is
@@ -51,10 +51,10 @@ import io.swagger.v3.oas.annotations.media.Schema as SchemaAnnotation
 @CompileStatic
 class SchemaNames {
 
-    private static final String DERIVED = 'derived:'
+    private static final String RESERVED = 'reserved:'
 
     /**
-     * The claimant holding each name: the type of a class, or the marker of a derived schema.
+     * The claimant holding each name: the type of a class, or the marker of a reserved name.
      */
     private final Map<String, Object> holders = [:]
 
@@ -66,7 +66,7 @@ class SchemaNames {
     private final Set<String> shared = new LinkedHashSet<>()
 
     /**
-     * The name a derived schema was given while a class held the name it derives.
+     * The name a schema was given while a class held the name reserved for it.
      */
     private final Map<String, String> displaced = [:]
 
@@ -109,12 +109,13 @@ class SchemaNames {
     }
 
     /**
-     * Claims the name of a schema the document derives rather than resolves from a class.
+     * Reserves a name for a schema that is not resolved from a class: one the document already
+     * has, or one it derives.
      *
      * @return the name to describe it under while the document is described
      */
-    String derive(String name) {
-        String marker = DERIVED + name
+    String reserve(String name) {
+        String marker = RESERVED + name
         Object holder = holders.putIfAbsent(name, marker)
         if (holder == null || holder == marker) {
             return name
@@ -125,7 +126,8 @@ class SchemaNames {
 
     /**
      * The names to move once the document is complete: each class holding a name something else
-     * also claims moves to its qualified name, and each derived schema moves to the name it derives.
+     * also claims moves to its qualified name, and each schema a class kept from its reserved name
+     * moves to it.
      */
     Map<String, String> renames() {
         Map<String, String> renames = [:]

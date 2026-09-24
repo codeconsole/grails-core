@@ -299,8 +299,9 @@ not part of it.
 A schema is named after its class, or after the name a `@Schema` annotation on the class declares.
 Classes sharing a name in different packages are each named by their package as well, such as
 `com.example.v1.Book` and `com.example.v2.Book`, so neither stands in for the other and the names do
-not depend on which is described first. A class sharing the name of a schema the document derives,
-such as `ValidationErrors` or a `Patch` schema, is named by its package in the same way.
+not depend on which is described first. A class sharing the name of a schema the base document
+declares, or one the document derives, such as `ValidationErrors` or a `Patch` schema, is named by
+its package in the same way.
 
 [source,groovy]
 ----

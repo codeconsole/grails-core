@@ -18,7 +18,11 @@
  */
 package grails.openapi
 
+import io.swagger.v3.oas.models.Components
 import io.swagger.v3.oas.models.OpenAPI
+import io.swagger.v3.oas.models.SpecVersion
+import io.swagger.v3.oas.models.media.ObjectSchema
+import io.swagger.v3.oas.models.media.StringSchema
 
 import grails.artefact.Artefact
 import grails.openapi.names.ValidationErrors as NamedValidationErrors
@@ -28,8 +32,12 @@ import grails.openapi.names.v2.Label as V2Label
 import grails.rest.RestfulController
 
 import spock.lang.Specification
+import spock.lang.TempDir
 
 class SchemaNameSpec extends Specification {
+
+    @TempDir
+    File directory
 
     private static final String V1 = 'grails.openapi.names.v1.Label'
     private static final String V2 = 'grails.openapi.names.v2.Label'
@@ -147,6 +155,50 @@ class SchemaNameSpec extends Specification {
         openApi.paths['/reports'].post.responses['201'].content['application/json'].schema.$ref ==
                 '#/components/schemas/grails.openapi.names.ValidationErrors'
         openApi.components.schemas['grails.openapi.names.ValidationErrors'].properties.keySet() == ['summary'] as Set
+    }
+
+    void 'a class sharing the name of a schema the base document declares is named by its package'() {
+        given:
+        File base = new File(directory, 'base.yml')
+        base.text = '''\
+            openapi: 3.1.0
+            info:
+              title: Labels
+              version: 1.0.0
+            components:
+              schemas:
+                Label:
+                  type: object
+                  properties:
+                    handwritten:
+                      type: string
+            '''.stripIndent()
+
+        when:
+        def openApi = OpenApiFixture.generator(OpenApiFixture.holder { '/printed'(resources: 'printedLabel') },
+                OpenApiFixture.application([PrintedLabelController]), null,
+                ['grails.openapi.base-document': base.toURI().toString()]).generate()
+
+        then: 'the base document keeps its schema'
+        openApi.components.schemas['Label'].properties.keySet() == ['handwritten'] as Set
+
+        and: 'the class is described beside it'
+        responseReference(openApi, '/printed/{id}') == "#/components/schemas/${V1}"
+        openApi.components.schemas[V1].properties.keySet() == ['text'] as Set
+    }
+
+    void 'a class sharing the name of a schema springdoc described is named by its package'() {
+        given:
+        def openApi = new OpenAPI(SpecVersion.V31)
+        openApi.components = new Components().addSchemas('Label', new ObjectSchema().addProperty('sku', new StringSchema()))
+
+        when:
+        OpenApiFixture.generator(OpenApiFixture.holder { '/printed'(resources: 'printedLabel') },
+                OpenApiFixture.application([PrintedLabelController])).contribute(openApi, null)
+
+        then:
+        openApi.components.schemas['Label'].properties.keySet() == ['sku'] as Set
+        responseReference(openApi, '/printed/{id}') == "#/components/schemas/${V1}"
     }
 
     void 'every reference resolves once the names are moved'() {

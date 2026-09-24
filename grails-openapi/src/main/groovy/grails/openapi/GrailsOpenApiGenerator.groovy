@@ -225,9 +225,10 @@ class GrailsOpenApiGenerator {
         void contribute() {
             mergeBaseDocument()
 
-            // The validation errors are derived rather than resolved, so a class of the same name
-            // is named apart from them.
-            schemaNames.derive(VALIDATION_ERRORS_SCHEMA)
+            // A name the document already has, from the base document or springdoc, or that it
+            // derives rather than resolves, is not taken by a class of the same name.
+            components.schemas?.keySet()?.each { String name -> schemaNames.reserve(name) }
+            schemaNames.reserve(VALIDATION_ERRORS_SCHEMA)
             GrailsModelConverter.withSchemaNames(schemaNames) {
                 for (UrlMapping mapping : urlMappingsHolder.urlMappings) {
                     describe("URL mapping [${mapping.urlData?.urlPattern}]".toString()) {
@@ -672,7 +673,7 @@ class GrailsOpenApiGenerator {
             if (full == null || !full.required) {
                 return reference
             }
-            String patchName = patchSchemas.computeIfAbsent(name) { String base -> schemaNames.derive(base + PATCH_SUFFIX) }
+            String patchName = patchSchemas.computeIfAbsent(name) { String base -> schemaNames.reserve(base + PATCH_SUFFIX) }
             if (!components.schemas.containsKey(patchName)) {
                 Schema<?> patch = new ObjectSchema()
                 patch.setProperties(new LinkedHashMap<String, Schema>(full.properties ?: [:]))
