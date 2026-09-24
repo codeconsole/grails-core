@@ -134,6 +134,52 @@ class LinkGeneratorResourceControllerSpec extends Specification {
         generator.link(resource: new Gadget(id: 3), action: 'show') == '/bar/gadget/show/3'
     }
 
+    def "an ambiguous domain class is reported once until the cache is reset"() {
+        given: 'GadgetsController and AdminGadgetsController both declare Gadget, and neither is named after it'
+        def generator = createGenerator()
+        def captured = new ByteArrayOutputStream()
+        def originalErr = System.err
+        System.setErr(new PrintStream(captured, true))
+
+        when: 'two links to a Gadget are generated'
+        generator.link(resource: new Gadget(id: 3), action: 'show')
+        generator.link(resource: new Gadget(id: 4), action: 'show')
+
+        then: 'the fallback is reported once, naming the controllers that tied'
+        def reports = captured.toString().readLines().findAll { it.contains("[${Gadget.name}]") }
+        reports.size() == 1
+        reports[0].contains('[adminGadgets, gadgets]')
+        reports[0].contains('[gadget]')
+
+        when: 'the cache is reset, as a reload does, and another link is generated'
+        generator.resetControllerNamespaceCache()
+        generator.link(resource: new Gadget(id: 5), action: 'show')
+
+        then: 'it is reported again'
+        captured.toString().readLines().count { it.contains("[${Gadget.name}]") } == 2
+
+        cleanup:
+        System.setErr(originalErr)
+    }
+
+    def "an explicit namespace no controller serving the domain class is in is not reported"() {
+        given:
+        def generator = createGenerator()
+        def captured = new ByteArrayOutputStream()
+        def originalErr = System.err
+        System.setErr(new PrintStream(captured, true))
+
+        when: 'a Gadget is linked in a namespace neither controller serving it is in'
+        def link = generator.link(resource: new Gadget(id: 6), action: 'show', namespace: 'reports')
+
+        then: 'the namespace is honoured without a warning'
+        link == '/bar/reports/gadget/show/6'
+        !captured.toString().contains("[${Gadget.name}]")
+
+        cleanup:
+        System.setErr(originalErr)
+    }
+
     def "a domain class no controller declares falls back to the domain class name"() {
         given: 'NoteController declares no domain class'
         def generator = createGenerator()

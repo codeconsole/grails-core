@@ -95,6 +95,7 @@ class DefaultLinkGenerator implements LinkGenerator, PluginManagerAware {
 
     private volatile ControllerIndex controllerIndex
     private final Set<String> ambiguousControllersReported = ConcurrentHashMap.newKeySet()
+    private final Set<String> ambiguousResourcesReported = ConcurrentHashMap.newKeySet()
 
     @Value('${grails.resources.pattern:/static/**}')
     String resourcePattern = Settings.DEFAULT_RESOURCE_PATTERN
@@ -459,6 +460,7 @@ class DefaultLinkGenerator implements LinkGenerator, PluginManagerAware {
     void resetControllerNamespaceCache() {
         controllerIndex = null
         ambiguousControllersReported.clear()
+        ambiguousResourcesReported.clear()
     }
 
     /**
@@ -472,7 +474,8 @@ class DefaultLinkGenerator implements LinkGenerator, PluginManagerAware {
      *
      * <p>When no candidate is unambiguous, the link targets the controller name the candidates share, if
      * they share one, and otherwise the domain class name, as before; either way the namespace is then
-     * inferred for that name.</p>
+     * inferred for that name. Falling back to the domain class name while more than one candidate was
+     * equally near is reported, as the link may then target a controller that does not exist.</p>
      *
      * @param entity the domain class being linked to
      * @param attrs the link attributes, which may carry an explicit {@code namespace}
@@ -498,7 +501,35 @@ class DefaultLinkGenerator implements LinkGenerator, PluginManagerAware {
         for (ControllerRef ref in serving) {
             names.add(ref.name)
         }
-        return new ResourceTarget(names.size() == 1 ? names.iterator().next() : derivedName, null, false)
+        if (names.size() == 1) {
+            return new ResourceTarget(names.iterator().next(), null, false)
+        }
+        // An explicit namespace with no candidate in it is the caller's choice rather than an ambiguity.
+        Set<ControllerRef> tied = new HashSet<>()
+        for (ControllerRef ref in serving) {
+            if (!explicitNamespace || ref.namespace == targetNamespace) {
+                tied.add(ref)
+            }
+        }
+        if (tied.size() > 1) {
+            reportAmbiguousResource(entity, derivedName, tied)
+        }
+        return new ResourceTarget(derivedName, null, false)
+    }
+
+    /**
+     * Warns, once per domain class, that a resource link named no controller and more than one controller
+     * serving the domain class was equally near, so the controller named after it was assumed.
+     */
+    private void reportAmbiguousResource(PersistentEntity entity, String derivedName, Set<ControllerRef> tied) {
+        if (ambiguousResourcesReported.add(entity.name)) {
+            Set<String> controllers = new TreeSet<>()
+            for (ControllerRef ref in tied) {
+                controllers.add(ref.namespace != null ? "${ref.namespace}/${ref.name}".toString() : ref.name)
+            }
+            log.warn('A link to a [{}] names no controller, and the controllers serving it, {}, are equally near to where it is rendered. The controller named after the domain class, [{}], was assumed; pass a controller attribute to choose one.',
+                    entity.name, controllers, derivedName)
+        }
     }
 
     /**
