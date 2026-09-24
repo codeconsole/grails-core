@@ -28,6 +28,7 @@ import io.swagger.v3.core.converter.AnnotatedType
 import io.swagger.v3.core.converter.ModelConverter
 import io.swagger.v3.core.converter.ModelConverterContext
 import io.swagger.v3.core.converter.ModelConverters
+import io.swagger.v3.core.util.PrimitiveType
 import io.swagger.v3.oas.models.media.ArraySchema
 import io.swagger.v3.oas.models.media.IntegerSchema
 import io.swagger.v3.oas.models.media.ObjectSchema
@@ -194,12 +195,14 @@ class GrailsModelConverter implements ModelConverter {
                 : reference
     }
 
-    private static Schema identifierSchema(PersistentEntity entity) {
+    /**
+     * The schema of the identifier an entity is addressed and associated by: an integer of the
+     * width it is declared with, a UUID, or a string for any other type.
+     */
+    static Schema identifierSchema(PersistentEntity entity) {
         Class<?> identifierType = entity.identity?.type
-        if (identifierType != null && (Number.isAssignableFrom(identifierType) || identifierType.primitive)) {
-            return new IntegerSchema().format(INT64_FORMAT)
-        }
-        new StringSchema()
+        Schema schema = identifierType != null ? PrimitiveType.createProperty(identifierType) : null
+        schema ?: new StringSchema()
     }
 
     private static Schema modelOf(Schema resolved, ModelConverterContext context) {

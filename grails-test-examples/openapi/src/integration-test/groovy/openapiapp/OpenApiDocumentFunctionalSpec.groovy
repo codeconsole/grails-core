@@ -75,6 +75,17 @@ class OpenApiDocumentFunctionalSpec extends Specification implements HttpClientS
         document.paths['/books'].get.parameters*.name as Set == ['max', 'offset', 'sort', 'order', 'genre'] as Set
     }
 
+    void 'the identifier is described as the type the domain class declares'() {
+        given:
+        Map<String, Map> operations = document.paths['/books/{id}']
+
+        expect: 'on every operation, including one whose annotation describes it'
+        operations.values().every { Map operation ->
+            operation.parameters.find { it.name == 'id' }.schema == [type: 'integer', format: 'int64']
+        }
+        operations.get.parameters.find { it.name == 'id' }.description == 'The identifier of the book'
+    }
+
     void 'the document starts from the configured base document'() {
         expect:
         document.info.title == 'Catalogue API'

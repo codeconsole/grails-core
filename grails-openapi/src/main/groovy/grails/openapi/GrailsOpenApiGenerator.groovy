@@ -552,15 +552,13 @@ class GrailsOpenApiGenerator {
             }
         }
 
+        /**
+         * The identifier of the resource an operation addresses has the type its entity declares
+         * for it; any other path variable is a string.
+         */
         private Schema<?> pathParameterSchema(String name, Class<?> resourceType) {
-            if (name == ID_TOKEN) {
-                PersistentEntity entity = GrailsModelConverter.entityFor(resourceType)
-                Class<?> identifierType = entity?.identity?.type
-                if (identifierType != null && Number.isAssignableFrom(identifierType)) {
-                    return new IntegerSchema().format('int64')
-                }
-            }
-            new StringSchema()
+            PersistentEntity entity = name == ID_TOKEN ? GrailsModelConverter.entityFor(resourceType) : null
+            entity != null ? GrailsModelConverter.identifierSchema(entity) : new StringSchema()
         }
 
         /**

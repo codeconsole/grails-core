@@ -413,6 +413,22 @@ on it:
 | `order` | `asc` or `desc`
 |===
 
+The identifier an operation of a `RestfulController` addresses is described with the type the
+domain class declares for it:
+
+[cols="1,2"]
+|===
+| Identifier | OpenAPI
+
+| `Long` | `integer`, format `int64`
+| `Integer` | `integer`, format `int32`
+| `UUID` | `string`, format `uuid`
+| `String` or any other type | `string`
+|===
+
+An association to the domain class is described with the same type. A `@Parameter` declared for the
+identifier refines it, and keeps that type unless its schema names another.
+
 An action parameter of a simple type is bound from the request by name, so it is described as a
 query parameter of that type:
 

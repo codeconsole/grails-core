@@ -20,6 +20,7 @@ package grails.openapi
 
 import io.swagger.v3.oas.annotations.Hidden
 import io.swagger.v3.oas.annotations.Parameter as ParameterAnnotation
+import io.swagger.v3.oas.annotations.media.Schema as SchemaAnnotation
 import io.swagger.v3.oas.annotations.tags.Tag as TagAnnotation
 import io.swagger.v3.oas.annotations.Operation as OperationAnnotation
 import io.swagger.v3.oas.annotations.responses.ApiResponse as ApiResponseAnnotation
@@ -204,6 +205,41 @@ class ActionAnnotationSpec extends Specification {
             description == 'The identifier of the widget'
             example.toString() == '42'
         }
+
+        and: 'the annotation names no type, so the identifier keeps the one its entity declares'
+        with(openApi.paths['/annotated/show/{id}'].get.parameters.find { it.name == 'id' }.schema) {
+            OpenApiFixture.typeOf(it) == 'integer'
+            format == 'int64'
+        }
+    }
+
+    void 'a parameter schema declared without a type keeps the derived type'() {
+        given:
+        def openApi = new OpenAPI()
+
+        when:
+        customizer().contribute(openApi, null)
+
+        then:
+        with(openApi.paths['/annotated/update/{id}'].put.parameters.find { it.name == 'id' }.schema) {
+            OpenApiFixture.typeOf(it) == 'integer'
+            format == 'int64'
+            minimum == 1
+        }
+    }
+
+    void 'a parameter schema that declares a type replaces the derived one'() {
+        given:
+        def openApi = new OpenAPI()
+
+        when:
+        customizer().contribute(openApi, null)
+
+        then:
+        with(openApi.paths['/annotated/patch/{id}'].patch.parameters.find { it.name == 'id' }.schema) {
+            OpenApiFixture.typeOf(it) == 'string'
+            format == 'uuid'
+        }
     }
 
     private static GrailsOpenApiGenerator customizer() {
@@ -246,6 +282,14 @@ class AnnotatedController extends RestfulController<AnnotatedWidget> {
     @ParameterAnnotation(name = 'id', description = 'The identifier of the widget', example = '42')
     @Override
     def show() { }
+
+    @ParameterAnnotation(name = 'id', schema = @SchemaAnnotation(minimum = '1'))
+    @Override
+    def update() { }
+
+    @ParameterAnnotation(name = 'id', schema = @SchemaAnnotation(type = 'string', format = 'uuid'))
+    @Override
+    def patch() { }
 
     @Hidden
     @Override

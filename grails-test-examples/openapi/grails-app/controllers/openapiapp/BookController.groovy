@@ -40,4 +40,10 @@ class BookController extends RestfulController<Book> {
     Object index(Integer max) {
         super.index(max)
     }
+
+    @Parameter(name = 'id', in = ParameterIn.PATH, description = 'The identifier of the book')
+    @Override
+    Object show() {
+        super.show()
+    }
 }

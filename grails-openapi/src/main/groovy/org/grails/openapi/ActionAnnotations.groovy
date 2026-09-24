@@ -32,6 +32,7 @@ import io.swagger.v3.oas.annotations.ExternalDocumentation as ExternalDocumentat
 import io.swagger.v3.oas.annotations.Hidden
 import io.swagger.v3.oas.annotations.Operation as OperationAnnotation
 import io.swagger.v3.oas.annotations.Parameter as ParameterAnnotation
+import io.swagger.v3.oas.annotations.media.Schema as SchemaAnnotation
 import io.swagger.v3.oas.annotations.parameters.RequestBody as RequestBodyAnnotation
 import io.swagger.v3.oas.annotations.responses.ApiResponse as ApiResponseAnnotation
 import io.swagger.v3.oas.annotations.security.SecurityRequirement as SecurityRequirementAnnotation
@@ -41,6 +42,7 @@ import io.swagger.v3.oas.models.ExternalDocumentation
 import io.swagger.v3.oas.models.Operation
 import io.swagger.v3.oas.models.headers.Header
 import io.swagger.v3.oas.models.media.Content
+import io.swagger.v3.oas.models.media.Schema
 import io.swagger.v3.oas.models.parameters.Parameter as ParameterModel
 import io.swagger.v3.oas.models.parameters.RequestBody
 import io.swagger.v3.oas.models.responses.ApiResponse
@@ -282,9 +284,13 @@ class ActionAnnotations {
         }
 
         ParameterModel parameter = existing ?: new ParameterModel().name(name).in(parameterLocation(declared))
+        Schema derived = existing?.schema
         List<Annotation> annotations = [(Annotation) declared]
         ParameterProcessor.applyAnnotations(parameter, reflected?.parameterizedType ?: declaredType(declared), annotations,
                 components, NO_MEDIA_TYPES, DEFAULT_MEDIA_TYPES, null, openapi31)
+        if (derived != null && (reflected == null || reflected.type == Object)) {
+            keepDerivedType(parameter, derived, declared)
+        }
         if (parameter.in == null) {
             parameter.setIn(parameterLocation(declared))
         }
@@ -293,6 +299,31 @@ class ActionAnnotations {
         }
         if (existing == null) {
             operation.addParametersItem(parameter)
+        }
+    }
+
+    /**
+     * A parameter declared without a type describes it as a string, so one that refines a
+     * parameter the operation already describes, such as the identifier of the resource, keeps
+     * the type it was described with.
+     */
+    private static void keepDerivedType(ParameterModel parameter, Schema derived, ParameterAnnotation declared) {
+        if (declared.content() || AnnotationsUtils.hasArrayAnnotation(declared.array())) {
+            return
+        }
+        SchemaAnnotation schema = declared.schema()
+        if (!AnnotationsUtils.hasSchemaAnnotation(schema)) {
+            parameter.setSchema(derived)
+            return
+        }
+        Schema described = parameter.schema
+        if (described == null || schema.implementation() != Void || schema.type() || schema.types() || schema.ref()) {
+            return
+        }
+        described.setType(derived.type)
+        described.setTypes(derived.types)
+        if (!schema.format()) {
+            described.setFormat(derived.format)
         }
     }
 
