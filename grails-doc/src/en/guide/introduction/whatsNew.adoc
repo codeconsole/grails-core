@@ -392,8 +392,9 @@ because their right values depend on the deployment. Behind a TLS-terminating pr
 forwards in `X-Forwarded-Proto` or `Forwarded`.
 
 The headers are written when the response commits, and only if nothing else has set them, so a controller, an
-interceptor, another filter or Spring Security's own header writers always win. Redirects, error pages, streamed
-bodies and responses served by other filters, such as asset-pipeline assets, are covered too.
+interceptor, another filter or Spring Security's own header writers at Spring Boot's default filter order win.
+Redirects, error pages, streamed bodies and responses served by other Grails filters, such as asset-pipeline assets,
+are covered too.
 
 Everything is configurable under `grails.security.headers.*`: the whole filter, each header, and its value. A
 deployment whose reverse proxy already sends these headers can set `grails.security.headers.defaults: auto` to send

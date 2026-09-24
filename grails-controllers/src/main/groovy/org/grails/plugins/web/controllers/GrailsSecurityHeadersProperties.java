@@ -45,6 +45,11 @@ public class GrailsSecurityHeadersProperties {
 
     private Header contentSecurityPolicy = new Header(false, null);
 
+    /**
+     * Whether the security headers filter is active. The auto-configuration does not
+     * register the filter when this is {@code false}; a {@link GrailsSecurityHeadersFilter}
+     * constructed directly honors it too and passes requests through untouched.
+     */
     public boolean isEnabled() {
         return enabled;
     }

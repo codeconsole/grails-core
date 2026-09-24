@@ -2,7 +2,7 @@
   "properties": [
     {
       "name": "grails.security.headers.enabled",
-      "description": "Whether Grails registers the default servlet HTTP security headers filter.",
+      "description": "Whether Grails registers and applies the default servlet HTTP security headers filter.",
       "type": "java.lang.Boolean",
       "defaultValue": true
     },
@@ -80,7 +80,7 @@
     },
     {
       "name": "grails.security.headers.content-security-policy.value",
-      "description": "Value for the Content-Security-Policy response header when CSP is enabled.",
+      "description": "Value for the Content-Security-Policy response header when CSP is enabled. Required: an enabled header with a blank value is not sent and a warning is logged.",
       "type": "java.lang.String"
     }
   ],

@@ -59,8 +59,18 @@ HSTS and Content Security Policy are not enabled by default because their correc
 The headers are written immediately before the response is committed, and only when nothing else has already set them.
 A controller, an interceptor, another servlet filter, or Spring Security's own header writers can therefore set any of these headers and that value is what the browser receives; Grails only fills in the headers that are still missing.
 This also applies to responses committed by a redirect, an error page, a streamed body, or a body large enough to fill the container's response buffer.
+If a response is `reset()` after the headers were written, for example by an error handler that starts over, the replacement response receives them again.
 
-The filter runs first in the servlet filter chain, so it also covers responses that other filters serve themselves without continuing the chain, such as the static assets the asset-pipeline plugin streams.
+The filter is registered at `GrailsFilters.FIRST`, ahead of every other Grails-registered filter, so it also covers responses that those filters serve themselves without continuing the chain, such as the static assets the asset-pipeline plugin streams.
+Filters ordered ahead of `GrailsFilters.FIRST` run outside it: Spring Boot's forwarded-header, character-encoding and error-page filters, and any application filter you order below that value.
+A response such a filter serves itself, without continuing the chain, does not pass through the Grails filter and receives no default headers.
+
+===== Ordering relative to Spring Security
+
+At Spring Boot's default `spring.security.filter.order` the Spring Security filter chain runs inside the Grails filter, and its header writers run first at commit time, so whatever Spring Security is configured to send is what the browser receives.
+If you order the Spring Security chain ahead of `GrailsFilters.FIRST`, the Grails defaults are written before Spring Security's writers run.
+All of Spring Security's header writers except the `X-Frame-Options` writer leave a header alone once it is present, so in that arrangement they find the Grails value already in place and do not replace it.
+Disable the corresponding `grails.security.headers.<header>` to let Spring Security own that header, or leave the Spring Security chain at its default order.
 
 ===== HSTS behind a reverse proxy
 
@@ -133,4 +143,5 @@ grails:
 
 Set `grails.security.headers.<header>.enabled` to `false` to omit a single header.
 For example, `grails.security.headers.xss-protection.enabled: false` omits `X-XSS-Protection`.
+A header that is enabled but has a blank `value` is not sent; Grails logs a warning naming the property the first time that happens, since it usually means `content-security-policy.enabled` was set without a policy.
 If an application, another filter, or Spring Security has already set one of these headers on the response by the time it commits, Grails leaves that value unchanged.

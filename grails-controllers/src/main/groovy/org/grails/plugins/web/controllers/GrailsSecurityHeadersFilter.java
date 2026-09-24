@@ -20,7 +20,8 @@ package org.grails.plugins.web.controllers;
 
 import java.io.IOException;
 import java.util.List;
-import java.util.Locale;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import jakarta.servlet.FilterChain;
@@ -31,8 +32,10 @@ import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import org.springframework.http.server.ServletServerHttpRequest;
 import org.springframework.util.StringUtils;
 import org.springframework.web.filter.OncePerRequestFilter;
+import org.springframework.web.util.ForwardedHeaderUtils;
 
 /**
  * Applies baseline browser hardening response headers.
@@ -40,7 +43,10 @@ import org.springframework.web.filter.OncePerRequestFilter;
  * <p>Headers are written immediately before the response commits (or when the filter
  * chain returns, whichever comes first) and only when nothing further down the chain
  * has already set them, so a controller, an interceptor, another filter or Spring
- * Security's header writers always win over the Grails defaults.</p>
+ * Security's header writers running inside this filter win over the Grails defaults.
+ * A filter that runs <em>outside</em> this one and, like most of Spring Security's header
+ * writers, only fills headers that are still absent finds the Grails value already in
+ * place; see {@link GrailsSecurityHeadersAutoConfiguration} for the ordering.</p>
  *
  * <p>When {@code grails.security.headers.defaults} is {@code auto} and the request is
  * detected as having come through a reverse proxy, the built-in default values are
@@ -48,6 +54,11 @@ import org.springframework.web.filter.OncePerRequestFilter;
  * deployments where the proxy owns these headers and the application cannot see what it
  * adds. See {@link GrailsSecurityHeadersProperties.Defaults} for the controlling
  * setting.</p>
+ *
+ * <p>When {@link GrailsSecurityHeadersProperties#isEnabled()} is {@code false} the filter
+ * passes every request through untouched. The auto-configuration does not register the
+ * filter at all in that case; the check here covers filters an application constructs
+ * itself.</p>
  *
  * @since 8.0
  */
@@ -62,10 +73,6 @@ public class GrailsSecurityHeadersFilter extends OncePerRequestFilter {
 
     private static final Logger logger = LoggerFactory.getLogger(GrailsSecurityHeadersFilter.class);
 
-    private static final String X_FORWARDED_PROTO = "X-Forwarded-Proto";
-
-    private static final String FORWARDED = "Forwarded";
-
     private static final String HTTPS = "https";
 
     private final GrailsSecurityHeadersProperties properties;
@@ -73,6 +80,8 @@ public class GrailsSecurityHeadersFilter extends OncePerRequestFilter {
     private final boolean reverseProxyConfigured;
 
     private final AtomicBoolean reverseProxyLogged = new AtomicBoolean();
+
+    private final Set<String> blankValueLogged = ConcurrentHashMap.newKeySet();
 
     public GrailsSecurityHeadersFilter(GrailsSecurityHeadersProperties properties) {
         this(properties, false);
@@ -97,8 +106,12 @@ public class GrailsSecurityHeadersFilter extends OncePerRequestFilter {
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
             throws ServletException, IOException {
+        if (!this.properties.isEnabled()) {
+            filterChain.doFilter(request, response);
+            return;
+        }
         boolean applyDefaults = shouldApplyDefaults(request);
-        boolean secure = isSecure(request);
+        boolean secure = isEnabled(this.properties.getHsts()) && isSecure(request);
         SecurityHeadersResponseWrapper wrapped = new SecurityHeadersResponseWrapper(response,
                 () -> writeHeaders(response, applyDefaults, secure));
         try {
@@ -110,18 +123,20 @@ public class GrailsSecurityHeadersFilter extends OncePerRequestFilter {
     }
 
     private void writeHeaders(HttpServletResponse response, boolean applyDefaults, boolean secure) {
-        applyHeader(response, "X-Content-Type-Options", properties.getContentTypeOptions(), applyDefaults);
-        applyHeader(response, "X-Frame-Options", properties.getFrameOptions(), applyDefaults);
-        applyHeader(response, "Referrer-Policy", properties.getReferrerPolicy(), applyDefaults);
-        applyHeader(response, "X-XSS-Protection", properties.getXssProtection(), applyDefaults);
+        applyHeader(response, "X-Content-Type-Options", "content-type-options",
+                this.properties.getContentTypeOptions(), applyDefaults);
+        applyHeader(response, "X-Frame-Options", "frame-options", this.properties.getFrameOptions(), applyDefaults);
+        applyHeader(response, "Referrer-Policy", "referrer-policy", this.properties.getReferrerPolicy(), applyDefaults);
+        applyHeader(response, "X-XSS-Protection", "xss-protection", this.properties.getXssProtection(), applyDefaults);
         if (secure) {
-            applyHeader(response, "Strict-Transport-Security", properties.getHsts(), applyDefaults);
+            applyHeader(response, "Strict-Transport-Security", "hsts", this.properties.getHsts(), applyDefaults);
         }
-        applyHeader(response, "Content-Security-Policy", properties.getContentSecurityPolicy(), applyDefaults);
+        applyHeader(response, "Content-Security-Policy", "content-security-policy",
+                this.properties.getContentSecurityPolicy(), applyDefaults);
     }
 
     private boolean shouldApplyDefaults(HttpServletRequest request) {
-        return switch (properties.getDefaults()) {
+        return switch (this.properties.getDefaults()) {
             case ALWAYS -> true;
             case NEVER -> false;
             case AUTO -> !isBehindReverseProxy(request);
@@ -153,60 +168,47 @@ public class GrailsSecurityHeadersFilter extends OncePerRequestFilter {
     }
 
     /**
-     * Whether the client connection is secure. Falls back to the forwarded scheme when the
-     * container itself saw plain HTTP, which is the case behind a TLS-terminating proxy that
-     * has not been configured through {@code server.forward-headers-strategy}. Trusting the
-     * forwarded scheme is safe for HSTS: user agents ignore a
-     * {@code Strict-Transport-Security} header received over a non-secure transport
-     * (RFC 6797, section 8.1), so a spoofed header on a plain connection has no effect.
+     * Whether the client connection is secure. Falls back to the scheme a reverse proxy
+     * forwards in the RFC 7239 {@code Forwarded} header or in {@code X-Forwarded-Proto}
+     * (and {@code X-Forwarded-Ssl}), read the same way Spring's {@code ForwardedHeaderFilter}
+     * reads them, when the container itself saw plain HTTP. That is the case behind a
+     * TLS-terminating proxy that has not been configured through
+     * {@code server.forward-headers-strategy}. Trusting the forwarded scheme is safe for
+     * HSTS: user agents ignore a {@code Strict-Transport-Security} header received over a
+     * non-secure transport (RFC 6797, section 8.1), so a spoofed header on a plain
+     * connection has no effect.
      */
     private static boolean isSecure(HttpServletRequest request) {
         if (request.isSecure()) {
             return true;
         }
-        String forwardedProto = firstToken(request.getHeader(X_FORWARDED_PROTO), ',');
-        if (forwardedProto != null) {
-            return HTTPS.equalsIgnoreCase(forwardedProto);
+        ServletServerHttpRequest httpRequest = new ServletServerHttpRequest(request);
+        try {
+            String scheme = ForwardedHeaderUtils.adaptFromForwardedHeaders(httpRequest.getURI(), httpRequest.getHeaders())
+                    .build().getScheme();
+            return HTTPS.equalsIgnoreCase(scheme);
         }
-        return HTTPS.equalsIgnoreCase(forwardedProtoParameter(request.getHeader(FORWARDED)));
+        catch (IllegalArgumentException malformedForwardedHeaders) {
+            // A forwarded port that is not a number: no trustworthy scheme to go on.
+            return false;
+        }
     }
 
-    /**
-     * Extracts the {@code proto} parameter of the first RFC 7239 {@code Forwarded} element.
-     */
-    private static String forwardedProtoParameter(String forwarded) {
-        String firstElement = firstToken(forwarded, ',');
-        if (firstElement == null) {
-            return null;
-        }
-        for (String pair : firstElement.split(";")) {
-            int eq = pair.indexOf('=');
-            if (eq > 0 && "proto".equals(pair.substring(0, eq).trim().toLowerCase(Locale.ROOT))) {
-                return unquote(pair.substring(eq + 1).trim());
-            }
-        }
-        return null;
+    private static boolean isEnabled(GrailsSecurityHeadersProperties.Header header) {
+        return header != null && header.isEnabled();
     }
 
-    private static String firstToken(String value, char separator) {
-        if (!StringUtils.hasText(value)) {
-            return null;
-        }
-        int end = value.indexOf(separator);
-        String token = (end < 0 ? value : value.substring(0, end)).trim();
-        return token.isEmpty() ? null : token;
-    }
-
-    private static String unquote(String value) {
-        if (value.length() >= 2 && value.charAt(0) == '"' && value.charAt(value.length() - 1) == '"') {
-            return value.substring(1, value.length() - 1);
-        }
-        return value;
-    }
-
-    private static void applyHeader(HttpServletResponse response, String name,
+    private void applyHeader(HttpServletResponse response, String name, String propertyName,
             GrailsSecurityHeadersProperties.Header header, boolean applyDefaults) {
-        if (header == null || !header.isEnabled() || !StringUtils.hasText(header.getValue())) {
+        if (!isEnabled(header)) {
+            return;
+        }
+        if (!StringUtils.hasText(header.getValue())) {
+            if (this.blankValueLogged.add(name)) {
+                logger.warn("The {} response header is enabled but grails.security.headers.{}.value is blank, so the " +
+                        "header is not sent. Set a value or set grails.security.headers.{}.enabled to false.",
+                        name, propertyName, propertyName);
+            }
             return;
         }
         if (!applyDefaults && !header.isExplicit()) {

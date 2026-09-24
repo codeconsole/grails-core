@@ -86,6 +86,8 @@ class GrailsSecurityHeadersFilterTomcatSpec extends Specification {
         context.addServletMappingDecoded('/redirect', 'redirect')
         Tomcat.addServlet(context, 'error', new ErrorServlet())
         context.addServletMappingDecoded('/error', 'error')
+        Tomcat.addServlet(context, 'reset', new ResetServlet())
+        context.addServletMappingDecoded('/reset', 'reset')
         Tomcat.addServlet(context, 'unreachable', new BodyServlet(1, false))
         context.addServletMappingDecoded('/assets/*', 'unreachable')
 
@@ -132,6 +134,7 @@ class GrailsSecurityHeadersFilterTomcatSpec extends Specification {
         '/println'      | 'Content-Length reached by println'                     | 200    | 2 + LINE_SEPARATOR_LENGTH
         '/redirect'     | 'redirect committed inside the chain'                   | 302    | null
         '/error'        | 'sendError committed inside the chain'                  | 404    | null
+        '/reset'        | 'reset after the buffer filled but before it flushed'    | 500    | 5
         '/assets/a.js'  | 'served by an inner filter that never continues the chain' | 200 | 14
     }
 
@@ -181,6 +184,26 @@ class GrailsSecurityHeadersFilterTomcatSpec extends Specification {
         @Override
         protected void doGet(HttpServletRequest request, HttpServletResponse response) {
             response.sendRedirect('/small-stream')
+        }
+    }
+
+    /**
+     * Fills the response buffer exactly, which fires the filter's callback while Tomcat has
+     * not yet committed (it flushes on the write after the buffer fills, and a reached
+     * Content-Length commits immediately, so this is the one legal window), then resets
+     * and replaces the response the way an error handler does. The replacement must carry
+     * the headers too.
+     */
+    private static class ResetServlet extends HttpServlet {
+
+        @Override
+        protected void doGet(HttpServletRequest request, HttpServletResponse response) {
+            response.contentType = 'text/plain'
+            response.outputStream.write(new byte[response.bufferSize])
+            response.reset()
+            response.status = 500
+            response.contentType = 'text/plain'
+            response.outputStream.write('error'.bytes)
         }
     }
 

@@ -33,7 +33,8 @@ import jakarta.servlet.http.HttpServletResponseWrapper;
  * declared {@code Content-Length}, and writes that fill the container's response
  * buffer (which the container flushes, and thereby commits, on its own). If the
  * wrapped chain returns without committing, the owner is expected to invoke
- * {@link #beforeCommit()} itself.
+ * {@link #beforeCommit()} itself. A {@link #reset()} discards the headers along with the
+ * body, so it re-arms the callback for the response that replaces them.
  *
  * <p>Writing headers this late lets anything further down the filter chain (a
  * controller, an interceptor, Spring Security's header writers, another filter) set
@@ -56,6 +57,13 @@ final class SecurityHeadersResponseWrapper extends HttpServletResponseWrapper {
     private long contentLength = -1;
 
     private long contentWritten;
+
+    /**
+     * The container's buffer size, read once content is being written. The servlet API
+     * forbids changing it after that point, so the value is cached and only refreshed by
+     * {@link #setBufferSize(int)}, {@link #reset()} or {@link #resetBuffer()}.
+     */
+    private int bufferSize = -1;
 
     SecurityHeadersResponseWrapper(HttpServletResponse response, Runnable beforeCommit) {
         super(response);
@@ -112,6 +120,32 @@ final class SecurityHeadersResponseWrapper extends HttpServletResponseWrapper {
     public void flushBuffer() throws IOException {
         beforeCommit();
         super.flushBuffer();
+    }
+
+    /**
+     * Clears the status, headers and body. The headers the callback wrote are gone with
+     * it, so the callback is armed again for whatever is written next.
+     */
+    @Override
+    public void reset() {
+        super.reset();
+        this.fired = false;
+        this.contentLength = -1;
+        this.contentWritten = 0;
+        this.bufferSize = -1;
+    }
+
+    @Override
+    public void resetBuffer() {
+        super.resetBuffer();
+        this.contentWritten = 0;
+        this.bufferSize = -1;
+    }
+
+    @Override
+    public void setBufferSize(int size) {
+        super.setBufferSize(size);
+        this.bufferSize = -1;
     }
 
     @Override
@@ -192,11 +226,18 @@ final class SecurityHeadersResponseWrapper extends HttpServletResponseWrapper {
         }
         this.contentWritten += count;
         boolean bodyComplete = this.contentLength >= 0 && this.contentWritten >= this.contentLength;
-        int bufferSize = getBufferSize();
-        boolean bufferFull = bufferSize > 0 && this.contentWritten >= bufferSize;
+        int size = bufferSize();
+        boolean bufferFull = size > 0 && this.contentWritten >= size;
         if (bodyComplete || bufferFull) {
             beforeCommit();
         }
+    }
+
+    private int bufferSize() {
+        if (this.bufferSize < 0) {
+            this.bufferSize = getBufferSize();
+        }
+        return this.bufferSize;
     }
 
     private final class CommitAwareOutputStream extends ServletOutputStream {
