@@ -19,11 +19,8 @@
 
 package grails.plugin.scaffolding
 
-import java.nio.charset.Charset
 import java.util.concurrent.ConcurrentHashMap
 
-import groovy.text.GStringTemplateEngine
-import groovy.text.Template
 import groovy.transform.CompileStatic
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
@@ -43,7 +40,6 @@ import grails.plugin.scaffolding.annotation.Scaffold
 import grails.util.BuildSettings
 import grails.util.Environment
 import org.apache.grails.scaffolding.ScaffoldedPages
-import org.grails.buffer.FastStringWriter
 import org.grails.gsp.io.GroovyPageScriptSource
 import org.grails.web.servlet.mvc.GrailsWebRequest
 import org.grails.web.servlet.view.GroovyPageView
@@ -272,13 +268,8 @@ class ScaffoldingViewResolver extends GroovyPageViewResolver implements Resource
     }
 
     private View expandTemplate(Map<String, Object> model, byte[] template, String cacheKey) {
-        def viewGenerator = new GStringTemplateEngine()
-        Template t = viewGenerator.createTemplate(new String(template, Charset.defaultCharset()))
-
-        def contents = new FastStringWriter()
-        t.make(model).writeTo(contents)
-
-        def compiled = templateEngine.createTemplate(new ByteArrayResource(contents.toString().getBytes(templateEngine.gspEncoding), "view:$cacheKey"), !enableReload)
+        String page = ScaffoldedPages.expand(template, model)
+        def compiled = templateEngine.createTemplate(new ByteArrayResource(page.getBytes(templateEngine.gspEncoding), "view:$cacheKey"), !enableReload)
         def view = new GroovyPageView()
         view.setServletContext(getServletContext())
         view.setTemplate(compiled)

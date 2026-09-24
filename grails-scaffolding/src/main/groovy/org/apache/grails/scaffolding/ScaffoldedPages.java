@@ -18,6 +18,8 @@
  */
 package org.apache.grails.scaffolding;
 
+import java.io.IOException;
+import java.io.StringWriter;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -25,18 +27,19 @@ import java.util.HexFormat;
 import java.util.Map;
 import java.util.TreeSet;
 
+import groovy.text.GStringTemplateEngine;
+
 /**
- * Names the page the build compiles from a scaffolding template, so that the runtime resolver can
- * find it.
+ * Expands a scaffolding template into a page, and names the page the build compiles from it so
+ * that the runtime resolver can find it.
  *
  * <p>A page is named for a digest of the template it was expanded from and of every name the model
  * binds. Two expansions share a name only when their inputs are identical, so a template the build
  * did not see, or a model derived differently from the one bound here, names a page that does not
  * exist rather than a different one.</p>
  *
- * <p>The Gradle plugin's {@code GenerateScaffoldedViewsTask} derives the same names independently
- * and writes the pages under the application's views, and the two are held together by the same
- * test vector in both modules.</p>
+ * <p>The build and the resolver both come here, so a page is expanded and named by the same code
+ * whichever of them does it.</p>
  *
  * @since 8.0
  */
@@ -65,6 +68,29 @@ public final class ScaffoldedPages {
      */
     public static String uri(Map<String, ?> model, byte[] template) {
         return "/" + DIRECTORY + "/" + model.get("fullName") + "/" + key(model, template) + ".gsp";
+    }
+
+    /**
+     * Expands a template with a model, as both the build and the resolver do. A template is read
+     * as UTF-8 wherever it is expanded, so the page the build compiles is the page the resolver
+     * would have expanded, whatever encoding either JVM defaults to.
+     *
+     * @param template the template exactly as it is read
+     * @param model the names the template is expanded with
+     * @return the page
+     */
+    public static String expand(byte[] template, Map<String, ?> model) {
+        StringWriter page = new StringWriter();
+        try {
+            new GStringTemplateEngine()
+                    .createTemplate(new String(template, StandardCharsets.UTF_8))
+                    .make(model)
+                    .writeTo(page);
+        }
+        catch (IOException | ClassNotFoundException e) {
+            throw new IllegalStateException("Could not expand the scaffolding template for " + model.get("fullName"), e);
+        }
+        return page.toString();
     }
 
     private static String key(Map<String, ?> model, byte[] template) {

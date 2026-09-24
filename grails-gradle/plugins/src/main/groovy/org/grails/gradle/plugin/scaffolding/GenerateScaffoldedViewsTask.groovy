@@ -16,11 +16,11 @@
  */
 package org.grails.gradle.plugin.scaffolding
 
-import java.nio.charset.StandardCharsets
 import java.util.jar.JarEntry
 import java.util.jar.JarFile
 
-import groovy.text.GStringTemplateEngine
+import javax.inject.Inject
+
 import groovy.transform.CompileStatic
 import groovyjarjarasm.asm.AnnotationVisitor
 import groovyjarjarasm.asm.ClassReader
@@ -28,17 +28,24 @@ import groovyjarjarasm.asm.ClassVisitor
 import groovyjarjarasm.asm.Opcodes
 import groovyjarjarasm.asm.Type
 
+import org.gradle.api.Action
 import org.gradle.api.DefaultTask
 import org.gradle.api.file.ConfigurableFileCollection
 import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.file.FileVisitDetails
+import org.gradle.api.provider.Property
 import org.gradle.api.tasks.CacheableTask
+import org.gradle.api.tasks.Classpath
 import org.gradle.api.tasks.InputFiles
+import org.gradle.api.tasks.Nested
 import org.gradle.api.tasks.Optional
 import org.gradle.api.tasks.OutputDirectory
 import org.gradle.api.tasks.PathSensitive
 import org.gradle.api.tasks.PathSensitivity
 import org.gradle.api.tasks.TaskAction
+import org.gradle.jvm.toolchain.JavaLauncher
+import org.gradle.process.ExecOperations
+import org.gradle.process.JavaExecSpec
 
 /**
  * Expands the scaffolding templates at build time, so the pages a scaffolded controller renders are
@@ -50,23 +57,22 @@ import org.gradle.api.tasks.TaskAction
  * ordinary GSP compiler instead.</p>
  *
  * <p>They are written under {@code grails-scaffolded/<domain class>/}, a directory no controller's
- * views resolve from, and each is named for a digest of the template it was expanded from and the
- * model it was expanded with. The runtime resolver decides which page a request gets exactly as it
- * would without them - a view the application or a plugin declares, a namespace-specific template,
- * a template override - and only where it would expand a template does it look for the page expanded
- * here from the same template and model. So a page cannot shadow a declared view, and a template
- * this task did not see, or a model it derived differently, finds nothing and is expanded at runtime
- * as before rather than being served a different page.</p>
+ * views resolve from, and each is named for its template and a digest of the template and the model
+ * it was expanded with. The runtime resolver decides which page a request gets exactly as it would
+ * without them - a view the application or a plugin declares, a namespace-specific template, a
+ * template override - and only where it would expand a template does it look for the page expanded
+ * from the same template and model. So a page cannot shadow a declared view, and a template this
+ * task did not see finds nothing and is expanded at runtime as before.</p>
  *
- * <p>Which template a controller uses depends on its namespace, which is only known when it is asked
- * for, so every template is expanded for every scaffolded domain class, namespace-specific ones such
- * as {@code admin/show.gsp} included. Where a template path appears more than once, the application's
- * {@code src/main/templates/scaffolding} wins and then the first on the classpath, which is what the
- * resolver finds for an application's controller.</p>
- *
- * <p>No GORM, application context or application class is needed: the controllers are read with ASM
- * and the model is derived from the domain class name alone, as the runtime model is. The template
- * engine of the build's Groovy is relied on to expand a template the way the application's does.</p>
+ * <p>This task finds the scaffolded domain classes, by reading the controllers with ASM so that no
+ * application class is loaded, and chooses the templates: every one on the classpath, with the
+ * application's {@code src/main/templates/scaffolding} winning over a dependency and an earlier
+ * dependency over a later one, which is what the resolver finds for an application's controller.
+ * Namespace-specific templates such as {@code admin/show.gsp} are included, because which one a
+ * controller uses depends on its namespace, which is only known when it is asked for. The pages
+ * themselves are expanded and named by {@code org.apache.grails.scaffolding.ScaffoldedPagesGenerator},
+ * run in a JVM on the application's runtime classpath, so they come from the same code and the same
+ * Groovy as the resolver's.</p>
  *
  * @since 8.0
  */
@@ -79,6 +85,9 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
 
     /** Path within an artifact holding the scaffolding templates. */
     private static final String TEMPLATE_PATH = 'META-INF/templates/scaffolding/'
+
+    /** The class that expands and names the pages, from the application's scaffolding library. */
+    static final String GENERATOR = 'org.apache.grails.scaffolding.ScaffoldedPagesGenerator'
 
     /** Compiled application classes, searched for scaffolded controllers. */
     @InputFiles
@@ -100,9 +109,25 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
     @PathSensitive(PathSensitivity.RELATIVE)
     abstract ConfigurableFileCollection getTemplateOverrides()
 
+    /**
+     * The classpath the pages are expanded on, normally the application's runtime classpath: the
+     * scaffolding library that names them and the Groovy that expands them, as the running
+     * application has them.
+     */
+    @Classpath
+    abstract ConfigurableFileCollection getGeneratorClasspath()
+
+    /** The Java the pages are expanded with; the build's own when not set. */
+    @Nested
+    @Optional
+    abstract Property<JavaLauncher> getJavaLauncher()
+
     /** Where the pages are written, as a tree to be compiled with the application's views. */
     @OutputDirectory
     abstract DirectoryProperty getOutputDirectory()
+
+    @Inject
+    abstract ExecOperations getExecOperations()
 
     @TaskAction
     void generate() {
@@ -115,37 +140,54 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
             logger.info('No scaffolding templates on the classpath; nothing to generate')
             return
         }
-
-        int written = 0
-        for (String domain : findScaffoldedDomains()) {
-            Map<String, Object> model = ScaffoldedPages.model(domain)
-            for (Map.Entry<String, byte[]> template : templates.entrySet()) {
-                String page
-                try {
-                    page = expand(template.value, model)
-                }
-                catch (Exception e) {
-                    logger.warn('Could not expand the scaffolding template {} for {}, so it is expanded when it is ' +
-                            'first rendered instead, which a native image cannot do: {}', template.key, domain, e.toString())
-                    continue
-                }
-                File target = new File(outputDir, ScaffoldedPages.path(model, template.value))
-                target.parentFile.mkdirs()
-                target.setText(page, StandardCharsets.UTF_8.name())
-                written++
-            }
+        Set<String> domains = findScaffoldedDomains()
+        if (domains.isEmpty()) {
+            logger.info('No scaffolded controllers; nothing to generate')
+            return
         }
-        logger.info('Generated {} scaffolded page(s)', written)
+        if (!generatorAvailable()) {
+            logger.warn('The scaffolding library on the runtime classpath does not provide {}, so no scaffolded page is ' +
+                    'compiled and each is expanded when it is first rendered, which a native image cannot do. ' +
+                    'Use a grails-scaffolding matching this Gradle plugin.', GENERATOR)
+            return
+        }
+
+        File work = temporaryDir
+        File templatesDir = new File(work, 'templates')
+        templatesDir.deleteDir()
+        templates.each { String path, byte[] content ->
+            File file = new File(templatesDir, "${path}.gsp")
+            file.parentFile.mkdirs()
+            file.bytes = content
+        }
+        File domainList = new File(work, 'domains.txt')
+        domainList.setText(domains.join('\n'), 'UTF-8')
+
+        execOperations.javaexec(new Action<JavaExecSpec>() {
+            @Override
+            void execute(JavaExecSpec spec) {
+                if (javaLauncher.present) {
+                    spec.executable = javaLauncher.get().executablePath.asFile.absolutePath
+                }
+                spec.classpath = generatorClasspath
+                spec.mainClass.set(GENERATOR)
+                spec.args(templatesDir.absolutePath, domainList.absolutePath, outputDir.absolutePath)
+            }
+        }).assertNormalExitValue()
     }
 
-    /** Expands a template with the names the runtime resolver binds. */
-    private static String expand(byte[] template, Map<String, Object> model) {
-        StringWriter out = new StringWriter()
-        new GStringTemplateEngine()
-                .createTemplate(new String(template, StandardCharsets.UTF_8))
-                .make(model)
-                .writeTo(out)
-        out.toString()
+    /** Whether the generator is on its classpath; a scaffolding library older than this plugin lacks it. */
+    private boolean generatorAvailable() {
+        String entry = GENERATOR.replace('.', '/') + '.class'
+        generatorClasspath.files.any { File file ->
+            if (file.isDirectory()) {
+                return new File(file, entry).isFile()
+            }
+            if (file.isFile() && file.name.endsWith('.jar')) {
+                return new JarFile(file).withCloseable { JarFile jar -> jar.getJarEntry(entry) != null }
+            }
+            false
+        }
     }
 
     /**

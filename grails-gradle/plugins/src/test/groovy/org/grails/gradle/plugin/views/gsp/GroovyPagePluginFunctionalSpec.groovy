@@ -136,9 +136,16 @@ class GroovyPagePluginFunctionalSpec extends GradleSpecification {
         new File(projectDir, 'build.gradle').append("""
             dependencies {
                 implementation localGroovy()
+                runtimeOnly files('generator')
             }
             sourceSets.main.groovy.srcDir('grails-app/controllers')
         """)
+        // The generator the task runs comes from grails-scaffolding, which this build cannot depend
+        // on; the tests' stand-in records what it is handed instead.
+        String generator = 'org/apache/grails/scaffolding/ScaffoldedPagesGenerator.class'
+        File generatorClass = new File(projectDir, "generator/${generator}")
+        generatorClass.parentFile.mkdirs()
+        generatorClass.bytes = getClass().classLoader.getResource(generator).bytes
         // Only the annotation's bytecode is read by the task; no application is started.
         Map<String, String> sources = [
             'src/main/groovy/grails/plugin/scaffolding/annotation/Scaffold.groovy': """
@@ -169,8 +176,15 @@ class GroovyPagePluginFunctionalSpec extends GradleSpecification {
             file.text = content.stripIndent()
         }
         File staged = new File(projectDir, 'build/generated/views')
-        Closure<Set<String>> pagesOf = { String domain ->
-            new File(staged, "grails-scaffolded/${domain}").listFiles()*.text as Set<String>
+        Closure<Map<String, String>> pagesOf = { String domain ->
+            File dir = new File(staged, "grails-scaffolded/${domain}")
+            Map<String, String> pages = [:]
+            dir.eachFileRecurse { File f ->
+                if (f.isFile()) {
+                    pages[dir.toPath().relativize(f.toPath()).toString().replace(File.separatorChar, '/' as char)] = f.text
+                }
+            }
+            pages
         }
 
         when:
@@ -184,9 +198,9 @@ class GroovyPagePluginFunctionalSpec extends GradleSpecification {
         !new File(staged, 'book/show.gsp').exists()
         !new File(staged, 'event').exists()
 
-        and: 'every template is expanded for every scaffolded domain, the namespaced controller included'
-        pagesOf('java.lang.String') == ['show String', 'admin show String'] as Set
-        pagesOf('java.lang.Integer') == ['show Integer', 'admin show Integer'] as Set
+        and: 'every template, namespace-specific ones included, is expanded for every scaffolded domain class'
+        pagesOf('java.lang.String') == ['show.gsp': 'show ${className}', 'admin/show.gsp': 'admin show ${className}']
+        pagesOf('java.lang.Integer') == ['show.gsp': 'show ${className}', 'admin/show.gsp': 'admin show ${className}']
 
         when: 'a template override is edited'
         new File(projectDir, 'src/main/templates/scaffolding/show.gsp').text = 'edited show ${className}'
@@ -194,6 +208,6 @@ class GroovyPagePluginFunctionalSpec extends GradleSpecification {
 
         then: 'the pages expanded from it are replaced, not added to'
         assertTaskSuccess('stageGroovyPages', rebuild)
-        pagesOf('java.lang.String') == ['edited show String', 'admin show String'] as Set
+        pagesOf('java.lang.String') == ['show.gsp': 'edited show ${className}', 'admin/show.gsp': 'admin show ${className}']
     }
 }

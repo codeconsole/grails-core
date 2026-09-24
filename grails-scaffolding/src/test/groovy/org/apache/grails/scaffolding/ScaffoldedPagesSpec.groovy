@@ -26,6 +26,10 @@ class ScaffoldedPagesSpec extends Specification {
 
     static final byte[] TEMPLATE = 'show ${className}'.getBytes(StandardCharsets.UTF_8)
 
+    static byte[] bytes(String text) {
+        text.getBytes(StandardCharsets.UTF_8)
+    }
+
     static Map<String, Object> model(Map<String, Object> changes = [:]) {
         [className: 'Book', fullName: 'com.example.Book', propertyName: 'book', modelName: 'book',
          packageName: 'com.example', packagePath: 'com/example', simpleName: 'Book', lowerCaseName: 'book'] + changes
@@ -66,5 +70,16 @@ class ScaffoldedPagesSpec extends Specification {
     void 'where one entry ends and the next begins is part of the name'() {
         expect:
         ScaffoldedPages.uri(model(a: 'bc'), TEMPLATE) != ScaffoldedPages.uri(model(ab: 'c'), TEMPLATE)
+    }
+
+    void 'a template is expanded with the model'() {
+        expect:
+        ScaffoldedPages.expand(bytes('list of ${propertyName} for ${className} in ${packageName}'), model()) ==
+                'list of book for Book in com.example'
+    }
+
+    void 'a template is read as UTF-8 wherever it is expanded'() {
+        expect:
+        ScaffoldedPages.expand(bytes('Título ${className}'), model()) == 'Título Book'
     }
 }

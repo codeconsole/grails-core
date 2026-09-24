@@ -357,6 +357,10 @@ class GroovyPagePlugin implements Plugin<Project> {
                 }
                 it.classesDirs.from(classesDirs)
                 it.templateClasspath.from(project.configurations.named('compileClasspath'))
+                // expanded by the application's own scaffolding library and Groovy, as the resolver
+                // expands them, so a page's name agrees with the one the resolver looks for
+                it.generatorClasspath.from(project.configurations.named('runtimeClasspath'))
+                it.javaLauncher.convention(launcher)
                 it.templateOverrides.from(
                         project.fileTree(project.layout.projectDirectory.dir('src/main/templates/scaffolding'))
                                 .matching { PatternFilterable p -> p.include('**/*.gsp') })
