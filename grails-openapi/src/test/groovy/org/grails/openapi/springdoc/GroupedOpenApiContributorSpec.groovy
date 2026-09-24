@@ -66,7 +66,8 @@ class GroupedOpenApiContributorSpec extends Specification {
         given:
         def context = new org.springframework.context.support.GenericApplicationContext()
         context.beanFactory.registerSingleton('gates', GroupedOpenApi.builder().group('gates').displayName('Gates')
-                .pathsToMatch('/gate/**').packagesToExclude('com.example').build())
+                .pathsToMatch('/gate/**').packagesToExclude('com.example').producesToMatch('application/json')
+                .consumesToMatch('text/xml').headersToMatch('X-Api-Version=1').build())
         context.refresh()
 
         when:
@@ -77,6 +78,9 @@ class GroupedOpenApiContributorSpec extends Specification {
         groups[0].displayName == 'Gates'
         groups[0].pathsToMatch == ['/gate/**']
         groups[0].packagesToExclude == ['com.example']
+        groups[0].producesToMatch == ['application/json']
+        groups[0].consumesToMatch == ['text/xml']
+        groups[0].headersToMatch == ['X-Api-Version=1']
 
         cleanup:
         context.close()

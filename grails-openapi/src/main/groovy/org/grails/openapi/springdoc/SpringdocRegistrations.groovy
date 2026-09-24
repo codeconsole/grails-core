@@ -71,6 +71,15 @@ class SpringdocRegistrations {
         if (group.packagesToExclude) {
             builder.packagesToExclude(group.packagesToExclude as String[])
         }
+        if (group.producesToMatch) {
+            builder.producesToMatch(group.producesToMatch as String[])
+        }
+        if (group.consumesToMatch) {
+            builder.consumesToMatch(group.consumesToMatch as String[])
+        }
+        if (group.headersToMatch) {
+            builder.headersToMatch(group.headersToMatch as String[])
+        }
         // A group without criteria selects everything, which springdoc only accepts from a group
         // that carries a customizer; the contributor supplies the one that matters.
         builder.addOpenApiCustomizer { }

@@ -32,7 +32,10 @@ import org.springframework.util.AntPathMatcher
  *
  * <p>A path criterion is an Ant pattern matched against the described path, such as
  * {@code /api/v1/**}. A package criterion names the package of the controller that serves the
- * operation, and matches its sub-packages too. A criterion left empty selects everything.</p>
+ * operation, and matches its sub-packages too. A media type criterion is matched the way springdoc
+ * matches a handler method: an operation matches only where it produces, or consumes, exactly the
+ * media types the criterion lists. A URL mapping declares no header condition, so an operation
+ * never matches a header criterion. A criterion left empty selects everything.</p>
  *
  * @since 8.0
  */
@@ -60,12 +63,41 @@ class OpenApiSelection {
     List<String> packagesToExclude = []
 
     /**
+     * The media types an operation must produce: those of the formats its controller declares in
+     * {@code responseFormats}, or {@code application/json} where it declares none.
+     */
+    List<String> producesToMatch = []
+
+    /**
+     * The media types an operation must consume: those it produces, where it binds a body.
+     */
+    List<String> consumesToMatch = []
+
+    /**
+     * The header conditions an operation must declare, which a URL mapping never does.
+     */
+    List<String> headersToMatch = []
+
+    /**
      * @param path the described path, such as {@code /books/{id}}
      * @param controllerClass the controller serving the operation, if known
      * @return whether the operation belongs in the document
      */
     boolean selects(String path, Class<?> controllerClass) {
         selectsPath(path) && selectsPackage(controllerClass?.package?.name)
+    }
+
+    /**
+     * @param produces the media types the operation responds in
+     * @param consumes the media types the operation binds a body from, empty where it binds none
+     * @return whether the operation's media types are the ones the criteria ask for
+     */
+    boolean selectsMediaTypes(Collection<String> produces, Collection<String> consumes) {
+        matches(producesToMatch, produces) && matches(consumesToMatch, consumes) && !headersToMatch
+    }
+
+    private static boolean matches(List<String> criterion, Collection<String> declared) {
+        !criterion || (declared && criterion.size() == declared.size() && criterion.containsAll(declared))
     }
 
     private boolean selectsPath(String path) {

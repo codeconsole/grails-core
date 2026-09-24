@@ -85,6 +85,9 @@ class GroupedOpenApiContributor implements BeanPostProcessor, BeanFactoryAware {
                 pathsToMatch: group.pathsToMatch ?: [],
                 pathsToExclude: group.pathsToExclude ?: [],
                 packagesToScan: group.packagesToScan ?: [],
-                packagesToExclude: group.packagesToExclude ?: [])
+                packagesToExclude: group.packagesToExclude ?: [],
+                producesToMatch: group.producesToMatch ?: [],
+                consumesToMatch: group.consumesToMatch ?: [],
+                headersToMatch: group.headersToMatch ?: [])
     }
 }

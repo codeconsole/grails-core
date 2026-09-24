@@ -143,6 +143,15 @@ class OpenApiDocumentFunctionalSpec extends Specification implements HttpClientS
         group.paths.keySet() == ['/authors', '/authors/{id}'] as Set
     }
 
+    void 'a group selects the operations that consume the media types it asks for'() {
+        when:
+        Map group = http('/v3/api-docs/author-changes').json()
+
+        then: 'only the operations that bind a JSON body'
+        group.paths.collectMany { String path, Map item -> item.keySet().collect { "${it} ${path}".toString() } } as Set ==
+                ['post /authors', 'put /authors/{id}', 'post /authors/{id}', 'patch /authors/{id}'] as Set
+    }
+
     void 'an association is described the way Grails renders and binds it'() {
         given:
         Map reference = (Map) ((Map) document.components.schemas.Book.get('properties')).author

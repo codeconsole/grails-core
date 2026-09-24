@@ -481,6 +481,11 @@ class GrailsOpenApiGenerator {
             if (pathItem.readOperationsMap().containsKey(method)) {
                 return
             }
+            List<String> mediaTypes = mediaTypes(controller, actionName)
+            List<String> consumes = bindsBody(method, controller, controllerType, actionName) ? mediaTypes : []
+            if (!selection.selectsMediaTypes(mediaTypes, consumes)) {
+                return
+            }
 
             Operation operation = buildOperation(path, method, controller, controllerType, controllerName,
                     actionName, operationId)
@@ -534,6 +539,22 @@ class GrailsOpenApiGenerator {
                 }
             }
             operation
+        }
+
+        /**
+         * Whether an operation binds a body: one it declares, the command object its action takes,
+         * or the resource a RestfulController serves.
+         */
+        private boolean bindsBody(PathItem.HttpMethod method, GrailsControllerClass controller,
+                                  Class<?> controllerType, String actionName) {
+            if (!(method.name() in BODY_METHODS)) {
+                return false
+            }
+            if (ActionAnnotations.declaresRequestBody(controllerType, actionName)
+                    || ActionAnnotations.commandObjectType(controllerType, actionName) != null) {
+                return true
+            }
+            controller != null && RestfulController.isAssignableFrom(controller.clazz) && resourceType(controller) != null
         }
 
         /**

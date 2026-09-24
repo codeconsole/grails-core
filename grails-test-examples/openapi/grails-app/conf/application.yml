@@ -30,6 +30,9 @@ springdoc:
     group-configs:
         - group: authors
           paths-to-match: /authors/**
+        - group: author-changes
+          paths-to-match: /authors/**
+          consumes-to-match: application/json
 
 dataSource:
     pooled: true

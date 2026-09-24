@@ -32,7 +32,9 @@ import org.springframework.core.env.PropertySource
  * <p>The same settings drive a document generated at build time and one springdoc serves. Where
  * springdoc is present, its {@code springdoc.paths-to-match}, {@code springdoc.paths-to-exclude},
  * {@code springdoc.packages-to-scan} and {@code springdoc.packages-to-exclude} are honored for the
- * default document as well, and {@code springdoc.api-docs.version} chooses the OpenAPI version.</p>
+ * default document as well, as are {@code springdoc.produces-to-match},
+ * {@code springdoc.consumes-to-match} and {@code springdoc.headers-to-match}, and
+ * {@code springdoc.api-docs.version} chooses the OpenAPI version.</p>
  *
  * @since 8.0
  */
@@ -128,6 +130,9 @@ class OpenApiSettings {
         defaults.pathsToExclude.addAll(springdoc.pathsToExclude)
         defaults.packagesToScan.addAll(springdoc.packagesToScan)
         defaults.packagesToExclude.addAll(springdoc.packagesToExclude)
+        defaults.producesToMatch.addAll(springdoc.producesToMatch)
+        defaults.consumesToMatch.addAll(springdoc.consumesToMatch)
+        defaults.headersToMatch.addAll(springdoc.headersToMatch)
         settings.defaultSelection = defaults
 
         settings.groups = groupNames(environment).collect { String name ->
@@ -143,7 +148,10 @@ class OpenApiSettings {
                 pathsToMatch: list(environment, "${prefix}.paths-to-match".toString()),
                 pathsToExclude: list(environment, "${prefix}.paths-to-exclude".toString()),
                 packagesToScan: list(environment, "${prefix}.packages-to-scan".toString()),
-                packagesToExclude: list(environment, "${prefix}.packages-to-exclude".toString()))
+                packagesToExclude: list(environment, "${prefix}.packages-to-exclude".toString()),
+                producesToMatch: list(environment, "${prefix}.produces-to-match".toString()),
+                consumesToMatch: list(environment, "${prefix}.consumes-to-match".toString()),
+                headersToMatch: list(environment, "${prefix}.headers-to-match".toString()))
     }
 
     private static List<String> list(Environment environment, String key) {

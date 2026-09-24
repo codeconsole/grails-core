@@ -20,6 +20,8 @@ package grails.openapi
 
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.tags.Tag
+import io.swagger.v3.oas.models.OpenAPI
+import io.swagger.v3.oas.models.PathItem
 
 import grails.artefact.Artefact
 import grails.gorm.annotation.Entity
@@ -75,6 +77,48 @@ class DocumentSelectionSpec extends Specification {
         ['grails.openapi.packages-to-scan': 'grails.openapi.namespaced.v2']           || ['/api/v2/gate']
         ['grails.openapi.packages-to-exclude': 'grails.openapi.namespaced']           || ['/api/v1/crates', '/api/v1/crates/{id}',
                                                                                           '/api/v1/pallets', '/api/v1/pallets/{id}']
+    }
+
+    void 'selects by the media types an operation produces and consumes'() {
+        when:
+        def openApi = OpenApiFixture.document(config, [CrateStackController, TicketController, V1GateController],
+                [CrateStack, Ticket]) {
+            '/crates'(resources: 'crateStack')
+            '/tickets'(resources: 'ticket')
+            '/gate'(controller: 'gate', action: 'index', namespace: 'v1')
+        }
+
+        then:
+        operations(openApi) == expected as Set
+
+        where:
+        config                                                           || expected
+        ['grails.openapi.produces-to-match': 'application/json']         || ['GET /crates', 'POST /crates', 'GET /crates/{id}',
+                                                                             'PUT /crates/{id}', 'POST /crates/{id}',
+                                                                             'PATCH /crates/{id}', 'DELETE /crates/{id}',
+                                                                             'GET /gate']
+        ['grails.openapi.produces-to-match': 'text/xml,application/json'] || ['GET /tickets', 'POST /tickets', 'GET /tickets/{id}',
+                                                                              'PUT /tickets/{id}', 'POST /tickets/{id}',
+                                                                              'PATCH /tickets/{id}', 'DELETE /tickets/{id}']
+        ['grails.openapi.consumes-to-match': 'application/json']         || ['POST /crates', 'PUT /crates/{id}', 'POST /crates/{id}',
+                                                                             'PATCH /crates/{id}']
+        ['grails.openapi.headers-to-match': 'X-Api-Version=1']           || []
+        ['springdoc.consumes-to-match': 'application/json,text/xml']     || ['POST /tickets', 'PUT /tickets/{id}', 'POST /tickets/{id}',
+                                                                             'PATCH /tickets/{id}']
+    }
+
+    void 'a group selects by the media types an operation produces'() {
+        given:
+        def generator = OpenApiFixture.generator(OpenApiFixture.holder {
+            '/crates'(resources: 'crateStack')
+            '/tickets'(resources: 'ticket')
+        }, OpenApiFixture.application([CrateStackController, TicketController]),
+                OpenApiFixture.context([CrateStack, Ticket]),
+                ['grails.openapi.groups.xml.produces-to-match[0]': 'application/json',
+                 'grails.openapi.groups.xml.produces-to-match[1]': 'text/xml'])
+
+        expect:
+        generator.generate('xml').paths.keySet() == ['/tickets', '/tickets/{id}'] as Set
     }
 
     void 'describes only what is annotated when asked to'() {
@@ -138,6 +182,12 @@ class DocumentSelectionSpec extends Specification {
 
         then:
         openApi.paths == null
+    }
+
+    private static Set<String> operations(OpenAPI openApi) {
+        (openApi.paths ?: [:]).collectMany { String path, PathItem item ->
+            item.readOperationsMap().keySet().collect { "${it} ${path}".toString() }
+        } as Set<String>
     }
 
     private static document(Map<String, Object> config) {

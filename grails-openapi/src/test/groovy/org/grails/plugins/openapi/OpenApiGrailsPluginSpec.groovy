@@ -64,12 +64,18 @@ class OpenApiGrailsPluginSpec extends Specification {
     void 'serves each configured group through springdoc, with the same criteria'() {
         when:
         def beanFactory = register('grails.openapi.groups.catalogue.paths-to-match': '/books/**',
-                'grails.openapi.groups.catalogue.display-name': 'Catalogue')
+                'grails.openapi.groups.catalogue.display-name': 'Catalogue',
+                'grails.openapi.groups.catalogue.produces-to-match': 'application/json',
+                'grails.openapi.groups.catalogue.consumes-to-match': 'application/json',
+                'grails.openapi.groups.catalogue.headers-to-match': 'X-Api-Version=1')
         def group = beanFactory.getBeansOfType(GroupedOpenApi).values().find { it.group == 'catalogue' }
 
         then:
         group.pathsToMatch == ['/books/**']
         group.displayName == 'Catalogue'
+        group.producesToMatch == ['application/json']
+        group.consumesToMatch == ['application/json']
+        group.headersToMatch == ['X-Api-Version=1']
     }
 
     void 'registers nothing when the document is disabled'() {

@@ -134,13 +134,16 @@ an entry in `grails.plugin.springsecurity.controllerAnnotations.staticRules`.
 | `grails.openapi.include-form-actions` | `false` | Whether the `create` and `edit` actions of a `RestfulController` are described
 | `grails.openapi.paths-to-match`, `grails.openapi.paths-to-exclude` | | Ant patterns of the paths the default document describes, or leaves out
 | `grails.openapi.packages-to-scan`, `grails.openapi.packages-to-exclude` | | The packages of the controllers the default document describes, or leaves out
+| `grails.openapi.produces-to-match`, `grails.openapi.consumes-to-match` | | The media types an operation the default document describes must produce, or consume
+| `grails.openapi.headers-to-match` | | The header conditions an operation must declare, which a URL mapping never does
 | `grails.openapi.groups.<name>.*` | | A group and what it selects, see <<openApiGroups,Groups>>
 | `grails.openapi.output-directory` | `build/openapi` | Where `generate-open-api` writes
 | `grails.openapi.output-format` | `yaml` | Whether `generate-open-api` writes `yaml` or `json`
 |===
 
 Where springdoc is used, its own `springdoc.paths-to-match`, `springdoc.paths-to-exclude`,
-`springdoc.packages-to-scan` and `springdoc.packages-to-exclude` apply to the Grails endpoints of the
+`springdoc.packages-to-scan`, `springdoc.packages-to-exclude`, `springdoc.produces-to-match`,
+`springdoc.consumes-to-match` and `springdoc.headers-to-match` apply to the Grails endpoints of the
 default document too, and `springdoc.api-docs.version` chooses between OpenAPI 3.1, the default,
 and 3.0 for both the build-time and the runtime description.
 
@@ -164,6 +167,20 @@ grails:
         packages-to-exclude: com.example.internal
 ----
 
+The media type settings select the way springdoc selects a Spring MVC handler method: an operation
+is described only where it produces, or consumes, exactly the media types a setting lists. An
+operation produces the media types of its controller's `responseFormats`, `application/json` where
+it declares none, and consumes the same media types where it binds a body. A URL mapping declares no
+header condition, so `headers-to-match` leaves every Grails endpoint out, as it leaves out a Spring
+handler method that declares none:
+
+[source,yaml]
+----
+grails:
+    openapi:
+        produces-to-match: application/json
+----
+
 The `create` and `edit` actions of a `RestfulController` answer the forms an HTML client renders,
 so they are left out unless `grails.openapi.include-form-actions` is set.
 
@@ -185,8 +202,9 @@ grails:
                 paths-to-match: /api/v2/**
 ----
 
-Each group takes the same `paths-to-match`, `paths-to-exclude`, `packages-to-scan` and
-`packages-to-exclude` settings as the default document, and `display-name` titles it. The
+Each group takes the same `paths-to-match`, `paths-to-exclude`, `packages-to-scan`,
+`packages-to-exclude`, `produces-to-match`, `consumes-to-match` and `headers-to-match` settings as
+the default document, and `display-name` titles it. The
 `generate-open-api` command writes each group to a file of its own, and at runtime springdoc serves
 each at `/v3/api-docs/<name>`, applying the same criteria to any Spring MVC endpoints the
 application also has. A group declared to springdoc, in `springdoc.group-configs` or as a

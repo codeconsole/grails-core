@@ -40,6 +40,7 @@ class BuildTimeDocumentFunctionalSpec extends Specification implements HttpClien
         new File(directory, 'openapi.yaml').file
         new File(directory, 'openapi-catalogue.yaml').file
         new File(directory, 'openapi-authors.yaml').file
+        new File(directory, 'openapi-author-changes.yaml').file
     }
 
     void 'the default document describes what springdoc serves'() {
@@ -62,7 +63,7 @@ class BuildTimeDocumentFunctionalSpec extends Specification implements HttpClien
         operations(generated) == operations(served)
 
         where:
-        group << ['catalogue', 'authors']
+        group << ['catalogue', 'authors', 'author-changes']
     }
 
     private static Map<String, Set<String>> operations(Map document) {
