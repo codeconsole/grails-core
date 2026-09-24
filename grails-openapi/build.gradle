@@ -49,6 +49,8 @@ dependencies {
     api project(':grails-core')
     api project(':grails-url-mappings')
     api project(':grails-rest-transforms')
+    // MimeType, which maps a controller's responseFormats to media types
+    implementation project(':grails-web-common')
     // Constrained/ConstrainedEntity and Validateable are used from src/main, not only from tests.
     api project(':grails-datamapping-validation')
     api project(':grails-validation')

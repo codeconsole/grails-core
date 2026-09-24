@@ -52,6 +52,7 @@ import io.swagger.v3.oas.models.tags.Tag
 import io.swagger.v3.oas.annotations.tags.Tag as TagAnnotation
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
+import org.springframework.context.ApplicationContext
 import org.springframework.core.GenericTypeResolver
 import org.springframework.core.io.DefaultResourceLoader
 import org.springframework.core.io.Resource
@@ -63,6 +64,7 @@ import grails.core.GrailsControllerClass
 import grails.rest.RestfulController
 import grails.web.mapping.UrlMapping
 import grails.web.mapping.UrlMappingsHolder
+import grails.web.mime.MimeType
 import org.grails.core.artefact.ControllerArtefactHandler
 import org.grails.datastore.mapping.model.MappingContext
 import org.grails.datastore.mapping.model.PersistentEntity
@@ -102,6 +104,7 @@ class GrailsOpenApiGenerator {
     private static final String ACTION_TOKEN = 'action'
     private static final String ID_TOKEN = 'id'
     private static final String PATCH_SUFFIX = 'Patch'
+    private static final String RESPONSE_FORMATS = 'responseFormats'
     private static final String REFERENCE_PREFIX = '#/components/schemas/'
 
     private static final List<String> BODY_METHODS = ['POST', 'PUT', 'PATCH'].asImmutable()
@@ -212,6 +215,7 @@ class GrailsOpenApiGenerator {
         private final SchemaNames schemaNames = new SchemaNames()
         private final Set<String> addedSchemas = [] as Set
         private final Map<String, String> patchSchemas = [:]
+        private Map<String, String> formatMediaTypes
 
         Contribution(OpenAPI openApi, OpenApiSelection selection) {
             this.openApi = openApi
@@ -510,8 +514,9 @@ class GrailsOpenApiGenerator {
             }
             addRequestParameters(operation, controllerType, actionName, pathNames)
 
+            List<String> mediaTypes = mediaTypes(controller, actionName)
             if (restful && actionName) {
-                operation.setResponses(restfulResponses(resourceType, actionName, !pathNames.isEmpty()))
+                operation.setResponses(restfulResponses(resourceType, actionName, !pathNames.isEmpty(), mediaTypes))
             }
             else {
                 ApiResponses responses = new ApiResponses()
@@ -525,8 +530,7 @@ class GrailsOpenApiGenerator {
             if (method.name() in BODY_METHODS && !ActionAnnotations.declaresRequestBody(controllerType, actionName)) {
                 Schema<?> body = requestBodySchema(controllerType, actionName, resourceType, method)
                 if (body != null) {
-                    operation.setRequestBody(new RequestBody().content(
-                            new Content().addMediaType(DEFAULT_MEDIA_TYPE, new MediaType().schema(body))))
+                    operation.setRequestBody(new RequestBody().content(content(body, mediaTypes)))
                 }
             }
             operation
@@ -629,7 +633,8 @@ class GrailsOpenApiGenerator {
          * NO_CONTENT with no body, an action addressed by an identifier can miss, and an action
          * that validates what it binds can answer with the validation errors.
          */
-        private ApiResponses restfulResponses(Class<?> resourceType, String actionName, boolean takesId) {
+        private ApiResponses restfulResponses(Class<?> resourceType, String actionName, boolean takesId,
+                                              List<String> mediaTypes) {
             ApiResponses responses = new ApiResponses()
 
             ApiResponse success = new ApiResponse().description('Success')
@@ -639,7 +644,7 @@ class GrailsOpenApiGenerator {
                     Schema<?> schema = RestfulControllerActions.isCollection(actionName)
                             ? new ArraySchema().items(resource)
                             : resource
-                    success.setContent(new Content().addMediaType(DEFAULT_MEDIA_TYPE, new MediaType().schema(schema)))
+                    success.setContent(content(schema, mediaTypes))
                 }
             }
             responses.addApiResponse(RestfulControllerActions.successCode(actionName), success)
@@ -650,10 +655,65 @@ class GrailsOpenApiGenerator {
             if (RestfulControllerActions.validates(actionName)) {
                 responses.addApiResponse(UNPROCESSABLE_RESPONSE_CODE, new ApiResponse()
                         .description('Validation failed')
-                        .content(new Content().addMediaType(DEFAULT_MEDIA_TYPE,
-                                new MediaType().schema(validationErrorsReference()))))
+                        .content(content(validationErrorsReference(), mediaTypes)))
             }
             responses
+        }
+
+        /**
+         * The media types an action responds in and binds a body from: those of the formats its
+         * controller declares in {@code responseFormats}, for the action or for every action, or
+         * JSON where it declares none.
+         */
+        private List<String> mediaTypes(GrailsControllerClass controller, String actionName) {
+            Object declared = controller?.getPropertyValue(RESPONSE_FORMATS)
+            Object formats = declared instanceof Map ? ((Map) declared).get(actionName) : declared
+            List<String> mediaTypes = []
+            if (formats instanceof Collection) {
+                for (Object format : (Collection) formats) {
+                    String mediaType = format != null ? formatMediaTypes()[format.toString()] : null
+                    if (mediaType != null && !mediaTypes.contains(mediaType)) {
+                        mediaTypes << mediaType
+                    }
+                }
+            }
+            mediaTypes ?: [DEFAULT_MEDIA_TYPE]
+        }
+
+        /**
+         * The media type Grails maps each format to: the first configured for it.
+         */
+        private Map<String, String> formatMediaTypes() {
+            if (formatMediaTypes == null) {
+                formatMediaTypes = [:]
+                for (MimeType mimeType : configuredMimeTypes()) {
+                    if (mimeType.extension && !formatMediaTypes.containsKey(mimeType.extension)) {
+                        formatMediaTypes[mimeType.extension] = mimeType.name
+                    }
+                }
+            }
+            formatMediaTypes
+        }
+
+        private MimeType[] configuredMimeTypes() {
+            try {
+                ApplicationContext context = grailsApplication?.mainContext
+                if (context?.containsBean(MimeType.BEAN_NAME)) {
+                    return context.getBean(MimeType.BEAN_NAME, MimeType[])
+                }
+            }
+            catch (RuntimeException ignored) {
+                // An application without the configured types describes with the defaults.
+            }
+            MimeType.createDefaults()
+        }
+
+        private Content content(Schema<?> schema, List<String> mediaTypes) {
+            Content content = new Content()
+            for (String mediaType : mediaTypes) {
+                content.addMediaType(mediaType, new MediaType().schema(schema))
+            }
+            content
         }
 
         /**

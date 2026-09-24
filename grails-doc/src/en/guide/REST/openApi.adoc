@@ -409,6 +409,22 @@ A `422` answers with the validation errors Grails renders for a request that can
 described once as the `ValidationErrors` schema. An application rendering its errors differently
 describes them with `@ApiResponse`.
 
+A response and a request body are described in the media types of the formats the controller
+declares in `responseFormats`, for the action or for every action, and in `application/json` where
+it declares none. A format is described as the first media type the application configures for it
+in `grails.mime.types`:
+
+[source,groovy]
+----
+class BookController extends RestfulController<Book> {
+
+    static responseFormats = ['json', 'xml']
+}
+----
+
+describes each body as `application/json` and as `text/xml`, the first media type Grails configures
+for `xml` by default.
+
 ==== Parameters
 
 A listing accepts the paging and sorting `RestfulController` passes to GORM, so those are described
