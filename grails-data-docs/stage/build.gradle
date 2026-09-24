@@ -22,6 +22,12 @@ apply plugin: 'groovy'
 // grails-data-mapping api
 def combinedGroovydoc = tasks.register('aggregateDataMappingGroovydoc', Groovydoc)
 apply from: rootProject.layout.projectDirectory.file('gradle/docs-dependencies.gradle')
+// aggregateDataMappingGroovydoc documents the whole data-mapping stack in one run, so it
+// needs more than a single module does.
+groovydocEnhancer {
+    maxHeapSize = '2g'
+}
+
 combinedGroovydoc.configure { Groovydoc task ->
     task.windowTitle = "Grails Data Mapping API - ${projectVersion}"
     task.docTitle = "Grails Data Mapping API - ${projectVersion}"
@@ -69,7 +75,10 @@ combinedGroovydoc.configure { Groovydoc task ->
     }.unique()
     task.source(allSourceDirs)
     task.ext.groovydocSourceDirs = allSourceDirs
-    task.classpath = files(sources.collect { SourceSet it -> it.compileClasspath.filter(File.&isDirectory) }.flatten().unique())
+    // The full compile classpath, not just the sibling projects' class directories: Groovydoc
+    // needs to load the external types referenced by the sources, otherwise it links them to
+    // a page it never generated instead of to the external javadocs configured above.
+    task.classpath = files(sources.collect { SourceSet it -> it.compileClasspath })
     task.destinationDir = project.layout.buildDirectory.dir('data-api/api').get().asFile
 
     task.inputs.files(task.source).withPropertyName("groovyDocSrc").withPathSensitivity(PathSensitivity.RELATIVE)
