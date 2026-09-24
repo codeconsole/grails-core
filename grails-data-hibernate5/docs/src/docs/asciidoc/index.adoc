@@ -24,6 +24,7 @@ under the License.
 :last-update-label!:
 :toc:
 :sectnums:
+:!fragment:
 
 [[introduction]]
 == Introduction
@@ -190,7 +191,9 @@ include::querying/hql.adoc[]
 include::advancedGORMFeatures.adoc[]
 
 [[eventsAutoTimestamping]]
-include::advancedGORMFeatures/eventsAutoTimestamping.adoc[leveloffset=+2]
+=== Events and Auto Timestamping
+
+include::advancedGORMFeatures/eventsAutoTimestamping.adoc[]
 
 [[ormdsl]]
 === Custom ORM Mapping
@@ -263,7 +266,9 @@ include::advancedGORMFeatures/ormdsl/customNamingStrategy.adoc[]
 include::advancedGORMFeatures/defaultSortOrder.adoc[]
 
 [[programmaticTransactions]]
-include::programmaticTransactions.adoc[leveloffset=+1]
+== Programmatic Transactions
+
+include::programmaticTransactions.adoc[]
 
 [[dataServices]]
 == GORM Data Services

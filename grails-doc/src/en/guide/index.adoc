@@ -146,7 +146,9 @@ include::conf/config.adoc[]
 include::conf/config/ymlPropertyOptions.adoc[]
 
 [[builtInOptions]]
-include::conf/config/builtInOptions.adoc[leveloffset=+3]
+==== Built in options
+
+include::conf/config/builtInOptions.adoc[]
 
 [[logging]]
 ==== Logging
@@ -959,7 +961,9 @@ include::testing/unitTesting.adoc[]
 include::testing/unitTesting/unitTestingControllers.adoc[]
 
 [[unitTestingTagLibraries]]
-include::testing/unitTesting/unitTestingTagLibraries.adoc[leveloffset=+3]
+==== Unit Testing Tag Libraries
+
+include::testing/unitTesting/unitTestingTagLibraries.adoc[]
 
 [[unitTestingDomains]]
 ==== Unit Testing Domains
@@ -1197,13 +1201,19 @@ include::redis/redisUsefulLinks.adoc[]
 include::plugins.adoc[]
 
 [[creatingAndInstallingPlugins]]
-include::plugins/creatingAndInstallingPlugins.adoc[leveloffset=+2]
+=== Creating and Installing Plugins
+
+include::plugins/creatingAndInstallingPlugins.adoc[]
 
 [[repositories]]
-include::plugins/repositories.adoc[leveloffset=+2]
+=== Plugin Repositories
+
+include::plugins/repositories.adoc[]
 
 [[providingBasicArtefacts]]
-include::plugins/providingBasicArtefacts.adoc[leveloffset=+2]
+=== Providing Basic Artefacts
+
+include::plugins/providingBasicArtefacts.adoc[]
 
 [[evaluatingConventions]]
 === Evaluating Conventions
@@ -1211,19 +1221,29 @@ include::plugins/providingBasicArtefacts.adoc[leveloffset=+2]
 include::plugins/evaluatingConventions.adoc[]
 
 [[hookingIntoRuntimeConfiguration]]
-include::plugins/hookingIntoRuntimeConfiguration.adoc[leveloffset=+2]
+=== Hooking into Runtime Configuration
+
+include::plugins/hookingIntoRuntimeConfiguration.adoc[]
 
 [[addingMethodsAtCompileTime]]
-include::plugins/addingMethodsAtCompileTime.adoc[leveloffset=+2]
+=== Adding Methods at Compile Time
+
+include::plugins/addingMethodsAtCompileTime.adoc[]
 
 [[addingDynamicMethodsAtRuntime]]
-include::plugins/addingDynamicMethodsAtRuntime.adoc[leveloffset=+2]
+=== Adding Dynamic Methods at Runtime
+
+include::plugins/addingDynamicMethodsAtRuntime.adoc[]
 
 [[participatingInAutoReloadEvents]]
-include::plugins/participatingInAutoReloadEvents.adoc[leveloffset=+2]
+=== Participating in Auto Reload Events
+
+include::plugins/participatingInAutoReloadEvents.adoc[]
 
 [[understandingPluginLoadOrder]]
-include::plugins/understandingPluginLoadOrder.adoc[leveloffset=+2]
+=== Understanding Plugin Load Order
+
+include::plugins/understandingPluginLoadOrder.adoc[]
 
 [[artefactApi]]
 === The Artefact API
@@ -1306,10 +1326,14 @@ include::scaffolding.adoc[]
 include::deployment.adoc[]
 
 [[deploymentStandalone]]
-include::deployment/deploymentStandalone.adoc[leveloffset=+2]
+=== Standalone
+
+include::deployment/deploymentStandalone.adoc[]
 
 [[deploymentContainer]]
-include::deployment/deploymentContainer.adoc[leveloffset=+2]
+=== Container Deployment (e.g. Tomcat)
+
+include::deployment/deploymentContainer.adoc[]
 
 [[deploymentTasks]]
 === Deployment Configuration Tasks
