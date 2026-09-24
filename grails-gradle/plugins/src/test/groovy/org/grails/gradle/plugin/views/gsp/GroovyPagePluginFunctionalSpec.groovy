@@ -128,4 +128,72 @@ class GroovyPagePluginFunctionalSpec extends GradleSpecification {
         and: 'so its test task is not put behind compiling pages it does not read'
         result.output.contains('TEST_WAITS_FOR_PAGE_COMPILATION=false')
     }
+
+    def "scaffolded pages are staged beside the application views, in a directory of their own"() {
+        given:
+        def runner = setupTestResourceProject('gsp-compile-classpath')
+        File projectDir = runner.projectDir
+        new File(projectDir, 'build.gradle').append("""
+            dependencies {
+                implementation localGroovy()
+            }
+            sourceSets.main.groovy.srcDir('grails-app/controllers')
+        """)
+        // Only the annotation's bytecode is read by the task; no application is started.
+        Map<String, String> sources = [
+            'src/main/groovy/grails/plugin/scaffolding/annotation/Scaffold.groovy': """
+                package grails.plugin.scaffolding.annotation
+                import java.lang.annotation.Retention
+                import java.lang.annotation.RetentionPolicy
+                @Retention(RetentionPolicy.RUNTIME)
+                @interface Scaffold { Class value() }
+            """,
+            'grails-app/controllers/admin/EventController.groovy': """
+                package admin
+                import grails.plugin.scaffolding.annotation.Scaffold
+                @Scaffold(String)
+                class EventController { static namespace = 'admin' }
+            """,
+            'grails-app/controllers/BookController.groovy': """
+                import grails.plugin.scaffolding.annotation.Scaffold
+                @Scaffold(Integer)
+                class BookController { }
+            """,
+            'src/main/templates/scaffolding/show.gsp': 'show ${className}',
+            'src/main/templates/scaffolding/admin/show.gsp': 'admin show ${className}',
+            'grails-app/views/book/index.gsp': 'handwritten index'
+        ]
+        sources.each { String path, String content ->
+            File file = new File(projectDir, path)
+            file.parentFile.mkdirs()
+            file.text = content.stripIndent()
+        }
+        File staged = new File(projectDir, 'build/generated/views')
+        Closure<Set<String>> pagesOf = { String domain ->
+            new File(staged, "grails-scaffolded/${domain}").listFiles()*.text as Set<String>
+        }
+
+        when:
+        def result = executeTask('stageGroovyPages')
+
+        then: 'the application views are staged as they are'
+        assertTaskSuccess('stageGroovyPages', result)
+        new File(staged, 'book/index.gsp').text == 'handwritten index'
+
+        and: 'no scaffolded page lands where a controller view resolves from'
+        !new File(staged, 'book/show.gsp').exists()
+        !new File(staged, 'event').exists()
+
+        and: 'every template is expanded for every scaffolded domain, the namespaced controller included'
+        pagesOf('java.lang.String') == ['show String', 'admin show String'] as Set
+        pagesOf('java.lang.Integer') == ['show Integer', 'admin show Integer'] as Set
+
+        when: 'a template override is edited'
+        new File(projectDir, 'src/main/templates/scaffolding/show.gsp').text = 'edited show ${className}'
+        def rebuild = executeTask('stageGroovyPages')
+
+        then: 'the pages expanded from it are replaced, not added to'
+        assertTaskSuccess('stageGroovyPages', rebuild)
+        pagesOf('java.lang.String') == ['edited show String', 'admin show String'] as Set
+    }
 }

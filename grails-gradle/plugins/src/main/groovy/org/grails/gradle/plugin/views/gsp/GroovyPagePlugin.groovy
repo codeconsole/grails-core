@@ -329,10 +329,11 @@ class GroovyPagePlugin implements Plugin<Project> {
             archive.from(packagedTagLibIndex)
         }
 
-        // A scaffolded controller has no views of its own, so they are expanded from their
-        // templates and compiled with the rest. They are staged together rather than compiled
-        // separately, because a second compilation writes a second gsp/views.properties and the
-        // archive tasks discard duplicates, losing the views one of them lists.
+        // A scaffolded controller has no views of its own, so its pages are expanded from their
+        // templates and compiled with the rest, into a directory of their own that the scaffolding
+        // resolver looks in and no controller's views resolve from. They are staged together rather
+        // than compiled separately, because a second compilation writes a second gsp/views.properties
+        // and the archive tasks discard duplicates, losing the views one of them lists.
         //
         // Only a project that scaffolds pays for this. Staging copies the views, and pointing the
         // compilation at the copy would change what every other project compiles for no reason.
@@ -345,7 +346,7 @@ class GroovyPagePlugin implements Plugin<Project> {
             def generateScaffoldedViews = tasks.register(
                     'generateScaffoldedViews', GenerateScaffoldedViewsTask) { GenerateScaffoldedViewsTask it ->
                 it.group = BasePlugin.BUILD_GROUP
-                it.description = 'Expands the views of scaffolded controllers so they can be precompiled'
+                it.description = 'Expands the pages of scaffolded controllers so they can be precompiled'
                 // the classes directory is written by more than one task, so the dependency is stated
                 // against the compilation rather than inferred from the directory
                 it.dependsOn(tasks.named('compileJava'))
@@ -358,19 +359,17 @@ class GroovyPagePlugin implements Plugin<Project> {
                 it.templateClasspath.from(project.configurations.named('compileClasspath'))
                 it.templateOverrides.from(
                         project.fileTree(project.layout.projectDirectory.dir('src/main/templates/scaffolding'))
-                                .matching { PatternFilterable p -> p.include('*.gsp') })
-                it.applicationViews.from(
-                        project.fileTree(appViews)
                                 .matching { PatternFilterable p -> p.include('**/*.gsp') })
                 it.outputDirectory.set(project.layout.buildDirectory.dir('generated/scaffolded-views'))
             }
 
             tasks.register('stageGroovyPages', Sync) { Sync it ->
-                it.description = 'Collects the application and scaffolded views for GSP compilation'
+                it.description = 'Collects the application views and scaffolded pages for GSP compilation'
                 it.into(stagedViews)
                 it.from(appViews)
                 it.from(generateScaffoldedViews)
-                // the application's own page wins, matching how the view resolvers are ordered
+                // the pages have a directory of their own, so this only settles a file an application
+                // puts there itself
                 it.duplicatesStrategy = DuplicatesStrategy.EXCLUDE
             }
             viewsToCompile = stagedViews.get()

@@ -16,6 +16,7 @@
  */
 package org.grails.gradle.plugin.scaffolding
 
+import java.nio.charset.StandardCharsets
 import java.util.jar.JarEntry
 import java.util.jar.JarFile
 
@@ -30,6 +31,7 @@ import groovyjarjarasm.asm.Type
 import org.gradle.api.DefaultTask
 import org.gradle.api.file.ConfigurableFileCollection
 import org.gradle.api.file.DirectoryProperty
+import org.gradle.api.file.FileVisitDetails
 import org.gradle.api.tasks.CacheableTask
 import org.gradle.api.tasks.InputFiles
 import org.gradle.api.tasks.Optional
@@ -39,23 +41,32 @@ import org.gradle.api.tasks.PathSensitivity
 import org.gradle.api.tasks.TaskAction
 
 /**
- * Writes the views a scaffolded controller would otherwise generate on its first request.
+ * Expands the scaffolding templates at build time, so the pages a scaffolded controller renders are
+ * compiled with the rest of the application instead of on the request that first asks for them.
  *
- * <p>Scaffolding expands a template into GSP source and compiles the result, and until now it did
- * both when the view was first asked for. That costs the first request on the JVM, and a native
- * image cannot do it at all: defining a class at runtime is exactly what an ahead-of-time image
- * gives up. Expanding the templates here instead lets the ordinary GSP compiler precompile the
- * result, so at runtime the views are found rather than produced.</p>
+ * <p>Scaffolding expands a template into GSP source and compiles the result. At runtime that costs
+ * the first request on the JVM, and a native image cannot do it at all: defining a class at runtime
+ * is exactly what an ahead-of-time image gives up. The pages written here are compiled by the
+ * ordinary GSP compiler instead.</p>
  *
- * <p>Only naming is substituted -- the templates read {@code className}, {@code propertyName},
- * {@code fullName} and {@code packageName}, and defer everything else about the domain class to the
- * field tag libraries at render time. That is why this needs no GORM, no application context and no
- * loading of application classes: the controllers are read with ASM and the domain class name is
- * enough. The qualified name is bound too, so that a template can declare the type of its model in a
- * form that resolves from the generated page.</p>
+ * <p>They are written under {@code grails-scaffolded/<domain class>/}, a directory no controller's
+ * views resolve from, and each is named for a digest of the template it was expanded from and the
+ * model it was expanded with. The runtime resolver decides which page a request gets exactly as it
+ * would without them - a view the application or a plugin declares, a namespace-specific template,
+ * a template override - and only where it would expand a template does it look for the page expanded
+ * here from the same template and model. So a page cannot shadow a declared view, and a template
+ * this task did not see, or a model it derived differently, finds nothing and is expanded at runtime
+ * as before rather than being served a different page.</p>
  *
- * <p>A view the application already declares is never overwritten, which keeps the existing
- * precedence: a hand-written {@code grails-app/views} page wins over a scaffolded one.</p>
+ * <p>Which template a controller uses depends on its namespace, which is only known when it is asked
+ * for, so every template is expanded for every scaffolded domain class, namespace-specific ones such
+ * as {@code admin/show.gsp} included. Where a template path appears more than once, the application's
+ * {@code src/main/templates/scaffolding} wins and then the first on the classpath, which is what the
+ * resolver finds for an application's controller.</p>
+ *
+ * <p>No GORM, application context or application class is needed: the controllers are read with ASM
+ * and the model is derived from the domain class name alone, as the runtime model is. The template
+ * engine of the build's Groovy is relied on to expand a template the way the application's does.</p>
  *
  * @since 8.0
  */
@@ -69,35 +80,27 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
     /** Path within an artifact holding the scaffolding templates. */
     private static final String TEMPLATE_PATH = 'META-INF/templates/scaffolding/'
 
-    /** The views scaffolding knows how to produce. */
-    private static final List<String> VIEW_NAMES = ['index', 'create', 'edit', 'show']
-
     /** Compiled application classes, searched for scaffolded controllers. */
     @InputFiles
     @PathSensitive(PathSensitivity.RELATIVE)
     abstract ConfigurableFileCollection getClassesDirs()
 
-    /**
-     * The classpath the scaffolding templates are read from. The application's own
-     * {@code src/main/templates/scaffolding} takes precedence, matching the runtime lookup.
-     */
+    /** The classpath the scaffolding templates are read from. */
     @InputFiles
     @PathSensitive(PathSensitivity.RELATIVE)
     abstract ConfigurableFileCollection getTemplateClasspath()
 
-    /** Application template overrides, normally {@code src/main/templates/scaffolding}. */
+    /**
+     * Application template overrides, normally the tree of {@code src/main/templates/scaffolding}.
+     * A template's path within the tree is its path as the resolver asks for it, so
+     * {@code admin/show.gsp} overrides the {@code show} template of the {@code admin} namespace.
+     */
     @InputFiles
     @Optional
     @PathSensitive(PathSensitivity.RELATIVE)
     abstract ConfigurableFileCollection getTemplateOverrides()
 
-    /** The application's own views; anything declared here is left alone. */
-    @InputFiles
-    @Optional
-    @PathSensitive(PathSensitivity.RELATIVE)
-    abstract ConfigurableFileCollection getApplicationViews()
-
-    /** Where the generated views are written. */
+    /** Where the pages are written, as a tree to be compiled with the application's views. */
     @OutputDirectory
     abstract DirectoryProperty getOutputDirectory()
 
@@ -107,106 +110,88 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
         outputDir.deleteDir()
         outputDir.mkdirs()
 
-        Map<String, String> templates = loadTemplates()
+        Map<String, byte[]> templates = loadTemplates()
         if (templates.isEmpty()) {
             logger.info('No scaffolding templates on the classpath; nothing to generate')
             return
         }
 
-        Set<File> declared = applicationViews.files
         int written = 0
-        for (Map.Entry<String, String> controller : findScaffoldedControllers()) {
-            String fullName = controller.value
-            String className = fullName.tokenize('.').last()
-            String propertyName = decapitalize(className)
-            String packageName = fullName.contains('.') ? fullName[0..<fullName.lastIndexOf('.')] : ''
-            for (String viewName : VIEW_NAMES) {
-                String template = templates.get(viewName)
-                if (template == null) {
+        for (String domain : findScaffoldedDomains()) {
+            Map<String, Object> model = ScaffoldedPages.model(domain)
+            for (Map.Entry<String, byte[]> template : templates.entrySet()) {
+                String page
+                try {
+                    page = expand(template.value, model)
+                }
+                catch (Exception e) {
+                    logger.warn('Could not expand the scaffolding template {} for {}, so it is expanded when it is ' +
+                            'first rendered instead, which a native image cannot do: {}', template.key, domain, e.toString())
                     continue
                 }
-                // a view the application wrote itself already wins at runtime, so leaving it out
-                // keeps build-time and runtime resolution agreeing
-                if (declared.any { it.path.endsWith("views/${controller.key}/${viewName}.gsp".toString()) }) {
-                    logger.info("Skipping ${controller.key}/${viewName}.gsp, the application declares it")
-                    continue
-                }
-                File target = new File(outputDir, "${controller.key}/${viewName}.gsp")
+                File target = new File(outputDir, ScaffoldedPages.path(model, template.value))
                 target.parentFile.mkdirs()
-                target.text = expand(template, className, propertyName, fullName, packageName)
+                target.setText(page, StandardCharsets.UTF_8.name())
                 written++
             }
         }
-        logger.info("Generated ${written} scaffolded view(s)")
+        logger.info('Generated {} scaffolded page(s)', written)
     }
 
-    /**
-     * Expands a template the same way the runtime resolver does, binding the same names it does.
-     *
-     * <p>{@code fullName} and {@code packageName} are bound alongside the naming because a template
-     * that declares the type of its model has to name a type that resolves from the page, and the
-     * simple name does not.</p>
-     */
-    private String expand(String template, String className, String propertyName, String fullName, String packageName) {
+    /** Expands a template with the names the runtime resolver binds. */
+    private static String expand(byte[] template, Map<String, Object> model) {
         StringWriter out = new StringWriter()
         new GStringTemplateEngine()
-                .createTemplate(template)
-                .make([className: className, propertyName: propertyName,
-                       fullName: fullName, packageName: packageName, modelName: propertyName])
+                .createTemplate(new String(template, StandardCharsets.UTF_8))
+                .make(model)
                 .writeTo(out)
         out.toString()
     }
 
     /**
-     * Maps view name to template text, with the application's overrides winning over the templates
-     * a plugin contributes.
+     * Maps a template's path, without its extension, to its content, with the application's
+     * overrides winning over the templates a dependency contributes and an earlier dependency over
+     * a later one.
      */
-    private Map<String, String> loadTemplates() {
-        Map<String, String> templates = [:]
+    private Map<String, byte[]> loadTemplates() {
+        Map<String, byte[]> templates = new TreeMap<>()
         for (File entry : templateClasspath.files) {
             if (entry.isDirectory()) {
                 File dir = new File(entry, TEMPLATE_PATH)
                 if (dir.isDirectory()) {
-                    dir.eachFileMatch(~/.*\.gsp/) { File f -> templates.putIfAbsent(baseName(f.name), f.text) }
+                    dir.eachFileRecurse { File f ->
+                        if (f.isFile() && f.name.endsWith('.gsp')) {
+                            String path = dir.toPath().relativize(f.toPath()).toString().replace(File.separatorChar, '/' as char)
+                            templates.putIfAbsent(baseName(path), f.bytes)
+                        }
+                    }
                 }
             }
             else if (entry.name.endsWith('.jar') && entry.isFile()) {
                 new JarFile(entry).withCloseable { JarFile jar ->
                     for (JarEntry e : jar.entries()) {
-                        if (e.name.startsWith(TEMPLATE_PATH) && e.name.endsWith('.gsp')) {
+                        if (!e.directory && e.name.startsWith(TEMPLATE_PATH) && e.name.endsWith('.gsp')) {
                             templates.putIfAbsent(baseName(e.name.substring(TEMPLATE_PATH.length())),
-                                    jar.getInputStream(e).getText('UTF-8'))
+                                    jar.getInputStream(e).withCloseable { InputStream input -> input.bytes })
                         }
                     }
                 }
             }
         }
-        for (File override : templateOverrides.files) {
-            if (override.isFile() && override.name.endsWith('.gsp')) {
-                templates.put(baseName(override.name), override.text)
+        templateOverrides.asFileTree.visit { FileVisitDetails details ->
+            if (!details.directory && details.name.endsWith('.gsp')) {
+                templates.put(baseName(details.relativePath.pathString), details.file.bytes)
             }
         }
         templates
     }
 
     /**
-     * Maps view directory name to the fully qualified domain class, for every {@code @Scaffold}
-     * controller. Qualified rather than simple because a view declaring the type of its model has to
-     * name a type that resolves.
-     *
-     * <p>A view directory is named for the controller alone - {@code getDeployedViewURI} builds
-     * {@code /WEB-INF/grails-app/views/<controller>/<view>.gsp} and never consults the namespace -
-     * so two controllers of the same simple name in different packages share one directory whatever
-     * their namespaces are. Where they scaffold different domains, no single page can serve both:
-     * whichever was written would declare one domain as its model and be rendered by the controller
-     * of the other. Both are left out rather than one of them guessed at, and the resolver goes on
-     * expanding a template per request for them, which is what it did before any of this and is the
-     * one thing that gets each controller its own domain. Everything else in the project is still
-     * precompiled.</p>
+     * The fully qualified name of every domain class a controller scaffolds. Qualified rather than
+     * simple because a page declaring the type of its model has to name a type that resolves.
      */
-    private Map<String, String> findScaffoldedControllers() {
-        Map<String, String> found = [:]
-        Map<String, List<String>> claimants = [:]
+    private Set<String> findScaffoldedDomains() {
+        Set<String> domains = new TreeSet<>()
         for (File dir : classesDirs.files) {
             if (!dir.isDirectory()) {
                 continue
@@ -216,25 +201,12 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
                     return
                 }
                 String domain = readScaffoldDomain(f)
-                if (domain == null) {
-                    return
+                if (domain != null) {
+                    domains.add(domain)
                 }
-                String controllerName = decapitalize(f.name - 'Controller.class')
-                claimants.computeIfAbsent(controllerName) { [] }.add(domain)
-                found.put(controllerName, domain)
             }
         }
-        claimants.each { String controllerName, List<String> domains ->
-            List<String> distinct = domains.unique(false)
-            if (distinct.size() > 1) {
-                found.remove(controllerName)
-                logger.warn("Not precompiling the views of ${controllerName}: " +
-                        "${distinct.size()} controllers named ${capitalize(controllerName)}Controller " +
-                        "scaffold different domains (${distinct.join(', ')}) and share the one view " +
-                        'directory. They are expanded per request instead, as they were before.')
-            }
-        }
-        found
+        domains
     }
 
     /**
@@ -289,13 +261,5 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
 
     private static String baseName(String fileName) {
         fileName.endsWith('.gsp') ? fileName[0..<fileName.length() - 4] : fileName
-    }
-
-    private static String decapitalize(String name) {
-        name ? name[0].toLowerCase() + name.substring(1) : name
-    }
-
-    private static String capitalize(String name) {
-        name ? name[0].toUpperCase() + name.substring(1) : name
     }
 }
