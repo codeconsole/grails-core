@@ -25,6 +25,7 @@ import grails.web.mapping.UrlCreator
 import grails.web.mapping.UrlMappingsHolder
 import org.grails.datastore.mapping.keyvalue.mapping.config.KeyValueMappingContext
 import org.grails.datastore.mapping.model.MappingContext
+import org.grails.web.mapping.domainlink.AdminDashboardController
 import org.grails.web.mapping.domainlink.AdminGadgetsController
 import org.grails.web.mapping.domainlink.Assessment
 import org.grails.web.mapping.domainlink.AssessmentController
@@ -39,6 +40,9 @@ import org.grails.web.mapping.domainlink.ChroniclesController
 import org.grails.web.mapping.domainlink.Gadget
 import org.grails.web.mapping.domainlink.GadgetsController
 import org.grails.web.mapping.domainlink.HomeController
+import org.grails.web.mapping.domainlink.Invoice
+import org.grails.web.mapping.domainlink.InvoiceController
+import org.grails.web.mapping.domainlink.InvoicesController
 import org.grails.web.mapping.domainlink.ManageAssessmentController
 import org.grails.web.mapping.domainlink.ManageBallotController
 import org.grails.web.mapping.domainlink.ManageDashboardController
@@ -85,7 +89,10 @@ class LinkGeneratorResourceControllerSpec extends Specification {
                 HomeController,
                 BallotController,
                 ManageBallotController,
-                AuditBallotController
+                AuditBallotController,
+                InvoiceController,
+                InvoicesController,
+                AdminDashboardController
         ).tap {
             initialise()
         }
@@ -304,6 +311,42 @@ class LinkGeneratorResourceControllerSpec extends Specification {
         fromChapter == '/bar/chapter/show/12'
     }
 
+    def "the default namespace is nearer than another namespace, even to a controller named after the domain class"() {
+        given: 'InvoicesController serves Invoice in the default namespace, InvoiceController only in admin'
+        bindRequest('home', null)
+        def generator = createGenerator()
+
+        expect: 'a link rendered in the default namespace stays there'
+        generator.link(resource: new Invoice(id: 13), action: 'show') == '/bar/invoices/show/13'
+    }
+
+    def "outside a request the default namespace is the scope"() {
+        given: 'no request is bound'
+        RequestContextHolder.resetRequestAttributes()
+        def generator = createGenerator()
+
+        expect:
+        generator.link(resource: new Invoice(id: 14), action: 'show') == '/bar/invoices/show/14'
+    }
+
+    def "a link rendered in a namespace with no controller serving the domain class looks in the default namespace next"() {
+        given: 'ManageDashboardController is handling a request in manage, where nothing serves Invoice'
+        bindRequest('manageDashboard', 'manage')
+        def generator = createGenerator()
+
+        expect: 'the default namespace is tried before the admin namespace holding InvoiceController'
+        generator.link(resource: new Invoice(id: 16), action: 'show') == '/bar/invoices/show/16'
+    }
+
+    def "a link rendered in the namespace of the controller named after the domain class goes there"() {
+        given: 'AdminDashboardController is handling a request in admin'
+        bindRequest('adminDashboard', 'admin')
+        def generator = createGenerator()
+
+        expect:
+        generator.link(resource: new Invoice(id: 15), action: 'show') == '/bar/admin/invoice/show/15'
+    }
+
     def "re-registering controllers rebuilds the index"() {
         given: 'an index built while PeopleController is registered'
         def generator = createGenerator()
@@ -341,6 +384,7 @@ class LinkGeneratorResourceControllerSpec extends Specification {
         context.addPersistentEntity(Chronicle)
         context.addPersistentEntity(Assessment)
         context.addPersistentEntity(Ballot)
+        context.addPersistentEntity(Invoice)
         context
     }
 

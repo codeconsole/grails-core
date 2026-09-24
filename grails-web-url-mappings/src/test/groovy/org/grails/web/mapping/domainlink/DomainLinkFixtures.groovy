@@ -226,3 +226,36 @@ class AuditBallotController extends ResourceControllerBase<Ballot> {
     def index() {}
     def show() {}
 }
+
+class Invoice {
+    Long id
+}
+
+/**
+ * Named after {@code Invoice}, but in the {@code admin} namespace only.
+ */
+@Artefact('Controller')
+class InvoiceController {
+    static namespace = 'admin'
+    def index() {}
+    def show() {}
+}
+
+/**
+ * Declares {@code Invoice} in the default namespace, which is nearer than {@link InvoiceController} to a
+ * link rendered outside the {@code admin} namespace.
+ */
+@Artefact('Controller')
+class InvoicesController extends ResourceControllerBase<Invoice> {
+    def index() {}
+    def show() {}
+}
+
+/**
+ * An {@code admin} controller serving no domain class, to render links from inside that namespace.
+ */
+@Artefact('Controller')
+class AdminDashboardController {
+    static namespace = 'admin'
+    def index() {}
+}

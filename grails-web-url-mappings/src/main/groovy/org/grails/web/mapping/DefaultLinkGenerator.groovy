@@ -333,37 +333,30 @@ class DefaultLinkGenerator implements LinkGenerator, PluginManagerAware {
             return null
         }
 
-        Set<String> namespaces = getControllerNamespacesByName().get(controller)
-        if (namespaces == null || namespaces.isEmpty()) {
+        Set<ControllerRef> candidates = controllersNamed(controller)
+        if (candidates.isEmpty()) {
             return null
         }
-
-        // Resolve the name the way code resolves a name, nearest scope first: the request's own
-        // namespace, then the default namespace, then the only namespace defining the controller. A
-        // link to "user" rendered in the admin namespace therefore reaches the admin UserController
-        // when there is one, and a controller defined in a single namespace needs no namespace
-        // attribute at all.
-        if (namespaces.contains(currentNamespace)) {
-            return currentNamespace
-        }
-        if (namespaces.contains(null)) {
+        ControllerRef nearest = nearestController(candidates, controller, currentNamespace, false)
+        if (nearest == null) {
+            reportAmbiguousNamespace(controller, candidates)
             return null
         }
-        if (namespaces.size() == 1) {
-            return namespaces.iterator().next()
-        }
-        reportAmbiguousNamespace(controller, namespaces)
-        return null
+        return nearest.namespace
     }
 
     /**
      * Warns, once per controller name, that a link named a controller defined in several namespaces
      * without saying which, from outside all of them, so no namespace could be inferred.
      */
-    private void reportAmbiguousNamespace(String controller, Set<String> namespaces) {
+    private void reportAmbiguousNamespace(String controller, Set<ControllerRef> candidates) {
         if (ambiguousControllersReported.add(controller)) {
+            Set<String> namespaces = new TreeSet<>()
+            for (ControllerRef candidate in candidates) {
+                namespaces.add(candidate.namespace)
+            }
             log.warn('A link to controller [{}] names no namespace, but the controller is defined in the namespaces {} and in neither the default namespace nor the namespace of the current request. No namespace was inferred; pass a namespace attribute to choose one.',
-                    controller, new TreeSet<String>(namespaces))
+                    controller, namespaces)
         }
     }
 
@@ -415,28 +408,19 @@ class DefaultLinkGenerator implements LinkGenerator, PluginManagerAware {
     }
 
     /**
-     * Resolves the controller a {@code resource} link for the given entity targets: the most specific
-     * controller that serves the domain class. A controller serves a domain class when it is named after
-     * it, or when it declares it as a generic type argument, as {@code PeopleController extends
-     * RestfulController<Person>} does. The link targets the explicit {@code namespace} when one is given,
-     * which a controller's redirect always supplies, and otherwise the request's own namespace.
-     * Candidates are tried from the most specific to the least:
+     * Resolves the controller a {@code resource} link for the given entity targets: the nearest controller
+     * serving the domain class, as {@link #nearestController} chooses it. A controller serves a domain
+     * class when it is named after it, or when it declares it as a generic type argument, as
+     * {@code PeopleController extends RestfulController<Person>} does. The link targets the explicit
+     * {@code namespace} when one is given, and otherwise the request's own namespace.
      *
-     * <ol>
-     *   <li>the controller handling the current request, if it serves the domain class and is in the
-     *       targeted namespace</li>
-     *   <li>the only controller in the targeted namespace serving the domain class</li>
-     *   <li>the controller named after the domain class</li>
-     *   <li>the only controller declaring the domain class</li>
-     * </ol>
-     *
-     * <p>A level with more than one candidate is ambiguous and falls through to the next rather than
-     * guessing. Outside a request, without an explicit namespace, only the last two apply. When nothing
-     * matches, the controller named after the domain class is assumed, as before.</p>
+     * <p>When no candidate is unambiguous, the link targets the controller name the candidates share, if
+     * they share one, and otherwise the domain class name, as before; either way the namespace is then
+     * inferred for that name.</p>
      *
      * @param entity the domain class being linked to
      * @param attrs the link attributes, which may carry an explicit {@code namespace}
-     * @return the target controller, and its namespace when the request context chose it
+     * @return the target controller, and its namespace when the scope chain found it
      */
     private ResourceTarget resolveResourceTarget(PersistentEntity entity, Map attrs) {
         String derivedName = entity.getDecapitalizedName()
@@ -445,60 +429,112 @@ class DefaultLinkGenerator implements LinkGenerator, PluginManagerAware {
             return new ResourceTarget(derivedName, null, false)
         }
         boolean explicitNamespace = attrs != null && attrs.containsKey(ATTRIBUTE_NAMESPACE)
-        String currentController = requestStateLookupStrategy.controllerName
-        if (explicitNamespace || currentController != null) {
-            String currentNamespace = requestStateLookupStrategy.controllerNamespace
-            String targetNamespace = explicitNamespace ? resolveNamespace(derivedName, null, attrs) : currentNamespace
-            ControllerRef current = new ControllerRef(currentController, currentNamespace)
-            ControllerRef chosen = currentController != null && current.namespace == targetNamespace && serving.contains(current) ?
-                    current :
-                    onlyIn(serving, targetNamespace)
-            if (chosen != null) {
-                // An explicit namespace is applied by the caller already; otherwise carry the one found.
-                return new ResourceTarget(chosen.name, chosen.namespace, !explicitNamespace)
-            }
+        String targetNamespace = explicitNamespace ?
+                resolveNamespace(derivedName, null, attrs) :
+                requestStateLookupStrategy.controllerNamespace
+        ControllerRef nearest = nearestController(serving, derivedName, targetNamespace, explicitNamespace)
+        if (nearest != null) {
+            // An explicit namespace is applied by the caller already; otherwise carry the one found.
+            return new ResourceTarget(nearest.name, nearest.namespace, !explicitNamespace)
         }
-        Set<String> declaringNames = new HashSet<>()
+        Set<String> names = new HashSet<>()
         for (ControllerRef ref in serving) {
-            if (ref.name == derivedName) {
-                return new ResourceTarget(derivedName, null, false)
-            }
-            declaringNames.add(ref.name)
+            names.add(ref.name)
         }
-        String declaring = declaringNames.size() == 1 ? declaringNames.iterator().next() : derivedName
-        return new ResourceTarget(declaring, null, false)
+        return new ResourceTarget(names.size() == 1 ? names.iterator().next() : derivedName, null, false)
+    }
+
+    /**
+     * Chooses, among the controllers a link could target, the one nearest to where the link is rendered,
+     * trying scopes from the most specific to the least, as code resolves a name:
+     *
+     * <ol>
+     *   <li>the controller handling the current request, if it is a candidate in the targeted
+     *       namespace</li>
+     *   <li>the candidate in the targeted namespace</li>
+     *   <li>the candidate in the default namespace</li>
+     *   <li>the candidate in any namespace</li>
+     * </ol>
+     *
+     * <p>A scope holding more than one candidate chooses the one with the conventional name, the
+     * controller named after the domain class for a resource link, and is otherwise ambiguous, so the
+     * next scope is tried rather than guessing. An explicit namespace confines the choice to that
+     * namespace.</p>
+     *
+     * @param candidates the controllers the link could target
+     * @param conventionalName the name that settles a tie within a scope
+     * @param targetNamespace the namespace the link targets, explicitly or from the request
+     * @param explicitNamespace whether the namespace was given explicitly
+     * @return the chosen controller, or {@code null} when no scope settles on one
+     */
+    private ControllerRef nearestController(Set<ControllerRef> candidates, String conventionalName,
+                                            String targetNamespace, boolean explicitNamespace) {
+        String currentController = requestStateLookupStrategy.controllerName
+        if (currentController != null) {
+            ControllerRef current = new ControllerRef(currentController, requestStateLookupStrategy.controllerNamespace)
+            if (current.namespace == targetNamespace && candidates.contains(current)) {
+                return current
+            }
+        }
+        ControllerRef chosen = chooseWithin(candidates, conventionalName, true, targetNamespace)
+        if (chosen != null || explicitNamespace) {
+            return chosen
+        }
+        if (targetNamespace != null) {
+            chosen = chooseWithin(candidates, conventionalName, true, null)
+            if (chosen != null) {
+                return chosen
+            }
+        }
+        return chooseWithin(candidates, conventionalName, false, null)
+    }
+
+    /**
+     * @return the only candidate in the scope, or failing that the only one in it with the conventional
+     *         name, or {@code null}; the scope is the given namespace, or every namespace when
+     *         {@code inNamespace} is {@code false}
+     */
+    private static ControllerRef chooseWithin(Set<ControllerRef> candidates, String conventionalName,
+                                              boolean inNamespace, String namespace) {
+        ControllerRef only = null
+        ControllerRef conventional = null
+        int count = 0
+        int conventionalCount = 0
+        for (ControllerRef candidate in candidates) {
+            if (inNamespace && candidate.namespace != namespace) {
+                continue
+            }
+            count++
+            only = candidate
+            if (candidate.name == conventionalName) {
+                conventionalCount++
+                conventional = candidate
+            }
+        }
+        if (count == 1) {
+            return only
+        }
+        return conventionalCount == 1 ? conventional : null
+    }
+
+    private Set<ControllerRef> controllersNamed(String name) {
+        Set<ControllerRef> named = new HashSet<>()
+        Set<String> namespaces = getControllerNamespacesByName().get(name)
+        if (namespaces != null) {
+            for (String namespace in namespaces) {
+                named.add(new ControllerRef(name, namespace))
+            }
+        }
+        return named
     }
 
     private Set<ControllerRef> servingControllers(PersistentEntity entity, String derivedName) {
-        Set<ControllerRef> serving = new HashSet<>()
-        Set<String> namedNamespaces = getControllerNamespacesByName().get(derivedName)
-        if (namedNamespaces != null) {
-            for (String namespace in namedNamespaces) {
-                serving.add(new ControllerRef(derivedName, namespace))
-            }
-        }
+        Set<ControllerRef> serving = controllersNamed(derivedName)
         Set<ControllerRef> declaring = getControllersByDomainClass().get(entity.name)
         if (declaring != null) {
             serving.addAll(declaring)
         }
         return serving
-    }
-
-    /**
-     * @return the only candidate in the given namespace, or {@code null} when there is none or more
-     *         than one
-     */
-    private static ControllerRef onlyIn(Set<ControllerRef> candidates, String namespace) {
-        ControllerRef found = null
-        for (ControllerRef ref in candidates) {
-            if (ref.namespace == namespace) {
-                if (found != null) {
-                    return null
-                }
-                found = ref
-            }
-        }
-        return found
     }
 
     private Map<String, Set<ControllerRef>> getControllersByDomainClass() {

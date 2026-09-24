@@ -83,7 +83,7 @@ Reverse URL mappings may specify the `namespace` explicitly.
 
 Most links do not need a `namespace` attribute. When a link, redirect, chain, form action, pagination link, sortable column link, or include targets a controller and omits `namespace`, Grails resolves the namespace for the target controller automatically.
 
-If the target is the controller currently handling the request, Grails uses the current request namespace. Otherwise it resolves the controller name the way code resolves a name, nearest scope first:
+If the target is the controller currently handling the request, Grails uses the current request namespace. Otherwise it resolves the controller name the way code resolves a name, nearest scope first, the same rule that resolves a `resource` link to a controller (see link:theWebLayer.html#restfulMappings[Mapping to REST resources]):
 
 . the current request namespace, if it defines a controller with that name
 . the default, non-namespaced controller, if there is one
