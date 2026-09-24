@@ -26,6 +26,8 @@ import groovy.transform.PackageScope
 import groovy.transform.TypeCheckingMode
 import groovy.util.logging.Slf4j
 
+import org.codehaus.groovy.runtime.typehandling.DefaultTypeTransformation
+
 import jakarta.annotation.PostConstruct
 
 import org.springframework.beans.factory.annotation.Autowired
@@ -257,14 +259,14 @@ class DefaultLinkGenerator implements LinkGenerator, PluginManagerAware {
         final methodAttribute = urlAttrs.get(ATTRIBUTE_METHOD)
         List<String> parentResources = Collections.emptyList()
 
-        if (resourceAttribute) {
+        if (truthy(resourceAttribute)) {
             String resource
             if (resourceAttribute instanceof CharSequence)
                 resource = resourceAttribute.toString()
             else {
                 PersistentEntity persistentEntity = (mappingContext != null) ? mappingContext.getPersistentEntity(resourceAttribute.getClass().getName()) : null
                 boolean hasId = persistentEntity != null || DomainClassArtefactHandler.isDomainClass(resourceAttribute.getClass(), true)
-                if (!id && hasId) {
+                if (!truthy(id) && hasId) {
                     id = getResourceId(resourceAttribute)
                 }
                 if (persistentEntity != null) {
@@ -288,32 +290,32 @@ class DefaultLinkGenerator implements LinkGenerator, PluginManagerAware {
                 }
             }
             List<String> tokens = resource.contains('/') ? resource.tokenize('/') : [resource]
-            controller = controllerAttribute ?: tokens[-1]
+            controller = truthy(controllerAttribute) ? controllerAttribute.toString() : tokens[-1]
             if (tokens.size() > 1) {
                 parentResources = tokens[0..-2]
             }
-            if (!methodAttribute && action) {
-                httpMethod =  REST_RESOURCE_ACTION_TO_HTTP_METHOD_MAP.get(action.toString())
-                if (!httpMethod) {
+            if (!truthy(methodAttribute) && truthy(action)) {
+                httpMethod =  REST_RESOURCE_ACTION_TO_HTTP_METHOD_MAP.get(action)
+                if (!truthy(httpMethod)) {
                     httpMethod = HttpMethod.GET.toString()
                 }
             }
-            else if (methodAttribute && !action) {
+            else if (truthy(methodAttribute) && !truthy(action)) {
                 httpMethod = methodAttribute.toString().toUpperCase()
                 action = resourceAction(null, methodAttribute, id)
             }
             else {
-                httpMethod = methodAttribute == null ? requestStateLookupStrategy.getHttpMethod() ?: UrlMapping.ANY_HTTP_METHOD : methodAttribute.toString()
+                httpMethod = methodAttribute == null ? requestHttpMethod() : methodAttribute.toString()
             }
 
         }
         else {
             controller = controllerAttribute == null ? requestStateLookupStrategy.getControllerName() : controllerAttribute.toString()
-            httpMethod = methodAttribute == null ? requestStateLookupStrategy.getHttpMethod() ?: UrlMapping.ANY_HTTP_METHOD : methodAttribute.toString()
+            httpMethod = methodAttribute == null ? requestHttpMethod() : methodAttribute.toString()
         }
 
         boolean defaultAction = false
-        if (controller && !action) {
+        if (truthy(controller) && !truthy(action)) {
             action = requestStateLookupStrategy.getActionName(grailsUrlConverter.toUrlElement(controller))
             defaultAction = true
         }
@@ -338,11 +340,49 @@ class DefaultLinkGenerator implements LinkGenerator, PluginManagerAware {
             return ''
         }
         def urlAttribute = attrs.get(ATTRIBUTE_URL)
-        if (urlAttribute && !(urlAttribute instanceof Map)) {
+        if (truthy(urlAttribute) && !(urlAttribute instanceof Map)) {
             return ''
         }
         LinkTarget target = resolveLinkTarget(attrs, urlAttribute instanceof Map ? (Map) urlAttribute : attrs)
-        "target[controller:${target.controller}, namespace:${target.namespace}, action:${target.action}, method:${target.httpMethod}]".toString()
+        return new StringBuilder(96).append('target[controller:').append(target.controller)
+                .append(', namespace:').append(target.namespace)
+                .append(', action:').append(target.action)
+                .append(', method:').append(target.httpMethod).append(']').toString()
+    }
+
+    /**
+     * @return the current request's HTTP method, or {@link UrlMapping#ANY_HTTP_METHOD} outside a request
+     */
+    private String requestHttpMethod() {
+        String method = requestStateLookupStrategy.getHttpMethod()
+        return truthy(method) ? method : UrlMapping.ANY_HTTP_METHOD
+    }
+
+    /**
+     * Groovy truth, as {@code if (value)} applies it. Statically compiled code applies it to a String or a
+     * number by dispatching {@code asBoolean} through the metaclass, which the cache of generated links
+     * would otherwise pay several times on every hit, as it resolves each link to key on it.
+     */
+    private static boolean truthy(Object value) {
+        if (value == null) {
+            return false
+        }
+        if (value instanceof CharSequence) {
+            return ((CharSequence) value).length() > 0
+        }
+        if (value instanceof Boolean) {
+            return (Boolean) value
+        }
+        if (value instanceof Number) {
+            return ((Number) value).doubleValue() != 0
+        }
+        if (value instanceof Collection) {
+            return !((Collection) value).isEmpty()
+        }
+        if (value instanceof Map) {
+            return !((Map) value).isEmpty()
+        }
+        return DefaultTypeTransformation.castToBoolean(value)
     }
 
     /**
@@ -353,12 +393,10 @@ class DefaultLinkGenerator implements LinkGenerator, PluginManagerAware {
         if (controller == null) {
             return null
         }
-        String currentControllerName = requestStateLookupStrategy.controllerName
-        String currentNamespace = requestStateLookupStrategy.controllerNamespace
         // Preserve the historical behaviour of reusing the current request namespace when the link
         // targets the controller currently handling the request.
-        if (controller == currentControllerName) {
-            return currentNamespace
+        if (Objects.equals(controller, requestStateLookupStrategy.controllerName)) {
+            return requestStateLookupStrategy.controllerNamespace
         }
 
         // A plugin-provided target is resolved within that plugin, so do not infer a namespace from
@@ -371,9 +409,9 @@ class DefaultLinkGenerator implements LinkGenerator, PluginManagerAware {
         if (candidates.isEmpty()) {
             // No registered controller has the name, so nothing is nearer than the namespace the link is
             // made from: stay in it, as an unqualified reference resolves against where it is made.
-            return currentNamespace
+            return requestStateLookupStrategy.controllerNamespace
         }
-        ControllerRef nearest = nearestController(candidates, controller, currentNamespace, false)
+        ControllerRef nearest = nearestController(candidates, controller, null, false)
         if (nearest == null) {
             reportAmbiguousNamespace(controller, candidates)
             return null
@@ -489,9 +527,7 @@ class DefaultLinkGenerator implements LinkGenerator, PluginManagerAware {
             return new ResourceTarget(derivedName, null, false)
         }
         boolean explicitNamespace = attrs != null && attrs.containsKey(ATTRIBUTE_NAMESPACE)
-        String targetNamespace = explicitNamespace ?
-                resolveNamespace(derivedName, null, attrs) :
-                requestStateLookupStrategy.controllerNamespace
+        String targetNamespace = explicitNamespace ? resolveNamespace(derivedName, null, attrs) : null
         ControllerRef nearest = nearestController(serving, derivedName, targetNamespace, explicitNamespace)
         if (nearest != null) {
             // An explicit namespace is applied by the caller already; otherwise carry the one found.
@@ -507,7 +543,7 @@ class DefaultLinkGenerator implements LinkGenerator, PluginManagerAware {
         // An explicit namespace with no candidate in it is the caller's choice rather than an ambiguity.
         Set<ControllerRef> tied = new HashSet<>()
         for (ControllerRef ref in serving) {
-            if (!explicitNamespace || ref.namespace == targetNamespace) {
+            if (!explicitNamespace || Objects.equals(ref.namespace, targetNamespace)) {
                 tied.add(ref)
             }
         }
@@ -551,16 +587,22 @@ class DefaultLinkGenerator implements LinkGenerator, PluginManagerAware {
      *
      * @param candidates the controllers the link could target
      * @param conventionalName the name that settles a tie within a scope
-     * @param targetNamespace the namespace the link targets, explicitly or from the request
-     * @param explicitNamespace whether the namespace was given explicitly
+     * @param namespace the namespace the link names, when {@code explicitNamespace} is set
+     * @param explicitNamespace whether the link names a namespace, rather than targeting the request's
      * @return the chosen controller, or {@code null} when no scope settles on one
      */
     private ControllerRef nearestController(Set<ControllerRef> candidates, String conventionalName,
-                                            String targetNamespace, boolean explicitNamespace) {
+                                            String namespace, boolean explicitNamespace) {
+        if (!explicitNamespace && candidates.size() == 1) {
+            // Every scope ends at the only candidate, so there is nothing to choose between.
+            return candidates.iterator().next()
+        }
+        String currentNamespace = requestStateLookupStrategy.controllerNamespace
+        String targetNamespace = explicitNamespace ? namespace : currentNamespace
         String currentController = requestStateLookupStrategy.controllerName
         if (currentController != null) {
-            ControllerRef current = new ControllerRef(currentController, requestStateLookupStrategy.controllerNamespace)
-            if (current.namespace == targetNamespace && candidates.contains(current)) {
+            ControllerRef current = new ControllerRef(currentController, currentNamespace)
+            if (Objects.equals(current.namespace, targetNamespace) && candidates.contains(current)) {
                 return current
             }
         }
@@ -589,12 +631,12 @@ class DefaultLinkGenerator implements LinkGenerator, PluginManagerAware {
         int count = 0
         int conventionalCount = 0
         for (ControllerRef candidate in candidates) {
-            if (inNamespace && candidate.namespace != namespace) {
+            if (inNamespace && !Objects.equals(candidate.namespace, namespace)) {
                 continue
             }
             count++
             only = candidate
-            if (candidate.name == conventionalName) {
+            if (Objects.equals(candidate.name, conventionalName)) {
                 conventionalCount++
                 conventional = candidate
             }
@@ -638,12 +680,12 @@ class DefaultLinkGenerator implements LinkGenerator, PluginManagerAware {
      * @return the action, or {@code null} for an HTTP method no action maps to
      */
     private static String resourceAction(String action, Object methodAttribute, Object id) {
-        if (action) {
+        if (truthy(action)) {
             return action
         }
-        String method = methodAttribute ? methodAttribute.toString().toUpperCase() : HttpMethod.GET.toString()
-        if (method == HttpMethod.GET.toString() && id) {
-            method = "${method}_ID".toString()
+        String method = truthy(methodAttribute) ? methodAttribute.toString().toUpperCase() : HttpMethod.GET.toString()
+        if (HttpMethod.GET.name().equals(method) && truthy(id)) {
+            method = 'GET_ID'
         }
         return REST_RESOURCE_HTTP_METHOD_TO_ACTION_MAP.get(method)
     }
@@ -911,13 +953,13 @@ class DefaultLinkGenerator implements LinkGenerator, PluginManagerAware {
         @Override
         boolean equals(Object other) {
             other instanceof ControllerRef &&
-                    name == ((ControllerRef) other).name &&
-                    namespace == ((ControllerRef) other).namespace
+                    Objects.equals(name, ((ControllerRef) other).name) &&
+                    Objects.equals(namespace, ((ControllerRef) other).namespace)
         }
 
         @Override
         int hashCode() {
-            Objects.hash(name, namespace)
+            31 * Objects.hashCode(name) + Objects.hashCode(namespace)
         }
     }
 
