@@ -65,10 +65,11 @@ import org.gradle.process.JavaExecSpec
  * task did not see finds nothing and is expanded at runtime as before.</p>
  *
  * <p>This task finds the scaffolded domain classes, by reading the controllers with ASM so that no
- * application class is loaded, and chooses the templates: every one on the application's runtime classpath, which the running
- * application reads them from, with the application's {@code src/main/templates/scaffolding}
- * winning over a dependency and an earlier dependency over a later one, which is what the resolver
- * finds for an application's controller.
+ * application class is loaded, and collects the templates: every copy of every template on the application's runtime classpath,
+ * which the running application reads them from, and in its {@code src/main/templates/scaffolding}.
+ * All copies are expanded rather than the one the resolver is expected to choose, so whichever copy
+ * it does choose - an override, a plugin's, the stock one - has its page, and nothing here predicts
+ * the resolver.
  * Namespace-specific templates such as {@code admin/show.gsp} are included, because which one a
  * controller uses depends on its namespace, which is only known when it is asked for. The pages
  * themselves are expanded and named by {@code org.apache.grails.scaffolding.ScaffoldedPagesGenerator},
@@ -131,7 +132,7 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
         outputDir.deleteDir()
         outputDir.mkdirs()
 
-        Map<String, byte[]> templates = loadTemplates()
+        Map<String, List<byte[]>> templates = loadTemplates()
         if (templates.isEmpty()) {
             logger.info('No scaffolding templates on the classpath; nothing to generate')
             return
@@ -148,13 +149,18 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
             return
         }
 
+        // one directory per copy, so that each holds a template path at most once
         File work = temporaryDir
-        File templatesDir = new File(work, 'templates')
-        templatesDir.deleteDir()
-        templates.each { String path, byte[] content ->
-            File file = new File(templatesDir, "${path}.gsp")
-            file.parentFile.mkdirs()
-            file.bytes = content
+        File templatesRoot = new File(work, 'templates')
+        templatesRoot.deleteDir()
+        int copies = (int) templates.values()*.size().max()
+        List<File> templateDirs = (0..<copies).collect { int copy -> new File(templatesRoot, String.valueOf(copy)) }
+        templates.each { String path, List<byte[]> contents ->
+            contents.eachWithIndex { byte[] content, int copy ->
+                File file = new File(templateDirs[copy], "${path}.gsp")
+                file.parentFile.mkdirs()
+                file.bytes = content
+            }
         }
         File domainList = new File(work, 'domains.txt')
         domainList.setText(domains.join('\n'), 'UTF-8')
@@ -167,7 +173,7 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
                 }
                 spec.classpath = runtimeClasspath
                 spec.mainClass.set(GENERATOR)
-                spec.args(templatesDir.absolutePath, domainList.absolutePath, outputDir.absolutePath)
+                spec.args([domainList.absolutePath, outputDir.absolutePath] + templateDirs*.absolutePath)
             }
         }).assertNormalExitValue()
     }
@@ -187,12 +193,17 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
     }
 
     /**
-     * Maps a template's path, without its extension, to its content, with the application's
-     * overrides winning over the templates a dependency contributes and an earlier dependency over
-     * a later one.
+     * Maps a template's path, without its extension, to every distinct copy of it: the
+     * application's own, then each dependency's in classpath order. A copy identical to one already
+     * found is left out, as it would expand to the same page.
      */
-    private Map<String, byte[]> loadTemplates() {
-        Map<String, byte[]> templates = new TreeMap<>()
+    private Map<String, List<byte[]>> loadTemplates() {
+        Map<String, List<byte[]>> templates = new TreeMap<>()
+        templateOverrides.asFileTree.visit { FileVisitDetails details ->
+            if (!details.directory && details.name.endsWith('.gsp')) {
+                addCopy(templates, baseName(details.relativePath.pathString), details.file.bytes)
+            }
+        }
         for (File entry : runtimeClasspath.files) {
             if (entry.isDirectory()) {
                 File dir = new File(entry, TEMPLATE_PATH)
@@ -200,7 +211,7 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
                     dir.eachFileRecurse { File f ->
                         if (f.isFile() && f.name.endsWith('.gsp')) {
                             String path = dir.toPath().relativize(f.toPath()).toString().replace(File.separatorChar, '/' as char)
-                            templates.putIfAbsent(baseName(path), f.bytes)
+                            addCopy(templates, baseName(path), f.bytes)
                         }
                     }
                 }
@@ -209,19 +220,21 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
                 new JarFile(entry).withCloseable { JarFile jar ->
                     for (JarEntry e : jar.entries()) {
                         if (!e.directory && e.name.startsWith(TEMPLATE_PATH) && e.name.endsWith('.gsp')) {
-                            templates.putIfAbsent(baseName(e.name.substring(TEMPLATE_PATH.length())),
+                            addCopy(templates, baseName(e.name.substring(TEMPLATE_PATH.length())),
                                     jar.getInputStream(e).withCloseable { InputStream input -> input.bytes })
                         }
                     }
                 }
             }
         }
-        templateOverrides.asFileTree.visit { FileVisitDetails details ->
-            if (!details.directory && details.name.endsWith('.gsp')) {
-                templates.put(baseName(details.relativePath.pathString), details.file.bytes)
-            }
-        }
         templates
+    }
+
+    private static void addCopy(Map<String, List<byte[]>> templates, String path, byte[] content) {
+        List<byte[]> copies = templates.computeIfAbsent(path) { [] }
+        if (!copies.any { byte[] copy -> Arrays.equals(copy, content) }) {
+            copies.add(content)
+        }
     }
 
     /**

@@ -33,11 +33,12 @@ import grails.codegen.model.ModelBuilder
  * exactly as the resolver models, expands and names it when the view is asked for.</p>
  *
  * <pre>
- * ScaffoldedPagesGenerator &lt;templates directory&gt; &lt;domain class list&gt; &lt;output directory&gt;
+ * ScaffoldedPagesGenerator &lt;domain class list&gt; &lt;output directory&gt; &lt;templates directory&gt;...
  * </pre>
  *
- * <p>The templates directory holds one file per template path, such as {@code show.gsp} or
- * {@code admin/show.gsp}; the list names one domain class per line.</p>
+ * <p>The list names one domain class per line. Each templates directory holds one copy of a set of
+ * templates, a file per template path such as {@code show.gsp} or {@code admin/show.gsp}; another
+ * copy of the same template goes in another directory, and each copy is expanded.</p>
  *
  * @since 8.0
  */
@@ -45,35 +46,39 @@ import grails.codegen.model.ModelBuilder
 class ScaffoldedPagesGenerator implements ModelBuilder {
 
     static void main(String[] args) {
-        if (args.length != 3) {
-            System.err.println('Usage: ScaffoldedPagesGenerator <templates directory> <domain class list> <output directory>')
+        if (args.length < 3) {
+            System.err.println('Usage: ScaffoldedPagesGenerator <domain class list> <output directory> <templates directory>...')
             System.exit(2)
         }
-        List<String> domains = new File(args[1]).readLines('UTF-8')*.trim().findAll { String line -> line }
-        new ScaffoldedPagesGenerator().generate(new File(args[0]), domains, new File(args[2]))
+        List<String> domains = new File(args[0]).readLines('UTF-8')*.trim().findAll { String line -> line }
+        List<File> templateDirs = args.drop(2).collect { String dir -> new File(dir) }
+        new ScaffoldedPagesGenerator().generate(templateDirs, domains, new File(args[1]))
     }
 
     /**
-     * Writes the page for every template and domain class under {@code outputDir}, where the
-     * resolver looks for it. A template that cannot be expanded for a domain class is reported and
-     * left to be expanded when it is first rendered.
+     * Writes the page for every template in every directory, for every domain class, under
+     * {@code outputDir}, where the resolver looks for it. A template that cannot be expanded for a
+     * domain class is reported and left to be expanded when it is first rendered.
      *
      * @return how many pages were written
      */
-    int generate(File templatesDir, List<String> domains, File outputDir) {
-        Map<String, byte[]> templates = new TreeMap<>()
-        if (templatesDir.isDirectory()) {
+    int generate(List<File> templateDirs, List<String> domains, File outputDir) {
+        List<Map.Entry<String, byte[]>> templates = []
+        for (File templatesDir : templateDirs) {
+            if (!templatesDir.isDirectory()) {
+                continue
+            }
             templatesDir.eachFileRecurse { File file ->
                 if (file.isFile() && file.name.endsWith('.gsp')) {
                     String path = templatesDir.toPath().relativize(file.toPath()).toString().replace(File.separatorChar, '/' as char)
-                    templates.put(path.substring(0, path.length() - '.gsp'.length()), file.bytes)
+                    templates.add(new AbstractMap.SimpleImmutableEntry<String, byte[]>(path.substring(0, path.length() - '.gsp'.length()), file.bytes))
                 }
             }
         }
         int written = 0
         for (String domain : domains) {
             Map<String, Object> model = model(domain).asMap()
-            for (Map.Entry<String, byte[]> template : templates.entrySet()) {
+            for (Map.Entry<String, byte[]> template : templates) {
                 String page
                 try {
                     page = ScaffoldedPages.expand(template.value, model)

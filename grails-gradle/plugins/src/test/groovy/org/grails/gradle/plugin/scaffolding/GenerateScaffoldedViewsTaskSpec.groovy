@@ -159,17 +159,21 @@ class GenerateScaffoldedViewsTaskSpec extends Specification {
         System.getProperty('java.class.path').split(File.pathSeparator).toList()
     }
 
-    /** What the generator was handed: each domain class and template path, with the template. */
-    private Map<String, String> handed(GenerateScaffoldedViewsTask task) {
+    /** What the generator was handed: each domain class and template path, with every copy of the template. */
+    private Map<String, List<String>> handed(GenerateScaffoldedViewsTask task) {
         File root = new File(task.outputDirectory.get().asFile, 'grails-scaffolded')
-        Map<String, String> pages = new TreeMap<>()
+        Map<String, List<String>> pages = new TreeMap<>()
         if (root.isDirectory()) {
             root.eachFileRecurse { File f ->
                 if (f.isFile()) {
-                    pages[root.toPath().relativize(f.toPath()).toString().replace(File.separatorChar, '/' as char) - '.gsp'] = f.getText('UTF-8')
+                    // <domain>/<copy>/<template path>.gsp, as the stand-in writes it
+                    List<String> parts = root.toPath().relativize(f.toPath()).toString().replace(File.separatorChar, '/' as char).tokenize('/')
+                    String key = ([parts[0]] + parts.drop(2)).join('/') - '.gsp'
+                    pages.computeIfAbsent(key) { [] } << f.getText('UTF-8')
                 }
             }
         }
+        pages.each { String key, List<String> copies -> copies.sort() }
         pages
     }
 
@@ -184,8 +188,8 @@ class GenerateScaffoldedViewsTaskSpec extends Specification {
             task.generate()
 
         then:
-            handed(task) == ['com.example.Book/index': 'index ${className}', 'com.example.Book/show': 'show ${className}',
-                             'com.example.User/index': 'index ${className}', 'com.example.User/show': 'show ${className}']
+            handed(task) == ['com.example.Book/index': ['index ${className}'], 'com.example.Book/show': ['show ${className}'],
+                             'com.example.User/index': ['index ${className}'], 'com.example.User/show': ['show ${className}']]
     }
 
     void 'a controller without the annotation is left alone'() {
@@ -259,10 +263,10 @@ class GenerateScaffoldedViewsTaskSpec extends Specification {
             task.generate()
 
         then:
-            handed(task)['com.example.Event/show'] == 'show ${className}'
+            handed(task)['com.example.Event/show'] == ['show ${className}']
     }
 
-    void 'an application template overrides the one a dependency contributes'() {
+    void 'an application template and the dependency template it overrides are both expanded'() {
         given:
             writeController('UserController', 'User')
             File overrides = new File(projectDir, 'templates')
@@ -273,9 +277,9 @@ class GenerateScaffoldedViewsTaskSpec extends Specification {
         when:
             task.generate()
 
-        then: 'only the template the resolver finds for an application controller is handed over'
-            handed(task)['com.example.User/index'] == 'custom ${className}'
-            handed(task)['com.example.User/show'] == 'show ${className}'
+        then: 'whichever the resolver chooses has its page, so nothing here decides for it'
+            handed(task)['com.example.User/index'] == ['custom ${className}', 'list of ${propertyName} for ${className}']
+            handed(task)['com.example.User/show'] == ['show ${className}']
     }
 
     void 'namespace-specific templates are handed over, from a dependency and from the application tree'() {
@@ -291,8 +295,8 @@ class GenerateScaffoldedViewsTaskSpec extends Specification {
             task.generate()
 
         then: 'which one a controller uses is only known when it is asked for, so all are ready'
-            handed(task) == ['com.example.User/admin/show': 'admin show ${className}', 'com.example.User/show': 'show ${className}',
-                             'com.example.User/staff/show': 'staff show ${className}']
+            handed(task) == ['com.example.User/admin/show': ['admin show ${className}'], 'com.example.User/show': ['show ${className}'],
+                             'com.example.User/staff/show': ['staff show ${className}']]
     }
 
     void 'templates are read from a classpath directory, namespace directories included'() {
@@ -309,10 +313,10 @@ class GenerateScaffoldedViewsTaskSpec extends Specification {
             task.generate()
 
         then:
-            handed(task) == ['com.example.User/admin/show': 'directory admin show', 'com.example.User/show': 'directory show']
+            handed(task) == ['com.example.User/admin/show': ['directory admin show'], 'com.example.User/show': ['directory show']]
     }
 
-    void 'an earlier dependency template wins over a later one of the same path'() {
+    void 'every copy of a template on the classpath is expanded'() {
         given:
             File later = new File(projectDir, 'later.jar')
             writeTemplateJar(later, [show: 'later show'])
@@ -325,7 +329,23 @@ class GenerateScaffoldedViewsTaskSpec extends Specification {
             task.generate()
 
         then:
-            handed(task) == ['com.example.User/show': 'show']
+            handed(task) == ['com.example.User/show': ['later show', 'show']]
+    }
+
+    void 'identical copies of a template are expanded once'() {
+        given:
+            File same = new File(projectDir, 'same.jar')
+            writeTemplateJar(same, [show: 'show'])
+            writeTemplateJar(templateJar, [show: 'show'])
+            writeController('UserController', 'User')
+            def task = task()
+            task.runtimeClasspath.from(same)
+
+        when:
+            task.generate()
+
+        then:
+            handed(task) == ['com.example.User/show': ['show']]
     }
 
     void 'a stale page from a previous run does not survive'() {

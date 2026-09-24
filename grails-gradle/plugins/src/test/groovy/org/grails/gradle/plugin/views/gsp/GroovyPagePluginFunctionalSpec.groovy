@@ -184,7 +184,11 @@ class GroovyPagePluginFunctionalSpec extends GradleSpecification {
             Map<String, String> pages = [:]
             dir.eachFileRecurse { File f ->
                 if (f.isFile()) {
-                    pages[dir.toPath().relativize(f.toPath()).toString().replace(File.separatorChar, '/' as char)] = f.text
+                    // <copy>/<template path>, as the stand-in writes it; each template here has one copy
+                    List<String> parts = dir.toPath().relativize(f.toPath()).toString().replace(File.separatorChar, '/' as char).tokenize('/')
+                    String path = parts.drop(1).join('/')
+                    assert !pages.containsKey(path)
+                    pages[path] = f.text
                 }
             }
             pages

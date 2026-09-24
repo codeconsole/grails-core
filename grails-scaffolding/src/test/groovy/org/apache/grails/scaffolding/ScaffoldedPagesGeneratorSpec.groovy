@@ -52,7 +52,7 @@ class ScaffoldedPagesGeneratorSpec extends Specification {
 
     void 'every template is expanded for every domain class, where the resolver looks for it'() {
         when:
-        int written = new ScaffoldedPagesGenerator().generate(templates, ['com.example.Book', 'com.example.Author'], output)
+        int written = new ScaffoldedPagesGenerator().generate([templates], ['com.example.Book', 'com.example.Author'], output)
 
         then:
         written == 4
@@ -67,12 +67,26 @@ class ScaffoldedPagesGeneratorSpec extends Specification {
         template('broken', 'broken ${noSuchName}')
 
         when:
-        int written = new ScaffoldedPagesGenerator().generate(templates, ['com.example.Book'], output)
+        int written = new ScaffoldedPagesGenerator().generate([templates], ['com.example.Book'], output)
 
         then:
         written == 2
         page('show', 'com.example.Book', 'show ${className}').exists()
         !new File(output, 'grails-scaffolded/com.example.Book').list().any { it.startsWith('broken') }
+    }
+
+    void 'every copy of a template is expanded, each to the page the resolver looks for when it chooses that copy'() {
+        given: 'a second copy of the show template, as a plugin overriding it would carry'
+        File other = new File(dir, 'other')
+        new File(other, 'show.gsp').with { parentFile.mkdirs(); setText('other show ${className}', 'UTF-8') }
+
+        when:
+        int written = new ScaffoldedPagesGenerator().generate([templates, other], ['com.example.Book'], output)
+
+        then:
+        written == 3
+        page('show', 'com.example.Book', 'show ${className}').getText('UTF-8') == 'show Book'
+        page('show', 'com.example.Book', 'other show ${className}').getText('UTF-8') == 'other show Book'
     }
 
     void 'the command line reads the domain classes from a list'() {
@@ -81,7 +95,7 @@ class ScaffoldedPagesGeneratorSpec extends Specification {
         list.setText('com.example.Book\n\n  com.example.Author  \n', 'UTF-8')
 
         when:
-        ScaffoldedPagesGenerator.main(templates.path, list.path, output.path)
+        ScaffoldedPagesGenerator.main(list.path, output.path, templates.path)
 
         then:
         page('show', 'com.example.Book', 'show ${className}').exists()
