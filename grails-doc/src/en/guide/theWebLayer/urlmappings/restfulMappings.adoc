@@ -295,9 +295,10 @@ the link targets
 
 Where one scope holds more than one controller serving the domain class, the one named after it is
 chosen; otherwise the scope is ambiguous and the next one is tried. The namespace a link targets is its
-`namespace` attribute when one is given, as it is for every redirect from a controller, and otherwise the
-namespace of the current request, which outside a request is the default namespace. When no scope
-settles on a single controller, the controller named after the domain class is assumed.
+`namespace` attribute when one is given, and otherwise the namespace of the current request; for a
+redirect it is the namespace of the controller issuing it, and outside a request it is the default
+namespace. When no scope settles on a single controller, the controller named after the domain class is
+assumed.
 
 A link, or the redirect after a save, therefore stays in the controller the user is working in. Given
 an `AssessmentController` and a `ManageAssessmentController` in the `manage` namespace, both serving
