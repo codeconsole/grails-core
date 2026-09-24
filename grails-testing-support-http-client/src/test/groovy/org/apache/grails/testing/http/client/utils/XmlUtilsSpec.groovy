@@ -23,7 +23,6 @@ import java.nio.file.Files
 
 import groovy.xml.XmlSlurper
 
-import org.xml.sax.SAXParseException
 import spock.lang.Specification
 import spock.lang.Unroll
 
@@ -289,7 +288,7 @@ class XmlUtilsSpec extends Specification {
         parsed.text() == 'safe'
     }
 
-    void 'newXmlSlurper blocks external entities'() {
+    void 'newXmlSlurper does not resolve external general entities'() {
         given:
         def secret = 'xml-utils-secret'
         def secretFile = Files.createTempFile('xml-utils-secret', '.txt')
@@ -301,14 +300,48 @@ class XmlUtilsSpec extends Specification {
 <root>&ext;</root>"""
 
         when:
-        XmlUtils.newXmlSlurper().parseText(xml)
+        def parsed = XmlUtils.newXmlSlurper().parseText(xml)
 
         then:
-        def e = thrown(SAXParseException)
-        e.message.contains('External Entity')
+        !parsed.text().contains(secret)
 
         cleanup:
         Files.deleteIfExists(secretFile)
+    }
+
+    void 'newXmlSlurper does not resolve external parameter entities'() {
+        given:
+        def secret = 'xml-utils-secret'
+        def secretFile = Files.createTempFile('xml-utils-secret', '.dtd')
+        Files.writeString(secretFile, "<!ENTITY leaked '${secret}'>")
+        def uri = secretFile.toUri().toASCIIString()
+        def xml = """<!DOCTYPE root [
+<!ENTITY % ext SYSTEM '${uri}'>
+%ext;
+]>
+<root>ok</root>"""
+
+        when:
+        def parsed = XmlUtils.newXmlSlurper().parseText(xml)
+
+        then:
+        parsed.text() == 'ok'
+
+        cleanup:
+        Files.deleteIfExists(secretFile)
+    }
+
+    void 'newXmlSlurper skips an external dtd rather than retrieving it'() {
+        given: 'a document naming a DTD that does not exist, so retrieval would fail loudly'
+        def missingDtd = Files.createTempDirectory('xml-utils').resolve('missing.dtd')
+        def xml = """<!DOCTYPE root SYSTEM '${missingDtd.toUri().toASCIIString()}'>
+<root>ok</root>"""
+
+        expect:
+        XmlUtils.newXmlSlurper().parseText(xml).text() == 'ok'
+
+        cleanup:
+        Files.deleteIfExists(missingDtd.parent)
     }
 
     void 'newXmlSlurper supports custom factory overrides'() {
