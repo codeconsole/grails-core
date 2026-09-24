@@ -135,6 +135,14 @@ class OpenApiDocumentFunctionalSpec extends Specification implements HttpClientS
         group.paths.keySet() == ['/books', '/books/{id}'] as Set
     }
 
+    void 'a group springdoc is configured with describes only what it selects'() {
+        when:
+        Map group = http('/v3/api-docs/authors').json()
+
+        then:
+        group.paths.keySet() == ['/authors', '/authors/{id}'] as Set
+    }
+
     void 'an association is described the way Grails renders and binds it'() {
         given:
         Map reference = (Map) ((Map) document.components.schemas.Book.get('properties')).author

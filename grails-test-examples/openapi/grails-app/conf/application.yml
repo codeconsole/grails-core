@@ -26,6 +26,11 @@ grails:
             catalogue:
                 paths-to-match: /books/**
 
+springdoc:
+    group-configs:
+        - group: authors
+          paths-to-match: /authors/**
+
 dataSource:
     pooled: true
     driverClassName: org.h2.Driver

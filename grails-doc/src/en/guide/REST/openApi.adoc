@@ -189,12 +189,16 @@ Each group takes the same `paths-to-match`, `paths-to-exclude`, `packages-to-sca
 `packages-to-exclude` settings as the default document, and `display-name` titles it. The
 `generate-open-api` command writes each group to a file of its own, and at runtime springdoc serves
 each at `/v3/api-docs/<name>`, applying the same criteria to any Spring MVC endpoints the
-application also has. A springdoc `GroupedOpenApi` bean the application declares is honored the same
-way, both at runtime and by the command.
+application also has. A group declared to springdoc, in `springdoc.group-configs` or as a
+`GroupedOpenApi` bean, is honored the same way, both at runtime and by the command:
 
-NOTE: Declare groups under `grails.openapi.groups` rather than springdoc's `springdoc.group-configs`.
-That property is a list of objects, which springdoc cannot read from the configuration Grails loads
-from `application.yml`.
+[source,yaml]
+----
+springdoc:
+    group-configs:
+        - group: sales
+          paths-to-match: /api/v1/**
+----
 
 [[openApiBaseDocument]]
 ==== The Base Document
