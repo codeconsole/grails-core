@@ -44,6 +44,24 @@ Grails 8 requires a minimum of Java 21 to both build and run Grails applications
 This is an increase from Grails 7, which required Java 17.
 Update your project's toolchain, CI pipelines, and deployment environments to use JDK 21 or later.
 
+==== 1.1 Gradle 9.7 Minimum Requirement
+
+The Grails 8 Gradle plugins require Gradle 9.7 or later.
+Grails 7 applications were generated with a Gradle 8.14.x wrapper, and a wrapper carried over from Grails 7 does not work with Grails 8.
+The Groovy compiler configuration that the Grails Gradle plugin sets up relies on the `groovyOptions.configurationScriptFile` property, which only exists from Gradle 9.7 on.
+On an older Gradle version `compileGroovy` fails with a `NoSuchMethodError` for `GroovyCompileOptions.getConfigurationScriptFile()`.
+
+Update the Gradle wrapper of your project as part of the upgrade:
+
+[,console,subs="attributes"]
+----
+./gradlew wrapper --gradle-version {gradleVersion}
+----
+
+Afterwards, check that the `distributionUrl` in `gradle/wrapper/gradle-wrapper.properties` points to the new version.
+Gradle 9 has breaking changes of its own that may affect your build scripts and other Gradle plugins you use; consult the https://docs.gradle.org/{gradleVersion}/userguide/upgrading_major_version_9.html[Gradle 9 upgrade guide].
+See also <<groovy-compiler-config-scripts,Generated Groovy Compiler Configuration Scripts>> if your build assigns a Groovy compiler configuration script itself.
+
 ==== 2. Spring Boot 4.1.x
 
 Grails 8 upgrades from Spring Boot 3.5.x to Spring Boot 4.1.x.
@@ -109,7 +127,9 @@ org.springframework.boot.env.EnvironmentPostProcessor=com.example.MyPostProcesso
 org.springframework.boot.EnvironmentPostProcessor=com.example.MyPostProcessor
 ----
 
-==== 4. MongoDB Configuration Property Changes
+==== 4. Spring Boot Configuration Property Changes
+
+===== 4.1 MongoDB Configuration
 
 Spring Boot 4 renamed the MongoDB configuration property namespace for Spring Boot's own auto-configuration.
 If your `application.yml` or `application.groovy` uses `spring.data.mongodb.*` properties for Spring Boot auto-configuration, you must rename them to `spring.mongodb.*`.
@@ -135,6 +155,39 @@ spring:
         port: 27017
         database: mydb
 ----
+
+[[multipart-upload-configuration]]
+===== 4.2 Multipart Upload Configuration
+
+The `grails.controllers.upload.\*` configuration properties are no longer supported.
+Applications that still define any property under `grails.controllers.upload` fail at startup with migration instructions.
+This startup check is a migration aid for Grails 8 only and will be removed in Grails 9, after which leftover `grails.controllers.upload` properties are silently ignored.
+Move those settings to Spring Boot's `spring.servlet.multipart.*` namespace:
+
+[source,yaml]
+.application.yml - Before (Grails 7)
+----
+grails:
+    controllers:
+        upload:
+            maxFileSize: 200000
+            maxRequestSize: 200000
+----
+
+[source,yaml]
+.application.yml - After (Grails 8)
+----
+spring:
+    servlet:
+        multipart:
+            maxFileSize: 200MB
+            maxRequestSize: 200MB
+----
+
+Spring Boot also provides `spring.servlet.multipart.location`, `spring.servlet.multipart.fileSizeThreshold`, `spring.servlet.multipart.enabled`, `spring.servlet.multipart.resolveLazily`, and `spring.servlet.multipart.strictServletCompliance` as replacements for the corresponding legacy settings. See the {springBootReference}../appendix/application-properties/index.html[Spring Boot multipart application properties] reference for the complete list.
+
+Unlike the Grails 7 default, the multipart location is not set to `System.getProperty("java.io.tmpdir")`; when `spring.servlet.multipart.location` is not configured, the resulting `MultipartConfigElement` has an empty location and uploads use the servlet container's temporary directory. This can matter when the container's temporary storage is constrained or when an application expects uploaded files in `java.io.tmpdir`.
+When no upload limits are configured, Spring Boot's defaults apply: 1MB per file and 10MB per request. Set `spring.servlet.multipart.maxFileSize` and `spring.servlet.multipart.maxRequestSize` explicitly if your application requires different limits.
 
 ==== 5. Hibernate ORM Package Relocations
 
@@ -739,8 +792,18 @@ The Spring annotations still work, so this is non-blocking, but new code should 
 * **Namespaced link generation is namespace-aware.**
 When a link, form action, pagination link, sortable column link, redirect, chain, or include targets a controller without an explicit `namespace`, Grails now resolves the namespace automatically. In the normal case, where only one controller has the target name, `controller` and `action` generate the correct namespaced or non-namespaced URL. Ambiguity only occurs when multiple controllers share the same name. In that case, specify `namespace` to choose the target explicitly. Pass `namespace: null` from Groovy code or `namespace=""` in a GSP tag to target the non-namespaced controller explicitly.
 
+* **A read-only transaction no longer flushes the session.**
+A read-only transaction (`@ReadOnly`, `@Transactional(readOnly = true)`) commits without flushing the session on every GORM datastore. Hibernate, Neo4j and the simple map datastore already behaved this way; GORM for MongoDB flushed the session when a read-only transaction committed, and no longer does.
++
+So on MongoDB, a write saved without `flush: true` before read-only code ran in the same session used to be persisted as a side effect of the read. It is now left queued in a session whose flush mode is `COMMIT`: later queries in that session do not see it, and it is discarded when the session closes. Flush such writes explicitly with `save(flush: true)`, or perform them in a read-write transaction. To make this discoverable, a read-only transaction that commits while its session holds pending inserts, updates or deletes now logs a warning from `org.grails.datastore.mapping.transactions.DatastoreTransactionManager` naming the session. See link:{mongodb5Guide}index.html#readOnlyTransactions[Read-Only Transactions] in the GORM for MongoDB guide.
++
+A GORM datastore implementation outside the Grails repository inherits this if it uses `SessionOnlyTransaction`; one that supplies its own `Transaction` can honour `readOnly` by overriding the new `AbstractSession.beginTransactionInternal(TransactionDefinition)`, which now receives the transaction definition instead of discarding it.
+
 * **`bindData` can clear omitted included fields.**
 `bindData(target, source, [include: [...], clearMissing: true])` now clears included properties that are absent from the binding source. The behavior is opt-in, requires an `include` list, and does not apply globally. Existing `bindData` calls without `clearMissing: true` keep omitted fields unchanged.
+
+* **GORM for MongoDB rejects Map criterion values that contain `$` keys.**
+`findWhere`, `findAllWhere`, criteria queries, the `where` DSL and dynamic finders now throw `InvalidDataAccessResourceUsageException` when a `Map` passed as a criterion value contains a key starting with `$` at any level, on any property type including enums. MongoDB interprets such a value document as an operator expression rather than as a value. Maps without such keys are still sent as literal subdocument comparisons, so exact matches on `Map` properties, dotted paths and array elements are unchanged, and geospatial criteria are exempt. Code that deliberately passed an operator document through a criteria value should use the native `find(Bson)` API instead.
 
 ==== 21. Tag Library Test Cleanup Changes
 
@@ -1638,6 +1701,7 @@ Now the framework bean simply backs off.
 
 NOTE: The clean back-off applies to beans that are registered before auto-configuration conditions are evaluated: `@Bean` methods in application configuration classes, and — as of the retimed plugin lifecycle (see _Plugin Beans Now Register Before Spring Boot Auto-Configuration_ below) — beans contributed through a plugin's `doWithSpring` or `beanRegistrar()`.
 Beans contributed through the application's `resources.groovy` or `resources.xml` register later and continue to take effect through bean-definition overriding, exactly as in previous releases.
+The one exception is a `@Configuration` class registered there, which is no longer processed — see <<resources-groovy-configuration-classes,`@Configuration` classes registered in `resources.groovy`>> below.
 
 [[plugin-beans-before-autoconfiguration]]
 ==== 33. Plugin Beans Now Register Before Spring Boot Auto-Configuration
@@ -1703,6 +1767,34 @@ class MyGrailsPlugin extends Plugin {
 Both hooks may be used on the same plugin during migration; when a registrar and the DSL register a bean under the same name, the registrar's definition wins.
 
 **Bean-definition overriding edge case.** Grails defaults `spring.main.allow-bean-definition-overriding` to `true`, and under that default nothing changes: an application bean (from the application class, `resources.groovy` or `resources.xml`) that uses the same name as a plugin bean still replaces the plugin's bean. However, because plugin beans now register earlier and application beans register in a separate, later step, an application that explicitly sets `spring.main.allow-bean-definition-overriding` to `false` will see a `BeanDefinitionOverrideException` for an application bean that shadows a plugin bean — in previous releases the two definitions were merged before a single registry write, so the shadowing was silent even with overriding disabled.
+
+[[resources-groovy-configuration-classes]]
+**`@Configuration` classes registered in `resources.groovy` are no longer processed.** In Grails 7 and earlier, a class annotated with `@Configuration` could be registered as a bean in the application's `resources.groovy` or `resources.xml`, or in the `doWithSpring` of the `Application` class, and its `@Bean` methods, `@Import` and `@Enable...` annotations were still honored. This is a breaking change in Grails 8: those bean definitions register after Spring has finished parsing configuration classes, so such a class is now created as a plain bean and none of the beans it declares are registered. No error or warning is reported — the beans are simply missing. The same applies to the application's `beanRegistrar()`.
+
+`@Configuration` classes contributed by a plugin's `doWithSpring` or `beanRegistrar()` are not affected, because plugin beans now register before configuration classes are parsed.
+
+`resources.groovy` and `resources.xml` are for defining beans. Register a configuration class with Spring directly instead, either by importing it from the `Application` class:
+
+[source,groovy]
+----
+import org.springframework.context.annotation.Import
+
+import grails.boot.GrailsApp
+import grails.boot.config.GrailsAutoConfiguration
+
+@Import(MyConfiguration)
+class Application extends GrailsAutoConfiguration {
+
+    static void main(String[] args) {
+        GrailsApp.run(Application, args)
+    }
+}
+----
+
+or by annotating the `Application` class with `@ComponentScan` so that configuration classes in the application's packages are discovered.
+Alternatively, declare the beans themselves — in `resources.groovy`, or in a `beans` block on the `Application` class (see link:spring.html#springdslAdditional[Configuring Additional Beans]).
+
+Plugin authors who previously told users to replace a plugin-provided `@Configuration` class through `resources.groovy` should ship that class as a Spring Boot auto-configuration and let users customize it through `@ConditionalOnMissingBean`-guarded beans or configuration properties instead.
 
 
 ==== 34. Compile-Time GORM Query Safety Check
@@ -3154,14 +3246,14 @@ with a diagnostic message, the same way it previously failed with `MissingMethod
 
 ===== 53.1 Oversized uploads now reach the application's error handling
 
-An upload larger than `grails.controllers.upload.maxFileSize` or
-`grails.controllers.upload.maxRequestSize` (both 128000 bytes by default) fails when the servlet
-container parses the request parts, and every parameter read on that request fails with it from then
-on. Because Grails reads request parameters on paths that run before, alongside and after the handler
-— to resolve the `_method` override, whenever a filter such as Spring Security builds `params`, in the
-locale-change interceptor, and in the exception resolver's request log — that failure used to abort
-the request inside the filter chain, where no exception handler could see it. The application was left
-with the container's own error page.
+An upload larger than `spring.servlet.multipart.maxFileSize` or `spring.servlet.multipart.maxRequestSize`
+(1MB per file and 10MB per request by default, see <<multipart-upload-configuration,Multipart Upload
+Configuration>>) fails when the servlet container parses the request parts, and every parameter read on
+that request fails with it from then on. Because Grails reads request parameters on paths that run
+before, alongside and after the handler — to resolve the `_method` override, whenever a filter such as
+Spring Security builds `params`, in the locale-change interceptor, and in the exception resolver's
+request log — that failure used to abort the request inside the filter chain, where no exception
+handler could see it. The application was left with the container's own error page.
 
 Those reads now tolerate a multipart request the container refuses to parse, so the failure surfaces
 where Spring raises it, as a
@@ -3191,7 +3283,7 @@ handler resolution — so outside the error handler this is only observable in a
 Tomcat and Jetty both surface the failure to the application as described above. Undertow applies the
 limit while it reads the request entity and refuses the request at the HTTP layer, so no application
 code runs at all: the response is a bare `413` with an empty body, and a `"413"` mapping is not
-consulted. Raising `grails.controllers.upload.maxRequestSize` raises the point at which Undertow
+consulted. Raising `spring.servlet.multipart.maxRequestSize` raises the point at which Undertow
 refuses, but there is no way to render a body for a request the container never dispatches.
 
 ===== 53.2 An error handler that fails is no longer forwarded to from inside itself
@@ -3577,6 +3669,7 @@ declaration, so it is read strictly at compile time and at runtime alike.
 
 See <<upgrading>> for the full description of the XML parsing defaults.
 
+[[groovy-compiler-config-scripts]]
 ==== 62. Generated Groovy Compiler Configuration Scripts
 
 On Gradle 9.7+, configure `groovyOptions.configurationScriptFile` before task execution. Assigning
@@ -3845,7 +3938,243 @@ Both eager web promises and returned promises now honor `spring.mvc.async.reques
 
 The `grails.async.promiseFactory=virtual-thread` opt-in now uses the same CompletableFuture implementation with its own decorated executor; it no longer relies on the deprecated FutureTask classes. Its default event bus remains asynchronous and its web tasks propagate request context. Its aggregate `onComplete` resolves to the callback's result, and aggregate `onError` observes the original failure while leaving the returned promise failed, rather than recovering to an empty list.
 
-==== 67. XML Web Support Is Optional
+==== 67. GORM for Hibernate 7 Tracks Changes From Persist, Not From Insert
+
+GORM for Hibernate 7 now activates its dirty-check tracking when an entity is persisted or merged rather
+than after its row has been inserted. Two observable behaviours change for existing applications on
+Hibernate 7. Applications on Hibernate 5 are unaffected.
+
+===== 67.1 A New Entity Starts at Version 0
+
+An entity whose identifier is generated before the insert, for example one mapped with
+`id generator: 'increment'` or `'assigned'`, or any member of a `tablePerConcreteClass` hierarchy, was
+written with an `INSERT` immediately followed by an `UPDATE` of the same row, so it started at `version` 1.
+It now starts at `version` 0 and costs a single statement, as on Hibernate 5 and as entities using the
+default `identity` generator always did.
+
+Code that compared such a version against 1, or that counted statements or update events for a new entity,
+needs to expect the value it would have had on Hibernate 5:
+
+[source,groovy]
+----
+def book = new Book(title: 'Grails').save(flush: true)   // id generator: 'increment'
+assert book.version == 0                                  // was 1 before Grails 8.0
+----
+
+===== 67.2 Persistence Listeners Receive Persist and Merge Events
+
+An `AbstractPersistenceEventListener` on Hibernate 7 now receives a `PersistEvent` (`eventType` `Persist`)
+for every explicit or flush-time cascaded persist, and a `MergeEvent` (`eventType` `Merge`) for every
+merge. Neither can be cancelled. Hibernate 5 publishes `SaveOrUpdateEvent` when an entity is saved and
+publishes no event for a merge.
+
+A listener that switches over `event.eventType` and throws in its default branch must handle the new
+values:
+
+[source,groovy]
+----
+@Override
+protected void onPersistenceEvent(AbstractPersistenceEvent event) {
+    switch (event.eventType) {
+        case Persist:                      // new on Hibernate 7
+        case Merge:                        // new on Hibernate 7
+        case PreInsert:
+            // ...
+            break
+        default:
+            throw new IllegalStateException("Unhandled ${event.eventType}")
+    }
+}
+----
+
+==== 68. `lock(id)` Applies the Multi-Tenancy Filter
+
+`DomainClass.lock(id)` loaded the row by identifier, and Hibernate's tenant filter does not apply to a load
+by identifier. A `MultiTenant` entity could therefore be locked, and returned, by a tenant that does not own
+it, even though `get(id)` correctly returned `null` for the same identifier.
+
+The lock now loads a multi-tenant entity through a query, as `get(id)` does, so it resolves within the bound
+tenant and returns `null` for a row that belongs to another one. Entities that are not multi-tenant are
+unaffected, and so is the statement issued for them.
+
+Code that relied on `lock(id)` reaching across tenants has to bind the owning tenant explicitly:
+
+[source,groovy]
+----
+Tenants.withId('tenant1') {
+    Book.lock(id)
+}
+----
+
+==== 69. Instance Operations on a Named-Connection Static API Use That Connection
+
+Reaching an instance operation through a named-connection static API - `Book.secondary.save(book)`,
+`Book.secondary.delete(book)` and so on - resolved the instance API for the *default* connection rather than
+for `secondary`. With only the named connection's session open, which is the normal arrangement, the call
+failed with `No Session found for current thread`:
+
+[source,groovy]
+----
+Book.secondary.withNewSession {
+    Book.secondary.withTransaction {
+        Book.secondary.save(book)     // threw: resolved the default connection
+    }
+}
+----
+
+Every such operation now resolves the connection the handle was obtained for: `save`, `insert`, `merge`,
+`delete`, `attach`, `isAttached`, `discard`, `ident`, `lock`, `mutex`, `refresh` and `instanceOf`. The example
+above now saves to `secondary`.
+
+GORM for Hibernate 5 needed a second fix for this to take effect. Its static API discarded the connection
+qualifier it was created with and reported `DEFAULT` for every connection, so a named-connection handle could
+not resolve anything but the default one. It now records its own qualifier, as GORM for Hibernate 7 already
+did. Anything that reads the qualifier of a Hibernate 5 named-connection static API therefore sees the real
+connection name where it previously saw `default`.
+
+Applications using a single datasource are unaffected, and so is the instance form `book.secondary.save()`,
+which already resolved the named connection.
+
+==== 70. `mutex` Reloads the Instance Under the Lock
+
+`entity.mutex { }` took an exclusive lock on the instance's already-loaded state and ran the closure. Because
+that lock is version-checked, a transaction that committed to the row between the load and the `mutex` call
+made it fail with an optimistic locking failure - the closure never ran.
+
+Where the datastore supports it, GORM for Hibernate 5 and 7 included, `mutex` now acquires the lock without a
+version check and reloads the row under it, so it waits for a competing writer and the closure runs on the
+committed state. The lock stays exclusive; there is no argument to weaken it, since a shared or optimistic
+lock would not give the closure mutual exclusion.
+
+Three consequences for existing code:
+
+* **Unflushed changes to the instance are discarded**, as they are for `refresh`. Apply changes inside the
+closure, not before the `mutex` call:
++
+[source,groovy]
+----
+book.title = 'new title'
+book.mutex { book.save() }        // the pending title is discarded by the reload
+
+book.mutex {                      // apply the change inside instead
+    book.title = 'new title'
+    book.save()
+}
+----
+* **An active transaction is required.** Without one the call now throws
+`jakarta.persistence.TransactionRequiredException`.
+* **The instance must be attached** to the current session; a detached one throws `IllegalArgumentException`.
+Re-attach it with `attach()` first.
+
+Code that relied on `mutex` failing fast on a stale version should check the version itself, or use
+`entity.lock()`, which is unchanged.
+
+Datastores that cannot reload under a lock keep their previous behaviour.
+
+==== 71. `id generator: 'sequence'` Derives Its Name From the Table on Hibernate 7
+
+On GORM for Hibernate 7, mapping an identifier with `id generator: 'sequence'` and no `params: [sequence:
+'...']` failed at session factory bootstrap:
+
+[source,groovy]
+----
+static mapping = {
+    id generator: 'sequence'   // threw: Unable to determine implicit sequence name for target table 'null'
+}
+----
+
+Hibernate's own generator-creation path supplies the target table so it can derive an implicit sequence name
+when none is given; the Grails-specific path that constructs the generator directly did not. The table name
+is now supplied the same way, so the mapping above starts the application.
+
+The derived name is not the one Grails 7 used. Hibernate 7 names the sequence after the entity's table with
+its own `_SEQ` suffix, where Grails 7 on Hibernate 5 gave every such mapping the same `hibernate_sequence`:
+
+[cols="2,2",options="header"]
+|===
+| `id generator: 'sequence'` on table `book` | Sequence
+
+| Grails 7, on Hibernate 5
+| `hibernate_sequence`
+
+| Grails 8, on Hibernate 7
+| `book_SEQ`
+|===
+
+An application whose schema is created at startup is unaffected. One that upgrades against an existing
+database has to either add the new sequences to that schema or keep the old name explicitly:
+
+[source,groovy]
+----
+static mapping = {
+    id generator: 'sequence', params: [sequence: 'hibernate_sequence']
+}
+----
+
+Mappings that already name a sequence are unaffected, and so is GORM for Hibernate 5.
+
+==== 72. Calls on a Class Inside a Named Connection's Session or Transaction Use That Connection
+
+Inside a session or transaction opened through a named connection - `Book.secondary.withTransaction { }`,
+`Book.secondary.withNewSession { }` and the like - the calls on `Book` itself, such as `Book.get(id)` or
+`book.save()`, used the *default* connection. With only the named connection's session open, a save failed
+with `No Session found for current thread`, and a read went to the default database:
+
+[source,groovy]
+----
+Book.secondary.withTransaction {
+    def book = Book.get(42)     // read from the default database
+    book.save()                 // threw: No Session found for current thread
+}
+----
+
+Whether the save threw depended on what else was open. With a default-connection session open further out,
+as the open-session-in-view interceptor or an outer `@Transactional` provides, it succeeded and wrote the
+instance to the default database, silently.
+
+They now use the connection whose session or transaction the block opened, as they do inside
+`withConnection`, and the example above reads and saves through `secondary`. Other domain classes are not
+affected, and an operation that names a connection keeps it. The same holds inside a method annotated
+`@Transactional(connection = 'secondary')`, for every domain class mapped to `secondary`; a class that is not
+mapped to it keeps its own connection, and a multi-tenant class is left to its tenant, as it was before. Code that relied on the old routing changes
+behaviour without failing, so look for it: a copy between connections written as
+
+[source,groovy]
+----
+Book.legacy.withTransaction {
+    Book.legacy.list().each { new Book(name: it.name).save() }    // meant for the default database
+}
+----
+
+used to write the copies to the default database, and now writes them back into `legacy`. Code that reached
+the default connection from inside such a block by calling the class directly has to name it now:
+
+[source,groovy]
+----
+Book.secondary.withTransaction {
+    Book.'default'.withSession { Book.count() }    // counts the default database
+}
+----
+
+A method annotated `@Transactional` without a connection, called from inside such a block, does not reset the
+routing. Its transaction is the default connection's, but the calls it makes on a class the block routes still
+reach the block's connection, so those writes join the transaction the block opened rather than the one the
+method began - including under `propagation = REQUIRES_NEW`, whose separate transaction then covers none of
+them. Name the connection, as in `@Transactional(connection = 'secondary')`, where the method's own transaction
+has to cover its writes.
+
+Applications using a single datasource are unaffected.
+
+==== 73. Default Security Response Headers
+
+Grails 8 registers a servlet filter that sends default browser hardening headers (`X-Content-Type-Options: nosniff`, `X-Frame-Options: SAMEORIGIN`, `Referrer-Policy: strict-origin-when-cross-origin`, `X-XSS-Protection: 0`) on the responses of every servlet web application, so an upgraded application sends these headers without any change on your part.
+The filter is registered at `GrailsFilters.FIRST`, ahead of the other Grails filters, and writes its headers when the response commits, only if nothing else has set them by then, so values set by your controllers, interceptors, custom filters, or Spring Security header writers at Spring Boot's default `spring.security.filter.order` are preserved.
+If you order the Spring Security chain ahead of `GrailsFilters.FIRST`, its header writers (other than the `X-Frame-Options` writer) find the Grails value already present and leave it; disable the corresponding `grails.security.headers.<header>` in that case.
+Filters ordered ahead of `GrailsFilters.FIRST`, such as Spring Boot's forwarded-header filter and, in a WAR deployment, its `ErrorPageFilter`, run outside the Grails filter, so a response one of them serves itself receives no default headers.
+If a reverse proxy in front of the application already sends these headers (for example through nginx's `add_header`), set `grails.security.headers.defaults: auto` so requests that arrive through the proxy (detected from forwarded request headers, `server.forward-headers-strategy`, or an active cloud platform) receive only the headers you configure explicitly, or strip the application's copies at the proxy.
+To disable or customize the Grails defaults, configure `grails.security.headers.*`; see the Security guide's HTTP Security Headers section for the full list and the reverse-proxy guidance.
+
+==== 74. XML Web Support Is Optional
 
 XML conversion, request-body binding, codecs, and REST renderers now live in the optional
 `grails-xml` module. Newly generated applications and the web starter no longer include that module by
@@ -3891,7 +4220,7 @@ APIs.
 This change does not affect Grails plugin descriptors. Plugin metadata continues to be generated and
 published in its existing descriptor format; `grails-xml` concerns application HTTP payloads only.
 
-==== 68. `respond()` Uses Spring JSON Conversion
+==== 75. `respond()` Uses Spring JSON Conversion
 
 Spring JSON rendering is opt-in on `8.0.x`: ordinary `respond()` calls continue to use the legacy
 Grails JSON converter unless `grails.web.rendering.json.spring` is `true`. Changing the default belongs
@@ -3952,7 +4281,7 @@ They do not automatically load the controllers, URL mappings or i18n plugins; li
 the curated unit-test setup. Plain `GrailsUnitTest` and `ServiceUnitTest` do not load XML or the web
 plugin graph simply because that module is on the classpath.
 
-==== 69. JSON Request Binding Uses the Boot `JsonMapper`
+==== 76. JSON Request Binding Uses the Boot `JsonMapper`
 
 JSON request bodies used for Grails data binding are now parsed by Spring Boot's configured Jackson 3
 `JsonMapper`. Mapper features installed through `JsonMapperBuilderCustomizer` therefore apply consistently
@@ -3967,7 +4296,7 @@ Untyped JSON numbers keep the types the previous parser produced. Values with a 
 as `BigDecimal` rather than `Double`, so binding a request value such as `1.15` to a `BigDecimal` property
 retains exactly the digits the request sent. Whole numbers continue to bind as `Integer` or `Long`.
 
-==== 70. REST Validation Errors Use RFC 9457 Problems
+==== 77. REST Validation Errors Use RFC 9457 Problems
 
 When Spring JSON rendering is enabled, `respond()` renders Spring `Errors` as
 `application/problem+json` by default. Grails uses the public `ValidationProblemDetailFactory` bean to
@@ -4002,7 +4331,7 @@ Rejected field values are excluded by default because they can contain passwords
 sensitive request data. Applications that deliberately need those values can define their own
 `new ValidationProblemDetailFactory(true)` bean after reviewing that exposure risk.
 
-==== 71. HAL Rendering
+==== 78. HAL Rendering
 
 Existing Grails HAL JSON renderers remain available through explicit renderer registration.
 Adding `spring-boot-starter-hateoas` alone does not register a Grails renderer for Spring HATEOAS
