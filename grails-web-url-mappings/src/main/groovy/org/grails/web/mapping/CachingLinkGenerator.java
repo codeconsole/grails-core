@@ -69,7 +69,8 @@ public class CachingLinkGenerator extends DefaultLinkGenerator {
             return super.link(attrs, encoding);
         }
 
-        final String key = makeKey(LINK_PREFIX, attrs);
+        // The encoding decides how the link's parameters are escaped, so a link is cached per encoding.
+        final String key = makeKey(LINK_PREFIX, attrs) + "encoding[" + encoding + "]";
         Object resourceLink = linkCache.getIfPresent(key);
         if (resourceLink == null) {
             resourceLink = super.link(attrs, encoding);

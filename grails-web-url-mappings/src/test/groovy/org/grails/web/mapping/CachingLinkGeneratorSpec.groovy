@@ -19,7 +19,11 @@
 
 package org.grails.web.mapping
 
+import grails.core.DefaultGrailsApplication
+import grails.core.GrailsApplication
 import grails.util.GrailsWebMockUtil
+import grails.web.CamelCaseUrlConverter
+import org.grails.support.MockApplicationContext
 import org.grails.web.mapping.CachingLinkGenerator
 import org.grails.web.servlet.mvc.DefaultRequestStateLookupStrategy
 import org.grails.web.servlet.mvc.GrailsWebRequest
@@ -119,6 +123,22 @@ class CachingLinkGeneratorSpec extends Specification {
         key == "link[resource:org.grails.web.mapping.CachingLinkGeneratorSpec\$Resource->1, action:bar]target[controller:widget, namespace:null, action:bar, method:GET]"
     }
 
+
+    void "a link is cached separately for each encoding it is generated in"() {
+        given: 'a caching link generator over a real URL mapping'
+        def ctx = new MockApplicationContext()
+        ctx.registerMockBean(GrailsApplication.APPLICATION_ID, new DefaultGrailsApplication())
+        def generator = new CachingLinkGenerator('http://localhost', '')
+        generator.grailsUrlConverter = new CamelCaseUrlConverter()
+        generator.urlMappingsHolder = new DefaultUrlMappingsHolder(new DefaultUrlMappingEvaluator(ctx).evaluateMappings {
+            "/$controller/$action?/$id?"()
+        })
+        def attrs = [controller: 'book', action: 'list', params: [q: '\u00e9']]
+
+        expect: 'the same link generated in two encodings encodes its parameters in each'
+        generator.link(attrs, 'UTF-8') == '/book/list?q=%C3%A9'
+        generator.link(attrs, 'ISO-8859-1') == '/book/list?q=%E9'
+    }
 
     class MyCachingLinkGenerator extends CachingLinkGenerator {
         public MyCachingLinkGenerator(String serverBaseURL) {
