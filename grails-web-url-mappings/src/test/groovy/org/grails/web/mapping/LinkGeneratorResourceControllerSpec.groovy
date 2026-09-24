@@ -166,6 +166,23 @@ class LinkGeneratorResourceControllerSpec extends Specification {
         logCapture.close()
     }
 
+    def "an ambiguous domain class is reported again once the controllers change"() {
+        given: 'GadgetsController and AdminGadgetsController both declare Gadget, and neither is named after it'
+        def generator = createGenerator()
+        def logCapture = new LogCapture(DefaultLinkGenerator)
+
+        when: 'the ambiguity is reported, and a controller serving Gadget is then reloaded'
+        generator.link(resource: new Gadget(id: 3), action: 'show')
+        grailsApplication.addArtefact(ControllerArtefactHandler.TYPE, GadgetsController)
+        generator.link(resource: new Gadget(id: 4), action: 'show')
+
+        then: 'it is reported against the reloaded controllers too, without resetting the cache'
+        warningsAbout(logCapture, "[${Gadget.name}]").size() == 2
+
+        cleanup:
+        logCapture.close()
+    }
+
     def "a resource link naming its controller is not resolved, so no ambiguity is reported"() {
         given: 'GadgetsController and AdminGadgetsController both declare Gadget, and neither is named after it'
         def generator = createGenerator()

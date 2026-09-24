@@ -26,6 +26,7 @@ import grails.web.CamelCaseUrlConverter
 import grails.web.mapping.UrlCreator
 import grails.web.mapping.UrlMappingsHolder
 import org.apache.grails.core.testing.support.LogCapture
+import org.grails.core.artefact.ControllerArtefactHandler
 import org.grails.web.util.WebUtils
 import org.springframework.web.context.request.RequestContextHolder
 
@@ -227,6 +228,24 @@ class LinkGeneratorNamespaceInferenceSpec extends Specification {
         generator.getDefaultNamespace('report', null)
 
         then: 'it is reported again'
+        warningsAbout(logCapture, 'controller [report]').size() == 2
+
+        cleanup:
+        logCapture.close()
+    }
+
+    def "a controller name no scope resolves is reported again once the controllers change"() {
+        given: 'report is defined only in admin and sales, and the request is in the default namespace'
+        bindRequest('page', null)
+        def generator = createGenerator()
+        def logCapture = new LogCapture(DefaultLinkGenerator)
+
+        when: 'the ambiguity is reported, and a controller is then reloaded'
+        generator.getDefaultNamespace('report', null)
+        grailsApplication.addArtefact(ControllerArtefactHandler.TYPE, org.grails.web.mapping.nsinference.admin.ReportController)
+        generator.getDefaultNamespace('report', null)
+
+        then: 'it is reported against the reloaded controllers too, without resetting the cache'
         warningsAbout(logCapture, 'controller [report]').size() == 2
 
         cleanup:

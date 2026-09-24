@@ -96,8 +96,6 @@ class DefaultLinkGenerator implements LinkGenerator, PluginManagerAware {
     GrailsApplication grailsApplication
 
     private volatile ControllerIndex controllerIndex
-    private final Set<String> ambiguousControllersReported = ConcurrentHashMap.newKeySet()
-    private final Set<String> ambiguousResourcesReported = ConcurrentHashMap.newKeySet()
 
     @Value('${grails.resources.pattern:/static/**}')
     String resourcePattern = Settings.DEFAULT_RESOURCE_PATTERN
@@ -408,7 +406,8 @@ class DefaultLinkGenerator implements LinkGenerator, PluginManagerAware {
             return null
         }
 
-        Set<ControllerRef> candidates = controllersNamed(controller)
+        ControllerIndex index = getControllerIndex()
+        Set<ControllerRef> candidates = index.named(controller)
         if (candidates.isEmpty()) {
             // No registered controller has the name, so nothing is nearer than the namespace the link is
             // made from: stay in it, as an unqualified reference resolves against where it is made.
@@ -416,18 +415,19 @@ class DefaultLinkGenerator implements LinkGenerator, PluginManagerAware {
         }
         ControllerRef nearest = nearestController(candidates, controller, null, false)
         if (nearest == null) {
-            reportAmbiguousNamespace(controller, candidates)
+            reportAmbiguousNamespace(index, controller, candidates)
             return null
         }
         return nearest.namespace
     }
 
     /**
-     * Warns, once per controller name, that a link named a controller defined in several namespaces
-     * without saying which, from outside all of them, so no namespace could be inferred.
+     * Warns, once per controller name for the controllers the index holds, that a link named a controller
+     * defined in several namespaces without saying which, from outside all of them, so no namespace could be
+     * inferred.
      */
-    private void reportAmbiguousNamespace(String controller, Set<ControllerRef> candidates) {
-        if (ambiguousControllersReported.add(controller)) {
+    private void reportAmbiguousNamespace(ControllerIndex index, String controller, Set<ControllerRef> candidates) {
+        if (index.reportedControllerNames.add(controller)) {
             Set<String> namespaces = new TreeSet<>()
             for (ControllerRef candidate in candidates) {
                 namespaces.add(candidate.namespace)
@@ -494,14 +494,12 @@ class DefaultLinkGenerator implements LinkGenerator, PluginManagerAware {
     }
 
     /**
-     * Clears the cached controller-to-namespace and domain-class-to-controller indexes so they are
-     * rebuilt on next use. Invoked when the set of controllers may have changed (for example during
-     * development-mode reloads).
+     * Clears the cached index of controllers, and with it the ambiguities reported against them, so it is
+     * rebuilt on next use. The index is also rebuilt whenever the registered controllers change, as during
+     * a development-mode reload.
      */
     void resetControllerNamespaceCache() {
         controllerIndex = null
-        ambiguousControllersReported.clear()
-        ambiguousResourcesReported.clear()
     }
 
     /**
@@ -525,7 +523,8 @@ class DefaultLinkGenerator implements LinkGenerator, PluginManagerAware {
      */
     private ResourceTarget resolveResourceTarget(PersistentEntity entity, Map attrs, String action) {
         String derivedName = entity.getDecapitalizedName()
-        Set<ControllerRef> serving = servingControllers(entity, derivedName, action)
+        ControllerIndex index = getControllerIndex()
+        Set<ControllerRef> serving = servingControllers(index, entity, derivedName, action)
         if (serving.isEmpty()) {
             return new ResourceTarget(derivedName, null, false)
         }
@@ -551,17 +550,19 @@ class DefaultLinkGenerator implements LinkGenerator, PluginManagerAware {
             }
         }
         if (tied.size() > 1) {
-            reportAmbiguousResource(entity, derivedName, tied)
+            reportAmbiguousResource(index, entity, derivedName, tied)
         }
         return new ResourceTarget(derivedName, null, false)
     }
 
     /**
-     * Warns, once per domain class, that a resource link named no controller and more than one controller
-     * serving the domain class was equally near, so the controller named after it was assumed.
+     * Warns, once per domain class for the controllers the index holds, that a resource link named no
+     * controller and more than one controller serving the domain class was equally near, so the controller
+     * named after it was assumed.
      */
-    private void reportAmbiguousResource(PersistentEntity entity, String derivedName, Set<ControllerRef> tied) {
-        if (ambiguousResourcesReported.add(entity.name)) {
+    private void reportAmbiguousResource(ControllerIndex index, PersistentEntity entity, String derivedName,
+                                         Set<ControllerRef> tied) {
+        if (index.reportedDomainClasses.add(entity.name)) {
             Set<String> controllers = new TreeSet<>()
             for (ControllerRef ref in tied) {
                 controllers.add(ref.namespace != null ? "${ref.namespace}/${ref.name}".toString() : ref.name)
@@ -650,17 +651,12 @@ class DefaultLinkGenerator implements LinkGenerator, PluginManagerAware {
         return conventionalCount == 1 ? conventional : null
     }
 
-    private Set<ControllerRef> controllersNamed(String name) {
-        Set<ControllerRef> named = getControllerIndex().byName.get(name)
-        return named != null ? named : Collections.<ControllerRef>emptySet()
-    }
-
     /**
      * @return the controllers named after the entity or declaring it that define the given action, or
      *         every such controller when the action is not known
      */
-    private Set<ControllerRef> servingControllers(PersistentEntity entity, String derivedName, String action) {
-        ControllerIndex index = getControllerIndex()
+    private Set<ControllerRef> servingControllers(ControllerIndex index, PersistentEntity entity, String derivedName,
+                                                  String action) {
         String actionElement = action != null && grailsUrlConverter != null ? grailsUrlConverter.toUrlElement(action) : action
         Set<ControllerRef> serving = new HashSet<>()
         for (Set<ControllerRef> candidates in [index.byName.get(derivedName), index.byDomainClass.get(entity.name)]) {
@@ -916,6 +912,13 @@ class DefaultLinkGenerator implements LinkGenerator, PluginManagerAware {
         final Map<String, Set<ControllerRef>> byDomainClass
         final Map<ControllerRef, Set<String>> actions
 
+        /**
+         * The controller names and domain classes whose ambiguity has been reported against these
+         * controllers, so that each is reported once, and again once the controllers change.
+         */
+        final Set<String> reportedControllerNames = ConcurrentHashMap.newKeySet()
+        final Set<String> reportedDomainClasses = ConcurrentHashMap.newKeySet()
+
         ControllerIndex(GrailsClass[] controllers, MappingContext mappingContext, Map<String, Set<ControllerRef>> byName,
                         Map<String, Set<ControllerRef>> byDomainClass, Map<ControllerRef, Set<String>> actions) {
             this.controllers = controllers
@@ -927,6 +930,14 @@ class DefaultLinkGenerator implements LinkGenerator, PluginManagerAware {
 
         boolean isFor(GrailsClass[] current, MappingContext context) {
             current.is(controllers) && context.is(mappingContext)
+        }
+
+        /**
+         * @return the controllers with the given logical name, in every namespace
+         */
+        Set<ControllerRef> named(String name) {
+            Set<ControllerRef> named = byName.get(name)
+            named != null ? named : Collections.<ControllerRef>emptySet()
         }
 
         /**
