@@ -77,6 +77,12 @@ dependencies {
     testImplementation "org.apache.grails:grails-testing-support-web"
 }
 
+// PrecompiledScaffoldPagesSpec reads the pages this build compiles, as the packaged application does
+tasks.named('test') {
+    dependsOn tasks.named('compileGroovyPages')
+    systemProperty 'scaffolding.compiledPages', layout.buildDirectory.dir('gsp-classes/main').get().asFile.absolutePath
+}
+
 apply {
     from rootProject.layout.projectDirectory.file('gradle/functional-test-config.gradle')
     from rootProject.layout.projectDirectory.file('gradle/test-webjar-asset-config.gradle')
