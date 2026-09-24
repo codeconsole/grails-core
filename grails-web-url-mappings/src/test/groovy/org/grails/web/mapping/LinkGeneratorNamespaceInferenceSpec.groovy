@@ -18,11 +18,14 @@
  */
 package org.grails.web.mapping
 
+import ch.qos.logback.classic.Level
+
 import grails.core.DefaultGrailsApplication
 import grails.util.GrailsWebMockUtil
 import grails.web.CamelCaseUrlConverter
 import grails.web.mapping.UrlCreator
 import grails.web.mapping.UrlMappingsHolder
+import org.apache.grails.core.testing.support.LogCapture
 import org.grails.web.util.WebUtils
 import org.springframework.web.context.request.RequestContextHolder
 
@@ -204,9 +207,7 @@ class LinkGeneratorNamespaceInferenceSpec extends Specification {
         given: 'report is defined only in admin and sales, and the request is in the default namespace'
         bindRequest('page', null)
         def generator = createGenerator()
-        def captured = new ByteArrayOutputStream()
-        def originalErr = System.err
-        System.setErr(new PrintStream(captured, true))
+        def logCapture = new LogCapture(DefaultLinkGenerator)
 
         when: 'its namespace is inferred twice'
         def first = generator.getDefaultNamespace('report', null)
@@ -216,8 +217,8 @@ class LinkGeneratorNamespaceInferenceSpec extends Specification {
         first == null
         second == null
 
-        and: 'the ambiguity is reported once, naming the namespaces'
-        def reports = captured.toString().readLines().findAll { it.contains('controller [report]') }
+        and: 'the ambiguity is reported once, as a warning naming the namespaces'
+        def reports = warningsAbout(logCapture, 'controller [report]')
         reports.size() == 1
         reports[0].contains('[admin, sales]')
 
@@ -226,10 +227,10 @@ class LinkGeneratorNamespaceInferenceSpec extends Specification {
         generator.getDefaultNamespace('report', null)
 
         then: 'it is reported again'
-        captured.toString().readLines().count { it.contains('controller [report]') } == 2
+        warningsAbout(logCapture, 'controller [report]').size() == 2
 
         cleanup:
-        System.setErr(originalErr)
+        logCapture.close()
     }
 
     def "caching link generator does not collide across request namespaces for the same attrs"() {
@@ -266,6 +267,10 @@ class LinkGeneratorNamespaceInferenceSpec extends Specification {
         then: 'the resource link is namespaced per request (no cache collision)'
         adminUrl == '/bar/admin/report/index'
         salesUrl == '/bar/sales/report/index'
+    }
+
+    private static List<String> warningsAbout(LogCapture logCapture, String subject) {
+        logCapture.events.findAll { it.level == Level.WARN && it.formattedMessage.contains(subject) }*.formattedMessage
     }
 
     private void bindRequest(String controllerName, String namespace) {

@@ -18,14 +18,17 @@
  */
 package org.grails.web.mapping
 
+import ch.qos.logback.classic.Level
+
 import grails.core.DefaultGrailsApplication
 import grails.util.GrailsWebMockUtil
 import grails.web.CamelCaseUrlConverter
 import grails.web.HyphenatedUrlConverter
 import grails.web.mapping.UrlCreator
 import grails.web.mapping.UrlMappingsHolder
-import org.grails.datastore.mapping.keyvalue.mapping.config.KeyValueMappingContext
+import org.apache.grails.core.testing.support.LogCapture
 import org.grails.core.artefact.ControllerArtefactHandler
+import org.grails.datastore.mapping.keyvalue.mapping.config.KeyValueMappingContext
 import org.grails.datastore.mapping.model.MappingContext
 import org.grails.web.mapping.domainlink.AdminDashboardController
 import org.grails.web.mapping.domainlink.AdminGadgetsController
@@ -137,16 +140,14 @@ class LinkGeneratorResourceControllerSpec extends Specification {
     def "an ambiguous domain class is reported once until the cache is reset"() {
         given: 'GadgetsController and AdminGadgetsController both declare Gadget, and neither is named after it'
         def generator = createGenerator()
-        def captured = new ByteArrayOutputStream()
-        def originalErr = System.err
-        System.setErr(new PrintStream(captured, true))
+        def logCapture = new LogCapture(DefaultLinkGenerator)
 
         when: 'two links to a Gadget are generated'
         generator.link(resource: new Gadget(id: 3), action: 'show')
         generator.link(resource: new Gadget(id: 4), action: 'show')
 
-        then: 'the fallback is reported once, naming the controllers that tied'
-        def reports = captured.toString().readLines().findAll { it.contains("[${Gadget.name}]") }
+        then: 'the fallback is reported once, as a warning naming the controllers that tied'
+        def reports = warningsAbout(logCapture, "[${Gadget.name}]")
         reports.size() == 1
         reports[0].contains('[adminGadgets, gadgets]')
         reports[0].contains('[gadget]')
@@ -156,28 +157,26 @@ class LinkGeneratorResourceControllerSpec extends Specification {
         generator.link(resource: new Gadget(id: 5), action: 'show')
 
         then: 'it is reported again'
-        captured.toString().readLines().count { it.contains("[${Gadget.name}]") } == 2
+        warningsAbout(logCapture, "[${Gadget.name}]").size() == 2
 
         cleanup:
-        System.setErr(originalErr)
+        logCapture.close()
     }
 
     def "an explicit namespace no controller serving the domain class is in is not reported"() {
         given:
         def generator = createGenerator()
-        def captured = new ByteArrayOutputStream()
-        def originalErr = System.err
-        System.setErr(new PrintStream(captured, true))
+        def logCapture = new LogCapture(DefaultLinkGenerator)
 
         when: 'a Gadget is linked in a namespace neither controller serving it is in'
         def link = generator.link(resource: new Gadget(id: 6), action: 'show', namespace: 'reports')
 
         then: 'the namespace is honoured without a warning'
         link == '/bar/reports/gadget/show/6'
-        !captured.toString().contains("[${Gadget.name}]")
+        warningsAbout(logCapture, "[${Gadget.name}]").isEmpty()
 
         cleanup:
-        System.setErr(originalErr)
+        logCapture.close()
     }
 
     def "a domain class no controller declares falls back to the domain class name"() {
@@ -456,6 +455,10 @@ class LinkGeneratorResourceControllerSpec extends Specification {
 
         expect: 'the action named in the link is found under its converted name'
         generator.link(resource: new Manuscript(id: 6), action: 'exportAll') == '/bar/manuscriptReport/exportAll/6'
+    }
+
+    private static List<String> warningsAbout(LogCapture logCapture, String subject) {
+        logCapture.events.findAll { it.level == Level.WARN && it.formattedMessage.contains(subject) }*.formattedMessage
     }
 
     private void bindRequest(String controllerName, String namespace) {
