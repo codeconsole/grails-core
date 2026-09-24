@@ -41,10 +41,14 @@ class ControllerRedirectSpec extends Specification {
 
     List<Map> linkArguments = []
 
+    List<Object> namespacesInScope = []
+
     LinkGenerator linkGenerator = Stub(LinkGenerator) {
         getServerBaseURL() >> 'http://localhost:8080'
         link(_) >> { Map arguments ->
             linkArguments << arguments
+            namespacesInScope << RequestContextHolder.currentRequestAttributes().currentRequest
+                    .getAttribute(GrailsApplicationAttributes.CONTROLLER_NAMESPACE_ATTRIBUTE)
             "/${arguments.action}".toString()
         }
     }
@@ -123,6 +127,33 @@ class ControllerRedirectSpec extends Specification {
         new NamespacedRedirectController().redirectToIndex()
 
         then: 'the namespace is the one declared by the redirecting controller, not the executing one'
+        linkArguments[0].namespace == 'admin'
+    }
+
+    void 'a redirect to another controller the application defines is resolved from the issuing namespace'() {
+        given: 'a request already carrying a namespace'
+        MockHttpServletRequest request = bindRequest()
+        request.setAttribute(GrailsApplicationAttributes.CONTROLLER_NAMESPACE_ATTRIBUTE, 'reporting')
+
+        when: 'an admin controller redirects to the registered plain controller without naming a namespace'
+        new NamespacedRedirectController().redirectToPlain()
+
+        then: 'no namespace is forced onto the link'
+        !linkArguments[0].containsKey('namespace')
+
+        and: 'the link is resolved from the issuing namespace'
+        namespacesInScope[0] == 'admin'
+
+        and: 'the request namespace is restored once the redirect is issued'
+        request.getAttribute(GrailsApplicationAttributes.CONTROLLER_NAMESPACE_ATTRIBUTE) == 'reporting'
+    }
+
+    void 'a redirect to a controller the application does not define keeps the issuing namespace'() {
+        when:
+        bindRequest()
+        new NamespacedRedirectController().redirectToUndefined()
+
+        then: 'the issuing namespace is passed explicitly, as it always has been'
         linkArguments[0].namespace == 'admin'
     }
 
@@ -217,6 +248,14 @@ class NamespacedRedirectController implements Controller {
 
     void redirectToIndexInNamespace(String explicitNamespace) {
         redirect(action: 'index', namespace: explicitNamespace)
+    }
+
+    void redirectToPlain() {
+        redirect(controller: 'plainRedirect', action: 'index')
+    }
+
+    void redirectToUndefined() {
+        redirect(controller: 'nowhere', action: 'index')
     }
 }
 
