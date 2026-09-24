@@ -18,12 +18,18 @@
  */
 package org.grails.openapi.springdoc
 
+import java.lang.reflect.Method
+
 import io.swagger.v3.oas.models.OpenAPI
+import org.springdoc.core.customizers.SpringDocCustomizers
+import org.springdoc.core.filters.GlobalOpenApiMethodFilter
+import org.springdoc.core.filters.OpenApiMethodFilter
 import org.springdoc.core.models.GroupedOpenApi
 import org.springdoc.webmvc.api.MultipleOpenApiWebMvcResource
 import org.springframework.beans.factory.support.DefaultListableBeanFactory
 
 import grails.openapi.GrailsOpenApiGenerator
+import grails.openapi.OpenApiSelection
 import grails.openapi.OpenApiFixture
 import grails.openapi.WidgetController
 import grails.openapi.Widget
@@ -50,6 +56,37 @@ class GroupedOpenApiContributorSpec extends Specification {
         then:
         paths(beanFactory.getBean('gates', GroupedOpenApi)) == ['/gate'] as Set
         paths(beanFactory.getBean('widgets', GroupedOpenApi)) == ['/widgets', '/widgets/{id}'] as Set
+    }
+
+    void 'applies the method filters of a group, and the global ones, to the Grails actions'() {
+        given:
+        def beanFactory = new DefaultListableBeanFactory()
+        beanFactory.registerSingleton('generator', generator())
+        beanFactory.registerSingleton('springDocCustomizers',
+                customizers(globalMethodFilters: [{ Method action -> action.name != 'delete' } as GlobalOpenApiMethodFilter]))
+        beanFactory.registerSingleton('widgets', GroupedOpenApi.builder().group('widgets').pathsToMatch('/widgets/**')
+                .addOpenApiMethodFilter { Method action -> action.name != 'save' }.build())
+        def contributor = new GroupedOpenApiContributor()
+        contributor.beanFactory = beanFactory
+
+        when:
+        contributor.postProcessBeforeInitialization(resource(beanFactory), 'multipleOpenApiResource')
+
+        then:
+        operations(document(beanFactory.getBean('widgets', GroupedOpenApi))) ==
+                ['GET /widgets', 'GET /widgets/{id}', 'PUT /widgets/{id}', 'POST /widgets/{id}', 'PATCH /widgets/{id}'] as Set
+    }
+
+    void 'applies the method filters springdoc applies to its default document'() {
+        given:
+        def customizers = customizers(methodFilters: [{ Method action -> action.name != 'delete' } as OpenApiMethodFilter])
+
+        when:
+        def openApi = generator().generate(SpringdocSelections.defaultSelection(new OpenApiSelection(), customizers))
+
+        then:
+        openApi.paths['/widgets/{id}'].get
+        openApi.paths['/widgets/{id}'].delete == null
     }
 
     void 'leaves every other bean alone'() {
@@ -84,6 +121,50 @@ class GroupedOpenApiContributorSpec extends Specification {
 
         cleanup:
         context.close()
+    }
+
+    void 'generates a group with the global method filters at build time, where springdoc has not added them'() {
+        given:
+        def context = new org.springframework.context.support.GenericApplicationContext()
+        context.beanFactory.registerSingleton('springDocCustomizers',
+                customizers(globalMethodFilters: [{ Method action -> action.name != 'delete' } as GlobalOpenApiMethodFilter]))
+        context.beanFactory.registerSingleton('widgets', GroupedOpenApi.builder().group('widgets')
+                .pathsToMatch('/widgets/**').build())
+        context.refresh()
+
+        when:
+        def openApi = generator().generate(GroupedOpenApiContributor.declaredGroups(context).first())
+
+        then:
+        openApi.paths['/widgets/{id}'].get
+        openApi.paths['/widgets/{id}'].delete == null
+
+        cleanup:
+        context.close()
+    }
+
+    private static OpenAPI document(GroupedOpenApi group) {
+        def openApi = new OpenAPI()
+        group.openApiCustomizers.each { it.customise(openApi) }
+        openApi
+    }
+
+    private static Set<String> operations(OpenAPI openApi) {
+        openApi.paths.collectMany { String path, item ->
+            item.readOperationsMap().keySet().collect { "${it} ${path}".toString() }
+        } as Set<String>
+    }
+
+    private static SpringDocCustomizers customizers(Map<String, Collection> declared) {
+        new SpringDocCustomizers(
+                Optional.of((declared.openApiCustomizers ?: []) as LinkedHashSet),
+                Optional.of((declared.operationCustomizers ?: []) as LinkedHashSet),
+                Optional.empty(), Optional.empty(),
+                Optional.of((declared.methodFilters ?: []) as LinkedHashSet),
+                Optional.of((declared.globalOpenApiCustomizers ?: []) as LinkedHashSet),
+                Optional.of((declared.globalOperationCustomizers ?: []) as LinkedHashSet),
+                Optional.of((declared.globalMethodFilters ?: []) as LinkedHashSet),
+                Optional.empty(), Optional.empty())
     }
 
     private static Set<String> paths(GroupedOpenApi group) {

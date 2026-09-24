@@ -143,6 +143,21 @@ class OpenApiDocumentFunctionalSpec extends Specification implements HttpClientS
         group.paths.keySet() == ['/authors', '/authors/{id}'] as Set
     }
 
+    void 'a springdoc method filter leaves an action out of the default document'() {
+        expect: 'the action is served, but not described'
+        http('/notes/audit').assertStatus(204)
+        !document.paths.containsKey('/notes/audit')
+    }
+
+    void 'a group applies its method filters to the Grails actions'() {
+        when:
+        Map group = http('/v3/api-docs/book-reads').json()
+
+        then:
+        group.paths.collectMany { String path, Map item -> item.keySet().collect { "${it} ${path}".toString() } } as Set ==
+                ['get /books', 'get /books/{id}'] as Set
+    }
+
     void 'a group selects the operations that consume the media types it asks for'() {
         when:
         Map group = http('/v3/api-docs/author-changes').json()

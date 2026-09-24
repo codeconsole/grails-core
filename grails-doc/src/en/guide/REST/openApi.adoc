@@ -181,6 +181,20 @@ grails:
         produces-to-match: application/json
 ----
 
+Where springdoc is used, its method filters decide for the Grails actions too. Each filter is
+called with the method the action is declared as, and an action a filter excludes is left out, at
+runtime and by the `generate-open-api` command. An `OpenApiMethodFilter` bean applies to the default
+document, a `GlobalOpenApiMethodFilter` bean to every document, and a filter a `GroupedOpenApi` adds
+to that group:
+
+[source,groovy]
+----
+@Bean
+OpenApiMethodFilter internalActionFilter() {
+    { Method action -> !action.isAnnotationPresent(Internal) } as OpenApiMethodFilter
+}
+----
+
 The `create` and `edit` actions of a `RestfulController` answer the forms an HTML client renders,
 so they are left out unless `grails.openapi.include-form-actions` is set.
 

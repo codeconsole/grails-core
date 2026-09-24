@@ -474,7 +474,8 @@ class GrailsOpenApiGenerator {
         private void addOperation(String path, PathItem.HttpMethod method, GrailsControllerClass controller,
                                   Class<?> controllerType, String controllerName, String actionName,
                                   String operationId) {
-            if (!selection.selects(path, controllerType)) {
+            if (!selection.selects(path, controllerType)
+                    || !selection.selectsAction(ActionAnnotations.actionMethod(controllerType, actionName))) {
                 return
             }
             PathItem pathItem = paths.get(path) ?: new PathItem()

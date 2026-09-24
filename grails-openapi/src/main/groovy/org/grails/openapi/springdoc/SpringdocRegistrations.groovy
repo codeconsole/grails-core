@@ -20,7 +20,9 @@ package org.grails.openapi.springdoc
 
 import groovy.transform.CompileStatic
 
+import org.springdoc.core.customizers.SpringDocCustomizers
 import org.springdoc.core.models.GroupedOpenApi
+import org.springframework.beans.factory.ObjectProvider
 import org.springframework.beans.factory.BeanRegistry
 
 import grails.openapi.GrailsOpenApiGenerator
@@ -39,7 +41,11 @@ class SpringdocRegistrations {
         registry.registerBean('grailsOpenApiCustomizer', GrailsOpenApiCustomizer) {
             it.supplier { context ->
                 GrailsOpenApiGenerator generator = context.bean(generatorBeanName, GrailsOpenApiGenerator)
-                new GrailsOpenApiCustomizer({ -> generator }, { -> settings.defaultSelection })
+                // springdoc's customizers hold this customizer, so they are read as the document is built.
+                ObjectProvider<SpringDocCustomizers> customizers = context.beanProvider(SpringDocCustomizers)
+                new GrailsOpenApiCustomizer({ -> generator }, { ->
+                    SpringdocSelections.defaultSelection(settings.defaultSelection, customizers.getIfAvailable())
+                })
             }
         }
         registry.registerBean('grailsGroupedOpenApiContributor', GroupedOpenApiContributor) {

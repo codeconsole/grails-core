@@ -18,23 +18,15 @@
  */
 package openapiapp
 
-import openapiapp.drafts.Note as DraftNote
-import openapiapp.reviews.Note as ReviewNote
+import java.lang.annotation.ElementType
+import java.lang.annotation.Retention
+import java.lang.annotation.RetentionPolicy
+import java.lang.annotation.Target
 
-class NoteController {
-
-    static responseFormats = ['json']
-
-    def review(ReviewNote note) {
-        respond note
-    }
-
-    def draft(DraftNote note) {
-        respond note
-    }
-
-    @Internal
-    def audit() {
-        render status: 204
-    }
+/**
+ * Marks an action that is not part of the published API.
+ */
+@Retention(RetentionPolicy.RUNTIME)
+@Target(ElementType.METHOD)
+@interface Internal {
 }

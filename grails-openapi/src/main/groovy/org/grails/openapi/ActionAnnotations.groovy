@@ -398,6 +398,17 @@ class ActionAnnotations {
     }
 
     /**
+     * The method an action is declared as. Grails compiles an action that takes parameters into a
+     * second method without them, which binds the parameters and calls the declared one, so the
+     * declared one is the one that takes them.
+     *
+     * @return the declared method, or {@code null} where the controller has no method of that name
+     */
+    static Method actionMethod(Class<?> controllerClass, String actionName) {
+        actionMethods(controllerClass, actionName).max { Method method -> method.parameterCount }
+    }
+
+    /**
      * Grails compiles an action into more than one method where it takes parameters, so every
      * method of that name is consulted rather than only the first found.
      */

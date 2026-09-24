@@ -26,6 +26,7 @@ class UrlMappings {
         '/publishers'(resources: 'publisher')
         post '/notes/review'(controller: 'note', action: 'review')
         post '/notes/draft'(controller: 'note', action: 'draft')
+        get '/notes/audit'(controller: 'note', action: 'audit')
         "/$controller/$action?/$id?(.$format)?" {}
         '/'(view: '/index')
         '500'(view: '/error')

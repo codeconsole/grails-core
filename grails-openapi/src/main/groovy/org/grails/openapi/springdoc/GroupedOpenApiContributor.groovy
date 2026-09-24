@@ -55,10 +55,11 @@ class GroupedOpenApiContributor implements BeanPostProcessor, BeanFactoryAware {
     Object postProcessBeforeInitialization(Object bean, String beanName) throws BeansException {
         if (bean instanceof AbstractMultipleOpenApiResource) {
             beanFactory.getBeansOfType(GroupedOpenApi).values().each { GroupedOpenApi group ->
-                OpenApiSelection selection = selectionOf(group)
+                // Read as the document is built, once springdoc has given the group the global
+                // method filters.
                 group.addAllOpenApiCustomizer([new GrailsOpenApiCustomizer(
                         { -> beanFactory.getBean(GrailsOpenApiGenerator) },
-                        { -> selection })])
+                        { -> SpringdocSelections.groupSelection(group, SpringdocSelections.customizers(beanFactory)) })])
             }
         }
         bean
@@ -70,8 +71,16 @@ class GroupedOpenApiContributor implements BeanPostProcessor, BeanFactoryAware {
      */
     static List<OpenApiSelection> declaredGroups(ApplicationContext applicationContext) {
         applicationContext.getBeansOfType(GroupedOpenApi).values().collect { GroupedOpenApi group ->
-            selectionOf(group)
+            SpringdocSelections.groupSelection(group, SpringdocSelections.customizers(applicationContext))
         }
+    }
+
+    /**
+     * The document an application generates without serving it: its default document, with
+     * springdoc's method filters applied, where springdoc is configured.
+     */
+    static OpenApiSelection defaultSelection(ApplicationContext applicationContext, OpenApiSelection criteria) {
+        SpringdocSelections.defaultSelection(criteria, SpringdocSelections.customizers(applicationContext))
     }
 
     /**

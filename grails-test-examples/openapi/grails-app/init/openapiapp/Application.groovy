@@ -18,6 +18,12 @@
  */
 package openapiapp
 
+import java.lang.reflect.Method
+
+import org.springdoc.core.filters.OpenApiMethodFilter
+import org.springdoc.core.models.GroupedOpenApi
+import org.springframework.context.annotation.Bean
+
 import grails.boot.GrailsApp
 import grails.boot.config.GrailsAutoConfiguration
 
@@ -25,5 +31,25 @@ class Application extends GrailsAutoConfiguration {
 
     static void main(String[] args) {
         GrailsApp.run(Application, args)
+    }
+
+    /**
+     * Leaves the actions that are not part of the published API out of the default document.
+     */
+    @Bean
+    OpenApiMethodFilter internalActionFilter() {
+        { Method action -> !action.isAnnotationPresent(Internal) } as OpenApiMethodFilter
+    }
+
+    /**
+     * A group of the books API that only reads.
+     */
+    @Bean
+    GroupedOpenApi bookReads() {
+        GroupedOpenApi.builder()
+                .group('book-reads')
+                .pathsToMatch('/books/**')
+                .addOpenApiMethodFilter { Method action -> !(action.name in ['save', 'update', 'patch', 'delete']) }
+                .build()
     }
 }

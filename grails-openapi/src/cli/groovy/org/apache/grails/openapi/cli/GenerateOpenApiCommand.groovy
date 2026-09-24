@@ -66,22 +66,40 @@ class GenerateOpenApiCommand implements ApplicationCommand {
             return false
         }
 
-        write(generator.generate(), new File(directory, "openapi.${format}"), format)
+        write(generator.generate(defaultSelection(settings)), new File(directory, "openapi.${format}"), format)
         for (OpenApiSelection group : groups(settings)) {
             write(generator.generate(group), new File(directory, "openapi-${group.group}.${format}"), format)
         }
         true
     }
 
+    /**
+     * The default document, with the method filters springdoc applies to it where springdoc is
+     * configured, so the file describes what springdoc serves.
+     */
+    private OpenApiSelection defaultSelection(OpenApiSettings settings) {
+        springdocPresent()
+                ? GroupedOpenApiContributor.defaultSelection(applicationContext, settings.defaultSelection)
+                : settings.defaultSelection
+    }
+
+    /**
+     * The groups springdoc serves, which include those configured under
+     * {@code grails.openapi.groups}, or those groups alone without springdoc.
+     */
     private Collection<OpenApiSelection> groups(OpenApiSettings settings) {
         Map<String, OpenApiSelection> byName = [:]
-        settings.groups.each { OpenApiSelection group -> byName[group.group] = group }
-        if (ClassUtils.isPresent(SPRINGDOC_GROUP, GenerateOpenApiCommand.classLoader)) {
+        if (springdocPresent()) {
             GroupedOpenApiContributor.declaredGroups(applicationContext).each { OpenApiSelection group ->
                 byName.putIfAbsent(group.group, group)
             }
         }
+        settings.groups.each { OpenApiSelection group -> byName.putIfAbsent(group.group, group) }
         byName.values()
+    }
+
+    private static boolean springdocPresent() {
+        ClassUtils.isPresent(SPRINGDOC_GROUP, GenerateOpenApiCommand.classLoader)
     }
 
     private static void write(OpenAPI openApi, File file, String format) {

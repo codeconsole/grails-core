@@ -18,6 +18,9 @@
  */
 package grails.openapi
 
+import java.lang.reflect.Method
+import java.util.function.Predicate
+
 import groovy.transform.CompileStatic
 
 import org.springframework.util.AntPathMatcher
@@ -79,12 +82,44 @@ class OpenApiSelection {
     List<String> headersToMatch = []
 
     /**
+     * Decide, from the method an action is declared as, whether its operations are described, the
+     * way a springdoc method filter decides for a handler method. An action is described only
+     * where every filter includes it.
+     */
+    List<Predicate<Method>> actionFilters = []
+
+    /**
+     * @return a selection with the same criteria, which can be added to without changing these
+     */
+    OpenApiSelection copy() {
+        new OpenApiSelection(
+                group: group,
+                displayName: displayName,
+                pathsToMatch: new ArrayList<String>(pathsToMatch),
+                pathsToExclude: new ArrayList<String>(pathsToExclude),
+                packagesToScan: new ArrayList<String>(packagesToScan),
+                packagesToExclude: new ArrayList<String>(packagesToExclude),
+                producesToMatch: new ArrayList<String>(producesToMatch),
+                consumesToMatch: new ArrayList<String>(consumesToMatch),
+                headersToMatch: new ArrayList<String>(headersToMatch),
+                actionFilters: new ArrayList<Predicate<Method>>(actionFilters))
+    }
+
+    /**
      * @param path the described path, such as {@code /books/{id}}
      * @param controllerClass the controller serving the operation, if known
      * @return whether the operation belongs in the document
      */
     boolean selects(String path, Class<?> controllerClass) {
         selectsPath(path) && selectsPackage(controllerClass?.package?.name)
+    }
+
+    /**
+     * @param action the method the action is declared as, if known
+     * @return whether every action filter includes the action
+     */
+    boolean selectsAction(Method action) {
+        action == null || actionFilters.every { Predicate<Method> filter -> filter.test(action) }
     }
 
     /**

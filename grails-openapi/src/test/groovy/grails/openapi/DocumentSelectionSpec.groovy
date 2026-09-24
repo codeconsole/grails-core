@@ -18,6 +18,9 @@
  */
 package grails.openapi
 
+import java.lang.reflect.Method
+import java.util.function.Predicate
+
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.tags.Tag
 import io.swagger.v3.oas.models.OpenAPI
@@ -119,6 +122,28 @@ class DocumentSelectionSpec extends Specification {
 
         expect:
         generator.generate('xml').paths.keySet() == ['/tickets', '/tickets/{id}'] as Set
+    }
+
+    void 'selects the actions every action filter includes, by the method each is declared as'() {
+        given:
+        List<Method> filtered = []
+        def selection = new OpenApiSelection(actionFilters: [
+                { Method action -> filtered << action; true } as Predicate<Method>,
+                { Method action -> action.name != 'delete' } as Predicate<Method>])
+
+        when:
+        def openApi = OpenApiFixture.generator(OpenApiFixture.holder(MAPPINGS),
+                OpenApiFixture.application([CrateStackController, PalletController, V1GateController, V2GateController]),
+                OpenApiFixture.context([CrateStack, Pallet])).generate(selection)
+
+        then:
+        openApi.paths['/api/v1/crates/{id}'].get
+        openApi.paths['/api/v1/crates/{id}'].delete == null
+        openApi.paths['/api/v1/pallets/{id}'].delete == null
+
+        and: 'an action taking parameters is filtered by the method it is declared as, not the one Grails adds'
+        filtered.findAll { it.name == 'index' && it.declaringClass == CrateStackController }*.parameterTypes ==
+                [[Integer] as Class[]]
     }
 
     void 'describes only what is annotated when asked to'() {
