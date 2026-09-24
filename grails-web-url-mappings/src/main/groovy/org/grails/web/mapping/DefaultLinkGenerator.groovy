@@ -93,8 +93,7 @@ class DefaultLinkGenerator implements LinkGenerator, PluginManagerAware {
     @Autowired(required = false)
     GrailsApplication grailsApplication
 
-    private volatile ControllerIndex<String> controllerNamespacesByName
-    private volatile ControllerIndex<ControllerRef> controllersByDomainClass
+    private volatile ControllerIndex controllerIndex
     private final Set<String> ambiguousControllersReported = ConcurrentHashMap.newKeySet()
 
     @Value('${grails.resources.pattern:/static/**}')
@@ -263,30 +262,28 @@ class DefaultLinkGenerator implements LinkGenerator, PluginManagerAware {
                 resource = resourceAttribute.toString()
             else {
                 PersistentEntity persistentEntity = (mappingContext != null) ? mappingContext.getPersistentEntity(resourceAttribute.getClass().getName()) : null
-                boolean hasId = false
+                boolean hasId = persistentEntity != null || DomainClassArtefactHandler.isDomainClass(resourceAttribute.getClass(), true)
+                if (!id && hasId) {
+                    id = getResourceId(resourceAttribute)
+                }
                 if (persistentEntity != null) {
-                    resourceTarget = resolveResourceTarget(persistentEntity, attrs)
+                    resourceTarget = resolveResourceTarget(persistentEntity, attrs, resourceAction(action, methodAttribute, id))
                     resource = resourceTarget.controller
-                    hasId = true
-                } else if (DomainClassArtefactHandler.isDomainClass(resourceAttribute.getClass(), true)) {
+                } else if (hasId) {
                     resource = GrailsNameUtils.getPropertyName(resourceAttribute.getClass())
-                    hasId = true
                 } else if (resourceAttribute instanceof Class) {
                     // A domain class rather than an instance, used where loading the instance would
                     // defeat the point, such as an uninitialised association rendered from its proxy.
                     PersistentEntity classEntity = (mappingContext != null) ?
                             mappingContext.getPersistentEntity(((Class) resourceAttribute).name) : null
                     if (classEntity != null) {
-                        resourceTarget = resolveResourceTarget(classEntity, attrs)
+                        resourceTarget = resolveResourceTarget(classEntity, attrs, resourceAction(action, methodAttribute, id))
                         resource = resourceTarget.controller
                     } else {
                         resource = GrailsNameUtils.getPropertyName(resourceAttribute)
                     }
                 } else {
                     resource = resourceAttribute.toString()
-                }
-                if (!id && hasId) {
-                    id = getResourceId(resourceAttribute)
                 }
             }
             List<String> tokens = resource.contains('/') ? resource.tokenize('/') : [resource]
@@ -301,10 +298,8 @@ class DefaultLinkGenerator implements LinkGenerator, PluginManagerAware {
                 }
             }
             else if (methodAttribute && !action) {
-                def method = methodAttribute.toString().toUpperCase()
-                httpMethod = method
-                if (method == 'GET' && id) method = "${method}_ID".toString()
-                action = REST_RESOURCE_HTTP_METHOD_TO_ACTION_MAP[method]
+                httpMethod = methodAttribute.toString().toUpperCase()
+                action = resourceAction(null, methodAttribute, id)
             }
             else {
                 httpMethod = methodAttribute == null ? requestStateLookupStrategy.getHttpMethod() ?: UrlMapping.ANY_HTTP_METHOD : methodAttribute.toString()
@@ -400,40 +395,60 @@ class DefaultLinkGenerator implements LinkGenerator, PluginManagerAware {
         }
     }
 
-    private Map<String, Set<String>> getControllerNamespacesByName() {
+    /**
+     * The registered controllers, indexed for resolving links. {@code getArtefacts} returns a cached array
+     * that is replaced with a new instance whenever the set of controllers changes (late registration in
+     * tests, a development-mode reload, or a namespace edit), so comparing the array identity rebuilds the
+     * index on any such change while staying O(1) on the common path where nothing changed.
+     */
+    private ControllerIndex getControllerIndex() {
         GrailsApplication application = grailsApplication
         if (application == null) {
-            return Collections.emptyMap()
+            return ControllerIndex.EMPTY
         }
-        // getArtefacts returns a cached array that is replaced with a new instance whenever the set of
-        // controllers changes (late registration in tests, a development-mode reload, or a namespace
-        // edit). Comparing the array identity rebuilds the index on any such change while staying O(1)
-        // on the common path where nothing changed.
         GrailsClass[] controllers = application.getArtefacts(ControllerArtefactHandler.TYPE)
-        ControllerIndex<String> index = controllerNamespacesByName
-        if (index == null || !index.isFor(controllers)) {
-            index = new ControllerIndex<String>(controllers, buildControllerNamespaceIndex(controllers))
-            controllerNamespacesByName = index
+        MappingContext context = mappingContext
+        ControllerIndex index = controllerIndex
+        if (index == null || !index.isFor(controllers, context)) {
+            index = buildControllerIndex(controllers, context)
+            controllerIndex = index
         }
-        return index.entries
+        return index
     }
 
-    private Map<String, Set<String>> buildControllerNamespaceIndex(GrailsClass[] controllers) {
-        Map<String, Set<String>> index = new HashMap<>()
+    private ControllerIndex buildControllerIndex(GrailsClass[] controllers, MappingContext context) {
+        Map<String, Set<ControllerRef>> byName = new HashMap<>()
+        Map<String, Set<ControllerRef>> byDomainClass = new HashMap<>()
+        Map<ControllerRef, Set<String>> actions = new HashMap<>()
         for (GrailsClass gc in controllers) {
             GrailsControllerClass controllerClass = (GrailsControllerClass) gc
             String name = controllerClass.logicalPropertyName
             if (name == null) {
                 continue
             }
-            Set<String> namespaces = index.get(name)
-            if (namespaces == null) {
-                namespaces = new HashSet<>()
-                index.put(name, namespaces)
+            ControllerRef ref = new ControllerRef(name, controllerClass.namespace)
+            indexUnder(byName, name, ref)
+            Set<String> refActions = actions.get(ref)
+            if (refActions == null) {
+                refActions = new HashSet<>()
+                actions.put(ref, refActions)
             }
-            namespaces.add(controllerClass.namespace)
+            refActions.addAll(controllerClass.actions)
+            String domainClassName = context != null ? domainClassNameFor(controllerClass.clazz, context) : null
+            if (domainClassName != null) {
+                indexUnder(byDomainClass, domainClassName, ref)
+            }
         }
-        return index
+        return new ControllerIndex(controllers, context, byName, byDomainClass, actions)
+    }
+
+    private static void indexUnder(Map<String, Set<ControllerRef>> index, String key, ControllerRef ref) {
+        Set<ControllerRef> refs = index.get(key)
+        if (refs == null) {
+            refs = new HashSet<>()
+            index.put(key, refs)
+        }
+        refs.add(ref)
     }
 
     /**
@@ -442,8 +457,7 @@ class DefaultLinkGenerator implements LinkGenerator, PluginManagerAware {
      * development-mode reloads).
      */
     void resetControllerNamespaceCache() {
-        controllerNamespacesByName = null
-        controllersByDomainClass = null
+        controllerIndex = null
         ambiguousControllersReported.clear()
     }
 
@@ -451,8 +465,10 @@ class DefaultLinkGenerator implements LinkGenerator, PluginManagerAware {
      * Resolves the controller a {@code resource} link for the given entity targets: the nearest controller
      * serving the domain class, as {@link #nearestController} chooses it. A controller serves a domain
      * class when it is named after it, or when it declares it as a generic type argument, as
-     * {@code PeopleController extends RestfulController<Person>} does. The link targets the explicit
-     * {@code namespace} when one is given, and otherwise the request's own namespace.
+     * {@code PeopleController extends RestfulController<Person>} does, and it defines the action the link
+     * targets, so a controller declaring the domain class for another purpose, such as a report, is not
+     * sent links it cannot handle. The link targets the explicit {@code namespace} when one is given, and
+     * otherwise the request's own namespace.
      *
      * <p>When no candidate is unambiguous, the link targets the controller name the candidates share, if
      * they share one, and otherwise the domain class name, as before; either way the namespace is then
@@ -460,11 +476,12 @@ class DefaultLinkGenerator implements LinkGenerator, PluginManagerAware {
      *
      * @param entity the domain class being linked to
      * @param attrs the link attributes, which may carry an explicit {@code namespace}
+     * @param action the action the link targets, as {@link #resourceAction} determines it
      * @return the target controller, and its namespace when the scope chain found it
      */
-    private ResourceTarget resolveResourceTarget(PersistentEntity entity, Map attrs) {
+    private ResourceTarget resolveResourceTarget(PersistentEntity entity, Map attrs, String action) {
         String derivedName = entity.getDecapitalizedName()
-        Set<ControllerRef> serving = servingControllers(entity, derivedName)
+        Set<ControllerRef> serving = servingControllers(entity, derivedName, action)
         if (serving.isEmpty()) {
             return new ResourceTarget(derivedName, null, false)
         }
@@ -558,62 +575,46 @@ class DefaultLinkGenerator implements LinkGenerator, PluginManagerAware {
     }
 
     private Set<ControllerRef> controllersNamed(String name) {
-        Set<ControllerRef> named = new HashSet<>()
-        Set<String> namespaces = getControllerNamespacesByName().get(name)
-        if (namespaces != null) {
-            for (String namespace in namespaces) {
-                named.add(new ControllerRef(name, namespace))
-            }
-        }
-        return named
+        Set<ControllerRef> named = getControllerIndex().byName.get(name)
+        return named != null ? named : Collections.<ControllerRef>emptySet()
     }
 
-    private Set<ControllerRef> servingControllers(PersistentEntity entity, String derivedName) {
-        Set<ControllerRef> serving = controllersNamed(derivedName)
-        Set<ControllerRef> declaring = getControllersByDomainClass().get(entity.name)
-        if (declaring != null) {
-            serving.addAll(declaring)
+    /**
+     * @return the controllers named after the entity or declaring it that define the given action, or
+     *         every such controller when the action is not known
+     */
+    private Set<ControllerRef> servingControllers(PersistentEntity entity, String derivedName, String action) {
+        ControllerIndex index = getControllerIndex()
+        String actionElement = action != null && grailsUrlConverter != null ? grailsUrlConverter.toUrlElement(action) : action
+        Set<ControllerRef> serving = new HashSet<>()
+        for (Set<ControllerRef> candidates in [index.byName.get(derivedName), index.byDomainClass.get(entity.name)]) {
+            if (candidates == null) {
+                continue
+            }
+            for (ControllerRef candidate in candidates) {
+                if (action == null || index.defines(candidate, action, actionElement)) {
+                    serving.add(candidate)
+                }
+            }
         }
         return serving
     }
 
-    private Map<String, Set<ControllerRef>> getControllersByDomainClass() {
-        GrailsApplication application = grailsApplication
-        if (application == null || mappingContext == null) {
-            return Collections.emptyMap()
+    /**
+     * The action a resource link targets, for choosing a controller that handles it: the action it names,
+     * or else the one its HTTP method maps to, a link naming neither being followed with a {@code GET}.
+     *
+     * @return the action, or {@code null} for an HTTP method no action maps to
+     */
+    private static String resourceAction(String action, Object methodAttribute, Object id) {
+        if (action) {
+            return action
         }
-        // Mirrors getControllerNamespacesByName(): getArtefacts returns a cached array replaced with a
-        // new instance whenever the set of controllers changes, so comparing the array identity rebuilds
-        // the index on any such change while staying O(1) on the common path.
-        GrailsClass[] controllers = application.getArtefacts(ControllerArtefactHandler.TYPE)
-        ControllerIndex<ControllerRef> index = controllersByDomainClass
-        if (index == null || !index.isFor(controllers)) {
-            index = new ControllerIndex<ControllerRef>(controllers, buildDomainClassControllerIndex(controllers, mappingContext))
-            controllersByDomainClass = index
+        String method = methodAttribute ? methodAttribute.toString().toUpperCase() : HttpMethod.GET.toString()
+        if (method == HttpMethod.GET.toString() && id) {
+            method = "${method}_ID".toString()
         }
-        return index.entries
-    }
-
-    private Map<String, Set<ControllerRef>> buildDomainClassControllerIndex(GrailsClass[] controllers, MappingContext context) {
-        Map<String, Set<ControllerRef>> index = new HashMap<>()
-        for (GrailsClass gc in controllers) {
-            GrailsControllerClass controllerClass = (GrailsControllerClass) gc
-            String controllerName = controllerClass.logicalPropertyName
-            if (controllerName == null) {
-                continue
-            }
-            String domainClassName = domainClassNameFor(controllerClass.clazz, context)
-            if (domainClassName == null) {
-                continue
-            }
-            Set<ControllerRef> declaring = index.get(domainClassName)
-            if (declaring == null) {
-                declaring = new HashSet<>()
-                index.put(domainClassName, declaring)
-            }
-            declaring.add(new ControllerRef(controllerName, controllerClass.namespace))
-        }
-        return index
+        return REST_RESOURCE_HTTP_METHOD_TO_ACTION_MAP.get(method)
     }
 
     /**
@@ -819,25 +820,46 @@ class DefaultLinkGenerator implements LinkGenerator, PluginManagerAware {
     }
 
     /**
-     * An index over the registered controllers, paired with the artefact array it was built from.
+     * The registered controllers indexed for resolving links: by logical name, by the domain class each
+     * declares, and with the actions each defines, paired with the artefact array and mapping context it
+     * was built from.
      *
-     * <p>The two are published together through a single volatile reference. Publishing them as two
+     * <p>All of it is published together through a single volatile reference. Publishing parts of it as
      * separate fields let a request that raced a controller reload store an index built from the old
      * controllers next to the new array, after which the identity check passed and the stale index was
      * served until the controllers changed again.</p>
      */
-    private static final class ControllerIndex<T> {
+    private static final class ControllerIndex {
+
+        static final ControllerIndex EMPTY = new ControllerIndex(null, null, Collections.<String, Set<ControllerRef>>emptyMap(),
+                Collections.<String, Set<ControllerRef>>emptyMap(), Collections.<ControllerRef, Set<String>>emptyMap())
 
         final GrailsClass[] controllers
-        final Map<String, Set<T>> entries
+        final MappingContext mappingContext
+        final Map<String, Set<ControllerRef>> byName
+        final Map<String, Set<ControllerRef>> byDomainClass
+        final Map<ControllerRef, Set<String>> actions
 
-        ControllerIndex(GrailsClass[] controllers, Map<String, Set<T>> entries) {
+        ControllerIndex(GrailsClass[] controllers, MappingContext mappingContext, Map<String, Set<ControllerRef>> byName,
+                        Map<String, Set<ControllerRef>> byDomainClass, Map<ControllerRef, Set<String>> actions) {
             this.controllers = controllers
-            this.entries = entries
+            this.mappingContext = mappingContext
+            this.byName = byName
+            this.byDomainClass = byDomainClass
+            this.actions = actions
         }
 
-        boolean isFor(GrailsClass[] current) {
-            current.is(controllers)
+        boolean isFor(GrailsClass[] current, MappingContext context) {
+            current.is(controllers) && context.is(mappingContext)
+        }
+
+        /**
+         * @return whether the controller defines the action, given by name or as the URL converter writes
+         *         it, since registering a converter renames the actions it records
+         */
+        boolean defines(ControllerRef controller, String action, String actionElement) {
+            Set<String> defined = actions.get(controller)
+            defined != null && (defined.contains(action) || defined.contains(actionElement))
         }
     }
 

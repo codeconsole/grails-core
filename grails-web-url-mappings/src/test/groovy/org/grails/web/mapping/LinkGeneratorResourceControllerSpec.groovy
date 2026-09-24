@@ -21,9 +21,11 @@ package org.grails.web.mapping
 import grails.core.DefaultGrailsApplication
 import grails.util.GrailsWebMockUtil
 import grails.web.CamelCaseUrlConverter
+import grails.web.HyphenatedUrlConverter
 import grails.web.mapping.UrlCreator
 import grails.web.mapping.UrlMappingsHolder
 import org.grails.datastore.mapping.keyvalue.mapping.config.KeyValueMappingContext
+import org.grails.core.artefact.ControllerArtefactHandler
 import org.grails.datastore.mapping.model.MappingContext
 import org.grails.web.mapping.domainlink.AdminDashboardController
 import org.grails.web.mapping.domainlink.AdminGadgetsController
@@ -46,6 +48,9 @@ import org.grails.web.mapping.domainlink.InvoicesController
 import org.grails.web.mapping.domainlink.ManageAssessmentController
 import org.grails.web.mapping.domainlink.ManageBallotController
 import org.grails.web.mapping.domainlink.ManageDashboardController
+import org.grails.web.mapping.domainlink.Manuscript
+import org.grails.web.mapping.domainlink.ManuscriptController
+import org.grails.web.mapping.domainlink.ManuscriptReportController
 import org.grails.web.mapping.domainlink.Note
 import org.grails.web.mapping.domainlink.NoteController
 import org.grails.web.mapping.domainlink.PeopleController
@@ -92,7 +97,9 @@ class LinkGeneratorResourceControllerSpec extends Specification {
                 AuditBallotController,
                 InvoiceController,
                 InvoicesController,
-                AdminDashboardController
+                AdminDashboardController,
+                ManuscriptController,
+                ManuscriptReportController
         ).tap {
             initialise()
         }
@@ -361,6 +368,50 @@ class LinkGeneratorResourceControllerSpec extends Specification {
         generator.link(resource: new Person(id: 11), action: 'show') != '/bar/people/show/11'
     }
 
+    def "a controller declaring the domain class is not sent a link to show it #shape"() {
+        given: 'ManuscriptReportController, which declares Manuscript but defines no show action, is handling the request'
+        bindRequest('manuscriptReport', null)
+        def generator = createGenerator()
+
+        expect: 'the link goes to the controller that shows a manuscript'
+        generator.link([resource: new Manuscript(id: 1)] + attrs).startsWith('/bar/manuscript/')
+
+        where:
+        shape                                                 | attrs
+        'naming the action'                                   | [action: 'show']
+        'naming only the GET method, as a redirect does'      | [method: 'GET']
+        'naming neither, since it is followed with a GET'     | [:]
+    }
+
+    def "a link to an action only a controller declaring the domain class defines goes to it"() {
+        given: 'ManuscriptController is named after Manuscript, but only ManuscriptReportController defines export'
+        def generator = createGenerator()
+
+        expect:
+        generator.link(resource: new Manuscript(id: 4), action: 'export') == '/bar/manuscriptReport/export/4'
+    }
+
+    def "a link to an action no controller serving the domain class defines assumes the naming convention"() {
+        given:
+        def generator = createGenerator()
+
+        expect:
+        generator.link(resource: new Manuscript(id: 5), action: 'print') == '/bar/manuscript/print/5'
+    }
+
+    def "an action is recognised once a URL converter has renamed it"() {
+        given: 'the controllers record their actions as the hyphenated converter writes them'
+        def converter = new HyphenatedUrlConverter()
+        for (controller in grailsApplication.getArtefacts(ControllerArtefactHandler.TYPE)) {
+            ((grails.core.GrailsControllerClass) controller).registerUrlConverter(converter)
+        }
+        def generator = createGenerator()
+        generator.grailsUrlConverter = converter
+
+        expect: 'the action named in the link is found under its converted name'
+        generator.link(resource: new Manuscript(id: 6), action: 'exportAll') == '/bar/manuscriptReport/exportAll/6'
+    }
+
     private void bindRequest(String controllerName, String namespace) {
         def webRequest = GrailsWebMockUtil.bindMockWebRequest()
         webRequest.setControllerName(controllerName)
@@ -385,6 +436,7 @@ class LinkGeneratorResourceControllerSpec extends Specification {
         context.addPersistentEntity(Assessment)
         context.addPersistentEntity(Ballot)
         context.addPersistentEntity(Invoice)
+        context.addPersistentEntity(Manuscript)
         context
     }
 

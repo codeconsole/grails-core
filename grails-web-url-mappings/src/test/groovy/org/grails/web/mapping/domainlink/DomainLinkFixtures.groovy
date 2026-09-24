@@ -259,3 +259,27 @@ class AdminDashboardController {
     static namespace = 'admin'
     def index() {}
 }
+
+class Manuscript {
+    Long id
+}
+
+/**
+ * The controller named after {@code Manuscript}, which shows it.
+ */
+@Artefact('Controller')
+class ManuscriptController {
+    def index() {}
+    def show() {}
+}
+
+/**
+ * Declares {@code Manuscript} for reporting on it rather than serving it, so it defines no {@code show}
+ * action and should not be sent the links to one, even from its own pages.
+ */
+@Artefact('Controller')
+class ManuscriptReportController extends ResourceControllerBase<Manuscript> {
+    def index() {}
+    def export() {}
+    def exportAll() {}
+}
