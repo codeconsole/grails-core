@@ -68,6 +68,9 @@ dependencies {
     // Not a main/runtime dependency - grails-controllers has no compile-time
     // dependency on Spring Security.
     testImplementation 'org.springframework.security:spring-security-web'
+    // Test-only: GrailsSecurityHeadersFilterTomcatSpec runs the security headers filter
+    // in a real servlet container, whose commit behavior the Spring mocks do not model.
+    testImplementation 'org.apache.tomcat.embed:tomcat-embed-core'
     testRuntimeOnly 'org.assertj:assertj-core'
 
     testImplementation 'org.apache.groovy:groovy-test-junit5'

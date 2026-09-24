@@ -39,6 +39,16 @@ import org.grails.web.config.http.GrailsFilters;
  * response headers. The filter writes at response commit time and only fills headers
  * that are still absent, so it coexists with Spring Security's header writers and any
  * other filter or controller that sets these headers itself.
+ *
+ * <p>The filter is registered at {@link GrailsFilters#FIRST}, the outermost Grails slot.
+ * Commit-time writers nest, and the innermost fires first, so the outermost one is the
+ * last to write and therefore the one that only fills gaps; that is what lets every
+ * filter inside it (Spring Security wherever its chain is ordered, SiteMesh, an
+ * application filter) win. Being outermost also means a filter that serves the response
+ * itself without continuing the chain, as the asset-pipeline filter does for static
+ * assets, still passes through this filter's response wrapper and receives the headers.</p>
+ *
+ * @since 8.0
  */
 @AutoConfiguration
 @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
@@ -79,7 +89,7 @@ public class GrailsSecurityHeadersAutoConfiguration {
         registrationBean.setDispatcherTypes(EnumSet.of(DispatcherType.REQUEST, DispatcherType.FORWARD,
                 DispatcherType.INCLUDE, DispatcherType.ERROR));
         registrationBean.addUrlPatterns("/*");
-        registrationBean.setOrder(GrailsFilters.LAST.getOrder());
+        registrationBean.setOrder(GrailsFilters.FIRST.getOrder());
         return registrationBean;
     }
 }

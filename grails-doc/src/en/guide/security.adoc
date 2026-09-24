@@ -58,7 +58,9 @@ HSTS and Content Security Policy are not enabled by default because their correc
 
 The headers are written immediately before the response is committed, and only when nothing else has already set them.
 A controller, an interceptor, another servlet filter, or Spring Security's own header writers can therefore set any of these headers and that value is what the browser receives; Grails only fills in the headers that are still missing.
-This also applies to responses committed by a redirect, an error page, or a streamed body.
+This also applies to responses committed by a redirect, an error page, a streamed body, or a body large enough to fill the container's response buffer.
+
+The filter runs first in the servlet filter chain, so it also covers responses that other filters serve themselves without continuing the chain, such as the static assets the asset-pipeline plugin streams.
 
 ===== HSTS behind a reverse proxy
 
@@ -69,37 +71,43 @@ If your proxy sets neither, configure the Spring Boot `server.forward-headers-st
 ===== Reverse proxies that already send these headers
 
 The application cannot see headers a reverse proxy adds to the response on its way to the client.
-If your edge proxy already sends one of these headers (for example nginx's `add_header`, which _appends_ to upstream headers rather than replacing them), the client would otherwise receive the header twice, and browsers handle duplicate, conflicting values inconsistently: duplicate `X-Frame-Options` can cause a browser to block framing outright, duplicate `Referrer-Policy` resolves to the last value sent, and multiple `Content-Security-Policy` headers are enforced as the intersection of all of them.
+If your edge proxy already sends one of these headers (for example nginx's `add_header`, which _appends_ to upstream headers rather than replacing them), the client receives the header twice.
+For the four default headers that is harmless or, at worst, stricter: `nosniff` twice is still `nosniff`, conflicting `X-Frame-Options` values make the browser block framing, `Referrer-Policy` resolves to the last valid token (the proxy's, since it is appended after the application's), and no current browser implements `X-XSS-Protection`.
+Duplicate `Content-Security-Policy` headers do matter, because browsers enforce the intersection of all the policies they receive, but CSP is never sent unless you configure it.
 
-To avoid that, Grails detects requests that arrived through a reverse proxy and, for those requests, sends only the headers you configured explicitly under `grails.security.headers.*`; the built-in default values are not applied.
+If you would rather the application not send its defaults through a proxy that owns these headers, set `grails.security.headers.defaults` to `auto`.
+Grails then detects requests that arrived through a reverse proxy and, for those requests, sends only the headers you configured explicitly under `grails.security.headers.*`; the built-in default values are not applied.
 A request is treated as proxied when any of the following holds:
 
 * it carries a `Forwarded`, `X-Forwarded-For`, `X-Forwarded-Proto`, `X-Forwarded-Host`, `Via`, or `X-Real-IP` request header;
 * `server.forward-headers-strategy` is set to `framework` or `native` (the forwarding filter or valve strips the forwarded request headers before Grails could see them, so the configuration itself is taken as the signal);
 * Spring Boot detects that the application is running on a cloud platform such as Kubernetes or Cloud Foundry, where traffic normally enters through an ingress proxy.
 
-The first time a proxied request is seen, Grails logs a message at `INFO` level explaining that the defaults are being withheld.
+The first time a proxied request is seen in `auto` mode, Grails logs a message at `INFO` level explaining that the defaults are being withheld.
 Any header you configure explicitly (setting either its `enabled` or its `value` key) is always sent, whether or not a proxy is detected.
 
-The `grails.security.headers.defaults` setting controls this behavior:
+Note that most load balancers, ingress controllers and platform routers add `X-Forwarded-For` to every request without adding any security headers of their own, and every Kubernetes pod is detected as a cloud platform.
+In `auto` mode such deployments send none of the defaults, which is why `always` is the default; choose `auto` only when the proxy really does own these headers.
+
+The `grails.security.headers.defaults` setting accepts these values:
 
 [cols="1,3", options="header"]
 |===
 | Value
 | Behavior
 
-| `auto` (default)
-| Apply the default values unless the request came through a reverse proxy.
+| `always` (default)
+| Apply the default values on every response, including behind a reverse proxy.
 
-| `always`
-| Apply the default values on every response, including behind a reverse proxy. Use this when you know the proxy does not set these headers.
+| `auto`
+| Apply the default values unless the request came through a reverse proxy. Use this when the proxy already sends these headers.
 
 | `never`
 | Never apply the default values; send only the headers you configured explicitly. Use this when the proxy owns the headers but detection cannot see it, for example because the proxy strips its own forwarding headers.
 |===
 
-A client can add a forwarding header to its own direct request and thereby suppress the defaults for that one response.
-This does not weaken the protection these headers provide, because an attacker does not control the request headers a victim's browser sends, but if the application is never deployed behind a proxy you can set `defaults: always` to remove the possibility entirely.
+In `auto` mode a client can add a forwarding header to its own direct request and thereby suppress the defaults for that one response.
+This does not weaken the protection these headers provide, because an attacker does not control the request headers a victim's browser sends.
 
 You can disable the whole filter, disable individual headers, or override values from `application.yml`:
 
@@ -110,7 +118,7 @@ grails:
     security:
         headers:
             enabled: true
-            defaults: auto
+            defaults: always
             frame-options:
                 value: DENY
             referrer-policy:

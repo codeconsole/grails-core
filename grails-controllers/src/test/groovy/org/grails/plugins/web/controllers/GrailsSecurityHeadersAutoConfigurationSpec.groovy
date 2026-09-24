@@ -24,6 +24,7 @@ import jakarta.servlet.FilterChain
 import jakarta.servlet.http.HttpServlet
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.servlet.http.HttpServletResponse
+import jakarta.servlet.http.HttpServletResponseWrapper
 
 import org.springframework.boot.autoconfigure.AutoConfigurations
 import org.springframework.boot.test.context.runner.ApplicationContextRunner
@@ -34,6 +35,8 @@ import org.springframework.mock.web.MockHttpServletRequest
 import org.springframework.mock.web.MockHttpServletResponse
 import org.springframework.security.web.header.HeaderWriterFilter
 import org.springframework.security.web.header.writers.frameoptions.XFrameOptionsHeaderWriter
+
+import org.grails.web.config.http.GrailsFilters
 
 import spock.lang.Specification
 import spock.lang.Unroll
@@ -50,6 +53,18 @@ class GrailsSecurityHeadersAutoConfigurationSpec extends Specification {
                 .run { context ->
                     assert context.getBeanNamesForType(GrailsSecurityHeadersFilter).length == 1
                     assert context.getBean('grailsSecurityHeadersFilter') instanceof FilterRegistrationBean
+                }
+    }
+
+    void 'the security headers filter is registered outermost so every later filter can win at commit time'() {
+        expect:
+        new WebApplicationContextRunner()
+                .withConfiguration(AutoConfigurations.of(GrailsSecurityHeadersAutoConfiguration))
+                .run { context ->
+                    def registration = context.getBean('grailsSecurityHeadersFilter', FilterRegistrationBean)
+                    assert registration.order == GrailsFilters.FIRST.getOrder()
+                    assert registration.order < GrailsFilters.ASSET_PIPELINE_FILTER.getOrder()
+                    assert registration.urlPatterns == ['/*'] as Set
                 }
     }
 
@@ -232,6 +247,50 @@ class GrailsSecurityHeadersAutoConfigurationSpec extends Specification {
         response.contentAsString == 'ok'
     }
 
+    void 'Spring Security header writers running before the filter still win'() {
+        given: 'spring.security.filter.order placed ahead of the Grails filter, so its wrapper is the outer one'
+        def request = new MockHttpServletRequest('GET', '/')
+        def response = new MockHttpServletResponse()
+        def springSecurity = new HeaderWriterFilter([
+                new XFrameOptionsHeaderWriter(XFrameOptionsHeaderWriter.XFrameOptionsMode.DENY)
+        ])
+        def servlet = new HttpServlet() {
+            @Override
+            protected void doGet(HttpServletRequest req, HttpServletResponse res) {
+                res.writer.write('ok')
+            }
+        }
+
+        when:
+        springSecurity.doFilter(request, response,
+                new MockFilterChain(servlet, new GrailsSecurityHeadersFilter(new GrailsSecurityHeadersProperties())))
+
+        then: 'the outer Spring Security wrapper is now the last to write, and it replaces the Grails default'
+        response.getHeader('X-Frame-Options') == 'DENY'
+        response.getHeader('X-Content-Type-Options') == 'nosniff'
+    }
+
+    void 'a downstream filter that serves the response itself without continuing the chain still gets the headers'() {
+        given: 'the asset-pipeline pattern: write the asset, flushBuffer, never call chain.doFilter'
+        def request = new MockHttpServletRequest('GET', '/assets/app.js')
+        def response = new MockHttpServletResponse()
+        boolean headersPresentAtFlush = false
+        FilterChain assetFilter = { downstreamRequest, downstreamResponse ->
+            downstreamResponse.contentType = 'application/javascript'
+            downstreamResponse.outputStream.write('console.log(1)'.bytes)
+            downstreamResponse.flushBuffer()
+            headersPresentAtFlush = DEFAULT_HEADER_NAMES.every { response.getHeader(it) != null }
+        } as FilterChain
+
+        when:
+        new GrailsSecurityHeadersFilter(new GrailsSecurityHeadersProperties()).doFilter(request, response, assetFilter)
+
+        then:
+        response.committed
+        headersPresentAtFlush
+        response.getHeader('X-Content-Type-Options') == 'nosniff'
+    }
+
     void 'filter writes security headers before a downstream redirect commits the response'() {
         given:
         def request = new MockHttpServletRequest('GET', '/')
@@ -249,12 +308,36 @@ class GrailsSecurityHeadersAutoConfigurationSpec extends Specification {
         DEFAULT_HEADER_NAMES.every { response.getHeader(it) != null }
     }
 
-    void 'filter writes security headers before a downstream sendError commits the response'() {
+    void 'filter writes security headers before a downstream redirect with an explicit status commits the response'() {
         given:
         def request = new MockHttpServletRequest('GET', '/')
         def response = new MockHttpServletResponse()
         FilterChain downstream = { downstreamRequest, downstreamResponse ->
-            downstreamResponse.sendError(404, 'missing')
+            downstreamResponse.sendRedirect('/target', 308, true)
+        } as FilterChain
+
+        when:
+        new GrailsSecurityHeadersFilter(new GrailsSecurityHeadersProperties()).doFilter(request, response, downstream)
+
+        then:
+        response.committed
+        response.status == 308
+        response.redirectedUrl == '/target'
+        DEFAULT_HEADER_NAMES.every { response.getHeader(it) != null }
+    }
+
+    @Unroll
+    void 'filter writes security headers before a downstream sendError(#description) commits the response'() {
+        given:
+        def request = new MockHttpServletRequest('GET', '/')
+        def response = new MockHttpServletResponse()
+        FilterChain downstream = { downstreamRequest, downstreamResponse ->
+            if (message == null) {
+                downstreamResponse.sendError(404)
+            }
+            else {
+                downstreamResponse.sendError(404, message)
+            }
         } as FilterChain
 
         when:
@@ -264,6 +347,11 @@ class GrailsSecurityHeadersAutoConfigurationSpec extends Specification {
         response.committed
         response.status == 404
         DEFAULT_HEADER_NAMES.every { response.getHeader(it) != null }
+
+        where:
+        description       | message
+        'status only'     | null
+        'status, message' | 'missing'
     }
 
     void 'filter writes security headers before a streaming downstream flushes the response'() {
@@ -286,6 +374,170 @@ class GrailsSecurityHeadersAutoConfigurationSpec extends Specification {
         response.committed
         headersPresentAtFlush
         response.contentAsString == 'chunkmore'
+    }
+
+    @Unroll
+    void 'filter writes security headers before closing the #streamType commits the response'() {
+        given:
+        def request = new MockHttpServletRequest('GET', '/')
+        def response = new MockHttpServletResponse()
+        boolean headersPresentAtClose = false
+        FilterChain downstream = { downstreamRequest, downstreamResponse ->
+            if (streamType == 'writer') {
+                def writer = downstreamResponse.writer
+                writer.write('done')
+                writer.close()
+            }
+            else {
+                def out = downstreamResponse.outputStream
+                out.write('done'.bytes)
+                out.close()
+            }
+            headersPresentAtClose = DEFAULT_HEADER_NAMES.every { response.getHeader(it) != null }
+        } as FilterChain
+
+        when:
+        new GrailsSecurityHeadersFilter(new GrailsSecurityHeadersProperties()).doFilter(request, response, downstream)
+
+        then:
+        headersPresentAtClose
+        response.contentAsString == 'done'
+
+        where:
+        streamType << ['writer', 'output stream']
+    }
+
+    void 'filter writes security headers once the body outgrows the response buffer'() {
+        given: 'a container commits as soon as the buffer fills, with no explicit flush from the application'
+        def request = new MockHttpServletRequest('GET', '/')
+        def response = new MockHttpServletResponse()
+        response.bufferSize = 16
+        boolean headersPresentBeforeBufferFull = false
+        boolean headersPresentAfterBufferFull = false
+        FilterChain downstream = { downstreamRequest, downstreamResponse ->
+            def out = downstreamResponse.outputStream
+            out.write(('x' * 8).bytes)
+            headersPresentBeforeBufferFull = DEFAULT_HEADER_NAMES.any { response.getHeader(it) != null }
+            out.write(('y' * 56).bytes)
+            headersPresentAfterBufferFull = DEFAULT_HEADER_NAMES.every { response.getHeader(it) != null }
+        } as FilterChain
+
+        when:
+        new GrailsSecurityHeadersFilter(new GrailsSecurityHeadersProperties()).doFilter(request, response, downstream)
+
+        then:
+        !headersPresentBeforeBufferFull
+        headersPresentAfterBufferFull
+    }
+
+    void 'filter writes security headers once the body written through the writer outgrows the response buffer'() {
+        given:
+        def request = new MockHttpServletRequest('GET', '/')
+        def response = new MockHttpServletResponse()
+        response.bufferSize = 16
+        boolean headersPresentAfterBufferFull = false
+        FilterChain downstream = { downstreamRequest, downstreamResponse ->
+            downstreamResponse.writer.write('z' * 64)
+            headersPresentAfterBufferFull = DEFAULT_HEADER_NAMES.every { response.getHeader(it) != null }
+        } as FilterChain
+
+        when:
+        new GrailsSecurityHeadersFilter(new GrailsSecurityHeadersProperties()).doFilter(request, response, downstream)
+
+        then:
+        headersPresentAfterBufferFull
+    }
+
+    void 'filter counts the line separator written by println toward the declared content length'() {
+        given:
+        def request = new MockHttpServletRequest('GET', '/')
+        def response = new MockHttpServletResponse()
+        boolean headersPresentAfterPrintln = false
+        FilterChain downstream = { downstreamRequest, downstreamResponse ->
+            downstreamResponse.setContentLength(2 + System.lineSeparator().length())
+            downstreamResponse.writer.println('hi')
+            headersPresentAfterPrintln = DEFAULT_HEADER_NAMES.every { response.getHeader(it) != null }
+        } as FilterChain
+
+        when:
+        new GrailsSecurityHeadersFilter(new GrailsSecurityHeadersProperties()).doFilter(request, response, downstream)
+
+        then:
+        headersPresentAfterPrintln
+        response.contentAsString == 'hi' + System.lineSeparator()
+    }
+
+    @Unroll
+    void 'filter honors a Content-Length declared through #description'() {
+        given:
+        def request = new MockHttpServletRequest('GET', '/')
+        def response = new MockHttpServletResponse()
+        boolean headersPresentAfterLastByte = false
+        FilterChain downstream = { downstreamRequest, downstreamResponse ->
+            declare(downstreamResponse)
+            downstreamResponse.outputStream.write('hello'.bytes)
+            headersPresentAfterLastByte = DEFAULT_HEADER_NAMES.every { response.getHeader(it) != null }
+        } as FilterChain
+
+        when:
+        new GrailsSecurityHeadersFilter(new GrailsSecurityHeadersProperties()).doFilter(request, response, downstream)
+
+        then:
+        headersPresentAfterLastByte
+
+        where:
+        description            | declare
+        'setContentLengthLong' | { HttpServletResponse r -> r.setContentLengthLong(5L) }
+        'setHeader'            | { HttpServletResponse r -> r.setHeader('Content-Length', '5') }
+        'addHeader'            | { HttpServletResponse r -> r.addHeader('content-length', '5') }
+        'setIntHeader'         | { HttpServletResponse r -> r.setIntHeader('Content-Length', 5) }
+        'addIntHeader'         | { HttpServletResponse r -> r.addIntHeader('Content-Length', 5) }
+    }
+
+    void 'a Content-Length declared after the body was written commits at once'() {
+        given:
+        def request = new MockHttpServletRequest('GET', '/')
+        def response = new MockHttpServletResponse()
+        boolean headersPresentAfterDeclaration = false
+        FilterChain downstream = { downstreamRequest, downstreamResponse ->
+            downstreamResponse.outputStream.write('hello'.bytes)
+            downstreamResponse.setContentLength(5)
+            headersPresentAfterDeclaration = DEFAULT_HEADER_NAMES.every { response.getHeader(it) != null }
+        } as FilterChain
+
+        when:
+        new GrailsSecurityHeadersFilter(new GrailsSecurityHeadersProperties()).doFilter(request, response, downstream)
+
+        then:
+        headersPresentAfterDeclaration
+    }
+
+    void 'a malformed Content-Length header is ignored and the headers are still written when the chain returns'() {
+        given: 'a container that, like Tomcat, drops an unparseable Content-Length instead of failing the request'
+        def request = new MockHttpServletRequest('GET', '/')
+        def response = new MockHttpServletResponse()
+        def lenientContainer = new HttpServletResponseWrapper(response) {
+            @Override
+            void setHeader(String name, String value) {
+                if (!('Content-Length'.equalsIgnoreCase(name) && !value.isLong())) {
+                    super.setHeader(name, value)
+                }
+            }
+        }
+        boolean headersPresentInsideChain = false
+        FilterChain downstream = { downstreamRequest, downstreamResponse ->
+            downstreamResponse.setHeader('Content-Length', 'not-a-number')
+            downstreamResponse.outputStream.write('hello'.bytes)
+            headersPresentInsideChain = DEFAULT_HEADER_NAMES.any { response.getHeader(it) != null }
+        } as FilterChain
+
+        when:
+        new GrailsSecurityHeadersFilter(new GrailsSecurityHeadersProperties())
+                .doFilter(request, lenientContainer, downstream)
+
+        then:
+        !headersPresentInsideChain
+        DEFAULT_HEADER_NAMES.every { response.getHeader(it) != null }
     }
 
     void 'filter writes security headers once the declared content length has been written'() {
@@ -356,13 +608,32 @@ class GrailsSecurityHeadersAutoConfigurationSpec extends Specification {
         response.getHeader('Strict-Transport-Security') == null
     }
 
+    void 'the defaults are applied by default, including to requests relayed through a reverse proxy'() {
+        given:
+        def properties = new GrailsSecurityHeadersProperties()
+        def request = new MockHttpServletRequest('GET', '/')
+        request.addHeader('X-Forwarded-For', '203.0.113.7')
+        request.addHeader('X-Real-IP', '203.0.113.7')
+        def response = new MockHttpServletResponse()
+
+        expect:
+        properties.defaults == GrailsSecurityHeadersProperties.Defaults.ALWAYS
+
+        when:
+        new GrailsSecurityHeadersFilter(properties, true).doFilter(request, response, new MockFilterChain())
+
+        then:
+        DEFAULT_HEADER_NAMES.every { response.getHeader(it) != null }
+    }
+
     @Unroll
-    void 'a request relayed through a reverse proxy (#headerName) suppresses the defaults but keeps explicit headers'() {
+    void 'defaults=auto: a proxied request (#headerName) suppresses the defaults but keeps explicit headers'() {
         given:
         def request = new MockHttpServletRequest('GET', '/')
         request.addHeader(headerName, 'proxy-value')
         def response = new MockHttpServletResponse()
         def properties = new GrailsSecurityHeadersProperties()
+        properties.defaults = GrailsSecurityHeadersProperties.Defaults.AUTO
         properties.frameOptions.value = 'DENY'
 
         when:
@@ -411,11 +682,12 @@ class GrailsSecurityHeadersAutoConfigurationSpec extends Specification {
         response.getHeader('X-XSS-Protection') == null
     }
 
-    void 'a filter told the deployment is behind a reverse proxy suppresses defaults without per-request signals'() {
+    void 'defaults=auto: a filter told the deployment is proxied suppresses defaults without per-request signals'() {
         given:
         def request = new MockHttpServletRequest('GET', '/')
         def response = new MockHttpServletResponse()
         def properties = new GrailsSecurityHeadersProperties()
+        properties.defaults = GrailsSecurityHeadersProperties.Defaults.AUTO
         properties.contentSecurityPolicy.enabled = true
         properties.contentSecurityPolicy.value = "default-src 'self'"
 
@@ -450,10 +722,31 @@ class GrailsSecurityHeadersAutoConfigurationSpec extends Specification {
     }
 
     @Unroll
-    void 'auto-configured filter treats every request as proxied when #property is set'() {
+    void 'auto-configured filter applies the defaults to a proxied request by default when #property is set'() {
         expect:
         new WebApplicationContextRunner()
-                .withPropertyValues(property, 'grails.security.headers.frame-options.value=DENY')
+                .withPropertyValues(property)
+                .withConfiguration(AutoConfigurations.of(GrailsSecurityHeadersAutoConfiguration))
+                .run { context ->
+                    def request = new MockHttpServletRequest('GET', '/')
+                    request.addHeader('X-Forwarded-For', '203.0.113.7')
+                    def response = new MockHttpServletResponse()
+                    context.getBean(GrailsSecurityHeadersFilter).doFilter(request, response, new MockFilterChain())
+                    assert DEFAULT_HEADER_NAMES.every { response.getHeader(it) != null }
+                }
+
+        where:
+        property << ['server.forward-headers-strategy=framework',
+                     'server.forward-headers-strategy=native',
+                     'spring.main.cloud-platform=kubernetes']
+    }
+
+    @Unroll
+    void 'defaults=auto: auto-configured filter treats every request as proxied when #property is set'() {
+        expect:
+        new WebApplicationContextRunner()
+                .withPropertyValues(property, 'grails.security.headers.defaults=auto',
+                        'grails.security.headers.frame-options.value=DENY')
                 .withConfiguration(AutoConfigurations.of(GrailsSecurityHeadersAutoConfiguration))
                 .run { context ->
                     def response = new MockHttpServletResponse()
@@ -472,10 +765,10 @@ class GrailsSecurityHeadersAutoConfigurationSpec extends Specification {
     }
 
     @Unroll
-    void 'auto-configured filter applies defaults to a direct request when #description'() {
+    void 'defaults=auto: auto-configured filter applies defaults to a direct request when #description'() {
         expect:
         new WebApplicationContextRunner()
-                .withPropertyValues(properties as String[])
+                .withPropertyValues((properties + ['grails.security.headers.defaults=auto']) as String[])
                 .withConfiguration(AutoConfigurations.of(GrailsSecurityHeadersAutoConfiguration))
                 .run { context ->
                     def response = new MockHttpServletResponse()
@@ -491,10 +784,11 @@ class GrailsSecurityHeadersAutoConfigurationSpec extends Specification {
         'cloud platform is none'              | ['spring.main.cloud-platform=none']
     }
 
-    void 'headers bound from application configuration are explicit and survive proxy detection'() {
+    void 'defaults=auto: headers bound from application configuration are explicit and survive proxy detection'() {
         expect:
         new WebApplicationContextRunner()
-                .withPropertyValues('grails.security.headers.hsts.enabled=true',
+                .withPropertyValues('grails.security.headers.defaults=auto',
+                        'grails.security.headers.hsts.enabled=true',
                         'grails.security.headers.content-security-policy.enabled=true',
                         "grails.security.headers.content-security-policy.value=default-src 'self'")
                 .withConfiguration(AutoConfigurations.of(GrailsSecurityHeadersAutoConfiguration))
@@ -510,19 +804,26 @@ class GrailsSecurityHeadersAutoConfigurationSpec extends Specification {
                 }
     }
 
-    void 'the defaults mode binds from application configuration'() {
+    @Unroll
+    void 'the defaults mode #mode binds from application configuration and a proxied request #outcome the defaults'() {
         expect:
         new WebApplicationContextRunner()
-                .withPropertyValues('grails.security.headers.defaults=always')
+                .withPropertyValues("grails.security.headers.defaults=${mode}")
                 .withConfiguration(AutoConfigurations.of(GrailsSecurityHeadersAutoConfiguration))
                 .run { context ->
-                    assert context.getBean(GrailsSecurityHeadersProperties).defaults ==
-                            GrailsSecurityHeadersProperties.Defaults.ALWAYS
+                    assert context.getBean(GrailsSecurityHeadersProperties).defaults == expectedMode
                     def request = new MockHttpServletRequest('GET', '/')
                     request.addHeader('Via', '1.1 proxy')
                     def response = new MockHttpServletResponse()
                     context.getBean(GrailsSecurityHeadersFilter).doFilter(request, response, new MockFilterChain())
-                    assert DEFAULT_HEADER_NAMES.every { response.getHeader(it) != null }
+                    assert DEFAULT_HEADER_NAMES.every { (response.getHeader(it) != null) == defaultsSent }
                 }
+
+        where:
+        mode     | expectedMode                                      | defaultsSent
+        'always' | GrailsSecurityHeadersProperties.Defaults.ALWAYS   | true
+        'auto'   | GrailsSecurityHeadersProperties.Defaults.AUTO     | false
+        'never'  | GrailsSecurityHeadersProperties.Defaults.NEVER    | false
+        outcome = defaultsSent ? 'receives' : 'does not receive'
     }
 }

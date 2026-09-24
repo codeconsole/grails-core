@@ -20,12 +20,18 @@ package org.grails.plugins.web.controllers;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
+/**
+ * Configuration for the browser hardening response headers Grails sends by default,
+ * bound from {@code grails.security.headers.*}.
+ *
+ * @since 8.0
+ */
 @ConfigurationProperties(prefix = "grails.security.headers")
 public class GrailsSecurityHeadersProperties {
 
     private boolean enabled = true;
 
-    private Defaults defaults = Defaults.AUTO;
+    private Defaults defaults = Defaults.ALWAYS;
 
     private Header contentTypeOptions = new Header(true, "nosniff");
 
@@ -111,15 +117,17 @@ public class GrailsSecurityHeadersProperties {
     public enum Defaults {
 
         /**
-         * Apply the defaults unless the request is detected as having come through a
-         * reverse proxy, in which case only explicitly configured headers are sent.
-         */
-        AUTO,
-
-        /**
-         * Apply the defaults on every response, even behind a reverse proxy.
+         * Apply the defaults on every response, including behind a reverse proxy. This
+         * is the default.
          */
         ALWAYS,
+
+        /**
+         * Apply the defaults unless the request is detected as having come through a
+         * reverse proxy, in which case only explicitly configured headers are sent. For
+         * deployments whose proxy already sends these headers.
+         */
+        AUTO,
 
         /**
          * Never apply the defaults; only explicitly configured headers are sent.

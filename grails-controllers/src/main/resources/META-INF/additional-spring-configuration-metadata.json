@@ -8,9 +8,9 @@
     },
     {
       "name": "grails.security.headers.defaults",
-      "description": "When the built-in default header values are applied. 'auto' (default) applies them unless the request is detected as having come through a reverse proxy; 'always' applies them on every response; 'never' applies only explicitly configured headers. Explicitly configured headers are always applied.",
+      "description": "When the built-in default header values are applied. 'always' (default) applies them on every response; 'auto' applies them unless the request is detected as having come through a reverse proxy, for deployments whose proxy already sends these headers; 'never' applies only explicitly configured headers. Explicitly configured headers are always applied.",
       "type": "org.grails.plugins.web.controllers.GrailsSecurityHeadersProperties$Defaults",
-      "defaultValue": "auto"
+      "defaultValue": "always"
     },
     {
       "name": "grails.security.headers.content-type-options.enabled",
@@ -89,12 +89,12 @@
       "name": "grails.security.headers.defaults",
       "values": [
         {
-          "value": "auto",
-          "description": "Apply the default header values unless the request came through a reverse proxy (forwarded request headers, server.forward-headers-strategy, or an active cloud platform)."
+          "value": "always",
+          "description": "Apply the default header values on every response, including behind a reverse proxy."
         },
         {
-          "value": "always",
-          "description": "Apply the default header values on every response, even behind a reverse proxy."
+          "value": "auto",
+          "description": "Apply the default header values unless the request came through a reverse proxy (forwarded request headers, server.forward-headers-strategy, or an active cloud platform). For deployments whose proxy already sends these headers."
         },
         {
           "value": "never",

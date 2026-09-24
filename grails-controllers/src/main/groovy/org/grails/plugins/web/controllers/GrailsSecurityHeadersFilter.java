@@ -42,11 +42,14 @@ import org.springframework.web.filter.OncePerRequestFilter;
  * has already set them, so a controller, an interceptor, another filter or Spring
  * Security's header writers always win over the Grails defaults.</p>
  *
- * <p>When the request is detected as having come through a reverse proxy, the built-in
- * default values are suppressed and only headers the application configured explicitly
- * are applied, because the proxy commonly owns these headers and the application cannot
- * see what it adds. See {@link GrailsSecurityHeadersProperties.Defaults} for the
- * controlling setting.</p>
+ * <p>When {@code grails.security.headers.defaults} is {@code auto} and the request is
+ * detected as having come through a reverse proxy, the built-in default values are
+ * suppressed and only headers the application configured explicitly are applied, for
+ * deployments where the proxy owns these headers and the application cannot see what it
+ * adds. See {@link GrailsSecurityHeadersProperties.Defaults} for the controlling
+ * setting.</p>
+ *
+ * @since 8.0
  */
 public class GrailsSecurityHeadersFilter extends OncePerRequestFilter {
 
@@ -131,10 +134,11 @@ public class GrailsSecurityHeadersFilter extends OncePerRequestFilter {
             return false;
         }
         if (this.reverseProxyLogged.compareAndSet(false, true)) {
-            logger.info("Reverse proxy detected via {}. Default Grails security headers are not applied and only " +
-                    "explicitly configured grails.security.headers.* values are sent, because the proxy commonly " +
-                    "owns these headers. Set grails.security.headers.defaults to 'always' to apply the defaults " +
-                    "behind the proxy, or to 'never' to rely solely on explicit configuration.", signal);
+            logger.info("Reverse proxy detected via {} and grails.security.headers.defaults is 'auto': the default " +
+                    "Grails security headers are not applied and only explicitly configured " +
+                    "grails.security.headers.* values are sent. Set grails.security.headers.defaults to 'always' " +
+                    "to apply the defaults behind the proxy, or to 'never' to rely solely on explicit " +
+                    "configuration.", signal);
         }
         return true;
     }
