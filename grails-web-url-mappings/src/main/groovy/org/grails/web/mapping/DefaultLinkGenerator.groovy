@@ -260,6 +260,9 @@ class DefaultLinkGenerator implements LinkGenerator, PluginManagerAware {
         List<String> parentResources = Collections.emptyList()
 
         if (truthy(resourceAttribute)) {
+            // A link naming its controller targets that controller, so the controllers serving the resource
+            // are not resolved, and no ambiguity among them is reported.
+            boolean namesController = truthy(controllerAttribute)
             String resource
             if (resourceAttribute instanceof CharSequence)
                 resource = resourceAttribute.toString()
@@ -269,7 +272,7 @@ class DefaultLinkGenerator implements LinkGenerator, PluginManagerAware {
                 if (!truthy(id) && hasId) {
                     id = getResourceId(resourceAttribute)
                 }
-                if (persistentEntity != null) {
+                if (persistentEntity != null && !namesController) {
                     resourceTarget = resolveResourceTarget(persistentEntity, attrs, resourceAction(action, methodAttribute, id))
                     resource = resourceTarget.controller
                 } else if (hasId) {
@@ -279,7 +282,7 @@ class DefaultLinkGenerator implements LinkGenerator, PluginManagerAware {
                     // defeat the point, such as an uninitialised association rendered from its proxy.
                     PersistentEntity classEntity = (mappingContext != null) ?
                             mappingContext.getPersistentEntity(((Class) resourceAttribute).name) : null
-                    if (classEntity != null) {
+                    if (classEntity != null && !namesController) {
                         resourceTarget = resolveResourceTarget(classEntity, attrs, resourceAction(action, methodAttribute, id))
                         resource = resourceTarget.controller
                     } else {
@@ -290,7 +293,7 @@ class DefaultLinkGenerator implements LinkGenerator, PluginManagerAware {
                 }
             }
             List<String> tokens = resource.contains('/') ? resource.tokenize('/') : [resource]
-            controller = truthy(controllerAttribute) ? controllerAttribute.toString() : tokens[-1]
+            controller = namesController ? controllerAttribute.toString() : tokens[-1]
             if (tokens.size() > 1) {
                 parentResources = tokens[0..-2]
             }
@@ -320,9 +323,9 @@ class DefaultLinkGenerator implements LinkGenerator, PluginManagerAware {
             defaultAction = true
         }
         String pluginName = attrs.get(UrlMapping.PLUGIN)?.toString()
-        // A resource link resolved from the request context carries the namespace that chose it,
-        // unless the caller named the controller itself.
-        String namespace = resourceTarget != null && resourceTarget.pinsNamespace && controllerAttribute == null ?
+        // A resource link resolved from the request context carries the namespace that chose it. One naming
+        // its controller is not resolved, so its namespace is inferred for that controller as any other's.
+        String namespace = resourceTarget != null && resourceTarget.pinsNamespace ?
                 resourceTarget.namespace :
                 resolveNamespace(controller, pluginName, attrs)
         return new LinkTarget(controller, action, defaultAction, namespace, httpMethod, id, parentResources)

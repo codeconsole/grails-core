@@ -56,6 +56,7 @@ import org.grails.web.mapping.domainlink.ManuscriptController
 import org.grails.web.mapping.domainlink.ManuscriptReportController
 import org.grails.web.mapping.domainlink.Note
 import org.grails.web.mapping.domainlink.NoteController
+import org.grails.web.mapping.domainlink.Pamphlet
 import org.grails.web.mapping.domainlink.PeopleController
 import org.grails.web.mapping.domainlink.Person
 import org.grails.web.mapping.domainlink.Tag
@@ -102,7 +103,9 @@ class LinkGeneratorResourceControllerSpec extends Specification {
                 InvoicesController,
                 AdminDashboardController,
                 ManuscriptController,
-                ManuscriptReportController
+                ManuscriptReportController,
+                org.grails.web.mapping.domainlink.print.PamphletsController,
+                org.grails.web.mapping.domainlink.archive.PamphletsController
         ).tap {
             initialise()
         }
@@ -161,6 +164,33 @@ class LinkGeneratorResourceControllerSpec extends Specification {
 
         cleanup:
         logCapture.close()
+    }
+
+    def "a resource link naming its controller is not resolved, so no ambiguity is reported"() {
+        given: 'GadgetsController and AdminGadgetsController both declare Gadget, and neither is named after it'
+        def generator = createGenerator()
+        def logCapture = new LogCapture(DefaultLinkGenerator)
+
+        when: 'a Gadget is linked naming the controller to target'
+        def link = generator.link(resource: new Gadget(id: 3), controller: 'gadgets', action: 'show')
+
+        then: 'the named controller is targeted and no ambiguity is reported'
+        link == '/bar/gadgets/show/3'
+        warningsAbout(logCapture, "[${Gadget.name}]").isEmpty()
+
+        cleanup:
+        logCapture.close()
+    }
+
+    def "a blank controller attribute resolves a resource link as an absent one does"() {
+        given: 'only the print PamphletsController shows a Pamphlet; an archive controller of the same name does not'
+        def generator = createGenerator()
+
+        expect: 'the link keeps the namespace its resolution found, which the name alone could not choose'
+        generator.link([resource: new Pamphlet(id: 1), action: 'show'] + controllerAttribute) == '/bar/print/pamphlets/show/1'
+
+        where:
+        controllerAttribute << [[:], [controller: '']]
     }
 
     def "an explicit namespace no controller serving the domain class is in is not reported"() {
@@ -486,6 +516,7 @@ class LinkGeneratorResourceControllerSpec extends Specification {
         context.addPersistentEntity(Ballot)
         context.addPersistentEntity(Invoice)
         context.addPersistentEntity(Manuscript)
+        context.addPersistentEntity(Pamphlet)
         context
     }
 

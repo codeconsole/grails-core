@@ -283,3 +283,7 @@ class ManuscriptReportController extends ResourceControllerBase<Manuscript> {
     def export() {}
     def exportAll() {}
 }
+
+class Pamphlet {
+    Long id
+}
