@@ -25,6 +25,7 @@ import groovy.transform.CompileStatic
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 
+import org.springframework.aot.AotDetector
 import org.springframework.context.ResourceLoaderAware
 import org.springframework.core.io.ByteArrayResource
 import org.springframework.core.io.FileSystemResource
@@ -94,6 +95,8 @@ class ScaffoldingViewResolver extends GroovyPageViewResolver implements Resource
     protected Map<String, View> generatedViewCache = new ConcurrentHashMap<>()
     protected Map<Class, Object> scaffoldValueCache = new ConcurrentHashMap<>()
     protected boolean enableReload = false
+    /** The pages already reported as having no compiled page, so each is reported once. */
+    protected final Set<String> reportedPages = ConcurrentHashMap.newKeySet()
     protected boolean enableNamespaceViewDefaults = false
 
     void setEnableReload(boolean enableReload) {
@@ -257,17 +260,37 @@ class ScaffoldingViewResolver extends GroovyPageViewResolver implements Resource
      * nothing and is expanded as it would be otherwise.</p>
      */
     private View findPrecompiledView(String templatePath, Map<String, Object> model, byte[] template) {
-        String uri = ScaffoldedPages.uri(templatePath, model, template)
-        View view = findPage(uri)
-        if (view == null) {
-            LOG.debug('No page compiled at {} for {}; expanding its template', uri, model.fullName)
+        View view = findPage(ScaffoldedPages.uri(templatePath, model, template))
+        if (view != null) {
+            return view
         }
-        return view
+        report(templatePath, model, 'no page was compiled from it, so it is expanded now. A native image cannot do that; ' +
+                'the build compiles a page for each template in src/main/templates/scaffolding and on the classpath')
+        return null
     }
 
     private View findPage(String uri) {
         GroovyPageScriptSource page = groovyPageLocator.findPage(uri)
         return page == null ? null : createGroovyPageView(uri, page)
+    }
+
+    /**
+     * Reports, once per page, a scaffolded view that was not served from a compiled page while
+     * compiled pages are in use. During development they are not, and nothing is reported.
+     */
+    private void report(String templatePath, Map<String, Object> model, String what) {
+        if (!precompiledPagesInUse()) {
+            LOG.debug('Expanding the scaffolding template {} for {}', templatePath, model.fullName)
+            return
+        }
+        if (reportedPages.add("${model.fullName}:${templatePath}".toString())) {
+            LOG.warn('Scaffolding template {} for {}: {}', templatePath, model.fullName, what)
+        }
+    }
+
+    /** Whether pages compiled by the build are used, which is when the page locator uses them. */
+    protected boolean precompiledPagesInUse() {
+        return !Environment.isDevelopmentMode() || AotDetector.useGeneratedArtifacts()
     }
 
     private View expandTemplate(Map<String, Object> model, byte[] template, String cacheKey) {
