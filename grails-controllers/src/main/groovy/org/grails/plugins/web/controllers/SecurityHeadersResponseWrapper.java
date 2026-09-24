@@ -72,6 +72,10 @@ final class SecurityHeadersResponseWrapper extends HttpServletResponseWrapper {
      */
     private int bufferSize = -1;
 
+    private ServletOutputStream outputStream;
+
+    private PrintWriter writer;
+
     SecurityHeadersResponseWrapper(HttpServletResponse response, Runnable beforeCommit) {
         super(response);
         this.beforeCommit = beforeCommit;
@@ -131,7 +135,9 @@ final class SecurityHeadersResponseWrapper extends HttpServletResponseWrapper {
 
     /**
      * Clears the status, headers and body. The headers the callback wrote are gone with
-     * it, so the callback is armed again for whatever is written next.
+     * it, so the callback is armed again for whatever is written next. The character
+     * encoding can change after a reset, so the next {@link #getWriter()} counts in the
+     * new one.
      */
     @Override
     public void reset() {
@@ -140,6 +146,7 @@ final class SecurityHeadersResponseWrapper extends HttpServletResponseWrapper {
         this.contentLength = -1;
         this.contentWritten = 0;
         this.bufferSize = -1;
+        this.writer = null;
     }
 
     @Override
@@ -191,15 +198,27 @@ final class SecurityHeadersResponseWrapper extends HttpServletResponseWrapper {
         super.addIntHeader(name, value);
     }
 
+    /**
+     * Returns the same stream on every call, as the container does.
+     */
     @Override
     public ServletOutputStream getOutputStream() throws IOException {
-        return new CommitAwareOutputStream(super.getOutputStream());
+        if (this.outputStream == null) {
+            this.outputStream = new CommitAwareOutputStream(super.getOutputStream());
+        }
+        return this.outputStream;
     }
 
+    /**
+     * Returns the same writer on every call, as the container does, until a {@link #reset()}
+     * discards it.
+     */
     @Override
     public PrintWriter getWriter() throws IOException {
-        PrintWriter writer = super.getWriter();
-        return new CommitAwareWriter(writer, getCharacterEncoding());
+        if (this.writer == null) {
+            this.writer = new CommitAwareWriter(super.getWriter(), getCharacterEncoding());
+        }
+        return this.writer;
     }
 
     private void trackContentLengthHeader(String name, String value) {

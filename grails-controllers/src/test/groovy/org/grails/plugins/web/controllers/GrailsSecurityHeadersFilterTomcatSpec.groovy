@@ -26,6 +26,7 @@ import java.nio.file.Path
 
 import jakarta.servlet.DispatcherType
 import jakarta.servlet.FilterChain
+import jakarta.servlet.ServletOutputStream
 import jakarta.servlet.ServletRequest
 import jakarta.servlet.ServletResponse
 import jakarta.servlet.http.HttpFilter
@@ -99,6 +100,10 @@ class GrailsSecurityHeadersFilterTomcatSpec extends Specification {
         context.addServletMappingDecoded('/error', 'error')
         Tomcat.addServlet(context, 'reset', new ResetServlet())
         context.addServletMappingDecoded('/reset', 'reset')
+        Tomcat.addServlet(context, 'writerIdentity', new WriterIdentityServlet())
+        context.addServletMappingDecoded('/writer-identity', 'writerIdentity')
+        Tomcat.addServlet(context, 'streamIdentity', new StreamIdentityServlet())
+        context.addServletMappingDecoded('/stream-identity', 'streamIdentity')
         Tomcat.addServlet(context, 'unreachable', new BodyServlet(1, false))
         context.addServletMappingDecoded('/assets/*', 'unreachable')
 
@@ -157,6 +162,19 @@ class GrailsSecurityHeadersFilterTomcatSpec extends Specification {
 
         then:
         response.headers().firstValue('Referrer-Policy').get() == 'no-referrer'
+    }
+
+    void 'the writer and output stream are the same instance on every call until a reset, like the container\'s'() {
+        when:
+        def writerResponse = get('/writer-identity')
+        def streamResponse = get('/stream-identity')
+
+        then:
+        writerResponse.body() == 'ok'.bytes
+        writerResponse.headers().firstValue('X-Content-Type-Options').orElse(null) == 'nosniff'
+        writerResponse.headers().firstValue('X-Same-Writer').get() == 'true'
+        writerResponse.headers().firstValue('X-New-Writer-After-Reset').get() == 'true'
+        streamResponse.headers().firstValue('X-Same-Stream').get() == 'true'
     }
 
     private static class BodyServlet extends HttpServlet {
@@ -232,6 +250,34 @@ class GrailsSecurityHeadersFilterTomcatSpec extends Specification {
             response.status = 500
             response.contentType = 'text/plain'
             response.outputStream.write('error'.bytes)
+        }
+    }
+
+    private static class WriterIdentityServlet extends HttpServlet {
+
+        @Override
+        protected void doGet(HttpServletRequest request, HttpServletResponse response) {
+            response.contentType = 'text/plain'
+            PrintWriter first = response.writer
+            boolean sameWriter = first.is(response.writer)
+            first.write('discarded')
+            response.reset()
+            response.contentType = 'text/plain'
+            PrintWriter second = response.writer
+            response.setHeader('X-Same-Writer', String.valueOf(sameWriter && second.is(response.writer)))
+            response.setHeader('X-New-Writer-After-Reset', String.valueOf(!second.is(first)))
+            second.write('ok')
+        }
+    }
+
+    private static class StreamIdentityServlet extends HttpServlet {
+
+        @Override
+        protected void doGet(HttpServletRequest request, HttpServletResponse response) {
+            response.contentType = 'text/plain'
+            ServletOutputStream stream = response.outputStream
+            response.setHeader('X-Same-Stream', String.valueOf(stream.is(response.outputStream)))
+            stream.write('ok'.bytes)
         }
     }
 

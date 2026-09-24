@@ -625,6 +625,37 @@ class GrailsSecurityHeadersAutoConfigurationSpec extends Specification {
         headersPresentAtNewLength
     }
 
+    void 'a writer obtained after a reset counts in the character encoding set after the reset'() {
+        given: 'twelve characters are 12 bytes in UTF-8 but 24 in UTF-16BE, past a 16 byte buffer'
+        def request = new MockHttpServletRequest('GET', '/')
+        def response = new MockHttpServletResponse()
+        response.bufferSize = 16
+        boolean sameWriterBeforeReset = false
+        boolean newWriterAfterReset = false
+        boolean headersPresentAfterBufferFull = false
+        FilterChain downstream = { downstreamRequest, downstreamResponse ->
+            downstreamResponse.characterEncoding = 'UTF-8'
+            def first = downstreamResponse.writer
+            sameWriterBeforeReset = first.is(downstreamResponse.writer)
+            downstreamResponse.reset()
+            downstreamResponse.characterEncoding = 'UTF-16BE'
+            def second = downstreamResponse.writer
+            newWriterAfterReset = !second.is(first)
+            second.write('x' * 12)
+            headersPresentAfterBufferFull = response.committed &&
+                    DEFAULT_HEADER_NAMES.every { response.getHeader(it) != null }
+        } as FilterChain
+
+        when:
+        new GrailsSecurityHeadersFilter(new GrailsSecurityHeadersProperties()).doFilter(request, response, downstream)
+
+        then:
+        sameWriterBeforeReset
+        newWriterAfterReset
+        headersPresentAfterBufferFull
+        response.contentAsByteArray.length == 24
+    }
+
     void 'resetBuffer restarts the count of body written toward the buffer size'() {
         given:
         def request = new MockHttpServletRequest('GET', '/')
@@ -876,12 +907,13 @@ class GrailsSecurityHeadersAutoConfigurationSpec extends Specification {
         'X-Forwarded-For'   | '192.0.2.60'                                 || false
     }
 
-    void 'HSTS is not sent when the forwarded headers cannot be parsed'() {
-        given: 'a forwarded port that is not a number invalidates the whole forwarded header set'
+    @Unroll
+    void 'HSTS is not sent when the forwarded headers cannot be parsed: #headerName: #headerValue'() {
+        given: 'a malformed forwarded value invalidates the whole forwarded header set'
         def request = new MockHttpServletRequest('GET', '/')
         request.secure = false
         request.addHeader('X-Forwarded-Proto', 'https')
-        request.addHeader('X-Forwarded-Port', 'not-a-port')
+        request.addHeader(headerName, headerValue)
         def response = new MockHttpServletResponse()
         def properties = new GrailsSecurityHeadersProperties()
         properties.hsts.enabled = true
@@ -892,6 +924,12 @@ class GrailsSecurityHeadersAutoConfigurationSpec extends Specification {
         then:
         response.getHeader('Strict-Transport-Security') == null
         response.getHeader('X-Content-Type-Options') == 'nosniff'
+
+        where:
+        headerName         | headerValue
+        'X-Forwarded-Port' | 'not-a-port'
+        'X-Forwarded-Host' | 'a:b:c'
+        'Forwarded'        | 'host=a:b:c;proto=https'
     }
 
     @Unroll

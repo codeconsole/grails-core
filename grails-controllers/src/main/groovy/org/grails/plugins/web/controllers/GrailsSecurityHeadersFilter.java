@@ -194,7 +194,7 @@ public class GrailsSecurityHeadersFilter extends OncePerRequestFilter {
             return HTTPS.equalsIgnoreCase(scheme);
         }
         catch (IllegalArgumentException malformedForwardedHeaders) {
-            // A forwarded port that is not a number: no trustworthy scheme to go on.
+            // Malformed forwarded headers: no trustworthy scheme to go on.
             return false;
         }
     }
