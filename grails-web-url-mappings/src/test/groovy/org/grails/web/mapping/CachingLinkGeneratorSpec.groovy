@@ -115,8 +115,8 @@ class CachingLinkGeneratorSpec extends Specification {
         request.setControllerName("foo")
         key = linkGenerator.makeKey([resource: new Resource(id: 1), action: "bar"])
 
-        then: "controller and namespace aren't in the key"
-        key == "link[resource:org.grails.web.mapping.CachingLinkGeneratorSpec\$Resource->1, action:bar]"
+        then: "the request context is folded under its own keys, never as the target controller or namespace"
+        key == "link[resource:org.grails.web.mapping.CachingLinkGeneratorSpec\$Resource->1, action:bar, __grailsRequestController:foo, __grailsRequestNamespace:fooReq]"
     }
 
 

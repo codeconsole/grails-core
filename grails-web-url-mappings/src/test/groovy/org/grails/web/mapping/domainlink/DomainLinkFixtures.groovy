@@ -158,3 +158,71 @@ class ChroniclesController extends NestedResourceControllerBase<Person, Chronicl
     def index() {}
     def show() {}
 }
+
+class Assessment {
+    Long id
+}
+
+/**
+ * The root controller named after {@code Assessment}, which the naming convention resolves to.
+ */
+@Artefact('Controller')
+class AssessmentController {
+    def index() {}
+    def show() {}
+}
+
+/**
+ * A second controller serving {@code Assessment}, in the {@code manage} namespace, so a link rendered
+ * while it or another {@code manage} controller handles the request should stay in {@code manage}.
+ */
+@Artefact('Controller')
+class ManageAssessmentController extends ResourceControllerBase<Assessment> {
+    static namespace = 'manage'
+    def index() {}
+    def show() {}
+}
+
+/**
+ * A {@code manage} controller serving no domain class, to render links from inside the namespace.
+ */
+@Artefact('Controller')
+class ManageDashboardController {
+    static namespace = 'manage'
+    def index() {}
+}
+
+/**
+ * A root controller serving no domain class, to render links from outside any namespace.
+ */
+@Artefact('Controller')
+class HomeController {
+    def index() {}
+}
+
+class Ballot {
+    Long id
+}
+
+@Artefact('Controller')
+class BallotController {
+    def index() {}
+    def show() {}
+}
+
+/**
+ * One of two {@code manage} controllers declaring {@code Ballot}, making the namespace ambiguous for it.
+ */
+@Artefact('Controller')
+class ManageBallotController extends ResourceControllerBase<Ballot> {
+    static namespace = 'manage'
+    def index() {}
+    def show() {}
+}
+
+@Artefact('Controller')
+class AuditBallotController extends ResourceControllerBase<Ballot> {
+    static namespace = 'manage'
+    def index() {}
+    def show() {}
+}

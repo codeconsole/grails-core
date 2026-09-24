@@ -26,6 +26,11 @@ import grails.web.mapping.UrlMappingsHolder
 import org.grails.datastore.mapping.keyvalue.mapping.config.KeyValueMappingContext
 import org.grails.datastore.mapping.model.MappingContext
 import org.grails.web.mapping.domainlink.AdminGadgetsController
+import org.grails.web.mapping.domainlink.Assessment
+import org.grails.web.mapping.domainlink.AssessmentController
+import org.grails.web.mapping.domainlink.AuditBallotController
+import org.grails.web.mapping.domainlink.Ballot
+import org.grails.web.mapping.domainlink.BallotController
 import org.grails.web.mapping.domainlink.Chapter
 import org.grails.web.mapping.domainlink.ChapterApiController
 import org.grails.web.mapping.domainlink.ChapterController
@@ -33,6 +38,10 @@ import org.grails.web.mapping.domainlink.Chronicle
 import org.grails.web.mapping.domainlink.ChroniclesController
 import org.grails.web.mapping.domainlink.Gadget
 import org.grails.web.mapping.domainlink.GadgetsController
+import org.grails.web.mapping.domainlink.HomeController
+import org.grails.web.mapping.domainlink.ManageAssessmentController
+import org.grails.web.mapping.domainlink.ManageBallotController
+import org.grails.web.mapping.domainlink.ManageDashboardController
 import org.grails.web.mapping.domainlink.Note
 import org.grails.web.mapping.domainlink.NoteController
 import org.grails.web.mapping.domainlink.PeopleController
@@ -69,7 +78,14 @@ class LinkGeneratorResourceControllerSpec extends Specification {
                 ChapterController,
                 ChapterApiController,
                 TagsController,
-                ChroniclesController
+                ChroniclesController,
+                AssessmentController,
+                ManageAssessmentController,
+                ManageDashboardController,
+                HomeController,
+                BallotController,
+                ManageBallotController,
+                AuditBallotController
         ).tap {
             initialise()
         }
@@ -168,6 +184,126 @@ class LinkGeneratorResourceControllerSpec extends Specification {
         createGenerator(false).link(resource: person, action: 'show') != '/bar/people/show/10'
     }
 
+    def "a link rendered by a controller serving the domain class stays in that controller"() {
+        given: 'ManageAssessmentController is handling the request, although AssessmentController is named after the domain'
+        bindRequest('manageAssessment', 'manage')
+        def generator = createGenerator()
+
+        expect: 'the link targets the current controller in its namespace'
+        generator.link(resource: new Assessment(id: 1), action: 'show') == '/bar/manage/manageAssessment/show/1'
+
+        and: 'so does a link from the domain class, as an uninitialised association renders it'
+        generator.link(resource: Assessment, id: 2, action: 'show') == '/bar/manage/manageAssessment/show/2'
+    }
+
+    def "a link rendered by the controller named after the domain class stays there"() {
+        given: 'AssessmentController is handling the request'
+        bindRequest('assessment', null)
+        def generator = createGenerator()
+
+        expect:
+        generator.link(resource: new Assessment(id: 3), action: 'show') == '/bar/assessment/show/3'
+    }
+
+    def "a link rendered elsewhere in a namespace targets the controller serving the domain class there"() {
+        given: 'ManageDashboardController, which serves no domain class, is handling a request in manage'
+        bindRequest('manageDashboard', 'manage')
+        def generator = createGenerator()
+
+        expect: 'the only manage controller serving Assessment is chosen over the root one'
+        generator.link(resource: new Assessment(id: 4), action: 'show') == '/bar/manage/manageAssessment/show/4'
+    }
+
+    def "a namespace with more than one controller serving the domain class falls through to the naming convention"() {
+        given: 'two manage controllers declare Ballot'
+        bindRequest('manageDashboard', 'manage')
+        def generator = createGenerator()
+
+        expect: 'the namespace is ambiguous, so the controller named after the domain class is used'
+        generator.link(resource: new Ballot(id: 5), action: 'show') == '/bar/ballot/show/5'
+    }
+
+    def "a link rendered outside the namespace targets the controller serving the domain class outside it"() {
+        given: 'HomeController, in the default namespace, is handling the request'
+        bindRequest('home', null)
+        def generator = createGenerator()
+
+        expect: 'AssessmentController is the only default-namespace controller serving Assessment'
+        generator.link(resource: new Assessment(id: 6), action: 'show') == '/bar/assessment/show/6'
+    }
+
+    def "a link generated outside a request uses the naming convention"() {
+        given: 'no request is bound, as for a background job'
+        RequestContextHolder.resetRequestAttributes()
+        def generator = createGenerator()
+
+        expect:
+        generator.link(resource: new Assessment(id: 7), action: 'show') == '/bar/assessment/show/7'
+    }
+
+    def "an explicit namespace chooses the controller serving the domain class in that namespace"() {
+        given: 'HomeController is handling the request'
+        bindRequest('home', null)
+        def generator = createGenerator()
+
+        expect: 'the explicit namespace outranks the request context'
+        generator.link(resource: new Assessment(id: 8), action: 'show', namespace: 'manage') == '/bar/manage/manageAssessment/show/8'
+    }
+
+    def "an explicit controller outranks the controller handling the request"() {
+        given: 'ManageAssessmentController is handling the request'
+        bindRequest('manageAssessment', 'manage')
+        def generator = createGenerator()
+
+        expect: 'the named controller is used, in its own namespace rather than the request one'
+        generator.link(resource: new Assessment(id: 9), action: 'show', controller: 'assessment') == '/bar/assessment/show/9'
+    }
+
+    def "a cached link rendered by one controller is not served to another"() {
+        given: 'two default-namespace controllers serve Chapter, and no controller is namespaced'
+        def application = new DefaultGrailsApplication(ChapterController, ChapterApiController).tap { initialise() }
+        def generator = createCachingGenerator(application)
+
+        and: 'one instance, as a page rendering it repeatedly would pass'
+        def chapter = new Chapter(id: 10)
+
+        when: 'the same link is generated while each controller handles the request'
+        bindRequest('chapterApi', null)
+        def fromApi = generator.link(resource: chapter, action: 'show')
+        bindRequest('chapter', null)
+        def fromChapter = generator.link(resource: chapter, action: 'show')
+
+        then: 'each gets its own controller rather than the first cached URL'
+        fromApi == '/bar/chapterApi/show/10'
+        fromChapter == '/bar/chapter/show/10'
+    }
+
+    def "a redirect, which names its own namespace, stays in the controller serving the domain class"() {
+        given: 'ChapterApiController is handling the request, although ChapterController is named after the domain'
+        bindRequest('chapterApi', null)
+        def generator = createGenerator()
+
+        expect: 'the explicit default namespace a controller redirect carries still resolves to the current controller'
+        generator.link(resource: new Chapter(id: 11), method: 'GET', namespace: null) == '/bar/chapterApi/show/11'
+    }
+
+    def "a cached link naming a namespace, as a controller redirect does, is not served to another controller"() {
+        given: 'two default-namespace controllers serve Chapter'
+        def application = new DefaultGrailsApplication(ChapterController, ChapterApiController).tap { initialise() }
+        def generator = createCachingGenerator(application)
+        def chapter = new Chapter(id: 12)
+
+        when: 'each controller links to the same instance with an action, naming its own namespace as a redirect does'
+        bindRequest('chapterApi', null)
+        def fromApi = generator.link(resource: chapter, action: 'show', namespace: null)
+        bindRequest('chapter', null)
+        def fromChapter = generator.link(resource: chapter, action: 'show', namespace: null)
+
+        then:
+        fromApi == '/bar/chapterApi/show/12'
+        fromChapter == '/bar/chapter/show/12'
+    }
+
     def "re-registering controllers rebuilds the index"() {
         given: 'an index built while PeopleController is registered'
         def generator = createGenerator()
@@ -182,6 +318,18 @@ class LinkGeneratorResourceControllerSpec extends Specification {
         generator.link(resource: new Person(id: 11), action: 'show') != '/bar/people/show/11'
     }
 
+    private void bindRequest(String controllerName, String namespace) {
+        def webRequest = GrailsWebMockUtil.bindMockWebRequest()
+        webRequest.setControllerName(controllerName)
+        webRequest.setControllerNamespace(namespace)
+    }
+
+    private CachingLinkGenerator createCachingGenerator(DefaultGrailsApplication application) {
+        def generator = new CachingLinkGenerator(BASE_URL, CONTEXT)
+        configure(generator, application, true)
+        generator
+    }
+
     private MappingContext createMappingContext() {
         def context = new KeyValueMappingContext('')
         context.addPersistentEntity(Person)
@@ -191,13 +339,20 @@ class LinkGeneratorResourceControllerSpec extends Specification {
         context.addPersistentEntity(Chapter)
         context.addPersistentEntity(Tag)
         context.addPersistentEntity(Chronicle)
+        context.addPersistentEntity(Assessment)
+        context.addPersistentEntity(Ballot)
         context
     }
 
     private DefaultLinkGenerator createGenerator(boolean withMappingContext = true) {
         def generator = new DefaultLinkGenerator(BASE_URL, CONTEXT)
+        configure(generator, grailsApplication, withMappingContext)
+        generator
+    }
+
+    private void configure(DefaultLinkGenerator generator, DefaultGrailsApplication application, boolean withMappingContext) {
         generator.grailsUrlConverter = new CamelCaseUrlConverter()
-        generator.grailsApplication = grailsApplication
+        generator.grailsApplication = application
         if (withMappingContext) {
             generator.mappingContext = createMappingContext()
         }
@@ -207,6 +362,5 @@ class LinkGeneratorResourceControllerSpec extends Specification {
             }] as UrlCreator
         }
         generator.urlMappingsHolder = [getReverseMapping: callable, getReverseMappingNoDefault: callable] as UrlMappingsHolder
-        generator
     }
 }

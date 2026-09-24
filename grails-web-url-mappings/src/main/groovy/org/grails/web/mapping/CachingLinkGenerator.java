@@ -120,34 +120,37 @@ public class CachingLinkGenerator extends DefaultLinkGenerator {
             // <g:link url="[controller:'book']"/>); the plugin, like link(), is read from the top
             // level. For these shapes we fold the precisely resolved namespace, which keeps the key
             // tight and the cache hit rate high.
-            if (!map.containsKey(UrlMapping.NAMESPACE)) {
-                Object controllerValue = map.get(UrlMapping.CONTROLLER);
-                Object pluginValue = map.get(UrlMapping.PLUGIN);
-                Object urlValue = map.get(ATTRIBUTE_URL);
-                if (controllerValue == null && urlValue instanceof Map) {
-                    controllerValue = ((Map) urlValue).get(UrlMapping.CONTROLLER);
+            Object controllerValue = map.get(UrlMapping.CONTROLLER);
+            Object resourceValue = map.get(RESOURCE_PREFIX);
+            Object urlValue = map.get(ATTRIBUTE_URL);
+            if (controllerValue == null && urlValue instanceof Map) {
+                controllerValue = ((Map) urlValue).get(UrlMapping.CONTROLLER);
+                if (resourceValue == null) {
+                    resourceValue = ((Map) urlValue).get(RESOURCE_PREFIX);
                 }
-                if (controllerValue != null) {
+            }
+            if (controllerValue != null) {
+                if (!map.containsKey(UrlMapping.NAMESPACE)) {
+                    Object pluginValue = map.get(UrlMapping.PLUGIN);
                     String namespace = getDefaultNamespace(controllerValue.toString(),
                             pluginValue == null ? null : pluginValue.toString());
                     if (GrailsStringUtils.isNotEmpty(namespace)) {
                         map.put(UrlMapping.NAMESPACE, namespace);
                     }
                 }
-                else if (map.get(RESOURCE_PREFIX) != null && hasNamespacedControllers()) {
-                    // A resource link derives its controller through more involved resolution that we
-                    // do not duplicate here. When namespaced controllers exist a namespace could be
-                    // inferred, so fold the request context the inference depends on into the key so
-                    // resource links from different request namespaces never collide on a cached URL.
-                    // (A non-null request namespace always implies a namespaced controller is
-                    // registered, so this condition also covers the same-controller resource case.)
-                    String requestNamespace = getRequestStateLookupStrategy().getControllerNamespace();
-                    if (GrailsStringUtils.isNotEmpty(requestControllerName)) {
-                        map.put(REQUEST_CONTROLLER_KEY, requestControllerName);
-                    }
-                    if (GrailsStringUtils.isNotEmpty(requestNamespace)) {
-                        map.put(REQUEST_NAMESPACE_KEY, requestNamespace);
-                    }
+            }
+            else if (resourceValue != null) {
+                // A resource link resolves its controller from the request context when more than one
+                // controller serves the domain class, preferring the controller handling the request.
+                // That holds even with an explicit namespace, which every controller redirect carries.
+                // The resolution is not duplicated here, so fold the request context it depends on into
+                // the key, and a resource link rendered by one controller is never served to another.
+                String requestNamespace = getRequestStateLookupStrategy().getControllerNamespace();
+                if (GrailsStringUtils.isNotEmpty(requestControllerName)) {
+                    map.put(REQUEST_CONTROLLER_KEY, requestControllerName);
+                }
+                if (GrailsStringUtils.isNotEmpty(requestNamespace)) {
+                    map.put(REQUEST_NAMESPACE_KEY, requestNamespace);
                 }
             }
             boolean first = true;

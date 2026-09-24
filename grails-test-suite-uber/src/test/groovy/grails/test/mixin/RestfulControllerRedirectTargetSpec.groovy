@@ -23,6 +23,7 @@ import grails.persistence.Entity
 import grails.rest.RestfulController
 import grails.testing.gorm.DomainUnitTest
 import grails.testing.web.controllers.ControllerUnitTest
+import org.grails.core.artefact.ControllerArtefactHandler
 import org.grails.web.mime.HttpServletResponseExtension
 
 import spock.lang.Specification
@@ -69,6 +70,20 @@ class RestfulControllerRedirectTargetSpec extends Specification implements Contr
         response.redirectedUrl == "/movies/show/${film.id}"
     }
 
+    void "an HTML form save stays in the controller that saved it when another is named after the domain class"() {
+        given: 'a FilmController, named after the domain class, is registered as well'
+        grailsApplication.addArtefact(ControllerArtefactHandler.TYPE, FilmController)
+
+        when: 'a Film is saved through MoviesController from an HTML form'
+        request.method = 'POST'
+        request.format = 'form'
+        params.title = 'Metropolis'
+        controller.save()
+
+        then: 'the redirect stays in MoviesController instead of moving to FilmController'
+        response.redirectedUrl == '/movies/show/1'
+    }
+
     void "an API save names the controller that saved the instance in its Location header"() {
         when: 'the same save is made as an API request'
         request.method = 'POST'
@@ -92,4 +107,13 @@ class MoviesController extends RestfulController<Film> {
     MoviesController() {
         super(Film)
     }
+}
+
+/**
+ * Named after {@link Film}, so the naming convention alone would send a redirect for a Film here even
+ * when {@link MoviesController} saved it.
+ */
+@Artefact('Controller')
+class FilmController {
+    def show() {}
 }

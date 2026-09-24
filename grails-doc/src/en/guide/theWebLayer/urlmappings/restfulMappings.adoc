@@ -268,10 +268,9 @@ As a convenience you can also pass a domain instance to the `resource` attribute
 
 This will automatically produce the correct link (in this case "/books/1" for an id of "1").
 
-When the `resource` attribute is given a domain instance, the controller named after the domain class
-is used if one exists, so an application following the naming convention is unaffected. Only when no
-such controller exists is the controller that _declares_ the domain class used, which lets a
-controller named for the resource rather than the domain class be linked to:
+When the `resource` attribute is given a domain instance, the link targets the most specific controller
+that serves its domain class. A controller serves a domain class when it is named after it, or when it
+declares it as a generic type argument:
 
 [source,groovy]
 ----
@@ -285,11 +284,38 @@ class PeopleController extends RestfulController<Person> {
 <g:link resource="${person}">My Link</g:link>     <%-- /people/1 --%>
 ----
 
-If no controller declares the domain class, or more than one does, the link falls back to the domain
-class name; pass the `controller` attribute explicitly in that case.
+Candidates are tried from the most specific to the least:
 
-NOTE: This applies only when `resource` is given a domain instance and GORM is configured. Passing a
-controller name directly, as in `<g:link resource="book">`, is unaffected.
+. the controller handling the current request, if it serves the domain class and is in the namespace
+the link targets
+. the only controller in that namespace serving the domain class
+. the controller named after the domain class
+. the only controller declaring the domain class
+
+The namespace a link targets is its `namespace` attribute when one is given, as it is for every redirect
+from a controller, and otherwise the namespace of the current request. A level with more than one
+candidate falls through to the next, and when nothing matches, the controller named after the domain
+class is assumed.
+
+A link, or the redirect after a save, therefore stays in the controller the user is working in. Given
+an `AssessmentController` and a `ManageAssessmentController` in the `manage` namespace, both serving
+`Assessment`:
+
+[format="csv", options="header"]
+|===
+
+Link to an Assessment rendered by,Targets
+AssessmentController,AssessmentController
+ManageAssessmentController,ManageAssessmentController
+another controller in the `manage` namespace,ManageAssessmentController
+any other controller or no request,AssessmentController
+|===
+
+Pass the `controller` attribute to link to a different controller explicitly, for example from an
+administration page to the public one.
+
+NOTE: This applies when `resource` is given a domain instance or domain class and GORM is configured.
+Passing a controller name, as in `<g:link resource="book">`, is unchanged.
 
 
 The case of nested resources is a little different as they typically required two identifiers (the id of the resource and the one it is nested within). For example given the nested resources:

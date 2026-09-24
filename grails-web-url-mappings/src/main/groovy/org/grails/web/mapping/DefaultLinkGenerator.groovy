@@ -91,8 +91,8 @@ class DefaultLinkGenerator implements LinkGenerator, PluginManagerAware {
     @Autowired(required = false)
     GrailsApplication grailsApplication
 
-    private volatile ControllerIndex controllerNamespacesByName
-    private volatile ControllerIndex controllerNamesByDomainClass
+    private volatile ControllerIndex<String> controllerNamespacesByName
+    private volatile ControllerIndex<ControllerRef> controllersByDomainClass
 
     @Value('${grails.resources.pattern:/static/**}')
     String resourcePattern = Settings.DEFAULT_RESOURCE_PATTERN
@@ -171,6 +171,7 @@ class DefaultLinkGenerator implements LinkGenerator, PluginManagerAware {
                 final controllerAttribute = urlAttrs.get(ATTRIBUTE_CONTROLLER)
                 final resourceAttribute = urlAttrs.get(ATTRIBUTE_RESOURCE)
                 String controller
+                ResourceTarget resourceTarget = null
                 String action = urlAttrs.get(ATTRIBUTE_ACTION)?.toString()
                 def id = urlAttrs.get(ATTRIBUTE_ID)
                 String httpMethod
@@ -186,7 +187,8 @@ class DefaultLinkGenerator implements LinkGenerator, PluginManagerAware {
                         PersistentEntity persistentEntity = (mappingContext != null) ? mappingContext.getPersistentEntity(resourceAttribute.getClass().getName()) : null
                         boolean hasId = false
                         if (persistentEntity != null) {
-                            resource = controllerNameForResource(persistentEntity)
+                            resourceTarget = resolveResourceTarget(persistentEntity, attrs)
+                            resource = resourceTarget.controller
                             hasId = true
                         } else if (DomainClassArtefactHandler.isDomainClass(resourceAttribute.getClass(), true)) {
                             resource = GrailsNameUtils.getPropertyName(resourceAttribute.getClass())
@@ -196,9 +198,12 @@ class DefaultLinkGenerator implements LinkGenerator, PluginManagerAware {
                             // defeat the point, such as an uninitialised association rendered from its proxy.
                             PersistentEntity classEntity = (mappingContext != null) ?
                                     mappingContext.getPersistentEntity(((Class) resourceAttribute).name) : null
-                            resource = classEntity != null ?
-                                    controllerNameForResource(classEntity) :
-                                    GrailsNameUtils.getPropertyName(resourceAttribute)
+                            if (classEntity != null) {
+                                resourceTarget = resolveResourceTarget(classEntity, attrs)
+                                resource = resourceTarget.controller
+                            } else {
+                                resource = GrailsNameUtils.getPropertyName(resourceAttribute)
+                            }
                         } else {
                             resource = resourceAttribute.toString()
                         }
@@ -264,7 +269,11 @@ class DefaultLinkGenerator implements LinkGenerator, PluginManagerAware {
                     params.put(ATTRIBUTE_ID, id)
                 }
                 def pluginName = attrs.get(UrlMapping.PLUGIN)?.toString()
-                String namespace = resolveNamespace(controller, pluginName, attrs)
+                // A resource link resolved from the request context carries the namespace that chose it,
+                // unless the caller named the controller itself.
+                String namespace = resourceTarget != null && resourceTarget.pinsNamespace && controllerAttribute == null ?
+                        resourceTarget.namespace :
+                        resolveNamespace(controller, pluginName, attrs)
                 UrlCreator mapping = urlMappingsHolder.getReverseMappingNoDefault(controller, action, namespace, pluginName, httpMethod, params)
                 if (mapping == null && isDefaultAction) {
                     mapping = urlMappingsHolder.getReverseMappingNoDefault(controller, null, namespace, pluginName, httpMethod, params)
@@ -358,28 +367,12 @@ class DefaultLinkGenerator implements LinkGenerator, PluginManagerAware {
         // edit). Comparing the array identity rebuilds the index on any such change while staying O(1)
         // on the common path where nothing changed.
         GrailsClass[] controllers = application.getArtefacts(ControllerArtefactHandler.TYPE)
-        ControllerIndex index = controllerNamespacesByName
+        ControllerIndex<String> index = controllerNamespacesByName
         if (index == null || !index.isFor(controllers)) {
-            index = new ControllerIndex(controllers, buildControllerNamespaceIndex(controllers))
+            index = new ControllerIndex<String>(controllers, buildControllerNamespaceIndex(controllers))
             controllerNamespacesByName = index
         }
         return index.entries
-    }
-
-    /**
-     * @return {@code true} if at least one registered controller declares a namespace. Used by the
-     * caching link generator to decide whether a request's namespace context must be folded into the
-     * cache key for link shapes whose target controller it cannot cheaply resolve (resource links).
-     */
-    protected boolean hasNamespacedControllers() {
-        for (Set<String> namespaces in getControllerNamespacesByName().values()) {
-            for (String namespace in namespaces) {
-                if (namespace != null) {
-                    return true
-                }
-            }
-        }
-        return false
     }
 
     private Map<String, Set<String>> buildControllerNamespaceIndex(GrailsClass[] controllers) {
@@ -407,32 +400,97 @@ class DefaultLinkGenerator implements LinkGenerator, PluginManagerAware {
      */
     void resetControllerNamespaceCache() {
         controllerNamespacesByName = null
-        controllerNamesByDomainClass = null
+        controllersByDomainClass = null
     }
 
     /**
-     * Resolves the logical name of the controller a {@code resource} link for the given entity should
-     * target.
+     * Resolves the controller a {@code resource} link for the given entity targets: the most specific
+     * controller that serves the domain class. A controller serves a domain class when it is named after
+     * it, or when it declares it as a generic type argument, as {@code PeopleController extends
+     * RestfulController<Person>} does. The link targets the explicit {@code namespace} when one is given,
+     * which a controller's redirect always supplies, and otherwise the request's own namespace.
+     * Candidates are tried from the most specific to the least:
      *
-     * <p>A controller named after the domain class always wins, so an application that relies on the
-     * naming convention is unaffected. Only when no such controller exists is the controller that
-     * declares the domain class used, which allows a controller named for the resource rather than the
-     * domain class, such as a {@code PeopleController} handling {@code Person}, to be linked to.</p>
+     * <ol>
+     *   <li>the controller handling the current request, if it serves the domain class and is in the
+     *       targeted namespace</li>
+     *   <li>the only controller in the targeted namespace serving the domain class</li>
+     *   <li>the controller named after the domain class</li>
+     *   <li>the only controller declaring the domain class</li>
+     * </ol>
+     *
+     * <p>A level with more than one candidate is ambiguous and falls through to the next rather than
+     * guessing. Outside a request, without an explicit namespace, only the last two apply. When nothing
+     * matches, the controller named after the domain class is assumed, as before.</p>
      *
      * @param entity the domain class being linked to
-     * @return the controller's logical name, falling back to the domain class name when no single
-     *         controller declares it
+     * @param attrs the link attributes, which may carry an explicit {@code namespace}
+     * @return the target controller, and its namespace when the request context chose it
      */
-    private String controllerNameForResource(PersistentEntity entity) {
+    private ResourceTarget resolveResourceTarget(PersistentEntity entity, Map attrs) {
         String derivedName = entity.getDecapitalizedName()
-        if (getControllerNamespacesByName().containsKey(derivedName)) {
-            return derivedName
+        Set<ControllerRef> serving = servingControllers(entity, derivedName)
+        if (serving.isEmpty()) {
+            return new ResourceTarget(derivedName, null, false)
         }
-        Set<String> candidates = getControllerNamesByDomainClass().get(entity.name)
-        candidates != null && candidates.size() == 1 ? candidates.iterator().next() : derivedName
+        boolean explicitNamespace = attrs != null && attrs.containsKey(ATTRIBUTE_NAMESPACE)
+        String currentController = requestStateLookupStrategy.controllerName
+        if (explicitNamespace || currentController != null) {
+            String currentNamespace = requestStateLookupStrategy.controllerNamespace
+            String targetNamespace = explicitNamespace ? resolveNamespace(derivedName, null, attrs) : currentNamespace
+            ControllerRef current = new ControllerRef(currentController, currentNamespace)
+            ControllerRef chosen = currentController != null && current.namespace == targetNamespace && serving.contains(current) ?
+                    current :
+                    onlyIn(serving, targetNamespace)
+            if (chosen != null) {
+                // An explicit namespace is applied by the caller already; otherwise carry the one found.
+                return new ResourceTarget(chosen.name, chosen.namespace, !explicitNamespace)
+            }
+        }
+        Set<String> declaringNames = new HashSet<>()
+        for (ControllerRef ref in serving) {
+            if (ref.name == derivedName) {
+                return new ResourceTarget(derivedName, null, false)
+            }
+            declaringNames.add(ref.name)
+        }
+        String declaring = declaringNames.size() == 1 ? declaringNames.iterator().next() : derivedName
+        return new ResourceTarget(declaring, null, false)
     }
 
-    private Map<String, Set<String>> getControllerNamesByDomainClass() {
+    private Set<ControllerRef> servingControllers(PersistentEntity entity, String derivedName) {
+        Set<ControllerRef> serving = new HashSet<>()
+        Set<String> namedNamespaces = getControllerNamespacesByName().get(derivedName)
+        if (namedNamespaces != null) {
+            for (String namespace in namedNamespaces) {
+                serving.add(new ControllerRef(derivedName, namespace))
+            }
+        }
+        Set<ControllerRef> declaring = getControllersByDomainClass().get(entity.name)
+        if (declaring != null) {
+            serving.addAll(declaring)
+        }
+        return serving
+    }
+
+    /**
+     * @return the only candidate in the given namespace, or {@code null} when there is none or more
+     *         than one
+     */
+    private static ControllerRef onlyIn(Set<ControllerRef> candidates, String namespace) {
+        ControllerRef found = null
+        for (ControllerRef ref in candidates) {
+            if (ref.namespace == namespace) {
+                if (found != null) {
+                    return null
+                }
+                found = ref
+            }
+        }
+        return found
+    }
+
+    private Map<String, Set<ControllerRef>> getControllersByDomainClass() {
         GrailsApplication application = grailsApplication
         if (application == null || mappingContext == null) {
             return Collections.emptyMap()
@@ -441,16 +499,16 @@ class DefaultLinkGenerator implements LinkGenerator, PluginManagerAware {
         // new instance whenever the set of controllers changes, so comparing the array identity rebuilds
         // the index on any such change while staying O(1) on the common path.
         GrailsClass[] controllers = application.getArtefacts(ControllerArtefactHandler.TYPE)
-        ControllerIndex index = controllerNamesByDomainClass
+        ControllerIndex<ControllerRef> index = controllersByDomainClass
         if (index == null || !index.isFor(controllers)) {
-            index = new ControllerIndex(controllers, buildDomainClassControllerIndex(controllers, mappingContext))
-            controllerNamesByDomainClass = index
+            index = new ControllerIndex<ControllerRef>(controllers, buildDomainClassControllerIndex(controllers, mappingContext))
+            controllersByDomainClass = index
         }
         return index.entries
     }
 
-    private Map<String, Set<String>> buildDomainClassControllerIndex(GrailsClass[] controllers, MappingContext context) {
-        Map<String, Set<String>> index = new HashMap<>()
+    private Map<String, Set<ControllerRef>> buildDomainClassControllerIndex(GrailsClass[] controllers, MappingContext context) {
+        Map<String, Set<ControllerRef>> index = new HashMap<>()
         for (GrailsClass gc in controllers) {
             GrailsControllerClass controllerClass = (GrailsControllerClass) gc
             String controllerName = controllerClass.logicalPropertyName
@@ -461,12 +519,12 @@ class DefaultLinkGenerator implements LinkGenerator, PluginManagerAware {
             if (domainClassName == null) {
                 continue
             }
-            Set<String> names = index.get(domainClassName)
-            if (names == null) {
-                names = new HashSet<>()
-                index.put(domainClassName, names)
+            Set<ControllerRef> declaring = index.get(domainClassName)
+            if (declaring == null) {
+                declaring = new HashSet<>()
+                index.put(domainClassName, declaring)
             }
-            names.add(controllerName)
+            declaring.add(new ControllerRef(controllerName, controllerClass.namespace))
         }
         return index
     }
@@ -681,18 +739,62 @@ class DefaultLinkGenerator implements LinkGenerator, PluginManagerAware {
      * controllers next to the new array, after which the identity check passed and the stale index was
      * served until the controllers changed again.</p>
      */
-    private static final class ControllerIndex {
+    private static final class ControllerIndex<T> {
 
         final GrailsClass[] controllers
-        final Map<String, Set<String>> entries
+        final Map<String, Set<T>> entries
 
-        ControllerIndex(GrailsClass[] controllers, Map<String, Set<String>> entries) {
+        ControllerIndex(GrailsClass[] controllers, Map<String, Set<T>> entries) {
             this.controllers = controllers
             this.entries = entries
         }
 
         boolean isFor(GrailsClass[] current) {
             current.is(controllers)
+        }
+    }
+
+    /**
+     * A controller as a link addresses it: by logical name and namespace, {@code null} being the
+     * default namespace.
+     */
+    private static final class ControllerRef {
+
+        final String name
+        final String namespace
+
+        ControllerRef(String name, String namespace) {
+            this.name = name
+            this.namespace = namespace
+        }
+
+        @Override
+        boolean equals(Object other) {
+            other instanceof ControllerRef &&
+                    name == ((ControllerRef) other).name &&
+                    namespace == ((ControllerRef) other).namespace
+        }
+
+        @Override
+        int hashCode() {
+            Objects.hash(name, namespace)
+        }
+    }
+
+    /**
+     * The controller a resource link resolved to. When the request context chose it, the namespace it
+     * was found in is carried as well, so the link stays in that namespace.
+     */
+    private static final class ResourceTarget {
+
+        final String controller
+        final String namespace
+        final boolean pinsNamespace
+
+        ResourceTarget(String controller, String namespace, boolean pinsNamespace) {
+            this.controller = controller
+            this.namespace = namespace
+            this.pinsNamespace = pinsNamespace
         }
     }
 }
