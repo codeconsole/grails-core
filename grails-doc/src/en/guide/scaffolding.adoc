@@ -59,6 +59,10 @@ With this configured, when you start your application the actions and views will
 
 A CRUD interface will also be generated. To access this open `http://localhost:8080/book` in a browser.
 
+When the application is built, the Gradle plugin's `generateScaffoldedViews` task expands every scaffolding template for every domain class a controller scaffolds with `@Scaffold`, and `compileGroovyPages` compiles the resulting pages with the application's views. A packaged application then renders a scaffolded view without generating it on the first request, and a native image, which cannot compile a page at runtime, can render it at all.
+
+Compiling the pages does not change which page a request gets. A view the application or a plugin declares still takes precedence, a controller with a `namespace` still uses a namespace-specific template when one exists, and a template in `src/main/templates/scaffolding` still overrides the one a plugin provides. The compiled page is used only when it was expanded from the same template, for the same domain class, that the application resolves when the view is requested. When it was not, for example with templates supplied by a plugin that overrides the scaffolding templates or with the `static scaffold` property described below, the template is expanded on its first use as before. A native image cannot do that, so provide a concrete GSP view for such a controller.
+
 If you prefer to keep your domain model in Java and https://hibernate.org/[mapped with Hibernate] you can still use scaffolding, simply import the domain class and use it in the `@Scaffold` annotation.
 
 ===== Legacy Static Scaffold Property
