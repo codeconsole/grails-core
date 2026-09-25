@@ -163,6 +163,10 @@ class GlobalGrailsClassInjectorTransformation implements ASTTransformation, Comp
             if (GrailsASTUtils.isSubclassOfOrImplementsInterface(classNode, GRAILS_AUTO_CONFIGURATION_CLASS_NAME)) {
                 compileBeansDsl(classNode, source)
             }
+            // A unit test's beans compile onto a nested configuration class the testing support registers
+            if (GrailsBeansASTTransformation.isUnitTest(classNode)) {
+                compileBeansDsl(classNode, source)
+            }
             if (updateGrailsFactoriesWithTypes(classNode, [ARTEFACT_HANDLER_CLASS, TRAIT_INJECTOR_CLASS], compilationTargetDirectory)) {
                 continue
             }
@@ -360,10 +364,10 @@ class GlobalGrailsClassInjectorTransformation implements ASTTransformation, Comp
     }
 
     /**
-     * Compiles a plugin descriptor's or application class's {@code beans} closure into {@code @Bean}
-     * factory methods, so {@code @GrailsBeans} does not have to be written out - the {@code beans}
-     * property is a convention here in the same way {@code doWithSpring} and {@code watchedResources}
-     * already are.
+     * Compiles a plugin descriptor's, application class's or unit test's {@code beans} closure
+     * into {@code @Bean} factory methods, so {@code @GrailsBeans} does not have to be written out -
+     * the {@code beans} property is a convention here in the same way {@code doWithSpring} and
+     * {@code watchedResources} already are.
      *
      * <p>The transformation is invoked directly rather than by adding the annotation: annotation-driven
      * transformations are collected during semantic analysis, so an annotation added at
@@ -387,6 +391,8 @@ class GlobalGrailsClassInjectorTransformation implements ASTTransformation, Comp
         if (beansProperty == null || !classNode.getAnnotations(GRAILS_BEANS_ANNOTATION).isEmpty()) {
             return
         }
+        // A Spock specification's field initializer has been moved into a method by now
+        GrailsBeansASTTransformation.reclaimMovedInitializer(classNode, beansProperty)
         List<Statement> statements = beansDslStatements(beansProperty)
         if (statements == null) {
             return

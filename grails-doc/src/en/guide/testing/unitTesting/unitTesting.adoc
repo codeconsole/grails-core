@@ -25,9 +25,35 @@ The following functionality is available to all tests
 
 Any modifications to the context will be specific to that test class. A new context is created for each test class. Artifacts under test are subjected to dependency injection just like they are in the running application. The unit testing environment does not spin up the entire Spring application context with all of the beans that would normally be configured in the running application. Unit tests may register any beans necessary to carry out the test in a number of different ways.
 
+==== beans
+
+To provide or replace beans in the context, declare them in a `beans` property with the <<springdslAdditional,`beans` DSL>>, as an application class or a plugin does:
+
+[source,groovy]
+----
+class ReportServiceSpec extends Specification implements ServiceUnitTest<ReportService> {
+
+    def beans = {
+        bean(SomeHelper)
+
+        bean('reportCache', ReportCache) { SomeHelper someHelper ->
+        }
+    }
+
+    void "the report uses the cache"() {
+        expect:
+        service.reportCache.helper instanceof SomeHelper
+    }
+}
+----
+
+The block is compiled into a static nested configuration class, `BeansConfiguration`, which the test's context registers as it does any nested configuration class (see below). No annotation is needed. A `beans` block in a base test applies to the tests that extend it.
+
+A bean body cannot use the test's own fields or methods: the beans are created before any instance of the test exists. Declare what a bean depends on as a closure parameter instead, as `reportCache` does above.
+
 ==== beanRegistrar
 
-To provide or replace beans in the context, override the `beanRegistrar` method and return a Spring Framework link:{springapi}org/springframework/beans/factory/BeanRegistrar.html[BeanRegistrar] — the same hook plugins and applications use to register beans. `BeanRegistrar` is a functional interface, so a closure coerced with `as BeanRegistrar` is all that is required.
+For registration that needs more than the DSL, override the `beanRegistrar` method and return a Spring Framework link:{springapi}org/springframework/beans/factory/BeanRegistrar.html[BeanRegistrar] — the same hook plugins and applications use to register beans. `BeanRegistrar` is a functional interface, so a closure coerced with `as BeanRegistrar` is all that is required.
 
 [source,groovy]
 ----
@@ -49,36 +75,27 @@ The registrar is applied at the point an application's is at boot: after the dep
 
 ==== Configuration classes
 
-A test's static nested classes annotated `@Configuration` are registered in its context, as are those of any test it extends — the convention Spring's own test support follows. They are registered ahead of the framework's auto-configurations, as an application's own configuration is, so an auto-configuration guarded by `@ConditionalOnMissingBean` backs off from the beans they declare.
-
-That is also how a test declares beans with the <<springdslAdditional,`beans` DSL>>: annotate the nested class `@GrailsBeans` as well.
+A test's static nested classes annotated `@Configuration` are registered in its context, as are those of any test it extends — the convention Spring's own test support follows. They are registered ahead of the framework's auto-configurations, as an application's own configuration is, so an auto-configuration guarded by `@ConditionalOnMissingBean` backs off from the beans they declare. The class a `beans` block compiles to is one of them.
 
 [source,groovy]
 ----
-import grails.compiler.beans.GrailsBeans
+import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 
 class ReportServiceSpec extends Specification implements ServiceUnitTest<ReportService> {
 
-    @GrailsBeans
     @Configuration
-    static class Beans {
-        def beans = {
-            bean(SomeHelper)
+    static class ReportingConfiguration {
 
-            bean('reportCache', ReportCache) { SomeHelper someHelper ->
-            }
+        @Bean
+        ReportCache reportCache(SomeHelper someHelper) {
+            new ReportCache(someHelper)
         }
-    }
-
-    void "the report uses the cache"() {
-        expect:
-        service.reportCache.helper instanceof SomeHelper
     }
 }
 ----
 
-To register classes other than the nested ones, override `getConfigurationClasses` and return them; the nested classes are then not registered unless the returned set includes them.
+To register classes other than the nested ones, override `getConfigurationClasses` and return them; the nested classes, the one a `beans` block compiles to included, are then not registered unless the returned set includes them.
 
 [source,groovy]
 ----
@@ -89,7 +106,7 @@ Set<Class<?>> getConfigurationClasses() {
 
 ==== doWithSpring
 
-WARNING: `doWithSpring` is deprecated in Grails {grailsMajorVersion}, as it is on plugins and applications. It keeps working, but the bean builder DSL receives no fixes for new issues — prefer `beanRegistrar` or a configuration class.
+WARNING: `doWithSpring` is deprecated in Grails {grailsMajorVersion}, as it is on plugins and applications. It keeps working, but the bean builder DSL receives no fixes for new issues — prefer a `beans` block, `beanRegistrar` or a configuration class.
 
 [source,groovy]
 ----

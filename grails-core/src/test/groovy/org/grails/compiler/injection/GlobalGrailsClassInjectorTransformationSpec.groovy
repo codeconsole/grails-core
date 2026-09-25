@@ -22,6 +22,7 @@ import groovy.xml.XmlSlurper
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ClassHelper
 import org.codehaus.groovy.ast.ClassNode
+import org.codehaus.groovy.ast.Parameter
 import org.codehaus.groovy.classgen.GeneratorContext
 import org.codehaus.groovy.control.CompilationFailedException
 import org.codehaus.groovy.control.CompilationUnit
@@ -411,6 +412,42 @@ class GlobalGrailsClassInjectorTransformationSpec extends Specification {
             classNode.getProperty('beans') == null
 
         and: "only the sibling generated for a plugin descriptor is registered, and there is none here"
+            !new File(targetDir,
+                    'META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports').exists()
+    }
+
+    void "the implicit beans convention compiles a unit test's beans closure onto a nested configuration class"() {
+        given: "a Spock spec implementing the testing support's trait, stood in for here, in a test source directory"
+            def testSources = new File(tempDir, 'src/test/groovy')
+            def trait = new File(testSources, 'org/grails/testing/GrailsUnitTest.groovy')
+            trait.parentFile.mkdirs()
+            trait.text = 'package org.grails.testing\ninterface GrailsUnitTest { }\n'
+            def spec = new File(testSources, 'ReportServiceSpec.groovy')
+            spec.text = '''
+                class ReportServiceSpec extends spock.lang.Specification implements org.grails.testing.GrailsUnitTest {
+                    def beans = {
+                        bean('greeting', String) { 'hello' }
+                    }
+                }
+            '''
+            def targetDir = new File(tempDir, 'build/classes/groovy/test')
+
+        when:
+            def cu = new CompilationUnit(new CompilerConfiguration(targetDirectory: targetDir))
+            cu.addSource(trait)
+            cu.addSource(spec)
+            cu.compile(Phases.CANONICALIZATION)
+            ClassNode test = cu.AST.getClass('ReportServiceSpec')
+            ClassNode configuration = cu.AST.getClass('ReportServiceSpec$BeansConfiguration')
+
+        then: "the property is consumed with no @GrailsBeans written"
+            test.getProperty('beans') == null
+
+        and: "the beans are on the nested class the testing support registers"
+            configuration != null
+            configuration.getMethod('greeting', [] as Parameter[]) != null
+
+        and: "nothing is registered as an auto-configuration"
             !new File(targetDir,
                     'META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports').exists()
     }

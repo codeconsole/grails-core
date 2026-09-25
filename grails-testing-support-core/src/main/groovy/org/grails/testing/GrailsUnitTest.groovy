@@ -161,9 +161,9 @@ trait GrailsUnitTest {
     /**
      * Beans for the test application context in the bean builder DSL.
      *
-     * @deprecated since 8.0, as {@code doWithSpring()} is on plugins and applications, in favour of
-     * {@link #beanRegistrar()} or a configuration class (see {@link #getConfigurationClasses()}).
-     * The DSL keeps working but receives no fixes for new issues.
+     * @deprecated since 8.0, as {@code doWithSpring()} is on plugins and applications, in favour of a
+     * {@code beans} block, {@link #beanRegistrar()} or a configuration class (see
+     * {@link #getConfigurationClasses()}). The DSL keeps working but receives no fixes for new issues.
      */
     @Deprecated(since = '8.0')
     Closure doWithSpring() {
@@ -189,9 +189,8 @@ trait GrailsUnitTest {
      *
      * <p>By default, the static nested classes of the test, and of any test it extends, annotated
      * {@code @Configuration} directly or through another annotation such as {@code @AutoConfiguration}
-     * - the convention Spring's own test support follows. A nested {@code @GrailsBeans @Configuration}
-     * class is how a test declares beans with the {@code beans} DSL. Override to register other
-     * classes instead.</p>
+     * - the convention Spring's own test support follows. A test's {@code beans} block compiles into
+     * one of them, {@code BeansConfiguration}. Override to register other classes instead.</p>
      *
      * @since 8.0
      */

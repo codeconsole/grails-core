@@ -69,6 +69,7 @@ import org.codehaus.groovy.ast.expr.ClosureExpression;
 import org.codehaus.groovy.ast.expr.ConstantExpression;
 import org.codehaus.groovy.ast.expr.ConstructorCallExpression;
 import org.codehaus.groovy.ast.expr.Expression;
+import org.codehaus.groovy.ast.expr.FieldExpression;
 import org.codehaus.groovy.ast.expr.ListExpression;
 import org.codehaus.groovy.ast.expr.MapEntryExpression;
 import org.codehaus.groovy.ast.expr.MapExpression;
@@ -252,6 +253,10 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
     private static final String AUTO_CONFIGURATION_NAME_MEMBER = "autoConfigurationName";
     private static final String MOVE_ANNOTATIONS_MEMBER = "moveAnnotations";
     private static final String PROXY_BEAN_METHODS_MEMBER = "proxyBeanMethods";
+    /** Named, not referenced: this module does not depend on the testing support. */
+    static final String UNIT_TEST_TRAIT_NAME = "org.grails.testing.GrailsUnitTest";
+    /** The nested class a unit test's beans compile onto; the Configuration suffix as a group's has. */
+    static final String UNIT_TEST_CONFIGURATION_NAME = "BeansConfiguration";
     private static final String DUMP_DIR_PROPERTY = "grails.beans.dsl.dumpdir";
 
     private CompilationUnit compilationUnit;
@@ -270,6 +275,7 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
             addError(classNode, source, "@GrailsBeans requires a 'beans' property initialised to a closure");
             return;
         }
+        reclaimMovedInitializer(classNode, beansProperty);
 
         Expression initialExpression = beansProperty.getInitialExpression();
         if (!(initialExpression instanceof ClosureExpression)) {
@@ -289,6 +295,7 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
         }
 
         boolean isPlugin = extendsGrailsPlugin(classNode);
+        boolean isUnitTest = !isPlugin && isUnitTest(classNode);
         if (!isPlugin) {
             for (String pluginOnlyMember : new String[] { AUTO_CONFIGURATION_NAME_MEMBER, MOVE_ANNOTATIONS_MEMBER }) {
                 if (grailsBeansAnnotation.getMember(pluginOnlyMember) != null) {
@@ -299,8 +306,19 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
             }
         }
 
-        ClassNode beanMethodHost = isPlugin ?
-                createAutoConfigurationSibling(classNode, grailsBeansAnnotation, source) : classNode;
+        ClassNode beanMethodHost;
+        if (isPlugin) {
+            beanMethodHost = createAutoConfigurationSibling(classNode, grailsBeansAnnotation, source);
+        }
+        else if (isUnitTest) {
+            beanMethodHost = createUnitTestConfiguration(classNode, beansProperty, source);
+            if (beanMethodHost == null) {
+                return;
+            }
+        }
+        else {
+            beanMethodHost = classNode;
+        }
 
         Set<String> usedNames = existingMemberNames(beanMethodHost);
         validateSharedBeanNames(statements, classNode, source);
@@ -326,9 +344,10 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
         generatedFields.removeAll(preExistingFields);
         rejectUnproxiedSiblingBeanCalls(beanMethodHost, generatedMethods, source);
         if (beanMethodHost != classNode) {
-            // Only on a plugin descriptor. On a plain host the beans and the anonymous class share a
-            // home, so this$0 is never retyped and an unqualified reference resolves as it reads.
-            rejectAnonymousClassReachingOutward(beanMethodHost, false, generatedMethods, source);
+            // Only on a plugin descriptor or a unit test. On a plain host the beans and the anonymous
+            // class share a home, so this$0 is never retyped and an unqualified reference resolves as
+            // it reads.
+            rejectAnonymousClassReachingOutward(beanMethodHost, isUnitTest, generatedMethods, source);
         }
         dumpGeneratedMembers(beanMethodHost, generatedMethods, generatedFields, source);
 
@@ -348,6 +367,91 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
         // behind, so another member still referring to 'beans' type-checks and compiles to a
         // getfield against a field that is never emitted, failing with NoSuchFieldError at runtime.
         classNode.removeField(BEANS_PROPERTY);
+    }
+
+    /**
+     * Puts back a {@code beans} closure that Spock moved off its field. Spock compiles a
+     * specification's field initializers into a generated method, as {@code field = value}
+     * statements, before this transformation runs; left there, the block would be found empty here,
+     * and the statement would outlive the field this removes. The statement is found by the field
+     * it assigns, not by where Spock put it.
+     */
+    public static void reclaimMovedInitializer(ClassNode classNode, PropertyNode beansProperty) {
+        FieldNode field = beansProperty.getField();
+        if (field == null || field.getInitialExpression() != null) {
+            return;
+        }
+        for (MethodNode method : classNode.getMethods()) {
+            if (method.getCode() instanceof BlockStatement &&
+                    reclaimFrom((BlockStatement) method.getCode(), field)) {
+                return;
+            }
+        }
+    }
+
+    private static boolean reclaimFrom(BlockStatement block, FieldNode field) {
+        List<Statement> statements = block.getStatements();
+        for (int i = 0; i < statements.size(); i++) {
+            Statement statement = statements.get(i);
+            if (statement instanceof BlockStatement && reclaimFrom((BlockStatement) statement, field)) {
+                return true;
+            }
+            if (!(statement instanceof ExpressionStatement) ||
+                    !(((ExpressionStatement) statement).getExpression() instanceof BinaryExpression)) {
+                continue;
+            }
+            BinaryExpression assignment = (BinaryExpression) ((ExpressionStatement) statement).getExpression();
+            if (assignment.getOperation().getType() == Types.ASSIGN &&
+                    assignment.getLeftExpression() instanceof FieldExpression &&
+                    ((FieldExpression) assignment.getLeftExpression()).getField() == field &&
+                    assignment.getRightExpression() instanceof ClosureExpression) {
+                statements.remove(i);
+                field.setInitialValueExpression(assignment.getRightExpression());
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * A class implementing the testing support's {@code GrailsUnitTest} trait, as every Grails
+     * testing trait does. Checked with {@link ClassNode#implementsInterface}, which follows every
+     * super-interface and superclass, so a spec inheriting the trait from a base spec counts.
+     */
+    public static boolean isUnitTest(ClassNode classNode) {
+        return classNode.implementsInterface(ClassHelper.make(UNIT_TEST_TRAIT_NAME));
+    }
+
+    /**
+     * The static nested {@code @Configuration(proxyBeanMethods = false)} class a unit test's beans
+     * compile onto, which the testing support registers with the test's application context as it
+     * does any nested configuration class. The test class itself cannot host them: Spring would have
+     * to construct an instance of its own to call them, outside Spock, where the test's field
+     * initializers - a {@code Mock()}, say - cannot run.
+     *
+     * @return the class, or {@code null} after reporting that the test already declares one of that name
+     */
+    private ClassNode createUnitTestConfiguration(ClassNode testClass, PropertyNode beansProperty, SourceUnit source) {
+        String name = testClass.getName() + "$" + UNIT_TEST_CONFIGURATION_NAME;
+        for (ClassNode existing : source.getAST().getClasses()) {
+            if (existing.getName().equals(name)) {
+                addError(beansProperty, source, testClass.getNameWithoutPackage() + " already declares a nested " +
+                        "class named " + UNIT_TEST_CONFIGURATION_NAME + " - a unit test's beans compile onto a " +
+                        "nested class of that name, so rename the existing one");
+                return null;
+            }
+        }
+        InnerClassNode configuration = new InnerClassNode(testClass, name,
+                Modifier.PUBLIC | Modifier.STATIC, ClassHelper.OBJECT_TYPE);
+        configuration.setSourcePosition(beansProperty);
+        source.getAST().addClass(configuration);
+
+        // proxyBeanMethods = false, as a group's nested class has: nothing here needs CGLIB, and it
+        // keeps the sibling-call check meaningful.
+        AnnotationNode annotation = new AnnotationNode(ClassHelper.make(Configuration.class));
+        annotation.setMember(PROXY_BEAN_METHODS_MEMBER, new ConstantExpression(Boolean.FALSE));
+        configuration.addAnnotation(withPosition(annotation, beansProperty));
+        return configuration;
     }
 
     private boolean extendsGrailsPlugin(ClassNode classNode) {
@@ -1504,7 +1608,8 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
      * <p>Groovy fixes an inner class's outer class when it creates the node and offers no way to
      * move it, so a class constructed in a bean body stays homed on the class the {@code beans}
      * block was written on, while the members around it compile somewhere else - onto the generated
-     * sibling of a plugin descriptor, or onto a {@code group(...)}'s nested class. Its MOP dispatch
+     * sibling of a plugin descriptor, or onto the nested class of a {@code group(...)} or of a unit
+     * test. Its MOP dispatch
      * methods then read a {@code this$0} typed as the original home where the field holds the new
      * one, and the reference fails with {@code NoSuchFieldError} inside a running application - or,
      * under {@code @CompileStatic}, as a "cannot find matching method" naming a synthetic class
@@ -1524,7 +1629,7 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
      * that declares {@code methodMissing} or {@code propertyMissing} can answer anything at all,
      * and is left alone entirely.</p>
      */
-    private void rejectAnonymousClassReachingOutward(ClassNode owner, boolean isGroup,
+    private void rejectAnonymousClassReachingOutward(ClassNode owner, boolean staticNestedOwner,
             List<MethodNode> generatedMethods, SourceUnit source) {
         for (MethodNode method : generatedMethods) {
             List<ConstructorCallExpression> anonymous = new ArrayList<>();
@@ -1549,7 +1654,7 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
                 }
             }
             for (ConstructorCallExpression call : anonymous) {
-                reportOutwardReferences(call.getType(), owner, isGroup, source,
+                reportOutwardReferences(call.getType(), owner, staticNestedOwner, source,
                         new HashSet<>(), new HashSet<>(), EnclosingMethodMode.NONE);
             }
         }
@@ -1559,7 +1664,7 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
     // inner anonymous class's own enclosing-instance field was never retyped - it holds the outer
     // anonymous class, exactly as written - so a name on that outer class does resolve from here,
     // and only what lies beyond the outermost one is out of reach.
-    private void reportOutwardReferences(ClassNode inner, ClassNode owner, boolean isGroup,
+    private void reportOutwardReferences(ClassNode inner, ClassNode owner, boolean staticNestedOwner,
             SourceUnit source, Set<String> enclosingReachable, Set<ClassNode> visited,
             EnclosingMethodMode enclosingMode) {
         if (!visited.add(inner) || answersAnything(inner)) {
@@ -1604,31 +1709,31 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
             // baseOwn, not the body's set, is what a class nested here inherits: the statics have to
             // reach it through its own answer or not at all, or a static body would hand them over
             // before that answer is ever consulted.
-            recurseIntoNested(walkBody(method.getCode(), inner, owner, isGroup, source,
+            recurseIntoNested(walkBody(method.getCode(), inner, owner, staticNestedOwner, source,
                     enclosingStatics, bodyStatic ? ownWithStatics : baseOwn),
-                    owner, isGroup, source, baseOwn, visited, nestedMethodMode(enclosingMode, methodMode));
+                    owner, staticNestedOwner, source, baseOwn, visited, nestedMethodMode(enclosingMode, methodMode));
         }
         // A field initializer and an object initializer are the class's code too - the Verifier only
         // folds them into the constructor at class generation, long after this - and there is
         // nowhere to annotate them, so they keep the class's answer.
         for (FieldNode field : inner.getFields()) {
             if (field.getInitialExpression() != null) {
-                recurseIntoNested(walkBody(field.getInitialExpression(), inner, owner, isGroup, source,
+                recurseIntoNested(walkBody(field.getInitialExpression(), inner, owner, staticNestedOwner, source,
                         enclosingStatics, classOwn),
-                        owner, isGroup, source, baseOwn, visited, enclosingMode);
+                        owner, staticNestedOwner, source, baseOwn, visited, enclosingMode);
             }
         }
         for (Statement statement : inner.getObjectInitializerStatements()) {
-            recurseIntoNested(walkBody(statement, inner, owner, isGroup, source, enclosingStatics,
-                    classOwn), owner, isGroup, source, baseOwn, visited, enclosingMode);
+            recurseIntoNested(walkBody(statement, inner, owner, staticNestedOwner, source, enclosingStatics,
+                    classOwn), owner, staticNestedOwner, source, baseOwn, visited, enclosingMode);
         }
     }
 
     private void recurseIntoNested(List<ConstructorCallExpression> nested, ClassNode owner,
-            boolean isGroup, SourceUnit source, Set<String> enclosingReachable,
+            boolean staticNestedOwner, SourceUnit source, Set<String> enclosingReachable,
             Set<ClassNode> visited, EnclosingMethodMode enclosingMode) {
         for (ConstructorCallExpression call : nested) {
-            reportOutwardReferences(call.getType(), owner, isGroup, source, enclosingReachable,
+            reportOutwardReferences(call.getType(), owner, staticNestedOwner, source, enclosingReachable,
                     visited, enclosingMode);
         }
     }
@@ -1659,7 +1764,7 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
     }
 
     private List<ConstructorCallExpression> walkBody(ASTNode body, ClassNode inner, ClassNode owner,
-            boolean isGroup, SourceUnit source, Set<String> enclosingStatics, Set<String> own) {
+            boolean staticNestedOwner, SourceUnit source, Set<String> enclosingStatics, Set<String> own) {
         List<ConstructorCallExpression> nested = new ArrayList<>();
         body.visit(new CodeVisitorSupport() {
                 // Deliberately not descending, the same reason rejectUnproxiedSiblingBeanCalls does
@@ -1722,7 +1827,7 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
                         return;
                     }
                     addError(at, source, "\"" + name + callSuffix + "\" does not resolve on this anonymous " +
-                            "inner class, and " + reachDescription(owner, isGroup) + ". The reference would " +
+                            "inner class, and " + reachDescription(owner, staticNestedOwner) + ". The reference would " +
                             "fail at runtime - with NoSuchFieldError, or a ClassCastException where the class " +
                             "sits inside a nested closure. Pass what the anonymous class needs as a constructor " +
                             "argument or a captured local, or give it a name and declare it as a static nested " +
@@ -1736,9 +1841,9 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
         return nested;
     }
 
-    private String reachDescription(ClassNode owner, boolean isGroup) {
-        if (isGroup) {
-            return "a group's beans compile onto " + owner.getNameWithoutPackage() + ", a static nested " +
+    private String reachDescription(ClassNode owner, boolean staticNestedOwner) {
+        if (staticNestedOwner) {
+            return "these beans compile onto " + owner.getNameWithoutPackage() + ", a static nested " +
                     "class with no enclosing instance behind it, so nothing outside the anonymous class " +
                     "is in reach";
         }
