@@ -71,9 +71,9 @@ import org.gradle.process.JavaExecSpec
  * it, and no others:</p>
  * <ul>
  *   <li>The resolver looks for a template beside the controller's class first. For an application
- *   controller that is the application's own template, from {@code src/main/templates/scaffolding},
- *   which so replaces every dependency's copy of it; for a plugin's controller it is the plugin's
- *   own.</li>
+ *   controller that is the application's own template, from {@code src/main/templates/scaffolding}
+ *   or its resources, which so replaces every dependency's copy of it; for a plugin's controller it
+ *   is the plugin's own.</li>
  *   <li>Beyond that it depends on what the build cannot see - a plugin that overrides the templates,
  *   the order of the classpath the application runs with - so every distinct copy is expanded, and
  *   whichever the resolver chooses has its page.</li>
@@ -116,10 +116,10 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
     abstract ConfigurableFileCollection getClassesDirs()
 
     /**
-     * The application's own templates, as a tree rooted at the template directory: normally
-     * {@code src/main/templates/scaffolding}. A template's path within the tree is its path as the
-     * resolver asks for it, so {@code admin/show.gsp} is the {@code show} template of the
-     * {@code admin} namespace.
+     * The application's own templates, as trees rooted at the template directory: normally
+     * {@code src/main/templates/scaffolding} and {@code META-INF/templates/scaffolding} under the
+     * resource directories. A template's path within its tree is its path as the resolver asks for
+     * it, so {@code admin/show.gsp} is the {@code show} template of the {@code admin} namespace.
      */
     @InputFiles
     @Optional

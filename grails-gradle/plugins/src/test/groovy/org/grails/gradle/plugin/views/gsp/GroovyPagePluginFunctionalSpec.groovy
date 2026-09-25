@@ -173,6 +173,8 @@ class GroovyPagePluginFunctionalSpec extends GradleSpecification {
             """,
             'src/main/templates/scaffolding/show.gsp': 'show ${className}',
             'src/main/templates/scaffolding/admin/show.gsp': 'admin show ${className}',
+            // a template the application keeps with its resources, which are packaged the same way
+            'src/main/resources/META-INF/templates/scaffolding/edit.gsp': 'resources edit ${className}',
             // a template from a dependency the application only has at runtime
             'theme/META-INF/templates/scaffolding/list.gsp': 'theme list ${className}',
             'grails-app/views/book/index.gsp': 'handwritten index'
@@ -211,10 +213,11 @@ class GroovyPagePluginFunctionalSpec extends GradleSpecification {
 
         and: 'every template the application runs with is expanded for every scaffolded domain class'
         pagesOf('java.lang.String') == ['show.gsp': 'show ${className}', 'admin/show.gsp': 'admin show ${className}',
-                                        'list.gsp': 'theme list ${className}']
+                                        'edit.gsp': 'resources edit ${className}', 'list.gsp': 'theme list ${className}']
 
         and: 'a namespace-specific one only for a domain class a namespaced controller scaffolds'
-        pagesOf('java.lang.Integer') == ['show.gsp': 'show ${className}', 'list.gsp': 'theme list ${className}']
+        pagesOf('java.lang.Integer') == ['show.gsp': 'show ${className}', 'edit.gsp': 'resources edit ${className}',
+                                         'list.gsp': 'theme list ${className}']
 
         when:
         def inspection = executeTask('inspectGeneratedPages')
@@ -229,6 +232,6 @@ class GroovyPagePluginFunctionalSpec extends GradleSpecification {
         then: 'the pages expanded from it are replaced, not added to'
         assertTaskSuccess('stageGroovyPages', rebuild)
         pagesOf('java.lang.String') == ['show.gsp': 'edited show ${className}', 'admin/show.gsp': 'admin show ${className}',
-                                        'list.gsp': 'theme list ${className}']
+                                        'edit.gsp': 'resources edit ${className}', 'list.gsp': 'theme list ${className}']
     }
 }
