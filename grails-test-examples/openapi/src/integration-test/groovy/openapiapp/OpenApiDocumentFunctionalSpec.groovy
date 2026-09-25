@@ -117,6 +117,10 @@ class OpenApiDocumentFunctionalSpec extends Specification implements HttpClientS
         document.paths.keySet().findAll { String path -> path.startsWith('/publisher/') } ==
                 ['/publisher/index', '/publisher/show/{id}'] as Set
 
+        and: 'the default mapping answers the path of the controller alone with its index'
+        document.paths['/publisher'].keySet() == ['get'] as Set
+        http('/publisher').assertStatus(200)
+
         and: 'a write the document leaves out is one the controller refuses'
         httpPostJson('/publishers', '{"name":"Ace"}').assertStatus(405)
     }

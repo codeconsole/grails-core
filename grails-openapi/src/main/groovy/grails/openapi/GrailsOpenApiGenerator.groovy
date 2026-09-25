@@ -339,14 +339,16 @@ class GrailsOpenApiGenerator {
          * A mapping whose action is optional reaches the controller's default action where the path
          * leaves the action out, and every variable after it, which Grails would take for the action.
          */
-        private void addDefaultActionOperation(UrlMapping mapping, GrailsControllerClass controller, String controllerName) {
+        private void addDefaultActionOperation(UrlMapping mapping, GrailsControllerClass controller, String controllerName,
+                                               Map<String, String> substitutions = [:], Set<String> omitted = [] as Set) {
             String actionName = controller.defaultAction
             if (!actionName || !controller.actions.contains(actionName) || !isDescribed(controller, controller.clazz, actionName)) {
                 return
             }
             List<String> names = UrlMappingPaths.variableNames(mapping)
-            Set<String> omitted = names.subList(names.indexOf(ACTION_TOKEN), names.size()).toSet()
-            List<String> described = UrlMappingPaths.paths(mapping, [:], omitted).take(1)
+            Set<String> left = new HashSet<String>(omitted)
+            left.addAll(names.subList(names.indexOf(ACTION_TOKEN), names.size()))
+            List<String> described = UrlMappingPaths.paths(mapping, substitutions, left).take(1)
             for (PathItem.HttpMethod method : httpMethods(mapping.httpMethod, controller, actionName)) {
                 for (String path : described) {
                     addOperation(mapping, path, method, controller, controller.clazz, controllerName, actionName,
@@ -421,6 +423,7 @@ class GrailsOpenApiGenerator {
                 }
 
                 boolean capturesNamespace = names.contains(NAMESPACE_TOKEN)
+                boolean optionalAction = expandsAction && UrlMappingPaths.isOptional(mapping, ACTION_TOKEN)
                 for (GrailsControllerClass controller : reached) {
                     // A mapping that leaves the namespace out reaches the controller Grails resolves for
                     // the name alone; one that captures it reaches each controller at its own.
@@ -431,6 +434,18 @@ class GrailsOpenApiGenerator {
                     for (String actionName : actions) {
                         DocumentParts.describe("action [${controller.logicalPropertyName}.${actionName}]".toString()) {
                             addExpandedOperation(mapping, controller, actionName, expandsAction)
+                        }
+                    }
+                    if (optionalAction) {
+                        // As for a mapping naming the controller, the path without the action reaches
+                        // the default action: GET /book is the index of "/$controller/$action?/$id?".
+                        DocumentParts.describe("action [${controller.logicalPropertyName}.${controller.defaultAction}]".toString()) {
+                            Map<String, String> substitutions = [:]
+                            Set<String> omitted = [] as Set
+                            if (reachedAt(mapping, controller, substitutions, omitted)) {
+                                addDefaultActionOperation(mapping, controller, controller.logicalPropertyName,
+                                        substitutions, omitted)
+                            }
                         }
                     }
                 }
@@ -447,19 +462,10 @@ class GrailsOpenApiGenerator {
             }
 
             String controllerName = controller.logicalPropertyName
-            Map<String, String> substitutions = [(CONTROLLER_TOKEN): controllerName]
+            Map<String, String> substitutions = [:]
             Set<String> omitted = [] as Set
-            if (UrlMappingPaths.variableNames(mapping).contains(NAMESPACE_TOKEN)) {
-                if (controller.namespace) {
-                    substitutions[NAMESPACE_TOKEN] = controller.namespace
-                }
-                else if (UrlMappingPaths.isOptional(mapping, NAMESPACE_TOKEN)) {
-                    omitted << NAMESPACE_TOKEN
-                }
-                else {
-                    // A namespace the controller does not have does not reach it.
-                    return
-                }
+            if (!reachedAt(mapping, controller, substitutions, omitted)) {
+                return
             }
             boolean takesId = controllers.takesId(controller, actionName)
             if (expandsAction) {
@@ -481,6 +487,31 @@ class GrailsOpenApiGenerator {
                     addOperation(mapping, path, method, controller, controller.clazz, controllerName, actionName, operationId)
                 }
             }
+        }
+
+        /**
+         * Fixes the controller, and the namespace where the mapping captures it, to those of the
+         * controller a mapping is expanded for.
+         *
+         * @return false where the mapping does not reach the controller: it captures a namespace the
+         * controller does not have
+         */
+        private boolean reachedAt(UrlMapping mapping, GrailsControllerClass controller, Map<String, String> substitutions,
+                                  Set<String> omitted) {
+            substitutions[CONTROLLER_TOKEN] = controller.logicalPropertyName
+            if (!UrlMappingPaths.variableNames(mapping).contains(NAMESPACE_TOKEN)) {
+                return true
+            }
+            if (controller.namespace) {
+                substitutions[NAMESPACE_TOKEN] = controller.namespace
+            }
+            else if (UrlMappingPaths.isOptional(mapping, NAMESPACE_TOKEN)) {
+                omitted << NAMESPACE_TOKEN
+            }
+            else {
+                return false
+            }
+            true
         }
 
         private boolean isDescribed(GrailsControllerClass controller, Class<?> controllerType, String actionName) {

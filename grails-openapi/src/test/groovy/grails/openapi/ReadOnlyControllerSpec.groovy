@@ -46,8 +46,8 @@ class ReadOnlyControllerSpec extends Specification {
             "/$controller/$action?/$id?(.$format)?" {}
         }
 
-        then:
-        openApi.paths.keySet() == ['/archive/index', '/archive/show/{id}'] as Set
+        then: 'and the default action at the path of the controller alone'
+        openApi.paths.keySet() == ['/archive', '/archive/index', '/archive/show/{id}'] as Set
     }
 
     void 'the form actions are left out even where they are asked for'() {

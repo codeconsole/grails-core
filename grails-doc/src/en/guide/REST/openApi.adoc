@@ -731,7 +731,8 @@ or by leaving both, as the default mapping does:
 Either way the REST controllers those mappings reach are described, at the URLs the mapping serves:
 `RestfulController` subclasses, and controllers declaring the formats they respond in with
 `responseFormats`, none of them `html`. The first form above produces `GET /book`, `POST /book` and `GET /book/{id}`; the
-second produces `GET /book/index`, `POST /book/save` and `GET /book/show/{id}`. An application whose
+second produces `GET /book/index`, `POST /book/save` and `GET /book/show/{id}`, and, because its
+action is optional, `GET /book` for the controller's default action. An application whose
 mappings name every controller gets neither, because expansion follows the mappings rather than the
 controllers.
 

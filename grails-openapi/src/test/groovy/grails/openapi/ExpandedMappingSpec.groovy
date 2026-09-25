@@ -139,6 +139,25 @@ class ExpandedMappingSpec extends Specification {
         operations(openApi) == ['GET /admin/index', 'GET /admin/purge', 'GET /admin'] as Set
     }
 
+    void 'describes the default action at the path of the controller alone where the default mapping leaves the action out'() {
+        when:
+        def openApi = OpenApiFixture.document([DrawerController, V1ParcelController], [Drawer, Parcel]) {
+            "/$controller/$action?/$id?(.$format)?" {}
+            "/$namespace/$controller/$action?/$id?" {}
+        }
+
+        then: 'Grails answers GET /drawer with the index, as it answers GET /drawer/index'
+        openApi.paths['/drawer'].get.operationId == 'drawer_index_get'
+        openApi.paths['/drawer/index'].get.operationId == 'drawer_index_get_byAction'
+
+        and: 'nothing after the action is taken without it'
+        !openApi.paths.containsKey('/drawer/{id}')
+
+        and: 'a mapping that captures the namespace reaches it at the namespace of the controller'
+        openApi.paths['/v1/parcel'].get
+        !openApi.paths.containsKey('/{namespace}/drawer')
+    }
+
     void 'describes no default action where the controller declares none'() {
         when:
         def openApi = OpenApiFixture.document([TopicController], []) {
