@@ -33,6 +33,7 @@ import org.springdoc.core.customizers.SpringDocCustomizers
 import org.springdoc.core.filters.GlobalOpenApiMethodFilter
 import org.springdoc.core.filters.OpenApiMethodFilter
 import org.springdoc.core.models.GroupedOpenApi
+import org.springdoc.core.properties.SpringDocConfigProperties
 import org.springframework.beans.factory.BeanFactory
 import org.springframework.context.ApplicationContext
 import org.springframework.web.method.HandlerMethod
@@ -77,7 +78,8 @@ class SpringdocSelection extends OpenApiSelection implements ActionHooks {
      * A group selects what its criteria select, among the actions its method filters and the
      * global ones include, and gives each operation to its operation customizers and the global ones.
      */
-    static SpringdocSelection groupSelection(GroupedOpenApi group, SpringDocCustomizers customizers) {
+    static SpringdocSelection groupSelection(GroupedOpenApi group, SpringDocCustomizers customizers,
+                                             SpringDocConfigProperties properties = null) {
         // springdoc adds the global filters and customizers to each group as it prepares the group,
         // which it has not where the document is generated without serving it.
         Set<OpenApiMethodFilter> filters = new LinkedHashSet<>()
@@ -96,7 +98,14 @@ class SpringdocSelection extends OpenApiSelection implements ActionHooks {
         if (group.operationCustomizers) {
             operationCustomizers.addAll(group.operationCustomizers)
         }
-        new SpringdocSelection(GroupedOpenApiContributor.selectionOf(group), filters, operationCustomizers)
+        new SpringdocSelection(GroupedOpenApiContributor.selectionOf(group, properties), filters, operationCustomizers)
+    }
+
+    /**
+     * springdoc's configuration, where springdoc is configured in the context.
+     */
+    static SpringDocConfigProperties properties(BeanFactory beanFactory) {
+        beanFactory?.getBeanProvider(SpringDocConfigProperties)?.getIfAvailable()
     }
 
     /**

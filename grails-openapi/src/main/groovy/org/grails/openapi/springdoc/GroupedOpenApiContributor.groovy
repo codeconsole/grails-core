@@ -28,6 +28,7 @@ import org.springdoc.core.customizers.GlobalOpenApiCustomizer
 import org.springdoc.core.customizers.OpenApiCustomizer
 import org.springdoc.core.customizers.SpringDocCustomizers
 import org.springdoc.core.models.GroupedOpenApi
+import org.springdoc.core.properties.SpringDocConfigProperties
 import org.springframework.beans.BeansException
 import org.springframework.beans.factory.BeanFactory
 import org.springframework.beans.factory.BeanFactoryAware
@@ -70,7 +71,8 @@ class GroupedOpenApiContributor implements BeanPostProcessor, BeanFactoryAware {
                 // method filters.
                 group.addAllOpenApiCustomizer([new GrailsOpenApiCustomizer(
                         { -> beanFactory.getBean(GrailsOpenApiGenerator) },
-                        { -> SpringdocSelection.groupSelection(group, SpringdocSelection.customizers(beanFactory)) })])
+                        { -> SpringdocSelection.groupSelection(group, SpringdocSelection.customizers(beanFactory),
+                                SpringdocSelection.properties(beanFactory)) })])
             }
         }
         bean
@@ -118,7 +120,8 @@ class GroupedOpenApiContributor implements BeanPostProcessor, BeanFactoryAware {
      */
     static List<OpenApiSelection> declaredGroups(ApplicationContext applicationContext) {
         applicationContext.getBeansOfType(GroupedOpenApi).values().collect { GroupedOpenApi group ->
-            (OpenApiSelection) SpringdocSelection.groupSelection(group, SpringdocSelection.customizers(applicationContext))
+            (OpenApiSelection) SpringdocSelection.groupSelection(group, SpringdocSelection.customizers(applicationContext),
+                    SpringdocSelection.properties(applicationContext))
         }
     }
 
@@ -173,19 +176,25 @@ class GroupedOpenApiContributor implements BeanPostProcessor, BeanFactoryAware {
     }
 
     /**
-     * The criteria springdoc applies to the group's Spring MVC endpoints, applied to its Grails
-     * endpoints too.
+     * What a group selects, as springdoc selects it: springdoc's own top-level criteria apply to
+     * every group, and a group's criterion only where the top-level one is empty.
+     *
+     * @param properties springdoc's configuration, where springdoc is configured
      */
-    static OpenApiSelection selectionOf(GroupedOpenApi group) {
+    static OpenApiSelection selectionOf(GroupedOpenApi group, SpringDocConfigProperties properties = null) {
         new OpenApiSelection(
                 group: group.group,
                 displayName: group.displayName,
-                pathsToMatch: group.pathsToMatch ?: [],
-                pathsToExclude: group.pathsToExclude ?: [],
-                packagesToScan: group.packagesToScan ?: [],
-                packagesToExclude: group.packagesToExclude ?: [],
-                producesToMatch: group.producesToMatch ?: [],
-                consumesToMatch: group.consumesToMatch ?: [],
-                headersToMatch: group.headersToMatch ?: [])
+                pathsToMatch: criterion(properties?.pathsToMatch, group.pathsToMatch),
+                pathsToExclude: criterion(properties?.pathsToExclude, group.pathsToExclude),
+                packagesToScan: criterion(properties?.packagesToScan, group.packagesToScan),
+                packagesToExclude: criterion(properties?.packagesToExclude, group.packagesToExclude),
+                producesToMatch: criterion(properties?.producesToMatch, group.producesToMatch),
+                consumesToMatch: criterion(properties?.consumesToMatch, group.consumesToMatch),
+                headersToMatch: criterion(properties?.headersToMatch, group.headersToMatch))
+    }
+
+    private static List<String> criterion(List<String> topLevel, List<String> group) {
+        new ArrayList<String>(topLevel ?: group ?: Collections.<String> emptyList())
     }
 }

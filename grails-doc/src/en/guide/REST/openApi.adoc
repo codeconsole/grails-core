@@ -237,7 +237,9 @@ the default document, and `display-name` titles it. The
 `generate-open-api` command writes each group to a file of its own, and at runtime springdoc serves
 each at `/v3/api-docs/<name>`, applying the same criteria to any Spring MVC endpoints the
 application also has. A group declared to springdoc, in `springdoc.group-configs` or as a
-`GroupedOpenApi` bean, is honored the same way, both at runtime and by the command:
+`GroupedOpenApi` bean, is honored the same way, both at runtime and by the command. Where springdoc
+is used, its own top-level criteria, such as `springdoc.paths-to-match`, apply to every group ahead
+of the group's own, criterion by criterion, as springdoc applies them to its Spring MVC endpoints:
 
 [source,yaml]
 ----

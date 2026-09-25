@@ -32,6 +32,7 @@ import org.springdoc.core.customizers.SpringDocCustomizers
 import org.springdoc.core.filters.GlobalOpenApiMethodFilter
 import org.springdoc.core.filters.OpenApiMethodFilter
 import org.springdoc.core.models.GroupedOpenApi
+import org.springdoc.core.properties.SpringDocConfigProperties
 import org.springdoc.webmvc.api.MultipleOpenApiWebMvcResource
 import org.springframework.beans.factory.config.BeanDefinition
 import org.springframework.beans.factory.support.DefaultListableBeanFactory
@@ -69,6 +70,23 @@ class GroupedOpenApiContributorSpec extends Specification {
         then:
         paths(beanFactory.getBean('gates', GroupedOpenApi)) == ['/gate'] as Set
         paths(beanFactory.getBean('widgets', GroupedOpenApi)) == ['/widgets', '/widgets/{id}'] as Set
+    }
+
+    void 'applies springdoc\'s top-level criteria to a group ahead of the group\'s own, as springdoc does'() {
+        given: 'springdoc selecting /gate for every document, and a group selecting /widgets'
+        def beanFactory = new DefaultListableBeanFactory()
+        beanFactory.registerSingleton('generator', generator())
+        beanFactory.registerSingleton('springDocConfigProperties', new SpringDocConfigProperties(pathsToMatch: ['/gate']))
+        beanFactory.registerSingleton('widgets', GroupedOpenApi.builder().group('widgets').pathsToMatch('/widgets/**')
+                .packagesToScan('grails.openapi').build())
+        def contributor = new GroupedOpenApiContributor()
+        contributor.beanFactory = beanFactory
+
+        when:
+        contributor.postProcessBeforeInitialization(resource(beanFactory), 'multipleOpenApiResource')
+
+        then: 'the top-level paths, where springdoc has them, and the group\'s own packages, where it has none'
+        paths(beanFactory.getBean('widgets', GroupedOpenApi)) == ['/gate'] as Set
     }
 
     void 'applies the method filters of a group, and the global ones, to the Grails actions'() {
