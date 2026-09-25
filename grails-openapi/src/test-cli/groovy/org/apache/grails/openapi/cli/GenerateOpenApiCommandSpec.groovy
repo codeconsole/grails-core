@@ -136,6 +136,27 @@ class GenerateOpenApiCommandSpec extends Specification {
         !directory.list()
     }
 
+    void 'says where springdoc is disabled in the environment it runs in'() {
+        given: 'springdoc disabled, as an application generated with the openapi feature has it in production'
+        applicationContext.environment.propertySources.addFirst(
+                new MapPropertySource('springdoc', ['springdoc.api-docs.enabled': false]))
+        def command = command([:])
+        def logged = new ByteArrayOutputStream()
+        def err = System.err
+        System.err = new PrintStream(logged, true)
+
+        when:
+        boolean written = command.handle(context("--output-directory=${directory.absolutePath}"))
+
+        then: 'the documents are written, and it says what is not applied to them'
+        written
+        new File(directory, 'openapi.yaml').file
+        logged.toString().contains('springdoc is disabled where the command runs')
+
+        cleanup:
+        System.err = err
+    }
+
     void 'refuses a format it cannot write'() {
         given:
         def command = command([:])

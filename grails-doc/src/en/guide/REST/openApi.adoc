@@ -75,7 +75,11 @@ the environment it runs in, such as a datasource.
 
 Where springdoc is configured, the command applies the method filters, operation customizers and
 OpenAPI customizers springdoc applies to the documents it serves, so each file describes what
-springdoc serves. A filter or customizer that fails there, such as one that reads the current
+springdoc serves. That holds only in an environment where springdoc is enabled: with
+`springdoc.api-docs.enabled: false`, as an application generated with the `openapi` feature has in
+production, springdoc configures nothing, so the command writes no `springdoc.group-configs` group and
+applies none of springdoc's filters and customizers, and says so; `grails.openapi.groups` are
+written as ever. A filter or customizer that fails there, such as one that reads the current
 request, is skipped and logged, rather than the operations it was applied to.
 
 To package the description and serve it as a static file, include it in the application's

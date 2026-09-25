@@ -48,6 +48,7 @@ import org.grails.openapi.springdoc.GroupedOpenApiContributor
 class GenerateOpenApiCommand implements ApplicationCommand {
 
     private static final String SPRINGDOC_GROUP = 'org.springdoc.core.models.GroupedOpenApi'
+    private static final String SPRINGDOC_ENABLED = 'springdoc.api-docs.enabled'
 
     final String description = 'Writes the OpenAPI description of the application to files'
 
@@ -59,6 +60,10 @@ class GenerateOpenApiCommand implements ApplicationCommand {
             return false
         }
         OpenApiSettings settings = generator.settings
+        if (springdocPresent() && !applicationContext.environment.getProperty(SPRINGDOC_ENABLED, Boolean, true)) {
+            log.warn('springdoc is disabled where the command runs, by {}: false, so neither the groups of ' +
+                    'springdoc.group-configs nor springdoc\'s method filters and customizers are applied', SPRINGDOC_ENABLED)
+        }
 
         String format = (option(executionContext, 'format') ?: settings.outputFormat).toLowerCase(Locale.ENGLISH)
         if (!(format in ['yaml', 'json'])) {
