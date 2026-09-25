@@ -109,7 +109,9 @@ they resolve to no controller.
 
 The Grails operations are added to each document before any other springdoc customizer runs, so an
 `OpenApiCustomizer` bean, a `GlobalOpenApiCustomizer` bean, or a customizer a `GroupedOpenApi` adds
-sees them and can change them.
+sees them and can change them. springdoc runs an `OpenApiLocaleCustomizer` before all of those,
+though, so one does not see the Grails operations, and the `generate-open-api` command, which
+answers no request in a locale, does not run one.
 
 A domain class a Spring MVC endpoint of the application returns is described as Grails renders it
 there too, and once: the Grails endpoints refer to the schema springdoc described for it.

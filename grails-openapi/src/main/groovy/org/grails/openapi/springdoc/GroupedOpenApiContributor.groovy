@@ -48,8 +48,9 @@ import grails.openapi.OpenApiSelection
  * its own customizer, selecting what the group's criteria select, before springdoc builds the
  * group's document.</p>
  *
- * <p>The Grails description is contributed ahead of every other customizer, in each group and in
- * the default document, so a customizer the application declares sees the Grails operations.</p>
+ * <p>The Grails description is contributed ahead of every other {@code OpenApiCustomizer}, in each
+ * group and in the default document, so one the application declares sees the Grails operations.
+ * springdoc runs its {@code OpenApiLocaleCustomizer}s before any of them, so those do not.</p>
  */
 @CompileStatic
 class GroupedOpenApiContributor implements BeanPostProcessor, BeanFactoryAware {
