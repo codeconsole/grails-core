@@ -247,7 +247,7 @@ class GrailsModelConverter implements ModelConverter {
             return
         }
         JavaType type = javaType(annotatedType.type)
-        if (type == null || !SchemaNames.isNamed(type)) {
+        if (type == null || !SchemaNames.isNamed(annotatedType, type)) {
             return
         }
         String natural = SchemaNames.naturalName(annotatedType, type)

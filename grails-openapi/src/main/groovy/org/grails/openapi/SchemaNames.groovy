@@ -26,10 +26,13 @@ import com.fasterxml.jackson.databind.JavaType
 import com.fasterxml.jackson.databind.PropertyName
 import com.fasterxml.jackson.databind.SerializationConfig
 import io.swagger.v3.core.converter.AnnotatedType
+import io.swagger.v3.core.jackson.ModelResolver
 import io.swagger.v3.core.jackson.TypeNameResolver
+import io.swagger.v3.core.util.AnnotationsUtils
 import io.swagger.v3.core.util.Json
 import io.swagger.v3.core.util.PrimitiveType
 import io.swagger.v3.core.util.ReflectionUtils
+import io.swagger.v3.oas.annotations.media.ArraySchema
 import io.swagger.v3.oas.annotations.media.Schema as SchemaAnnotation
 
 /**
@@ -72,11 +75,26 @@ class SchemaNames {
 
     /**
      * Whether swagger-core describes the type as a schema of its own, which is named, rather than
-     * inline.
+     * inline. An enum is described inline unless it is described as a schema of its own, by
+     * {@code @Schema(enumAsRef = true)} or swagger-core's configuration.
      */
-    static boolean isNamed(JavaType type) {
-        !type.containerType && !type.primitive && !type.javaLangObject
-                && PrimitiveType.fromType(type) == null && !ReflectionUtils.isSystemType(type)
+    static boolean isNamed(AnnotatedType annotatedType, JavaType type) {
+        if (type.containerType || type.primitive || type.javaLangObject || ReflectionUtils.isSystemType(type)) {
+            return false
+        }
+        if (type.enumType) {
+            return isEnumNamed(annotatedType, type)
+        }
+        PrimitiveType.fromType(type) == null
+    }
+
+    private static boolean isEnumNamed(AnnotatedType annotatedType, JavaType type) {
+        if (ModelResolver.enumsAsRef || annotatedType.resolveEnumAsRef) {
+            return true
+        }
+        Annotation merged = AnnotationsUtils.mergeSchemaAnnotations(annotatedType.ctxAnnotations, type)
+        SchemaAnnotation declared = merged instanceof ArraySchema ? ((ArraySchema) merged).schema() : (SchemaAnnotation) merged
+        declared != null && declared.enumAsRef()
     }
 
     /**

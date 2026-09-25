@@ -26,6 +26,7 @@ import io.swagger.v3.oas.models.media.StringSchema
 
 import grails.artefact.Artefact
 import grails.openapi.names.ValidationErrors as NamedValidationErrors
+import grails.openapi.names.inline.Label as InlineLabel
 import grails.openapi.names.v1.Label as V1Label
 import grails.openapi.names.v1.LabelPatch as V1LabelPatch
 import grails.openapi.names.v2.Label as V2Label
@@ -236,6 +237,36 @@ class SchemaNameSpec extends Specification {
         openApi.components.schemas['grails.openapi.names.v2.Status'].enum == ['PENDING', 'SHIPPED']
     }
 
+    void 'an enum described inline does not share its name with a class'() {
+        when:
+        def openApi = OpenApiFixture.document([PrintedLabelController, ParcelTagController], []) {
+            '/printed'(resources: 'printedLabel')
+            '/tags'(resources: 'parcelTag')
+        }
+
+        then: 'the class keeps its simple name'
+        responseReference(openApi, '/printed/{id}') == '#/components/schemas/Label'
+        !openApi.components.schemas.keySet().any { it.startsWith('grails.') }
+
+        and: 'the enum is described where it is used'
+        openApi.components.schemas['ParcelTag'].properties.size.enum == ['SMALL', 'LARGE']
+    }
+
+    void 'a command object bound from the request parameters does not share its name with a class'() {
+        when:
+        def openApi = OpenApiFixture.document([PrintedLabelController, LabelSearchController], []) {
+            '/printed'(resources: 'printedLabel')
+            get '/labels/search'(controller: 'labelSearch', action: 'search')
+        }
+
+        then: 'its properties are the parameters'
+        openApi.paths['/labels/search'].get.parameters*.name as Set == ['code', 'width'] as Set
+
+        and: 'the class described keeps its simple name'
+        responseReference(openApi, '/printed/{id}') == '#/components/schemas/Label'
+        !openApi.components.schemas.keySet().any { it.startsWith('grails.') }
+    }
+
     void 'every reference resolves once the names are moved'() {
         when:
         def openApi = OpenApiFixture.document([PrintedLabelController, ShippingLabelController, LabelSheetController], []) {
@@ -263,6 +294,21 @@ class SchemaNameSpec extends Specification {
         String json = GrailsOpenApiGenerator.serialize(openApi, 'json')
         (json =~ /#\/components\/schemas\/([^"]+)"/).collect { ((List<String>) it)[1] } as Set<String>
     }
+}
+
+class ParcelTag {
+    V1Label label
+    InlineLabel size
+}
+
+@Artefact('Controller')
+class ParcelTagController extends RestfulController<ParcelTag> {
+    ParcelTagController() { super(ParcelTag) }
+}
+
+@Artefact('Controller')
+class LabelSearchController {
+    def search(V2Label criteria) { }
 }
 
 class Dispatch {

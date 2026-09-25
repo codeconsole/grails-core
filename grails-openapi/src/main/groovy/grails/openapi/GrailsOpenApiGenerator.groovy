@@ -897,11 +897,17 @@ class GrailsOpenApiGenerator {
             }
         }
 
+        /**
+         * The schema of a type described inline, to read its properties from rather than to add to
+         * the document, so it claims no name in it.
+         */
         private Schema<?> inlineSchema(Class<?> type) {
             ResolvedSchema resolved = null
             describe("type [${type.name}]".toString()) {
-                resolved = ModelConverters.getInstance(openapi31)
-                        .resolveAsResolvedSchema(new AnnotatedType(type).resolveAsRef(false))
+                GrailsModelConverter.withSchemaNames(null) {
+                    resolved = ModelConverters.getInstance(openapi31)
+                            .resolveAsResolvedSchema(new AnnotatedType(type).resolveAsRef(false))
+                }
             }
             resolved?.schema
         }

@@ -387,7 +387,8 @@ Classes sharing a name in different packages are each named by their package as 
 `com.example.v1.Book` and `com.example.v2.Book`, so neither stands in for the other and the names do
 not depend on which is described first. A class sharing the name of a schema the base document
 declares, or one the document derives, such as `ValidationErrors` or a `Patch` schema, is named by
-its package in the same way.
+its package in the same way. An enum is described where it is used, and so shares no name, unless
+`@Schema(enumAsRef = true)` describes it as a schema of its own.
 
 [source,groovy]
 ----
