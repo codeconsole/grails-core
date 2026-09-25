@@ -82,17 +82,19 @@ class OperationParameters {
 
     /**
      * A command object an action binds on a request without a body is bound from the request
-     * parameters, so each property it binds is a query parameter.
+     * parameters, so each property it binds is a query parameter, sent under the name Grails binds
+     * it by, whatever name the command object is described with.
      */
     void addCommandParameters(Operation operation, Class<?> controllerType, String actionName, List<String> pathNames) {
         Class<?> commandType = ActionAnnotations.commandObjectType(controllerType, actionName)
         Schema<?> command = commandType != null ? schemas.inline(commandType) : null
-        ((Map<String, Schema>) command?.properties)?.each { String name, Schema property ->
+        ((Map<String, Schema>) command?.properties)?.each { String described, Schema property ->
+            String name = GrailsModelConverter.boundName(commandType, described)
             if (name in pathNames || property.readOnly || !isParameterValue(property)) {
                 return
             }
             Parameter parameter = queryParameter(name, property.description, property)
-            if (name in (command.required ?: [])) {
+            if (described in (command.required ?: [])) {
                 parameter.setRequired(true)
             }
             addIfAbsent(operation, parameter)

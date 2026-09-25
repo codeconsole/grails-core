@@ -18,6 +18,7 @@
  */
 package grails.openapi
 
+import com.fasterxml.jackson.annotation.JsonProperty
 import io.swagger.v3.oas.models.OpenAPI
 
 import grails.artefact.Artefact
@@ -89,8 +90,9 @@ class ActionParameterSpec extends Specification {
         }
         def parameters = openApi.paths['/lockers/find'].get.parameters
 
-        then: 'each property that a request parameter can carry'
-        parameters*.name as Set == ['label', 'size', 'tags'] as Set
+        then: 'each property that a request parameter can carry, by the name Grails binds it by'
+        parameters*.name as Set == ['label', 'size', 'tags', 'codeName', 'SKU'] as Set
+        parameters.find { it.name == 'codeName' }.required
         with(parameters.find { it.name == 'label' }) {
             required
             schema.maxLength == 10
@@ -131,11 +133,18 @@ class LockerSearch implements Validateable {
     List<String> tags
     LockerAddress address
 
+    @JsonProperty('code_name')
+    String codeName
+
+    String SKU
+
     static constraints = {
         label nullable: false, maxSize: 10
         size nullable: true
         tags nullable: true
         address nullable: true
+        codeName nullable: false
+        SKU nullable: true
     }
 }
 

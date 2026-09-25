@@ -380,7 +380,10 @@ annotation on the class or on one of its properties is honored, including one th
 property. The `metaClass` every Groovy object has and the `errors` a validateable object has are
 not part of it. The constraints, and whether it is required or read only, follow a
 renamed property. Grails' converters, JSON views and data binding use the property's own name, so a
-Jackson rename describes a type the application renders and binds with Jackson.
+Jackson rename describes a type the application renders and binds with Jackson. A property of a
+domain class or a command object is otherwise described by the name Grails uses, even where Jackson
+would write it another way, such as `ISBN`, which Jackson writes as `isbn`, and a command object's
+request parameters are described by the names Grails binds them by.
 
 A schema is named after its class, or after the name a `@Schema` annotation on the class declares.
 Classes sharing a name in different packages are each named by their package as well, such as

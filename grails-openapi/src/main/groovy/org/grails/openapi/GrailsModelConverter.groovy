@@ -24,20 +24,13 @@ import java.lang.reflect.Type
 
 import groovy.transform.CompileStatic
 
-import com.fasterxml.jackson.databind.BeanDescription
 import com.fasterxml.jackson.databind.JavaType
-import com.fasterxml.jackson.databind.SerializationConfig
-import com.fasterxml.jackson.databind.introspect.AnnotatedMember
-import com.fasterxml.jackson.databind.introspect.AnnotatedMethod
-import com.fasterxml.jackson.databind.introspect.BeanPropertyDefinition
 import com.fasterxml.jackson.databind.type.TypeFactory
 import io.swagger.v3.core.converter.AnnotatedType
 import io.swagger.v3.core.converter.ModelConverter
 import io.swagger.v3.core.converter.ModelConverterContext
 import io.swagger.v3.core.converter.ModelConverters
-import io.swagger.v3.core.util.Json
 import io.swagger.v3.core.util.PrimitiveType
-import io.swagger.v3.oas.annotations.media.Schema as SchemaAnnotation
 import io.swagger.v3.oas.models.media.ArraySchema
 import io.swagger.v3.oas.models.media.IntegerSchema
 import io.swagger.v3.oas.models.media.ObjectSchema
@@ -80,8 +73,8 @@ import org.grails.datastore.mapping.model.types.ToMany
  *
  * <p>The converter is registered with swagger-core once and applies to every type it resolves.
  * The GORM metadata it uses is supplied by whatever is resolving at the time, through
- * {@link #withMappingContexts}. A type whose Grails declarations cannot be read, such as
- * constraints that fail to evaluate, is described as swagger-core resolves it, and logged.</p>
+ * {@link #withMappingContexts}. A declaration that cannot be read, such as constraints that fail
+ * to evaluate, is left out, and logged; each is read before the schema is changed.</p>
  */
 @CompileStatic
 class GrailsModelConverter implements ModelConverter {
@@ -320,67 +313,58 @@ class GrailsModelConverter implements ModelConverter {
     }
 
     private static void describe(Class<?> type, Schema model) {
-        Map<String, String> names = describedNames(type)
         PersistentEntity entity = entityFor(type)
+        boolean validateable = Validateable.isAssignableFrom(type)
+        if (entity == null && !validateable && !declaresBindableProperties(type)) {
+            // Grails neither renders nor binds it by its own rules, so it is described as it is.
+            return
+        }
+
+        // What Grails declares of the type is read before the schema is changed, each declaration
+        // on its own, so one that cannot be read is left out without leaving the schema half changed.
+        PropertyNames propertyNames = PropertyNames.of(type)
+        Map<String, Constrained> constraints = read("the constraints of [${type.name}]") {
+            entity != null ? entityConstraints(entity) : (validateable ? validateableConstraints(type) : null)
+        } ?: Collections.<String, Constrained> emptyMap()
+        Set<String> readOnly = entity == null ? readOnlyConstrained(type, constraints.keySet()) : Collections.<String> emptySet()
+        List<String> bindable = read("what data binding binds of [${type.name}]") {
+            DataBindingUtils.getBindingIncludeListForType(type)
+        }
+        Set<String> beanProperties = BeanUtils.getPropertyDescriptors(type)*.name.toSet()
+
+        Map<String, String> names = propertyNames.applyTo(model)
+        String versionName = null
         if (entity != null) {
-            describeEntity(entity, type, model, names)
+            versionName = entity.versioned ? entity.version?.name : null
+            describeEntity(entity, model, names, versionName)
         }
-        else if (Validateable.isAssignableFrom(type)) {
-            applyConstraints(model, writable(type, validateableConstraints(type), model, names), null, names)
-        }
-        if (entity != null || Validateable.isAssignableFrom(type) || declaresBindableProperties(type)) {
-            markUnbound(type, model, names)
+        readOnly.each { String name -> property(model, names, name)?.setReadOnly(true) }
+        applyConstraints(model, constraints.findAll { String name, Constrained constrained -> !(name in readOnly) },
+                versionName, names)
+        if (bindable != null) {
+            markUnbound(model, names, bindable, beanProperties)
         }
     }
 
     /**
-     * The name each property of a type is described under, by its name in the type: the name a
-     * {@code @Schema} annotation or Jackson gives it, or its own, which swagger-core describes it
-     * under.
+     * Reads a declaration of a type, logging rather than throwing where it cannot be read.
      */
-    private static Map<String, String> describedNames(Class<?> type) {
-        Map<String, String> names = [:]
-        List<BeanPropertyDefinition> properties
+    private static <T> T read(String what, Closure<T> declaration) {
         try {
-            SerializationConfig config = Json.mapper().serializationConfig
-            BeanDescription description = config.introspect(config.constructType(type))
-            properties = description.findProperties()
+            return declaration.call()
         }
-        catch (RuntimeException | LinkageError ignored) {
-            // A type Jackson cannot introspect is described by its property names.
-            return names
+        catch (RuntimeException | LinkageError e) {
+            LOG.warn("Could not read ${what}; it is described without them", e)
+            return null
         }
-        for (BeanPropertyDefinition property : properties) {
-            try {
-                String name = propertyName(property)
-                if (name) {
-                    names[name] = schemaName(property) ?: property.name
-                }
-            }
-            catch (RuntimeException ignored) {
-                // Jackson refuses a property with conflicting accessors, such as Groovy's metaClass.
-            }
-        }
-        names
     }
 
-    private static String propertyName(BeanPropertyDefinition property) {
-        if (property.field != null) {
-            return property.field.name
-        }
-        AnnotatedMethod accessor = property.getter ?: property.setter
-        PropertyDescriptor descriptor = accessor != null ? BeanUtils.findPropertyForMethod(accessor.annotated) : null
-        descriptor?.name ?: property.internalName
-    }
-
-    private static String schemaName(BeanPropertyDefinition property) {
-        for (AnnotatedMember member : [property.getter, property.field, property.setter]) {
-            String name = member?.getAnnotation(SchemaAnnotation)?.name()
-            if (name) {
-                return name
-            }
-        }
-        null
+    /**
+     * The name a request parameter binding a property of a type is sent under: the name Grails
+     * uses for it, whatever name it is described under.
+     */
+    static String boundName(Class<?> type, String described) {
+        type != null ? (PropertyNames.of(type).nameOf(described) ?: described) : described
     }
 
     /**
@@ -399,14 +383,11 @@ class GrailsModelConverter implements ModelConverter {
      * one constrained {@code bindable: false}, or a transient - is not something a client sends,
      * so it is read only.
      */
-    private static void markUnbound(Class<?> type, Schema model, Map<String, String> names) {
-        List<String> bindable = DataBindingUtils.getBindingIncludeListForType(type)
-        if (bindable == null) {
-            return
-        }
-        ((Map<String, Schema>) model.properties).each { String described, Schema property ->
+    private static void markUnbound(Schema model, Map<String, String> names, List<String> bindable,
+                                    Set<String> beanProperties) {
+        ((Map<String, Schema>) model.properties)?.each { String described, Schema property ->
             String name = propertyNamed(names, described)
-            if (!(name in bindable) && BeanUtils.getPropertyDescriptor(type, name) != null) {
+            if (!(name in bindable) && name in beanProperties) {
                 property.setReadOnly(true)
             }
         }
@@ -426,22 +407,12 @@ class GrailsModelConverter implements ModelConverter {
     }
 
     /**
-     * A command property that can only be read - one with a getter and nothing to bind it to -
-     * is not something a client sends, so it is read only and its constraints are not required
-     * of a request.
+     * A command property that can only be read - one with a getter and nothing to bind it to - is
+     * not something a client sends, so it is read only and its constraints are not required of a
+     * request.
      */
-    private static Map<String, Constrained> writable(Class<?> type, Map<String, Constrained> constraints, Schema model,
-                                                     Map<String, String> names) {
-        Map<String, Constrained> result = [:]
-        constraints.each { String name, Constrained constrained ->
-            if (isWritable(type, name)) {
-                result[name] = constrained
-            }
-            else {
-                property(model, names, name)?.setReadOnly(true)
-            }
-        }
-        result
+    private static Set<String> readOnlyConstrained(Class<?> type, Collection<String> constrained) {
+        constrained.findAll { String name -> !isWritable(type, name) }.toSet()
     }
 
     private static boolean isWritable(Class<?> type, String name) {
@@ -451,27 +422,22 @@ class GrailsModelConverter implements ModelConverter {
 
     /**
      * Grails renders an entity as its identifier, its persistent properties and, where it is
-     * configured to, its version. A transient, a getter with nothing persisted behind it, and the
-     * accessor GORM adds for the foreign key of an association are not part of it.
+     * configured to, its version. Anything else swagger-core finds - a transient, a getter with
+     * nothing persisted behind it, a public field, or the accessor GORM adds for the foreign key of
+     * an association - is not part of it.
      */
-    private static void describeEntity(PersistentEntity entity, Class<?> type, Schema model, Map<String, String> names) {
-        Map<String, Schema> properties = model.properties
+    private static void describeEntity(PersistentEntity entity, Schema model, Map<String, String> names,
+                                       String versionName) {
         String identityName = entity.identity?.name
-        String versionName = entity.versioned ? entity.version?.name : null
-        boolean includeVersion = INCLUDE_VERSION.get()
-
-        properties.keySet().removeAll { String described ->
-            String name = propertyNamed(names, described)
-            name != identityName && (name == versionName
-                    || (BeanUtils.getPropertyDescriptor(type, name) != null && entity.getPropertyByName(name) == null))
+        ((Map<String, Schema>) model.properties)?.keySet()?.removeAll { String described ->
+            String name = names.find { String candidate, String describedAs -> describedAs == described }?.key
+            name == null || (name != identityName && (name == versionName || entity.getPropertyByName(name) == null))
         }
 
         markReadOnly(model, names[identityName] ?: identityName)
-        if (includeVersion) {
+        if (INCLUDE_VERSION.get()) {
             markReadOnly(model, names[versionName] ?: versionName)
         }
-
-        applyConstraints(model, entityConstraints(entity), versionName, names)
     }
 
     /**

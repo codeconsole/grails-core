@@ -383,8 +383,12 @@ class PersistentEntitySchemaSpec extends Specification {
         schema.required.contains('book_title')
         !schema.properties.containsKey('title')
 
-        and: 'a property whose name Jackson writes another way is kept'
-        schema.properties.keySet().any { it.equalsIgnoreCase('isbn') }
+        and: 'a property whose name Jackson writes another way is described by the name Grails renders it by'
+        schema.properties.containsKey('ISBN')
+        !schema.properties.containsKey('isbn')
+
+        and: 'a public field, which Grails does not render, is not described'
+        !schema.properties.containsKey('shelfNote')
     }
 
     void 'marks what data binding does not bind as read only'() {
@@ -573,6 +577,8 @@ class RenamedBook {
     String title
 
     String ISBN
+
+    public String shelfNote
 
     static constraints = {
         title nullable: false, maxSize: 50
