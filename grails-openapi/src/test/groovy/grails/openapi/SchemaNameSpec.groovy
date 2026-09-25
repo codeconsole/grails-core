@@ -29,6 +29,9 @@ import grails.openapi.names.ValidationErrors as NamedValidationErrors
 import grails.openapi.names.v1.Label as V1Label
 import grails.openapi.names.v1.LabelPatch as V1LabelPatch
 import grails.openapi.names.v2.Label as V2Label
+import grails.openapi.names.v2.LabelPatch as V2LabelPatch
+import grails.openapi.names.v1.Status as V1Status
+import grails.openapi.names.v2.Status as V2Status
 import grails.rest.RestfulController
 
 import spock.lang.Specification
@@ -201,6 +204,38 @@ class SchemaNameSpec extends Specification {
         responseReference(openApi, '/printed/{id}') == "#/components/schemas/${V1}"
     }
 
+    void 'a patch schema moved with its schema keeps apart from a class holding that name'() {
+        when: 'Label is shared, so the patch of v2.Label moves to where the class v2.LabelPatch is named'
+        def openApi = OpenApiFixture.document([PrintedLabelController, ShippingLabelController, LabelReasonController], []) {
+            '/printed'(resources: 'printedLabel')
+            '/shipping'(resources: 'shippingLabel')
+            post '/reasons'(controller: 'labelReason', action: 'record')
+        }
+        def schemas = openApi.components.schemas
+        String patch = name(openApi.paths['/shipping/{id}'].patch.requestBody.content['application/json'].schema.$ref)
+        String command = name(openApi.paths['/reasons'].post.requestBody.content['application/json'].schema.$ref)
+
+        then:
+        patch != command
+        schemas[patch].properties.keySet() == ['code', 'width'] as Set
+        schemas[command].properties.keySet() == ['reason'] as Set
+        schemas.keySet().containsAll(references(openApi))
+    }
+
+    void 'names apart enums sharing a name that are described as schemas of their own'() {
+        when:
+        def openApi = OpenApiFixture.document([DispatchController], []) {
+            '/dispatches'(resources: 'dispatch')
+        }
+        def properties = openApi.components.schemas['Dispatch'].properties
+
+        then:
+        properties.inbound.$ref == '#/components/schemas/grails.openapi.names.v1.Status'
+        properties.outbound.$ref == '#/components/schemas/grails.openapi.names.v2.Status'
+        openApi.components.schemas['grails.openapi.names.v1.Status'].enum == ['OPEN', 'CLOSED']
+        openApi.components.schemas['grails.openapi.names.v2.Status'].enum == ['PENDING', 'SHIPPED']
+    }
+
     void 'every reference resolves once the names are moved'() {
         when:
         def openApi = OpenApiFixture.document([PrintedLabelController, ShippingLabelController, LabelSheetController], []) {
@@ -216,6 +251,10 @@ class SchemaNameSpec extends Specification {
         defined.containsAll(referenced)
     }
 
+    private static String name(String reference) {
+        reference.substring('#/components/schemas/'.length())
+    }
+
     private static String responseReference(OpenAPI openApi, String path) {
         openApi.paths[path].get.responses['200'].content['application/json'].schema.$ref
     }
@@ -224,6 +263,21 @@ class SchemaNameSpec extends Specification {
         String json = GrailsOpenApiGenerator.serialize(openApi, 'json')
         (json =~ /#\/components\/schemas\/([^"]+)"/).collect { ((List<String>) it)[1] } as Set<String>
     }
+}
+
+class Dispatch {
+    V1Status inbound
+    V2Status outbound
+}
+
+@Artefact('Controller')
+class DispatchController extends RestfulController<Dispatch> {
+    DispatchController() { super(Dispatch) }
+}
+
+@Artefact('Controller')
+class LabelReasonController {
+    def record(V2LabelPatch reason) { }
 }
 
 class LabelSheet {

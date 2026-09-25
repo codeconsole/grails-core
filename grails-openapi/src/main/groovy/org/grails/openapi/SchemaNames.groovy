@@ -75,7 +75,7 @@ class SchemaNames {
      * inline.
      */
     static boolean isNamed(JavaType type) {
-        !type.containerType && !type.enumType && !type.primitive && !type.javaLangObject
+        !type.containerType && !type.primitive && !type.javaLangObject
                 && PrimitiveType.fromType(type) == null && !ReflectionUtils.isSystemType(type)
     }
 
@@ -122,6 +122,16 @@ class SchemaNames {
         }
         shared << name
         displaced.computeIfAbsent(name) { String taken -> unclaimed(taken + '_', marker) }
+    }
+
+    /**
+     * Claims the name a reserved schema moves to once the document is complete, such as a patch
+     * schema following the schema it is a patch of, apart from any class that holds it.
+     *
+     * @return the name to move the schema to
+     */
+    String move(String reserved, String target) {
+        unclaimed(target, RESERVED + reserved)
     }
 
     /**

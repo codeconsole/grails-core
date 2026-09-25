@@ -33,12 +33,16 @@ import io.swagger.v3.oas.models.media.Schema
 import io.swagger.v3.oas.models.parameters.Parameter
 import io.swagger.v3.oas.models.parameters.RequestBody
 import io.swagger.v3.oas.models.responses.ApiResponse
+import org.slf4j.Logger
+import org.slf4j.LoggerFactory
 
 /**
  * Moves schemas to new names, and every reference to them with them, across a whole document.
  */
 @CompileStatic
 class SchemaReferences {
+
+    private static final Logger LOG = LoggerFactory.getLogger(SchemaReferences)
 
     private static final String REFERENCE_PREFIX = Components.COMPONENTS_SCHEMAS_REF
 
@@ -54,8 +58,26 @@ class SchemaReferences {
      */
     static void rename(OpenAPI openApi, Map<String, String> renames) {
         if (renames) {
-            new SchemaReferences(renames).renameIn(openApi)
+            new SchemaReferences(distinct(renames, openApi.components?.schemas?.keySet())).renameIn(openApi)
         }
+    }
+
+    /**
+     * A schema is only moved to a name nothing else holds or moves to, so no schema replaces another.
+     */
+    private static Map<String, String> distinct(Map<String, String> renames, Set<String> existing) {
+        Map<String, String> moves = [:]
+        Set<String> taken = new HashSet<String>(existing ?: Collections.<String> emptySet())
+        taken.removeAll(renames.keySet())
+        renames.each { String from, String to ->
+            if (taken.add(to)) {
+                moves[from] = to
+            }
+            else {
+                LOG.warn('Not renaming the schema [{}] to [{}], which another schema holds', from, to)
+            }
+        }
+        moves
     }
 
     private void renameIn(OpenAPI openApi) {

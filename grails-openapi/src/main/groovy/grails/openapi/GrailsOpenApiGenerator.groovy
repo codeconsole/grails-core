@@ -817,7 +817,7 @@ class GrailsOpenApiGenerator {
             patchSchemas.each { String base, String patch ->
                 String moved = renames[base]
                 if (moved != null && patch in addedSchemas) {
-                    renames[patch] = moved + PATCH_SUFFIX
+                    renames[patch] = schemaNames.move(base + PATCH_SUFFIX, moved + PATCH_SUFFIX)
                 }
             }
             renames
