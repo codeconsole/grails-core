@@ -410,6 +410,24 @@ class GenerateScaffoldedViewsTaskSpec extends Specification {
             handed(task) == ['com.example.User/show': ['show ${className}']]
     }
 
+    void 'the templates the application packages are read from where they are packaged'() {
+        given: 'the output of the application, where a template is kept under META-INF/templates/scaffolding'
+            File output = new File(projectDir, 'resources-output')
+            new File(output, 'META-INF/templates/scaffolding').mkdirs()
+            new File(output, 'META-INF/templates/scaffolding/index.gsp').text = 'packaged index ${className}'
+            new File(output, 'application.yml').text = 'not a template'
+            writeController('UserController', 'User')
+            def task = task()
+            task.packagedTemplates.from(output)
+
+        when:
+            task.generate()
+
+        then:
+            handed(task)['com.example.User/index'] == ['list of ${propertyName} for ${className}', 'packaged index ${className}']
+            !handed(task).keySet().any { it.contains('application') }
+    }
+
     void 'templates are read from a classpath directory, namespace directories included'() {
         given:
             File resources = new File(projectDir, 'resources')

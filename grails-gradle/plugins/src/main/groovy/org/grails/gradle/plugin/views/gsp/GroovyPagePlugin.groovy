@@ -370,17 +370,17 @@ class GroovyPagePlugin implements Plugin<Project> {
                 // page's name agrees with the one the resolver looks for
                 it.runtimeClasspath.from(project.configurations.named('runtimeClasspath'))
                 it.javaLauncher.convention(launcher)
-                // the application's own templates, wherever it keeps them, which its runtime
-                // classpath does not carry
+                // the application's own templates, which its runtime classpath does not carry: as
+                // they are edited, and as the resources that are packaged beside its controllers.
+                // The resources rather than the whole source set output, which view compilers add
+                // directories to without naming themselves as their producers.
                 it.templateOverrides.from(
                         project.fileTree(project.layout.projectDirectory.dir('src/main/templates/scaffolding'))
                                 .matching { PatternFilterable p -> p.include('**/*.gsp') })
-                it.templateOverrides.from(project.provider {
-                    (mainSourceSet?.resources?.srcDirs ?: [] as Set<File>).collect { File dir ->
-                        project.fileTree(new File(dir, 'META-INF/templates/scaffolding'))
-                                .matching { PatternFilterable p -> p.include('**/*.gsp') }
-                    }
-                })
+                if (mainSourceSet != null) {
+                    it.packagedTemplates.from(project.files(tasks.named(mainSourceSet.processResourcesTaskName)).asFileTree
+                            .matching { PatternFilterable p -> p.include('META-INF/templates/scaffolding/**/*.gsp') })
+                }
                 it.outputDirectory.set(project.layout.buildDirectory.dir('generated/scaffolded-views'))
             }
 

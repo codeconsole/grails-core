@@ -144,6 +144,20 @@ class GroovyPagePluginFunctionalSpec extends GradleSpecification {
             tasks.named('compileGroovyPages') {
                 compileOptions.encoding.set('ISO-8859-1')
             }
+            // templates the application packages by routes of its own
+            processResources {
+                from('extra-templates') { into 'META-INF/templates/scaffolding' }
+            }
+            def generateTemplates = tasks.register('generateTemplates') {
+                def generated = layout.buildDirectory.dir('generated-templates')
+                outputs.dir(generated)
+                doLast {
+                    def template = generated.get().file('META-INF/templates/scaffolding/create.gsp').asFile
+                    template.parentFile.mkdirs()
+                    template.text = 'generated create \${className}'
+                }
+            }
+            sourceSets.main.resources.srcDir(generateTemplates)
         """)
         // The generator the task runs comes from grails-scaffolding, and the page compiler from
         // grails-web-gsp, which this build cannot depend on; the tests' stand-ins record what they
@@ -178,6 +192,7 @@ class GroovyPagePluginFunctionalSpec extends GradleSpecification {
             'src/main/templates/scaffolding/admin/show.gsp': 'admin show ${className}',
             // a template the application keeps with its resources, which are packaged the same way
             'src/main/resources/META-INF/templates/scaffolding/edit.gsp': 'resources edit ${className}',
+            'extra-templates/index.gsp': 'extra index ${className}',
             // templates from a dependency the application only has at runtime, one of them a copy of
             // a template the application has too
             'theme/META-INF/templates/scaffolding/list.gsp': 'theme list ${className}',
@@ -218,11 +233,13 @@ class GroovyPagePluginFunctionalSpec extends GradleSpecification {
         and: 'every copy of every template the application runs with is expanded for every scaffolded domain class'
         pagesOf('java.lang.String') == ['show.gsp': ['show ${className}', 'theme show ${className}'],
                                         'admin/show.gsp': 'admin show ${className}',
-                                        'edit.gsp': 'resources edit ${className}', 'list.gsp': 'theme list ${className}']
+                                        'edit.gsp': 'resources edit ${className}', 'list.gsp': 'theme list ${className}',
+                                        'index.gsp': 'extra index ${className}', 'create.gsp': 'generated create ${className}']
 
         and: 'a namespace-specific one only for a domain class a namespaced controller scaffolds'
         pagesOf('java.lang.Integer') == ['show.gsp': ['show ${className}', 'theme show ${className}'],
-                                         'edit.gsp': 'resources edit ${className}', 'list.gsp': 'theme list ${className}']
+                                         'edit.gsp': 'resources edit ${className}', 'list.gsp': 'theme list ${className}',
+                                         'index.gsp': 'extra index ${className}', 'create.gsp': 'generated create ${className}']
 
         and: 'they are written in the encoding they are compiled with'
         new File(staged, 'encoding.txt').text == 'ISO-8859-1'
@@ -243,6 +260,7 @@ class GroovyPagePluginFunctionalSpec extends GradleSpecification {
         assertTaskSuccess('stageGroovyPages', rebuild)
         pagesOf('java.lang.String') == ['show.gsp': ['edited show ${className}', 'theme show ${className}'],
                                         'admin/show.gsp': 'admin show ${className}',
-                                        'edit.gsp': 'resources edit ${className}', 'list.gsp': 'theme list ${className}']
+                                        'edit.gsp': 'resources edit ${className}', 'list.gsp': 'theme list ${className}',
+                                        'index.gsp': 'extra index ${className}', 'create.gsp': 'generated create ${className}']
     }
 }

@@ -118,14 +118,26 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
 
     /**
      * The application's own templates, as trees rooted at the template directory: normally
-     * {@code src/main/templates/scaffolding} and {@code META-INF/templates/scaffolding} under the
-     * resource directories. A template's path within its tree is its path as the resolver asks for
-     * it, so {@code admin/show.gsp} is the {@code show} template of the {@code admin} namespace.
+     * {@code src/main/templates/scaffolding}. A template's path within its tree is its path as the
+     * resolver asks for it, so {@code admin/show.gsp} is the {@code show} template of the
+     * {@code admin} namespace.
      */
     @InputFiles
     @Optional
     @PathSensitive(PathSensitivity.RELATIVE)
     abstract ConfigurableFileCollection getTemplateOverrides()
+
+    /**
+     * The application's templates as it packages them, each at
+     * {@code META-INF/templates/scaffolding/<template path>} in its tree: normally the output of
+     * {@code processResources}, filtered to them. That is where the resolver finds them beside the
+     * application's controllers, however the build put them there - from
+     * {@code src/main/templates}, from the resources, or from a task that feeds them.
+     */
+    @InputFiles
+    @Optional
+    @PathSensitive(PathSensitivity.RELATIVE)
+    abstract ConfigurableFileCollection getPackagedTemplates()
 
     /**
      * The application's runtime classpath. The templates and the plugins' controllers are read from
@@ -234,6 +246,12 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
         templateOverrides.asFileTree.visit { FileVisitDetails details ->
             if (!details.directory && details.name.endsWith('.gsp')) {
                 templates.add(baseName(details.relativePath.pathString), details.file.bytes)
+            }
+        }
+        packagedTemplates.asFileTree.visit { FileVisitDetails details ->
+            String path = details.relativePath.pathString
+            if (!details.directory && path.startsWith(TEMPLATE_PATH) && path.endsWith('.gsp')) {
+                templates.add(baseName(path.substring(TEMPLATE_PATH.length())), details.file.bytes)
             }
         }
         String generator = GENERATOR.replace('.', '/') + '.class'
