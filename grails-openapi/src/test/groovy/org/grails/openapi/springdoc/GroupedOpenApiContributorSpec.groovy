@@ -33,6 +33,7 @@ import org.springdoc.core.filters.GlobalOpenApiMethodFilter
 import org.springdoc.core.filters.OpenApiMethodFilter
 import org.springdoc.core.models.GroupedOpenApi
 import org.springdoc.core.properties.SpringDocConfigProperties
+import org.springdoc.webmvc.api.MultipleOpenApiActuatorResource
 import org.springdoc.webmvc.api.MultipleOpenApiWebMvcResource
 import org.springframework.beans.factory.config.BeanDefinition
 import org.springframework.beans.factory.support.DefaultListableBeanFactory
@@ -87,6 +88,24 @@ class GroupedOpenApiContributorSpec extends Specification {
 
         then: 'the top-level paths, where springdoc has them, and the group\'s own packages, where it has none'
         paths(beanFactory.getBean('widgets', GroupedOpenApi)) == ['/gate'] as Set
+    }
+
+    void 'contributes to a group once, where springdoc serves the groups through the actuator too'() {
+        given:
+        def beanFactory = new DefaultListableBeanFactory()
+        beanFactory.registerSingleton('generator', generator())
+        beanFactory.registerSingleton('gates', GroupedOpenApi.builder().group('gates').pathsToMatch('/gate/**').build())
+        def contributor = new GroupedOpenApiContributor()
+        contributor.beanFactory = beanFactory
+        def groups = beanFactory.getBeansOfType(GroupedOpenApi).values().toList()
+
+        when: 'springdoc prepares the resource serving the groups, and the one serving them through the actuator'
+        contributor.postProcessBeforeInitialization(resource(beanFactory), 'multipleOpenApiResource')
+        contributor.postProcessBeforeInitialization(new MultipleOpenApiActuatorResource(groups, null, null, null, null,
+                null, null, null), 'multipleOpenApiActuatorResource')
+
+        then:
+        beanFactory.getBean('gates', GroupedOpenApi).openApiCustomizers.count { it instanceof GrailsOpenApiCustomizer } == 1
     }
 
     void 'warns of a group name declared more than once'() {

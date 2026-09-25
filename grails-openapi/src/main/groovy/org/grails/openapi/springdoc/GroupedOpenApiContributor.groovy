@@ -68,8 +68,15 @@ class GroupedOpenApiContributor implements BeanPostProcessor, BeanFactoryAware {
     Object postProcessBeforeInitialization(Object bean, String beanName) throws BeansException {
         if (bean instanceof AbstractMultipleOpenApiResource) {
             Collection<GroupedOpenApi> groups = beanFactory.getBeansOfType(GroupedOpenApi).values()
-            warnOfRepeatedGroups(groups)
-            groups.each { GroupedOpenApi group ->
+            // springdoc serves the same groups through the actuator too, where it is configured to,
+            // so a group is given the Grails description by the first of them only.
+            List<GroupedOpenApi> described = groups.findAll { GroupedOpenApi group ->
+                !group.openApiCustomizers.any { OpenApiCustomizer it -> it instanceof GrailsOpenApiCustomizer }
+            }.toList()
+            if (described) {
+                warnOfRepeatedGroups(groups)
+            }
+            described.each { GroupedOpenApi group ->
                 // Read as the document is built, once springdoc has given the group the global
                 // method filters.
                 group.addAllOpenApiCustomizer([new GrailsOpenApiCustomizer(
