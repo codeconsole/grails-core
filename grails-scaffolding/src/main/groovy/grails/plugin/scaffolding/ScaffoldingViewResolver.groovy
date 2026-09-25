@@ -25,7 +25,6 @@ import groovy.transform.CompileStatic
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 
-import org.springframework.aot.AotDetector
 import org.springframework.context.ResourceLoaderAware
 import org.springframework.core.io.ByteArrayResource
 import org.springframework.core.io.FileSystemResource
@@ -276,8 +275,9 @@ class ScaffoldingViewResolver extends GroovyPageViewResolver implements Resource
     }
 
     /**
-     * Reports, once per page, a scaffolded view that was not served from a compiled page while
-     * compiled pages are in use. During development they are not, and nothing is reported.
+     * Reports, once per page, a scaffolded view that was not served from a compiled page where
+     * compiled pages are in use. During development, and in an application's tests, which render
+     * the views as they are, they are not, and nothing is reported.
      */
     private void report(String templatePath, Map<String, Object> model, String what) {
         if (!precompiledPagesInUse()) {
@@ -289,9 +289,9 @@ class ScaffoldingViewResolver extends GroovyPageViewResolver implements Resource
         }
     }
 
-    /** Whether pages compiled by the build are used, which is when the page locator uses them. */
+    /** Whether pages compiled by the build are used, which is whether the page locator uses them. */
     protected boolean precompiledPagesInUse() {
-        return !Environment.isDevelopmentMode() || AotDetector.useGeneratedArtifacts()
+        return groovyPageLocator.precompiledAvailable
     }
 
     private View expandTemplate(Map<String, Object> model, byte[] template, String cacheKey) {

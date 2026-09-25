@@ -115,18 +115,6 @@ class ScaffoldingViewResolverSpec extends Specification {
         ScaffoldedPages.uri(templatePath, resolver.model(domain).asMap(), text.getBytes(StandardCharsets.UTF_8))
     }
 
-    /** A resolver as a production application has one, where compiled pages are used. */
-    ScaffoldingViewResolver resolverUsingCompiledPages() {
-        ScaffoldingViewResolver compiled = new ScaffoldingViewResolver() {
-            @Override
-            protected boolean precompiledPagesInUse() { true }
-        }
-        compiled.groovyPageLocator = mockPageLocator
-        compiled.templateEngine = mockTemplateEngine
-        compiled.applicationContext = resolver.applicationContext
-        compiled
-    }
-
     GroovyPageView mockViewWithUrl(String url) {
         def view = Mock(GroovyPageView)
         view.url >> url
@@ -419,42 +407,36 @@ class ScaffoldingViewResolverSpec extends Specification {
 
     void "a template expanded where compiled pages are used is reported, once"() {
         given:
-        def compiled = resolverUsingCompiledPages()
         setupScaffoldController(TestScaffoldController, TestDomain)
+        mockPageLocator.precompiledAvailable >> true
         mockPageLocator.resolveViewFormat(_ as String) >> { String name -> name }
         mockPageLocator.findPage(_) >> null
         mockTemplateEngine.gspEncoding >> 'UTF-8'
         mockTemplateEngine.createTemplate(_ as Resource, _) >> Stub(GroovyPageTemplate)
-        compiled.resourceLoader = templates(list: LIST_TEMPLATE)
+        resolver.resourceLoader = templates(list: LIST_TEMPLATE)
 
         when: 'two views expand the same template for the same domain class'
-        compiled.tryGenerateScaffoldedView('/event/list', mockControllerClass) { String name -> [name] }
-        compiled.tryGenerateScaffoldedView('/other/list', mockControllerClass) { String name -> [name] }
+        resolver.tryGenerateScaffoldedView('/event/list', mockControllerClass) { String name -> [name] }
+        resolver.tryGenerateScaffoldedView('/other/list', mockControllerClass) { String name -> [name] }
 
         then:
-        compiled.reportedPages == ["${TestDomain.name}:list".toString()] as Set
+        resolver.reportedPages == ["${TestDomain.name}:list".toString()] as Set
     }
 
-    void "during development an expanded template is not reported"() {
+    void "where no compiled pages are used, as in development or an application's tests, an expanded template is not reported"() {
         given:
         setupScaffoldController(TestScaffoldController, TestDomain)
+        mockPageLocator.precompiledAvailable >> false
         mockPageLocator.resolveViewFormat(LIST_VIEW_NAME) >> LIST_VIEW_NAME
         mockTemplateEngine.gspEncoding >> 'UTF-8'
         mockTemplateEngine.createTemplate(_ as Resource, _) >> Stub(GroovyPageTemplate)
-        def developing = new ScaffoldingViewResolver() {
-            @Override
-            protected boolean precompiledPagesInUse() { false }
-        }
-        developing.groovyPageLocator = mockPageLocator
-        developing.templateEngine = mockTemplateEngine
-        developing.applicationContext = resolver.applicationContext
-        developing.resourceLoader = templates(list: LIST_TEMPLATE)
+        resolver.resourceLoader = templates(list: LIST_TEMPLATE)
 
         when:
-        developing.tryGenerateScaffoldedView(LIST_VIEW_NAME, mockControllerClass) { String name -> [name] }
+        resolver.tryGenerateScaffoldedView(LIST_VIEW_NAME, mockControllerClass) { String name -> [name] }
 
         then:
-        developing.reportedPages.isEmpty()
+        resolver.reportedPages.isEmpty()
     }
 
     // Test domain class for annotation testing

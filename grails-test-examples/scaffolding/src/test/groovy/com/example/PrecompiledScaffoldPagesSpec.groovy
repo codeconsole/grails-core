@@ -64,10 +64,7 @@ class PrecompiledScaffoldPagesSpec extends Specification {
         }
         context.refresh()
 
-        resolver = new ScaffoldingViewResolver() {
-            @Override
-            protected boolean precompiledPagesInUse() { true }
-        }
+        resolver = new ScaffoldingViewResolver()
         resolver.groovyPageLocator = locator
         resolver.templateEngine = Stub(GroovyPagesTemplateEngine) { createTemplate(_) >> Stub(GroovyPageTemplate) }
         resolver.resourceLoader = new DefaultResourceLoader()
