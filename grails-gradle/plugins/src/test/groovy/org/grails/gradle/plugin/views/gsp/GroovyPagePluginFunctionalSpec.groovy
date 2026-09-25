@@ -18,6 +18,9 @@
  */
 package org.grails.gradle.plugin.views.gsp
 
+import java.util.jar.JarEntry
+import java.util.jar.JarOutputStream
+
 import org.grails.gradle.plugin.core.GradleSpecification
 
 /**
@@ -139,6 +142,8 @@ class GroovyPagePluginFunctionalSpec extends GradleSpecification {
                 implementation files('compiler')
                 runtimeOnly files('generator')
                 runtimeOnly files('theme')
+                runtimeOnly files('damaged-plugin.jar')
+                runtimeOnly files('notes.txt')
             }
             sourceSets.main.groovy.srcDir('grails-app/controllers')
             tasks.named('compileGroovyPages') {
@@ -204,6 +209,16 @@ class GroovyPagePluginFunctionalSpec extends GradleSpecification {
             file.parentFile.mkdirs()
             file.text = content.stripIndent()
         }
+        // a plugin whose controller cannot be read, and a classpath entry that holds nothing to read
+        new JarOutputStream(new File(projectDir, 'damaged-plugin.jar').newOutputStream()).withCloseable { JarOutputStream out ->
+            ['META-INF/grails-plugin.xml': '<plugin/>'.bytes,
+             'com/plugin/DamagedController.class': [0xCA, 0xFE, 0xBA, 0xBE, 0, 0] as byte[]].each { String name, byte[] bytes ->
+                out.putNextEntry(new JarEntry(name))
+                out.write(bytes)
+                out.closeEntry()
+            }
+        }
+        new File(projectDir, 'notes.txt').text = 'not an archive'
         File staged = new File(projectDir, 'build/generated/views')
         Closure<Map<String, Object>> pagesOf = { String domain ->
             File dir = new File(staged, "grails-scaffolded/${domain}")
@@ -224,6 +239,10 @@ class GroovyPagePluginFunctionalSpec extends GradleSpecification {
 
         then: 'the application views are staged as they are'
         assertTaskSuccess('stageGroovyPages', result)
+
+        and: 'a controller that cannot be read is warned about, where a note would not be shown'
+        result.output.contains('Could not read damaged-plugin.jar!/com/plugin/DamagedController.class')
+        !result.output.contains('is not an archive')
         new File(staged, 'book/index.gsp').text == 'handwritten index'
 
         and: 'no scaffolded page lands where a controller view resolves from'
