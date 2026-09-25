@@ -4103,7 +4103,41 @@ Filters ordered ahead of `GrailsFilters.FIRST`, such as Spring Boot's forwarded-
 If a reverse proxy in front of the application already sends these headers (for example through nginx's `add_header`), set `grails.security.headers.defaults: auto` so requests that arrive through the proxy (detected from forwarded request headers, `server.forward-headers-strategy`, or an active cloud platform) receive only the headers you configure explicitly, or strip the application's copies at the proxy.
 To disable or customize the Grails defaults, configure `grails.security.headers.*`; see the Security guide's HTTP Security Headers section for the full list and the reverse-proxy guidance.
 
-==== 74. A List of Objects in Configuration Binds to Its Declared Type
+==== 74. Scaffolded Views Are Compiled With the Application
+
+In Grails 7 a scaffolded view was expanded from its template and compiled on the first request that asked
+for it. In Grails 8, the pages of every controller annotated `@Scaffold`, the application's or a plugin's, are
+expanded at build time by the `generateScaffoldedViews` task, into `build/generated/scaffolded-views`, and
+compiled by `compileGroovyPages` in the same compilation as `grails-app/views`, under a `grails-scaffolded`
+directory that no controller's views resolve from. The resolver still chooses the
+template for a request exactly as before, and serves the page compiled from that template when there is one,
+so a request gets the same page it did. Which pages are compiled, and what happens to the others, is
+described in the link:scaffolding.html[Scaffolding] guide.
+
+`compileGroovyPages` takes the pages as its `generatedViews`, beside its `source`, so a build that sets the
+`source` itself still compiles them. In a project that scaffolds nothing, `generateScaffoldedViews` writes
+nothing.
+
+A scaffolding template of the application's own, in `src/main/templates/scaffolding` or packaged under
+`META-INF/templates/scaffolding`, is now compiled at build time, so one that cannot be expanded, or whose page
+does not compile, fails the build as a view that does not compile does - where in Grails 7 it failed on the
+first request for the view. A page expanded from a template a dependency supplies that cannot be compiled
+does not fail the build: it is left out, the build output names it, and it is expanded when it is first
+rendered, as in Grails 7.
+
+The `generateScaffoldedViews` task of 8.0.0-RC1 wrote pages into the controllers' view directories and had
+`templateClasspath` and `applicationViews` properties. Both are gone: the templates are read from the
+`runtimeClasspath` the pages are expanded on, and a view the application declares needs no exclusion, since
+it takes precedence over any scaffolded page when a request is resolved. A build that configures either
+property fails with an unknown property; remove the setting.
+
+8.0.0-RC1 also compiled a scaffolding project's views from a copy made by a `stageGroovyPages` task, which
+it registered only when a controller source mentioned `@Scaffold` - decided by
+`GroovyPagePlugin.scaffoldsAnyController`. Both are gone: nothing is copied, and every project generates the
+pages its scaffolded controllers need, a plugin's among them. A build that refers to `stageGroovyPages`
+fails with an unknown task; remove the reference.
+
+==== 75. A List of Objects in Configuration Binds to Its Declared Type
 
 A list of objects in `application.yml` or `application.groovy`, such as:
 
