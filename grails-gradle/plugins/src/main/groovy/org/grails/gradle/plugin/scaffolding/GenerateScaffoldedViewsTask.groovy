@@ -37,6 +37,7 @@ import org.gradle.api.GradleException
 import org.gradle.api.file.ConfigurableFileCollection
 import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.file.FileVisitDetails
+import org.gradle.api.file.RegularFileProperty
 import org.gradle.api.provider.Property
 import org.gradle.api.tasks.CacheableTask
 import org.gradle.api.tasks.Classpath
@@ -45,6 +46,7 @@ import org.gradle.api.tasks.InputFiles
 import org.gradle.api.tasks.Nested
 import org.gradle.api.tasks.Optional
 import org.gradle.api.tasks.OutputDirectory
+import org.gradle.api.tasks.OutputFile
 import org.gradle.api.tasks.PathSensitive
 import org.gradle.api.tasks.PathSensitivity
 import org.gradle.api.tasks.TaskAction
@@ -102,12 +104,6 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
 
     /** What marks an artifact as a Grails plugin, whose controllers are artefacts of the application. */
     private static final String PLUGIN_DESCRIPTOR = 'META-INF/grails-plugin.xml'
-
-    /**
-     * The directory, under the views, the pages are written to and the resolver looks in, as
-     * {@code org.apache.grails.scaffolding.ScaffoldedPages} names it.
-     */
-    static final String PAGES_DIRECTORY = 'grails-scaffolded'
 
     /** The class that expands and names the pages, from the application's scaffolding library. */
     static final String GENERATOR = 'org.apache.grails.scaffolding.ScaffoldedPagesGenerator'
@@ -174,11 +170,21 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
     @OutputDirectory
     abstract DirectoryProperty getOutputDirectory()
 
+    /**
+     * Lists, a line apiece, the pages expanded from templates a dependency supplies, as paths under
+     * {@link #getOutputDirectory()}, for the page compilation to leave out any that do not compile.
+     * A page expanded from a template of the application's own is not listed, so it has to compile,
+     * as a view does.
+     */
+    @OutputFile
+    abstract RegularFileProperty getOptionalPages()
+
     @Inject
     abstract ExecOperations getExecOperations()
 
     GenerateScaffoldedViewsTask() {
         pageEncoding.convention('UTF-8')
+        optionalPages.convention(project.layout.buildDirectory.file("generated/${name}-optional-pages.txt"))
     }
 
     @TaskAction
@@ -186,6 +192,9 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
         File outputDir = outputDirectory.get().asFile
         outputDir.deleteDir()
         outputDir.mkdirs()
+        File optionalPagesFile = optionalPages.get().asFile
+        optionalPagesFile.parentFile.mkdirs()
+        optionalPagesFile.text = ''
 
         Templates templates = findTemplates()
         if (templates.copies.isEmpty()) {
@@ -246,23 +255,34 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
     }
 
     /**
-     * Reports each template that could not be expanded for a domain class. One a dependency
-     * supplies is a warning: it may never be the copy the resolver chooses - a stock template the
-     * application has replaced, say - and where it is, it is expanded when rendered, as it was before
-     * any page was compiled. One of the application's own is its code as much as a view is, and a
-     * view that does not compile fails the build, so this does too, after reporting every one.
+     * Acts on what the generator reports, by whose each template is.
+     *
+     * <p>A page expanded from a template a dependency supplies is listed as optional, and a template
+     * a dependency supplies that could not be expanded for a domain class is a warning: it may never
+     * be the copy the resolver chooses - a stock template the application has replaced, say - and
+     * where it is, it is expanded when rendered, as it was before any page was compiled. A template
+     * of the application's own is its code as much as a view is, and a view that does not compile
+     * fails the build: its pages are not optional, and one that cannot be expanded fails the build
+     * here, after every one is reported.</p>
      */
     private void report(Templates templates, File reportFile) {
         Map<String, TemplateCopy> byDirectory = templates.copies.collectEntries { TemplateCopy copy ->
             [copy.directory.absolutePath, copy]
         }
+        List<String> optional = []
         List<String> applicationFailures = []
         (reportFile.isFile() ? reportFile.readLines('UTF-8') : []).each { String line ->
             List<String> fields = line.split('\t', 4).toList()
+            TemplateCopy copy = fields.size() > 1 ? byDirectory.get(new File(fields[1]).absolutePath) : null
+            if (fields.size() == 3 && fields[0] == 'page') {
+                if (!copy?.application) {
+                    optional.add(fields[2])
+                }
+                return
+            }
             if (fields.size() < 4 || fields[0] != 'failed') {
                 return
             }
-            TemplateCopy copy = byDirectory.get(new File(fields[1]).absolutePath)
             String failure = "the scaffolding template ${copy?.path}, from ${copy?.origin}, for ${fields[2]}: ${fields[3]}"
             if (copy?.application) {
                 applicationFailures.add(failure)
@@ -271,6 +291,7 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
                 logger.warn('Could not expand {}. No page is compiled for it; if it is rendered it fails the same way.', failure)
             }
         }
+        optionalPages.get().asFile.setText(optional.sort().join('\n'), 'UTF-8')
         if (applicationFailures) {
             throw new GradleException('Could not expand ' + applicationFailures.join('\nCould not expand ') +
                     '\nA template of the application\'s own fails the build, as a view that does not compile does.')

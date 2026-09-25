@@ -185,8 +185,13 @@ class ScaffoldedPagesGeneratorSpec extends Specification {
         page('index', 'com.example.Author', 'index ${className}').getText('UTF-8').endsWith(
                 "%{-- expanded from the application's index.gsp for com.example.Author --}%")
 
-        and: 'a template that could not be expanded is reported on one line'
-        report.readLines('UTF-8').size() == 1
-        report.readLines('UTF-8')[0].split('\t').toList().take(3) == ['failed', broken.path, 'com.example.Broken']
+        and: 'each page written is reported with the templates it came from, and each template that could not be expanded'
+        List<List<String>> lines = report.readLines('UTF-8')*.split('\t')*.toList()
+        lines.findAll { it[0] == 'page' }.collect { it.take(3) } as Set == [
+                ['page', templates.path, page('show', 'com.example.Book', 'show ${className}').path - "${output.path}/"],
+                ['page', templates.path, page('admin/show', 'com.example.Book', 'admin show ${className}').path - "${output.path}/"],
+                ['page', plain.path, page('index', 'com.example.Book', 'index ${className}').path - "${output.path}/"],
+                ['page', plain.path, page('index', 'com.example.Author', 'index ${className}').path - "${output.path}/"]] as Set
+        lines.findAll { it[0] == 'failed' }.collect { it.take(3) } == [['failed', broken.path, 'com.example.Broken']]
     }
 }

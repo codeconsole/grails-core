@@ -266,10 +266,14 @@ class GroovyPagePluginFunctionalSpec extends GradleSpecification {
         when:
         def compilation = executeTask('compileGroovyPages')
 
-        then: 'the page compiler is told which pages are generated, so one that does not compile is left out rather than failing the build'
+        then: 'the page compiler is told which pages it may leave out: those from a dependency\'s templates, not the application\'s'
         assertTaskSuccess('compileGroovyPages', compilation)
-        new File(projectDir, 'build/gsp-classes/main/compiler.txt').readLines('UTF-8') ==
-                ['generatedDirectories=grails-scaffolded', 'encoding=ISO-8859-1']
+        List<String> recorded = new File(projectDir, 'build/gsp-classes/main/compiler.txt').readLines('UTF-8')
+        recorded[1] == 'encoding=ISO-8859-1'
+        List<String> optional = (recorded[0] - 'optionalPages=').tokenize(',')
+        optional.collect { String page -> new File(staged, page).text } as Set ==
+                ['theme show ${className}', 'theme list ${className}'] as Set
+        optional.size() == 4
 
         when: 'a template override is edited'
         new File(projectDir, 'src/main/templates/scaffolding/show.gsp').text = 'edited show ${className}'

@@ -33,8 +33,8 @@ import java.util.stream.Stream;
  * every template in each planned directory is copied to
  * {@code grails-scaffolded/<domain class>/<directory>/<template path>} under the output directory,
  * where each directory came from to {@code origins/<directory>}, and the page encoding to
- * {@code encoding.txt}. A template whose text contains {@code FAIL} is reported as one that could
- * not be expanded instead. How the real generator expands and names a page is tested in
+ * {@code encoding.txt}; each page is reported as written, and a template whose text contains
+ * {@code FAIL} as one that could not be expanded instead. How the real generator expands and names a page is tested in
  * grails-scaffolding.
  */
 public final class ScaffoldedPagesGenerator {
@@ -65,9 +65,11 @@ public final class ScaffoldedPagesGenerator {
                         report.add("failed\t" + templates + "\t" + fields[0] + "\tthe template says FAIL");
                         continue;
                     }
-                    Path target = output.resolve("grails-scaffolded/" + fields[0] + "/" + templates.getFileName() + "/" + path);
+                    String page = "grails-scaffolded/" + fields[0] + "/" + templates.getFileName() + "/" + path;
+                    Path target = output.resolve(page);
                     Files.createDirectories(target.getParent());
                     Files.write(target, Files.readAllBytes(file));
+                    report.add("page\t" + templates + "\t" + page);
                 }
             }
         }

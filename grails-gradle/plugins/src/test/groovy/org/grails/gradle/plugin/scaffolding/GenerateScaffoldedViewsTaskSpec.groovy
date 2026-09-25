@@ -207,6 +207,7 @@ class GenerateScaffoldedViewsTaskSpec extends Specification {
                 it.runtimeClasspath.from(testClasspath())
                 it.templateOverrides.from(overrides)
                 it.outputDirectory.set(new File(projectDir, 'out'))
+                it.optionalPages.set(new File(projectDir, 'optional-pages.txt'))
         }
         project.tasks.named('generateScaffoldedViews', GenerateScaffoldedViewsTask).get()
     }
@@ -611,6 +612,25 @@ class GenerateScaffoldedViewsTaskSpec extends Specification {
         then: 'it may be a copy the resolver never chooses, and where it is, it is expanded when rendered'
             noExceptionThrown()
             handed(task) == ['com.example.User/index': ['index ${className}']]
+    }
+
+    void "only the pages expanded from a dependency's templates are optional to compile"() {
+        given:
+            writeTemplateJar(templateJar, [show: 'show ${className}', index: 'index ${className}'])
+            writeController('UserController', 'User')
+            File overrides = new File(projectDir, 'templates')
+            new File(overrides, 'show.gsp').with { parentFile.mkdirs(); text = 'custom show' }
+            def task = task(ProjectBuilder.builder().build().fileTree(overrides))
+
+        when:
+            task.generate()
+            List<String> optional = task.optionalPages.get().asFile.readLines('UTF-8')
+
+        then: 'the application\'s own has to compile, as a view does'
+            optional.size() == 2
+            optional.every { String page -> new File(task.outputDirectory.get().asFile, page).isFile() }
+            optional.collect { String page -> new File(task.outputDirectory.get().asFile, page).text } as Set ==
+                    ['show ${className}', 'index ${className}'] as Set
     }
 
     void "a template of the application's own that cannot be expanded fails the build, naming each"() {

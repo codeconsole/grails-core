@@ -4117,8 +4117,12 @@ Such a project compiles its views from a copy staged by the `stageGroovyPages` t
 `grails-app/views` and the expanded pages, rather than from `grails-app/views` itself. A build that sets the
 `source` of `compileGroovyPages` itself replaces that copy, and compiles no scaffolded page.
 
-A page that cannot be compiled does not fail the build: it is left out, the build output names it, and it is
-expanded when it is first rendered, as in Grails 7.
+A scaffolding template of the application's own, in `src/main/templates/scaffolding` or packaged under
+`META-INF/templates/scaffolding`, is now compiled at build time, so one that cannot be expanded, or whose page
+does not compile, fails the build as a view that does not compile does - where in Grails 7 it failed on the
+first request for the view. A page expanded from a template a dependency supplies that cannot be compiled
+does not fail the build: it is left out, the build output names it, and it is expanded when it is first
+rendered, as in Grails 7.
 
 The `generateScaffoldedViews` task of 8.0.0-RC1 wrote pages into the controllers' view directories and had
 `templateClasspath` and `applicationViews` properties. Both are gone: the templates are read from the

@@ -28,23 +28,32 @@ class GroovyPageForkedCompilerSpec extends Specification {
     @TempDir
     File dir
 
-    void 'the directories of generated pages reach the page compiler from the build'() {
+    private File pageList(String name, String... pages) {
+        File list = new File(dir, name)
+        list.setText(pages.join('\n'), 'UTF-8')
+        list
+    }
+
+    void 'the optional pages reach the page compiler from the build, from every list it is given'() {
         given:
-        String previous = System.getProperty(BuildSettings.GENERATED_GSP_DIRECTORIES)
-        System.setProperty(BuildSettings.GENERATED_GSP_DIRECTORIES, 'grails-scaffolded, other')
+        String lists = [pageList('scaffolded.txt', 'grails-scaffolded/a.gsp', '', 'grails-scaffolded/b.gsp'),
+                        pageList('other.txt', 'other/c.gsp'),
+                        new File(dir, 'missing.txt')]*.path.join(File.pathSeparator)
+        String previous = System.getProperty(BuildSettings.OPTIONAL_GSP_PAGES)
+        System.setProperty(BuildSettings.OPTIONAL_GSP_PAGES, lists)
 
         when:
         def compiler = new GroovyPageForkedCompiler(dir, dir, dir).createPageCompiler()
 
         then:
-        compiler.generatedDirectories == ['grails-scaffolded', 'other']
+        compiler.optionalPages == ['grails-scaffolded/a.gsp', 'grails-scaffolded/b.gsp', 'other/c.gsp'] as Set
 
         cleanup:
-        previous == null ? System.clearProperty(BuildSettings.GENERATED_GSP_DIRECTORIES) :
-                System.setProperty(BuildSettings.GENERATED_GSP_DIRECTORIES, previous)
+        previous == null ? System.clearProperty(BuildSettings.OPTIONAL_GSP_PAGES) :
+                System.setProperty(BuildSettings.OPTIONAL_GSP_PAGES, previous)
     }
 
-    void 'a generated page left out is printed, which is what the build shows of this process'() {
+    void 'an optional page left out is printed, which is what the build shows of this process'() {
         given:
         File views = new File(dir, 'views')
         new File(views, 'generated').mkdirs()
@@ -54,8 +63,8 @@ class GroovyPageForkedCompilerSpec extends Specification {
         File work = new File(dir, 'work')
         [classes, work]*.mkdirs()
         def compiler = new GroovyPageForkedCompiler(views, classes, work)
-        String previous = System.getProperty(BuildSettings.GENERATED_GSP_DIRECTORIES)
-        System.setProperty(BuildSettings.GENERATED_GSP_DIRECTORIES, 'generated')
+        String previous = System.getProperty(BuildSettings.OPTIONAL_GSP_PAGES)
+        System.setProperty(BuildSettings.OPTIONAL_GSP_PAGES, pageList('optional.txt', 'generated/broken.gsp').path)
         PrintStream err = System.err
         ByteArrayOutputStream printed = new ByteArrayOutputStream()
         System.err = new PrintStream(printed, true, 'UTF-8')
@@ -64,24 +73,24 @@ class GroovyPageForkedCompilerSpec extends Specification {
         compiler.compile([broken])
 
         then:
-        printed.toString('UTF-8').contains('Left out the generated page generated/broken.gsp')
+        printed.toString('UTF-8').contains('Left out the optional page generated/broken.gsp')
 
         cleanup:
         System.err = err
-        previous == null ? System.clearProperty(BuildSettings.GENERATED_GSP_DIRECTORIES) :
-                System.setProperty(BuildSettings.GENERATED_GSP_DIRECTORIES, previous)
+        previous == null ? System.clearProperty(BuildSettings.OPTIONAL_GSP_PAGES) :
+                System.setProperty(BuildSettings.OPTIONAL_GSP_PAGES, previous)
     }
 
-    void 'without the setting no page is treated as generated'() {
+    void 'without the setting no page is optional'() {
         given:
-        String previous = System.getProperty(BuildSettings.GENERATED_GSP_DIRECTORIES)
-        System.clearProperty(BuildSettings.GENERATED_GSP_DIRECTORIES)
+        String previous = System.getProperty(BuildSettings.OPTIONAL_GSP_PAGES)
+        System.clearProperty(BuildSettings.OPTIONAL_GSP_PAGES)
 
         expect:
-        new GroovyPageForkedCompiler(dir, dir, dir).createPageCompiler().generatedDirectories.isEmpty()
+        new GroovyPageForkedCompiler(dir, dir, dir).createPageCompiler().optionalPages.isEmpty()
 
         cleanup:
-        previous == null ? System.clearProperty(BuildSettings.GENERATED_GSP_DIRECTORIES) :
-                System.setProperty(BuildSettings.GENERATED_GSP_DIRECTORIES, previous)
+        previous == null ? System.clearProperty(BuildSettings.OPTIONAL_GSP_PAGES) :
+                System.setProperty(BuildSettings.OPTIONAL_GSP_PAGES, previous)
     }
 }

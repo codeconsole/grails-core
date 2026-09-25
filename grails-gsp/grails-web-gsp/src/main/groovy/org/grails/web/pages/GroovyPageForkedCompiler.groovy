@@ -87,9 +87,14 @@ class GroovyPageForkedCompiler {
         if (encoding) {
             compiler.encoding = encoding
         }
-        String generated = System.getProperty(BuildSettings.GENERATED_GSP_DIRECTORIES)
-        if (generated) {
-            compiler.generatedDirectories = generated.tokenize(',')*.trim()
+        String optionalPages = System.getProperty(BuildSettings.OPTIONAL_GSP_PAGES)
+        if (optionalPages) {
+            for (String list : optionalPages.split(File.pathSeparator)) {
+                File file = new File(list)
+                if (file.isFile()) {
+                    compiler.optionalPages.addAll(file.readLines('UTF-8')*.trim().findAll { String page -> page })
+                }
+            }
         }
         return compiler
     }
@@ -108,7 +113,7 @@ class GroovyPageForkedCompiler {
         compiler.compile()
         // the build shows what this process prints, not what it logs
         compiler.leftOut.each { String page, String reason ->
-            System.err.println("Left out the generated page ${page}, which does not compile; if it is rendered it " +
+            System.err.println("Left out the optional page ${page}, which does not compile; if it is rendered it " +
                     "is produced then instead, and fails the same way: ${reason}")
         }
     }

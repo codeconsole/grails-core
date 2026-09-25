@@ -71,11 +71,11 @@ class GroovyPageCompiler {
     String expressionCodec = OutputEncodingSettings.getDefaultValue(OutputEncodingSettings.EXPRESSION_CODEC_NAME)
     String[] configs = []
     /**
-     * Directories under {@link #viewsDir}, as relative paths, whose pages were generated. One of
-     * those that does not compile is left out with a warning instead of failing the compilation.
+     * Pages under {@link #viewsDir}, as relative paths, that may be left out: one of these that does
+     * not compile is left out with a warning instead of failing the compilation.
      */
-    List<String> generatedDirectories = []
-    /** The generated pages left out because they did not compile, each with the reason. */
+    Set<String> optionalPages = [] as Set<String>
+    /** The optional pages left out because they did not compile, each with the reason. */
     final Map<String, String> leftOut = Collections.synchronizedMap(new TreeMap<String, String>())
     ConfigMap configMap
     ExecutorService threadPool
@@ -136,8 +136,8 @@ class GroovyPageCompiler {
                                 compileGSP(viewsDir, gsp, viewPrefix, packagePrefix, results)
                             } catch (Exception ex) {
                                 String page = relativePath(viewsDir, gsp)
-                                if (isGenerated(page)) {
-                                    LOG.warn("Leaving out the generated page ${page}, which does not compile: ${ex.message}")
+                                if (optionalPages.contains(page)) {
+                                    LOG.warn("Leaving out the optional page ${page}, which does not compile: ${ex.message}")
                                     leftOut.put(page, String.valueOf(ex.message))
                                     continue
                                 }
@@ -245,10 +245,6 @@ class GroovyPageCompiler {
             return null
         }
         stale.contains(name) || current.contains(name) ? name : null
-    }
-
-    private boolean isGenerated(String page) {
-        generatedDirectories.any { String dir -> page.startsWith(dir.endsWith('/') ? dir : dir + '/') }
     }
 
     /**

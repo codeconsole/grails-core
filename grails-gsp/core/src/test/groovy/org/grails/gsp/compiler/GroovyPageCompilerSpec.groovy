@@ -120,14 +120,14 @@ class GroovyPageCompilerSpec extends Specification {
         registry().keySet() == ['/index.gsp'] as Set
     }
 
-    void 'a generated page that does not compile is left out, and the others compiled'() {
+    void 'an optional page that does not compile is left out, and the others compiled'() {
         given:
         writeView('index.gsp')
         writeView('generated/good.gsp')
         writeView('generated/broken.gsp', '<% def x = ; %>')
 
         when:
-        compile('/', ['generated'])
+        compile('/', ['generated/good.gsp', 'generated/broken.gsp'])
 
         then: 'nothing names the page that did not compile, so it is produced when it is rendered'
         registry().keySet() == ['/index.gsp', '/generated/good.gsp'] as Set
@@ -137,15 +137,19 @@ class GroovyPageCompilerSpec extends Specification {
         lastCompiler.leftOut.keySet() == ['generated/broken.gsp'] as Set
     }
 
-    void 'a written page that does not compile fails the compilation'() {
+    void 'a page that is not optional and does not compile fails the compilation, beside optional ones or not'() {
         given:
-        writeView('index.gsp', '<% def x = ; %>')
+        writeView(page, '<% def x = ; %>')
+        writeView('generated/optional.gsp')
 
         when:
-        compile('/', ['generated'])
+        compile('/', ['generated/optional.gsp'])
 
         then:
         thrown(Exception)
+
+        where:
+        page << ['index.gsp', 'generated/own.gsp']
     }
 
     private File writeView(String path, String content = null) {
@@ -157,10 +161,10 @@ class GroovyPageCompilerSpec extends Specification {
 
     private GroovyPageCompiler lastCompiler
 
-    private void compile(String viewPrefix = '/', List<String> generated = []) {
+    private void compile(String viewPrefix = '/', List<String> optional = []) {
         GroovyPageCompiler compiler = new GroovyPageCompiler()
         lastCompiler = compiler
-        compiler.generatedDirectories = generated
+        compiler.optionalPages = optional as Set<String>
         compiler.viewsDir = viewsDir
         compiler.targetDir = targetDir
         compiler.generatedGroovyPagesDirectory = generatedDir

@@ -16,18 +16,19 @@
  */
 package org.grails.web.pages;
 
+import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
  * Stands in for grails-web-gsp's forked page compiler, which the plugin's tests cannot depend on,
- * and records what {@code GroovyPageForkCompileTask} starts it with: the directories whose pages are
- * generated, and the encoding the pages are read in, to {@code compiler.txt} in the destination
- * directory. How the real compiler treats a generated page is tested in grails-web-gsp.
+ * and records what {@code GroovyPageForkCompileTask} starts it with: the pages it may leave out,
+ * and the encoding the pages are read in, to {@code compiler.txt} in the destination directory. How the real compiler treats a generated page is tested in grails-web-gsp.
  */
 public final class GroovyPageForkedCompiler {
 
@@ -37,8 +38,15 @@ public final class GroovyPageForkedCompiler {
     public static void main(String[] args) throws IOException {
         Path destination = Paths.get(args[1]);
         Files.createDirectories(destination);
+        List<String> optional = new ArrayList<>();
+        String lists = System.getProperty("grails.views.gsp.optionalPages");
+        if (lists != null) {
+            for (String list : lists.split(File.pathSeparator)) {
+                optional.addAll(Files.readAllLines(Paths.get(list), StandardCharsets.UTF_8));
+            }
+        }
         Files.write(destination.resolve("compiler.txt"), List.of(
-                "generatedDirectories=" + System.getProperty("grails.views.gsp.generatedDirectories"),
+                "optionalPages=" + String.join(",", optional),
                 "encoding=" + args[7]), StandardCharsets.UTF_8);
     }
 }

@@ -38,10 +38,11 @@ import grails.codegen.model.ModelBuilder
  * expand for it. A templates directory holds a file per template path, such as {@code show.gsp} or
  * {@code admin/show.gsp}. Each line of the origins names a templates directory and, after a tab,
  * where its template came from. The pages are written in the encoding they will be compiled
- * with. What the build has to decide about is written to the report: a line for each template that
- * could not be expanded for a domain class, {@code failed}, its templates directory, the domain
- * class and why, tab separated. Whether that fails the build depends on whose template it is,
- * which the build knows and this does not.</p>
+ * with. What the build has to decide about is written to the report, a line apiece, tab
+ * separated: each page written - {@code page}, its templates directory and its path under the
+ * output directory - and each template that could not be expanded for a domain class -
+ * {@code failed}, its templates directory, the domain class and why. What becomes of either depends
+ * on whose template it is, which the build knows and this does not.</p>
  *
  * @since 8.0
  */
@@ -68,9 +69,11 @@ class ScaffoldedPagesGenerator implements ModelBuilder {
             }
         }
         Result result = new ScaffoldedPagesGenerator().generate(plan, new File(args[2]), args[3], origins)
-        new File(args[4]).setText(result.failures.collect { Failure failure ->
+        List<String> report = result.pages.collect { Page page -> ['page', page.templatesDir.path, page.path].join('\t') }
+        report.addAll(result.failures.collect { Failure failure ->
             ['failed', failure.templatesDir.path, failure.domain, failure.reason.replaceAll(/\s+/, ' ')].join('\t')
-        }.join('\n'), 'UTF-8')
+        })
+        new File(args[4]).setText(report.join('\n'), 'UTF-8')
     }
 
     /**
@@ -84,7 +87,7 @@ class ScaffoldedPagesGenerator implements ModelBuilder {
      * @param plan each domain class, with the templates directories to expand for it
      * @param origins where the template in each templates directory came from; the template's own
      *     file for a directory not named
-     * @return how many pages were written, and each template that could not be expanded
+     * @return each page written, and each template that could not be expanded
      */
     Result generate(Map<String, List<File>> plan, File outputDir, String encoding = 'UTF-8', Map<File, String> origins = [:]) {
         Result result = new Result()
@@ -100,10 +103,11 @@ class ScaffoldedPagesGenerator implements ModelBuilder {
                             String.valueOf(e.cause ?: e)))
                     continue
                 }
-                File target = new File(outputDir, ScaffoldedPages.uri(template.path, model, template.content).substring(1))
+                String path = ScaffoldedPages.uri(template.path, model, template.content).substring(1)
+                File target = new File(outputDir, path)
                 target.parentFile.mkdirs()
                 target.setText("${page}%{-- expanded from ${template.origin} for ${domain} --}%", encoding)
-                result.written++
+                result.pages.add(new Page(template.directory, path))
             }
         }
         result
@@ -112,11 +116,30 @@ class ScaffoldedPagesGenerator implements ModelBuilder {
     /** What a generation did. */
     static final class Result {
 
-        /** How many pages were written. */
-        int written
+        /** Each page written. */
+        final List<Page> pages = []
 
         /** Each template that could not be expanded for a domain class. */
         final List<Failure> failures = []
+
+        /** How many pages were written. */
+        int getWritten() {
+            pages.size()
+        }
+
+    }
+
+    /** A page written: the templates directory it was expanded from, and its path under the output directory. */
+    static final class Page {
+
+        final File templatesDir
+
+        final String path
+
+        Page(File templatesDir, String path) {
+            this.templatesDir = templatesDir
+            this.path = path
+        }
 
     }
 
