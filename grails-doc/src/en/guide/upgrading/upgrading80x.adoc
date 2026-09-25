@@ -4106,16 +4106,17 @@ To disable or customize the Grails defaults, configure `grails.security.headers.
 ==== 74. Scaffolded Views Are Compiled With the Application
 
 In Grails 7 a scaffolded view was expanded from its template and compiled on the first request that asked
-for it. In Grails 8, a project with a controller annotated `@Scaffold` has those pages expanded at build time
-by the `generateScaffoldedViews` task and compiled by `compileGroovyPages` with the rest of its views, under
-a `grails-scaffolded` directory that no controller's views resolve from. The resolver still chooses the
+for it. In Grails 8, the pages of every controller annotated `@Scaffold`, the application's or a plugin's, are
+expanded at build time by the `generateScaffoldedViews` task, into `build/generated/scaffolded-views`, and
+compiled by `compileGroovyPages` in the same compilation as `grails-app/views`, under a `grails-scaffolded`
+directory that no controller's views resolve from. The resolver still chooses the
 template for a request exactly as before, and serves the page compiled from that template when there is one,
 so a request gets the same page it did. Which pages are compiled, and what happens to the others, is
 described in the link:scaffolding.html[Scaffolding] guide.
 
-Such a project compiles its views from a copy staged by the `stageGroovyPages` task, holding
-`grails-app/views` and the expanded pages, rather than from `grails-app/views` itself. A build that sets the
-`source` of `compileGroovyPages` itself replaces that copy, and compiles no scaffolded page.
+`compileGroovyPages` takes the pages as its `generatedViews`, beside its `source`, so a build that sets the
+`source` itself still compiles them. In a project that scaffolds nothing, `generateScaffoldedViews` writes
+nothing.
 
 A scaffolding template of the application's own, in `src/main/templates/scaffolding` or packaged under
 `META-INF/templates/scaffolding`, is now compiled at build time, so one that cannot be expanded, or whose page
@@ -4129,3 +4130,9 @@ The `generateScaffoldedViews` task of 8.0.0-RC1 wrote pages into the controllers
 `runtimeClasspath` the pages are expanded on, and a view the application declares needs no exclusion, since
 it takes precedence over any scaffolded page when a request is resolved. A build that configures either
 property fails with an unknown property; remove the setting.
+
+8.0.0-RC1 also compiled a scaffolding project's views from a copy made by a `stageGroovyPages` task, which
+it registered only when a controller source mentioned `@Scaffold` - decided by
+`GroovyPagePlugin.scaffoldsAnyController`. Both are gone: nothing is copied, and every project generates the
+pages its scaffolded controllers need, a plugin's among them. A build that refers to `stageGroovyPages`
+fails with an unknown task; remove the reference.

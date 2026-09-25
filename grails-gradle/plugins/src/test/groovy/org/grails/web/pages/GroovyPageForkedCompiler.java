@@ -27,8 +27,9 @@ import java.util.List;
 
 /**
  * Stands in for grails-web-gsp's forked page compiler, which the plugin's tests cannot depend on,
- * and records what {@code GroovyPageForkCompileTask} starts it with: the pages it may leave out,
- * and the encoding the pages are read in, to {@code compiler.txt} in the destination directory. How the real compiler treats a generated page is tested in grails-web-gsp.
+ * and records what {@code GroovyPageForkCompileTask} starts it with - the directory of the pages,
+ * the directories of generated pages compiled with them, the pages it may leave out, and the
+ * encoding the pages are read in - to {@code compiler.txt} in the destination directory. How the real compiler treats a generated page is tested in grails-web-gsp.
  */
 public final class GroovyPageForkedCompiler {
 
@@ -46,6 +47,8 @@ public final class GroovyPageForkedCompiler {
             }
         }
         Files.write(destination.resolve("compiler.txt"), List.of(
+                "source=" + args[0],
+                "generatedViews=" + System.getProperty("grails.views.gsp.generatedViewDirectories"),
                 "optionalPages=" + String.join(",", optional),
                 "encoding=" + args[7]), StandardCharsets.UTF_8);
     }

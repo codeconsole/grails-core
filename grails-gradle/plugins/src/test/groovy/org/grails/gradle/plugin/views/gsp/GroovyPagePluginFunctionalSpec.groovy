@@ -21,6 +21,11 @@ package org.grails.gradle.plugin.views.gsp
 import java.util.jar.JarEntry
 import java.util.jar.JarOutputStream
 
+import groovyjarjarasm.asm.AnnotationVisitor
+import groovyjarjarasm.asm.ClassWriter
+import groovyjarjarasm.asm.Opcodes
+import groovyjarjarasm.asm.Type
+
 import org.grails.gradle.plugin.core.GradleSpecification
 
 /**
@@ -132,7 +137,7 @@ class GroovyPagePluginFunctionalSpec extends GradleSpecification {
         result.output.contains('TEST_WAITS_FOR_PAGE_COMPILATION=false')
     }
 
-    def "scaffolded pages are staged beside the application views, in a directory of their own"() {
+    def "scaffolded pages are generated into a directory of their own and compiled with the application views"() {
         given:
         def runner = setupTestResourceProject('gsp-compile-classpath')
         File projectDir = runner.projectDir
@@ -219,9 +224,9 @@ class GroovyPagePluginFunctionalSpec extends GradleSpecification {
             }
         }
         new File(projectDir, 'notes.txt').text = 'not an archive'
-        File staged = new File(projectDir, 'build/generated/views')
+        File generated = new File(projectDir, 'build/generated/scaffolded-views')
         Closure<Map<String, Object>> pagesOf = { String domain ->
-            File dir = new File(staged, "grails-scaffolded/${domain}")
+            File dir = new File(generated, "grails-scaffolded/${domain}")
             Map<String, List<String>> pages = [:]
             dir.eachFileRecurse { File f ->
                 if (f.isFile()) {
@@ -235,19 +240,20 @@ class GroovyPagePluginFunctionalSpec extends GradleSpecification {
         }
 
         when:
-        def result = executeTask('stageGroovyPages')
+        def result = executeTask('generateScaffoldedViews')
 
-        then: 'the application views are staged as they are'
-        assertTaskSuccess('stageGroovyPages', result)
+        then:
+        assertTaskSuccess('generateScaffoldedViews', result)
 
         and: 'a controller that cannot be read is warned about, where a note would not be shown'
         result.output.contains('Could not read damaged-plugin.jar!/com/plugin/DamagedController.class')
         !result.output.contains('is not an archive')
-        new File(staged, 'book/index.gsp').text == 'handwritten index'
 
-        and: 'no scaffolded page lands where a controller view resolves from'
-        !new File(staged, 'book/show.gsp').exists()
-        !new File(staged, 'event').exists()
+        and: 'the pages have a directory of their own, where no controller view resolves from, and the views are not copied'
+        new File(generated, 'grails-scaffolded').isDirectory()
+        !new File(generated, 'book').exists()
+        !new File(generated, 'event').exists()
+        !new File(projectDir, 'build/generated/views').exists()
 
         and: 'every copy of every template the application runs with is expanded for every scaffolded domain class'
         pagesOf('java.lang.String') == ['show.gsp': ['show ${className}', 'theme show ${className}'],
@@ -261,29 +267,86 @@ class GroovyPagePluginFunctionalSpec extends GradleSpecification {
                                          'index.gsp': 'extra index ${className}', 'create.gsp': 'generated create ${className}']
 
         and: 'they are written in the encoding they are compiled with'
-        new File(staged, 'encoding.txt').text == 'ISO-8859-1'
+        new File(generated, 'encoding.txt').text == 'ISO-8859-1'
 
         when:
         def compilation = executeTask('compileGroovyPages')
+        Map<String, String> recorded = new File(projectDir, 'build/gsp-classes/main/compiler.txt').readLines('UTF-8')
+                .collectEntries { String line -> line.split('=', 2) as List }
 
-        then: 'the page compiler is told which pages it may leave out: those from a dependency\'s templates, not the application\'s'
+        then: 'the application views are compiled where they are, and the generated pages with them, in one compilation'
         assertTaskSuccess('compileGroovyPages', compilation)
-        List<String> recorded = new File(projectDir, 'build/gsp-classes/main/compiler.txt').readLines('UTF-8')
-        recorded[1] == 'encoding=ISO-8859-1'
-        List<String> optional = (recorded[0] - 'optionalPages=').tokenize(',')
-        optional.collect { String page -> new File(staged, page).text } as Set ==
+        new File(recorded.source).canonicalFile == new File(projectDir, 'grails-app/views').canonicalFile
+        new File(recorded.generatedViews).canonicalFile == generated.canonicalFile
+        recorded.encoding == 'ISO-8859-1'
+
+        and: 'the page compiler is told which pages it may leave out: those from a dependency\'s templates, not the application\'s'
+        List<String> optional = recorded.optionalPages.tokenize(',')
+        optional.collect { String page -> new File(generated, page).text } as Set ==
                 ['theme show ${className}', 'theme list ${className}'] as Set
         optional.size() == 4
 
         when: 'a template override is edited'
         new File(projectDir, 'src/main/templates/scaffolding/show.gsp').text = 'edited show ${className}'
-        def rebuild = executeTask('stageGroovyPages')
+        def rebuild = executeTask('generateScaffoldedViews')
 
         then: 'the pages expanded from it are replaced, not added to'
-        assertTaskSuccess('stageGroovyPages', rebuild)
+        assertTaskSuccess('generateScaffoldedViews', rebuild)
         pagesOf('java.lang.String') == ['show.gsp': ['edited show ${className}', 'theme show ${className}'],
                                         'admin/show.gsp': 'admin show ${className}',
                                         'edit.gsp': 'resources edit ${className}', 'list.gsp': 'theme list ${className}',
                                         'index.gsp': 'extra index ${className}', 'create.gsp': 'generated create ${className}']
+    }
+
+    def "a plugin's scaffolded controllers have their pages generated in an application that scaffolds none of its own"() {
+        given: 'no controller of the application is scaffolded, so nothing it wrote says it scaffolds'
+        def runner = setupTestResourceProject('gsp-compile-classpath')
+        File projectDir = runner.projectDir
+        new File(projectDir, 'build.gradle').append("""
+            dependencies {
+                runtimeOnly files('generator')
+                runtimeOnly files('widget-plugin.jar')
+            }
+        """)
+        String generator = 'org/apache/grails/scaffolding/ScaffoldedPagesGenerator.class'
+        File generatorClass = new File(projectDir, "generator/${generator}")
+        generatorClass.parentFile.mkdirs()
+        generatorClass.bytes = getClass().classLoader.getResource(generator).bytes
+        ClassWriter controller = new ClassWriter(0)
+        controller.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, 'com/plugin/WidgetController', null, 'java/lang/Object', null)
+        AnnotationVisitor scaffold = controller.visitAnnotation('Lgrails/plugin/scaffolding/annotation/Scaffold;', true)
+        scaffold.visit('domain', Type.getObjectType('java/lang/Long'))
+        scaffold.visitEnd()
+        controller.visitEnd()
+        new JarOutputStream(new File(projectDir, 'widget-plugin.jar').newOutputStream()).withCloseable { JarOutputStream out ->
+            ['META-INF/grails-plugin.xml': '<plugin/>'.bytes,
+             'com/plugin/WidgetController.class': controller.toByteArray(),
+             'META-INF/templates/scaffolding/show.gsp': 'widget show ${className}'.bytes].each { String name, byte[] bytes ->
+                out.putNextEntry(new JarEntry(name))
+                out.write(bytes)
+                out.closeEntry()
+            }
+        }
+
+        when:
+        def result = executeTask('generateScaffoldedViews')
+
+        then:
+        assertTaskSuccess('generateScaffoldedViews', result)
+        File pages = new File(projectDir, 'build/generated/scaffolded-views/grails-scaffolded/java.lang.Long')
+        pages.isDirectory()
+        pages.listFiles()*.listFiles().flatten()*.text == ['widget show ${className}']
+    }
+
+    def "a project that scaffolds nothing generates nothing"() {
+        given:
+        def runner = setupTestResourceProject('gsp-compile-classpath')
+
+        when:
+        def result = executeTask('generateScaffoldedViews')
+
+        then:
+        assertTaskSuccess('generateScaffoldedViews', result)
+        !new File(runner.projectDir, 'build/generated/scaffolded-views/grails-scaffolded').exists()
     }
 }

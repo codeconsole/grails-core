@@ -37,6 +37,7 @@ import org.gradle.api.provider.Property
 import org.gradle.api.tasks.Input
 import org.gradle.api.tasks.InputDirectory
 import org.gradle.api.tasks.InputFiles
+import org.gradle.api.tasks.Internal
 import org.gradle.api.tasks.LocalState
 import org.gradle.api.tasks.Nested
 import org.gradle.api.tasks.Optional
@@ -126,6 +127,16 @@ abstract class GroovyPageForkCompileTask extends AbstractCompile {
     @PathSensitive(PathSensitivity.RELATIVE)
     final ConfigurableFileCollection optionalPages
 
+    /**
+     * Directories of pages the build generated, compiled in the same compilation as the source, each
+     * page named by its path under the directory holding it, as though it were in the source, where a
+     * page at the same path takes precedence. Part of {@link #getSource()}, so a project whose only
+     * pages are generated compiles them. One compilation rather than two, because each would write a
+     * {@code gsp/views.properties} and an archive keeps only the first.
+     */
+    @Internal
+    final ConfigurableFileCollection generatedViews
+
     private ExecOperations execOperations
 
     /**
@@ -156,6 +167,7 @@ abstract class GroovyPageForkCompileTask extends AbstractCompile {
         compileStatic = objectFactory.property(Boolean).convention(false)
         compileStaticStrict = objectFactory.property(Boolean).convention(false)
         optionalPages = objectFactory.fileCollection()
+        generatedViews = objectFactory.fileCollection()
         grailsConfigurationPaths = objectFactory.fileCollection()
         grailsConfigurationPaths.from(
                 project.layout.projectDirectory.file('grails-app/conf/application.yml'),
@@ -167,7 +179,7 @@ abstract class GroovyPageForkCompileTask extends AbstractCompile {
     @Override
     @PathSensitive(PathSensitivity.RELATIVE)
     FileTree getSource() {
-        return super.getSource()
+        return super.getSource().plus(generatedViews.asFileTree)
     }
 
     @Override
@@ -212,6 +224,10 @@ abstract class GroovyPageForkCompileTask extends AbstractCompile {
                         javaExecSpec.setMaxHeapSize(compileOptions.forkOptions.memoryMaximumSize)
                         javaExecSpec.setMinHeapSize(compileOptions.forkOptions.memoryInitialSize)
 
+                        if (!generatedViews.isEmpty()) {
+                            javaExecSpec.systemProperty(BuildSettings.GENERATED_GSP_VIEW_DIRECTORIES,
+                                    generatedViews.files*.absolutePath.join(File.pathSeparator))
+                        }
                         if (!optionalPages.isEmpty()) {
                             javaExecSpec.systemProperty(BuildSettings.OPTIONAL_GSP_PAGES,
                                     optionalPages.files*.absolutePath.join(File.pathSeparator))
