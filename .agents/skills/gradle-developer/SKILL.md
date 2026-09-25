@@ -11,7 +11,7 @@ Licensed to the Apache Software Foundation (ASF) under one or more contributor l
 
 ## What I Do
 
-- Write and change Gradle build scripts the way **this repository** already does them on `8.0.x` (Gradle **9.6.x**).
+- Write and change Gradle build scripts the way **this repository** already does them on `8.0.x` (Gradle **9.7.x**).
 - Keep agents off generic Gradle "best practice" when it conflicts with established monorepo patterns.
 - Cover composite builds (`build-logic`, `grails-gradle`, `grails-forge`, `end-to-end`), convention plugins, BOM/`platform()` dependency management, test wiring, publishing hooks, and Gradle 9 task-configuration traps learned from recent PRs.
 - Make Gradle changes boring, copy-paste consistent, and correct on the first try.
@@ -136,7 +136,7 @@ Presence-based flags (property **present**, value optional) match `skipFunctiona
 
 ## Gradle Version Sync (Hard Rule)
 
-Current line: **Gradle 9.6.0** (`distributionUrl` + `gradleToolingApiVersion=9.6.0`). Upstream may already ship a newer 9.6.x patch - this repo rides close to latest **only after** a deliberate multi-location bump PR. Do not "helpfully" jump one wrapper ahead of the rest.
+Current line: **Gradle 9.7.1** (`distributionUrl` + `gradleToolingApiVersion=9.7.1`). Upstream may already ship a newer 9.7.x patch - this repo rides close to latest **only after** a deliberate multi-location bump PR. Do not "helpfully" jump one wrapper ahead of the rest.
 
 **Two Groovy stacks:** Gradle itself embeds **Groovy 4** for build logic. Application/runtime code on 8.0.x is **Groovy 5**. That is why `dependencies.gradle` keeps separate maps:
 
@@ -183,12 +183,17 @@ Also keep `gradlew.bat` LF line endings on this line (PR #15709). Comment at top
 | `org.gradle.daemon` | `true` |
 | `org.gradle.configuration-cache` | **`false`** until #15497 resolved - do not enable casually |
 | `org.gradle.configureondemand` | **commented off** - Gradle issue #9489 |
-| `org.gradle.jvmargs` | `-Xmx5G` (raise only with reason; groovydoc is hungry) |
+| `org.gradle.jvmargs` | `-Xmx3G` (daemon only; groovydoc and the guide run in their own JVMs) |
 | `javaVersion` | `21` (CompilePlugin reads this for `--release`) |
 | `projectVersion` | framework version |
 | `slf4jPreventExclusion` | `true` - Grails Gradle plugin POM behavior |
 
 CI vs local behavior is branched on `System.getenv('CI')` and `SOURCE_DATE_EPOCH` (reproducible builds disable remote cache).
+
+`groovydocMaxHeapSize` and `guideMaxHeapSize` are **not** keys in `gradle.properties` - do not add
+them. Each documentation JVM carries its own default (1g per groovydoc task, raised to 3g/2g by the
+two aggregates; 1500m for the guide), and these exist only as `-P` overrides that beat the build
+script when a documentation run will not fit.
 
 ---
 
@@ -288,7 +293,7 @@ For POM property generation, **map key must be the dependency name prefix**:
 
 ```groovy
 bomDependencyVersions = [
-    'groovy.version': '5.0.7',
+    'groovy.version': '5.1.3',
 ]
 bomDependencies = [
     'groovy': "org.apache.groovy:groovy:${bomDependencyVersions['groovy.version']}",
@@ -554,8 +559,8 @@ DO_NOT_CACHE_TESTS=1 ./gradlew :module:test
 ./gradlew :module:test -PmaxTestParallel=1
 ./gradlew :module:test -PtestBisect
 
-# Memory
-export GRADLE_OPTS='-Xms2G -Xmx5G'
+# Memory - org.gradle.jvmargs sizes the daemon, so a bare -Xmx here is ignored
+export GRADLE_OPTS='-Dorg.gradle.jvmargs=-Xmx4G'
 ```
 
 Work in `grails-gradle` or `grails-forge` only with **that** directory's `./gradlew`.
@@ -599,16 +604,16 @@ Develocity: `https://develocity.apache.org` - build scans publish when authentic
 
 Use official docs for API signatures and deprecations (pin URLs to the version you are bumping toward):
 
-- [Gradle 9.6 release notes](https://docs.gradle.org/9.6.0/release-notes.html)
-- [Upgrading major version 9](https://docs.gradle.org/9.6.0/userguide/upgrading_major_version_9.html)
-- [Upgrading within Gradle 9.x](https://docs.gradle.org/9.6.0/userguide/upgrading_version_9.html)
-- [Java Library plugin](https://docs.gradle.org/9.6.0/userguide/java_library_plugin.html)
-- [Java Platform / BOM](https://docs.gradle.org/9.6.0/userguide/java_platform_plugin.html)
-- [Platforms](https://docs.gradle.org/9.6.0/userguide/platforms.html)
-- [Sharing build logic via included builds](https://docs.gradle.org/9.6.0/userguide/sharing_build_logic_between_subprojects.html)
-- [Task configuration avoidance](https://docs.gradle.org/9.6.0/userguide/task_configuration_avoidance.html)
-- [Configuration cache](https://docs.gradle.org/9.6.0/userguide/configuration_cache.html) (read for compatibility - still **off** here)
-- [Version catalogs](https://docs.gradle.org/9.6.0/userguide/version_catalogs.html) (docs like them - **this repo does not**)
+- [Gradle 9.7 release notes](https://docs.gradle.org/9.7.1/release-notes.html)
+- [Upgrading major version 9](https://docs.gradle.org/9.7.1/userguide/upgrading_major_version_9.html)
+- [Upgrading within Gradle 9.x](https://docs.gradle.org/9.7.1/userguide/upgrading_version_9.html)
+- [Java Library plugin](https://docs.gradle.org/9.7.1/userguide/java_library_plugin.html)
+- [Java Platform / BOM](https://docs.gradle.org/9.7.1/userguide/java_platform_plugin.html)
+- [Platforms](https://docs.gradle.org/9.7.1/userguide/platforms.html)
+- [Sharing build logic via included builds](https://docs.gradle.org/9.7.1/userguide/sharing_build_logic_between_subprojects.html)
+- [Task configuration avoidance](https://docs.gradle.org/9.7.1/userguide/task_configuration_avoidance.html)
+- [Configuration cache](https://docs.gradle.org/9.7.1/userguide/configuration_cache.html) (read for compatibility - still **off** here)
+- [Version catalogs](https://docs.gradle.org/9.7.1/userguide/version_catalogs.html) (docs like them - **this repo does not**)
 
 ### Docs say X - we do Y
 
