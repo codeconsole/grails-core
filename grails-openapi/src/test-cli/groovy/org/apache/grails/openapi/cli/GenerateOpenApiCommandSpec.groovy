@@ -71,6 +71,44 @@ class GenerateOpenApiCommandSpec extends Specification {
         read('openapi-ledgers.yaml').paths.keySet() == ['/ledgers'] as Set
     }
 
+    void 'writes a group whose name a file name cannot hold under one it can'() {
+        given:
+        def command = command([:])
+        applicationContext.beanFactory.registerSingleton('adminLedgers',
+                GroupedOpenApi.builder().group('admin/v1').pathsToMatch('/ledgers/**').build())
+
+        when:
+        boolean handled = command.handle(context("--output-directory=${directory.absolutePath}"))
+
+        then:
+        handled
+        directory.list() as Set == ['openapi.yaml', 'openapi-admin-v1.yaml'] as Set
+        read('openapi-admin-v1.yaml').paths.keySet() == ['/ledgers'] as Set
+    }
+
+    void 'writes nothing, and says why, where two groups would be written to one file'() {
+        given:
+        def command = command([:])
+        applicationContext.beanFactory.registerSingleton('adminLedgers',
+                GroupedOpenApi.builder().group('admin/v1').pathsToMatch('/ledgers/**').build())
+        applicationContext.beanFactory.registerSingleton('adminReports',
+                GroupedOpenApi.builder().group('admin-v1').pathsToMatch('/reports/**').build())
+        def logged = new ByteArrayOutputStream()
+        def err = System.err
+        System.err = new PrintStream(logged, true)
+
+        when:
+        boolean handled = command.handle(context("--output-directory=${directory.absolutePath}"))
+
+        then:
+        !handled
+        !directory.list()
+        logged.toString().contains('would both be written to openapi-admin-v1.yaml')
+
+        cleanup:
+        System.err = err
+    }
+
     void 'applies the customizers springdoc applies to each document it serves'() {
         given:
         applicationContext.beanFactory.registerSingleton('springDocCustomizers', new SpringDocCustomizers(

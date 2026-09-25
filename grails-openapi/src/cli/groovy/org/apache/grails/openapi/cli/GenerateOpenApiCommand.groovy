@@ -18,6 +18,8 @@
  */
 package org.apache.grails.openapi.cli
 
+import java.util.regex.Pattern
+
 import groovy.transform.CompileStatic
 import groovy.util.logging.Slf4j
 
@@ -50,6 +52,12 @@ class GenerateOpenApiCommand implements ApplicationCommand {
     private static final String SPRINGDOC_GROUP = 'org.springdoc.core.models.GroupedOpenApi'
     private static final String SPRINGDOC_ENABLED = 'springdoc.api-docs.enabled'
 
+    /**
+     * The characters a file name cannot hold on some file system: a path separator, one Windows
+     * reserves, or a control character.
+     */
+    private static final Pattern UNSAFE_FILE_NAME_CHARACTERS = Pattern.compile('[\\\\/:*?"<>|\\p{Cntrl}]')
+
     final String description = 'Writes the OpenAPI description of the application to files'
 
     @Override
@@ -76,11 +84,39 @@ class GenerateOpenApiCommand implements ApplicationCommand {
             return false
         }
 
+        Map<String, OpenApiSelection> files = groupFiles(groups(settings), format)
+        if (files == null) {
+            return false
+        }
         write(customized(generator.generate(defaultSelection(settings)), null), new File(directory, "openapi.${format}"), format)
-        for (OpenApiSelection group : groups(settings)) {
-            write(customized(generator.generate(group), group.group), new File(directory, "openapi-${group.group}.${format}"), format)
+        files.each { String fileName, OpenApiSelection group ->
+            write(customized(generator.generate(group), group.group), new File(directory, fileName), format)
         }
         true
+    }
+
+    /**
+     * The file each group is written to, named for the group, with each character a file name
+     * cannot hold, such as the {@code /} of {@code admin/v1}, written as {@code -}.
+     *
+     * @return the group written to each file, or {@code null}, and why logged, where two groups
+     * would be written to one file
+     */
+    private Map<String, OpenApiSelection> groupFiles(Collection<OpenApiSelection> groups, String format) {
+        Map<String, OpenApiSelection> files = [:]
+        for (OpenApiSelection group : groups) {
+            String fileName = "openapi-${group.group.replaceAll(UNSAFE_FILE_NAME_CHARACTERS, '-')}.${format}".toString()
+            OpenApiSelection earlier = files.putIfAbsent(fileName, group)
+            if (earlier != null) {
+                log.error('Wrote no OpenAPI description: the groups [{}] and [{}] would both be written to {}; ' +
+                        'rename one of them', earlier.group, group.group, fileName)
+                return null
+            }
+            if (fileName != "openapi-${group.group}.${format}".toString()) {
+                log.warn('Writing the OpenAPI group [{}] to {}, since a file name cannot hold its name', group.group, fileName)
+            }
+        }
+        files
     }
 
     /**
