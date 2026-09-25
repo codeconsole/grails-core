@@ -27,8 +27,9 @@ import org.springframework.util.StringUtils
 /**
  * A {@link org.springframework.core.env.PropertySource} that doesn't return values for navigable submaps
  *
- * <p>A list of objects is presented element by element, under the indexed names Spring Boot binds
- * a list from, such as {@code app.items[0].name}, rather than as one value. Spring Boot binds a
+ * <p>A list of objects, or of lists holding objects, is presented element by element, under the
+ * indexed names Spring Boot binds a list from, such as {@code app.items[0].name}, rather than as
+ * one value. Spring Boot binds a
  * value it finds under the name of the list itself by conversion rather than element by element,
  * so a {@code List} of beans would otherwise be bound as a list of maps. A list of plain values is
  * presented as it is.</p>
@@ -103,8 +104,14 @@ class NavigableMapPropertySource extends MapPropertySource {
         super.getProperty(name)
     }
 
+    /**
+     * A list holding an object anywhere in it, including within a list it holds.
+     */
     private static boolean isObjectList(Object value) {
-        value instanceof List && ((List) value).any { Object element -> unwrap(element) instanceof Map }
+        value instanceof List && ((List) value).any { Object element ->
+            Object unwrapped = unwrap(element)
+            unwrapped instanceof Map || isObjectList(unwrapped)
+        }
     }
 
     private static void flatten(Map<String, Object> into, String name, Object value) {
