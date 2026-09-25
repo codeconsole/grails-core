@@ -2616,6 +2616,38 @@ class GrailsBeansASTTransformationSpec extends Specification {
         fixtureBeans.getDeclaredMethod('URLHelper') != null
     }
 
+    def "bean(Type) of a nested type derives the name from its simple name, as Class.getSimpleName() gives it"() {
+        given:
+        String source = '''
+            import java.util.concurrent.ThreadPoolExecutor
+
+            import grails.compiler.beans.GrailsBeans
+            import org.springframework.boot.autoconfigure.AutoConfiguration
+
+            @GrailsBeans
+            @AutoConfiguration
+            class NestedTypeFixtureBeans {
+                def beans = {
+                    bean(NestedTypeOuter.Helper)
+                    bean(ThreadPoolExecutor.AbortPolicy)
+                }
+            }
+
+            class NestedTypeOuter {
+                static class Helper { }
+            }
+        '''
+
+        when:
+        Class<?> fixtureBeans = compile(source)
+
+        then: 'a nested type compiled with it is named helper, not nestedTypeOuter$Helper'
+        fixtureBeans.getDeclaredMethod('helper').getAnnotation(Bean).value() == ['helper'] as String[]
+
+        and: "so is a nested type from a class already compiled"
+        fixtureBeans.getDeclaredMethod('abortPolicy').getAnnotation(Bean).value() == ['abortPolicy'] as String[]
+    }
+
     def "bean(Type) with no factory closure compiles to a method that constructs the declared type"() {
         given:
         String source = '''

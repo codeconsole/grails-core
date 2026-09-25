@@ -732,7 +732,7 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
         }
         String name;
         if (args.size() == 1) {
-            name = decapitalize(((ClassExpression) args.get(0)).getType().getNameWithoutPackage());
+            name = decapitalize(simpleName(((ClassExpression) args.get(0)).getType()));
         }
         else {
             name = resolveStringConstant(args.get(0), declaringClass);
@@ -2217,7 +2217,7 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
     }
 
     private String syntheticBeanMethodName(ClassNode beanType, Set<String> usedNames) {
-        String base = decapitalize(beanType.getNameWithoutPackage());
+        String base = decapitalize(simpleName(beanType));
         String candidate;
         int index = 0;
         do {
@@ -2590,7 +2590,7 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
 
         String name;
         if (args.size() == 1) {
-            name = decapitalize(type.getType().getNameWithoutPackage());
+            name = decapitalize(simpleName(type.getType()));
             // The derived name becomes the generated member's name just as an explicit one does, so
             // it has to clear the same bar - decapitalizing Boolean, Long or Class hands back a Java
             // keyword, and no closure body could then reference the member.
@@ -3299,6 +3299,28 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
 
     private String decapitalize(String name) {
         return Introspector.decapitalize(name);
+    }
+
+    /**
+     * A type's simple name as {@link Class#getSimpleName()} gives it - {@code Helper} for a nested
+     * {@code Outer.Helper}, where {@link ClassNode#getNameWithoutPackage()} gives the binary
+     * {@code Outer$Helper} and so derived a bean name no one would write.
+     */
+    private static String simpleName(ClassNode type) {
+        String name = type.getNameWithoutPackage();
+        ClassNode outer = type.getOuterClass();
+        if (outer != null && name.startsWith(outer.getNameWithoutPackage() + "$")) {
+            return name.substring(outer.getNameWithoutPackage().length() + 1);
+        }
+        if (name.indexOf('$') >= 0 && type.isResolved()) {
+            try {
+                return type.getTypeClass().getSimpleName();
+            }
+            catch (RuntimeException | LinkageError ignored) {
+                // not loadable here: keep the binary name rather than guess where the nesting splits
+            }
+        }
+        return name;
     }
 
     private boolean isValidJavaIdentifier(String name) {
