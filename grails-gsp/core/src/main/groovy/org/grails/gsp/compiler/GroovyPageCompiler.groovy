@@ -174,6 +174,10 @@ class GroovyPageCompiler {
                 // lets the up-to-date check above decide what to recompile. The merge existed for a caller that
                 // passed only the changed files; one that did would now write a registry naming those alone.
                 File viewregistryFile = new File(targetDir, 'gsp/views.properties')
+                Properties previous = new Properties()
+                if (viewregistryFile.isFile()) {
+                    viewregistryFile.withInputStream { InputStream viewsIn -> previous.load(viewsIn) }
+                }
                 viewregistryFile.parentFile.mkdirs()
                 // Use SortedProperties to ensure a consistent order of entries for reproducible builds
                 Properties views = CollectionFactory.createSortedProperties(false)
@@ -182,12 +186,65 @@ class GroovyPageCompiler {
                     views.store(viewsOut, "Precompiled views for ${packagePrefix}")
                 }
                 PropertyFileUtils.makePropertiesFileReproducible(viewregistryFile)
+                removeStalePages(previous.values().collect { Object c -> String.valueOf(c) } as Set<String>,
+                        compileGSPRegistry.values().collect { Object c -> String.valueOf(c) } as Set<String>)
             } finally {
                 // eventListener?.triggerEvent("StatusUpdate", "Shutting Down ThreadPool")
                 threadPool.shutdown()
             }
         }
         return compileGSPRegistry
+    }
+
+    /**
+     * Removes what an earlier compilation wrote for pages it compiled that this one did not - pages
+     * removed or renamed since, and generated pages whose names change with what they are generated
+     * from. Nothing names them any more, so they are never served, but left in place they would be
+     * packaged with every artifact built until the directory is cleaned. Only the classes the
+     * earlier registry names are removed, with their inner classes and data files, so nothing this
+     * compiler did not write is touched.
+     */
+    private void removeStalePages(Set<String> previous, Set<String> current) {
+        Set<String> stale = previous.findAll { String pageClass -> !current.contains(pageClass) } as Set<String>
+        if (stale.isEmpty()) {
+            return
+        }
+        targetDir.listFiles()?.each { File file ->
+            String owner = file.isFile() ? pageClassOf(file.name, stale, current) : null
+            if (owner != null && stale.contains(owner) && !file.delete()) {
+                LOG.warn("Could not remove ${file}, left from a page that is no longer compiled")
+            }
+        }
+    }
+
+    /**
+     * The page class, of those given, that a file in the target directory belongs to: the class
+     * itself, one of its inner classes, or one of its data files. The longest such class is the
+     * owner, so a page whose own name happens to extend another's is not taken for its inner class.
+     */
+    private static String pageClassOf(String fileName, Set<String> stale, Set<String> current) {
+        String name
+        if (fileName.endsWith(GroovyPageMetaInfo.HTML_DATA_POSTFIX)) {
+            name = fileName.substring(0, fileName.length() - GroovyPageMetaInfo.HTML_DATA_POSTFIX.length())
+        }
+        else if (fileName.endsWith(GroovyPageMetaInfo.LINENUMBERS_DATA_POSTFIX)) {
+            name = fileName.substring(0, fileName.length() - GroovyPageMetaInfo.LINENUMBERS_DATA_POSTFIX.length())
+        }
+        else if (fileName.endsWith('.class')) {
+            name = fileName.substring(0, fileName.length() - '.class'.length())
+            // an inner class is named for its outer class and a $, as many times as it is nested
+            for (int end = name.length(); end > 0; end = name.lastIndexOf('$', end - 1)) {
+                String candidate = name.substring(0, end)
+                if (stale.contains(candidate) || current.contains(candidate)) {
+                    return candidate
+                }
+            }
+            return null
+        }
+        else {
+            return null
+        }
+        stale.contains(name) || current.contains(name) ? name : null
     }
 
     private boolean isGenerated(String page) {

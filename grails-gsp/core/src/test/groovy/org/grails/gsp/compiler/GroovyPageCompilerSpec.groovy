@@ -72,6 +72,42 @@ class GroovyPageCompilerSpec extends Specification {
         registry().keySet() == ['/index.gsp'] as Set
     }
 
+    void 'what was compiled for a page removed since the last compile is removed with it'() {
+        given: 'two pages compiled, one of them with a closure, which compiles to an inner class'
+        writeView('index.gsp')
+        File removed = writeView('obsolete.gsp', '<% [1, 2].each { int i -> out << i } %>')
+        compile()
+        List<String> left = targetDir.list().findAll { it.contains('obsolete') }
+        assert left.any { it.endsWith('_html.data') } && left.any { it.contains('$') }
+
+        and: 'a file the compiler did not write'
+        File unrelated = new File(targetDir, 'gsp_probeobsolete_gsp.txt')
+        unrelated.text = 'not a page'
+
+        when:
+        removed.delete()
+        compile()
+
+        then: 'nothing is left of the removed page, and what else is there is kept'
+        targetDir.list().findAll { it.contains('obsolete') } == [unrelated.name]
+        targetDir.list().any { it.startsWith('gsp_probeindex_gsp') }
+    }
+
+    void 'a page whose name extends a removed one is not taken for part of it'() {
+        given:
+        File removed = writeView('a.gsp')
+        writeView('a_gsp$b.gsp')
+        compile()
+
+        when:
+        removed.delete()
+        compile()
+
+        then:
+        !targetDir.list().any { it.startsWith('gsp_probea_gsp.') || it.startsWith('gsp_probea_gsp_') }
+        registry().values().every { String pageClass -> new File(targetDir, "${pageClass}.class").isFile() }
+    }
+
     void 'a page recompiled under a different prefix is registered only under the new one'() {
         given: 'a registry written under the prefix a Grails application looks views up by'
         writeView('index.gsp')
