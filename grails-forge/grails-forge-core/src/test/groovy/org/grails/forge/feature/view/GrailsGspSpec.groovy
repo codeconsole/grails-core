@@ -87,11 +87,21 @@ class GrailsGspSpec extends ApplicationContextSpec implements CommandOutputFixtu
     void "test default views are present"() {
         when:
         final def output = generate(ApplicationType.WEB, new Options(DevelopmentReloading.DEVTOOLS))
-        
+
         then:
         output.containsKey("grails-app/views/index.gsp")
         output.containsKey("grails-app/views/error.gsp")
         output.containsKey("grails-app/views/notFound.gsp")
+    }
+
+    void "test default error page looks up the jakarta servlet error exception attribute"() {
+        when:
+        final def output = generate(ApplicationType.WEB, new Options(DevelopmentReloading.DEVTOOLS))
+        final String error = output["grails-app/views/error.gsp"]
+
+        then: "the container stores the forwarded exception under the jakarta attribute name, not the pre-Jakarta EE one"
+        error.contains("request.getAttribute('jakarta.servlet.error.exception')")
+        !error.contains("javax.servlet.error.exception")
     }
 
     @Unroll

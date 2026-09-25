@@ -45,12 +45,12 @@ import org.xml.sax.SAXException
 @CompileStatic
 class XmlUtils {
 
-    private static final String DISALLOW_DOCTYPE_DECL = 'https://apache.org/xml/features/disallow-doctype-decl'
-    private static final String EXTERNAL_GENERAL_ENTITIES = 'https://xml.org/sax/features/external-general-entities'
-    private static final String EXTERNAL_PARAMETER_ENTITIES = 'https://xml.org/sax/features/external-parameter-entities'
+    private static final String DISALLOW_DOCTYPE_DECL = 'http://apache.org/xml/features/disallow-doctype-decl'
+    private static final String EXTERNAL_GENERAL_ENTITIES = 'http://xml.org/sax/features/external-general-entities'
+    private static final String EXTERNAL_PARAMETER_ENTITIES = 'http://xml.org/sax/features/external-parameter-entities'
     private static final String FEATURE_SECURE_PROCESSING = XMLConstants.FEATURE_SECURE_PROCESSING
-    private static final String LOAD_DTD_GRAMMAR = 'https://apache.org/xml/features/nonvalidating/load-dtd-grammar'
-    private static final String LOAD_EXTERNAL_DTD = 'https://apache.org/xml/features/nonvalidating/load-external-dtd'
+    private static final String LOAD_DTD_GRAMMAR = 'http://apache.org/xml/features/nonvalidating/load-dtd-grammar'
+    private static final String LOAD_EXTERNAL_DTD = 'http://apache.org/xml/features/nonvalidating/load-external-dtd'
 
     private static final Pattern SPACE_AND_EMPTY_ELEMENT_CLOSE = ~/ \/>/
     private static final String EMPTY_ELEMENT_CLOSE = '/>'
