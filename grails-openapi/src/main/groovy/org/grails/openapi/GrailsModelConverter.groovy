@@ -51,7 +51,6 @@ import grails.util.GrailsNameUtils
 import grails.gorm.validation.ConstrainedEntity
 import grails.gorm.validation.ConstrainedProperty
 import grails.validation.Validateable
-import grails.web.databinding.DataBindingUtils
 import org.grails.datastore.mapping.model.MappingContext
 import org.grails.datastore.mapping.model.PersistentEntity
 import org.grails.datastore.mapping.model.PersistentProperty
@@ -60,6 +59,7 @@ import org.grails.datastore.mapping.model.types.Basic
 import org.grails.datastore.mapping.model.types.Embedded
 import org.grails.datastore.mapping.model.types.EmbeddedCollection
 import org.grails.datastore.mapping.model.types.ToMany
+import org.grails.web.databinding.BindingIncludeLists
 
 /**
  * Teaches swagger-core what a Groovy class, a command object and a GORM entity look like, so the
@@ -361,7 +361,7 @@ class GrailsModelConverter implements ModelConverter {
         } ?: Collections.<String, Constrained> emptyMap()
         Set<String> readOnly = entity == null ? readOnlyConstrained(type, constraints.keySet()) : Collections.<String> emptySet()
         List<String> bindable = read("what data binding binds of [${type.name}]") {
-            DataBindingUtils.getBindingIncludeListForType(type)
+            BindingIncludeLists.propertyNames(type)
         }
         Set<String> beanProperties = BeanUtils.getPropertyDescriptors(type)*.name.toSet()
 

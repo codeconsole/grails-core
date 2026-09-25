@@ -30,6 +30,7 @@ import grails.databinding.SimpleMapDataBindingSource
 import grails.util.Holders
 import grails.web.mime.MimeTypeResolver
 import org.grails.datastore.mapping.model.MappingContext
+import org.grails.web.databinding.BindingIncludeLists
 import org.grails.web.databinding.bindingsource.DataBindingSourceRegistry
 import org.grails.web.databinding.bindingsource.DefaultDataBindingSourceRegistry
 
@@ -111,14 +112,26 @@ class DataBindingUtilsSpec extends Specification {
 
     void 'test the include list of a type is the one its instances are bound with'() {
         expect:
-        DataBindingUtils.getBindingIncludeListForType(WhitelistedCommand) == ['name']
-        DataBindingUtils.getBindingIncludeListForType(SubclassOfWhitelistedCommand) == ['name']
+        BindingIncludeLists.propertyNames(WhitelistedCommand) == ['name']
+        BindingIncludeLists.propertyNames(SubclassOfWhitelistedCommand) == ['name']
 
         and: 'a type that declares none is not restricted'
-        DataBindingUtils.getBindingIncludeListForType(NoWhitelistCommand) == null
+        BindingIncludeLists.propertyNames(NoWhitelistCommand) == null
 
-        and: 'a type that cannot be created has no include list to give'
-        DataBindingUtils.getBindingIncludeListForType(UncreatableCommand) == null
+        and: 'it is read from the class, so a type without a no-argument constructor has one too'
+        BindingIncludeLists.propertyNames(UncreatableCommand) == ['name']
+    }
+
+    void 'test the include list of a type is read without creating an instance of it'() {
+        given:
+        CountedCommand.created = 0
+
+        when:
+        def names = BindingIncludeLists.propertyNames(CountedCommand)
+
+        then:
+        names == ['name']
+        CountedCommand.created == 0
     }
 
     void 'test binding a collection'() {
@@ -281,6 +294,19 @@ class WhitelistedCommand {
 }
 
 class SubclassOfWhitelistedCommand extends WhitelistedCommand {
+}
+
+class CountedCommand {
+
+    public static final List $defaultDatabindingWhiteList = ['name']
+
+    static int created
+
+    String name
+
+    CountedCommand() {
+        created++
+    }
 }
 
 class UncreatableCommand {
