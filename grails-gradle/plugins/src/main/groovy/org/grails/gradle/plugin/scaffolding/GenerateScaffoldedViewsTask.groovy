@@ -222,6 +222,10 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
         planFile.setText(plan.collect { String domain, Set<TemplateCopy> copies ->
             ([domain] + copies*.directory*.absolutePath).join('\t')
         }.join('\n'), 'UTF-8')
+        File originsFile = new File(work, 'origins.txt')
+        originsFile.setText(templates.copies.collect { TemplateCopy copy ->
+            "${copy.directory.absolutePath}\t${copy.origin}"
+        }.join('\n'), 'UTF-8')
 
         execOperations.javaexec(new Action<JavaExecSpec>() {
             @Override
@@ -231,7 +235,7 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
                 }
                 spec.classpath = runtimeClasspath
                 spec.mainClass.set(GENERATOR)
-                spec.args(planFile.absolutePath, outputDir.absolutePath, pageEncoding.get())
+                spec.args(planFile.absolutePath, originsFile.absolutePath, outputDir.absolutePath, pageEncoding.get())
             }
         }).assertNormalExitValue()
     }
@@ -245,13 +249,15 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
         Templates templates = new Templates()
         templateOverrides.asFileTree.visit { FileVisitDetails details ->
             if (!details.directory && details.name.endsWith('.gsp')) {
-                templates.add(baseName(details.relativePath.pathString), details.file.bytes)
+                templates.add(baseName(details.relativePath.pathString), details.file.bytes,
+                        "the application's ${details.relativePath.pathString}")
             }
         }
         packagedTemplates.asFileTree.visit { FileVisitDetails details ->
             String path = details.relativePath.pathString
             if (!details.directory && path.startsWith(TEMPLATE_PATH) && path.endsWith('.gsp')) {
-                templates.add(baseName(path.substring(TEMPLATE_PATH.length())), details.file.bytes)
+                String templatePath = path.substring(TEMPLATE_PATH.length())
+                templates.add(baseName(templatePath), details.file.bytes, "the application's ${templatePath}")
             }
         }
         String generator = GENERATOR.replace('.', '/') + '.class'
@@ -263,7 +269,7 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
                     dir.eachFileRecurse { File f ->
                         if (f.isFile() && f.name.endsWith('.gsp')) {
                             String path = dir.toPath().relativize(f.toPath()).toString().replace(File.separatorChar, '/' as char)
-                            templates.add(baseName(path), f.bytes)
+                            templates.add(baseName(path), f.bytes, "${entry.name}/${TEMPLATE_PATH}${path}")
                         }
                     }
                 }
@@ -274,7 +280,7 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
                     for (JarEntry e : jar.entries()) {
                         if (!e.directory && e.name.startsWith(TEMPLATE_PATH) && e.name.endsWith('.gsp')) {
                             templates.add(baseName(e.name.substring(TEMPLATE_PATH.length())),
-                                    jar.getInputStream(e).withCloseable { InputStream input -> input.bytes })
+                                    jar.getInputStream(e).withCloseable { InputStream input -> input.bytes }, "${entry.name}!/${e.name}")
                         }
                     }
                 }
@@ -512,18 +518,24 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
 
     }
 
-    /** One copy of a template. */
+    /**
+     * One copy of a template, and where it was first found, named without the machine's own paths:
+     * the page it expands to says so, and a page is part of what the build caches.
+     */
     private static final class TemplateCopy {
 
         final String path
 
         final byte[] content
 
+        final String origin
+
         File directory
 
-        TemplateCopy(String path, byte[] content) {
+        TemplateCopy(String path, byte[] content, String origin) {
             this.path = path
             this.content = content
+            this.origin = origin
         }
 
     }
@@ -535,9 +547,9 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
 
         boolean generator
 
-        void add(String path, byte[] content) {
+        void add(String path, byte[] content, String origin) {
             if (!copies.any { TemplateCopy c -> c.path == path && Arrays.equals(c.content, content) }) {
-                copies.add(new TemplateCopy(path, content))
+                copies.add(new TemplateCopy(path, content, origin))
             }
         }
 

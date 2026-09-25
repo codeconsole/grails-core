@@ -233,6 +233,48 @@ class GenerateScaffoldedViewsTaskSpec extends Specification {
         pages
     }
 
+    /** Where the generator was told each template came from, by the template's text. */
+    private Map<String, String> originsOf(GenerateScaffoldedViewsTask task) {
+        File output = task.outputDirectory.get().asFile
+        File root = new File(output, 'grails-scaffolded')
+        Map<String, String> origins = [:]
+        root.eachFileRecurse { File f ->
+            if (f.isFile()) {
+                String copy = root.toPath().relativize(f.toPath()).getName(1).toString()
+                origins[f.getText('UTF-8')] = new File(output, "origins/${copy}").getText('UTF-8')
+            }
+        }
+        origins
+    }
+
+    void 'each copy is handed over with where it came from, named without the paths of this machine'() {
+        given:
+            File classesTheme = new File(projectDir, 'theme-classes')
+            new File(classesTheme, 'META-INF/templates/scaffolding').mkdirs()
+            new File(classesTheme, 'META-INF/templates/scaffolding/edit.gsp').text = 'directory edit'
+            File overrides = new File(projectDir, 'templates')
+            new File(overrides, 'index.gsp').with { parentFile.mkdirs(); text = 'custom index' }
+            File packaged = new File(projectDir, 'resources-output')
+            new File(packaged, 'META-INF/templates/scaffolding/create.gsp').with { parentFile.mkdirs(); text = 'packaged create' }
+            writeController('UserController', 'User')
+            def task = task(ProjectBuilder.builder().build().fileTree(overrides))
+            task.packagedTemplates.from(packaged)
+            task.runtimeClasspath.from(classesTheme)
+
+        when:
+            task.generate()
+
+        then:
+            originsOf(task) == [
+                    'custom index'                            : "the application's index.gsp",
+                    'packaged create'                         : "the application's create.gsp",
+                    'show ${className}'                       : 'templates.jar!/META-INF/templates/scaffolding/show.gsp',
+                    'list of ${propertyName} for ${className}': 'templates.jar!/META-INF/templates/scaffolding/index.gsp',
+                    'create ${className}'                     : 'templates.jar!/META-INF/templates/scaffolding/create.gsp',
+                    'edit ${className}'                       : 'templates.jar!/META-INF/templates/scaffolding/edit.gsp',
+                    'directory edit'                          : 'theme-classes/META-INF/templates/scaffolding/edit.gsp']
+    }
+
     void 'every template is expanded for every scaffolded domain class'() {
         given:
             writeController('UserController', 'User')

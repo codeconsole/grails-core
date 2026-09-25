@@ -44,6 +44,11 @@ class ScaffoldedPagesGeneratorSpec extends Specification {
         file.setText(text, 'UTF-8')
     }
 
+    /** What a page renders: all of it but the comment it ends with. */
+    static String rendered(File page) {
+        page.getText('UTF-8').replaceFirst(/%\{--[^%]*--}%$/, '')
+    }
+
     /** Where the resolver looks for the page, which is where the generator must have written it. */
     File page(String templatePath, String domain, String text) {
         Map<String, Object> model = new ScaffoldedPagesGenerator().model(domain).asMap()
@@ -56,10 +61,10 @@ class ScaffoldedPagesGeneratorSpec extends Specification {
 
         then:
         written == 4
-        page('show', 'com.example.Book', 'show ${className}').getText('UTF-8') == 'show Book'
-        page('admin/show', 'com.example.Book', 'admin show ${className}').getText('UTF-8') == 'admin show Book'
-        page('show', 'com.example.Author', 'show ${className}').getText('UTF-8') == 'show Author'
-        page('admin/show', 'com.example.Author', 'admin show ${className}').getText('UTF-8') == 'admin show Author'
+        rendered(page('show', 'com.example.Book', 'show ${className}')) == 'show Book'
+        rendered(page('admin/show', 'com.example.Book', 'admin show ${className}')) == 'admin show Book'
+        rendered(page('show', 'com.example.Author', 'show ${className}')) == 'show Author'
+        rendered(page('admin/show', 'com.example.Author', 'admin show ${className}')) == 'admin show Author'
     }
 
     void 'a domain class is expanded with only the templates planned for it'() {
@@ -100,8 +105,8 @@ class ScaffoldedPagesGeneratorSpec extends Specification {
 
         then:
         written == 3
-        page('show', 'com.example.Book', 'show ${className}').getText('UTF-8') == 'show Book'
-        page('show', 'com.example.Book', 'other show ${className}').getText('UTF-8') == 'other show Book'
+        rendered(page('show', 'com.example.Book', 'show ${className}')) == 'show Book'
+        rendered(page('show', 'com.example.Book', 'other show ${className}')) == 'other show Book'
     }
 
     void 'a page is written in the encoding it is compiled with'() {
@@ -112,7 +117,37 @@ class ScaffoldedPagesGeneratorSpec extends Specification {
         new ScaffoldedPagesGenerator().generate(['com.example.Book': [templates]], output, 'ISO-8859-1')
 
         then:
-        page('show', 'com.example.Book', 'show ${className} \u00e9').bytes == 'show Book \u00e9'.getBytes(StandardCharsets.ISO_8859_1)
+        new String(page('show', 'com.example.Book', 'show ${className} \u00e9').bytes, StandardCharsets.ISO_8859_1).startsWith('show Book \u00e9')
+    }
+
+    void 'a page ends with a comment naming the template it was expanded from, which renders as nothing'() {
+        given:
+        String origin = 'theme.jar!/META-INF/templates/scaffolding/show.gsp'
+
+        when:
+        new ScaffoldedPagesGenerator().generate(['com.example.Book': [templates]], output, 'UTF-8', [(templates): origin])
+
+        then:
+        page('show', 'com.example.Book', 'show ${className}').getText('UTF-8') ==
+                "show Book%{-- expanded from ${origin} for com.example.Book --}%".toString()
+    }
+
+    void 'a template that cannot be expanded is reported with where it came from'() {
+        given:
+        File broken = new File(dir, 'broken')
+        new File(broken, 'show.gsp').with { parentFile.mkdirs(); setText('broken ${noSuchName}', 'UTF-8') }
+        ByteArrayOutputStream err = new ByteArrayOutputStream()
+        PrintStream original = System.err
+        System.err = new PrintStream(err, true, 'UTF-8')
+
+        when:
+        new ScaffoldedPagesGenerator().generate(['com.example.Book': [broken]], output, 'UTF-8', [(broken): 'theme.jar!/show.gsp'])
+
+        then:
+        err.toString('UTF-8').contains('Could not expand the scaffolding template show, from theme.jar!/show.gsp, for com.example.Book')
+
+        cleanup:
+        System.err = original
     }
 
     void 'a domain class named by the build is modelled as the resolver models the class itself'() {
@@ -131,12 +166,16 @@ class ScaffoldedPagesGeneratorSpec extends Specification {
         plan.setText("com.example.Book\t${templates.path}\t${plain.path}\n\ncom.example.Author\t${plain.path}\n", 'UTF-8')
 
         when:
-        ScaffoldedPagesGenerator.main(plan.path, output.path, 'UTF-8')
+        File origins = new File(dir, 'origins.txt')
+        origins.setText("${plain.path}\tthe application's index.gsp\n", 'UTF-8')
+        ScaffoldedPagesGenerator.main(plan.path, origins.path, output.path, 'UTF-8')
 
         then:
         page('show', 'com.example.Book', 'show ${className}').exists()
         page('index', 'com.example.Book', 'index ${className}').exists()
         page('index', 'com.example.Author', 'index ${className}').exists()
         !page('show', 'com.example.Author', 'show ${className}').exists()
+        page('index', 'com.example.Author', 'index ${className}').getText('UTF-8').endsWith(
+                "%{-- expanded from the application's index.gsp for com.example.Author --}%")
     }
 }
