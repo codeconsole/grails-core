@@ -22,7 +22,6 @@ import java.beans.PropertyDescriptor
 import java.lang.reflect.Method
 import java.lang.reflect.Type
 
-
 import groovy.transform.CompileStatic
 
 import com.fasterxml.jackson.databind.JavaType
