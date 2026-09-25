@@ -390,8 +390,10 @@ Classes sharing a name in different packages are each named by their package as 
 `com.example.v1.Book` and `com.example.v2.Book`, so neither stands in for the other and the names do
 not depend on which is described first. A class sharing the name of a schema the base document
 declares, or one the document derives, such as `ValidationErrors` or a `Patch` schema, is named by
-its package in the same way. An enum is described where it is used, and so shares no name, unless
-`@Schema(enumAsRef = true)` describes it as a schema of its own.
+its package in the same way. Only a class described as a schema of its own takes a name: an enum is
+described where it is used unless `@Schema(enumAsRef = true)` describes it as a schema of its own,
+and a class described in the place of another - the implementation a `@Schema` annotation names, or
+the value a `@JsonValue` accessor returns - leaves the name to the class described.
 
 [source,groovy]
 ----
@@ -513,7 +515,8 @@ embedded with their total. The status is the one the view sets, which is `422` f
 an application is generated with. So:
 
 * A controller with an errors view of its own, such as `grails-app/views/book/_errors.gson`, is
-  described answering in JSON without a shape, since only the application knows it.
+  described answering `422` in JSON without a shape, since only the application knows it; the view
+  answers with the status it sets, as the errors view it is usually copied from sets `422`.
 * An application with JSON views but no errors view renders the errors with the view for any
   object, which answers with success rather than `422`, so its `422` is described in XML alone.
 * An application rendering its errors another way declares `ValidationErrors` in the base document,
