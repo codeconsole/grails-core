@@ -31,11 +31,29 @@ class EmbeddedAssociationSpec extends Specification {
         def openApi = OpenApiFixture.document([DepotController], [Depot]) {
             '/depots'(resources: 'depot')
         }
-        def address = openApi.components.schemas['Depot'].properties.address
 
         then:
-        address.$ref == '#/components/schemas/DepotAddress'
+        openApi.components.schemas['Depot'].properties.site.$ref == '#/components/schemas/DepotAddress'
         openApi.components.schemas['DepotAddress'].properties.keySet() == ['street', 'city'] as Set
+    }
+
+    void 'describes a nullable embedded association as the associated schema or null'() {
+        when:
+        def openApi = OpenApiFixture.document(['springdoc.api-docs.version': version], [DepotController], [Depot]) {
+            '/depots'(resources: 'depot')
+        }
+        def properties = openApi.components.schemas['Depot'].properties
+
+        then: 'one that cannot be null is the reference itself'
+        properties.site.$ref == '#/components/schemas/DepotAddress'
+
+        and: 'one that can be null is the reference or null, as the version says it'
+        check(properties.address)
+
+        where:
+        version       | check
+        'openapi_3_1' | { it.oneOf*.$ref == ['#/components/schemas/DepotAddress', null] && it.oneOf[1].types == ['null'] as Set }
+        'openapi_3_0' | { it.allOf*.$ref == ['#/components/schemas/DepotAddress'] && it.nullable }
     }
 }
 
@@ -43,8 +61,14 @@ class EmbeddedAssociationSpec extends Specification {
 class Depot {
     String code
     DepotAddress address
+    DepotAddress site
 
-    static embedded = ['address']
+    static embedded = ['address', 'site']
+
+    static constraints = {
+        address nullable: true
+        site nullable: false
+    }
 }
 
 class DepotAddress {

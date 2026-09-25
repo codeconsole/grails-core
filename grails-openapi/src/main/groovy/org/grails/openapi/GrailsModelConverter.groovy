@@ -34,8 +34,11 @@ import io.swagger.v3.core.converter.ModelConverter
 import io.swagger.v3.core.converter.ModelConverterContext
 import io.swagger.v3.core.converter.ModelConverters
 import io.swagger.v3.core.util.PrimitiveType
+import io.swagger.v3.oas.models.SpecVersion
 import io.swagger.v3.oas.models.media.ArraySchema
+import io.swagger.v3.oas.models.media.ComposedSchema
 import io.swagger.v3.oas.models.media.IntegerSchema
+import io.swagger.v3.oas.models.media.JsonSchema
 import io.swagger.v3.oas.models.media.ObjectSchema
 import io.swagger.v3.oas.models.media.Schema
 import io.swagger.v3.oas.models.media.StringSchema
@@ -625,10 +628,34 @@ class GrailsModelConverter implements ModelConverter {
             }
             applyConstraints(property, constrained)
             String described = names[name] ?: name
+            if (constrained.nullable && property.$ref) {
+                model.properties[described] = nullableReference(property, model.specVersion)
+            }
             if (!constrained.nullable && name != versionName && !model.required?.contains(described)) {
                 model.addRequiredItem(described)
             }
         }
+    }
+
+    /**
+     * A reference is never null in itself, so a nullable property described by one is the
+     * referenced schema or null: in OpenAPI 3.1 one of the reference and a null type, and in 3.0 all
+     * of the reference, nullable.
+     */
+    private static Schema nullableReference(Schema reference, SpecVersion specVersion) {
+        Schema nullable
+        if (specVersion == SpecVersion.V31) {
+            nullable = new JsonSchema()
+            nullable.setOneOf([reference, new JsonSchema().types([NULL_TYPE] as Set<String>)])
+        }
+        else {
+            nullable = new ComposedSchema()
+            nullable.setAllOf([reference])
+            nullable.setNullable(true)
+        }
+        nullable.setDescription(reference.description)
+        reference.setDescription(null)
+        nullable
     }
 
     private static void applyConstraints(Schema schema, Constrained constrained) {
