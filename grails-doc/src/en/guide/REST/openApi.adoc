@@ -144,7 +144,7 @@ an entry in `grails.plugin.springsecurity.controllerAnnotations.staticRules`.
 | `grails.openapi.paths-to-match`, `grails.openapi.paths-to-exclude` | | Ant patterns of the paths the default document describes, or leaves out
 | `grails.openapi.packages-to-scan`, `grails.openapi.packages-to-exclude` | | The packages of the controllers the default document describes, or leaves out
 | `grails.openapi.produces-to-match`, `grails.openapi.consumes-to-match` | | The media types an operation the default document describes must produce, or consume
-| `grails.openapi.headers-to-match` | | The header conditions an operation must declare, which a URL mapping never does
+| `grails.openapi.headers-to-match` | | The header conditions an operation must declare, such as `Accept-Version=1.0`
 | `grails.openapi.groups.<name>.*` | | A group and what it selects, see <<openApiGroups,Groups>>
 | `grails.openapi.output-directory` | `build/openapi` | Where `generate-open-api` writes
 | `grails.openapi.output-format` | `yaml` | Whether `generate-open-api` writes `yaml` or `json`
@@ -179,9 +179,10 @@ grails:
 The media type settings select the way springdoc selects a Spring MVC handler method: an operation
 is described only where it produces, or consumes, exactly the media types a setting lists. An
 operation produces the media types of its controller's `responseFormats`, `application/json` where
-it declares none, and consumes the same media types where it binds a body. A URL mapping declares no
-header condition, so `headers-to-match` leaves every Grails endpoint out, as it leaves out a Spring
-handler method that declares none:
+it declares none, and consumes the same media types where it binds a body. A mapping declared for a
+version declares the `Accept-Version` header it is matched on, so `headers-to-match:
+Accept-Version=1.0` selects the operations of version `1.0`. Any other header criterion leaves every
+Grails endpoint out, as it leaves out a Spring handler method that declares no header condition:
 
 [source,yaml]
 ----
@@ -280,7 +281,8 @@ components:
 ----
 
 The information, servers, security and external documentation of the base document are used as they
-are. Its tags, extensions, paths and components are kept beside what is derived. Where the base
+are. Its tags, extensions and components are kept beside what is derived, and so are its paths, in
+each document whose path settings select them. Where the base
 document declares no version, the application's `info.app.version` is used, and without a base
 document the description is titled with `info.app.name`.
 
@@ -337,6 +339,29 @@ declares none, for the method a `RestfulController` action of that name answers,
 other action.
 A mapping that names a namespace is documented with that namespace's controller, so versioned
 controllers of the same name are each described at their own routes.
+
+==== Versions
+
+A mapping declared for a version is matched on the `Accept-Version` header a request sends:
+
+[source,groovy]
+----
+"/books"(version: '1.0', resources: 'book', namespace: 'v1')
+"/books"(version: '2.0', resources: 'book', namespace: 'v2')
+----
+
+A request asking for no version is answered by the highest version, so that is the one the default
+document describes, with an optional `Accept-Version` parameter naming it. A group describes another
+version by selecting its header, and there the parameter is required:
+
+[source,yaml]
+----
+grails:
+    openapi:
+        groups:
+            v1:
+                headers-to-match: Accept-Version=1.0
+----
 
 ==== Resource Schemas
 

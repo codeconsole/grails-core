@@ -49,6 +49,19 @@ class BaseDocumentSpec extends Specification {
         openApi.paths['/widgets'].get
     }
 
+    void 'describes a path of the base document only in the documents whose paths select it'() {
+        given:
+        def generator = OpenApiFixture.generator(OpenApiFixture.holder { '/widgets'(resources: 'widget') },
+                OpenApiFixture.application([WidgetController]), OpenApiFixture.context([Widget, Crate]),
+                ['grails.openapi.base-document'                 : 'classpath:openapi/base.yml',
+                 'grails.openapi.groups.widgets.paths-to-match': '/widgets/**'])
+
+        expect:
+        generator.generate().paths.containsKey('/login')
+        !generator.generate('widgets').paths.containsKey('/login')
+        generator.generate('widgets').paths.containsKey('/widgets')
+    }
+
     void 'takes the version the application declares when the base document declares none'() {
         given:
         def application = OpenApiFixture.application([WidgetController])

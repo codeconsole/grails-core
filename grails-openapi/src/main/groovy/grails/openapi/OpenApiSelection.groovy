@@ -153,7 +153,8 @@ class OpenApiSelection {
         !criterion || (declared && criterion.size() == declared.size() && criterion.containsAll(declared))
     }
 
-    private boolean selectsPath(String path) {
+    @PackageScope
+    boolean selectsPath(String path) {
         if (pathsToExclude.any { String pattern -> PATH_MATCHER.match(pattern, path) }) {
             return false
         }

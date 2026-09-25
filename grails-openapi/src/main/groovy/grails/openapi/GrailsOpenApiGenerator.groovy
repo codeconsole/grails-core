@@ -62,7 +62,9 @@ import org.springframework.core.io.ResourceLoader
 import grails.core.GrailsApplication
 import grails.core.GrailsClass
 import grails.core.GrailsControllerClass
+import grails.plugins.VersionComparator
 import grails.rest.RestfulController
+import grails.web.http.HttpHeaders
 import grails.web.mapping.UrlMapping
 import grails.web.mapping.UrlMappingsHolder
 import grails.web.mime.MimeType
@@ -108,6 +110,7 @@ class GrailsOpenApiGenerator {
     private static final String PATCH_SUFFIX = 'Patch'
     private static final String RESPONSE_FORMATS = 'responseFormats'
     private static final String ALLOWED_METHODS = 'allowedMethods'
+    private static final VersionComparator VERSION_COMPARATOR = new VersionComparator()
     private static final String REFERENCE_PREFIX = '#/components/schemas/'
 
     private static final List<String> BODY_METHODS = ['POST', 'PUT', 'PATCH'].asImmutable()
@@ -220,6 +223,7 @@ class GrailsOpenApiGenerator {
         private final Map<String, String> patchSchemas = [:]
         private Map<String, String> formatMediaTypes
         private final Map<Class<?>, Class<?>> boundResources = [:]
+        private Map<String, String> latestVersions
 
         Contribution(OpenAPI openApi, OpenApiSelection selection) {
             this.openApi = openApi
@@ -310,8 +314,9 @@ class GrailsOpenApiGenerator {
                 }
             }
             base.extensions?.each { String name, Object value -> openApi.addExtension(name, value) }
+            // A path the base document declares belongs to the documents whose paths select it.
             base.paths?.each { String path, PathItem item ->
-                if (!paths.containsKey(path)) {
+                if (!paths.containsKey(path) && selection.selectsPath(path)) {
                     paths.addPathItem(path, item)
                 }
             }
@@ -391,7 +396,7 @@ class GrailsOpenApiGenerator {
             }
             for (PathItem.HttpMethod method : httpMethods(mappedMethod, controller, actionName)) {
                 for (String path : UrlMappingPaths.paths(mapping)) {
-                    addOperation(path, method, controller, controllerType, controllerName, actionName,
+                    addOperation(mapping, path, method, controller, controllerType, controllerName, actionName,
                             operationId(controller, controllerName, actionName, method))
                 }
             }
@@ -507,7 +512,7 @@ class GrailsOpenApiGenerator {
                 // Only the form that addresses a resource is described where the action takes one;
                 // the shorter forms an optional identifier allows do not reach it.
                 for (String path : (expandsAction && takesId ? described.take(1) : described)) {
-                    addOperation(path, method, controller, controller.clazz, controllerName, actionName, operationId)
+                    addOperation(mapping, path, method, controller, controller.clazz, controllerName, actionName, operationId)
                 }
             }
         }
@@ -578,9 +583,9 @@ class GrailsOpenApiGenerator {
             instance instanceof RestfulController && ((RestfulController) instance).readOnly
         }
 
-        private void addOperation(String path, PathItem.HttpMethod method, GrailsControllerClass controller,
-                                  Class<?> controllerType, String controllerName, String actionName,
-                                  String operationId) {
+        private void addOperation(UrlMapping mapping, String path, PathItem.HttpMethod method,
+                                  GrailsControllerClass controller, Class<?> controllerType, String controllerName,
+                                  String actionName, String operationId) {
             ReflectedMethod action = ActionAnnotations.actionMethod(controllerType, actionName)
             if (!selection.selects(path, controllerType) || !selection.selectsAction(action)) {
                 return
@@ -591,12 +596,19 @@ class GrailsOpenApiGenerator {
             }
             List<String> mediaTypes = mediaTypes(controller, actionName)
             List<String> consumes = bindsBody(method, controller, controllerType, actionName) ? mediaTypes : []
-            if (!selection.selectsConditions(mediaTypes, consumes, Collections.<String> emptyList())) {
+            String version = versionOf(mapping)
+            List<String> headers = version != null
+                    ? ["${HttpHeaders.ACCEPT_VERSION}=${version}".toString()]
+                    : Collections.<String> emptyList()
+            if (!selection.selectsConditions(mediaTypes, consumes, headers)) {
                 return
             }
 
             Operation operation = buildOperation(path, method, controller, controllerType, controllerName,
                     actionName, operationId)
+            if (version != null) {
+                addVersionParameter(operation, version, !isLatestVersion(mapping, version))
+            }
             ActionAnnotations.apply(operation, controllerType, actionName, components, openapi31)
             operation = selection.customize(operation, components,
                     controller != null ? controllerInstance(controller) : null, action)
@@ -652,6 +664,54 @@ class GrailsOpenApiGenerator {
                 }
             }
             operation
+        }
+
+        /**
+         * The version a mapping is declared for, which Grails matches on the {@code Accept-Version}
+         * header, or {@code null} for a mapping that answers any version.
+         */
+        private String versionOf(UrlMapping mapping) {
+            String version = mapping?.version
+            version && version != UrlMapping.ANY_VERSION ? version : null
+        }
+
+        /**
+         * Whether a version is the one Grails answers a request asking for none with: the highest
+         * version mapped for the same pattern and method.
+         */
+        private boolean isLatestVersion(UrlMapping mapping, String version) {
+            if (latestVersions == null) {
+                latestVersions = [:]
+                for (UrlMapping candidate : urlMappingsHolder.urlMappings) {
+                    String candidateVersion = versionOf(candidate)
+                    if (candidateVersion == null) {
+                        continue
+                    }
+                    String route = routeOf(candidate)
+                    String latest = latestVersions[route]
+                    if (latest == null || VERSION_COMPARATOR.compare(candidateVersion, latest) > 0) {
+                        latestVersions[route] = candidateVersion
+                    }
+                }
+            }
+            latestVersions[routeOf(mapping)] == version
+        }
+
+        private String routeOf(UrlMapping mapping) {
+            "${mapping.httpMethod ?: UrlMapping.ANY_HTTP_METHOD} ${mapping.urlData?.urlPattern}".toString()
+        }
+
+        private void addVersionParameter(Operation operation, String version, boolean required) {
+            StringSchema schema = new StringSchema()
+            schema.setEnum([version])
+            operation.addParametersItem(new Parameter()
+                    .name(HttpHeaders.ACCEPT_VERSION)
+                    .in('header')
+                    .required(required)
+                    .description(required
+                            ? "Asks for version ${version} of the API".toString()
+                            : "Asks for version ${version} of the API, the version answered where none is asked for".toString())
+                    .schema(schema))
         }
 
         /**
