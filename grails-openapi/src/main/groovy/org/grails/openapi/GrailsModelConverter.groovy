@@ -41,6 +41,7 @@ import org.codehaus.groovy.runtime.InvokerHelper
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import org.springframework.beans.BeanUtils
+import org.springframework.core.ResolvableType
 import org.springframework.util.ClassUtils
 import org.springframework.validation.Errors
 import org.springframework.validation.Validator
@@ -55,6 +56,7 @@ import org.grails.datastore.mapping.model.MappingContext
 import org.grails.datastore.mapping.model.PersistentEntity
 import org.grails.datastore.mapping.model.PersistentProperty
 import org.grails.datastore.mapping.model.types.Association
+import org.grails.datastore.mapping.model.types.Basic
 import org.grails.datastore.mapping.model.types.Embedded
 import org.grails.datastore.mapping.model.types.EmbeddedCollection
 import org.grails.datastore.mapping.model.types.ToMany
@@ -357,11 +359,49 @@ class GrailsModelConverter implements ModelConverter {
             describeEntity(entity, model, names, versionName)
         }
         readOnly.each { String name -> property(model, names, name)?.setReadOnly(true) }
+        describeCollectionsInXml(type, model, names, entity)
         applyConstraints(model, constraints.findAll { String name, Constrained constrained -> !(name in readOnly) },
                 versionName, names)
         if (bindable != null) {
             markUnbound(model, names, bindable, beanProperties)
         }
+    }
+
+    /**
+     * Grails renders a collection of values in XML as an element holding one for each, named for
+     * the class of the value, such as {@code <lines><string>a</string></lines>}. A to-many
+     * association is described so where it is referred to, and a value described as a schema of its
+     * own is named for its class there.
+     */
+    private static void describeCollectionsInXml(Class<?> type, Schema model, Map<String, String> names,
+                                                 PersistentEntity entity) {
+        ((Map<String, Schema>) model.properties)?.each { String described, Schema property ->
+            if (property.xml != null || !(property.type == 'array' || property.types?.contains('array'))) {
+                return
+            }
+            property.setXml(new XML().wrapped(true))
+            Class<?> element = elementType(type, propertyNamed(names, described), entity)
+            if (element != null && property.items != null && !property.items.$ref) {
+                property.items.setXml(new XML().name(GrailsNameUtils.getPropertyName(element)))
+            }
+        }
+    }
+
+    /**
+     * The class of the values a collection property holds: the one GORM maps it with, or the one
+     * its type declares.
+     */
+    private static Class<?> elementType(Class<?> type, String name, PersistentEntity entity) {
+        PersistentProperty persistent = entity?.getPropertyByName(name)
+        if (persistent instanceof Basic && ((Basic) persistent).componentType != null) {
+            return ((Basic) persistent).componentType
+        }
+        Method getter = BeanUtils.getPropertyDescriptor(type, name)?.readMethod
+        if (getter == null) {
+            return null
+        }
+        ResolvableType declared = ResolvableType.forMethodReturnType(getter)
+        declared.array ? declared.componentType.resolve() : declared.asCollection().resolveGeneric(0)
     }
 
     /**

@@ -442,8 +442,10 @@ The constraints are carried across as follows:
 
 A domain class is described as Grails renders it: its identifier and its persistent properties. A
 transient, or a getter with nothing persisted behind it, is not rendered and is not described. The
-version is not rendered either unless `grails.converters.domain.include.version` is set, and is
-described only then.
+version is not rendered either unless it is configured to be, and is described only then: in JSON
+with `grails.converters.json.domain.include.version`, or `grails.converters.domain.include.version`
+for every format. The document describes the version where JSON renders it, so a version rendered in
+XML alone, with `grails.converters.xml.domain.include.version`, is not described.
 
 A property data binding does not bind is marked `readOnly`: the identifier and the version, which the
 server assigns, `dateCreated` and `lastUpdated`, a property constrained `bindable: false`, and a
@@ -537,9 +539,13 @@ renders a view, a form or a HAL document, such as `html` or `hal`, is listed wit
 body is described in the data formats alone.
 
 The XML is described as the converters render it, with the OpenAPI `xml` object: a domain class or a
-command object as an element named for its class, such as `book`, its identifier and version as
-attributes, an association as an element carrying the associated identifier as an attribute, and a
-listing as a `list` element holding one for each.
+command object as an element named for its class, such as `book`, its identifier as the `id`
+attribute and its version as an attribute, an association as an element carrying the associated
+identifier as the `id` attribute, a collection of values as an element holding one named for the
+class of each, such as `<lines><string>a</string></lines>`, and a listing as a `list` element
+holding one for each. The `xml` object cannot describe a map, which Grails renders as `entry`
+elements keyed by an attribute, and the document describes the XML Grails renders by default, not
+that of `grails.converters.xml.default.deep` or `grails.converters.xml.domain.include.class`.
 
 A `RestfulController` answers a `save` with a `Location` header naming the created resource, which
 the `201` response describes.

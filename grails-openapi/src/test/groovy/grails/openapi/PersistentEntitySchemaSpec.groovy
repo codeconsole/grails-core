@@ -251,6 +251,22 @@ class PersistentEntitySchemaSpec extends Specification {
         }
     }
 
+    void 'describes a collection of values in XML as an element holding one named for the class of each'() {
+        when:
+        def openApi = OpenApiFixture.document([ManifestController], [Manifest]) {
+            '/manifests'(resources: 'manifest')
+        }
+        def properties = openApi.components.schemas['Manifest'].properties
+
+        then: 'as Grails renders it: <lines><string>..</string></lines>'
+        properties.lines.xml.wrapped
+        properties.lines.items.xml.name == 'string'
+
+        and: 'a collection GORM maps as values of its own'
+        properties.codes.xml.wrapped
+        properties.codes.items.xml.name == 'integer'
+    }
+
     void 'marks the server assigned properties readOnly rather than defining a second schema'() {
         given:
         def openApi = new OpenAPI()
@@ -636,6 +652,8 @@ class LedgerLineController extends RestfulController<LedgerLine> {
 @Entity
 class Manifest {
     List<String> lines
+
+    static hasMany = [codes: Integer]
 
     static constraints = {
         lines size: 1..5
