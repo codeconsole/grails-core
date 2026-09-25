@@ -120,6 +120,10 @@ class GrailsOpenApiGenerator {
     private static final String MULTIPART_MEDIA_TYPE = 'multipart/form-data'
     private static final Set<String> DATA_FORMATS = ['json', 'xml'].toSet().asImmutable()
     private static final String JSON_VIEW_RESOLVER = 'grails.plugin.json.view.mvc.JsonViewResolver'
+    private static final String DEFAULT_TITLE = 'Grails application'
+    private static final String DEFAULT_VERSION = '1.0'
+    private static final String SPRINGDOC_TITLE = 'OpenAPI definition'
+    private static final String SPRINGDOC_VERSION = 'v0'
     private static final VersionComparator VERSION_COMPARATOR = new VersionComparator()
     private static final String REFERENCE_PREFIX = '#/components/schemas/'
 
@@ -177,16 +181,24 @@ class GrailsOpenApiGenerator {
     OpenAPI generate(OpenApiSelection selection) {
         boolean openapi31 = settings.specVersion == SpecVersion.V31
         OpenAPI openApi = new OpenAPI(settings.specVersion).openapi(openapi31 ? '3.1.0' : '3.0.1')
-        String name = grailsApplication?.config?.getProperty('info.app.name', String)
-        String version = grailsApplication?.config?.getProperty('info.app.version', String)
-        openApi.setInfo(new Info()
-                .title(selection?.displayName ?: name ?: 'Grails application')
-                .version(version ?: '1.0'))
+        openApi.setInfo(applicationInfo(selection))
         contribute(openApi, selection)
         if (openApi.info?.version == null) {
-            openApi.info.setVersion(version ?: '1.0')
+            openApi.info.setVersion(applicationInfo(selection).version)
         }
         openApi
+    }
+
+    /**
+     * The document titled with the group's display name or {@code info.app.name}, and versioned
+     * with {@code info.app.version}.
+     */
+    private Info applicationInfo(OpenApiSelection selection) {
+        String name = grailsApplication?.config?.getProperty('info.app.name', String)
+        String version = grailsApplication?.config?.getProperty('info.app.version', String)
+        new Info()
+                .title(selection?.displayName ?: name ?: DEFAULT_TITLE)
+                .version(version ?: DEFAULT_VERSION)
     }
 
     /**
@@ -247,6 +259,7 @@ class GrailsOpenApiGenerator {
 
         void contribute() {
             mergeBaseDocument()
+            describeApplication()
 
             // A name the document already has, from the base document or springdoc, or that it
             // derives rather than resolves, is not taken by a class of the same name.
@@ -300,6 +313,18 @@ class GrailsOpenApiGenerator {
             }
             List<GrailsControllerClass> named = controllersByName[name]
             named?.size() == 1 ? named.first() : null
+        }
+
+        /**
+         * springdoc starts a document with a placeholder title and version, which are replaced by
+         * the application's, as a document generated at build time has them. A title or version
+         * given any other way is kept.
+         */
+        private void describeApplication() {
+            Info info = openApi.info
+            if (info != null && info.title == SPRINGDOC_TITLE && info.version == SPRINGDOC_VERSION) {
+                openApi.setInfo(applicationInfo(selection))
+            }
         }
 
         private void mergeBaseDocument() {

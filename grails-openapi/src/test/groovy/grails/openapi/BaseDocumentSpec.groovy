@@ -87,6 +87,35 @@ class BaseDocumentSpec extends Specification {
         openApi.info.version == '3.4.5'
     }
 
+    void 'titles a document springdoc started as the application, as one generated at build time is'() {
+        given: 'springdoc starts a document with a placeholder title and version'
+        def application = OpenApiFixture.application([WidgetController])
+        application.config.merge([info: [app: [version: '3.4.5', name: 'Warehouse']]])
+        def generator = OpenApiFixture.generator(OpenApiFixture.holder { '/widgets'(resources: 'widget') }, application)
+        def served = new OpenAPI(SpecVersion.V31).info(new Info().title('OpenAPI definition').version('v0'))
+
+        when:
+        generator.contribute(served, null)
+
+        then:
+        served.info.title == generator.generate().info.title
+        served.info.title == 'Warehouse'
+        served.info.version == '3.4.5'
+    }
+
+    void 'keeps a title a document was given another way'() {
+        given:
+        def served = new OpenAPI(SpecVersion.V31).info(new Info().title('Sales').version('v0'))
+
+        when:
+        OpenApiFixture.generator(OpenApiFixture.holder { '/widgets'(resources: 'widget') },
+                OpenApiFixture.application([WidgetController])).contribute(served, null)
+
+        then:
+        served.info.title == 'Sales'
+        served.info.version == 'v0'
+    }
+
     void 'reads a base document written in JSON'() {
         given:
         File base = new File(directory, 'base.json')
