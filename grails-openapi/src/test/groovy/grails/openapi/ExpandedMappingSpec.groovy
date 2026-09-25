@@ -225,6 +225,32 @@ class ExpandedMappingSpec extends Specification {
         openApi.paths.keySet().any { it.startsWith('/bin') }
     }
 
+    void 'decides each action by its own entry where responseFormats is a map'() {
+        when:
+        def openApi = OpenApiFixture.document([KioskController], []) {
+            "/$controller/$action?/$id?(.$format)?" {}
+        }
+
+        then: 'the actions responding in data formats alone are described, the default one also at the controller path'
+        openApi.paths['/kiosk/index'].get
+        openApi.paths['/kiosk'].get
+        openApi.paths['/kiosk/status'].get
+
+        and: 'one responding in HTML too, or declaring nothing, renders views for a browser'
+        !openApi.paths.containsKey('/kiosk/page')
+        !openApi.paths.containsKey('/kiosk/help')
+    }
+
+    void 'reads responseFormats as respond does, which takes a list and not an array'() {
+        when:
+        def openApi = OpenApiFixture.document([ScreenController], []) {
+            "/$controller/$action?/$id?(.$format)?" {}
+        }
+
+        then: 'respond answers in any format the application configures, HTML too, so it is not a REST controller'
+        !openApi.paths.keySet().any { it.startsWith('/screen') }
+    }
+
     void 'does not describe a mapping to a controller the application does not have'() {
         when:
         def openApi = OpenApiFixture.document([TopicController], []) {
@@ -291,6 +317,23 @@ class SignInController {
     def index() { }
     def auth() { }
     def denied() { }
+}
+
+@Artefact('Controller')
+class KioskController {
+    static responseFormats = [index: ['json'], status: ['xml'], page: ['html', 'json']]
+
+    def index() { }
+    def status() { }
+    def page() { }
+    def help() { }
+}
+
+@Artefact('Controller')
+class ScreenController {
+    static responseFormats = ['json'] as String[]
+
+    def index() { }
 }
 
 @Artefact('Controller')

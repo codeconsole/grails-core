@@ -66,15 +66,11 @@ class MediaTypes {
      * XML, does and a view, a form or a HAL document does not.
      */
     Map<String, Boolean> responseMediaTypes(GrailsControllerClass controller, String actionName) {
-        Object declared = controllers.responseFormats(controller)
-        Object formats = declared instanceof Map ? ((Map) declared).get(actionName) : declared
         Map<String, Boolean> mediaTypes = [:]
-        if (formats instanceof Collection) {
-            for (Object format : (Collection) formats) {
-                String mediaType = format != null ? formatMediaTypes()[format.toString()] : null
-                if (mediaType != null && !mediaTypes.containsKey(mediaType)) {
-                    mediaTypes[mediaType] = format.toString() in DATA_FORMATS
-                }
+        for (String format : controllers.responseFormats(controller, actionName) ?: []) {
+            String mediaType = formatMediaTypes()[format]
+            if (mediaType != null && !mediaTypes.containsKey(mediaType)) {
+                mediaTypes[mediaType] = format in DATA_FORMATS
             }
         }
         mediaTypes ?: [(DEFAULT_MEDIA_TYPE): true] as Map<String, Boolean>

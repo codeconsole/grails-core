@@ -432,11 +432,14 @@ class GrailsOpenApiGenerator {
                     }
                     Collection<String> actions = expandsAction ? controller.actions : [mappedAction]
                     for (String actionName : actions) {
+                        if (!controllers.isRestAction(controller, actionName)) {
+                            continue
+                        }
                         DocumentParts.describe("action [${controller.logicalPropertyName}.${actionName}]".toString()) {
                             addExpandedOperation(mapping, controller, actionName, expandsAction)
                         }
                     }
-                    if (optionalAction) {
+                    if (optionalAction && controllers.isRestAction(controller, controller.defaultAction)) {
                         // As for a mapping naming the controller, the path without the action reaches
                         // the default action: GET /book is the index of "/$controller/$action?/$id?".
                         DocumentParts.describe("action [${controller.logicalPropertyName}.${controller.defaultAction}]".toString()) {

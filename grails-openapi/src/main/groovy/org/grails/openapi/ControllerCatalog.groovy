@@ -86,10 +86,16 @@ class ControllerCatalog {
     }
 
     /**
-     * The formats a controller declares it responds in, for every action or by action.
+     * The formats an action responds in, read as {@code respond} reads them: a list declared for
+     * every action, or the list a map declares for the action.
+     *
+     * @return the declared formats, or null where the controller declares none for the action, and
+     * it responds in any format the application configures
      */
-    Object responseFormats(GrailsControllerClass controller) {
-        controller?.getPropertyValue(RESPONSE_FORMATS)
+    List<String> responseFormats(GrailsControllerClass controller, String actionName) {
+        Object declared = controller?.getPropertyValue(RESPONSE_FORMATS)
+        Object formats = declared instanceof Map ? ((Map) declared).get(actionName) : declared
+        formats instanceof List ? ((List) formats).findAll().collect { Object format -> format.toString() } : null
     }
 
     /**
@@ -100,19 +106,27 @@ class ControllerCatalog {
     }
 
     /**
-     * A controller a mapping reaching controllers by name describes: a RestfulController, or one
-     * declaring the formats it responds in, as a REST controller does, none of them HTML, rather than
-     * one rendering views for a browser.
+     * A controller a mapping reaching controllers by name describes an action of: a
+     * RestfulController, or one declaring the formats an action responds in, as a REST controller
+     * does, none of them HTML, rather than one rendering views for a browser.
      */
     boolean isRestController(GrailsControllerClass controller) {
+        RestfulController.isAssignableFrom(controller.clazz) || controller.actions.any { String action ->
+            isRestAction(controller, action)
+        }
+    }
+
+    /**
+     * An action a mapping reaching controllers by name describes: one of a RestfulController, or
+     * one its controller declares the formats of, none of them HTML. Where {@code responseFormats} is
+     * a map, each action is decided by its own entry.
+     */
+    boolean isRestAction(GrailsControllerClass controller, String actionName) {
         if (RestfulController.isAssignableFrom(controller.clazz)) {
             return true
         }
-        Object declared = responseFormats(controller)
-        Collection<Object> formats = declared instanceof Map
-                ? ((Map) declared).values().collectMany { it instanceof Collection ? (Collection) it : [it] }
-                : (declared instanceof Collection ? (Collection<Object>) declared : [])
-        formats && !formats.any { Object format -> format?.toString() == HTML_FORMAT }
+        List<String> formats = responseFormats(controller, actionName)
+        formats && !formats.contains(HTML_FORMAT)
     }
 
     /**

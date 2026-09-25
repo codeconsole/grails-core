@@ -748,7 +748,10 @@ only the first form removes the default mapping from its `UrlMappings`.
 
 A controller rendering views for a browser declares no `responseFormats`, or declares `html` among
 them, such as a login controller responding in `html` and `json`, so it does not appear in the
-document. Controllers `@Scaffold` generates extend `RestfulController`, and those `generate-controller`
+document. Where `responseFormats` is a map by action, each action is decided by its own entry: with
+`[index: ['json'], page: ['html', 'json']]`, `index` is described and `page`, like an action the map
+leaves out, is not. `responseFormats` is read as `respond` reads it, a list, or a list for each action;
+an array is not one, so `respond` answers in any configured format, `html` too. Controllers `@Scaffold` generates extend `RestfulController`, and those `generate-controller`
 generates for a REST application declare `responseFormats`, so both are described; those it
 generates for a web application render views and are not.
 
