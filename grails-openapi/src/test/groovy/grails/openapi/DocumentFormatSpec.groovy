@@ -43,6 +43,26 @@ class DocumentFormatSpec extends Specification {
         openApi.components.schemas['Widget'].properties.name.type == 'string'
     }
 
+    void 'writes what each version says in the form that version reads'() {
+        when:
+        Map written = Json.mapper().readValue(GrailsOpenApiGenerator.serialize(generator(config).generate(), 'json'), Map)
+        Map widget = (Map) ((Map) ((Map) written.components).schemas).Widget
+        Map properties = (Map) widget.get('properties')
+
+        then: 'a value that may be null, and a type'
+        properties.weight.type == weightType
+        properties.weight.nullable == nullable
+
+        and: 'the identifier path variable, and an association reference'
+        ((Map) ((List) ((Map) ((Map) written.paths)['/widgets/{id}']).get.parameters).find { it.name == 'id' }).schema.type == 'integer'
+        properties.crate.type == crateType
+
+        where:
+        config                                        || weightType          | nullable | crateType
+        [:]                                           || ['number', 'null']  | null     | ['object', 'null']
+        ['springdoc.api-docs.version': 'openapi_3_0'] || 'number'            | true     | 'object'
+    }
+
     void 'writes the document as YAML or JSON'() {
         given:
         def openApi = generator(['springdoc.api-docs.version': 'openapi_3_0']).generate()
