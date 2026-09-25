@@ -90,6 +90,21 @@ class ComponentSchemas {
     }
 
     /**
+     * Counts the schemas some work adds to the components as this document's own, as swagger-core
+     * adds a class an annotation names as it reads the annotation, so such a class is named apart
+     * as one resolved here is.
+     */
+    void addedBy(Closure<?> work) {
+        Set<String> before = new HashSet<String>(components.schemas?.keySet() ?: Collections.<String> emptySet())
+        work.call()
+        components.schemas?.keySet()?.each { String name ->
+            if (!(name in before)) {
+                added << name
+            }
+        }
+    }
+
+    /**
      * The schema of a patch of what a reference refers to: its properties with nothing required,
      * since a patch binds only what it is sent, sent in XML as the same element. A schema requiring
      * nothing is its own patch.

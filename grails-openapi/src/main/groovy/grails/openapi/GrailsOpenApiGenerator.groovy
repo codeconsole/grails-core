@@ -524,7 +524,7 @@ class GrailsOpenApiGenerator {
             if (version != null) {
                 OperationParameters.addVersionParameter(operation, version, !versions.isLatest(mapping, version))
             }
-            ActionAnnotations.apply(operation, controllerType, actionName, components, openapi31)
+            schemas.addedBy { ActionAnnotations.apply(operation, controllerType, actionName, components, openapi31) }
             if (hooks != null) {
                 operation = hooks.customize(operation, components, controller, action)
                 if (operation == null) {

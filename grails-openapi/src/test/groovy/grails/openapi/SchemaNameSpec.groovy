@@ -18,7 +18,9 @@
  */
 package grails.openapi
 
+import io.swagger.v3.oas.annotations.media.Content
 import io.swagger.v3.oas.annotations.media.Schema as SchemaAnnotation
+import io.swagger.v3.oas.annotations.responses.ApiResponse
 import io.swagger.v3.oas.models.Components
 import io.swagger.v3.oas.models.OpenAPI
 import io.swagger.v3.oas.models.SpecVersion
@@ -308,6 +310,21 @@ class SchemaNameSpec extends Specification {
         openApi.components.schemas['grails.openapi.names.v2.Grade'].enum == ['f', 'g']
     }
 
+    void 'names apart a class an annotation names as it names a class reached any other way'() {
+        when: 'one class sharing a name is named by an annotation, before the other is reached, as a longer path is'
+        def openApi = OpenApiFixture.document([LabelNoticeController, PrintedLabelController], []) {
+            get '/labels/notices/latest'(controller: 'labelNotice', action: 'notice')
+            '/printed'(resources: 'printedLabel')
+        }
+
+        then: 'neither keeps the name they share, however each is reached'
+        !openApi.components.schemas.containsKey('Label')
+        openApi.paths['/labels/notices/latest'].get.responses['200'].content['application/json'].schema.$ref ==
+                "#/components/schemas/${V2}"
+        responseReference(openApi, '/printed/{id}') == "#/components/schemas/${V1}"
+        schemasReferenced(openApi)
+    }
+
     void 'every reference resolves once the names are moved'() {
         when:
         def openApi = OpenApiFixture.document([PrintedLabelController, ShippingLabelController, LabelSheetController], []) {
@@ -321,6 +338,10 @@ class SchemaNameSpec extends Specification {
         then:
         !referenced.isEmpty()
         defined.containsAll(referenced)
+    }
+
+    private static boolean schemasReferenced(OpenAPI openApi) {
+        openApi.components.schemas.keySet().containsAll(references(openApi))
     }
 
     private static String name(String reference) {
@@ -350,6 +371,13 @@ class ParcelTagController extends RestfulController<ParcelTag> {
 @Artefact('Controller')
 class LabelSearchController {
     def search(V2Label criteria) { }
+}
+
+@Artefact('Controller')
+class LabelNoticeController {
+
+    @ApiResponse(responseCode = '200', content = @Content(schema = @SchemaAnnotation(implementation = V2Label)))
+    def notice() { }
 }
 
 class LabelSummary {
