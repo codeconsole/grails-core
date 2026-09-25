@@ -552,7 +552,7 @@ class GrailsOpenApiGenerator {
             }
 
             List<String> described = UrlMappingPaths.paths(mapping, substitutions, omitted)
-            for (PathItem.HttpMethod method : httpMethods(expandsAction ? null : mapping.httpMethod, controller, actionName)) {
+            for (PathItem.HttpMethod method : httpMethods(mapping.httpMethod, controller, actionName)) {
                 String operationId = operationId(controller, controllerName, actionName, method)
                 if (expandsAction) {
                     operationId += '_byAction'

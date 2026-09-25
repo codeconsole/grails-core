@@ -96,6 +96,19 @@ class ExpandedMappingSpec extends Specification {
         openApi.paths['/drawer/update/{id}'].post
     }
 
+    void 'describes an action a mapping takes from the path only for the method the mapping answers'() {
+        when:
+        def openApi = OpenApiFixture.document([DrawerController], [Drawer]) {
+            get "/api/$controller/$action?/$id?"()
+        }
+
+        then: 'a GET mapping does not reach save or delete, whatever they answer elsewhere'
+        openApi.paths['/api/drawer/index'].get
+        openApi.paths['/api/drawer/show/{id}'].get
+        !openApi.paths.containsKey('/api/drawer/save')
+        !openApi.paths.containsKey('/api/drawer/delete/{id}')
+    }
+
     void 'describes each action a mapping takes from the path of a controller it names'() {
         when:
         def openApi = OpenApiFixture.document([TopicController], []) {
