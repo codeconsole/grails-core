@@ -89,6 +89,28 @@ class GroupedOpenApiContributorSpec extends Specification {
         paths(beanFactory.getBean('widgets', GroupedOpenApi)) == ['/gate'] as Set
     }
 
+    void 'warns of a group name declared more than once'() {
+        given:
+        def beanFactory = new DefaultListableBeanFactory()
+        beanFactory.registerSingleton('generator', generator())
+        beanFactory.registerSingleton('widgets', GroupedOpenApi.builder().group('widgets').pathsToMatch('/widgets/**').build())
+        beanFactory.registerSingleton('moreWidgets', GroupedOpenApi.builder().group('widgets').pathsToMatch('/gate').build())
+        def contributor = new GroupedOpenApiContributor()
+        contributor.beanFactory = beanFactory
+        def logged = new ByteArrayOutputStream()
+        def err = System.err
+        System.err = new PrintStream(logged, true)
+
+        when:
+        contributor.postProcessBeforeInitialization(resource(beanFactory), 'multipleOpenApiResource')
+
+        then:
+        logged.toString().contains('The OpenAPI group [widgets] is declared 2 times')
+
+        cleanup:
+        System.err = err
+    }
+
     void 'applies the method filters of a group, and the global ones, to the Grails actions'() {
         given:
         def beanFactory = new DefaultListableBeanFactory()

@@ -239,7 +239,9 @@ each at `/v3/api-docs/<name>`, applying the same criteria to any Spring MVC endp
 application also has. A group declared to springdoc, in `springdoc.group-configs` or as a
 `GroupedOpenApi` bean, is honored the same way, both at runtime and by the command. Where springdoc
 is used, its own top-level criteria, such as `springdoc.paths-to-match`, apply to every group ahead
-of the group's own, criterion by criterion, as springdoc applies them to its Spring MVC endpoints:
+of the group's own, criterion by criterion, as springdoc applies them to its Spring MVC endpoints. A
+group name declared more than once is described by its first declaration, and logged, since
+springdoc may select the group's Spring MVC endpoints by another:
 
 [source,yaml]
 ----

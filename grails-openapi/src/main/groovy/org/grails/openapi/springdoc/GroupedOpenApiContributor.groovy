@@ -66,7 +66,9 @@ class GroupedOpenApiContributor implements BeanPostProcessor, BeanFactoryAware {
     @Override
     Object postProcessBeforeInitialization(Object bean, String beanName) throws BeansException {
         if (bean instanceof AbstractMultipleOpenApiResource) {
-            beanFactory.getBeansOfType(GroupedOpenApi).values().each { GroupedOpenApi group ->
+            Collection<GroupedOpenApi> groups = beanFactory.getBeansOfType(GroupedOpenApi).values()
+            warnOfRepeatedGroups(groups)
+            groups.each { GroupedOpenApi group ->
                 // Read as the document is built, once springdoc has given the group the global
                 // method filters.
                 group.addAllOpenApiCustomizer([new GrailsOpenApiCustomizer(
@@ -121,7 +123,9 @@ class GroupedOpenApiContributor implements BeanPostProcessor, BeanFactoryAware {
      * writes a document for each of them too.
      */
     static List<OpenApiSelection> declaredGroups(ApplicationContext applicationContext) {
-        applicationContext.getBeansOfType(GroupedOpenApi).values().collect { GroupedOpenApi group ->
+        Collection<GroupedOpenApi> groups = applicationContext.getBeansOfType(GroupedOpenApi).values()
+        warnOfRepeatedGroups(groups)
+        groups.collect { GroupedOpenApi group ->
             (OpenApiSelection) SpringdocSelection.groupSelection(group, SpringdocSelection.customizers(applicationContext),
                     SpringdocSelection.properties(applicationContext))
         }
@@ -175,6 +179,20 @@ class GroupedOpenApiContributor implements BeanPostProcessor, BeanFactoryAware {
      */
     static OpenApiSelection defaultSelection(ApplicationContext applicationContext, OpenApiSelection criteria) {
         SpringdocSelection.defaultSelection(criteria, SpringdocSelection.customizers(applicationContext))
+    }
+
+    /**
+     * A group name declared more than once, across {@code GroupedOpenApi} beans,
+     * {@code springdoc.group-configs} and {@code grails.openapi.groups}, is served as the first
+     * declaration of it, where springdoc may select its Spring MVC endpoints by another.
+     */
+    private static void warnOfRepeatedGroups(Collection<GroupedOpenApi> groups) {
+        groups.countBy { GroupedOpenApi group -> group.group }.each { String name, Integer declarations ->
+            if (declarations > 1) {
+                LOG.warn('The OpenAPI group [{}] is declared {} times; its document is described by the first', name,
+                        declarations)
+            }
+        }
     }
 
     /**
