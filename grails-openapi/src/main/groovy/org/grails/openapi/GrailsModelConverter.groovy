@@ -83,6 +83,11 @@ class GrailsModelConverter implements ModelConverter {
 
     static final GrailsModelConverter INSTANCE = new GrailsModelConverter()
 
+    /**
+     * The name Grails renders and binds an identifier by, whatever the identity is named.
+     */
+    private static final String IDENTITY = 'id'
+
     private static final Logger LOG = LoggerFactory.getLogger(GrailsModelConverter)
 
     private static final String EMAIL_FORMAT = 'email'
@@ -286,12 +291,13 @@ class GrailsModelConverter implements ModelConverter {
             return null
         }
 
-        // Grails renders the identifier in XML as an attribute of the association's element, and a
-        // to-many association as an element holding one for each, named for the associated class.
+        // Grails renders and binds the associated identifier as id, whatever the identity is named:
+        // in XML as an attribute of the association's element, and a to-many association as an
+        // element holding one for each, named for the associated class.
         Schema reference = new ObjectSchema()
-                .addProperty(associated.identity?.name ?: 'id', identifierSchema(associated).xml(new XML().attribute(true)))
+                .addProperty(IDENTITY, identifierSchema(associated).xml(new XML().attribute(true)))
                 .description("The identifier of the associated ${associated.javaClass.simpleName}".toString())
-        reference.addRequiredItem(associated.identity?.name ?: 'id')
+        reference.addRequiredItem(IDENTITY)
 
         if (association instanceof ToMany) {
             reference.setXml(new XML().name(GrailsNameUtils.getPropertyName(associated.javaClass)))
@@ -447,6 +453,10 @@ class GrailsModelConverter implements ModelConverter {
         }
 
         markReadOnly(model, names[identityName] ?: identityName)
+        if (identityName && identityName != IDENTITY) {
+            // Grails renders the identifier in XML as the id attribute, whatever it is named.
+            ((Schema) model.properties[names[identityName] ?: identityName]).xml.setName(IDENTITY)
+        }
         if (INCLUDE_VERSION.get()) {
             markReadOnly(model, names[versionName] ?: versionName)
         }

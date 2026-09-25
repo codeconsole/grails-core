@@ -113,6 +113,26 @@ class PersistentEntitySchemaSpec extends Specification {
         }
     }
 
+    void 'describes an identifier named otherwise as Grails renders it'() {
+        when:
+        def openApi = OpenApiFixture.document([VolumeController, LoanController], [Volume, Loan]) {
+            '/volumes'(resources: 'volume')
+            '/loans'(resources: 'loan')
+        }
+        def volume = openApi.components.schemas['Volume'].properties
+        def reference = openApi.components.schemas['Loan'].properties.volume
+
+        then: 'under its name in JSON, and as the id attribute in XML'
+        volume.code.readOnly
+        volume.code.xml.name == 'id'
+        volume.code.xml.attribute
+
+        and: 'an association to it by id, which Grails renders and binds whatever the identity is named'
+        reference.properties.keySet() == ['id'] as Set
+        reference.required == ['id']
+        reference.properties.id.xml.attribute
+    }
+
     void 'does not describe an entity reached only through an association'() {
         given:
         def openApi = new OpenAPI()
@@ -551,6 +571,31 @@ class Widget {
 class Crate {
     String label
     static hasMany = [widgets: Widget]
+}
+
+@Entity
+class Volume {
+    String code
+    String title
+
+    static mapping = {
+        id name: 'code', generator: 'assigned'
+    }
+}
+
+@Artefact('Controller')
+class VolumeController extends RestfulController<Volume> {
+    VolumeController() { super(Volume) }
+}
+
+@Entity
+class Loan {
+    Volume volume
+}
+
+@Artefact('Controller')
+class LoanController extends RestfulController<Loan> {
+    LoanController() { super(Loan) }
 }
 
 @Entity
