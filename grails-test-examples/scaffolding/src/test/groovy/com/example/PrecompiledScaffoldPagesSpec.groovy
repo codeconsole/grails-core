@@ -34,9 +34,10 @@ import org.grails.web.servlet.view.GroovyPageView
 
 /**
  * The resolver finds, for every scaffolded view of this application, the page the build compiled
- * for it - the real resolver, reading the real templates, against the pages this build compiled,
- * as the packaged application does. The build and the resolver name the pages independently of
- * each other, so this is where the two are held together.
+ * for it - the real resolver, choosing among the real templates, the application's own included,
+ * against the pages this build compiled, as the packaged application does. The build and the
+ * resolver decide on the pages independently of each other, so this is where the two are held
+ * together.
  */
 class PrecompiledScaffoldPagesSpec extends Specification {
 
@@ -75,7 +76,7 @@ class PrecompiledScaffoldPagesSpec extends Specification {
         Thread.currentThread().contextClassLoader = original
     }
 
-    void '#controller.name serves its #view view from a page the build compiled'() {
+    void '#controller.name serves its #view view from the page the build compiled from #template'() {
         given:
         GrailsControllerClass controllerClass = Stub(GrailsControllerClass) {
             getClazz() >> controller
@@ -84,20 +85,20 @@ class PrecompiledScaffoldPagesSpec extends Specification {
             getPropertyValue('scaffold') >> null
         }
 
-        when:
-        GroovyPageView page = resolver.tryGenerateScaffoldedView("/${view}", controllerClass) { String name ->
-            namespace ? ["${namespace}/${name}".toString(), name] : [name]
-        } as GroovyPageView
+        when: 'the resolver chooses the template as it does for a request'
+        GroovyPageView page = resolver.tryGenerateScaffoldedView("/${view}", controllerClass) as GroovyPageView
 
         then:
-        page.url.startsWith('/grails-scaffolded/')
+        page.url.startsWith("/grails-scaffolded/${domain.name}/${template}-")
         locator.findPage(page.url) instanceof GroovyPageCompiledScriptSource
         resolver.reportedPages.isEmpty()
 
-        where:
-        [controller, namespace, view] << [
-                [[BookController, null], [UserController, null], [com.example.community.UserController, 'community']],
-                ['index', 'create', 'edit', 'show']
+        where: "summary is the application's own template, and the community namespace has one of its own"
+        [controller, namespace, domain, view] << [
+                [[BookController, null, Book], [UserController, null, User],
+                 [com.example.community.UserController, 'community', com.example.community.User]],
+                ['index', 'create', 'edit', 'show', 'summary']
         ].combinations().collect { List pair -> pair[0] + [pair[1]] }
+        template = namespace && view == 'summary' ? "${namespace}/${view}" : view
     }
 }
