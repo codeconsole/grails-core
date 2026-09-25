@@ -108,6 +108,14 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
     /** The class that expands and names the pages, from the application's scaffolding library. */
     static final String GENERATOR = 'org.apache.grails.scaffolding.ScaffoldedPagesGenerator'
 
+    /**
+     * The version of the exchange with the generator this task speaks - the command line, and the
+     * files handed over and back - as the generator declares its own in a {@code PROTOCOL}
+     * constant. The two ship apart, the generator in grails-scaffolding and this in the Gradle plugin,
+     * so a build can pair one version with another; this reads the generator's before running it.
+     */
+    public static final int GENERATOR_PROTOCOL = 1
+
     /** Compiled application classes, searched for scaffolded controllers. */
     @InputFiles
     @PathSensitive(PathSensitivity.RELATIVE)
@@ -206,10 +214,18 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
             logger.info('No scaffolded controllers; nothing to generate')
             return
         }
-        if (!templates.generator) {
+        if (templates.generator == null) {
             logger.warn('The scaffolding library on the runtime classpath does not provide {}, so no scaffolded page is ' +
                     'compiled and each is expanded when it is first rendered, which a native image cannot do. ' +
                     'Use a grails-scaffolding matching this Gradle plugin.', GENERATOR)
+            return
+        }
+        Integer protocol = readProtocol(templates.generator)
+        if (protocol != GENERATOR_PROTOCOL) {
+            logger.warn('The scaffolding library on the runtime classpath provides a {} for version {} of its exchange with ' +
+                    'this Gradle plugin, which speaks version {}, so no scaffolded page is compiled and each is expanded when ' +
+                    'it is first rendered, which a native image cannot do. Use a grails-scaffolding matching this Gradle plugin.',
+                    GENERATOR, protocol ?: 'none', GENERATOR_PROTOCOL)
             return
         }
 
@@ -321,7 +337,10 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
         String generator = GENERATOR.replace('.', '/') + '.class'
         for (File entry : runtimeClasspath.files) {
             if (entry.isDirectory()) {
-                templates.generator = templates.generator || new File(entry, generator).isFile()
+                File generatorClass = new File(entry, generator)
+                if (templates.generator == null && generatorClass.isFile()) {
+                    templates.generator = generatorClass.bytes
+                }
                 File dir = new File(entry, TEMPLATE_PATH)
                 if (dir.isDirectory()) {
                     dir.eachFileRecurse { File f ->
@@ -334,7 +353,10 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
             }
             else if (entry.isFile()) {
                 openArchive(entry)?.withCloseable { JarFile jar ->
-                    templates.generator = templates.generator || jar.getJarEntry(generator) != null
+                    JarEntry generatorClass = jar.getJarEntry(generator)
+                    if (templates.generator == null && generatorClass != null) {
+                        templates.generator = jar.getInputStream(generatorClass).withCloseable { InputStream input -> input.bytes }
+                    }
                     for (JarEntry e : jar.entries()) {
                         if (!e.directory && e.name.startsWith(TEMPLATE_PATH) && e.name.endsWith('.gsp')) {
                             templates.add(baseName(e.name.substring(TEMPLATE_PATH.length())),
@@ -558,6 +580,29 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
         }
     }
 
+    /**
+     * The version of the exchange a generator's class file declares, or {@code null} for one that
+     * declares none - a generator from before the exchange was versioned - or cannot be read.
+     */
+    private Integer readProtocol(byte[] generatorClass) {
+        Integer protocol = null
+        try {
+            new ClassReader(generatorClass).accept(new ClassVisitor(Opcodes.ASM9) {
+                @Override
+                FieldVisitor visitField(int access, String name, String descriptor, String signature, Object value) {
+                    if (name == 'PROTOCOL' && (access & Opcodes.ACC_STATIC) != 0 && value instanceof Integer) {
+                        protocol = (Integer) value
+                    }
+                    null
+                }
+            }, ClassReader.SKIP_CODE | ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES)
+        }
+        catch (IllegalArgumentException | IndexOutOfBoundsException e) {
+            logger.info('Could not read {} for the version of its exchange: {}', GENERATOR, e.message)
+        }
+        protocol
+    }
+
     private static String baseName(String fileName) {
         fileName.endsWith('.gsp') ? fileName[0..<fileName.length() - 4] : fileName
     }
@@ -601,12 +646,15 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
 
     }
 
-    /** Every distinct copy of every template, and whether the generator was found. */
+    /**
+     * Every distinct copy of every template, and the class file of the generator the application's
+     * class loader finds first, if any.
+     */
     private static final class Templates {
 
         final List<TemplateCopy> copies = []
 
-        boolean generator
+        byte[] generator
 
         void add(String path, byte[] content, String origin, boolean application) {
             TemplateCopy copy = copies.find { TemplateCopy c -> c.path == path && Arrays.equals(c.content, content) }

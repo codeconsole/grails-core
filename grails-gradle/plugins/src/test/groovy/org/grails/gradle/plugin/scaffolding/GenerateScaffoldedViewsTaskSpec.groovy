@@ -699,6 +699,40 @@ class GenerateScaffoldedViewsTaskSpec extends Specification {
             handed(task)['com.example.User/show'] == ['show ${className}']
     }
 
+    /**
+     * A jar holding a generator that declares the given version of its exchange, or none, and has no
+     * main method, so that running it would fail the build.
+     */
+    private File generatorJar(String name, Integer protocol) {
+        ClassWriter writer = new ClassWriter(0)
+        writer.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, 'org/apache/grails/scaffolding/ScaffoldedPagesGenerator', null,
+                'java/lang/Object', null)
+        if (protocol != null) {
+            writer.visitField(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC | Opcodes.ACC_FINAL, 'PROTOCOL', 'I', null, protocol).visitEnd()
+        }
+        writer.visitEnd()
+        File jar = new File(projectDir, name)
+        writeJar(jar, ['org/apache/grails/scaffolding/ScaffoldedPagesGenerator.class': writer.toByteArray()])
+        jar
+    }
+
+    void 'a generator for another version of the exchange is not run, and the build carries on'() {
+        given: 'the one the application loads first, ahead of one that would do'
+            writeController('UserController', 'User')
+            def task = task()
+            task.runtimeClasspath.setFrom([templateJar, generatorJar('other.jar', protocol)] + testClasspath())
+
+        when:
+            task.generate()
+
+        then: 'the pages are left to be expanded when rendered, as with no generator at all'
+            noExceptionThrown()
+            handed(task).isEmpty()
+
+        where:
+            protocol << [GenerateScaffoldedViewsTask.GENERATOR_PROTOCOL + 1, null]
+    }
+
     void 'with no templates on the classpath nothing is written'() {
         given:
             writeController('UserController', 'User')

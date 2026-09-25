@@ -49,6 +49,16 @@ import grails.codegen.model.ModelBuilder
 @CompileStatic
 class ScaffoldedPagesGenerator implements ModelBuilder {
 
+    /**
+     * The version of the exchange with the build this speaks: the command line, and the plan,
+     * origins and report files. This ships in grails-scaffolding and the build's side in the Gradle
+     * plugin, so a build can pair one version with another; the plugin reads this constant from the
+     * class file before running it, and expands nothing when it does not speak the same version, so a
+     * mismatch leaves the pages to be expanded when rendered instead of failing the build. Raised with
+     * every change to either side of the exchange, together with the plugin's.
+     */
+    public static final int PROTOCOL = 1
+
     static void main(String[] args) {
         if (args.length != 5) {
             System.err.println('Usage: ScaffoldedPagesGenerator <plan> <origins> <output directory> <page encoding> <report>')

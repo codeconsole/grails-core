@@ -39,6 +39,9 @@ import java.util.stream.Stream;
  */
 public final class ScaffoldedPagesGenerator {
 
+    /** The version of the exchange the task speaks, so that it runs this. */
+    public static final int PROTOCOL = org.grails.gradle.plugin.scaffolding.GenerateScaffoldedViewsTask.GENERATOR_PROTOCOL;
+
     private ScaffoldedPagesGenerator() {
     }
 
