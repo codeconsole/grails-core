@@ -49,6 +49,12 @@ class ScaffoldedPagesGeneratorSpec extends Specification {
         page.getText('UTF-8').replaceFirst(/%\{--[^%]*--}%$/, '')
     }
 
+    /** The page's path under the output directory, as the generator reports it: the same on every platform. */
+    String pagePath(String templatePath, String domain, String text) {
+        Map<String, Object> model = new ScaffoldedPagesGenerator().model(domain).asMap()
+        ScaffoldedPages.uri(templatePath, model, text.getBytes(StandardCharsets.UTF_8)).substring(1)
+    }
+
     /** Where the resolver looks for the page, which is where the generator must have written it. */
     File page(String templatePath, String domain, String text) {
         Map<String, Object> model = new ScaffoldedPagesGenerator().model(domain).asMap()
@@ -188,10 +194,10 @@ class ScaffoldedPagesGeneratorSpec extends Specification {
         and: 'each page written is reported with the templates it came from, and each template that could not be expanded'
         List<List<String>> lines = report.readLines('UTF-8')*.split('\t')*.toList()
         lines.findAll { it[0] == 'page' }.collect { it.take(3) } as Set == [
-                ['page', templates.path, page('show', 'com.example.Book', 'show ${className}').path - "${output.path}/"],
-                ['page', templates.path, page('admin/show', 'com.example.Book', 'admin show ${className}').path - "${output.path}/"],
-                ['page', plain.path, page('index', 'com.example.Book', 'index ${className}').path - "${output.path}/"],
-                ['page', plain.path, page('index', 'com.example.Author', 'index ${className}').path - "${output.path}/"]] as Set
+                ['page', templates.path, pagePath('show', 'com.example.Book', 'show ${className}')],
+                ['page', templates.path, pagePath('admin/show', 'com.example.Book', 'admin show ${className}')],
+                ['page', plain.path, pagePath('index', 'com.example.Book', 'index ${className}')],
+                ['page', plain.path, pagePath('index', 'com.example.Author', 'index ${className}')]] as Set
         lines.findAll { it[0] == 'failed' }.collect { it.take(3) } == [['failed', broken.path, 'com.example.Broken']]
     }
 }
