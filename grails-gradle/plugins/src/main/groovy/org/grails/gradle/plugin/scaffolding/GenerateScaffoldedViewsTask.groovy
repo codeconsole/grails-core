@@ -38,6 +38,7 @@ import org.gradle.api.file.FileVisitDetails
 import org.gradle.api.provider.Property
 import org.gradle.api.tasks.CacheableTask
 import org.gradle.api.tasks.Classpath
+import org.gradle.api.tasks.Input
 import org.gradle.api.tasks.InputFiles
 import org.gradle.api.tasks.Nested
 import org.gradle.api.tasks.Optional
@@ -134,6 +135,13 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
     @Classpath
     abstract ConfigurableFileCollection getRuntimeClasspath()
 
+    /**
+     * The encoding the pages are written in, which must be the one they are compiled with, so that
+     * a page reads back as it was expanded. Normally {@code compileGroovyPages}' encoding.
+     */
+    @Input
+    abstract Property<String> getPageEncoding()
+
     /** The Java the pages are expanded with; the build's own when not set. */
     @Nested
     @Optional
@@ -145,6 +153,10 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
 
     @Inject
     abstract ExecOperations getExecOperations()
+
+    GenerateScaffoldedViewsTask() {
+        pageEncoding.convention('UTF-8')
+    }
 
     @TaskAction
     void generate() {
@@ -197,7 +209,7 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
                 }
                 spec.classpath = runtimeClasspath
                 spec.mainClass.set(GENERATOR)
-                spec.args(planFile.absolutePath, outputDir.absolutePath)
+                spec.args(planFile.absolutePath, outputDir.absolutePath, pageEncoding.get())
             }
         }).assertNormalExitValue()
     }

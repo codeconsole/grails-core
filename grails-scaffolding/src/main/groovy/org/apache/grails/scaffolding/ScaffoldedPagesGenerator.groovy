@@ -18,8 +18,6 @@
  */
 package org.apache.grails.scaffolding
 
-import java.nio.charset.StandardCharsets
-
 import groovy.transform.CompileStatic
 
 import grails.codegen.model.ModelBuilder
@@ -33,12 +31,12 @@ import grails.codegen.model.ModelBuilder
  * exactly as the resolver models, expands and names it when the view is asked for.</p>
  *
  * <pre>
- * ScaffoldedPagesGenerator &lt;plan&gt; &lt;output directory&gt;
+ * ScaffoldedPagesGenerator &lt;plan&gt; &lt;output directory&gt; &lt;page encoding&gt;
  * </pre>
  *
  * <p>Each line of the plan names a domain class and, tab separated, the templates directories to
  * expand for it. A templates directory holds a file per template path, such as {@code show.gsp} or
- * {@code admin/show.gsp}.</p>
+ * {@code admin/show.gsp}. The pages are written in the encoding they will be compiled with.</p>
  *
  * @since 8.0
  */
@@ -46,8 +44,8 @@ import grails.codegen.model.ModelBuilder
 class ScaffoldedPagesGenerator implements ModelBuilder {
 
     static void main(String[] args) {
-        if (args.length != 2) {
-            System.err.println('Usage: ScaffoldedPagesGenerator <plan> <output directory>')
+        if (args.length != 3) {
+            System.err.println('Usage: ScaffoldedPagesGenerator <plan> <output directory> <page encoding>')
             System.exit(2)
         }
         Map<String, List<File>> plan = [:]
@@ -57,7 +55,7 @@ class ScaffoldedPagesGenerator implements ModelBuilder {
                 plan.put(fields.head(), fields.tail().collect { String dir -> new File(dir) })
             }
         }
-        new ScaffoldedPagesGenerator().generate(plan, new File(args[1]))
+        new ScaffoldedPagesGenerator().generate(plan, new File(args[1]), args[2])
     }
 
     /**
@@ -68,7 +66,7 @@ class ScaffoldedPagesGenerator implements ModelBuilder {
      * @param plan each domain class, with the templates directories to expand for it
      * @return how many pages were written
      */
-    int generate(Map<String, List<File>> plan, File outputDir) {
+    int generate(Map<String, List<File>> plan, File outputDir, String encoding = 'UTF-8') {
         int written = 0
         plan.each { String domain, List<File> templateDirs ->
             Map<String, Object> model = model(domain).asMap()
@@ -84,7 +82,7 @@ class ScaffoldedPagesGenerator implements ModelBuilder {
                 }
                 File target = new File(outputDir, ScaffoldedPages.uri(template.key, model, template.value).substring(1))
                 target.parentFile.mkdirs()
-                target.setText(page, StandardCharsets.UTF_8.name())
+                target.setText(page, encoding)
                 written++
             }
         }

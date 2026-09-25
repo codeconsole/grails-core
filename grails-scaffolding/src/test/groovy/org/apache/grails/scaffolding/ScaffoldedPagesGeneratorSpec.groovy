@@ -104,6 +104,17 @@ class ScaffoldedPagesGeneratorSpec extends Specification {
         page('show', 'com.example.Book', 'other show ${className}').getText('UTF-8') == 'other show Book'
     }
 
+    void 'a page is written in the encoding it is compiled with'() {
+        given:
+        template('show', 'show ${className} \u00e9')
+
+        when:
+        new ScaffoldedPagesGenerator().generate(['com.example.Book': [templates]], output, 'ISO-8859-1')
+
+        then:
+        page('show', 'com.example.Book', 'show ${className} \u00e9').bytes == 'show Book \u00e9'.getBytes(StandardCharsets.ISO_8859_1)
+    }
+
     void 'a domain class named by the build is modelled as the resolver models the class itself'() {
         expect: 'the build names a class as ASM reads it, nested classes by their binary name'
         new ScaffoldedPagesGenerator().model(type.name).asMap() == new ScaffoldedPagesGenerator().model(type).asMap()
@@ -120,7 +131,7 @@ class ScaffoldedPagesGeneratorSpec extends Specification {
         plan.setText("com.example.Book\t${templates.path}\t${plain.path}\n\ncom.example.Author\t${plain.path}\n", 'UTF-8')
 
         when:
-        ScaffoldedPagesGenerator.main(plan.path, output.path)
+        ScaffoldedPagesGenerator.main(plan.path, output.path, 'UTF-8')
 
         then:
         page('show', 'com.example.Book', 'show ${className}').exists()

@@ -467,6 +467,22 @@ class GenerateScaffoldedViewsTaskSpec extends Specification {
             handed(task).isEmpty()
     }
 
+    void 'the pages are written in the encoding they are compiled with'() {
+        given:
+            writeController('UserController', 'User')
+            def task = task()
+
+        expect:
+            task.pageEncoding.get() == 'UTF-8'
+
+        when:
+            task.pageEncoding.set('ISO-8859-1')
+            task.generate()
+
+        then:
+            new File(task.outputDirectory.get().asFile, 'encoding.txt').text == 'ISO-8859-1'
+    }
+
     void 'a stale page from a previous run does not survive'() {
         given:
             writeController('UserController', 'User')

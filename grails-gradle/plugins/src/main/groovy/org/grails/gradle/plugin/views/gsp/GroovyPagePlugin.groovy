@@ -413,6 +413,11 @@ class GroovyPagePlugin implements Plugin<Project> {
             }
         }
 
+        // scaffolded pages are written in the encoding they are compiled with
+        tasks.withType(GenerateScaffoldedViewsTask).configureEach { GenerateScaffoldedViewsTask generate ->
+            generate.pageEncoding.convention(compileGroovyPages.flatMap { GroovyPageForkCompileTask compile -> compile.compileOptions.encoding })
+        }
+
         def compileWebappGroovyPages = tasks.register('compileWebappGroovyPages', GroovyPageForkCompileTask) {
             it.destinationDirectory.set(webappDestDir)
             it.source = project.layout.projectDirectory.dir('src/main/webapp')
