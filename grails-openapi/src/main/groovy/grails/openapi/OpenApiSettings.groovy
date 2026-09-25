@@ -87,6 +87,13 @@ class OpenApiSettings {
     SpecVersion specVersion = SpecVersion.V31
 
     /**
+     * Whether Grails renders the version of a domain class, which it does where
+     * {@code grails.converters.json.domain.include.version} or
+     * {@code grails.converters.domain.include.version} is set.
+     */
+    boolean includeVersion = false
+
+    /**
      * What the default document selects.
      */
     OpenApiSelection defaultSelection = new OpenApiSelection()
@@ -118,6 +125,9 @@ class OpenApiSettings {
         settings.baseDocument = environment.getProperty("${PREFIX}.base-document".toString())
         settings.outputDirectory = environment.getProperty("${PREFIX}.output-directory".toString(), settings.outputDirectory)
         settings.outputFormat = environment.getProperty("${PREFIX}.output-format".toString(), settings.outputFormat)
+
+        settings.includeVersion = environment.getProperty('grails.converters.json.domain.include.version', Boolean,
+                environment.getProperty('grails.converters.domain.include.version', Boolean, false))
 
         String version = environment.getProperty('springdoc.api-docs.version')
         if (version?.toLowerCase(Locale.ENGLISH)?.contains('3_0')) {

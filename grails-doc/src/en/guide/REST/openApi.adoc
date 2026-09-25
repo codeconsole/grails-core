@@ -392,9 +392,15 @@ The constraints are carried across as follows:
 | `email` / `url` | `format`
 |===
 
-The identifier and the version of a domain class are marked `readOnly`, because the server assigns
-them, as is a property a command object can only read. Tools that understand OpenAPI leave a
-read-only property out of a request body, so one schema describes both directions.
+A domain class is described as Grails renders it: its identifier and its persistent properties. A
+transient, or a getter with nothing persisted behind it, is not rendered and is not described. The
+version is not rendered either unless `grails.converters.domain.include.version` is set, and is
+described only then.
+
+A property data binding does not bind is marked `readOnly`: the identifier and the version, which the
+server assigns, `dateCreated` and `lastUpdated`, a property constrained `bindable: false`, and a
+property a command object can only read. Tools that understand OpenAPI leave a read-only property
+out of a request body, so one schema describes both directions.
 
 An association to another domain class is described by the associated identifier, which is what
 Grails renders for it and what it binds it from:

@@ -36,6 +36,7 @@ import io.swagger.v3.oas.models.media.ObjectSchema
 import io.swagger.v3.oas.models.media.Schema
 import io.swagger.v3.oas.models.media.StringSchema
 import org.codehaus.groovy.runtime.InvokerHelper
+import org.springframework.beans.BeanUtils
 import org.springframework.validation.Errors
 import org.springframework.validation.Validator
 
@@ -43,6 +44,7 @@ import grails.gorm.validation.Constrained
 import grails.gorm.validation.ConstrainedEntity
 import grails.gorm.validation.ConstrainedProperty
 import grails.validation.Validateable
+import grails.web.databinding.DataBindingUtils
 import org.grails.datastore.mapping.model.MappingContext
 import org.grails.datastore.mapping.model.PersistentEntity
 import org.grails.datastore.mapping.model.PersistentProperty
@@ -81,6 +83,10 @@ class GrailsModelConverter implements ModelConverter {
 
     private static final ThreadLocal<Collection<MappingContext>> MAPPING_CONTEXTS = new ThreadLocal<>()
 
+    private static final ThreadLocal<Boolean> INCLUDE_VERSION = new ThreadLocal<>()
+
+    private static final String DATABINDING_WHITELIST = '$defaultDatabindingWhiteList'
+
     private static final ThreadLocal<SchemaNames> SCHEMA_NAMES = new ThreadLocal<>()
 
     private static final ThreadLocal<Deque<Class<?>>> RESOLVING = ThreadLocal.<Deque<Class<?>>> withInitial {
@@ -104,13 +110,24 @@ class GrailsModelConverter implements ModelConverter {
      * identifiers and associations are described.
      */
     static <T> T withMappingContexts(Collection<MappingContext> mappingContexts, Closure<T> work) {
+        withMappingContexts(mappingContexts, false, work)
+    }
+
+    /**
+     * @param includeVersion whether Grails renders the version of an entity, which it does not
+     * unless {@code grails.converters.domain.include.version} is set
+     */
+    static <T> T withMappingContexts(Collection<MappingContext> mappingContexts, boolean includeVersion, Closure<T> work) {
         Collection<MappingContext> previous = MAPPING_CONTEXTS.get()
+        Boolean previousIncludeVersion = INCLUDE_VERSION.get()
         MAPPING_CONTEXTS.set(mappingContexts)
+        INCLUDE_VERSION.set(includeVersion)
         try {
             return work.call()
         }
         finally {
             MAPPING_CONTEXTS.set(previous)
+            INCLUDE_VERSION.set(previousIncludeVersion)
         }
     }
 
@@ -262,6 +279,39 @@ class GrailsModelConverter implements ModelConverter {
         else if (Validateable.isAssignableFrom(type)) {
             applyConstraints(model, writable(type, validateableConstraints(type), model), null)
         }
+        if (entity != null || Validateable.isAssignableFrom(type) || declaresBindableProperties(type)) {
+            markUnbound(type, model)
+        }
+    }
+
+    /**
+     * A property data binding does not bind - one the server assigns, such as {@code dateCreated},
+     * one constrained {@code bindable: false}, or a transient - is not something a client sends,
+     * so it is read only. A property renamed in the document is left as it is.
+     */
+    private static void markUnbound(Class<?> type, Schema model) {
+        List<String> bindable = DataBindingUtils.getBindingIncludeListForType(type)
+        if (bindable == null) {
+            return
+        }
+        ((Map<String, Schema>) model.properties).each { String name, Schema property ->
+            if (!(name in bindable) && BeanUtils.getPropertyDescriptor(type, name) != null) {
+                property.setReadOnly(true)
+            }
+        }
+    }
+
+    /**
+     * Grails declares the properties it binds on a command object an action takes.
+     */
+    private static boolean declaresBindableProperties(Class<?> type) {
+        try {
+            type.getField(DATABINDING_WHITELIST)
+            return true
+        }
+        catch (NoSuchFieldException | SecurityException ignored) {
+            return false
+        }
     }
 
     /**
@@ -287,18 +337,25 @@ class GrailsModelConverter implements ModelConverter {
         type.methods.any { Method method -> method.name == setter && method.parameterCount == 1 }
     }
 
+    /**
+     * Grails renders an entity as its identifier, its persistent properties and, where it is
+     * configured to, its version. A transient, a getter with nothing persisted behind it, and the
+     * accessor GORM adds for the foreign key of an association are not part of it.
+     */
     private static void describeEntity(PersistentEntity entity, Schema model) {
         Map<String, Schema> properties = model.properties
+        String identityName = entity.identity?.name
+        String versionName = entity.versioned ? entity.version?.name : null
+        boolean includeVersion = INCLUDE_VERSION.get()
 
-        // GORM adds an accessor for the foreign key alongside a to-one association; the
-        // association itself already describes the relationship.
-        for (Association association : entity.associations) {
-            properties.remove("${association.name}Id".toString())
+        properties.keySet().removeAll { String name ->
+            name != identityName && (name == versionName || entity.getPropertyByName(name) == null)
         }
 
-        markReadOnly(model, entity.identity?.name)
-        String versionName = entity.versioned ? entity.version?.name : null
-        markReadOnly(model, versionName)
+        markReadOnly(model, identityName)
+        if (includeVersion) {
+            markReadOnly(model, versionName)
+        }
 
         applyConstraints(model, entityConstraints(entity), versionName)
     }

@@ -51,6 +51,8 @@ dependencies {
     api project(':grails-rest-transforms')
     // MimeType, which maps a controller's responseFormats to media types
     implementation project(':grails-web-common')
+    // DataBindingUtils, which says which properties data binding binds
+    implementation project(':grails-web-databinding')
     // Constrained/ConstrainedEntity and Validateable are used from src/main, not only from tests.
     api project(':grails-datamapping-validation')
     api project(':grails-validation')

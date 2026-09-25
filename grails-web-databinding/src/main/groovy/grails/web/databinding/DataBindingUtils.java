@@ -146,6 +146,36 @@ public class DataBindingUtils {
         return bindObjectToInstance(object, source, getBindingIncludeList(object), Collections.emptyList(), null);
     }
 
+    /**
+     * The names of the properties {@link #bindObjectToInstance(Object, Object)} binds on an
+     * instance of the given type: the include list Grails generates for a domain class or a command
+     * object, as {@code grails.databinding.denyByDefault} selects it.
+     *
+     * @param type a type with a no-argument constructor
+     * @return the bindable property names, or {@code null} where binding the type is not restricted
+     * or an instance cannot be created
+     * @since 8.0
+     */
+    public static List<String> getBindingIncludeListForType(final Class<?> type) {
+        final Object instance;
+        try {
+            instance = type.getDeclaredConstructor().newInstance();
+        } catch (ReflectiveOperationException | RuntimeException | LinkageError e) {
+            return null;
+        }
+        final List includeList = getBindingIncludeList(instance);
+        if (includeList == null) {
+            return null;
+        }
+        final List<String> names = new ArrayList<>();
+        for (Object name : includeList) {
+            if (name != null && !DefaultASTDatabindingHelper.NO_BINDABLE_PROPERTIES.equals(name)) {
+                names.add(name.toString());
+            }
+        }
+        return Collections.unmodifiableList(names);
+    }
+
     protected static List getBindingIncludeList(final Object object) {
         final boolean denyByDefaultEnabled = isDenyByDefaultEnabled();
         final Map<Class, List> includeListCache = denyByDefaultEnabled ?

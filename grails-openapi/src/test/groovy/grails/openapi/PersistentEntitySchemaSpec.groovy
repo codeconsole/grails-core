@@ -165,10 +165,9 @@ class PersistentEntitySchemaSpec extends Specification {
         when:
         customizer().contribute(openApi, null)
 
-        then: 'the identifier and version are present but not for a client to send'
+        then: 'the identifier is present but not for a client to send'
         with(openApi.components.schemas['Widget'].properties) {
             id.readOnly
-            version.readOnly
 
             and: 'an editable property is not marked'
             !name.readOnly
@@ -295,7 +294,7 @@ class PersistentEntitySchemaSpec extends Specification {
         !openApi.components.schemas['Widget'].properties.containsKey('crateId')
     }
 
-    void 'describes the version even though swagger-core does not surface it'() {
+    void 'does not describe the version, which Grails does not render by default'() {
         given:
         def openApi = new OpenAPI()
 
@@ -303,9 +302,44 @@ class PersistentEntitySchemaSpec extends Specification {
         customizer().contribute(openApi, null)
 
         then:
+        !openApi.components.schemas['Widget'].properties.containsKey('version')
+    }
+
+    void 'describes the version where Grails is configured to render it, though swagger-core does not surface it'() {
+        when:
+        def openApi = OpenApiFixture.generator(holder(), application(), context(), [(setting): true]).generate()
+
+        then:
         with(openApi.components.schemas['Widget'].properties.version) {
             it
             readOnly
+        }
+        !('version' in (openApi.components.schemas['Widget'].required ?: []))
+
+        where:
+        setting << ['grails.converters.domain.include.version', 'grails.converters.json.domain.include.version']
+    }
+
+    void 'describes only what Grails renders of an entity'() {
+        when:
+        def openApi = OpenApiFixture.document([LedgerLineController], [LedgerLine]) {
+            '/lines'(resources: 'ledgerLine')
+        }
+
+        then: 'the identifier and the persistent properties, not a transient or a derived getter'
+        openApi.components.schemas['LedgerLine'].properties.keySet() == ['id', 'amount', 'memo'] as Set
+    }
+
+    void 'marks what data binding does not bind as read only'() {
+        when:
+        def openApi = OpenApiFixture.document([LedgerLineController], [LedgerLine]) {
+            '/lines'(resources: 'ledgerLine')
+        }
+
+        then: 'a property Grails leaves out of the binding, as it does one constrained bindable: false'
+        with(openApi.components.schemas['LedgerLine'].properties) {
+            memo.readOnly
+            !amount.readOnly
         }
     }
 
@@ -429,4 +463,31 @@ class Crate {
 @Entity
 class Orphan {
     String note
+}
+
+@Entity
+class LedgerLine {
+
+    // Grails generates the properties a domain class binds; declared here as it would generate them.
+    public static final List $defaultDatabindingWhiteList = ['amount']
+
+    BigDecimal amount
+    String memo
+    String scratch
+
+    static transients = ['scratch']
+
+    String getDisplay() {
+        "${amount} ${memo}"
+    }
+
+    static constraints = {
+        memo nullable: true, bindable: false
+        scratch nullable: true
+    }
+}
+
+@Artefact('Controller')
+class LedgerLineController extends RestfulController<LedgerLine> {
+    LedgerLineController() { super(LedgerLine) }
 }

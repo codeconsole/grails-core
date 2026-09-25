@@ -235,11 +235,30 @@ class OpenApiDocumentFunctionalSpec extends Specification implements HttpClientS
         expect:
         properties.title.maxLength == 120
         properties.genre.enum == ['scifi', 'history']
-        book.required == ['title']
+        book.required as Set == ['title', 'dateCreated', 'lastUpdated'] as Set
 
         and: 'with the properties the server assigns marked read only'
         properties.id.readOnly
-        properties.version.readOnly
+        properties.dateCreated.readOnly
+        properties.lastUpdated.readOnly
+
+        and: 'the version, which Grails does not render, left out'
+        !properties.containsKey('version')
+    }
+
+    void 'what data binding does not bind is described as read only, and is not bound'() {
+        given:
+        Map properties = (Map) document.components.schemas.Book.get('properties')
+
+        when:
+        Map book = httpPostJson('/books', '{"title":"Kindred","shelfCode":"A1","dateCreated":"2000-01-01T00:00:00Z"}')
+                .assertStatus(201).json()
+
+        then:
+        properties.shelfCode.readOnly
+        !properties.title.readOnly
+        book.shelfCode == null
+        !book.dateCreated.startsWith('2000')
     }
 
     void 'classes sharing a simple name are each described under their package'() {

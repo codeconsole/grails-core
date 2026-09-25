@@ -75,6 +75,20 @@ class DenyByDefaultConfigSpec extends Specification {
     }
 
     @Unroll
+    void 'the include list of a type follows deny-by-default configuration value #configuredValue'() {
+        given:
+        Holders.setConfig(new PropertySourcesConfig([(Settings.DATABINDING_DENY_BY_DEFAULT): configuredValue]))
+
+        expect:
+        DataBindingUtils.getBindingIncludeListForType(DenyByDefaultTarget) == expected
+
+        where:
+        configuredValue || expected
+        false           || ['allowed', 'compatibilityProperty']
+        true            || ['allowed']
+    }
+
+    @Unroll
     void 'unrecognised configuration value #configuredValue fails closed through the public binding API'() {
         given:
         Holders.setConfig(new PropertySourcesConfig([(Settings.DATABINDING_DENY_BY_DEFAULT): configuredValue]))

@@ -109,6 +109,18 @@ class DataBindingUtilsSpec extends Specification {
         command.version == null
     }
 
+    void 'test the include list of a type is the one its instances are bound with'() {
+        expect:
+        DataBindingUtils.getBindingIncludeListForType(WhitelistedCommand) == ['name']
+        DataBindingUtils.getBindingIncludeListForType(SubclassOfWhitelistedCommand) == ['name']
+
+        and: 'a type that declares none is not restricted'
+        DataBindingUtils.getBindingIncludeListForType(NoWhitelistCommand) == null
+
+        and: 'a type that cannot be created has no include list to give'
+        DataBindingUtils.getBindingIncludeListForType(UncreatableCommand) == null
+    }
+
     void 'test binding a collection'() {
         given:
         def collectionBindingSource = Stub(CollectionDataBindingSource) {
@@ -269,4 +281,15 @@ class WhitelistedCommand {
 }
 
 class SubclassOfWhitelistedCommand extends WhitelistedCommand {
+}
+
+class UncreatableCommand {
+
+    public static final List $defaultDatabindingWhiteList = ['name']
+
+    String name
+
+    UncreatableCommand(String name) {
+        this.name = name
+    }
 }

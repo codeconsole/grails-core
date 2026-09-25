@@ -183,7 +183,7 @@ class GrailsOpenApiGenerator {
             return
         }
         GrailsModelConverter.register()
-        GrailsModelConverter.withMappingContexts(mappingContexts) {
+        GrailsModelConverter.withMappingContexts(mappingContexts, settings.includeVersion) {
             new Contribution(openApi, selection ?: new OpenApiSelection()).contribute()
         }
     }
