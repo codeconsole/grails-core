@@ -24,6 +24,10 @@ import groovy.transform.CompileStatic
 
 import jakarta.servlet.ServletContext
 
+import org.springframework.asm.AnnotationVisitor
+import org.springframework.asm.ClassReader
+import org.springframework.asm.ClassVisitor
+import org.springframework.asm.SpringAsmInfo
 import org.springframework.beans.BeansException
 import org.springframework.beans.MutablePropertyValues
 import org.springframework.beans.factory.BeanRegistrar
@@ -83,6 +87,8 @@ class GrailsApplicationBuilder {
 
     static final String GRAILS_PLUGIN_SUFFIX = 'GrailsPlugin'
     static final String AUTO_CONFIGURATION_SUFFIX = 'AutoConfiguration'
+    private static final String GRAILS_BEANS_DESCRIPTOR = 'Lgrails/compiler/beans/GrailsBeans;'
+    private static final String AUTO_CONFIGURATION_NAME_ATTRIBUTE = 'autoConfigurationName'
 
     Closure doWithSpring
     BeanRegistrar beanRegistrar
@@ -230,28 +236,76 @@ class GrailsApplicationBuilder {
     }
 
     /**
-     * The class each included plugin's {@code beans} block compiles to, named as {@code @GrailsBeans}
-     * names it by default: {@code FooGrailsPlugin} gives {@code FooAutoConfiguration}, and any other
-     * name has {@code AutoConfiguration} appended, in the plugin's package. Only classes the build
-     * listed as auto-configurations are registered, so a name that merely matches is never picked up.
-     * The framework's own are registered regardless, with every {@code org.grails} auto-configuration.
+     * The class each included plugin's {@code beans} block compiles to. Only classes the build listed
+     * as auto-configurations are registered, so a name that merely matches is never picked up. The
+     * framework's own are registered regardless, with every {@code org.grails} auto-configuration.
      */
     protected static Set<String> generatedAutoConfigurationNames(PluginDiscovery discovery) {
         Set<String> names = new LinkedHashSet<>()
         for (PluginInfo plugin : discovery.pluginsInLoadOrder) {
-            Class<?> pluginClass = plugin.pluginClass
-            if (pluginClass == null) {
-                continue
+            if (plugin.pluginClass != null) {
+                names << generatedAutoConfigurationName(plugin.pluginClass)
             }
-            String simpleName = pluginClass.simpleName
+        }
+        names
+    }
+
+    /**
+     * The class a plugin's {@code beans} block compiles to, named as {@code @GrailsBeans} names it:
+     * the plugin's {@code autoConfigurationName}, in the plugin's package unless it names one; else
+     * {@code FooGrailsPlugin} gives {@code FooAutoConfiguration}, and any other name has
+     * {@code AutoConfiguration} appended, in the plugin's package.
+     */
+    protected static String generatedAutoConfigurationName(Class<?> pluginClass) {
+        String packageName = pluginClass.packageName
+        String simpleName = pluginClass.simpleName
+        String name = declaredAutoConfigurationName(pluginClass)
+        if (name == null) {
             String base = simpleName.endsWith(GRAILS_PLUGIN_SUFFIX) && simpleName.length() > GRAILS_PLUGIN_SUFFIX.length()
                     ? simpleName.substring(0, simpleName.length() - GRAILS_PLUGIN_SUFFIX.length())
                     : simpleName
-            String simpleAutoConfigurationName = base + AUTO_CONFIGURATION_SUFFIX
-            String packageName = pluginClass.packageName
-            names << (packageName ? packageName + '.' + simpleAutoConfigurationName : simpleAutoConfigurationName)
+            name = base + AUTO_CONFIGURATION_SUFFIX
         }
-        names
+        name.contains('.') || !packageName ? name : packageName + '.' + name
+    }
+
+    /**
+     * {@code @GrailsBeans(autoConfigurationName = ...)} as the plugin wrote it, or {@code null}. The
+     * annotation has CLASS retention, so it is read off the plugin's class file rather than through
+     * reflection; a plugin can only rename the class by writing it out, so one without it uses the
+     * default name.
+     */
+    private static String declaredAutoConfigurationName(Class<?> pluginClass) {
+        InputStream input = pluginClass.classLoader?.getResourceAsStream(pluginClass.name.replace('.', '/') + '.class')
+        if (input == null) {
+            return null
+        }
+        String[] declared = new String[1]
+        try {
+            new ClassReader(input).accept(new ClassVisitor(SpringAsmInfo.ASM_VERSION) {
+                @Override
+                AnnotationVisitor visitAnnotation(String descriptor, boolean visible) {
+                    if (descriptor != GRAILS_BEANS_DESCRIPTOR) {
+                        return null
+                    }
+                    new AnnotationVisitor(SpringAsmInfo.ASM_VERSION) {
+                        @Override
+                        void visit(String attribute, Object value) {
+                            if (attribute == AUTO_CONFIGURATION_NAME_ATTRIBUTE && value instanceof String) {
+                                declared[0] = (String) value
+                            }
+                        }
+                    }
+                }
+            }, ClassReader.SKIP_CODE | ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES)
+        }
+        catch (IOException ignored) {
+            // unreadable here: the default name still finds a plugin that did not rename the class
+        }
+        finally {
+            input.close()
+        }
+        declared[0]
     }
 
     void executeDoWithSpringCallback(GrailsApplication grailsApplication) {

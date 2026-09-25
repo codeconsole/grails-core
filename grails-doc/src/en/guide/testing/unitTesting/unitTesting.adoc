@@ -151,7 +151,7 @@ WARNING: If you override this method, the default plugins will not be included. 
 
 An included plugin's `doWithSpring` and `beanRegistrar` beans are registered before the test's configuration is read, as an application's early phase registers them, and after the test's `doWithConfig` is applied. So a `@ConditionalOnMissingBean` bean backs off from them, whether it is the framework's, the plugin's own (from its `beans` block) or the test's. A bean the test's `doWithSpring` or `beanRegistrar` registers under the same name replaces one, as an application's does.
 
-NOTE: A plugin's `beans` block is found by the name `@GrailsBeans` gives the class it compiles to by default. A plugin that names that class itself, with `@GrailsBeans(autoConfigurationName = ...)`, is not matched; register the class through `getConfigurationClasses` instead. The framework's own auto-configurations are registered whichever plugins are included.
+NOTE: The framework's own auto-configurations are registered whichever plugins are included.
 
 ==== Other Spring configuration
 
