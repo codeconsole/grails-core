@@ -56,6 +56,10 @@ class ValidationAndPatchSpec extends Specification {
             properties.id.readOnly
         }
 
+        and: 'sent in XML as the same element'
+        openApi.components.schemas['WidgetPatch'].xml.name == 'widget'
+
+
         and: 'a full update still requires what the resource requires'
         openApi.paths['/widgets/{id}'].put.requestBody.content['application/json'].schema.$ref ==
                 '#/components/schemas/Widget'

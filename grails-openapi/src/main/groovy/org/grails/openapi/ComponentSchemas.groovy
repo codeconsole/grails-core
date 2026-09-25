@@ -91,7 +91,8 @@ class ComponentSchemas {
 
     /**
      * The schema of a patch of what a reference refers to: its properties with nothing required,
-     * since a patch binds only what it is sent. A schema requiring nothing is its own patch.
+     * since a patch binds only what it is sent, sent in XML as the same element. A schema requiring
+     * nothing is its own patch.
      */
     Schema<?> patchReference(Schema<?> reference) {
         String name = nameOf(reference)
@@ -104,6 +105,7 @@ class ComponentSchemas {
             Schema<?> patch = new ObjectSchema()
             patch.setProperties(new LinkedHashMap<String, Schema>(full.properties ?: [:]))
             patch.setDescription(full.description)
+            patch.setXml(full.xml)
             components.addSchemas(patchName, patch)
             added << patchName
         }
