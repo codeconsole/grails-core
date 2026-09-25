@@ -71,8 +71,10 @@ class GroupedOpenApiContributor implements BeanPostProcessor, BeanFactoryAware {
                 // method filters.
                 group.addAllOpenApiCustomizer([new GrailsOpenApiCustomizer(
                         { -> beanFactory.getBean(GrailsOpenApiGenerator) },
-                        { -> SpringdocSelection.groupSelection(group, SpringdocSelection.customizers(beanFactory),
-                                SpringdocSelection.properties(beanFactory)) })])
+                        { ->
+                            SpringdocSelection.groupSelection(group, SpringdocSelection.customizers(beanFactory),
+                                    SpringdocSelection.properties(beanFactory))
+                        })])
             }
         }
         bean
