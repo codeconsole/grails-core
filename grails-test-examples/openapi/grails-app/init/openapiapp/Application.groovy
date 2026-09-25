@@ -20,7 +20,10 @@ package openapiapp
 
 import java.lang.reflect.Method
 
+import io.swagger.v3.oas.models.OpenAPI
 import io.swagger.v3.oas.models.Operation
+import io.swagger.v3.oas.models.PathItem
+import org.springdoc.core.customizers.GlobalOpenApiCustomizer
 import org.springdoc.core.customizers.GlobalOperationCustomizer
 import org.springdoc.core.filters.OpenApiMethodFilter
 import org.springdoc.core.models.GroupedOpenApi
@@ -42,6 +45,17 @@ class Application extends GrailsAutoConfiguration {
     @Bean
     OpenApiMethodFilter internalActionFilter() {
         { Method action -> !action.isAnnotationPresent(Internal) } as OpenApiMethodFilter
+    }
+
+    /**
+     * Counts, in every document, the operations it describes.
+     */
+    @Bean
+    GlobalOpenApiCustomizer operationCounter() {
+        { OpenAPI openApi ->
+            int count = (openApi.paths?.values() ?: []).sum(0) { PathItem item -> item.readOperations().size() } as int
+            openApi.addExtension('x-operation-count', count)
+        } as GlobalOpenApiCustomizer
     }
 
     /**

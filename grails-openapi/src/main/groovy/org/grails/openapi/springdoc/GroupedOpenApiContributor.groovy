@@ -21,6 +21,8 @@ package org.grails.openapi.springdoc
 import groovy.transform.CompileStatic
 
 import org.springdoc.api.AbstractMultipleOpenApiResource
+import org.springdoc.core.customizers.OpenApiCustomizer
+import org.springdoc.core.customizers.SpringDocCustomizers
 import org.springdoc.core.models.GroupedOpenApi
 import org.springframework.beans.BeansException
 import org.springframework.beans.factory.BeanFactory
@@ -40,6 +42,9 @@ import grails.openapi.OpenApiSelection
  * module registers for {@code grails.openapi.groups}, or one the application declares - is given
  * its own customizer, selecting what the group's criteria select, before springdoc builds the
  * group's document.</p>
+ *
+ * <p>The Grails description is contributed ahead of every other customizer, in each group and in
+ * the default document, so a customizer the application declares sees the Grails operations.</p>
  */
 @CompileStatic
 class GroupedOpenApiContributor implements BeanPostProcessor, BeanFactoryAware {
@@ -63,6 +68,36 @@ class GroupedOpenApiContributor implements BeanPostProcessor, BeanFactoryAware {
             }
         }
         bean
+    }
+
+    @Override
+    Object postProcessAfterInitialization(Object bean, String beanName) throws BeansException {
+        if (bean instanceof AbstractMultipleOpenApiResource) {
+            // springdoc puts the global customizers ahead of a group's own as it prepares the group.
+            beanFactory.getBeansOfType(GroupedOpenApi).values().each { GroupedOpenApi group ->
+                contributeFirst(group.openApiCustomizers)
+            }
+        }
+        else if (bean instanceof SpringDocCustomizers) {
+            ((SpringDocCustomizers) bean).openApiCustomizers.ifPresent { Set<OpenApiCustomizer> customizers ->
+                contributeFirst(customizers)
+            }
+        }
+        bean
+    }
+
+    /**
+     * Moves the Grails contribution ahead of the other customizers, in the set springdoc applies.
+     */
+    private static void contributeFirst(Set<OpenApiCustomizer> customizers) {
+        List<OpenApiCustomizer> grails = customizers.findAll { OpenApiCustomizer it -> it instanceof GrailsOpenApiCustomizer }.toList()
+        if (!grails) {
+            return
+        }
+        List<OpenApiCustomizer> others = customizers.findAll { OpenApiCustomizer it -> !(it instanceof GrailsOpenApiCustomizer) }.toList()
+        customizers.clear()
+        customizers.addAll(grails)
+        customizers.addAll(others)
     }
 
     /**

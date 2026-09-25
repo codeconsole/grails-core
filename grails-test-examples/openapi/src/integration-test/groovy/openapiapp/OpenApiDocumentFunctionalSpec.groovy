@@ -165,6 +165,16 @@ class OpenApiDocumentFunctionalSpec extends Specification implements HttpClientS
         document.paths['/notes/review'].post['x-action'] == 'NoteController.review'
     }
 
+    void 'a customizer the application declares sees the Grails operations'() {
+        given:
+        int described = document.paths.values().sum { Map item -> item.size() } as int
+        Map group = http('/v3/api-docs/book-reads').json()
+
+        expect: 'in the default document, and in a group, which springdoc gives the global customizers first'
+        document['x-operation-count'] == described
+        group['x-operation-count'] == 2
+    }
+
     void 'a group applies its operation customizers, and the global ones, to the Grails operations'() {
         when:
         Map group = http('/v3/api-docs/book-reads').json()

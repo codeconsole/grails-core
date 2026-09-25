@@ -23,7 +23,9 @@ import java.lang.reflect.Method
 import io.swagger.v3.oas.models.Components
 import io.swagger.v3.oas.models.OpenAPI
 import io.swagger.v3.oas.models.Operation
+import org.springdoc.core.customizers.GlobalOpenApiCustomizer
 import org.springdoc.core.customizers.GlobalOperationComponentsCustomizer
+import org.springdoc.core.customizers.OpenApiCustomizer
 import org.springdoc.core.customizers.OperationCustomizer
 import org.springdoc.core.customizers.SpringDocCustomizers
 import org.springdoc.core.filters.GlobalOpenApiMethodFilter
@@ -142,6 +144,46 @@ class GroupedOpenApiContributorSpec extends Specification {
         openApi.paths['/gate'].get.summary == 'index'
     }
 
+    void 'contributes to a group ahead of the global customizers springdoc puts first'() {
+        given:
+        Set<String> seen = []
+        def beanFactory = new DefaultListableBeanFactory()
+        beanFactory.registerSingleton('generator', generator())
+        beanFactory.registerSingleton('widgets', GroupedOpenApi.builder().group('widgets').pathsToMatch('/widgets/**').build())
+        def group = beanFactory.getBean('widgets', GroupedOpenApi)
+        def resource = resource(beanFactory)
+        def contributor = new GroupedOpenApiContributor()
+        contributor.beanFactory = beanFactory
+
+        when: 'springdoc prepares the group, adding a global customizer as it does'
+        contributor.postProcessBeforeInitialization(resource, 'multipleOpenApiResource')
+        group.addAllOpenApiCustomizer([{ OpenAPI openApi -> seen.addAll(openApi.paths?.keySet() ?: []) } as GlobalOpenApiCustomizer])
+        contributor.postProcessAfterInitialization(resource, 'multipleOpenApiResource')
+        document(group)
+
+        then: 'the global customizer sees the Grails operations'
+        seen == ['/widgets', '/widgets/{id}'] as Set
+    }
+
+    void 'contributes to the default document ahead of the other customizers'() {
+        given:
+        Set<String> seen = []
+        def grails = new GrailsOpenApiCustomizer({ -> generator() }, { -> new OpenApiSelection() })
+        def customizers = customizers(openApiCustomizers: [
+                { OpenAPI openApi -> seen.addAll(openApi.paths?.keySet() ?: []) } as OpenApiCustomizer, grails])
+        def contributor = new GroupedOpenApiContributor()
+        contributor.beanFactory = new DefaultListableBeanFactory()
+
+        when:
+        contributor.postProcessAfterInitialization(customizers, 'springDocCustomizers')
+        def openApi = new OpenAPI()
+        customizers.openApiCustomizers.get().each { it.customise(openApi) }
+
+        then:
+        customizers.openApiCustomizers.get().first().is(grails)
+        seen == ['/widgets', '/widgets/{id}', '/gate'] as Set
+    }
+
     void 'leaves every other bean alone'() {
         given:
         def contributor = new GroupedOpenApiContributor()
@@ -150,6 +192,7 @@ class GroupedOpenApiContributorSpec extends Specification {
 
         expect:
         contributor.postProcessBeforeInitialization(bean, 'other').is(bean)
+        contributor.postProcessAfterInitialization(bean, 'other').is(bean)
     }
 
     void 'reads the groups an application declares, so they are generated at build time too'() {

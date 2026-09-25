@@ -102,6 +102,10 @@ resource handlers, so Swagger UI is served even though Grails leaves Spring Boot
 resource handler disabled, and the springdoc paths fall through the Grails URL mappings because
 they resolve to no controller.
 
+The Grails operations are added to each document before any other springdoc customizer runs, so an
+`OpenApiCustomizer` bean, a `GlobalOpenApiCustomizer` bean, or a customizer a `GroupedOpenApi` adds
+sees them and can change them.
+
 An application whose URL mappings include a catch-all that resolves to a view or a controller - a
 single page application forwarding unmatched paths to an index view, or an API answering unmatched
 paths with a `404` of its own - does need to let the springdoc paths through:
