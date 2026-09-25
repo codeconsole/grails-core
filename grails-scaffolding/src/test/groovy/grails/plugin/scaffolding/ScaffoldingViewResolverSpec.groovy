@@ -20,8 +20,12 @@ package grails.plugin.scaffolding
 
 import java.nio.charset.StandardCharsets
 
+import ch.qos.logback.classic.Level
+import ch.qos.logback.classic.spi.ILoggingEvent
+
 import grails.core.GrailsControllerClass
 import grails.plugin.scaffolding.annotation.Scaffold
+import org.apache.grails.core.testing.support.LogCapture
 import org.apache.grails.scaffolding.ScaffoldedPages
 import org.grails.gsp.GroovyPageTemplate
 import org.grails.gsp.GroovyPagesTemplateEngine
@@ -49,6 +53,7 @@ class ScaffoldingViewResolverSpec extends Specification {
     GroovyPagesTemplateEngine mockTemplateEngine
     GrailsWebRequest mockWebRequest
     GrailsControllerClass mockControllerClass
+    StaticWebApplicationContext context
 
     def setup() {
         resolver = new ScaffoldingViewResolver()
@@ -65,7 +70,7 @@ class ScaffoldingViewResolverSpec extends Specification {
         resolver.groovyPageLocator = mockPageLocator
         resolver.templateEngine = mockTemplateEngine
         // a view is created against the servlet context the resolver runs in
-        def context = new StaticWebApplicationContext()
+        context = new StaticWebApplicationContext()
         context.servletContext = Stub(jakarta.servlet.ServletContext) {
             getInitParameterNames() >> Collections.emptyEnumeration()
             getAttributeNames() >> Collections.emptyEnumeration()
@@ -405,38 +410,54 @@ class ScaffoldingViewResolverSpec extends Specification {
         second.is(first)
     }
 
-    void "a template expanded where compiled pages are used is reported, once"() {
-        given:
+    /** Expands the list template for two views of the same domain class, with no compiled page for it. */
+    List<ILoggingEvent> reportsWhenExpanding(boolean precompiled) {
         setupScaffoldController(TestScaffoldController, TestDomain)
-        mockPageLocator.precompiledAvailable >> true
+        mockPageLocator.precompiledAvailable >> precompiled
         mockPageLocator.resolveViewFormat(_ as String) >> { String name -> name }
         mockPageLocator.findPage(_) >> null
         mockTemplateEngine.gspEncoding >> 'UTF-8'
         mockTemplateEngine.createTemplate(_ as Resource, _) >> Stub(GroovyPageTemplate)
         resolver.resourceLoader = templates(list: LIST_TEMPLATE)
+        new LogCapture(ScaffoldingViewResolver, Level.INFO).withCloseable { LogCapture log ->
+            resolver.tryGenerateScaffoldedView('/event/list', mockControllerClass) { String name -> [name] }
+            resolver.tryGenerateScaffoldedView('/other/list', mockControllerClass) { String name -> [name] }
+            new ArrayList<ILoggingEvent>(log.events)
+        }
+    }
 
-        when: 'two views expand the same template for the same domain class'
-        resolver.tryGenerateScaffoldedView('/event/list', mockControllerClass) { String name -> [name] }
-        resolver.tryGenerateScaffoldedView('/other/list', mockControllerClass) { String name -> [name] }
+    void "a template expanded on the JVM where compiled pages are used is noted, once"() {
+        when:
+        def reports = reportsWhenExpanding(true)
+
+        then: 'it is expanded as it always was, so it is not a warning'
+        reports*.level == [Level.INFO]
+        reports[0].formattedMessage.contains("list for ${TestDomain.name} was not compiled by the build")
+    }
+
+    void "a template expanded in a native image is warned about, once, with what to do"() {
+        given: 'a native image, where the expansion that follows fails'
+        resolver = new ScaffoldingViewResolver() {
+            @Override
+            protected boolean inNativeImage() {
+                true
+            }
+        }
+        resolver.groovyPageLocator = mockPageLocator
+        resolver.templateEngine = mockTemplateEngine
+        resolver.applicationContext = context
+
+        when:
+        def reports = reportsWhenExpanding(true)
 
         then:
-        resolver.reportedPages == ["${TestDomain.name}:list".toString()] as Set
+        reports*.level == [Level.WARN]
+        reports[0].formattedMessage.contains('a native image cannot expand it at runtime')
     }
 
     void "where no compiled pages are used, as in development or an application's tests, an expanded template is not reported"() {
-        given:
-        setupScaffoldController(TestScaffoldController, TestDomain)
-        mockPageLocator.precompiledAvailable >> false
-        mockPageLocator.resolveViewFormat(LIST_VIEW_NAME) >> LIST_VIEW_NAME
-        mockTemplateEngine.gspEncoding >> 'UTF-8'
-        mockTemplateEngine.createTemplate(_ as Resource, _) >> Stub(GroovyPageTemplate)
-        resolver.resourceLoader = templates(list: LIST_TEMPLATE)
-
-        when:
-        resolver.tryGenerateScaffoldedView(LIST_VIEW_NAME, mockControllerClass) { String name -> [name] }
-
-        then:
-        resolver.reportedPages.isEmpty()
+        expect:
+        reportsWhenExpanding(false).isEmpty()
     }
 
     // Test domain class for annotation testing

@@ -26,6 +26,7 @@ import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 
 import org.springframework.context.ResourceLoaderAware
+import org.springframework.core.NativeDetector
 import org.springframework.core.io.ByteArrayResource
 import org.springframework.core.io.FileSystemResource
 import org.springframework.core.io.Resource
@@ -256,16 +257,16 @@ class ScaffoldingViewResolver extends GroovyPageViewResolver implements Resource
      * <p>Every decision about which template to use has been made by the time this is asked, the
      * same way whether or not anything was compiled, so this only replaces the expansion. The page
      * is found by the template and the model together: a template the build did not see finds
-     * nothing and is expanded as it would be otherwise. The build compiles every copy of every
-     * template it can see, so whichever copy was chosen has its page.</p>
+     * nothing and is expanded as it would be otherwise. For each scaffolded controller the build
+     * compiles every copy of each template it can choose, so whichever copy was chosen has its
+     * page.</p>
      */
     private View findPrecompiledView(String templatePath, Map<String, Object> model, byte[] template) {
         View view = findPage(ScaffoldedPages.uri(templatePath, model, template))
         if (view != null) {
             return view
         }
-        report(templatePath, model, 'no page was compiled from it, so it is expanded now. A native image cannot do that; ' +
-                'the build compiles a page for each template in src/main/templates/scaffolding and on the runtime classpath')
+        reportMissingPage(templatePath, model)
         return null
     }
 
@@ -275,23 +276,41 @@ class ScaffoldingViewResolver extends GroovyPageViewResolver implements Resource
     }
 
     /**
-     * Reports, once per page, a scaffolded view that was not served from a compiled page where
-     * compiled pages are in use. During development, and in an application's tests, which render
-     * the views as they are, they are not, and nothing is reported.
+     * Reports, once per page, a scaffolded view that has no compiled page where compiled pages are
+     * in use. During development, and in an application's tests, which render the views as they
+     * are, they are not, and nothing is reported.
+     *
+     * <p>On the JVM the template is expanded instead, as it always was, so that is worth no more
+     * than a note. A native image cannot define the page's class at runtime, so there the
+     * expansion that follows fails, and the warning says why.</p>
      */
-    private void report(String templatePath, Map<String, Object> model, String what) {
+    private void reportMissingPage(String templatePath, Map<String, Object> model) {
         if (!precompiledPagesInUse()) {
             LOG.debug('Expanding the scaffolding template {} for {}', templatePath, model.fullName)
             return
         }
-        if (reportedPages.add("${model.fullName}:${templatePath}".toString())) {
-            LOG.warn('Scaffolding template {} for {}: {}', templatePath, model.fullName, what)
+        if (!reportedPages.add("${model.fullName}:${templatePath}".toString())) {
+            return
+        }
+        if (inNativeImage()) {
+            LOG.warn('Scaffolding template {} for {} was not compiled by the build, and a native image cannot expand it ' +
+                    'at runtime. The scaffolding guide lists the pages the build compiles; otherwise give the controller ' +
+                    'a view of its own.', templatePath, model.fullName)
+        }
+        else {
+            LOG.info('Scaffolding template {} for {} was not compiled by the build, so it is expanded on first use',
+                    templatePath, model.fullName)
         }
     }
 
     /** Whether pages compiled by the build are used, which is whether the page locator uses them. */
     protected boolean precompiledPagesInUse() {
         return groovyPageLocator.precompiledAvailable
+    }
+
+    /** Whether this runs in a native image, which cannot expand a template into a page at runtime. */
+    protected boolean inNativeImage() {
+        return NativeDetector.inNativeImage()
     }
 
     private View expandTemplate(Map<String, Object> model, byte[] template, String cacheKey) {
