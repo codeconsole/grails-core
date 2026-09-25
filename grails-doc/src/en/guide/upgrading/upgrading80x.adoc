@@ -4125,7 +4125,16 @@ way on `springdoc.group-configs` before the application could start.
 
 `Environment.getProperty('springdoc.group-configs')` now returns `null` and
 `Environment.containsProperty` returns `false`, as they do in a Spring Boot application, so a
-`@Value('${springdoc.group-configs}')` without a default fails to resolve. Read such a list through
-`grailsApplication.config`, which is unchanged, or bind it. The same applies to a list holding lists
-of objects, such as `rows: [[{a: 1}], [{b: 2}]]`, whose objects are presented under names such as
-`rows[0][0].a`. A list of plain values, such as `names: [a, b]`, is presented as before.
+`@Value('${springdoc.group-configs}')` without a default fails to resolve, as does a `${...}`
+placeholder naming the list anywhere else. Read such a list through `grailsApplication.config`,
+which is unchanged, or bind it. The same applies to a list holding lists of objects, such as
+`rows: [[{a: 1}], [{b: 2}]]`, whose objects are presented under names such as `rows[0][0].a`. A list
+of plain values, such as `names: [a, b]`, is presented as before.
+
+What reads the names the configuration presents sees the change too:
+
+* The `config-report` command lists such a list as a row for each value, such as
+  `springdoc.group-configs[0].group`, rather than one row for the list.
+* GORM used outside a Grails application, given a `ConfigurableEnvironment` it copies the property
+  names of, no longer finds the list under its own name. In a Grails application a datastore is
+  given `grailsApplication.config`, and sees the list as before.
