@@ -443,6 +443,23 @@ class GenerateScaffoldedViewsTaskSpec extends Specification {
             handed(task) == ['com.example.User/show': ['later show', 'show']]
     }
 
+    void 'an archive on the classpath is read whatever it is named'() {
+        given:
+            File zip = new File(projectDir, 'theme.zip')
+            writeTemplateJar(zip, [show: 'zipped show'])
+            File notAnArchive = new File(projectDir, 'notes.txt')
+            notAnArchive.text = 'not an archive'
+            writeController('UserController', 'User')
+            def task = task()
+            task.runtimeClasspath.from(zip, notAnArchive)
+
+        when:
+            task.generate()
+
+        then:
+            handed(task)['com.example.User/show'] == ['show ${className}', 'zipped show']
+    }
+
     void 'identical copies of a template are expanded once'() {
         given:
             File same = new File(projectDir, 'same.jar')

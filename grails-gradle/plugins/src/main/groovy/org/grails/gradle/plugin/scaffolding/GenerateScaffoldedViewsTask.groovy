@@ -18,6 +18,7 @@ package org.grails.gradle.plugin.scaffolding
 
 import java.util.jar.JarEntry
 import java.util.jar.JarFile
+import java.util.zip.ZipException
 
 import javax.inject.Inject
 
@@ -249,8 +250,8 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
                     }
                 }
             }
-            else if (entry.name.endsWith('.jar') && entry.isFile()) {
-                new JarFile(entry).withCloseable { JarFile jar ->
+            else if (entry.isFile()) {
+                openArchive(entry)?.withCloseable { JarFile jar ->
                     templates.generator = templates.generator || jar.getJarEntry(generator) != null
                     for (JarEntry e : jar.entries()) {
                         if (!e.directory && e.name.startsWith(TEMPLATE_PATH) && e.name.endsWith('.gsp')) {
@@ -286,8 +287,8 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
                 }
             }
             for (File entry : runtimeClasspath.files) {
-                if (entry.name.endsWith('.jar') && entry.isFile()) {
-                    new JarFile(entry).withCloseable { JarFile jar ->
+                if (entry.isFile()) {
+                    openArchive(entry)?.withCloseable { JarFile jar ->
                         if (jar.getJarEntry(PLUGIN_DESCRIPTOR) == null) {
                             return
                         }
@@ -457,6 +458,22 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
             }
         }, ClassReader.SKIP_CODE | ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES)
         scaffolded ? (fromDomain ?: fromValue) : null
+    }
+
+    /**
+     * Opens a file on the runtime classpath as the archive the application's class loader reads it
+     * as, whatever it is named; {@code null} for one that is not an archive, which holds nothing
+     * this looks for.
+     */
+    private JarFile openArchive(File entry) {
+        try {
+            return new JarFile(entry)
+        }
+        catch (ZipException e) {
+            logger.info('{} on the runtime classpath is not an archive, so no template or controller is read from it: {}',
+                    entry, e.message)
+            return null
+        }
     }
 
     private static String baseName(String fileName) {
