@@ -36,12 +36,12 @@ jobs:
       groovyVersion: ${{ steps.groovy-version.outputs.value }}
     steps:
       - name: "☕️ Setup JDK"
-        uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5.2.0
+        uses: actions/setup-java@v6.0.1
         with:
           java-version: 17
           distribution: liberica
       - name: "📥 Checkout Grails Core to fetch Gradle Plugin versions it uses"
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@v7.0.1
         with:
           sparse-checkout-cone-mode: false
           sparse-checkout: settings.gradle
@@ -120,7 +120,7 @@ jobs:
           cd groovy
           ./gradlew pTML -x groovydoc -x javadoc -x javadocAll -x groovydocAll -x asciidoc -x docGDK
       - name: "📤 Share locally built Groovy artifacts with the build_grails job"
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: local-groovy-maven-repo
           path: ~/.m2/repository/org/apache/groovy/
@@ -154,9 +154,9 @@ jobs:
 
           df -h
       - name: "📥 Checkout project"
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@v7.0.1
       - name: "☕️ Setup JDK"
-        uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5.2.0
+        uses: actions/setup-java@v6.0.1
         with:
           java-version: 17
           distribution: liberica
@@ -168,7 +168,7 @@ jobs:
       - name: "🔍 Setup TestLens"
         uses: testlens-app/setup-testlens@d96a555133c275a00949d2cc77b70fe9a4242ebf # v1.9.2
       - name: "📥 Fetch the locally built Groovy artifacts"
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@v8.0.1
         with:
           name: local-groovy-maven-repo
           path: ~/.m2/repository/org/apache/groovy
