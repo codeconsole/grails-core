@@ -20,6 +20,7 @@ package openapiapp
 
 import java.lang.reflect.Method
 
+import io.swagger.v3.core.converter.ModelConverter
 import io.swagger.v3.oas.models.OpenAPI
 import io.swagger.v3.oas.models.Operation
 import io.swagger.v3.oas.models.PathItem
@@ -33,6 +34,8 @@ import org.springframework.web.method.HandlerMethod
 
 import grails.boot.GrailsApp
 import grails.boot.config.GrailsAutoConfiguration
+import openapiapp.legacy.LegacyApi
+import openapiapp.spring.ShelfApi
 
 class Application extends GrailsAutoConfiguration {
 
@@ -80,6 +83,24 @@ class Application extends GrailsAutoConfiguration {
             RequestContextHolder.currentRequestAttributes()
             operation
         } as GlobalOperationCustomizer
+    }
+
+    @Bean
+    ShelfApi shelfApi() {
+        new ShelfApi()
+    }
+
+    @Bean
+    LegacyApi legacyApi() {
+        new LegacyApi()
+    }
+
+    /**
+     * A converter of the application's own, which springdoc registers with its own.
+     */
+    @Bean
+    ModelConverter requiredRecordingConverter() {
+        new RequiredRecordingConverter()
     }
 
     /**

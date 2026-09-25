@@ -18,12 +18,12 @@
  */
 package org.grails.openapi.springdoc
 
-import java.util.function.Supplier
-
 import groovy.transform.CompileStatic
 
+import org.springdoc.core.customizers.OpenApiBuilderCustomizer
 import org.springdoc.core.customizers.SpringDocCustomizers
 import org.springdoc.core.models.GroupedOpenApi
+import org.springdoc.core.service.OpenAPIService
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.beans.factory.BeanRegistry
 import org.springframework.core.Ordered
@@ -31,7 +31,6 @@ import org.springframework.core.Ordered
 import grails.openapi.GrailsOpenApiGenerator
 import grails.openapi.OpenApiSelection
 import grails.openapi.OpenApiSettings
-import org.grails.datastore.mapping.model.MappingContext
 import org.grails.openapi.GrailsModelConverter
 
 /**
@@ -42,20 +41,21 @@ class SpringdocRegistrations {
 
     static void register(BeanRegistry registry, OpenApiSettings settings, String generatorBeanName) {
         // springdoc registers the converters the application declares with swagger-core as it
-        // starts, before it resolves the types of its own endpoints, so they are described the
-        // same way in the first document as in the next. It adds each in front of those before it,
+        // starts, before it resolves the types of its own endpoints, so the converter sees them
+        // resolved in the first document as in the next. It adds each in front of those before it,
         // so the first is the one closest to swagger-core's own resolution: the Grails converter
         // describes a type first, and springdoc's converters, and the application's, see what it
         // described. A fallback, it does not stand in the way of a converter the application
-        // injects on its own.
+        // injects on its own. The converter holds nothing of the application, so one registered
+        // by another application, or an application context since closed, describes the same.
         registry.registerBean('grailsModelConverter', GrailsModelConverter) {
-            it.order(Ordered.HIGHEST_PRECEDENCE).fallback().supplier { context ->
-                // Aware of the application's entities, so a domain class springdoc's own endpoint
-                // returns is described as Grails renders it, and the Grails endpoints refer to it.
-                ObjectProvider<MappingContext> mappingContexts = context.beanProvider(MappingContext)
-                new GrailsModelConverter({ -> mappingContexts.orderedStream().toList() } as Supplier<Collection<MappingContext>>,
-                        settings.includeVersion)
-            }
+            it.order(Ordered.HIGHEST_PRECEDENCE).fallback().supplier { GrailsModelConverter.INSTANCE }
+        }
+        // springdoc describes its own endpoints as Jackson renders them. The classes it resolves
+        // for them while it builds a document are recorded, so a Grails endpoint using one of them
+        // is described by that schema, as Grails renders it, rather than by a second one.
+        registry.registerBean('grailsResolvedNamesRecorder', OpenApiBuilderCustomizer) {
+            it.supplier { { OpenAPIService service -> GrailsModelConverter.recordResolvedNames() } as OpenApiBuilderCustomizer }
         }
         // A plain customizer is applied to springdoc's default document only; each group is given
         // its own by the contributor.

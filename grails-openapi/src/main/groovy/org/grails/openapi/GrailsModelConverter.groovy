@@ -22,8 +22,6 @@ import java.beans.PropertyDescriptor
 import java.lang.reflect.Method
 import java.lang.reflect.Type
 
-import java.util.concurrent.ConcurrentHashMap
-import java.util.function.Supplier
 
 import groovy.transform.CompileStatic
 
@@ -83,10 +81,13 @@ import org.grails.web.databinding.BindingIncludeLists
  *   binds for it, rather than by the whole associated resource.</li>
  * </ul>
  *
- * <p>The converter is registered with swagger-core once and applies to every type it resolves.
- * The GORM metadata it uses is supplied by whatever is resolving at the time, through
- * {@link #withMappingContexts}. A declaration that cannot be read, such as constraints that fail
- * to evaluate, is left out, and logged; each is read before the schema is changed.</p>
+ * <p>The converter is registered with swagger-core once, and describes a type so only where a
+ * Grails description is resolving it, which supplies the GORM metadata it uses through
+ * {@link #withMappingContexts}. Anywhere else, as springdoc resolves the types of its own
+ * endpoints, which Jackson renders rather than Grails, it passes the type on as it is, and records,
+ * while springdoc builds a document, the class it resolves under each name. A declaration that
+ * cannot be read, such as constraints that fail to evaluate, is left out, and logged; each is read
+ * before the schema is changed.</p>
  */
 @CompileStatic
 class GrailsModelConverter implements ModelConverter {
@@ -120,6 +121,12 @@ class GrailsModelConverter implements ModelConverter {
     private static final ThreadLocal<SchemaNames> SCHEMA_NAMES = new ThreadLocal<>()
 
     private static final ThreadLocal<Boolean> TYPES_ONLY = ThreadLocal.withInitial { false }
+
+    /**
+     * The class resolved under each name outside a Grails description while springdoc builds a
+     * document on the thread.
+     */
+    private static final ThreadLocal<Map<String, Class<?>>> RESOLVED_ELSEWHERE = new ThreadLocal<>()
 
     private static final ThreadLocal<Deque<Class<?>>> RESOLVING = ThreadLocal.<Deque<Class<?>>> withInitial {
         (Deque<Class<?>>) new ArrayDeque<Class<?>>()
@@ -227,69 +234,44 @@ class GrailsModelConverter implements ModelConverter {
     }
 
     /**
-     * The GORM mapping contexts of the application, where the converter describes its entities
-     * wherever swagger-core resolves them, not only where a Grails document is described.
+     * Starts recording the class resolved under each name outside a Grails description on this
+     * thread, as springdoc starts building a document, before it resolves the types of its own
+     * endpoints. What an earlier document recorded is dropped.
      */
-    private final Supplier<Collection<MappingContext>> applicationMappingContexts
-
-    private final boolean applicationIncludeVersion
-
-    /**
-     * The class resolved under each name where no Grails document was being described, as springdoc
-     * resolves the types of its own endpoints.
-     */
-    private final Map<String, Class<?>> namedOutsideDocuments = new ConcurrentHashMap<>()
-
-    GrailsModelConverter() {
-        this(null, false)
+    static void recordResolvedNames() {
+        RESOLVED_ELSEWHERE.set([:])
     }
 
     /**
-     * A converter describing an application's entities wherever swagger-core resolves them, as
-     * springdoc does for its own endpoints, so a domain class one of them returns is described as
-     * Grails renders it, and the Grails endpoints refer to the same schema.
+     * Stops recording, as the Grails description of a document springdoc builds starts.
      *
-     * @param applicationMappingContexts the GORM mapping contexts of the application
-     * @param includeVersion whether Grails renders the version of an entity
+     * @return the class resolved under each name outside a Grails description since recording
+     * started on this thread, which is none where it was not started
      */
-    GrailsModelConverter(Supplier<Collection<MappingContext>> applicationMappingContexts, boolean includeVersion) {
-        this.applicationMappingContexts = applicationMappingContexts
-        this.applicationIncludeVersion = includeVersion
-    }
-
-    /**
-     * The class an application's converter resolved under a name where no Grails document was being
-     * described, as springdoc does for its own endpoints.
-     *
-     * @return the class, or {@code null} where none was resolved under the name
-     */
-    static Class<?> classNamed(boolean openapi31, String name) {
-        for (ModelConverter converter : ModelConverters.getInstance(openapi31).converters) {
-            if (converter instanceof GrailsModelConverter && ((GrailsModelConverter) converter).applicationMappingContexts != null) {
-                return ((GrailsModelConverter) converter).namedOutsideDocuments[name]
-            }
-        }
-        null
+    static Map<String, Class<?>> takeResolvedNames() {
+        Map<String, Class<?>> recorded = RESOLVED_ELSEWHERE.get()
+        RESOLVED_ELSEWHERE.remove()
+        recorded ?: Collections.<String, Class<?>> emptyMap()
     }
 
     @Override
     Schema resolve(AnnotatedType annotatedType, ModelConverterContext context, Iterator<ModelConverter> chain) {
-        if (applicationMappingContexts != null && MAPPING_CONTEXTS.get() == null) {
-            // Resolved where no Grails document is being described, as springdoc resolves its own.
-            return withMappingContexts(applicationMappingContexts(), applicationIncludeVersion) {
-                resolveDescribed(annotatedType, context, chain)
-            }
+        if (MAPPING_CONTEXTS.get() == null && !TYPES_ONLY.get()) {
+            // Resolved outside a Grails description, as springdoc resolves the types of its own
+            // endpoints, which Jackson renders rather than Grails.
+            recordResolvedName(annotatedType)
+            return chain.hasNext() ? chain.next().resolve(annotatedType, context, chain) : null
         }
         resolveDescribed(annotatedType, context, chain)
     }
 
-    private Collection<MappingContext> applicationMappingContexts() {
-        try {
-            return applicationMappingContexts.get() ?: Collections.<MappingContext> emptyList()
-        }
-        catch (RuntimeException e) {
-            LOG.debug('Could not look up the GORM mapping contexts', e)
-            return Collections.<MappingContext> emptyList()
+    private static void recordResolvedName(AnnotatedType annotatedType) {
+        Map<String, Class<?>> recorded = RESOLVED_ELSEWHERE.get()
+        Class<?> type = recorded != null ? rawClass(annotatedType.type) : null
+        JavaType javaType = type != null ? javaType(annotatedType.type) : null
+        if (javaType != null && SchemaNames.isDescribedAsItself(annotatedType, javaType)
+                && SchemaNames.isNamed(annotatedType, javaType)) {
+            recorded.putIfAbsent(annotatedType.name ?: SchemaNames.naturalName(annotatedType, javaType), type)
         }
     }
 
@@ -319,9 +301,6 @@ class GrailsModelConverter implements ModelConverter {
             return chain.next().resolve(annotatedType, context, chain)
         }
         nameApart(annotatedType)
-        if (applicationMappingContexts != null && SCHEMA_NAMES.get() == null && SchemaNames.isNamed(annotatedType, javaType)) {
-            namedOutsideDocuments.putIfAbsent(annotatedType.name ?: SchemaNames.naturalName(annotatedType, javaType), type)
-        }
 
         Deque<Class<?>> resolving = RESOLVING.get()
         resolving.push(type)

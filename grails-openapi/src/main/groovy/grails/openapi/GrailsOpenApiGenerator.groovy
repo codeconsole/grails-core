@@ -236,23 +236,25 @@ class GrailsOpenApiGenerator {
         }
 
         void contribute() {
+            Map<String, Class<?>> resolvedBySpringdoc = GrailsModelConverter.takeResolvedNames()
             OpenAPI base = BaseDocument.read(settings.baseDocument, resourceLoader, openapi31)
             if (base != null) {
                 BaseDocument.merge(base, openApi, paths, components) { String path -> selection.selectsPath(path) }
             }
             describeApplication()
+
+            // A name the document already has, from the base document or springdoc, or that it
+            // derives rather than resolves, is not taken by a class of the same name. One springdoc
+            // resolved from a class for its own endpoints is that class's: a Grails endpoint using
+            // the class is described by it, as Grails renders the class.
+            Set<String> declared = base?.components?.schemas?.keySet() ?: Collections.<String> emptySet()
+            components.schemas?.keySet()?.each { String name ->
+                schemas.reserve(name, name in declared ? null : resolvedBySpringdoc[name])
+            }
             // Validation errors the base document declares describe them in place of those derived.
             responses = new OperationResponses(schemas, new ValidationErrorsContent(components,
                     ErrorsViews.of(grailsApplication?.mainContext), VALIDATION_ERRORS_SCHEMA,
-                    base?.components?.schemas?.containsKey(VALIDATION_ERRORS_SCHEMA) ?: false))
-
-            // A name the document already has, from the base document or springdoc, or that it
-            // derives rather than resolves, is not taken by a class of the same name; one springdoc
-            // resolved from a class is that class's, which the document refers to rather than
-            // describing it again.
-            components.schemas?.keySet()?.each { String name ->
-                schemas.reserve(name, GrailsModelConverter.classNamed(openapi31, name))
-            }
+                    VALIDATION_ERRORS_SCHEMA in declared))
             schemas.reserve(VALIDATION_ERRORS_SCHEMA)
             GrailsModelConverter.withSchemaNames(schemas.names) {
                 for (UrlMapping mapping : urlMappingsHolder.urlMappings) {

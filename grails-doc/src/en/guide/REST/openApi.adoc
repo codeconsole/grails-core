@@ -117,8 +117,13 @@ sees them and can change them. springdoc runs an `OpenApiLocaleCustomizer` befor
 though, so one does not see the Grails operations, and the `generate-open-api` command, which
 answers no request in a locale, does not run one.
 
-A domain class a Spring MVC endpoint of the application returns is described as Grails renders it
-there too, and once: the Grails endpoints refer to the schema springdoc described for it.
+springdoc describes the application's own Spring MVC endpoints as it does without Grails, since
+Jackson rather than Grails renders what they return: a domain class one of them returns is described
+with everything Jackson writes of it, such as a getter with nothing persisted behind it, and with the
+whole of what it is associated with. Where a Grails endpoint in the same document uses the class too,
+it is described once, as Grails renders it, and the Spring MVC endpoint refers to that schema as well.
+A class springdoc describes under the same name as another the Grails endpoints use is named apart
+from it, as below, in each document on its own.
 
 An application whose URL mappings include a catch-all that resolves to a view or a controller - a
 single page application forwarding unmatched paths to an index view, or an API answering unmatched
@@ -702,7 +707,9 @@ Where springdoc is used, its operation customizers are given each Grails operati
 annotations are applied, with a `HandlerMethod` of the controller and the method the action is
 declared as: an `OperationCustomizer` bean for the default document, a `GlobalOperationCustomizer`
 bean for every document, and a customizer a `GroupedOpenApi` adds for that group. A customizer that
-returns `null` leaves the operation out. The `generate-open-api` command applies them the same way:
+returns `null` leaves the operation out. A schema a customizer adds to the components is kept under
+the name it gives it, and is not named apart from the classes the Grails operations are described
+with. The `generate-open-api` command applies them the same way:
 
 [source,groovy]
 ----

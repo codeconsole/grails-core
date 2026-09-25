@@ -44,6 +44,12 @@ class ComponentSchemas {
     private final Set<String> added = [] as Set
     private final Map<String, String> patches = [:]
 
+    /**
+     * The names the document already has for a schema springdoc resolved from a class, which the
+     * schema Grails describes the class by replaces.
+     */
+    private final Set<String> resolvedElsewhere = [] as Set
+
     ComponentSchemas(Components components, boolean openapi31) {
         this.components = components
         this.openapi31 = openapi31
@@ -64,11 +70,15 @@ class ComponentSchemas {
     }
 
     /**
-     * Keeps a name the document already has, for the class its schema was resolved from where that
-     * is known, so the class is described by the schema rather than apart from it.
+     * Keeps a name the document already has, for the class springdoc resolved its schema from where
+     * that is known, so the class is described under the name, as Grails renders it, rather than
+     * apart from it.
      */
     void reserve(String name, Class<?> resolvedFrom) {
         names.reserve(name, resolvedFrom)
+        if (resolvedFrom != null) {
+            resolvedElsewhere << name
+        }
     }
 
     /**
@@ -92,6 +102,11 @@ class ComponentSchemas {
             if (!components.schemas?.containsKey(name)) {
                 components.addSchemas(name, schema)
                 added << name
+            }
+            else if (resolvedElsewhere.remove(name)) {
+                // Only the class springdoc resolved it from is described under the name, so the
+                // schema describes that class, which springdoc's endpoints refer to as well.
+                components.addSchemas(name, schema)
             }
         }
         resolved.schema.$ref ? new Schema<>().$ref(resolved.schema.$ref) : resolved.schema

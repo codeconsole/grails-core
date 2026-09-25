@@ -18,36 +18,21 @@
  */
 package org.grails.plugins.openapi
 
-import io.swagger.v3.core.converter.AnnotatedType
 import io.swagger.v3.core.converter.ModelConverter
-import io.swagger.v3.core.converter.ModelConverterContext
-import io.swagger.v3.core.converter.ModelConverters
-import io.swagger.v3.core.jackson.ModelResolver
-import io.swagger.v3.oas.models.Components
 import io.swagger.v3.oas.models.OpenAPI
-import io.swagger.v3.oas.models.SpecVersion
-import org.springdoc.core.converters.ModelConverterRegistrar
+import org.springdoc.core.customizers.OpenApiBuilderCustomizer
 import org.springdoc.core.customizers.OpenApiCustomizer
 import org.springdoc.core.models.GroupedOpenApi
-import org.springdoc.core.properties.SpringDocConfigProperties
 import org.springframework.beans.factory.support.BeanRegistryAdapter
 import org.springframework.beans.factory.support.DefaultListableBeanFactory
-import org.springframework.context.annotation.AnnotationConfigUtils
-import org.springframework.context.support.GenericApplicationContext
 import org.springframework.core.env.MapPropertySource
 import org.springframework.core.env.StandardEnvironment
 
 import grails.artefact.Artefact
 import grails.core.DefaultGrailsApplication
 import grails.core.GrailsApplication
-import grails.gorm.annotation.Entity
 import grails.openapi.GrailsOpenApiGenerator
-import grails.openapi.OpenApiFixture
-import grails.rest.RestfulController
-import grails.validation.Validateable
 import grails.web.mapping.UrlMappingsHolder
-import org.grails.datastore.mapping.model.MappingContext
-import org.grails.openapi.GrailsModelConverter
 import org.grails.support.MockApplicationContext
 import org.grails.web.mapping.DefaultUrlMappingEvaluator
 import org.grails.web.mapping.DefaultUrlMappingsHolder
@@ -96,101 +81,13 @@ class OpenApiGrailsPluginSpec extends Specification {
         group.headersToMatch == ['X-Api-Version=1']
     }
 
-    void 'springdoc registers the Grails converter with its own as the application starts'() {
-        given: 'swagger-core as a new JVM has it'
-        def properties = new SpringDocConfigProperties()
-        def converters = ModelConverters.getInstance(properties.openapi31)
-        converters.removeConverter(GrailsModelConverter.INSTANCE)
-
-        when: 'the plugin registers its beans'
+    void 'registers with springdoc a model converter, and what records the types springdoc resolves as it builds a document'() {
+        when:
         def beanFactory = register()
 
-        then: 'swagger-core is left as it is, since an application processed ahead of time registers no beans as it starts'
-        !converters.converters.any { it instanceof GrailsModelConverter }
-
-        when: 'springdoc registers the converters the application declares, before it resolves any type'
-        new ModelConverterRegistrar(beanFactory.getBeansOfType(ModelConverter).values().toList(), properties)
-
-        then:
-        converters.converters.any { it instanceof GrailsModelConverter }
-
-        cleanup:
-        restoreConverters()
-    }
-
-    void 'springdoc puts the Grails converter closest to swagger-core, so its converters and the application\'s see what it describes'() {
-        given: 'an application context with a converter of its own, which springdoc is given every converter of'
-        def context = new GenericApplicationContext()
-        AnnotationConfigUtils.registerAnnotationConfigProcessors(context)
-        context.registerBean('applicationConverter', ApplicationConverter)
-        registerInto(context.defaultListableBeanFactory)
-        context.registerBean(SpringdocConverters)
-        context.refresh()
-        def properties = new SpringDocConfigProperties()
-
-        when: 'springdoc registers them in the order it is given them'
-        List<ModelConverter> injected = context.getBean(SpringdocConverters).converters
-        new ModelConverterRegistrar(injected, properties)
-        List<ModelConverter> chain = ModelConverters.getInstance(properties.openapi31).converters
-        int grails = chain.findIndexOf { it instanceof GrailsModelConverter }
-
-        then: 'the Grails converter is given first, so it is added last'
-        injected.first() instanceof GrailsModelConverter
-        chain.findIndexOf { it instanceof ApplicationConverter } < grails
-        chain[grails + 1] instanceof ModelResolver
-
-        and: 'an application injecting a converter of its own is given its own'
-        context.getBean(ModelConverter) instanceof ApplicationConverter
-
-        cleanup:
-        chain?.findAll { it instanceof ApplicationConverter }?.each { ModelConverters.getInstance(properties.openapi31).removeConverter(it) }
-        restoreConverters()
-        context?.close()
-    }
-
-    void 'a type springdoc resolves for its own endpoints is described where what Grails declares of it cannot be read'() {
-        given:
-        def properties = new SpringDocConfigProperties()
-        new ModelConverterRegistrar(register().getBeansOfType(ModelConverter).values().toList(), properties)
-
-        when: 'its constraints fail to evaluate'
-        def schemas = ModelConverters.getInstance(properties.openapi31).readAll(UnreadableConstraintsCommand)
-
-        then: 'it is described as swagger-core resolves it'
-        schemas['UnreadableConstraintsCommand'].properties.keySet() == ['name'] as Set
-
-        cleanup:
-        restoreConverters()
-    }
-
-    void 'describes a domain class springdoc resolved first for its own endpoint once, as Grails renders it'() {
-        given: 'an application with a domain class, whose converters springdoc registers'
-        def beanFactory = registerInto(new DefaultListableBeanFactory(), [:], [PamphletController],
-                OpenApiFixture.context([Pamphlet])) {
-            '/pamphlets'(resources: 'pamphlet')
-        }
-        def properties = new SpringDocConfigProperties()
-        new ModelConverterRegistrar(beanFactory.getBeansOfType(ModelConverter).values().toList(), properties)
-
-        and: 'springdoc resolving it first, for a Spring MVC endpoint that returns it'
-        def openApi = new OpenAPI(properties.openapi31 ? SpecVersion.V31 : SpecVersion.V30)
-        openApi.components = new Components().schemas(ModelConverters.getInstance(properties.openapi31)
-                .resolveAsResolvedSchema(new AnnotatedType(Pamphlet).resolveAsRef(true)).referencedSchemas)
-
-        when:
-        beanFactory.getBean(OpenApiGrailsPlugin.GENERATOR_BEAN_NAME, GrailsOpenApiGenerator).contribute(openApi, null)
-
-        then: 'one schema, which the Grails operations refer to'
-        !openApi.components.schemas.keySet().any { it.startsWith('org.') }
-        openApi.paths['/pamphlets/{id}'].get.responses['200'].content['application/json'].schema.$ref ==
-                '#/components/schemas/Pamphlet'
-
-        and: 'as Grails renders it, which springdoc resolved it as too'
-        openApi.components.schemas['Pamphlet'].properties.id.readOnly
-        openApi.components.schemas['Pamphlet'].required == ['title']
-
-        cleanup:
-        restoreConverters()
+        then: 'springdoc registers the converters and the builder customizers the application declares'
+        beanFactory.getBeansOfType(ModelConverter).size() == 1
+        beanFactory.getBeansOfType(OpenApiBuilderCustomizer).size() == 1
     }
 
     void 'registers nothing when the document is disabled'() {
@@ -201,6 +98,7 @@ class OpenApiGrailsPluginSpec extends Specification {
         !beanFactory.containsBean(OpenApiGrailsPlugin.GENERATOR_BEAN_NAME)
         !beanFactory.containsBean('grailsOpenApiCustomizer')
         beanFactory.getBeansOfType(ModelConverter).isEmpty()
+        beanFactory.getBeansOfType(OpenApiBuilderCustomizer).isEmpty()
     }
 
     void 'declares a dependency on the URL mappings plugin'() {
@@ -209,20 +107,12 @@ class OpenApiGrailsPluginSpec extends Specification {
     }
 
     private static DefaultListableBeanFactory register(Map<String, Object> config = [:]) {
-        registerInto(new DefaultListableBeanFactory(), config)
-    }
-
-    private static DefaultListableBeanFactory registerInto(DefaultListableBeanFactory beanFactory,
-                                                           Map<String, Object> config = [:],
-                                                           List<Class<?>> controllers = [BookController],
-                                                           MappingContext mappingContext = null,
-                                                           Closure mappings = { '/books'(controller: 'book', action: 'index', method: 'GET') }) {
-        def application = new DefaultGrailsApplication(controllers as Class[]).tap { it.initialise() }
+        def beanFactory = new DefaultListableBeanFactory()
+        def application = new DefaultGrailsApplication(BookController).tap { it.initialise() }
         beanFactory.registerSingleton(GrailsApplication.APPLICATION_ID, application)
-        beanFactory.registerSingleton('grailsUrlMappingsHolder', urlMappingsHolder(application, mappings))
-        if (mappingContext != null) {
-            beanFactory.registerSingleton('grailsDomainClassMappingContext', mappingContext)
-        }
+        beanFactory.registerSingleton('grailsUrlMappingsHolder', urlMappingsHolder(application) {
+            '/books'(controller: 'book', action: 'index', method: 'GET')
+        })
         def environment = new StandardEnvironment()
         environment.propertySources.addFirst(new MapPropertySource('test', config))
         def registrar = new OpenApiGrailsPlugin().beanRegistrar()
@@ -235,68 +125,10 @@ class OpenApiGrailsPluginSpec extends Specification {
         ctx.registerMockBean(GrailsApplication.APPLICATION_ID, application)
         new DefaultUrlMappingsHolder(new DefaultUrlMappingEvaluator(ctx).evaluateMappings(mappings))
     }
-
-    /**
-     * Puts swagger-core's global converters back as the Grails description has them, where springdoc
-     * replaced the Grails converter with an application's.
-     */
-    private static void restoreConverters() {
-        [false, true].each { boolean openapi31 ->
-            ModelConverters converters = ModelConverters.getInstance(openapi31)
-            converters.converters.findAll { it instanceof GrailsModelConverter }.each { converters.removeConverter(it) }
-        }
-        GrailsModelConverter.register()
-    }
 }
 
 @Artefact('Controller')
 class BookController {
     def index() { }
     def show() { }
-}
-
-class UnreadableConstraintsCommand implements Validateable {
-    String name
-
-    static Map getConstraintsMap() {
-        throw new IllegalStateException('the constraints cannot be evaluated')
-    }
-}
-
-/**
- * A converter an application declares, which passes every type on.
- */
-class ApplicationConverter implements ModelConverter {
-
-    @Override
-    io.swagger.v3.oas.models.media.Schema resolve(AnnotatedType type, ModelConverterContext context,
-                                                   Iterator<ModelConverter> chain) {
-        chain.hasNext() ? chain.next().resolve(type, context, chain) : null
-    }
-}
-
-/**
- * Takes the converters as springdoc's configuration takes them.
- */
-class SpringdocConverters {
-
-    final List<ModelConverter> converters
-
-    SpringdocConverters(Optional<List<ModelConverter>> converters) {
-        this.converters = converters.orElse([])
-    }
-}
-
-@Entity
-class Pamphlet {
-    String title
-
-    static constraints = {
-        title nullable: false
-    }
-}
-
-@Artefact('Controller')
-class PamphletController extends RestfulController<Pamphlet> {
-    PamphletController() { super(Pamphlet) }
 }

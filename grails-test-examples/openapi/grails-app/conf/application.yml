@@ -33,6 +33,14 @@ springdoc:
         - group: author-changes
           paths-to-match: /authors/**
           consumes-to-match: application/json
+        - group: shelf
+          paths-to-match:
+              - /spring/**
+              - /books/**
+        - group: legacy
+          paths-to-match:
+              - /legacy/**
+              - /books/**
 
 dataSource:
     pooled: true
