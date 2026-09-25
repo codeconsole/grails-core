@@ -20,6 +20,7 @@ package openapiapp.spring
 
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
+import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
 
@@ -45,5 +46,11 @@ class ShelfApi {
     @GetMapping(path = '/magazines', produces = 'application/json')
     List<Magazine> magazines() {
         Magazine.list()
+    }
+
+    @Internal
+    @PostMapping(path = '/checks', produces = 'application/json')
+    ValidationErrors check() {
+        new ValidationErrors(count: 0, problems: [])
     }
 }

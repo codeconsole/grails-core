@@ -534,7 +534,10 @@ it answers with rather than a uniform `200`:
 |===
 
 A `422` answers with the validation errors Grails renders for a request that cannot be bound,
-described once as the `ValidationErrors` schema. The converters render them, in JSON as an object
+described once as the `ValidationErrors` schema, or as `grails.validation.ValidationErrors`, after
+the class Grails renders them from, where the document already describes something else as
+`ValidationErrors`, such as a class of the application a Spring MVC endpoint returns. The
+converters render them, in JSON as an object
 listing them and in XML as an `errors` element holding an `error` element for each. Where a JSON
 view renders them, as the errors view of an application generated with JSON views does, they are
 described in JSON as that view renders them: one error with its message, path and link, or several

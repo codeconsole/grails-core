@@ -18,8 +18,11 @@
  */
 package grails.openapi
 
+import io.swagger.v3.oas.models.Components
 import io.swagger.v3.oas.models.OpenAPI
 import io.swagger.v3.oas.models.media.Content
+import io.swagger.v3.oas.models.media.IntegerSchema
+import io.swagger.v3.oas.models.media.ObjectSchema
 
 import grails.artefact.Artefact
 import grails.gorm.annotation.Entity
@@ -162,6 +165,22 @@ class ErrorsViewSpec extends Specification {
         openApi.components.schemas['ValidationErrors'].properties.keySet() == ['problems'] as Set
     }
 
+    void 'describes the errors under the name of their class where the document describes something else as ValidationErrors'() {
+        given: 'a document springdoc started, describing a class of the application named ValidationErrors'
+        def openApi = new OpenAPI().components(new Components().addSchemas('ValidationErrors',
+                new ObjectSchema().addProperty('count', new IntegerSchema())))
+
+        when:
+        generator().contribute(openApi, null)
+
+        then: 'the class keeps its name and its schema'
+        openApi.components.schemas['ValidationErrors'].properties.keySet() == ['count'] as Set
+
+        and: 'the errors are described apart from it'
+        errors(openApi, '/kettles').values()*.schema*.$ref.every { it == '#/components/schemas/grails.validation.ValidationErrors' }
+        openApi.components.schemas['grails.validation.ValidationErrors'].properties.keySet() == ['errors'] as Set
+    }
+
     private static final String OBJECT_VIEW = '''\
         @Field Object object
 
@@ -187,6 +206,10 @@ class ErrorsViewSpec extends Specification {
     }
 
     private OpenAPI document(Map<String, Object> config = [:]) {
+        generator(config).generate()
+    }
+
+    private GrailsOpenApiGenerator generator(Map<String, Object> config = [:]) {
         def resolver = new JsonViewResolver(new JsonViewConfiguration(templatePath: views.path))
         def controllers = [KettleController, GizmoController, SprocketController, TeapotController]
         OpenApiFixture.generator(OpenApiFixture.holder {
@@ -194,7 +217,7 @@ class ErrorsViewSpec extends Specification {
             '/teapots'(resources: 'teapot')
             '/admin/gizmos'(resources: 'gizmo', namespace: 'admin')
             '/sprockets'(resources: 'sprocket')
-        }, OpenApiFixture.application(controllers, [resolver]), OpenApiFixture.context([Kettle]), config).generate()
+        }, OpenApiFixture.application(controllers, [resolver]), OpenApiFixture.context([Kettle]), config)
     }
 
     private static Content errors(OpenAPI openApi, String path) {

@@ -64,8 +64,10 @@ class ComponentSchemas {
 
     /**
      * Keeps a name for a schema that is not resolved from a class, so no class takes it.
+     *
+     * @return the name to describe the schema under while the document is described
      */
-    void reserve(String name) {
+    String reserve(String name) {
         names.reserve(name)
     }
 

@@ -87,6 +87,12 @@ class GrailsOpenApiGenerator {
 
     private static final Logger LOG = LoggerFactory.getLogger(GrailsOpenApiGenerator)
 
+    /**
+     * The name the validation errors are described under where the document already describes
+     * something else as {@link #VALIDATION_ERRORS_SCHEMA}: that of the class Grails renders them from.
+     */
+    private static final String QUALIFIED_VALIDATION_ERRORS_SCHEMA = 'grails.validation.ValidationErrors'
+
     private static final String CONTROLLER_TOKEN = 'controller'
     private static final String ACTION_TOKEN = 'action'
     private static final String NAMESPACE_TOKEN = 'namespace'
@@ -252,10 +258,13 @@ class GrailsOpenApiGenerator {
                 schemas.reserve(name, name in declared ? null : resolvedBySpringdoc[name])
             }
             // Validation errors the base document declares describe them in place of those derived.
+            // A schema springdoc already has under the name describes something else, so the errors
+            // are described under their qualified name.
+            boolean errorsDeclared = VALIDATION_ERRORS_SCHEMA in declared
+            String errorsSchema = schemas.reserve(errorsDeclared || !components.schemas?.containsKey(VALIDATION_ERRORS_SCHEMA)
+                    ? VALIDATION_ERRORS_SCHEMA : QUALIFIED_VALIDATION_ERRORS_SCHEMA)
             responses = new OperationResponses(schemas, new ValidationErrorsContent(components,
-                    ErrorsViews.of(grailsApplication?.mainContext), VALIDATION_ERRORS_SCHEMA,
-                    VALIDATION_ERRORS_SCHEMA in declared))
-            schemas.reserve(VALIDATION_ERRORS_SCHEMA)
+                    ErrorsViews.of(grailsApplication?.mainContext), errorsSchema, errorsDeclared))
             GrailsModelConverter.withSchemaNames(schemas.names) {
                 for (UrlMapping mapping : urlMappingsHolder.urlMappings) {
                     DocumentParts.describe("URL mapping [${mapping.urlData?.urlPattern}]".toString()) {

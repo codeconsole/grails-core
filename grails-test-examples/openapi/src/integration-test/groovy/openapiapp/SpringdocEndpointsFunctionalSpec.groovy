@@ -56,6 +56,21 @@ class SpringdocEndpointsFunctionalSpec extends Specification implements HttpClie
         magazine.get('properties').publisher.'$ref' == '#/components/schemas/Publisher'
     }
 
+    void 'the validation errors are described apart from a class of that name a Spring MVC endpoint returns'() {
+        when:
+        Map shelf = http('/v3/api-docs/shelf').json()
+
+        then: 'the class keeps its name, as the Spring MVC endpoint describes it'
+        shelf.paths['/spring/checks'].post.responses['200'].content['application/json'].schema.'$ref' ==
+                '#/components/schemas/ValidationErrors'
+        shelf.components.schemas.ValidationErrors.get('properties').keySet() == ['count', 'problems'] as Set
+
+        and: 'the Grails endpoints answer a failed validation with the errors, under the name of their class'
+        shelf.paths['/books'].post.responses['422'].content['application/json'].schema.'$ref' ==
+                '#/components/schemas/grails.validation.ValidationErrors'
+        shelf.components.schemas['grails.validation.ValidationErrors'].get('properties').errors
+    }
+
     void 'a class springdoc described for one document is not taken for another class of its name in the next'() {
         given: 'the shelf group, whose Spring MVC endpoint returns the domain class Book, described first'
         http('/v3/api-docs/shelf').json()
