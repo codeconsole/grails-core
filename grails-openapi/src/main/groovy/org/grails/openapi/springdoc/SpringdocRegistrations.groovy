@@ -24,6 +24,7 @@ import org.springdoc.core.customizers.SpringDocCustomizers
 import org.springdoc.core.models.GroupedOpenApi
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.beans.factory.BeanRegistry
+import org.springframework.core.Ordered
 
 import grails.openapi.GrailsOpenApiGenerator
 import grails.openapi.OpenApiSelection
@@ -39,9 +40,13 @@ class SpringdocRegistrations {
     static void register(BeanRegistry registry, OpenApiSettings settings, String generatorBeanName) {
         // springdoc registers the converters the application declares with swagger-core as it
         // starts, before it resolves the types of its own endpoints, so they are described the
-        // same way in the first document as in the next.
+        // same way in the first document as in the next. It adds each in front of those before it,
+        // so the first is the one closest to swagger-core's own resolution: the Grails converter
+        // describes a type first, and springdoc's converters, and the application's, see what it
+        // described. A fallback, it does not stand in the way of a converter the application
+        // injects on its own.
         registry.registerBean('grailsModelConverter', GrailsModelConverter) {
-            it.supplier { GrailsModelConverter.INSTANCE }
+            it.order(Ordered.HIGHEST_PRECEDENCE).fallback().supplier { GrailsModelConverter.INSTANCE }
         }
         // A plain customizer is applied to springdoc's default document only; each group is given
         // its own by the contributor.
