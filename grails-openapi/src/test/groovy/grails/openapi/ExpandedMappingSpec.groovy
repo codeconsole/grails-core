@@ -119,6 +119,16 @@ class ExpandedMappingSpec extends Specification {
         operations(openApi) == ['GET /topics/latest', 'GET /topics/archive/{id}', 'GET /topics/purge/{id}'] as Set
     }
 
+    void 'describes each action a mapping of a named controller takes from the path for the method it declares'() {
+        when:
+        def openApi = OpenApiFixture.document([TopicController], []) {
+            post "/topics/$action/$id?"(controller: 'topic')
+        }
+
+        then: 'each action as the method the mapping answers, not the one a mapping for any method implies'
+        operations(openApi) == ['POST /topics/latest', 'POST /topics/archive/{id}', 'POST /topics/purge/{id}'] as Set
+    }
+
     void 'describes an action chosen by the method of the request as an operation for each'() {
         when:
         def openApi = OpenApiFixture.document([TopicController], []) {
