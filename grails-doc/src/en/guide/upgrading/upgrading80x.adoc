@@ -4128,8 +4128,11 @@ way on `springdoc.group-configs` before the application could start.
 `@Value('${springdoc.group-configs}')` without a default fails to resolve, as does a `${...}`
 placeholder naming the list anywhere else. Read such a list through `grailsApplication.config`,
 which is unchanged, or bind it. The same applies to a list holding lists of objects, such as
-`rows: [[{a: 1}], [{b: 2}]]`, whose objects are presented under names such as `rows[0][0].a`. A list
-of plain values, such as `names: [a, b]`, is presented as before.
+`rows: [[{a: 1}], [{b: 2}]]`, whose objects are presented under names such as `rows[0][0].a`, and to
+a list mixing plain values and objects, such as `mixed: [a, {b: 1}]`, presented as `mixed[0]` and
+`mixed[1].b`. Within such a list, an empty object, an empty list or a `null` value is presented as an
+empty string under its own name, such as `empty[0]` for `empty: [{}]`, as Spring Boot presents it. A
+list of plain values only, such as `names: [a, b]`, is presented as before.
 
 What reads the names the configuration presents sees the change too:
 

@@ -114,19 +114,26 @@ class NavigableMapPropertySource extends MapPropertySource {
         }
     }
 
+    /**
+     * Presents a value under the names Spring Boot's YAML loader gives it, an empty object, an
+     * empty list or a {@code null} being presented as an empty string, so no element disappears.
+     */
     private static void flatten(Map<String, Object> into, String name, Object value) {
         Object unwrapped = unwrap(value)
-        if (unwrapped instanceof Map) {
+        if (unwrapped instanceof Map && !((Map) unwrapped).isEmpty()) {
             ((Map<Object, Object>) unwrapped).each { Object key, Object nested ->
                 flatten(into, "${name}.${key}".toString(), nested)
             }
         }
-        else if (unwrapped instanceof List) {
+        else if (unwrapped instanceof List && !((List) unwrapped).isEmpty()) {
             ((List) unwrapped).eachWithIndex { Object element, int index ->
                 flatten(into, "${name}[${index}]".toString(), element)
             }
         }
-        else if (unwrapped != null) {
+        else if (unwrapped instanceof Map || unwrapped instanceof List || unwrapped == null) {
+            into[name] = ''
+        }
+        else {
             into[name] = unwrapped
         }
     }
