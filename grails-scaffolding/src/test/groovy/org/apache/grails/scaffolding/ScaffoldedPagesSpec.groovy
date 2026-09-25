@@ -43,8 +43,8 @@ class ScaffoldedPagesSpec extends Specification {
 
         where:
         templatePath | expected
-        'show'       | /\/grails-scaffolded\/com\.example\.Book\/show-[0-9a-f]{32}\.gsp/
-        'admin/show' | /\/grails-scaffolded\/com\.example\.Book\/admin\/show-[0-9a-f]{32}\.gsp/
+        'show'       | /\/grails-scaffolded\/com\.example\.Book\/show-[0-9a-f]{16}\.gsp/
+        'admin/show' | /\/grails-scaffolded\/com\.example\.Book\/admin\/show-[0-9a-f]{16}\.gsp/
     }
 
     void 'the same template and model always name the same page, whatever order the model is in'() {

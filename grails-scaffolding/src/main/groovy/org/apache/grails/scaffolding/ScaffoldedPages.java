@@ -54,8 +54,14 @@ public final class ScaffoldedPages {
      */
     public static final String DIRECTORY = "grails-scaffolded";
 
-    /** Bytes of the digest kept in a page's name. */
-    private static final int KEY_BYTES = 16;
+    /**
+     * Bytes of the digest kept in a page's name. The name already carries the domain class and the
+     * template path, so the digest only has to tell apart the copies of one template, and the
+     * models one template is expanded with; eight bytes do that with room to spare and keep the
+     * compiled page's class names - which carry the domain class and the digest both - short of the
+     * path lengths some tools stumble on.
+     */
+    private static final int KEY_BYTES = 8;
 
     private ScaffoldedPages() {
     }
