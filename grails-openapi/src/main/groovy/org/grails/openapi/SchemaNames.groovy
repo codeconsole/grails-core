@@ -104,11 +104,24 @@ class SchemaNames {
         if (type.enumType) {
             return true
         }
-        try {
-            return Json.mapper().serializationConfig.introspect(type).findJsonValueAccessor() == null
-        }
-        catch (RuntimeException ignored) {
-            return true
+        !SERIALIZED_AS_VALUE.get(type.rawClass)
+    }
+
+    /**
+     * Whether a class is serialized as the value of a {@code @JsonValue} accessor, which is read
+     * once for each class rather than for each time it is resolved.
+     */
+    private static final ClassValue<Boolean> SERIALIZED_AS_VALUE = new ClassValue<Boolean>() {
+
+        @Override
+        protected Boolean computeValue(Class<?> type) {
+            try {
+                SerializationConfig config = Json.mapper().serializationConfig
+                return config.introspect(config.constructType(type)).findJsonValueAccessor() != null
+            }
+            catch (RuntimeException ignored) {
+                return false
+            }
         }
     }
 

@@ -88,8 +88,9 @@ class OperationParameters {
     void addCommandParameters(Operation operation, Class<?> controllerType, String actionName, List<String> pathNames) {
         Class<?> commandType = ActionAnnotations.commandObjectType(controllerType, actionName)
         Schema<?> command = commandType != null ? schemas.inline(commandType) : null
+        PropertyNames names = command?.properties ? PropertyNames.of(commandType) : null
         ((Map<String, Schema>) command?.properties)?.each { String described, Schema property ->
-            String name = GrailsModelConverter.boundName(commandType, described)
+            String name = names.nameOf(described) ?: described
             if (name in pathNames || property.readOnly || !isParameterValue(property)) {
                 return
             }

@@ -435,14 +435,6 @@ class GrailsModelConverter implements ModelConverter {
     }
 
     /**
-     * The name a request parameter binding a property of a type is sent under: the name Grails
-     * uses for it, whatever name it is described under.
-     */
-    static String boundName(Class<?> type, String described) {
-        type != null ? (PropertyNames.of(type).nameOf(described) ?: described) : described
-    }
-
-    /**
      * The name in the type of a property the document describes under the given name.
      */
     private static String propertyNamed(Map<String, String> names, String described) {
