@@ -44,7 +44,7 @@ class SpringdocRegistrations {
                 // springdoc's customizers hold this customizer, so they are read as the document is built.
                 ObjectProvider<SpringDocCustomizers> customizers = context.beanProvider(SpringDocCustomizers)
                 new GrailsOpenApiCustomizer({ -> generator }, { ->
-                    SpringdocSelections.defaultSelection(settings.defaultSelection, customizers.getIfAvailable())
+                    SpringdocSelection.defaultSelection(settings.defaultSelection, customizers.getIfAvailable())
                 })
             }
         }

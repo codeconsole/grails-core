@@ -89,7 +89,7 @@ class GroupedOpenApiContributorSpec extends Specification {
         def customizers = customizers(methodFilters: [{ Method action -> action.name != 'delete' } as OpenApiMethodFilter])
 
         when:
-        def openApi = generator().generate(SpringdocSelections.defaultSelection(new OpenApiSelection(), customizers))
+        def openApi = generator().generate(SpringdocSelection.defaultSelection(new OpenApiSelection(), customizers))
 
         then:
         openApi.paths['/widgets/{id}'].get
@@ -137,7 +137,7 @@ class GroupedOpenApiContributorSpec extends Specification {
         } as OperationCustomizer])
 
         when:
-        def openApi = generator(true).generate(SpringdocSelections.defaultSelection(new OpenApiSelection(), customizers))
+        def openApi = generator(true).generate(SpringdocSelection.defaultSelection(new OpenApiSelection(), customizers))
 
         then:
         openApi.paths['/widgets/{id}'].get.summary == 'show'
@@ -182,6 +182,23 @@ class GroupedOpenApiContributorSpec extends Specification {
         then:
         customizers.openApiCustomizers.get().first().is(grails)
         seen == ['/widgets', '/widgets/{id}', '/gate'] as Set
+    }
+
+    void 'skips a filter or a customizer that fails, rather than the action it was applied to'() {
+        given: 'a filter and a customizer that read the current request, where there is none'
+        def customizers = customizers(
+                methodFilters: [{ Method action -> throw new IllegalStateException('No current request') } as OpenApiMethodFilter],
+                operationCustomizers: [{ Operation operation, HandlerMethod handlerMethod ->
+                    throw new IllegalStateException('No current request')
+                } as OperationCustomizer])
+
+        when:
+        def openApi = generator(true).generate(SpringdocSelection.defaultSelection(new OpenApiSelection(), customizers))
+
+        then:
+        openApi.paths['/widgets/{id}'].get
+        openApi.paths['/widgets/{id}'].delete
+        openApi.paths['/gate'].get
     }
 
     void 'leaves every other bean alone'() {

@@ -70,7 +70,7 @@ class GroupedOpenApiContributor implements BeanPostProcessor, BeanFactoryAware {
                 // method filters.
                 group.addAllOpenApiCustomizer([new GrailsOpenApiCustomizer(
                         { -> beanFactory.getBean(GrailsOpenApiGenerator) },
-                        { -> SpringdocSelections.groupSelection(group, SpringdocSelections.customizers(beanFactory)) })])
+                        { -> SpringdocSelection.groupSelection(group, SpringdocSelection.customizers(beanFactory)) })])
             }
         }
         bean
@@ -101,9 +101,15 @@ class GroupedOpenApiContributor implements BeanPostProcessor, BeanFactoryAware {
             return
         }
         List<OpenApiCustomizer> others = customizers.findAll { OpenApiCustomizer it -> !(it instanceof GrailsOpenApiCustomizer) }.toList()
-        customizers.clear()
-        customizers.addAll(grails)
-        customizers.addAll(others)
+        try {
+            customizers.clear()
+            customizers.addAll(grails)
+            customizers.addAll(others)
+        }
+        catch (UnsupportedOperationException ignored) {
+            LOG.warn('The springdoc customizers cannot be reordered, so a customizer declared before the Grails ' +
+                    'description is contributed does not see the Grails operations')
+        }
     }
 
     /**
@@ -112,7 +118,7 @@ class GroupedOpenApiContributor implements BeanPostProcessor, BeanFactoryAware {
      */
     static List<OpenApiSelection> declaredGroups(ApplicationContext applicationContext) {
         applicationContext.getBeansOfType(GroupedOpenApi).values().collect { GroupedOpenApi group ->
-            SpringdocSelections.groupSelection(group, SpringdocSelections.customizers(applicationContext))
+            (OpenApiSelection) SpringdocSelection.groupSelection(group, SpringdocSelection.customizers(applicationContext))
         }
     }
 
@@ -125,7 +131,7 @@ class GroupedOpenApiContributor implements BeanPostProcessor, BeanFactoryAware {
      * @param group the group, or {@code null} for the default document
      */
     static void customize(ApplicationContext applicationContext, String group, OpenAPI openApi) {
-        SpringDocCustomizers customizers = SpringdocSelections.customizers(applicationContext)
+        SpringDocCustomizers customizers = SpringdocSelection.customizers(applicationContext)
         Set<OpenApiCustomizer> applied = new LinkedHashSet<>()
         if (group == null) {
             Set<OpenApiCustomizer> declared = customizers?.openApiCustomizers?.orElse(null)
@@ -163,7 +169,7 @@ class GroupedOpenApiContributor implements BeanPostProcessor, BeanFactoryAware {
      * springdoc's method filters applied, where springdoc is configured.
      */
     static OpenApiSelection defaultSelection(ApplicationContext applicationContext, OpenApiSelection criteria) {
-        SpringdocSelections.defaultSelection(criteria, SpringdocSelections.customizers(applicationContext))
+        SpringdocSelection.defaultSelection(criteria, SpringdocSelection.customizers(applicationContext))
     }
 
     /**

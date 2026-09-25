@@ -19,7 +19,6 @@
 package grails.openapi
 
 import java.lang.reflect.Method
-import java.util.function.Predicate
 
 import io.swagger.v3.oas.annotations.Operation as OperationAnnotation
 import io.swagger.v3.oas.annotations.tags.Tag
@@ -126,12 +125,16 @@ class DocumentSelectionSpec extends Specification {
         generator.generate('xml').paths.keySet() == ['/tickets', '/tickets/{id}'] as Set
     }
 
-    void 'selects the actions every action filter includes, by the method each is declared as'() {
+    void 'selects the actions a selection includes, by the method each is declared as'() {
         given:
         List<Method> filtered = []
-        def selection = new OpenApiSelection(actionFilters: [
-                { Method action -> filtered << action; true } as Predicate<Method>,
-                { Method action -> action.name != 'delete' } as Predicate<Method>])
+        def selection = new OpenApiSelection() {
+            @Override
+            protected boolean selectsAction(Method action) {
+                filtered << action
+                action.name != 'delete'
+            }
+        }
 
         when:
         def openApi = OpenApiFixture.generator(OpenApiFixture.holder(MAPPINGS),
@@ -143,20 +146,21 @@ class DocumentSelectionSpec extends Specification {
         openApi.paths['/api/v1/crates/{id}'].delete == null
         openApi.paths['/api/v1/pallets/{id}'].delete == null
 
-        and: 'an action taking parameters is filtered by the method it is declared as, not the one Grails adds'
+        and: 'an action taking parameters is decided by the method it is declared as, not the one Grails adds'
         filtered.findAll { it.name == 'index' && it.declaringClass == CrateStackController }*.parameterTypes ==
                 [[Integer] as Class[]]
     }
 
     void 'customizes each operation with the controller and the action serving it'() {
         given:
-        def selection = new OpenApiSelection(operationCustomizers: [
-                { Operation operation, Components components, Object controller, Method action ->
-                    operation.summary("${controller.getClass().simpleName}.${action.name}(${action.parameterCount})".toString())
-                } as ActionOperationCustomizer,
-                { Operation operation, Components components, Object controller, Method action ->
-                    action.name == 'delete' ? null : operation
-                } as ActionOperationCustomizer])
+        def selection = new OpenApiSelection() {
+            @Override
+            protected Operation customize(Operation operation, Components components, Object controller, Method action) {
+                action.name == 'delete'
+                        ? null
+                        : operation.summary("${controller.getClass().simpleName}.${action.name}(${action.parameterCount})".toString())
+            }
+        }
         def application = OpenApiFixture.application([CrateStackController, PalletController],
                 [new CrateStackController(), new PalletController()])
 
@@ -173,6 +177,27 @@ class DocumentSelectionSpec extends Specification {
         and: 'a customizer that returns nothing leaves the operation out'
         openApi.paths['/crates/{id}'].delete == null
         openApi.paths['/crates/{id}'].get
+    }
+
+    void 'leaves out only the operation of an action that cannot be described'() {
+        given: 'an action whose method refers to a class that is not on the classpath'
+        def selection = new OpenApiSelection() {
+            @Override
+            protected Operation customize(Operation operation, Components components, Object controller, Method action) {
+                if (action?.name == 'delete') {
+                    throw new NoClassDefFoundError('com/example/Missing')
+                }
+                operation
+            }
+        }
+
+        when:
+        def openApi = OpenApiFixture.generator(OpenApiFixture.holder { '/crates'(resources: 'crateStack') },
+                OpenApiFixture.application([CrateStackController]), OpenApiFixture.context([CrateStack])).generate(selection)
+
+        then:
+        openApi.paths['/crates/{id}'].get
+        openApi.paths['/crates/{id}'].delete == null
     }
 
     void 'describes only what is annotated when asked to'() {

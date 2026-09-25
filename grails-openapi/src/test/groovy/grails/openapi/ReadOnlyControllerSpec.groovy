@@ -75,6 +75,18 @@ class ReadOnlyControllerSpec extends Specification {
         openApi.paths['/ledgers/{id}'].delete == null
     }
 
+    void 'reads a controller that another controller extends'() {
+        when: 'both are in the context, so looking the controller up by its type finds two'
+        def openApi = document([new ArchiveController(), new AuditedArchiveController()]) {
+            '/archives'(resources: 'archive')
+            '/audited'(resources: 'auditedArchive')
+        }
+
+        then:
+        openApi.paths['/archives'].readOperationsMap().keySet()*.name() == ['GET']
+        openApi.paths['/audited'].readOperationsMap().keySet()*.name() == ['GET']
+    }
+
     void 'a controller that is not read only is described in full'() {
         when:
         def openApi = document([new ArchiveController(false)]) {
@@ -114,6 +126,10 @@ class Archive {
 class ArchiveController extends RestfulController<Archive> {
     ArchiveController() { this(true) }
     ArchiveController(boolean readOnly) { super(Archive, readOnly) }
+}
+
+@Artefact('Controller')
+class AuditedArchiveController extends ArchiveController {
 }
 
 @Artefact('Controller')

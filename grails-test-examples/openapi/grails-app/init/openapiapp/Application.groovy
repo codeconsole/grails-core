@@ -28,6 +28,7 @@ import org.springdoc.core.customizers.GlobalOperationCustomizer
 import org.springdoc.core.filters.OpenApiMethodFilter
 import org.springdoc.core.models.GroupedOpenApi
 import org.springframework.context.annotation.Bean
+import org.springframework.web.context.request.RequestContextHolder
 import org.springframework.web.method.HandlerMethod
 
 import grails.boot.GrailsApp
@@ -65,6 +66,18 @@ class Application extends GrailsAutoConfiguration {
     GlobalOperationCustomizer actionNameCustomizer() {
         { Operation operation, HandlerMethod handlerMethod ->
             operation.addExtension('x-action', "${handlerMethod.beanType.simpleName}.${handlerMethod.method.name}".toString())
+            operation
+        } as GlobalOperationCustomizer
+    }
+
+    /**
+     * Reads the request the document is served for, which the generate-open-api command has none
+     * of, so the command skips it rather than the operations.
+     */
+    @Bean
+    GlobalOperationCustomizer requestReadingCustomizer() {
+        { Operation operation, HandlerMethod handlerMethod ->
+            RequestContextHolder.currentRequestAttributes()
             operation
         } as GlobalOperationCustomizer
     }

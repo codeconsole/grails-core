@@ -75,8 +75,8 @@ the environment it runs in, such as a datasource.
 
 Where springdoc is configured, the command applies the method filters, operation customizers and
 OpenAPI customizers springdoc applies to the documents it serves, so each file describes what
-springdoc serves. A customizer that cannot customize a document outside a request is skipped, and
-logged.
+springdoc serves. A filter or customizer that fails there, such as one that reads the current
+request, is skipped and logged, rather than the operations it was applied to.
 
 To package the description and serve it as a static file, include it in the application's
 static resources when the application is assembled:

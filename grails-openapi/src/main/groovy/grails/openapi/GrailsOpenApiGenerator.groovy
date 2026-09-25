@@ -485,7 +485,7 @@ class GrailsOpenApiGenerator {
             }
             List<String> mediaTypes = mediaTypes(controller, actionName)
             List<String> consumes = bindsBody(method, controller, controllerType, actionName) ? mediaTypes : []
-            if (!selection.selectsMediaTypes(mediaTypes, consumes)) {
+            if (!selection.selectsConditions(mediaTypes, consumes, Collections.<String> emptyList())) {
                 return
             }
 
@@ -582,14 +582,24 @@ class GrailsOpenApiGenerator {
          */
         private Object controllerInstance(GrailsControllerClass controller) {
             if (!controllerInstances.containsKey(controller.clazz)) {
-                controllerInstances[controller.clazz] = lookUpController(controller.clazz)
+                controllerInstances[controller.clazz] = lookUpController(controller)
             }
             controllerInstances[controller.clazz]
         }
 
-        private Object lookUpController(Class<?> controllerType) {
+        /**
+         * Grails registers a controller under its class name, which a subclass controller does not
+         * share, where a lookup by type would find both.
+         */
+        private Object lookUpController(GrailsControllerClass controller) {
+            ApplicationContext context = grailsApplication?.mainContext
+            if (context == null) {
+                return null
+            }
             try {
-                return grailsApplication?.mainContext?.getBean(controllerType)
+                return context.containsBean(controller.fullName)
+                        ? context.getBean(controller.fullName)
+                        : context.getBean(controller.clazz)
             }
             catch (RuntimeException ignored) {
                 return null
@@ -865,19 +875,25 @@ class GrailsOpenApiGenerator {
                 item.readOperations().collectMany { Operation operation -> operation.tags ?: [] }
             } as Set<String>
             for (GrailsControllerClass controller : controllersByKey.values()) {
-                if (ActionAnnotations.isHidden(controller.clazz)) {
+                describe("the tags of [${controller.fullName}]".toString()) {
+                    registerTags(controller, used)
+                }
+            }
+        }
+
+        private void registerTags(GrailsControllerClass controller, Set<String> used) {
+            if (ActionAnnotations.isHidden(controller.clazz)) {
+                return
+            }
+            for (TagAnnotation declared : ActionAnnotations.declaredTags(controller.clazz)) {
+                if (!(declared.name() in used) || openApi.tags?.any { Tag it -> it.name == declared.name() }) {
                     continue
                 }
-                for (TagAnnotation declared : ActionAnnotations.declaredTags(controller.clazz)) {
-                    if (!(declared.name() in used) || openApi.tags?.any { Tag it -> it.name == declared.name() }) {
-                        continue
-                    }
-                    Tag tag = new Tag().name(declared.name())
-                    if (declared.description()) {
-                        tag.setDescription(declared.description())
-                    }
-                    openApi.addTagsItem(tag)
+                Tag tag = new Tag().name(declared.name())
+                if (declared.description()) {
+                    tag.setDescription(declared.description())
                 }
+                openApi.addTagsItem(tag)
             }
         }
 
@@ -945,7 +961,7 @@ class GrailsOpenApiGenerator {
         try {
             work.call()
         }
-        catch (Exception e) {
+        catch (Exception | LinkageError e) {
             LOG.warn('Skipping {} in the OpenAPI document: {}', what, e.message)
             LOG.debug('Could not describe {}', what, e)
         }

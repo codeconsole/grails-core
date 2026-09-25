@@ -20,12 +20,12 @@ package grails.openapi
 
 import io.swagger.v3.oas.models.OpenAPI
 import io.swagger.v3.oas.models.media.Schema
+import org.springframework.context.support.GenericApplicationContext
 import org.springframework.core.env.MapPropertySource
 import org.springframework.core.env.StandardEnvironment
 
 import grails.core.DefaultGrailsApplication
 import grails.core.GrailsApplication
-import grails.util.GrailsNameUtils
 import grails.web.mapping.UrlMappingsHolder
 import org.grails.datastore.gorm.validation.constraints.registry.DefaultValidatorRegistry
 import org.grails.datastore.mapping.core.connections.ConnectionSourceSettings
@@ -67,11 +67,13 @@ class OpenApiFixture {
     }
 
     /**
-     * An application whose context holds the given controllers, as a running application's does.
+     * An application whose context holds the given controllers under their class names, as Grails
+     * registers them.
      */
     static GrailsApplication application(List<Class<?>> controllers, List<Object> instances) {
-        def ctx = new MockApplicationContext()
-        instances.each { ctx.registerMockBean(GrailsNameUtils.getPropertyName(it.getClass()), it) }
+        def ctx = new GenericApplicationContext()
+        instances.each { ctx.beanFactory.registerSingleton(it.getClass().name, it) }
+        ctx.refresh()
         application(controllers).tap { it.mainContext = ctx }
     }
 

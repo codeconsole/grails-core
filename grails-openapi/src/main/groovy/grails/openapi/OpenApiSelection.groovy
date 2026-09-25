@@ -19,9 +19,9 @@
 package grails.openapi
 
 import java.lang.reflect.Method
-import java.util.function.Predicate
 
 import groovy.transform.CompileStatic
+import groovy.transform.PackageScope
 
 import io.swagger.v3.oas.models.Components
 import io.swagger.v3.oas.models.Operation
@@ -37,10 +37,13 @@ import org.springframework.util.AntPathMatcher
  *
  * <p>A path criterion is an Ant pattern matched against the described path, such as
  * {@code /api/v1/**}. A package criterion names the package of the controller that serves the
- * operation, and matches its sub-packages too. A media type criterion is matched the way springdoc
- * matches a handler method: an operation matches only where it produces, or consumes, exactly the
- * media types the criterion lists. A URL mapping declares no header condition, so an operation
- * never matches a header criterion. A criterion left empty selects everything.</p>
+ * operation, and matches its sub-packages too. A media type or header criterion is matched the way
+ * springdoc matches a handler method: an operation matches only where it produces, consumes, or
+ * declares exactly what the criterion lists. A criterion left empty selects everything.</p>
+ *
+ * <p>A subclass can decide by the action itself, and customize each operation, by overriding
+ * {@link #selectsAction} and {@link #customize}; springdoc's method filters and operation
+ * customizers are applied that way.</p>
  *
  * @since 8.0
  */
@@ -55,16 +58,29 @@ class OpenApiSelection {
     String group
 
     /**
-     * The name a viewer shows for the group.
+     * The title of the document, and the name a viewer shows for the group.
      */
     String displayName
 
+    /**
+     * Ant patterns of the paths described, such as {@code /api/v1/**}; empty for every path.
+     */
     List<String> pathsToMatch = []
 
+    /**
+     * Ant patterns of the paths left out.
+     */
     List<String> pathsToExclude = []
 
+    /**
+     * The packages, with their sub-packages, of the controllers whose operations are described;
+     * empty for every package.
+     */
     List<String> packagesToScan = []
 
+    /**
+     * The packages, with their sub-packages, of the controllers whose operations are left out.
+     */
     List<String> packagesToExclude = []
 
     /**
@@ -79,80 +95,58 @@ class OpenApiSelection {
     List<String> consumesToMatch = []
 
     /**
-     * The header conditions an operation must declare, which a URL mapping never does.
+     * The header conditions an operation must declare, such as {@code Accept-Version=1.0}.
      */
     List<String> headersToMatch = []
 
-    /**
-     * Decide, from the method an action is declared as, whether its operations are described, the
-     * way a springdoc method filter decides for a handler method. An action is described only
-     * where every filter includes it.
-     */
-    List<Predicate<Method>> actionFilters = []
-
-    /**
-     * Customize, in order, each operation the document describes.
-     */
-    List<ActionOperationCustomizer> operationCustomizers = []
-
-    /**
-     * @return a selection with the same criteria, which can be added to without changing these
-     */
-    OpenApiSelection copy() {
-        new OpenApiSelection(
-                group: group,
-                displayName: displayName,
-                pathsToMatch: new ArrayList<String>(pathsToMatch),
-                pathsToExclude: new ArrayList<String>(pathsToExclude),
-                packagesToScan: new ArrayList<String>(packagesToScan),
-                packagesToExclude: new ArrayList<String>(packagesToExclude),
-                producesToMatch: new ArrayList<String>(producesToMatch),
-                consumesToMatch: new ArrayList<String>(consumesToMatch),
-                headersToMatch: new ArrayList<String>(headersToMatch),
-                actionFilters: new ArrayList<Predicate<Method>>(actionFilters),
-                operationCustomizers: new ArrayList<ActionOperationCustomizer>(operationCustomizers))
+    OpenApiSelection() {
     }
 
     /**
-     * @param path the described path, such as {@code /books/{id}}
-     * @param controllerClass the controller serving the operation, if known
-     * @return whether the operation belongs in the document
+     * A selection with the same criteria as another.
      */
+    OpenApiSelection(OpenApiSelection criteria) {
+        group = criteria.group
+        displayName = criteria.displayName
+        pathsToMatch = new ArrayList<String>(criteria.pathsToMatch)
+        pathsToExclude = new ArrayList<String>(criteria.pathsToExclude)
+        packagesToScan = new ArrayList<String>(criteria.packagesToScan)
+        packagesToExclude = new ArrayList<String>(criteria.packagesToExclude)
+        producesToMatch = new ArrayList<String>(criteria.producesToMatch)
+        consumesToMatch = new ArrayList<String>(criteria.consumesToMatch)
+        headersToMatch = new ArrayList<String>(criteria.headersToMatch)
+    }
+
+    /**
+     * Whether the action serving an operation is described, decided by the method it is declared
+     * as. Every action is.
+     *
+     * @param action the method the action is declared as, the one taking its parameters
+     */
+    protected boolean selectsAction(Method action) {
+        true
+    }
+
+    /**
+     * Customizes an operation the document describes, once the annotations of its action are
+     * applied. The operation is described as it is.
+     *
+     * @param controller the controller serving the action, where the application context holds one
+     * @param action the method the action is declared as, if known
+     * @return the operation to describe, or {@code null} to leave it out
+     */
+    protected Operation customize(Operation operation, Components components, Object controller, Method action) {
+        operation
+    }
+
+    @PackageScope
     boolean selects(String path, Class<?> controllerClass) {
         selectsPath(path) && selectsPackage(controllerClass?.package?.name)
     }
 
-    /**
-     * @param action the method the action is declared as, if known
-     * @return whether every action filter includes the action
-     */
-    boolean selectsAction(Method action) {
-        action == null || actionFilters.every { Predicate<Method> filter -> filter.test(action) }
-    }
-
-    /**
-     * Applies the operation customizers to an operation the document describes.
-     *
-     * @return the operation to describe, or {@code null} where a customizer leaves it out
-     */
-    Operation customize(Operation operation, Components components, Object controller, Method action) {
-        Operation customized = operation
-        for (ActionOperationCustomizer customizer : operationCustomizers) {
-            if (customized == null) {
-                break
-            }
-            customized = customizer.customize(customized, components, controller, action)
-        }
-        customized
-    }
-
-    /**
-     * @param produces the media types the operation responds in
-     * @param consumes the media types the operation binds a body from, empty where it binds none
-     * @return whether the operation's media types are the ones the criteria ask for
-     */
-    boolean selectsMediaTypes(Collection<String> produces, Collection<String> consumes) {
-        matches(producesToMatch, produces) && matches(consumesToMatch, consumes) && !headersToMatch
+    @PackageScope
+    boolean selectsConditions(Collection<String> produces, Collection<String> consumes, Collection<String> headers) {
+        matches(producesToMatch, produces) && matches(consumesToMatch, consumes) && matches(headersToMatch, headers)
     }
 
     private static boolean matches(List<String> criterion, Collection<String> declared) {
