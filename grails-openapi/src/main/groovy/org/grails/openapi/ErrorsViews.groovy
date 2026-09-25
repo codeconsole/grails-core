@@ -55,8 +55,16 @@ abstract class ErrorsViews {
      * application uses them.
      */
     static ErrorsViews of(ApplicationContext context) {
-        context != null && ClassUtils.isPresent(JSON_VIEW_RESOLVER, ErrorsViews.classLoader)
-                ? JsonErrorsViews.of(context) : NONE
+        if (context == null || !ClassUtils.isPresent(JSON_VIEW_RESOLVER, ErrorsViews.classLoader)) {
+            return NONE
+        }
+        try {
+            return JsonErrorsViews.of(context)
+        }
+        catch (LinkageError ignored) {
+            // JSON views is present without what it needs, so it renders nothing.
+            return NONE
+        }
     }
 
     /**

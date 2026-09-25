@@ -54,7 +54,7 @@ class JsonErrorsViews extends ErrorsViews {
         try {
             resolvers = context.getBeansOfType(JsonViewResolver).values()
         }
-        catch (RuntimeException e) {
+        catch (Exception | LinkageError e) {
             LOG.debug('Could not look up the JSON view resolvers', e)
             return NONE
         }
@@ -89,13 +89,14 @@ class JsonErrorsViews extends ErrorsViews {
     }
 
     /**
-     * A view that fails to resolve, such as a template that does not compile, is no view.
+     * A view that fails to resolve, such as a template that does not compile or cannot be read, is
+     * no view.
      */
     private static View resolve(String view, Closure<View> resolution) {
         try {
             return resolution.call()
         }
-        catch (RuntimeException e) {
+        catch (Exception | LinkageError e) {
             LOG.debug("Could not look up the JSON view for ${view}", e)
             return null
         }
