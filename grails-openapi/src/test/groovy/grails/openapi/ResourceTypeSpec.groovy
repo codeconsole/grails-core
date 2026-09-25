@@ -48,15 +48,15 @@ class ResourceTypeSpec extends Specification {
         !openApi.components.schemas.containsKey('Shipment')
     }
 
-    void 'keeps the properties a command renames'() {
+    void 'keeps the properties a command renames the description of'() {
         when:
         def openApi = OpenApiFixture.document([ShipmentController], [Shipment]) {
             '/shipments'(resources: 'shipment')
         }
 
-        then:
+        then: 'a rename of the description is kept, and a Jackson rename, which Grails binds without, is not'
         with(openApi.components.schemas['ShipmentView'].properties) {
-            keySet() == ['shipment_number', 'carrier_name', 'depot', 'label'] as Set
+            keySet() == ['shipment_number', 'carrier', 'depot', 'label'] as Set
             shipment_number.description == 'Renamed through the schema'
         }
 
