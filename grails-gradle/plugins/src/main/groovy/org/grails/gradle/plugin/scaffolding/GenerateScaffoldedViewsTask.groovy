@@ -277,7 +277,7 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
                 if (dir.isDirectory()) {
                     dir.eachFileRecurse { File f ->
                         if (f.name.endsWith('Controller.class')) {
-                            Controller controller = readController(f.bytes, null, resources, ancestors)
+                            Controller controller = readController(f.bytes, f.path, resources, ancestors)
                             if (controller != null) {
                                 controllers.add(controller)
                             }
@@ -294,7 +294,7 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
                         for (JarEntry e : jar.entries()) {
                             if (!e.directory && e.name.endsWith('Controller.class')) {
                                 byte[] bytes = jar.getInputStream(e).withCloseable { InputStream input -> input.bytes }
-                                Controller controller = readController(bytes, entry, resources, ancestors)
+                                Controller controller = readController(bytes, "${entry.name}!/${e.name}", resources, ancestors)
                                 if (controller != null) {
                                     controllers.add(controller)
                                 }
@@ -305,7 +305,7 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
                 else if (entry.isDirectory() && new File(entry, PLUGIN_DESCRIPTOR).isFile()) {
                     entry.eachFileRecurse { File f ->
                         if (f.name.endsWith('Controller.class')) {
-                            Controller controller = readController(f.bytes, entry, resources, ancestors)
+                            Controller controller = readController(f.bytes, f.path, resources, ancestors)
                             if (controller != null) {
                                 controllers.add(controller)
                             }
@@ -317,13 +317,19 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
         controllers
     }
 
-    private Controller readController(byte[] bytes, File source, ClassLoader resources, Map<String, Boolean> ancestors) {
+    /**
+     * A class this cannot read - newer than the ASM bundled with Gradle reads, or damaged - is left
+     * out with a warning rather than failing the build: its views are then expanded when rendered,
+     * as they were before any was compiled, which works on the JVM and not in a native image.
+     */
+    private Controller readController(byte[] bytes, String origin, ClassLoader resources, Map<String, Boolean> ancestors) {
         ClassReader reader
         try {
             reader = new ClassReader(bytes)
         }
         catch (IllegalArgumentException | IndexOutOfBoundsException e) {
-            logger.info('Could not read a controller from {}: {}', source ?: 'the application', e.message)
+            logger.warn('Could not read {}, so if it is a scaffolded controller no page is compiled for it and its views are ' +
+                    'expanded when rendered, which a native image cannot do: {}', origin, e.message)
             return null
         }
         String domain = readScaffoldDomain(reader)
@@ -379,7 +385,7 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
     /**
      * Superclasses can come from dependencies, whose class files may be newer than the bundled ASM
      * reads, or whose bytecode may be damaged or unreadable. One that cannot be read is taken to
-     * declare no namespace rather than failing the build.
+     * declare no namespace, with a warning, rather than failing the build.
      */
     private boolean ancestorHasNamespace(String internalName, ClassLoader resources, Map<String, Boolean> ancestors) {
         try {
@@ -391,8 +397,8 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
             return hasNamespace(reader, resources, ancestors)
         }
         catch (IllegalArgumentException | IOException | IndexOutOfBoundsException e) {
-            logger.info('Could not read {} to look for an inherited namespace; treating it as declaring none: {}',
-                    internalName.replace('/', '.'), e.message)
+            logger.warn('Could not read {} to look for a namespace its subclasses inherit, so none is assumed and no ' +
+                    'namespace-specific page is compiled for them: {}', internalName.replace('/', '.'), e.message)
             return false
         }
     }

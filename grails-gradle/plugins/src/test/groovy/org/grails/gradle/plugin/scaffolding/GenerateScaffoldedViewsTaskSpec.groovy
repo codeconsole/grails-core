@@ -356,6 +356,20 @@ class GenerateScaffoldedViewsTaskSpec extends Specification {
                     ['com.example.FromTrait/admin/show', 'com.example.Inherited/admin/show'] as Set
     }
 
+    void 'a controller that cannot be read is left out, and the others are still expanded'() {
+        given:
+            new File(classesDir, 'com/example').mkdirs()
+            new File(classesDir, 'com/example/DamagedController.class').bytes = [0xCA, 0xFE, 0xBA, 0xBE, 0, 0] as byte[]
+            writeController('UserController', 'User')
+            def task = task()
+
+        when:
+            task.generate()
+
+        then:
+            handed(task).keySet()*.tokenize('/')*.first().unique() == ['com.example.User']
+    }
+
     void 'a superclass that cannot be read is taken to declare no namespace'() {
         given:
             writeTemplateJar(templateJar, [show: 'show ${className}', 'admin/show': 'admin show ${className}'])
