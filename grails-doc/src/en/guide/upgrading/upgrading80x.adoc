@@ -4102,3 +4102,26 @@ If you order the Spring Security chain ahead of `GrailsFilters.FIRST`, its heade
 Filters ordered ahead of `GrailsFilters.FIRST`, such as Spring Boot's forwarded-header filter and, in a WAR deployment, its `ErrorPageFilter`, run outside the Grails filter, so a response one of them serves itself receives no default headers.
 If a reverse proxy in front of the application already sends these headers (for example through nginx's `add_header`), set `grails.security.headers.defaults: auto` so requests that arrive through the proxy (detected from forwarded request headers, `server.forward-headers-strategy`, or an active cloud platform) receive only the headers you configure explicitly, or strip the application's copies at the proxy.
 To disable or customize the Grails defaults, configure `grails.security.headers.*`; see the Security guide's HTTP Security Headers section for the full list and the reverse-proxy guidance.
+
+==== 74. Scaffolded Views Are Compiled With the Application
+
+In Grails 7 a scaffolded view was expanded from its template and compiled on the first request that asked
+for it. In Grails 8, a project with a controller annotated `@Scaffold` has those pages expanded at build time
+by the `generateScaffoldedViews` task and compiled by `compileGroovyPages` with the rest of its views, under
+a `grails-scaffolded` directory that no controller's views resolve from. The resolver still chooses the
+template for a request exactly as before, and serves the page compiled from that template when there is one,
+so a request gets the same page it did. Which pages are compiled, and what happens to the others, is
+described in the link:scaffolding.html[Scaffolding] guide.
+
+Such a project compiles its views from a copy staged by the `stageGroovyPages` task, holding
+`grails-app/views` and the expanded pages, rather than from `grails-app/views` itself. A build that sets the
+`source` of `compileGroovyPages` itself replaces that copy, and compiles no scaffolded page.
+
+A page that cannot be compiled does not fail the build: it is left out, the build output names it, and it is
+expanded when it is first rendered, as in Grails 7.
+
+The `generateScaffoldedViews` task of 8.0.0-RC1 wrote pages into the controllers' view directories and had
+`templateClasspath` and `applicationViews` properties. Both are gone: the templates are read from the
+`runtimeClasspath` the pages are expanded on, and a view the application declares needs no exclusion, since
+it takes precedence over any scaffolded page when a request is resolved. A build that configures either
+property fails with an unknown property; remove the setting.
