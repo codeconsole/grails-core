@@ -417,13 +417,23 @@ class ActionAnnotations {
     }
 
     /**
-     * Grails compiles an action into more than one method where it takes parameters, so every
-     * method of that name is consulted rather than only the first found.
+     * The methods an action is declared as, in the most derived class declaring it: an action a
+     * controller overrides, such as a {@code RestfulController} one, is declared by the override,
+     * whatever parameters the one it overrides takes. Grails compiles an action into more than one
+     * method where it takes parameters, so every method of that name the class declares is consulted.
      */
     private static List<Method> actionMethods(Class<?> controllerClass, String actionName) {
         if (controllerClass == null || !actionName) {
             return Collections.<Method> emptyList()
         }
-        controllerClass.methods.findAll { Method it -> it.name == actionName }.toList()
+        for (Class<?> type = controllerClass; type != null && type != Object; type = type.superclass) {
+            List<Method> declared = type.declaredMethods.findAll { Method it ->
+                it.name == actionName && Modifier.isPublic(it.modifiers) && !it.synthetic
+            }.toList()
+            if (declared) {
+                return declared
+            }
+        }
+        Collections.<Method> emptyList()
     }
 }

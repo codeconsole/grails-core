@@ -20,6 +20,7 @@ package org.grails.openapi.springdoc
 
 import java.lang.reflect.Method
 
+import io.swagger.v3.oas.annotations.Operation as OperationAnnotation
 import io.swagger.v3.oas.models.Components
 import io.swagger.v3.oas.models.OpenAPI
 import io.swagger.v3.oas.models.Operation
@@ -35,6 +36,7 @@ import org.springdoc.webmvc.api.MultipleOpenApiWebMvcResource
 import org.springframework.beans.factory.support.DefaultListableBeanFactory
 import org.springframework.web.method.HandlerMethod
 
+import grails.artefact.Artefact
 import grails.openapi.GrailsOpenApiGenerator
 import grails.openapi.OpenApiSelection
 import grails.openapi.OpenApiFixture
@@ -42,6 +44,7 @@ import grails.openapi.WidgetController
 import grails.openapi.Widget
 import grails.openapi.Crate
 import grails.openapi.namespaced.v1.GateController
+import grails.rest.RestfulController
 
 import spock.lang.Specification
 
@@ -94,6 +97,23 @@ class GroupedOpenApiContributorSpec extends Specification {
         then:
         openApi.paths['/widgets/{id}'].get
         openApi.paths['/widgets/{id}'].delete == null
+    }
+
+    void 'gives a method filter the action a controller overrides, as the controller declares it'() {
+        given: 'a filter describing only the actions annotated with @Operation'
+        def customizers = customizers(methodFilters: [
+                { Method action -> action.isAnnotationPresent(OperationAnnotation) } as OpenApiMethodFilter])
+        def generator = OpenApiFixture.generator(OpenApiFixture.holder { '/widgets'(resources: 'annotatedWidget') },
+                OpenApiFixture.application([AnnotatedWidgetController]), OpenApiFixture.context([Widget, Crate]))
+
+        when:
+        def openApi = generator.generate(SpringdocSelection.defaultSelection(new OpenApiSelection(), customizers))
+
+        then: 'the override, which is annotated, rather than the action it overrides'
+        openApi.paths['/widgets'].get.summary == 'Fetch all widgets'
+
+        and: 'an action it does not override, which is not annotated, is left out'
+        !openApi.paths['/widgets/{id}']?.get
     }
 
     void 'applies the operation customizers of a group, and the global ones, to the Grails operations'() {
@@ -299,5 +319,19 @@ class GroupedOpenApiContributorSpec extends Specification {
             '/widgets'(resources: 'widget')
             '/gate'(controller: 'gate', action: 'index', namespace: 'v1')
         }, application, OpenApiFixture.context([Widget, Crate]))
+    }
+}
+
+@Artefact('Controller')
+class AnnotatedWidgetController extends RestfulController<Widget> {
+
+    AnnotatedWidgetController() {
+        super(Widget)
+    }
+
+    @OperationAnnotation(summary = 'Fetch all widgets')
+    @Override
+    Object index() {
+        super.index(10)
     }
 }
