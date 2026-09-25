@@ -136,21 +136,24 @@ class GroovyPagePluginFunctionalSpec extends GradleSpecification {
         new File(projectDir, 'build.gradle').append("""
             dependencies {
                 implementation localGroovy()
+                implementation files('compiler')
                 runtimeOnly files('generator')
                 runtimeOnly files('theme')
             }
             sourceSets.main.groovy.srcDir('grails-app/controllers')
-            tasks.register('inspectGeneratedPages') {
-                def compile = tasks.named('compileGroovyPages')
-                doLast { println "GENERATED_DIRECTORIES=\${compile.get().generatedDirectories.get()}" }
+            tasks.named('compileGroovyPages') {
+                compileOptions.encoding.set('ISO-8859-1')
             }
         """)
-        // The generator the task runs comes from grails-scaffolding, which this build cannot depend
-        // on; the tests' stand-in records what it is handed instead.
-        String generator = 'org/apache/grails/scaffolding/ScaffoldedPagesGenerator.class'
-        File generatorClass = new File(projectDir, "generator/${generator}")
-        generatorClass.parentFile.mkdirs()
-        generatorClass.bytes = getClass().classLoader.getResource(generator).bytes
+        // The generator the task runs comes from grails-scaffolding, and the page compiler from
+        // grails-web-gsp, which this build cannot depend on; the tests' stand-ins record what they
+        // are handed instead.
+        ['generator': 'org/apache/grails/scaffolding/ScaffoldedPagesGenerator.class',
+         'compiler' : 'org/grails/web/pages/GroovyPageForkedCompiler.class'].each { String dir, String standIn ->
+            File standInClass = new File(projectDir, "${dir}/${standIn}")
+            standInClass.parentFile.mkdirs()
+            standInClass.bytes = getClass().classLoader.getResource(standIn).bytes
+        }
         // Only the annotation's bytecode is read by the task; no application is started.
         Map<String, String> sources = [
             'src/main/groovy/grails/plugin/scaffolding/annotation/Scaffold.groovy': """
@@ -221,11 +224,16 @@ class GroovyPagePluginFunctionalSpec extends GradleSpecification {
         pagesOf('java.lang.Integer') == ['show.gsp': ['show ${className}', 'theme show ${className}'],
                                          'edit.gsp': 'resources edit ${className}', 'list.gsp': 'theme list ${className}']
 
-        when:
-        def inspection = executeTask('inspectGeneratedPages')
+        and: 'they are written in the encoding they are compiled with'
+        new File(staged, 'encoding.txt').text == 'ISO-8859-1'
 
-        then: 'a scaffolded page that does not compile is left to runtime rather than failing the build'
-        inspection.output.contains('GENERATED_DIRECTORIES=[grails-scaffolded]')
+        when:
+        def compilation = executeTask('compileGroovyPages')
+
+        then: 'the page compiler is told which pages are generated, so one that does not compile is left out rather than failing the build'
+        assertTaskSuccess('compileGroovyPages', compilation)
+        new File(projectDir, 'build/gsp-classes/main/compiler.txt').readLines('UTF-8') ==
+                ['generatedDirectories=grails-scaffolded', 'encoding=ISO-8859-1']
 
         when: 'a template override is edited'
         new File(projectDir, 'src/main/templates/scaffolding/show.gsp').text = 'edited show ${className}'
