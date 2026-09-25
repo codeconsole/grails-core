@@ -17,6 +17,8 @@
  *  under the License.
  */
 
+import org.grails.gradle.plugin.commands.ApplicationContextCommandTask
+
 plugins {
     id 'org.apache.grails.buildsrc.properties'
     id 'org.apache.grails.buildsrc.dependency-validator'
@@ -50,9 +52,19 @@ apply {
     from rootProject.layout.projectDirectory.file('gradle/grails-extension-gradle-config.gradle')
 }
 
-// The description the generateOpenApi task, which Grails registers for the generate-open-api
-// command, writes, compared by the functional tests with what the application answers.
+// The description the generate-open-api command writes, compared by the functional tests with
+// what the application answers. Grails registers a generateOpenApi task only for a command jar
+// already built when the project is configured, which grails-openapi is not in a clean build of
+// this repository, so the command is run through a task of its own.
+def generatedOpenApi = layout.buildDirectory.dir('openapi')
+def generateOpenApi = tasks.register('generateOpenApiDocument', ApplicationContextCommandTask) {
+    classpath = sourceSets.main.runtimeClasspath + configurations.grailsCliClasspath
+    command = 'generate-open-api'
+    args("--output-directory=${generatedOpenApi.get().asFile.absolutePath}", 'openapirest.Application')
+    outputs.dir(generatedOpenApi)
+}
+
 tasks.named('integrationTest', Test) {
-    dependsOn('generateOpenApi')
-    systemProperty('openapi.generated.directory', layout.buildDirectory.dir('openapi').get().asFile.absolutePath)
+    dependsOn(generateOpenApi)
+    systemProperty('openapi.generated.directory', generatedOpenApi.get().asFile.absolutePath)
 }
