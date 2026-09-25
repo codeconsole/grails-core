@@ -35,12 +35,13 @@ import groovy.text.GStringTemplateEngine;
  *
  * <p>The build and the resolver both come here, so a page is expanded and named by the same code
  * whichever of them does it. A page is named for the template's path, for readability, and for a
- * digest of the template and of every name of the model the template mentions. Two expansions
- * share a name only when their inputs are identical, so a template the build did not see names a
- * page that does not exist rather than a different one. A name the template never mentions cannot
- * change what it expands to, and is left out, so a value that differs between the machine that
- * built the application and the one running it - {@code packagePath} follows the file separator -
- * does not cost the page.</p>
+ * digest of the template and of the value of each name of the model the template mentions. A
+ * template the build did not see, or saw expanded with a different model, so names a page that
+ * does not exist rather than a different one. A name the template never mentions is left out, so
+ * that a value that differs between the machine that built the application and the one running it
+ * - {@code packagePath} follows the file separator - does not cost the page; a template that reads
+ * the model without naming what it reads, through {@code binding} for instance, is named as though
+ * it did not read it.</p>
  *
  * @since 8.0
  */
