@@ -33,7 +33,10 @@ import org.springdoc.core.filters.GlobalOpenApiMethodFilter
 import org.springdoc.core.filters.OpenApiMethodFilter
 import org.springdoc.core.models.GroupedOpenApi
 import org.springdoc.webmvc.api.MultipleOpenApiWebMvcResource
+import org.springframework.beans.factory.config.BeanDefinition
 import org.springframework.beans.factory.support.DefaultListableBeanFactory
+import org.springframework.beans.factory.support.RootBeanDefinition
+import org.springframework.context.support.GenericApplicationContext
 import org.springframework.web.method.HandlerMethod
 
 import grails.artefact.Artefact
@@ -114,6 +117,36 @@ class GroupedOpenApiContributorSpec extends Specification {
 
         and: 'an action it does not override, which is not annotated, is left out'
         !openApi.paths['/widgets/{id}']?.get
+    }
+
+    void 'describes a controller that is not a singleton without creating it'() {
+        given: 'a controller in the prototype scope, and a customizer reading the handler of each operation'
+        CountedWidgetController.created = 0
+        def context = new GenericApplicationContext()
+        def definition = new RootBeanDefinition(CountedWidgetController)
+        definition.scope = BeanDefinition.SCOPE_PROTOTYPE
+        context.registerBeanDefinition(CountedWidgetController.name, definition)
+        context.refresh()
+        def application = OpenApiFixture.application([CountedWidgetController]).tap { it.mainContext = context }
+        def customizers = customizers(operationCustomizers: [{ Operation operation, HandlerMethod handlerMethod ->
+            operation.addExtension('x-controller', handlerMethod.beanType.simpleName)
+            operation
+        } as OperationCustomizer])
+        def generator = OpenApiFixture.generator(OpenApiFixture.holder { '/widgets'(resources: 'countedWidget') },
+                application, OpenApiFixture.context([Widget, Crate]))
+
+        when: 'two documents are described'
+        generator.generate(SpringdocSelection.defaultSelection(new OpenApiSelection(), customizers))
+        def openApi = generator.generate(SpringdocSelection.defaultSelection(new OpenApiSelection(), customizers))
+
+        then: 'no controller was created'
+        CountedWidgetController.created == 0
+
+        and: 'a customizer is still given the controller handling each operation'
+        openApi.paths['/widgets'].get.extensions['x-controller'] == 'CountedWidgetController'
+
+        cleanup:
+        context?.close()
     }
 
     void 'applies the operation customizers of a group, and the global ones, to the Grails operations'() {
@@ -333,5 +366,16 @@ class AnnotatedWidgetController extends RestfulController<Widget> {
     @Override
     Object index() {
         super.index(10)
+    }
+}
+
+@Artefact('Controller')
+class CountedWidgetController extends RestfulController<Widget> {
+
+    static int created
+
+    CountedWidgetController() {
+        super(Widget)
+        created++
     }
 }

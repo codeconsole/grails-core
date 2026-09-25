@@ -34,9 +34,12 @@ import org.springdoc.core.filters.GlobalOpenApiMethodFilter
 import org.springdoc.core.filters.OpenApiMethodFilter
 import org.springdoc.core.models.GroupedOpenApi
 import org.springframework.beans.factory.BeanFactory
+import org.springframework.context.ApplicationContext
 import org.springframework.web.method.HandlerMethod
 
+import grails.core.GrailsControllerClass
 import grails.openapi.OpenApiSelection
+import org.grails.openapi.ActionHooks
 
 /**
  * What a document springdoc serves selects: its criteria, and the method filters and operation
@@ -46,7 +49,7 @@ import grails.openapi.OpenApiSelection
  * none, is skipped and logged, rather than the action it was applied to.</p>
  */
 @CompileStatic
-class SpringdocSelection extends OpenApiSelection {
+class SpringdocSelection extends OpenApiSelection implements ActionHooks {
 
     private static final Logger LOG = LoggerFactory.getLogger(SpringdocSelection)
 
@@ -104,7 +107,7 @@ class SpringdocSelection extends OpenApiSelection {
     }
 
     @Override
-    protected boolean selectsAction(Method action) {
+    boolean selectsAction(Method action) {
         if (action == null) {
             return true
         }
@@ -113,14 +116,16 @@ class SpringdocSelection extends OpenApiSelection {
 
     /**
      * A customizer is given the handler method springdoc would give it for a Spring MVC endpoint:
-     * the controller, and the method the action is declared as.
+     * the controller bean, by name, as Spring MVC registers a handler, and the method the action is
+     * declared as. The controller is not created for it.
      */
     @Override
-    protected Operation customize(Operation operation, Components components, Object controller, Method action) {
-        if (controller == null || action == null) {
+    Operation customize(Operation operation, Components components, GrailsControllerClass controller, Method action) {
+        ApplicationContext context = controller?.application?.mainContext
+        if (context == null || action == null || !context.containsBean(controller.fullName)) {
             return operation
         }
-        HandlerMethod handlerMethod = new HandlerMethod(controller, action)
+        HandlerMethod handlerMethod = new HandlerMethod(controller.fullName, context, action)
         Operation customized = operation
         for (OperationCustomizer customizer : operationCustomizers) {
             if (customized == null) {

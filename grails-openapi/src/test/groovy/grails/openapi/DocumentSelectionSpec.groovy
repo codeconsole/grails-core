@@ -28,10 +28,12 @@ import io.swagger.v3.oas.models.OpenAPI
 import io.swagger.v3.oas.models.PathItem
 
 import grails.artefact.Artefact
+import grails.core.GrailsControllerClass
 import grails.gorm.annotation.Entity
 import grails.openapi.namespaced.v1.GateController as V1GateController
 import grails.openapi.namespaced.v2.GateController as V2GateController
 import grails.rest.RestfulController
+import org.grails.openapi.ActionHooks
 
 import spock.lang.Specification
 
@@ -128,13 +130,10 @@ class DocumentSelectionSpec extends Specification {
     void 'selects the actions a selection includes, by the method each is declared as'() {
         given:
         List<Method> filtered = []
-        def selection = new OpenApiSelection() {
-            @Override
-            protected boolean selectsAction(Method action) {
-                filtered << action
-                action.name != 'delete'
-            }
-        }
+        def selection = new HookedSelection(selects: { Method action ->
+            filtered << action
+            action.name != 'delete'
+        })
 
         when:
         def openApi = OpenApiFixture.generator(OpenApiFixture.holder(MAPPINGS),
@@ -153,14 +152,11 @@ class DocumentSelectionSpec extends Specification {
 
     void 'customizes each operation with the controller and the action serving it'() {
         given:
-        def selection = new OpenApiSelection() {
-            @Override
-            protected Operation customize(Operation operation, Components components, Object controller, Method action) {
-                action.name == 'delete'
-                        ? null
-                        : operation.summary("${controller.getClass().simpleName}.${action.name}(${action.parameterCount})".toString())
-            }
-        }
+        def selection = new HookedSelection(customizes: { Operation operation, GrailsControllerClass controller, Method action ->
+            action.name == 'delete'
+                    ? null
+                    : operation.summary("${controller.clazz.simpleName}.${action.name}(${action.parameterCount})".toString())
+        })
         def application = OpenApiFixture.application([CrateStackController, PalletController],
                 [new CrateStackController(), new PalletController()])
 
@@ -181,15 +177,12 @@ class DocumentSelectionSpec extends Specification {
 
     void 'leaves out only the operation of an action that cannot be described'() {
         given: 'an action whose method refers to a class that is not on the classpath'
-        def selection = new OpenApiSelection() {
-            @Override
-            protected Operation customize(Operation operation, Components components, Object controller, Method action) {
-                if (action?.name == 'delete') {
-                    throw new NoClassDefFoundError('com/example/Missing')
-                }
-                operation
+        def selection = new HookedSelection(customizes: { Operation operation, GrailsControllerClass controller, Method action ->
+            if (action?.name == 'delete') {
+                throw new NoClassDefFoundError('com/example/Missing')
             }
-        }
+            operation
+        })
 
         when:
         def openApi = OpenApiFixture.generator(OpenApiFixture.holder { '/crates'(resources: 'crateStack') },
@@ -299,4 +292,23 @@ class CrateStackController extends RestfulController<CrateStack> {
 @Artefact('Controller')
 class PalletController extends RestfulController<Pallet> {
     PalletController() { super(Pallet) }
+}
+
+/**
+ * A selection deciding by the action and customizing each operation, as springdoc's is.
+ */
+class HookedSelection extends OpenApiSelection implements ActionHooks {
+
+    Closure<Boolean> selects = { Method action -> true }
+    Closure<Operation> customizes = { Operation operation, GrailsControllerClass controller, Method action -> operation }
+
+    @Override
+    boolean selectsAction(Method action) {
+        selects.call(action)
+    }
+
+    @Override
+    Operation customize(Operation operation, Components components, GrailsControllerClass controller, Method action) {
+        customizes.call(operation, controller, action)
+    }
 }

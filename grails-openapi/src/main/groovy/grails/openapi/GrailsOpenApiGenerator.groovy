@@ -49,6 +49,7 @@ import grails.web.mapping.UrlMapping
 import grails.web.mapping.UrlMappingsHolder
 import org.grails.datastore.mapping.model.MappingContext
 import org.grails.openapi.ActionAnnotations
+import org.grails.openapi.ActionHooks
 import org.grails.openapi.BaseDocument
 import org.grails.openapi.ComponentSchemas
 import org.grails.openapi.ControllerCatalog
@@ -208,6 +209,7 @@ class GrailsOpenApiGenerator {
 
         private final OpenAPI openApi
         private final OpenApiSelection selection
+        private final ActionHooks hooks
         private final boolean openapi31
         private final Components components
         private final Paths paths
@@ -221,6 +223,8 @@ class GrailsOpenApiGenerator {
         Contribution(OpenAPI openApi, OpenApiSelection selection) {
             this.openApi = openApi
             this.selection = selection
+            // What springdoc decides by the action itself, where the selection is springdoc's.
+            this.hooks = selection instanceof ActionHooks ? (ActionHooks) selection : null
             this.openapi31 = openApi.specVersion == SpecVersion.V31
             this.components = openApi.components ?: new Components()
             this.paths = openApi.paths ?: new Paths()
@@ -496,7 +500,7 @@ class GrailsOpenApiGenerator {
                                   GrailsControllerClass controller, Class<?> controllerType, String controllerName,
                                   String actionName, String operationId) {
             Method action = ActionAnnotations.actionMethod(controllerType, actionName)
-            if (!selection.selects(path, controllerType) || !selection.selectsAction(action)) {
+            if (!selection.selects(path, controllerType) || (hooks != null && !hooks.selectsAction(action))) {
                 return
             }
             PathItem pathItem = paths.get(path) ?: new PathItem()
@@ -521,10 +525,11 @@ class GrailsOpenApiGenerator {
                 OperationParameters.addVersionParameter(operation, version, !versions.isLatest(mapping, version))
             }
             ActionAnnotations.apply(operation, controllerType, actionName, components, openapi31)
-            operation = selection.customize(operation, components,
-                    controller != null ? controllers.instance(controller) : null, action)
-            if (operation == null) {
-                return
+            if (hooks != null) {
+                operation = hooks.customize(operation, components, controller, action)
+                if (operation == null) {
+                    return
+                }
             }
             pathItem.operation(method, operation)
             paths.addPathItem(path, pathItem)

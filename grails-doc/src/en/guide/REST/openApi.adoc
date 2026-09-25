@@ -751,6 +751,9 @@ bodies, and the paging of its listing.
   the document. An operation that referred to it is described without a shape rather than with a
   reference that does not resolve. A class whose constraints cannot be evaluated is described
   without them, and logged.
+* A `RestfulController` is known to be read only from the controller the application serves
+  requests with, which is not created to be described, so one in a scope other than singleton is
+  described with its write actions.
 * A resource is described as Grails renders a domain class or an object by default. A JSON view,
   other than the errors view, or a custom renderer that renders another shape is described with
   `@ApiResponse`.

@@ -184,7 +184,8 @@ class ControllerCatalog {
 
     /**
      * Grails registers a controller under its class name, which a subclass controller does not
-     * share, where a lookup by type would find both.
+     * share, where a lookup by type would find both. A controller in a scope other than singleton
+     * would be created for the lookup, so it is not looked up.
      */
     private Object lookUp(GrailsControllerClass controller) {
         ApplicationContext context = grailsApplication?.mainContext
@@ -192,9 +193,10 @@ class ControllerCatalog {
             return null
         }
         try {
-            return context.containsBean(controller.fullName)
-                    ? context.getBean(controller.fullName)
-                    : context.getBean(controller.clazz)
+            String name = context.containsBean(controller.fullName)
+                    ? controller.fullName
+                    : context.getBeanNamesForType(controller.clazz).find()
+            return name != null && context.isSingleton(name) ? context.getBean(name) : null
         }
         catch (RuntimeException ignored) {
             return null

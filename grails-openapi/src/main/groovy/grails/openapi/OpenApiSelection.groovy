@@ -18,13 +18,9 @@
  */
 package grails.openapi
 
-import java.lang.reflect.Method
-
 import groovy.transform.CompileStatic
 import groovy.transform.PackageScope
 
-import io.swagger.v3.oas.models.Components
-import io.swagger.v3.oas.models.Operation
 import org.springframework.util.AntPathMatcher
 
 /**
@@ -40,10 +36,6 @@ import org.springframework.util.AntPathMatcher
  * operation, and matches its sub-packages too. A media type or header criterion is matched the way
  * springdoc matches a handler method: an operation matches only where it produces, consumes, or
  * declares exactly what the criterion lists. A criterion left empty selects everything.</p>
- *
- * <p>A subclass can decide by the action itself, and customize each operation, by overriding
- * {@link #selectsAction} and {@link #customize}; springdoc's method filters and operation
- * customizers are applied that way.</p>
  *
  * @since 8.0
  */
@@ -115,28 +107,6 @@ class OpenApiSelection {
         producesToMatch = new ArrayList<String>(criteria.producesToMatch)
         consumesToMatch = new ArrayList<String>(criteria.consumesToMatch)
         headersToMatch = new ArrayList<String>(criteria.headersToMatch)
-    }
-
-    /**
-     * Whether the action serving an operation is described, decided by the method it is declared
-     * as. Every action is.
-     *
-     * @param action the method the action is declared as, the one taking its parameters
-     */
-    protected boolean selectsAction(Method action) {
-        true
-    }
-
-    /**
-     * Customizes an operation the document describes, once the annotations of its action are
-     * applied. The operation is described as it is.
-     *
-     * @param controller the controller serving the action, where the application context holds one
-     * @param action the method the action is declared as, if known
-     * @return the operation to describe, or {@code null} to leave it out
-     */
-    protected Operation customize(Operation operation, Components components, Object controller, Method action) {
-        operation
     }
 
     @PackageScope
