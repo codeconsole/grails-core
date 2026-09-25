@@ -24,7 +24,7 @@ import org.springframework.context.support.StaticMessageSource
 import org.springframework.core.env.Environment
 
 import spock.lang.Specification
-import testing.included.IncludedGreeting
+import testing.included.RegisteredGreeting
 
 class TestMessageSource extends StaticMessageSource {
 }
@@ -48,14 +48,14 @@ class IncludedPluginBeanOverBeansBlockSpec extends Specification implements Grai
     }
 
     def beans = {
-        bean('registeredGreeting', IncludedGreeting) {
-            new IncludedGreeting(text: 'from the test')
+        bean('registeredGreeting', RegisteredGreeting) {
+            new RegisteredGreeting(text: 'from the test')
         }
     }
 
     void "an included plugin's bean wins over a beans block bean of the same name, as it does over an application's at boot"() {
         expect:
-        applicationContext.getBean('registeredGreeting', IncludedGreeting).text == 'from the plugin'
+        applicationContext.getBean('registeredGreeting', RegisteredGreeting).text == 'from the plugin'
     }
 }
 
@@ -67,14 +67,14 @@ class BeanRegistrarOverIncludedPluginBeanSpec extends Specification implements G
 
     BeanRegistrar beanRegistrar() {
         return { BeanRegistry registry, Environment environment ->
-            registry.registerBean('registeredGreeting', IncludedGreeting) { BeanRegistry.Spec<IncludedGreeting> spec ->
-                spec.supplier { new IncludedGreeting(text: 'from the test') }
+            registry.registerBean('registeredGreeting', RegisteredGreeting) { BeanRegistry.Spec<RegisteredGreeting> spec ->
+                spec.supplier { new RegisteredGreeting(text: 'from the test') }
             }
         } as BeanRegistrar
     }
 
     void "the test's beanRegistrar() replaces an included plugin's bean"() {
         expect:
-        applicationContext.getBean('registeredGreeting', IncludedGreeting).text == 'from the test'
+        applicationContext.getBean('registeredGreeting', RegisteredGreeting).text == 'from the test'
     }
 }

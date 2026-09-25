@@ -149,6 +149,8 @@ Set<String> getIncludePlugins() {
 
 WARNING: If you override this method, the default plugins will not be included. The default plugins are `core` and `eventBus`. If you want to add a plugin in addition to the defaults, add the defaults to your list.
 
+WARNING: A unit test registers an included plugin's `doWithSpring` and `beanRegistrar` beans after the configuration classes are read. An application's early phase registers them first. So in a test a `@ConditionalOnMissingBean` bean does not back off from them, whether it is the plugin's own (from its `beans` block) or the test's, and both beans are registered where an application would have one. Look such a bean up by name rather than by type.
+
 NOTE: A plugin's `beans` block is found by the name `@GrailsBeans` gives the class it compiles to by default. A plugin that names that class itself, with `@GrailsBeans(autoConfigurationName = ...)`, is not matched; register the class through `getConfigurationClasses` instead. The framework's own auto-configurations are registered whichever plugins are included.
 
 ==== Other Spring configuration
