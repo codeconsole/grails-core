@@ -70,6 +70,9 @@ dependencies {
     // Optional: when an application adds springdoc, the description is contributed to the
     // documents springdoc serves
     compileOnly 'org.springdoc:springdoc-openapi-starter-webmvc-api'
+    // Optional: where an application renders with JSON views, the validation errors are described
+    // as its errors view renders them
+    compileOnly project(':grails-views-gson')
 
     // the cli tier - published separately as org.apache.grails:grails-openapi-cli, carrying the
     // generate-open-api command
