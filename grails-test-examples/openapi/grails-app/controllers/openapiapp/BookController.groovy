@@ -34,7 +34,7 @@ class BookController extends RestfulController<Book> {
         super(Book)
     }
 
-    @Operation(summary = 'List the catalogue')
+    @Operation(summary = 'List the catalog')
     @Parameter(name = 'genre', in = ParameterIn.QUERY, description = 'Only books of this genre')
     @Override
     Object index(Integer max) {

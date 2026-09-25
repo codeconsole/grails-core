@@ -38,7 +38,7 @@ class BuildTimeDocumentFunctionalSpec extends Specification implements HttpClien
     void 'the default document and each group are written'() {
         expect:
         new File(directory, 'openapi.yaml').file
-        new File(directory, 'openapi-catalogue.yaml').file
+        new File(directory, 'openapi-catalog.yaml').file
         new File(directory, 'openapi-authors.yaml').file
         new File(directory, 'openapi-author-changes.yaml').file
         new File(directory, 'openapi-book-reads.yaml').file
@@ -68,7 +68,7 @@ class BuildTimeDocumentFunctionalSpec extends Specification implements HttpClien
         documentExtensions(generated) == documentExtensions(served)
 
         where:
-        group << ['catalogue', 'authors', 'author-changes', 'book-reads']
+        group << ['catalog', 'authors', 'author-changes', 'book-reads']
     }
 
     private static Map<String, Set<String>> operations(Map document) {

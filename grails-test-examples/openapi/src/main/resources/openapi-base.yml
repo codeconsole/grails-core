@@ -18,8 +18,8 @@
 #
 openapi: 3.1.0
 info:
-  title: Catalogue API
-  description: The books and authors of the catalogue.
+  title: Catalog API
+  description: The books and authors of the catalog.
   version: 2.0.0
 security:
   - Bearer: []

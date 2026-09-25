@@ -58,7 +58,7 @@ class ActionAnnotationSpec extends Specification {
         then:
         with(openApi.paths['/annotated/index'].get) {
             summary == 'List the widgets'
-            description == 'Returns every widget in the catalogue.'
+            description == 'Returns every widget in the catalog.'
         }
     }
 
@@ -72,7 +72,7 @@ class ActionAnnotationSpec extends Specification {
         then:
         with(openApi.paths['/annotated/index'].get) {
             operationId == 'listWidgets'
-            tags == ['Catalogue']
+            tags == ['Catalog']
         }
     }
 
@@ -139,10 +139,10 @@ class ActionAnnotationSpec extends Specification {
         mappedCustomizer().contribute(openApi, null)
 
         then: 'the summary and tags come from the annotation'
-        with(openApi.paths['/catalogue'].get) {
+        with(openApi.paths['/catalog'].get) {
             summary == 'List the widgets'
             operationId == 'listWidgets'
-            tags == ['Catalogue']
+            tags == ['Catalog']
         }
     }
 
@@ -154,10 +154,10 @@ class ActionAnnotationSpec extends Specification {
         mappedCustomizer().contribute(openApi, null)
 
         then:
-        !openApi.paths.containsKey('/catalogue/{id}')
+        !openApi.paths.containsKey('/catalog/{id}')
 
         and:
-        openApi.paths['/catalogue']
+        openApi.paths['/catalog']
     }
 
     private static GrailsOpenApiGenerator mappedCustomizer() {
@@ -165,8 +165,8 @@ class ActionAnnotationSpec extends Specification {
         def ctx = new MockApplicationContext()
         ctx.registerMockBean(GrailsApplication.APPLICATION_ID, application)
         def holder = new DefaultUrlMappingsHolder(new DefaultUrlMappingEvaluator(ctx).evaluateMappings {
-            get '/catalogue'(controller: 'annotated', action: 'index')
-            delete '/catalogue/$id'(controller: 'annotated', action: 'delete')
+            get '/catalog'(controller: 'annotated', action: 'index')
+            delete '/catalog/$id'(controller: 'annotated', action: 'delete')
         })
 
         MappingContext context = new KeyValueMappingContext('test')
@@ -186,7 +186,7 @@ class ActionAnnotationSpec extends Specification {
         then: 'the grouping carries its description, not only its name'
         with(openApi.tags.find { it.name == 'Widgets' }) {
             it
-            description == 'Everything in the catalogue'
+            description == 'Everything in the catalog'
         }
 
         and: 'and the operations appear under it, rather than under the controller name'
@@ -265,16 +265,16 @@ class AnnotatedWidget {
     String name
 }
 
-@TagAnnotation(name = 'Widgets', description = 'Everything in the catalogue')
+@TagAnnotation(name = 'Widgets', description = 'Everything in the catalog')
 @Artefact('Controller')
 class AnnotatedController extends RestfulController<AnnotatedWidget> {
 
     AnnotatedController() { super(AnnotatedWidget) }
 
     @OperationAnnotation(summary = 'List the widgets',
-            description = 'Returns every widget in the catalogue.',
+            description = 'Returns every widget in the catalog.',
             operationId = 'listWidgets',
-            tags = ['Catalogue'])
+            tags = ['Catalog'])
     @Override
     def index() { }
 

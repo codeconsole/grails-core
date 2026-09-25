@@ -88,7 +88,7 @@ class OpenApiDocumentFunctionalSpec extends Specification implements HttpClientS
 
     void 'the document starts from the configured base document'() {
         expect:
-        document.info.title == 'Catalogue API'
+        document.info.title == 'Catalog API'
         document.info.version == '2.0.0'
         document.security == [[Bearer: []]]
         document.components.securitySchemes.Bearer.scheme == 'bearer'
@@ -129,7 +129,7 @@ class OpenApiDocumentFunctionalSpec extends Specification implements HttpClientS
 
     void 'a group describes only what it selects'() {
         when:
-        Map group = http('/v3/api-docs/catalogue').json()
+        Map group = http('/v3/api-docs/catalog').json()
 
         then:
         group.paths.keySet() == ['/books', '/books/{id}'] as Set

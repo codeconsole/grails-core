@@ -301,7 +301,8 @@ class UrlMappings {
 }
 ----
 
-produces `GET` and `POST` on `/books`, and `GET`, `PUT`, `PATCH` and `DELETE` on `/books/{id}`.
+produces `GET` and `POST` on `/books`, and `GET`, `PUT`, `PATCH` and `DELETE` on `/books/{id}`, with
+`POST`, which Grails maps to `update` as well, where the controller's `allowedMethods` allows it.
 
 A `RestfulController` constructed read only answers `405` from its write actions, so only what it
 serves is described:
@@ -352,7 +353,8 @@ A mapping declared for a version is matched on the `Accept-Version` header a req
 ----
 
 A request asking for no version is answered by the highest version, so that is the one the default
-document describes, with an optional `Accept-Version` parameter naming it. A group describes another
+document describes, with an optional `Accept-Version` parameter naming it. Grails also takes the
+version from a `v` parameter of the `Accept` media type, which is not described. A group describes another
 version by selecting its header, and there the parameter is required:
 
 [source,yaml]
@@ -388,7 +390,7 @@ its package in the same way.
 ----
 import io.swagger.v3.oas.annotations.media.Schema
 
-@Schema(description = 'A book in the catalogue')
+@Schema(description = 'A book in the catalog')
 class Book {
 
     @Schema(description = 'Full title as printed', example = 'Dune')
@@ -715,3 +717,11 @@ bodies, and the paging of its listing.
 * A class that cannot be introspected is left out of the document and logged, rather than failing
   the document. An operation that referred to it is described without a shape rather than with a
   reference that does not resolve.
+* A resource is described as Grails renders a domain class or an object by default. A JSON view,
+  other than the errors view, or a custom renderer that renders another shape is described with
+  `@ApiResponse`.
+* A date is described as a `date-time`. Grails binds the formats `grails.databinding.dateFormats`
+  lists, which by default take a time in UTC, such as `2024-05-01T10:00:00Z`, but an offset only
+  with milliseconds, such as `2024-05-01T10:00:00.000+02:00`.
+* A variable capturing several segments, such as `$path**`, is described as a path parameter, which
+  OpenAPI allows only one segment; a client must not encode the `/` it holds.

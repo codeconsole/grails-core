@@ -151,6 +151,9 @@ class GrailsOpenApiGenerator {
         this.resourceLoader = grailsApplication?.mainContext ?: new DefaultResourceLoader(GrailsOpenApiGenerator.classLoader)
     }
 
+    /**
+     * @return the settings the generator describes the application with
+     */
     OpenApiSettings getSettings() {
         settings
     }
@@ -163,7 +166,7 @@ class GrailsOpenApiGenerator {
     }
 
     /**
-     * @param group the name of a group in {@code springdoc.group-configs}
+     * @param group the name of a group configured under {@code grails.openapi.groups}
      * @return the document of that group
      * @throws IllegalArgumentException if no such group is configured
      */
@@ -203,7 +206,10 @@ class GrailsOpenApiGenerator {
 
     /**
      * Adds the described operations, and the base document when one is configured, to a document
-     * something else has started.
+     * something else has started, such as springdoc.
+     *
+     * @param openApi the document to add to
+     * @param selection what the document selects, or {@code null} for everything
      */
     void contribute(OpenAPI openApi, OpenApiSelection selection) {
         if (!settings.enabled) {
@@ -216,7 +222,7 @@ class GrailsOpenApiGenerator {
     }
 
     /**
-     * Writes a document in the format its extension names: {@code .json} or YAML otherwise.
+     * Writes a document in the format named: {@code json}, or YAML otherwise.
      */
     static String serialize(OpenAPI openApi, String format) {
         boolean openapi31 = openApi.specVersion == SpecVersion.V31

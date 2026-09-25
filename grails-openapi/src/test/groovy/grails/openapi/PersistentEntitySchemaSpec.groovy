@@ -288,7 +288,7 @@ class PersistentEntitySchemaSpec extends Specification {
         customizer().contribute(openApi, null)
 
         then:
-        openApi.components.schemas['Widget'].description == 'A widget in the catalogue'
+        openApi.components.schemas['Widget'].description == 'A widget in the catalog'
     }
 
     void 'honors a Schema annotation on a property'() {
@@ -469,7 +469,7 @@ class CrateController extends RestfulController<Crate> {
     CrateController() { super(Crate) }
 }
 
-@SchemaAnnotation(description = 'A widget in the catalogue')
+@SchemaAnnotation(description = 'A widget in the catalog')
 @Entity
 class Widget {
     @SchemaAnnotation(description = 'The name shown to a customer', example = 'Sprocket')

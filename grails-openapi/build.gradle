@@ -42,6 +42,11 @@ cliArtifact {
     defaultDependencies = false
 }
 
+ext {
+    pomTitle = 'Grails OpenAPI Plugin'
+    pomDescription = 'Describes a Grails application as an OpenAPI document, at build time and through springdoc'
+}
+
 dependencies {
 
     implementation platform(project(':grails-bom'))

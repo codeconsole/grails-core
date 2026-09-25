@@ -41,6 +41,9 @@ import org.springframework.core.env.PropertySource
 @CompileStatic
 class OpenApiSettings {
 
+    /**
+     * The prefix of the settings.
+     */
     static final String PREFIX = 'grails.openapi'
 
     private static final String GROUPS_PREFIX = PREFIX + '.groups.'

@@ -23,7 +23,7 @@ grails:
     openapi:
         base-document: classpath:openapi-base.yml
         groups:
-            catalogue:
+            catalog:
                 paths-to-match: /books/**
 
 springdoc:
