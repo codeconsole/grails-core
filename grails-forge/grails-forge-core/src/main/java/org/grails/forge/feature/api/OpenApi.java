@@ -26,6 +26,8 @@ import org.grails.forge.feature.Category;
 import org.grails.forge.feature.Feature;
 import org.grails.forge.util.VersionInfo;
 
+import java.util.Map;
+
 /**
  * Publishes an OpenAPI description of the application's URL mappings, browsable with Swagger UI.
  *
@@ -47,7 +49,7 @@ public class OpenApi implements Feature {
     @Override
     public String getDescription() {
         return "Describes the application's URL mappings and domain classes as an OpenAPI document, " +
-                "served at /v3/api-docs and browsable at /swagger-ui/index.html.";
+                "served at /v3/api-docs and browsable at /swagger-ui/index.html outside production.";
     }
 
     @Override
@@ -60,6 +62,12 @@ public class OpenApi implements Feature {
                 .groupId("org.springdoc")
                 .artifactId("springdoc-openapi-starter-webmvc-ui")
                 .implementation());
+
+        // The document describes every endpoint and constraint to whoever can reach it, so it is
+        // not served in production unless the application chooses to.
+        Map<String, Object> config = generatorContext.getConfiguration();
+        config.put("environments.production.springdoc.api-docs.enabled", false);
+        config.put("environments.production.springdoc.swagger-ui.enabled", false);
     }
 
     @Override

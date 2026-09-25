@@ -126,7 +126,8 @@ WARNING: The runtime description is served to anyone who can reach the applicati
 every endpoint, resource and constraint it documents. Secure `/v3/api-docs/**` and
 `/swagger-ui/**` the way the application secures anything else, or disable them where they should
 not be served, for example in production with `springdoc.api-docs.enabled: false` and
-`springdoc.swagger-ui.enabled: false`. An application that only needs the description as a file
+`springdoc.swagger-ui.enabled: false`, which an application generated with the `openapi` feature
+sets for production. An application that only needs the description as a file
 can generate it at build time and leave springdoc out altogether. With the Spring Security plugin,
 whose default is to reject a request no rule matches, the paths need a rule of their own, such as
 an entry in `grails.plugin.springsecurity.controllerAnnotations.staticRules`.

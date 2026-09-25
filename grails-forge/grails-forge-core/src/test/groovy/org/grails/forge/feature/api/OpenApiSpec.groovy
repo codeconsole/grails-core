@@ -20,6 +20,7 @@ package org.grails.forge.feature.api
 import org.grails.forge.ApplicationContextSpec
 import org.grails.forge.BuildBuilder
 import org.grails.forge.application.ApplicationType
+import org.grails.forge.application.generator.GeneratorContext
 import org.grails.forge.feature.Features
 import org.grails.forge.fixture.CommandOutputFixture
 
@@ -44,6 +45,26 @@ class OpenApiSpec extends ApplicationContextSpec implements CommandOutputFixture
 
         and: 'springdoc, which serves the document and Swagger UI'
         template.contains('implementation "org.springdoc:springdoc-openapi-starter-webmvc-ui"')
+    }
+
+    void 'does not serve the document or Swagger UI in production'() {
+        when:
+        GeneratorContext ctx = buildGeneratorContext(['openapi'])
+
+        then:
+        ctx.configuration.get('environments.production.springdoc.api-docs.enabled') == false
+        ctx.configuration.get('environments.production.springdoc.swagger-ui.enabled') == false
+    }
+
+    void 'is offered for an application but not for a plugin'() {
+        when:
+        def feature = beanContext.getBean(OpenApi)
+
+        then:
+        feature.supports(ApplicationType.WEB)
+        feature.supports(ApplicationType.REST_API)
+        !feature.supports(ApplicationType.WEB_PLUGIN)
+        !feature.supports(ApplicationType.PLUGIN)
     }
 
     void 'the generated README links to the guide'() {
