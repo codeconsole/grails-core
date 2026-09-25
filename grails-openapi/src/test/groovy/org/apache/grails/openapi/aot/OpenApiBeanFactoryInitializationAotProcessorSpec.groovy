@@ -60,10 +60,14 @@ class OpenApiBeanFactoryInitializationAotProcessorSpec extends Specification {
 
         then:
         [ShelfController, NoticeController].every { Class<?> controller ->
-            RuntimeHintsPredicates.reflection().onType(controller)
-                    .withMemberCategories(MemberCategory.INVOKE_PUBLIC_METHODS, MemberCategory.ACCESS_DECLARED_FIELDS)
-                    .test(hints)
+            RuntimeHintsPredicates.reflection().onType(controller).withMemberCategories(MemberCategory.INVOKE_PUBLIC_METHODS,
+                    MemberCategory.INVOKE_DECLARED_METHODS, MemberCategory.ACCESS_DECLARED_FIELDS).test(hints)
         }
+
+        and: 'the classes a controller extends, whose actions it inherits, with their annotations and parameters'
+        RuntimeHintsPredicates.reflection().onMethodInvocation(RestfulController.getDeclaredMethod('index', Integer)).test(hints)
+        RuntimeHintsPredicates.reflection().onType(RestfulController).withMemberCategories(
+                MemberCategory.INVOKE_DECLARED_METHODS, MemberCategory.ACCESS_DECLARED_FIELDS).test(hints)
     }
 
     void 'keeps every type the description reaches from what the controllers serve and bind'() {
@@ -84,6 +88,9 @@ class OpenApiBeanFactoryInitializationAotProcessorSpec extends Specification {
         RuntimeHintsPredicates.reflection().onType(NoticeCommand)
                 .withMemberCategories(MemberCategory.INVOKE_PUBLIC_METHODS, MemberCategory.ACCESS_PUBLIC_FIELDS)
                 .test(hints)
+
+        and: 'with the private fields Groovy puts the annotations of its properties on'
+        RuntimeHintsPredicates.reflection().onFieldAccess(NoticeCommand.getDeclaredField('message')).test(hints)
     }
 
     void 'keeps the classes a kept type extends, whose members Jackson reads too'() {

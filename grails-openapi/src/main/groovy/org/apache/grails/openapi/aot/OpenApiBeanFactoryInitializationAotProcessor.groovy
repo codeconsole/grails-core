@@ -81,21 +81,25 @@ class OpenApiBeanFactoryInitializationAotProcessor implements BeanFactoryInitial
     private static final String SWAGGER_ANNOTATIONS = 'io.swagger.v3.oas.annotations.'
 
     /**
-     * What a controller is kept with: its actions and the static properties Grails reads its
-     * formats and allowed methods from.
+     * What a controller, and each class it extends, is kept with: the actions each declares, which
+     * the description reads with their annotations and parameters from the most derived class
+     * declaring them, and the static properties Grails reads its formats and allowed methods from.
      */
     private static final MemberCategory[] CONTROLLER_MEMBERS = [
             MemberCategory.INVOKE_PUBLIC_METHODS,
+            MemberCategory.INVOKE_DECLARED_METHODS,
             MemberCategory.ACCESS_DECLARED_FIELDS
     ] as MemberCategory[]
 
     /**
      * What a described type is kept with: the constraints a validateable type declares, read
-     * through a static method, and the properties Grails binds, read from a static field.
+     * through a static method, the properties Grails binds, read from a static field, and the
+     * fields Groovy puts the annotations of a property on, such as its {@code @Schema}.
      */
     private static final MemberCategory[] DESCRIBED_MEMBERS = [
             MemberCategory.INVOKE_PUBLIC_METHODS,
-            MemberCategory.ACCESS_PUBLIC_FIELDS
+            MemberCategory.ACCESS_PUBLIC_FIELDS,
+            MemberCategory.ACCESS_DECLARED_FIELDS
     ] as MemberCategory[]
 
     @Override
@@ -117,7 +121,9 @@ class OpenApiBeanFactoryInitializationAotProcessor implements BeanFactoryInitial
         return { GenerationContext generationContext, BeanFactoryInitializationCode code ->
             ReflectionHints reflection = generationContext.runtimeHints.reflection()
             for (Class<?> controller : controllers) {
-                reflection.registerType(controller, CONTROLLER_MEMBERS)
+                for (Class<?> current = controller; current != null && isApplicationType(current); current = current.superclass) {
+                    reflection.registerType(current, CONTROLLER_MEMBERS)
+                }
             }
             for (Class<?> type : described) {
                 reflection.registerType(type, DESCRIBED_MEMBERS)
