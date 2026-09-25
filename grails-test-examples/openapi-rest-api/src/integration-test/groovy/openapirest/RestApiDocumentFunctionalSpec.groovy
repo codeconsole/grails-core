@@ -98,6 +98,16 @@ class RestApiDocumentFunctionalSpec extends Specification implements HttpClientS
         ((List<Map>) ((Map) multiple._embedded).errors).every { Map error -> conforms(error, one) }
     }
 
+    void 'a failed validation in XML answers with the errors the converters render, described without a shape'() {
+        when:
+        def response = httpPostJson([Accept: 'text/xml'], '/book', '{"title":"Dawn"}')
+
+        then: 'the errors view renders only JSON'
+        response.assertStatus(422)
+        response.body().contains('<errors>')
+        described('post', '/book').responses['422'].content['text/xml'] == [:]
+    }
+
     private Map described(String method, String path) {
         (Map) ((Map) document.paths[path])[method]
     }

@@ -501,7 +501,10 @@ it answers with rather than a uniform `200`:
 A `422` answers with the validation errors Grails renders for a request that cannot be bound,
 described once as the `ValidationErrors` schema. Where a JSON view renders them, as the errors view
 of an application generated with JSON views does, they are described as that view renders them: one
-error with its message, path and link, or several embedded with their total. An application
+error with its message, path and link, or several embedded with their total. The errors view renders
+only JSON, so the errors the converters render in XML are then listed without a shape, as are those
+of a controller with an errors view of its own, such as `grails-app/views/book/_errors.gson`, and
+those JSON views render with the view for any object where there is no errors view. An application
 rendering its errors another way declares `ValidationErrors` in the base document, which is used in
 place of the one derived, or describes an action's errors with `@ApiResponse`.
 

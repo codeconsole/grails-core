@@ -120,6 +120,7 @@ class GrailsOpenApiGenerator {
     private static final String MULTIPART_MEDIA_TYPE = 'multipart/form-data'
     private static final Set<String> DATA_FORMATS = ['json', 'xml'].toSet().asImmutable()
     private static final String JSON_VIEW_RESOLVER = 'grails.plugin.json.view.mvc.JsonViewResolver'
+    private static final List<String> JSON_VIEW_MEDIA_TYPES = [MimeType.JSON.name, MimeType.TEXT_JSON.name].asImmutable()
     private static final String DEFAULT_TITLE = 'Grails application'
     private static final String DEFAULT_VERSION = '1.0'
     private static final String SPRINGDOC_TITLE = 'OpenAPI definition'
@@ -252,7 +253,9 @@ class GrailsOpenApiGenerator {
         private Map<String, String> formatMediaTypes
         private final Map<Class<?>, Class<?>> boundResources = [:]
         private Map<String, String> latestVersions
-        private Boolean errorsView
+        private ErrorsRendering errorsRendering
+        private List<Object> viewResolvers
+        private final Map<Class<?>, Boolean> ownErrorsViews = [:]
 
         Contribution(OpenAPI openApi, OpenApiSelection selection) {
             this.openApi = openApi
@@ -700,7 +703,8 @@ class GrailsOpenApiGenerator {
             Map<String, Boolean> mediaTypes = responseMediaTypes(controller, actionName)
             if (restful && actionName) {
                 boolean locates = controllerType != null && RestfulController.isAssignableFrom(controllerType)
-                operation.setResponses(restfulResponses(resourceType, actionName, !pathNames.isEmpty(), mediaTypes, locates))
+                operation.setResponses(restfulResponses(controller, resourceType, actionName, !pathNames.isEmpty(),
+                        mediaTypes, locates))
             }
             else {
                 ApiResponses responses = new ApiResponses()
@@ -973,8 +977,8 @@ class GrailsOpenApiGenerator {
          * NO_CONTENT with no body, an action addressed by an identifier can miss, and an action
          * that validates what it binds can answer with the validation errors.
          */
-        private ApiResponses restfulResponses(Class<?> resourceType, String actionName, boolean takesId,
-                                              Map<String, Boolean> mediaTypes, boolean locates) {
+        private ApiResponses restfulResponses(GrailsControllerClass controller, Class<?> resourceType, String actionName,
+                                              boolean takesId, Map<String, Boolean> mediaTypes, boolean locates) {
             ApiResponses responses = new ApiResponses()
 
             ApiResponse success = new ApiResponse().description('Success')
@@ -1001,7 +1005,7 @@ class GrailsOpenApiGenerator {
             if (RestfulControllerActions.validates(actionName)) {
                 responses.addApiResponse(UNPROCESSABLE_RESPONSE_CODE, new ApiResponse()
                         .description('Validation failed')
-                        .content(content(validationErrorsReference(), mediaTypes)))
+                        .content(errorsContent(controller, mediaTypes)))
             }
             responses
         }
@@ -1152,7 +1156,8 @@ class GrailsOpenApiGenerator {
          */
         private Schema<?> validationErrorsReference() {
             if (!components.schemas?.containsKey(VALIDATION_ERRORS_SCHEMA)) {
-                components.addSchemas(VALIDATION_ERRORS_SCHEMA, errorsRenderedByView() ? viewValidationErrors() : validationErrors())
+                components.addSchemas(VALIDATION_ERRORS_SCHEMA, errorsRendering() == ErrorsRendering.ERRORS_VIEW
+                        ? viewValidationErrors() : validationErrors())
             }
             new Schema<>().$ref(REFERENCE_PREFIX + VALIDATION_ERRORS_SCHEMA)
         }
@@ -1197,32 +1202,88 @@ class GrailsOpenApiGenerator {
         }
 
         /**
-         * Whether a JSON view renders the validation errors, as the errors view an application
-         * generated with JSON views has does. A view for {@code Errors} is looked up the way the
-         * JSON views renderer looks it up.
+         * How the validation errors are rendered in JSON: by the errors view an application
+         * generated with JSON views has, by the view JSON views fall back to for any object, or,
+         * with neither, by the converters. A view is looked up the way the JSON views renderer
+         * looks it up.
          */
-        private boolean errorsRenderedByView() {
-            if (errorsView == null) {
-                errorsView = lookUpErrorsView()
+        private ErrorsRendering errorsRendering() {
+            if (errorsRendering == null) {
+                errorsRendering = ErrorsRendering.CONVERTERS
+                for (Object resolver : jsonViewResolvers()) {
+                    Object view = resolveView(resolver, Errors)
+                    if (view != null) {
+                        errorsRendering = view.is(InvokerHelper.getProperty(resolver, 'objectView'))
+                                ? ErrorsRendering.OTHER_VIEW : ErrorsRendering.ERRORS_VIEW
+                        break
+                    }
+                }
             }
-            errorsView
+            errorsRendering
         }
 
-        private boolean lookUpErrorsView() {
+        /**
+         * Whether the controller has an errors view of its own, which the JSON views renderer
+         * prefers, and whose shape only the application knows.
+         */
+        private boolean hasOwnErrorsView(GrailsControllerClass controller) {
+            if (!ownErrorsViews.containsKey(controller.clazz)) {
+                String path = "${controller.namespace ? '/' + controller.namespace : ''}/${controller.logicalPropertyName}/_errors"
+                ownErrorsViews[controller.clazz] = jsonViewResolvers().any { Object resolver -> resolveView(resolver, path) != null }
+            }
+            ownErrorsViews[controller.clazz]
+        }
+
+        private Object resolveView(Object resolver, Object view) {
+            try {
+                return InvokerHelper.invokeMethod(resolver, 'resolveView', [view, Locale.ENGLISH] as Object[])
+            }
+            catch (Exception | LinkageError e) {
+                LOG.debug("Could not look up the JSON view for ${view}", e)
+                return null
+            }
+        }
+
+        private List<Object> jsonViewResolvers() {
+            if (viewResolvers == null) {
+                viewResolvers = lookUpJsonViewResolvers()
+            }
+            viewResolvers
+        }
+
+        private List<Object> lookUpJsonViewResolvers() {
             ApplicationContext context = grailsApplication?.mainContext
             if (context == null || !ClassUtils.isPresent(JSON_VIEW_RESOLVER, GrailsOpenApiGenerator.classLoader)) {
-                return false
+                return Collections.emptyList()
             }
             try {
                 Class<?> resolverType = ClassUtils.forName(JSON_VIEW_RESOLVER, GrailsOpenApiGenerator.classLoader)
-                return context.getBeansOfType(resolverType).values().any { Object resolver ->
-                    InvokerHelper.invokeMethod(resolver, 'resolveView', [Errors, Locale.ENGLISH] as Object[]) != null
-                }
+                return new ArrayList<Object>(context.getBeansOfType(resolverType).values())
             }
             catch (Exception | LinkageError e) {
-                LOG.debug('Could not look up a JSON view for the validation errors', e)
-                return false
+                LOG.debug('Could not look up the JSON view resolvers', e)
+                return Collections.emptyList()
             }
+        }
+
+        /**
+         * The errors a failed validation answers with, in each media type. JSON views render them
+         * in JSON, as the controller's own errors view does where it has one, and the converters
+         * render them in any other format; those a view other than the errors view renders are
+         * listed without a shape, as are those the converters render where the errors view
+         * renders the JSON, since the schema describes the view.
+         */
+        private Content errorsContent(GrailsControllerClass controller, Map<String, Boolean> mediaTypes) {
+            ErrorsRendering json = controller != null && hasOwnErrorsView(controller)
+                    ? ErrorsRendering.OTHER_VIEW : errorsRendering()
+            Content content = new Content()
+            mediaTypes.each { String mediaType, Boolean shaped ->
+                boolean described = shaped && (mediaType in JSON_VIEW_MEDIA_TYPES
+                        ? json != ErrorsRendering.OTHER_VIEW
+                        : errorsRendering() != ErrorsRendering.ERRORS_VIEW)
+                content.addMediaType(mediaType, described ? new MediaType().schema(validationErrorsReference()) : new MediaType())
+            }
+            content
         }
 
         /**
@@ -1394,5 +1455,12 @@ class GrailsOpenApiGenerator {
         String prefix = controller?.namespace ? "${controller.namespace}_${controllerName}".toString() : controllerName
         String verb = method.name().toLowerCase(Locale.ENGLISH)
         actionName ? "${prefix}_${actionName}_${verb}".toString() : "${prefix}_${verb}".toString()
+    }
+
+    /**
+     * What renders the validation errors a failed validation answers with in JSON.
+     */
+    private static enum ErrorsRendering {
+        CONVERTERS, ERRORS_VIEW, OTHER_VIEW
     }
 }

@@ -94,6 +94,8 @@ dependencies {
     testImplementation 'org.spockframework:spock-core'
     testImplementation 'org.springframework:spring-test'
     testImplementation 'org.springdoc:springdoc-openapi-starter-webmvc-api'
+    // JSON views, whose errors view the validation errors are described as
+    testImplementation project(':grails-views-gson')
     testImplementation 'org.slf4j:slf4j-simple'
 
     testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine'
