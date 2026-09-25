@@ -25,6 +25,8 @@ import groovy.transform.CompileStatic
 import groovyjarjarasm.asm.AnnotationVisitor
 import groovyjarjarasm.asm.ClassReader
 import groovyjarjarasm.asm.ClassVisitor
+import groovyjarjarasm.asm.FieldVisitor
+import groovyjarjarasm.asm.MethodVisitor
 import groovyjarjarasm.asm.Opcodes
 import groovyjarjarasm.asm.Type
 
@@ -62,19 +64,25 @@ import org.gradle.process.JavaExecSpec
  * without them - a view the application or a plugin declares, a namespace-specific template, a
  * template override - and only where it would expand a template does it look for the page expanded
  * from the same template and model. So a page cannot shadow a declared view, and a template this
- * task did not see finds nothing and is expanded at runtime as before.</p>
+ * task did not expand finds nothing and is expanded at runtime as before.</p>
  *
- * <p>This task finds the scaffolded domain classes, by reading the controllers with ASM so that no
- * application class is loaded, and collects the templates: every copy of every template on the application's runtime classpath,
- * which the running application reads them from, and in its {@code src/main/templates/scaffolding}.
- * All copies are expanded rather than the one the resolver is expected to choose, so whichever copy
- * it does choose - an override, a plugin's, the stock one - has its page, and nothing here predicts
- * the resolver.
- * Namespace-specific templates such as {@code admin/show.gsp} are included, because which one a
- * controller uses depends on its namespace, which is only known when it is asked for. The pages
- * themselves are expanded and named by {@code org.apache.grails.scaffolding.ScaffoldedPagesGenerator},
- * run in a JVM on the application's runtime classpath, so they come from the same code and the same
- * Groovy as the resolver's.</p>
+ * <p>For each scaffolded controller this expands for its domain class the templates the resolver can
+ * choose for it, and no others:</p>
+ * <ul>
+ *   <li>The resolver looks for a template beside the controller's class first, which for the
+ *   application's controllers is the application's own template, from
+ *   {@code src/main/templates/scaffolding}. It so replaces every dependency's copy of it.</li>
+ *   <li>Beyond that it depends on what the build cannot see - a plugin that overrides the templates,
+ *   the order of the classpath the application runs with - so every distinct copy is expanded, and
+ *   whichever the resolver chooses has its page.</li>
+ *   <li>A namespace-specific template such as {@code admin/show.gsp} can only be chosen for a
+ *   controller with a namespace, so it is expanded only for the domain classes such controllers
+ *   scaffold.</li>
+ * </ul>
+ *
+ * <p>No application class is loaded: the controllers are read with ASM, and the pages are expanded
+ * and named by {@code org.apache.grails.scaffolding.ScaffoldedPagesGenerator}, run in a JVM on the
+ * application's runtime classpath, from the same code and the same Groovy as the resolver's.</p>
  *
  * @since 8.0
  */
@@ -103,9 +111,10 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
     abstract ConfigurableFileCollection getClassesDirs()
 
     /**
-     * Application template overrides, normally the tree of {@code src/main/templates/scaffolding}.
-     * A template's path within the tree is its path as the resolver asks for it, so
-     * {@code admin/show.gsp} overrides the {@code show} template of the {@code admin} namespace.
+     * The application's own templates, as a tree rooted at the template directory: normally
+     * {@code src/main/templates/scaffolding}. A template's path within the tree is its path as the
+     * resolver asks for it, so {@code admin/show.gsp} is the {@code show} template of the
+     * {@code admin} namespace.
      */
     @InputFiles
     @Optional
@@ -138,39 +147,42 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
         outputDir.deleteDir()
         outputDir.mkdirs()
 
-        ClasspathScan scan = scanClasspath()
-        Map<String, List<byte[]>> templates = scan.templates
-        if (templates.isEmpty()) {
+        Templates templates = findTemplates()
+        if (templates.copies.isEmpty()) {
             logger.info('No scaffolding templates on the classpath; nothing to generate')
             return
         }
-        Set<String> domains = findScaffoldedDomains()
-        if (domains.isEmpty()) {
+        List<Controller> controllers = findScaffoldedControllers()
+        if (controllers.isEmpty()) {
             logger.info('No scaffolded controllers; nothing to generate')
             return
         }
-        if (!scan.generator) {
+        if (!templates.generator) {
             logger.warn('The scaffolding library on the runtime classpath does not provide {}, so no scaffolded page is ' +
                     'compiled and each is expanded when it is first rendered, which a native image cannot do. ' +
                     'Use a grails-scaffolding matching this Gradle plugin.', GENERATOR)
             return
         }
 
-        // one directory per copy, so that each holds a template path at most once
+        // every distinct copy once, in a directory of its own, so a domain class is handed the copies
+        // its controllers can choose
         File work = temporaryDir
         File templatesRoot = new File(work, 'templates')
         templatesRoot.deleteDir()
-        int copies = (int) templates.values()*.size().max()
-        List<File> templateDirs = (0..<copies).collect { int copy -> new File(templatesRoot, String.valueOf(copy)) }
-        templates.each { String path, List<byte[]> contents ->
-            contents.eachWithIndex { byte[] content, int copy ->
-                File file = new File(templateDirs[copy], "${path}.gsp")
-                file.parentFile.mkdirs()
-                file.bytes = content
-            }
+        templates.copies.eachWithIndex { TemplateCopy copy, int index ->
+            copy.directory = new File(templatesRoot, String.valueOf(index))
+            File file = new File(copy.directory, "${copy.path}.gsp")
+            file.parentFile.mkdirs()
+            file.bytes = copy.content
         }
-        File domainList = new File(work, 'domains.txt')
-        domainList.setText(domains.join('\n'), 'UTF-8')
+        Map<String, Set<TemplateCopy>> plan = new TreeMap<>()
+        for (Controller controller : controllers) {
+            plan.computeIfAbsent(controller.domain) { new LinkedHashSet<TemplateCopy>() }.addAll(templates.choosableBy(controller))
+        }
+        File planFile = new File(work, 'plan.txt')
+        planFile.setText(plan.collect { String domain, Set<TemplateCopy> copies ->
+            ([domain] + copies*.directory*.absolutePath).join('\t')
+        }.join('\n'), 'UTF-8')
 
         execOperations.javaexec(new Action<JavaExecSpec>() {
             @Override
@@ -180,99 +192,151 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
                 }
                 spec.classpath = runtimeClasspath
                 spec.mainClass.set(GENERATOR)
-                spec.args([domainList.absolutePath, outputDir.absolutePath] + templateDirs*.absolutePath)
+                spec.args(planFile.absolutePath, outputDir.absolutePath)
             }
         }).assertNormalExitValue()
     }
 
     /**
-     * Reads the templates and the generator from the application's template overrides and runtime
-     * classpath, in one pass over the classpath.
-     *
-     * <p>Every distinct copy of every template is kept: the application's own, then each
-     * dependency's in classpath order. A copy identical to one already found is left out, as it
-     * would expand to the same page. A scaffolding library older than this plugin has no
-     * generator.</p>
+     * Reads the templates: the application's own, then every distinct copy the runtime classpath
+     * carries, noting which artifact each came from; and whether the classpath carries the
+     * generator, which a scaffolding library older than this plugin does not.
      */
-    private ClasspathScan scanClasspath() {
-        ClasspathScan scan = new ClasspathScan()
+    private Templates findTemplates() {
+        Templates templates = new Templates()
         templateOverrides.asFileTree.visit { FileVisitDetails details ->
             if (!details.directory && details.name.endsWith('.gsp')) {
-                addCopy(scan.templates, baseName(details.relativePath.pathString), details.file.bytes)
+                templates.add(baseName(details.relativePath.pathString), details.file.bytes, null)
             }
         }
         String generator = GENERATOR.replace('.', '/') + '.class'
         for (File entry : runtimeClasspath.files) {
             if (entry.isDirectory()) {
-                scan.generator = scan.generator || new File(entry, generator).isFile()
+                templates.generator = templates.generator || new File(entry, generator).isFile()
                 File dir = new File(entry, TEMPLATE_PATH)
                 if (dir.isDirectory()) {
                     dir.eachFileRecurse { File f ->
                         if (f.isFile() && f.name.endsWith('.gsp')) {
                             String path = dir.toPath().relativize(f.toPath()).toString().replace(File.separatorChar, '/' as char)
-                            addCopy(scan.templates, baseName(path), f.bytes)
+                            templates.add(baseName(path), f.bytes, entry)
                         }
                     }
                 }
             }
             else if (entry.name.endsWith('.jar') && entry.isFile()) {
                 new JarFile(entry).withCloseable { JarFile jar ->
-                    scan.generator = scan.generator || jar.getJarEntry(generator) != null
+                    templates.generator = templates.generator || jar.getJarEntry(generator) != null
                     for (JarEntry e : jar.entries()) {
                         if (!e.directory && e.name.startsWith(TEMPLATE_PATH) && e.name.endsWith('.gsp')) {
-                            addCopy(scan.templates, baseName(e.name.substring(TEMPLATE_PATH.length())),
-                                    jar.getInputStream(e).withCloseable { InputStream input -> input.bytes })
+                            templates.add(baseName(e.name.substring(TEMPLATE_PATH.length())),
+                                    jar.getInputStream(e).withCloseable { InputStream input -> input.bytes }, entry)
                         }
                     }
                 }
             }
         }
-        scan
+        templates
     }
 
-    /** What the classpath carries: each template path's distinct copies, and whether the generator. */
-    private static final class ClasspathScan {
-
-        final Map<String, List<byte[]>> templates = new TreeMap<>()
-
-        boolean generator
-
-    }
-
-    private static void addCopy(Map<String, List<byte[]>> templates, String path, byte[] content) {
-        List<byte[]> copies = templates.computeIfAbsent(path) { [] }
-        if (!copies.any { byte[] copy -> Arrays.equals(copy, content) }) {
-            copies.add(content)
+    /** Every scaffolded controller, with the domain class it scaffolds and whether it has a namespace. */
+    private List<Controller> findScaffoldedControllers() {
+        List<Controller> controllers = []
+        Map<String, Boolean> ancestors = [:]
+        URL[] classpath = (classesDirs.files + runtimeClasspath.files).collect { it.toURI().toURL() } as URL[]
+        new URLClassLoader(classpath, (ClassLoader) null).withCloseable { URLClassLoader resources ->
+            for (File dir : classesDirs.files) {
+                if (dir.isDirectory()) {
+                    dir.eachFileRecurse { File f ->
+                        if (f.name.endsWith('Controller.class')) {
+                            Controller controller = readController(f.bytes, resources, ancestors)
+                            if (controller != null) {
+                                controllers.add(controller)
+                            }
+                        }
+                    }
+                }
+            }
         }
+        controllers
+    }
+
+    private Controller readController(byte[] bytes, ClassLoader resources, Map<String, Boolean> ancestors) {
+        ClassReader reader = new ClassReader(bytes)
+        String domain = readScaffoldDomain(reader)
+        domain == null ? null : new Controller(domain, hasNamespace(reader, resources, ancestors), null)
     }
 
     /**
-     * The fully qualified name of every domain class a controller scaffolds. Qualified rather than
-     * simple because a page declaring the type of its model has to name a type that resolves.
+     * Whether a controller declares a namespace, itself or through a superclass, read from its
+     * declarations without running any of its code.
+     *
+     * <p>Groovy traits rename their namespace fields but emit a static {@code getNamespace()}
+     * accessor on the implementing class. Checking that accessor covers trait-supplied namespaces
+     * without walking interfaces; only superclass declarations require an ancestor walk.</p>
+     *
+     * <p>A declaration is all this can see, not its value, so {@code static namespace = null}
+     * still counts even though the runtime, which tests the value, gives that controller no
+     * namespace. The value lives in {@code <clinit>} for the usual Groovy forms and code is not
+     * read here; such a controller only has namespace-specific templates expanded for it that it
+     * will not use.</p>
      */
-    private Set<String> findScaffoldedDomains() {
-        Set<String> domains = new TreeSet<>()
-        for (File dir : classesDirs.files) {
-            if (!dir.isDirectory()) {
-                continue
-            }
-            dir.eachFileRecurse { File f ->
-                if (!f.name.endsWith('Controller.class')) {
-                    return
+    private boolean hasNamespace(ClassReader reader, ClassLoader resources, Map<String, Boolean> ancestors) {
+        boolean declared = false
+        reader.accept(new ClassVisitor(Opcodes.ASM9) {
+            @Override
+            FieldVisitor visitField(int access, String name, String descriptor, String signature, Object value) {
+                if (name == 'namespace' && (access & Opcodes.ACC_STATIC) != 0) {
+                    declared = true
                 }
-                String domain = readScaffoldDomain(f)
-                if (domain != null) {
-                    domains.add(domain)
-                }
+                null
             }
+
+            @Override
+            MethodVisitor visitMethod(int access, String name, String descriptor, String signature, String[] exceptions) {
+                if (name == 'getNamespace' && descriptor.startsWith('()') && (access & Opcodes.ACC_STATIC) != 0) {
+                    declared = true
+                }
+                null
+            }
+        }, ClassReader.SKIP_CODE | ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES)
+        if (declared || reader.superName == null || reader.superName == 'java/lang/Object') {
+            return declared
         }
-        domains
+        String superName = reader.superName
+        Boolean known = ancestors.get(superName)
+        if (known != null) {
+            return known
+        }
+        boolean inherited = ancestorHasNamespace(superName, resources, ancestors)
+        ancestors.put(superName, inherited)
+        inherited
+    }
+
+    /**
+     * Superclasses can come from dependencies, whose class files may be newer than the bundled ASM
+     * reads, or whose bytecode may be damaged or unreadable. One that cannot be read is taken to
+     * declare no namespace rather than failing the build.
+     */
+    private boolean ancestorHasNamespace(String internalName, ClassLoader resources, Map<String, Boolean> ancestors) {
+        try {
+            InputStream parent = resources.getResourceAsStream("${internalName}.class")
+            if (parent == null) {
+                return false
+            }
+            ClassReader reader = parent.withCloseable { InputStream input -> new ClassReader(input) }
+            return hasNamespace(reader, resources, ancestors)
+        }
+        catch (IllegalArgumentException | IOException | IndexOutOfBoundsException e) {
+            logger.info('Could not read {} to look for an inherited namespace; treating it as declaring none: {}',
+                    internalName.replace('/', '.'), e.message)
+            return false
+        }
     }
 
     /**
      * Returns the fully qualified name of the domain class a controller scaffolds, or {@code null}
-     * when it is not scaffolded. Read with ASM so the application's classes are never loaded, which
-     * keeps the task independent of the runtime classpath.
+     * when it is not scaffolded. Qualified rather than simple because a page declaring the type of
+     * its model has to name a type that resolves.
      *
      * <p>{@code domain} is what names the domain class, and it is read in preference to
      * {@code value}, which names it only when it is the sole attribute given. Every form is
@@ -283,43 +347,112 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
      * controller superclass as the domain. The precedence matters rather than merely tidying,
      * because the two attributes are written in no guaranteed order.</p>
      */
-    private String readScaffoldDomain(File classFile) {
+    private String readScaffoldDomain(ClassReader reader) {
         boolean scaffolded = false
         String fromValue = null
         String fromDomain = null
-        classFile.withInputStream { InputStream input ->
-            new ClassReader(input).accept(new ClassVisitor(Opcodes.ASM9) {
-                @Override
-                AnnotationVisitor visitAnnotation(String descriptor, boolean visible) {
-                    if (descriptor != SCAFFOLD_ANNOTATION) {
-                        return null
-                    }
-                    scaffolded = true
-                    return new AnnotationVisitor(Opcodes.ASM9) {
-                        @Override
-                        void visit(String name, Object value) {
-                            if (!(value instanceof Type)) {
-                                return
-                            }
-                            String candidate = ((Type) value).className
-                            if (candidate.tokenize('.').last() == 'Void') {
-                                return
-                            }
-                            if (name == 'domain') {
-                                fromDomain = candidate
-                            }
-                            else if (name == 'value') {
-                                fromValue = candidate
-                            }
+        reader.accept(new ClassVisitor(Opcodes.ASM9) {
+            @Override
+            AnnotationVisitor visitAnnotation(String descriptor, boolean visible) {
+                if (descriptor != SCAFFOLD_ANNOTATION) {
+                    return null
+                }
+                scaffolded = true
+                return new AnnotationVisitor(Opcodes.ASM9) {
+                    @Override
+                    void visit(String name, Object value) {
+                        if (!(value instanceof Type)) {
+                            return
+                        }
+                        String candidate = ((Type) value).className
+                        if (candidate.tokenize('.').last() == 'Void') {
+                            return
+                        }
+                        if (name == 'domain') {
+                            fromDomain = candidate
+                        }
+                        else if (name == 'value') {
+                            fromValue = candidate
                         }
                     }
                 }
-            }, ClassReader.SKIP_CODE | ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES)
-        }
+            }
+        }, ClassReader.SKIP_CODE | ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES)
         scaffolded ? (fromDomain ?: fromValue) : null
     }
 
     private static String baseName(String fileName) {
         fileName.endsWith('.gsp') ? fileName[0..<fileName.length() - 4] : fileName
+    }
+
+    /** A scaffolded controller, and the artifact it comes from: {@code null} for the application. */
+    private static final class Controller {
+
+        final String domain
+
+        final boolean namespaced
+
+        final File source
+
+        Controller(String domain, boolean namespaced, File source) {
+            this.domain = domain
+            this.namespaced = namespaced
+            this.source = source
+        }
+
+    }
+
+    /** One copy of a template, and every artifact that carries it: {@code null} for the application. */
+    private static final class TemplateCopy {
+
+        final String path
+
+        final byte[] content
+
+        final Set<File> sources = new LinkedHashSet<>()
+
+        File directory
+
+        TemplateCopy(String path, byte[] content) {
+            this.path = path
+            this.content = content
+        }
+
+    }
+
+    /** Every distinct copy of every template, and whether the generator was found. */
+    private static final class Templates {
+
+        final List<TemplateCopy> copies = []
+
+        boolean generator
+
+        void add(String path, byte[] content, File source) {
+            TemplateCopy copy = copies.find { TemplateCopy c -> c.path == path && Arrays.equals(c.content, content) }
+            if (copy == null) {
+                copy = new TemplateCopy(path, content)
+                copies.add(copy)
+            }
+            copy.sources.add(source)
+        }
+
+        /**
+         * The copies the resolver can choose for a controller: for each template path, the copy
+         * beside the controller's class when there is one, and otherwise every copy. A
+         * namespace-specific template only for a controller with a namespace.
+         */
+        List<TemplateCopy> choosableBy(Controller controller) {
+            Map<String, List<TemplateCopy>> byPath = copies.groupBy { TemplateCopy c -> c.path }
+            List<TemplateCopy> choosable = []
+            byPath.each { String path, List<TemplateCopy> candidates ->
+                if (path.contains('/') && !controller.namespaced) {
+                    return
+                }
+                List<TemplateCopy> beside = candidates.findAll { TemplateCopy c -> controller.source in c.sources }
+                choosable.addAll(beside ?: candidates)
+            }
+            choosable
+        }
+
     }
 }

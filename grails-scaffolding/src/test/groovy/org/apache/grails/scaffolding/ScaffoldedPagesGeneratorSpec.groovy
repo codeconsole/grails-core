@@ -52,7 +52,7 @@ class ScaffoldedPagesGeneratorSpec extends Specification {
 
     void 'every template is expanded for every domain class, where the resolver looks for it'() {
         when:
-        int written = new ScaffoldedPagesGenerator().generate([templates], ['com.example.Book', 'com.example.Author'], output)
+        int written = new ScaffoldedPagesGenerator().generate(['com.example.Book': [templates], 'com.example.Author': [templates]], output)
 
         then:
         written == 4
@@ -62,12 +62,27 @@ class ScaffoldedPagesGeneratorSpec extends Specification {
         page('admin/show', 'com.example.Author', 'admin show ${className}').getText('UTF-8') == 'admin show Author'
     }
 
+    void 'a domain class is expanded with only the templates planned for it'() {
+        given:
+        File plain = new File(dir, 'plain')
+        new File(plain, 'show.gsp').with { parentFile.mkdirs(); setText('show ${className}', 'UTF-8') }
+
+        when:
+        int written = new ScaffoldedPagesGenerator().generate(['com.example.Book': [templates], 'com.example.Author': [plain]], output)
+
+        then:
+        written == 3
+        page('admin/show', 'com.example.Book', 'admin show ${className}').exists()
+        page('show', 'com.example.Author', 'show ${className}').exists()
+        !page('admin/show', 'com.example.Author', 'admin show ${className}').exists()
+    }
+
     void 'a template that cannot be expanded is skipped and the others are still written'() {
         given:
         template('broken', 'broken ${noSuchName}')
 
         when:
-        int written = new ScaffoldedPagesGenerator().generate([templates], ['com.example.Book'], output)
+        int written = new ScaffoldedPagesGenerator().generate(['com.example.Book': [templates]], output)
 
         then:
         written == 2
@@ -81,7 +96,7 @@ class ScaffoldedPagesGeneratorSpec extends Specification {
         new File(other, 'show.gsp').with { parentFile.mkdirs(); setText('other show ${className}', 'UTF-8') }
 
         when:
-        int written = new ScaffoldedPagesGenerator().generate([templates, other], ['com.example.Book'], output)
+        int written = new ScaffoldedPagesGenerator().generate(['com.example.Book': [templates, other]], output)
 
         then:
         written == 3
@@ -89,16 +104,28 @@ class ScaffoldedPagesGeneratorSpec extends Specification {
         page('show', 'com.example.Book', 'other show ${className}').getText('UTF-8') == 'other show Book'
     }
 
-    void 'the command line reads the domain classes from a list'() {
+    void 'a domain class named by the build is modelled as the resolver models the class itself'() {
+        expect: 'the build names a class as ASM reads it, nested classes by their binary name'
+        new ScaffoldedPagesGenerator().model(type.name).asMap() == new ScaffoldedPagesGenerator().model(type).asMap()
+
+        where:
+        type << [ScaffoldedPagesGenerator, Map.Entry]
+    }
+
+    void 'the command line reads a plan of domain classes and their templates directories'() {
         given:
-        File list = new File(dir, 'domains.txt')
-        list.setText('com.example.Book\n\n  com.example.Author  \n', 'UTF-8')
+        File plain = new File(dir, 'plain')
+        new File(plain, 'index.gsp').with { parentFile.mkdirs(); setText('index ${className}', 'UTF-8') }
+        File plan = new File(dir, 'plan.txt')
+        plan.setText("com.example.Book\t${templates.path}\t${plain.path}\n\ncom.example.Author\t${plain.path}\n", 'UTF-8')
 
         when:
-        ScaffoldedPagesGenerator.main(list.path, output.path, templates.path)
+        ScaffoldedPagesGenerator.main(plan.path, output.path)
 
         then:
         page('show', 'com.example.Book', 'show ${className}').exists()
-        page('show', 'com.example.Author', 'show ${className}').exists()
+        page('index', 'com.example.Book', 'index ${className}').exists()
+        page('index', 'com.example.Author', 'index ${className}').exists()
+        !page('show', 'com.example.Author', 'show ${className}').exists()
     }
 }

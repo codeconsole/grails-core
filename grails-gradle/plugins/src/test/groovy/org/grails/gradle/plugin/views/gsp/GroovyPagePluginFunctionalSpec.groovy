@@ -209,11 +209,12 @@ class GroovyPagePluginFunctionalSpec extends GradleSpecification {
         !new File(staged, 'book/show.gsp').exists()
         !new File(staged, 'event').exists()
 
-        and: 'every template the application runs with, namespace-specific ones included, is expanded for every scaffolded domain class'
+        and: 'every template the application runs with is expanded for every scaffolded domain class'
         pagesOf('java.lang.String') == ['show.gsp': 'show ${className}', 'admin/show.gsp': 'admin show ${className}',
                                         'list.gsp': 'theme list ${className}']
-        pagesOf('java.lang.Integer') == ['show.gsp': 'show ${className}', 'admin/show.gsp': 'admin show ${className}',
-                                         'list.gsp': 'theme list ${className}']
+
+        and: 'a namespace-specific one only for a domain class a namespaced controller scaffolds'
+        pagesOf('java.lang.Integer') == ['show.gsp': 'show ${className}', 'list.gsp': 'theme list ${className}']
 
         when:
         def inspection = executeTask('inspectGeneratedPages')

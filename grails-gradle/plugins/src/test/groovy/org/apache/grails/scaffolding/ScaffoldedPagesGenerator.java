@@ -28,9 +28,9 @@ import java.util.stream.Stream;
 
 /**
  * Stands in for grails-scaffolding's generator, which the plugin's tests cannot depend on, and
- * records what {@code GenerateScaffoldedViewsTask} hands it: every template, for every domain class,
- * is copied to {@code grails-scaffolded/<domain class>/<copy>/<template path>} under the output
- * directory, where {@code copy} numbers the templates directory it came from.
+ * records what {@code GenerateScaffoldedViewsTask} hands it: for each domain class in the plan,
+ * every template in each planned directory is copied to
+ * {@code grails-scaffolded/<domain class>/<directory>/<template path>} under the output directory.
  * How the real generator expands and names a page is tested in grails-scaffolding.
  */
 public final class ScaffoldedPagesGenerator {
@@ -39,18 +39,18 @@ public final class ScaffoldedPagesGenerator {
     }
 
     public static void main(String[] args) throws IOException {
-        List<String> domains = Files.readAllLines(Paths.get(args[0]), StandardCharsets.UTF_8);
         Path output = Paths.get(args[1]);
-        for (int copy = 2; copy < args.length; copy++) {
-            Path templates = Paths.get(args[copy]);
-            List<Path> files;
-            try (Stream<Path> walk = Files.walk(templates)) {
-                files = walk.filter(Files::isRegularFile).collect(Collectors.toList());
-            }
-            for (Path file : files) {
-                String path = templates.relativize(file).toString().replace(File.separatorChar, '/');
-                for (String domain : domains) {
-                    Path target = output.resolve("grails-scaffolded/" + domain + "/" + (copy - 2) + "/" + path);
+        for (String line : Files.readAllLines(Paths.get(args[0]), StandardCharsets.UTF_8)) {
+            String[] fields = line.split("\t");
+            for (int dir = 1; dir < fields.length; dir++) {
+                Path templates = Paths.get(fields[dir]);
+                List<Path> files;
+                try (Stream<Path> walk = Files.walk(templates)) {
+                    files = walk.filter(Files::isRegularFile).collect(Collectors.toList());
+                }
+                for (Path file : files) {
+                    String path = templates.relativize(file).toString().replace(File.separatorChar, '/');
+                    Path target = output.resolve("grails-scaffolded/" + fields[0] + "/" + templates.getFileName() + "/" + path);
                     Files.createDirectories(target.getParent());
                     Files.write(target, Files.readAllBytes(file));
                 }

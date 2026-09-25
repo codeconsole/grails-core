@@ -33,12 +33,12 @@ import grails.codegen.model.ModelBuilder
  * exactly as the resolver models, expands and names it when the view is asked for.</p>
  *
  * <pre>
- * ScaffoldedPagesGenerator &lt;domain class list&gt; &lt;output directory&gt; &lt;templates directory&gt;...
+ * ScaffoldedPagesGenerator &lt;plan&gt; &lt;output directory&gt;
  * </pre>
  *
- * <p>The list names one domain class per line. Each templates directory holds one copy of a set of
- * templates, a file per template path such as {@code show.gsp} or {@code admin/show.gsp}; another
- * copy of the same template goes in another directory, and each copy is expanded.</p>
+ * <p>Each line of the plan names a domain class and, tab separated, the templates directories to
+ * expand for it. A templates directory holds a file per template path, such as {@code show.gsp} or
+ * {@code admin/show.gsp}.</p>
  *
  * @since 8.0
  */
@@ -46,39 +46,33 @@ import grails.codegen.model.ModelBuilder
 class ScaffoldedPagesGenerator implements ModelBuilder {
 
     static void main(String[] args) {
-        if (args.length < 3) {
-            System.err.println('Usage: ScaffoldedPagesGenerator <domain class list> <output directory> <templates directory>...')
+        if (args.length != 2) {
+            System.err.println('Usage: ScaffoldedPagesGenerator <plan> <output directory>')
             System.exit(2)
         }
-        List<String> domains = new File(args[0]).readLines('UTF-8')*.trim().findAll { String line -> line }
-        List<File> templateDirs = args.drop(2).collect { String dir -> new File(dir) }
-        new ScaffoldedPagesGenerator().generate(templateDirs, domains, new File(args[1]))
+        Map<String, List<File>> plan = [:]
+        new File(args[0]).readLines('UTF-8').each { String line ->
+            List<String> fields = line.split('\t').toList()*.trim().findAll { String field -> field }
+            if (fields) {
+                plan.put(fields.head(), fields.tail().collect { String dir -> new File(dir) })
+            }
+        }
+        new ScaffoldedPagesGenerator().generate(plan, new File(args[1]))
     }
 
     /**
-     * Writes the page for every template in every directory, for every domain class, under
-     * {@code outputDir}, where the resolver looks for it. A template that cannot be expanded for a
-     * domain class is reported and left out.
+     * Writes, under {@code outputDir} where the resolver looks for it, the page for each domain
+     * class and each template in the directories planned for it. A template that cannot be
+     * expanded for a domain class is reported and left out.
      *
+     * @param plan each domain class, with the templates directories to expand for it
      * @return how many pages were written
      */
-    int generate(List<File> templateDirs, List<String> domains, File outputDir) {
-        List<Map.Entry<String, byte[]>> templates = []
-        for (File templatesDir : templateDirs) {
-            if (!templatesDir.isDirectory()) {
-                continue
-            }
-            templatesDir.eachFileRecurse { File file ->
-                if (file.isFile() && file.name.endsWith('.gsp')) {
-                    String path = templatesDir.toPath().relativize(file.toPath()).toString().replace(File.separatorChar, '/' as char)
-                    templates.add(new AbstractMap.SimpleImmutableEntry<String, byte[]>(path.substring(0, path.length() - '.gsp'.length()), file.bytes))
-                }
-            }
-        }
+    int generate(Map<String, List<File>> plan, File outputDir) {
         int written = 0
-        for (String domain : domains) {
+        plan.each { String domain, List<File> templateDirs ->
             Map<String, Object> model = model(domain).asMap()
-            for (Map.Entry<String, byte[]> template : templates) {
+            for (Map.Entry<String, byte[]> template : read(templateDirs)) {
                 String page
                 try {
                     page = ScaffoldedPages.expand(template.value, model)
@@ -95,5 +89,21 @@ class ScaffoldedPagesGenerator implements ModelBuilder {
             }
         }
         written
+    }
+
+    private static List<Map.Entry<String, byte[]>> read(List<File> templateDirs) {
+        List<Map.Entry<String, byte[]>> templates = []
+        for (File templatesDir : templateDirs) {
+            if (!templatesDir.isDirectory()) {
+                continue
+            }
+            templatesDir.eachFileRecurse { File file ->
+                if (file.isFile() && file.name.endsWith('.gsp')) {
+                    String path = templatesDir.toPath().relativize(file.toPath()).toString().replace(File.separatorChar, '/' as char)
+                    templates.add(new AbstractMap.SimpleImmutableEntry<String, byte[]>(path.substring(0, path.length() - '.gsp'.length()), file.bytes))
+                }
+            }
+        }
+        templates
     }
 }

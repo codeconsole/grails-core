@@ -129,16 +129,38 @@ class GenerateScaffoldedViewsTaskSpec extends Specification {
     }
 
     private void writeNamespacedController(String name, String domainInternalName) {
+        writeClass(classesDir, name, scaffolded(name, domainInternalName) { ClassWriter writer ->
+            writer.visitField(Opcodes.ACC_STATIC, 'namespace', 'Ljava/lang/String;', null, null).visitEnd()
+        })
+    }
+
+    /** A scaffolded class, with whatever else {@code extra} writes into it. */
+    private static byte[] scaffolded(String name, String domainInternalName, String superName = 'java/lang/Object',
+                                     Closure extra = {}) {
+        plain(name, superName) { ClassWriter writer ->
+            AnnotationVisitor annotation = writer.visitAnnotation('Lgrails/plugin/scaffolding/annotation/Scaffold;', true)
+            annotation.visit('domain', Type.getObjectType(domainInternalName))
+            annotation.visitEnd()
+            extra.call(writer)
+        }
+    }
+
+    private static byte[] scaffolded(String name, String domainInternalName, Closure extra) {
+        scaffolded(name, domainInternalName, 'java/lang/Object', extra)
+    }
+
+    private static byte[] plain(String name, String superName, Closure extra) {
         ClassWriter writer = new ClassWriter(0)
-        writer.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, name, null, 'java/lang/Object', null)
-        AnnotationVisitor annotation = writer.visitAnnotation('Lgrails/plugin/scaffolding/annotation/Scaffold;', true)
-        annotation.visit('domain', Type.getObjectType(domainInternalName))
-        annotation.visitEnd()
-        writer.visitField(Opcodes.ACC_STATIC, 'namespace', 'Ljava/lang/String;', null, null).visitEnd()
+        writer.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, name, null, superName, null)
+        extra.call(writer)
         writer.visitEnd()
-        File target = new File(classesDir, "${name}.class")
+        writer.toByteArray()
+    }
+
+    private static void writeClass(File root, String name, byte[] bytes) {
+        File target = new File(root, "${name}.class")
         target.parentFile.mkdirs()
-        target.bytes = writer.toByteArray()
+        target.bytes = bytes
     }
 
     private GenerateScaffoldedViewsTask task(Object overrides = []) {
@@ -266,7 +288,7 @@ class GenerateScaffoldedViewsTaskSpec extends Specification {
             handed(task)['com.example.Event/show'] == ['show ${className}']
     }
 
-    void 'an application template and the dependency template it overrides are both expanded'() {
+    void "an application template replaces every other copy for the application's controllers"() {
         given:
             writeController('UserController', 'User')
             File overrides = new File(projectDir, 'templates')
@@ -277,15 +299,16 @@ class GenerateScaffoldedViewsTaskSpec extends Specification {
         when:
             task.generate()
 
-        then: 'whichever the resolver chooses has its page, so nothing here decides for it'
-            handed(task)['com.example.User/index'] == ['custom ${className}', 'list of ${propertyName} for ${className}']
+        then: 'packaged, it is found beside the controller, ahead of any dependency, so no other copy is chosen'
+            handed(task)['com.example.User/index'] == ['custom ${className}']
             handed(task)['com.example.User/show'] == ['show ${className}']
     }
 
-    void 'namespace-specific templates are handed over, from a dependency and from the application tree'() {
+    void 'namespace-specific templates are expanded only for a domain class a namespaced controller scaffolds'() {
         given:
             writeTemplateJar(templateJar, [show: 'show ${className}', 'admin/show': 'admin show ${className}'])
             writeController('UserController', 'User')
+            writeNamespacedController('com/example/admin/EventController', 'com/example/Event')
             File overrides = new File(projectDir, 'templates')
             new File(overrides, 'staff').mkdirs()
             new File(overrides, 'staff/show.gsp').text = 'staff show ${className}'
@@ -294,9 +317,46 @@ class GenerateScaffoldedViewsTaskSpec extends Specification {
         when:
             task.generate()
 
-        then: 'which one a controller uses is only known when it is asked for, so all are ready'
-            handed(task) == ['com.example.User/admin/show': ['admin show ${className}'], 'com.example.User/show': ['show ${className}'],
-                             'com.example.User/staff/show': ['staff show ${className}']]
+        then: 'a controller without a namespace never asks for one'
+            handed(task) == ['com.example.Event/admin/show': ['admin show ${className}'], 'com.example.Event/show': ['show ${className}'],
+                             'com.example.Event/staff/show': ['staff show ${className}'], 'com.example.User/show': ['show ${className}']]
+    }
+
+    void 'a namespace is found however the controller comes by it'() {
+        given:
+            writeTemplateJar(templateJar, [show: 'show ${className}', 'admin/show': 'admin show ${className}'])
+            writeClass(classesDir, 'com/example/AdminBase', plain('com/example/AdminBase', 'java/lang/Object') { ClassWriter writer ->
+                writer.visitField(Opcodes.ACC_STATIC, 'namespace', 'Ljava/lang/String;', null, null).visitEnd()
+            })
+            writeClass(classesDir, 'com/example/InheritedController',
+                    scaffolded('com/example/InheritedController', 'com/example/Inherited', 'com/example/AdminBase'))
+            writeClass(classesDir, 'com/example/TraitController', scaffolded('com/example/TraitController', 'com/example/FromTrait') { ClassWriter writer ->
+                writer.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, 'getNamespace', '()Ljava/lang/String;', null, null).visitEnd()
+            })
+            def task = task()
+
+        when:
+            task.generate()
+
+        then: 'declared by a superclass, or by a trait, which leaves a static accessor on the class'
+            handed(task).keySet().findAll { it.endsWith('admin/show') } ==
+                    ['com.example.FromTrait/admin/show', 'com.example.Inherited/admin/show'] as Set
+    }
+
+    void 'a superclass that cannot be read is taken to declare no namespace'() {
+        given:
+            writeTemplateJar(templateJar, [show: 'show ${className}', 'admin/show': 'admin show ${className}'])
+            new File(classesDir, 'com/example').mkdirs()
+            new File(classesDir, 'com/example/Damaged.class').bytes = [0xCA, 0xFE, 0xBA, 0xBE, 0, 0] as byte[]
+            writeClass(classesDir, 'com/example/UserController',
+                    scaffolded('com/example/UserController', 'com/example/User', 'com/example/Damaged'))
+            def task = task()
+
+        when:
+            task.generate()
+
+        then:
+            handed(task) == ['com.example.User/show': ['show ${className}']]
     }
 
     void 'templates are read from a classpath directory, namespace directories included'() {
@@ -305,7 +365,7 @@ class GenerateScaffoldedViewsTaskSpec extends Specification {
             new File(resources, 'META-INF/templates/scaffolding/admin').mkdirs()
             new File(resources, 'META-INF/templates/scaffolding/show.gsp').text = 'directory show'
             new File(resources, 'META-INF/templates/scaffolding/admin/show.gsp').text = 'directory admin show'
-            writeController('UserController', 'User')
+            writeNamespacedController('com/example/admin/UserController', 'com/example/User')
             def task = task()
             task.runtimeClasspath.setFrom([resources] + testClasspath())
 
