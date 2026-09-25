@@ -167,8 +167,18 @@ class ScaffoldingViewResolver extends GroovyPageViewResolver implements Resource
             return view
         }
 
-        def controllerClass = GrailsWebRequest.lookup()?.controllerClass
+        return tryGenerateScaffoldedView(viewName, GrailsWebRequest.lookup()?.controllerClass)
+    }
 
+    /**
+     * Attempts to generate a scaffolded view for the given controller from the template it uses for
+     * a view it has none of: its namespace's, when it has a namespace and there is one, otherwise
+     * the general one.
+     * @param viewName The view name
+     * @param controllerClass The controller class
+     * @return The generated scaffolded view, or null if not applicable
+     */
+    protected View tryGenerateScaffoldedView(String viewName, GrailsControllerClass controllerClass) {
         return tryGenerateScaffoldedView(viewName, controllerClass) { String shortViewName ->
             controllerClass?.namespace ?
                     ["${controllerClass.namespace}/${shortViewName}".toString(), shortViewName] :

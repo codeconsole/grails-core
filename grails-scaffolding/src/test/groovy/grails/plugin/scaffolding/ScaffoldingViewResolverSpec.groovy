@@ -345,20 +345,35 @@ class ScaffoldingViewResolverSpec extends Specification {
         view instanceof GroovyPageView
     }
 
-    void "a namespace-specific template is looked for under its own path"() {
+    void "a namespaced controller's own template is looked for under its own path"() {
         given:
         setupScaffoldController(TestScaffoldController, TestDomain)
+        setupNamespaceController()
         mockPageLocator.resolveViewFormat(LIST_VIEW_NAME) >> LIST_VIEW_NAME
         resolver.resourceLoader = templates(list: LIST_TEMPLATE, 'admin/list': 'admin list ${className}')
         String expected = pageFor('admin/list', 'admin list ${className}')
 
         when:
-        resolver.tryGenerateScaffoldedView(LIST_VIEW_NAME, mockControllerClass) { String name -> ["admin/${name}".toString(), name] }
+        resolver.tryGenerateScaffoldedView(LIST_VIEW_NAME, mockControllerClass)
 
         then:
         expected.startsWith("/grails-scaffolded/${TestDomain.name}/admin/list-")
         1 * mockPageLocator.findPage(expected) >> Stub(GroovyPageScriptSource)
         0 * mockPageLocator.findPage(pageFor('list', LIST_TEMPLATE))
+    }
+
+    void "a namespaced controller with no template of its own uses the general one"() {
+        given:
+        setupScaffoldController(TestScaffoldController, TestDomain)
+        setupNamespaceController()
+        mockPageLocator.resolveViewFormat(LIST_VIEW_NAME) >> LIST_VIEW_NAME
+        resolver.resourceLoader = templates(list: LIST_TEMPLATE)
+
+        when:
+        resolver.tryGenerateScaffoldedView(LIST_VIEW_NAME, mockControllerClass)
+
+        then:
+        1 * mockPageLocator.findPage(pageFor('list', LIST_TEMPLATE)) >> Stub(GroovyPageScriptSource)
     }
 
     void "a customised template is looked for under its own page, never the stock template's"() {
