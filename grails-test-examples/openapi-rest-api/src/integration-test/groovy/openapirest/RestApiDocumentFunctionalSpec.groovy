@@ -80,6 +80,18 @@ class RestApiDocumentFunctionalSpec extends Specification implements HttpClientS
         described('get', '/book/{id}').parameters.find { it.name == 'id' }.schema == [type: 'integer', format: 'int64']
     }
 
+    void 'what data binding leaves out of a book is described as read only'() {
+        given:
+        Map<String, Map> book = (Map<String, Map>) schema('Book').get('properties')
+
+        expect: 'the identifier Grails assigns, and not the properties a book is bound from'
+        book.id.readOnly
+        ['title', 'isbn', 'pages'].every { !book[it].readOnly }
+
+        and: 'the version Grails does not render is not described'
+        !book.containsKey('version')
+    }
+
     void 'a failed validation answers with the errors the errors view renders, as described'() {
         given:
         Map errors = schema('ValidationErrors')

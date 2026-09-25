@@ -525,8 +525,11 @@ class Orphan {
 @Entity
 class LedgerLine {
 
-    // Grails generates the properties a domain class binds; declared here as it would generate them.
+    // Grails generates the properties a domain class binds, in the list data binding reads by
+    // default and the one it reads when it binds only what is declared bindable; declared here as
+    // it would generate them for a domain class in grails-app/domain.
     public static final List $defaultDatabindingWhiteList = ['amount']
+    public static final List $legacyDatabindingWhiteList = ['amount']
 
     BigDecimal amount
     String memo
