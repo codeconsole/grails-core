@@ -32,6 +32,7 @@ import grails.plugins.Plugin
 import grails.util.GrailsUtil
 import grails.web.mapping.UrlMappingsHolder
 import org.grails.datastore.mapping.model.MappingContext
+import org.grails.openapi.GrailsModelConverter
 import org.grails.openapi.springdoc.SpringdocRegistrations
 
 /**
@@ -55,6 +56,10 @@ class OpenApiGrailsPlugin extends Plugin {
             if (!settings.enabled) {
                 return
             }
+            // swagger-core resolves every type through its converters, springdoc's own endpoints
+            // included, so the converter is registered before springdoc resolves any, rather than
+            // when the Grails description is first contributed.
+            GrailsModelConverter.register()
 
             registry.registerBean(GENERATOR_BEAN_NAME, GrailsOpenApiGenerator) {
                 it.lazyInit().supplier { context ->

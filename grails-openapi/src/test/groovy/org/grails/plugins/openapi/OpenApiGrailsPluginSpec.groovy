@@ -18,6 +18,7 @@
  */
 package org.grails.plugins.openapi
 
+import io.swagger.v3.core.converter.ModelConverters
 import io.swagger.v3.oas.models.OpenAPI
 import org.springdoc.core.customizers.OpenApiCustomizer
 import org.springdoc.core.models.GroupedOpenApi
@@ -31,6 +32,7 @@ import grails.core.DefaultGrailsApplication
 import grails.core.GrailsApplication
 import grails.openapi.GrailsOpenApiGenerator
 import grails.web.mapping.UrlMappingsHolder
+import org.grails.openapi.GrailsModelConverter
 import org.grails.support.MockApplicationContext
 import org.grails.web.mapping.DefaultUrlMappingEvaluator
 import org.grails.web.mapping.DefaultUrlMappingsHolder
@@ -77,6 +79,19 @@ class OpenApiGrailsPluginSpec extends Specification {
         group.producesToMatch == ['application/json']
         group.consumesToMatch == ['application/json']
         group.headersToMatch == ['X-Api-Version=1']
+    }
+
+    void 'teaches swagger-core the Grails types as the application starts, before springdoc resolves any'() {
+        given: 'swagger-core as a new JVM has it'
+        [false, true].each { boolean openapi31 -> ModelConverters.getInstance(openapi31).removeConverter(GrailsModelConverter.INSTANCE) }
+
+        when:
+        register()
+
+        then:
+        [false, true].every { boolean openapi31 ->
+            ModelConverters.getInstance(openapi31).converters.any { it instanceof GrailsModelConverter }
+        }
     }
 
     void 'registers nothing when the document is disabled'() {
