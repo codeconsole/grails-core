@@ -97,6 +97,18 @@ class ErrorsViewSpec extends Specification {
         openApi.components.schemas['ValidationErrors'].properties.keySet() == ['errors'] as Set
     }
 
+    void 'describes no 422 for a controller responding only in JSON where JSON views fall back to the object view'() {
+        given:
+        view('object/_object.gson', OBJECT_VIEW)
+
+        when:
+        def openApi = document()
+
+        then: 'it never answers with 422'
+        !openApi.paths['/teapots'].post.responses.containsKey('422')
+        openApi.paths['/teapots'].post.responses.containsKey('201')
+    }
+
     void 'describes the errors a controller renders with an errors view of its own without a shape'() {
         given:
         view('object/_object.gson', OBJECT_VIEW)
@@ -176,9 +188,10 @@ class ErrorsViewSpec extends Specification {
 
     private OpenAPI document(Map<String, Object> config = [:]) {
         def resolver = new JsonViewResolver(new JsonViewConfiguration(templatePath: views.path))
-        def controllers = [KettleController, GizmoController, SprocketController]
+        def controllers = [KettleController, GizmoController, SprocketController, TeapotController]
         OpenApiFixture.generator(OpenApiFixture.holder {
             '/kettles'(resources: 'kettle')
+            '/teapots'(resources: 'teapot')
             '/admin/gizmos'(resources: 'gizmo', namespace: 'admin')
             '/sprockets'(resources: 'sprocket')
         }, OpenApiFixture.application(controllers, [resolver]), OpenApiFixture.context([Kettle]), config).generate()
@@ -207,6 +220,13 @@ class GizmoController extends RestfulController<Kettle> {
     static responseFormats = ['json', 'xml']
 
     GizmoController() { super(Kettle) }
+}
+
+@Artefact('Controller')
+class TeapotController extends RestfulController<Kettle> {
+    static responseFormats = ['json']
+
+    TeapotController() { super(Kettle) }
 }
 
 @Artefact('Controller')

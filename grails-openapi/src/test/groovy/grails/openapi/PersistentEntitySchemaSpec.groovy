@@ -435,6 +435,7 @@ class PersistentEntitySchemaSpec extends Specification {
         with(openApi.components.schemas['Widget'].properties.version) {
             it
             readOnly
+            xml.attribute
         }
         !('version' in (openApi.components.schemas['Widget'].required ?: []))
 

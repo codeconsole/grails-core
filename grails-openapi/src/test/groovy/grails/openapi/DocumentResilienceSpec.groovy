@@ -73,6 +73,9 @@ class DocumentResilienceSpec extends Specification {
                 '#/components/schemas/ExplodingCommand'
         openApi.components.schemas['ExplodingCommand'].properties.keySet() == ['ok'] as Set
         !openApi.components.schemas['ExplodingCommand'].required
+
+        and: 'with what Grails declares of it that could be read'
+        openApi.components.schemas['ExplodingCommand'].xml.name == 'explodingCommand'
     }
 
     void 'no reference anywhere in the document is left unresolved'() {
