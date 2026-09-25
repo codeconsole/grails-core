@@ -78,3 +78,23 @@ class BeanRegistrarOverIncludedPluginBeanSpec extends Specification implements G
         applicationContext.getBean('registeredGreeting', RegisteredGreeting).text == 'from the test'
     }
 }
+
+class DoWithSpringOverIncludedPluginBeanSpec extends Specification implements GrailsUnitTest {
+
+    Set<String> getIncludePlugins() {
+        GrailsApplicationBuilder.DEFAULT_INCLUDED_PLUGINS + ['includedBeans'] as Set<String>
+    }
+
+    Closure doWithSpring() {
+        { ->
+            registeredGreeting(RegisteredGreeting) {
+                text = 'from the test'
+            }
+        }
+    }
+
+    void "the test's doWithSpring() replaces an included plugin's bean, as an application's does"() {
+        expect:
+        applicationContext.getBean('registeredGreeting', RegisteredGreeting).text == 'from the test'
+    }
+}

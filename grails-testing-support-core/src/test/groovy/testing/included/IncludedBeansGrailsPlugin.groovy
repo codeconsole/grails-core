@@ -43,10 +43,18 @@ class IncludedBeansGrailsPlugin extends Plugin {
     def beans = {
         bean(IncludedGreeting).conditionalOnMissingBean()
 
-        // In an application this backs off from registeredGreeting below, which the early phase
-        // registers first; in a unit test both are registered (IncludedPluginConditionalBeansSpec)
+        // Backs off from registeredGreeting below, which is registered first, in a unit test as in an
+        // application (IncludedPluginConditionalBeansSpec)
         bean('fallbackGreeting', RegisteredGreeting).conditionalOnMissingBean() {
             new RegisteredGreeting(text: 'fallback')
+        }
+    }
+
+    // Reads the test's doWithConfig, which has to be applied before plugin beans are registered
+    @Override
+    Closure doWithSpring() {
+        { ->
+            configuredGreeting(String, config.getProperty('included.greeting', String, 'unset'))
         }
     }
 

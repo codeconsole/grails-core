@@ -30,8 +30,10 @@ import org.springframework.beans.factory.BeanRegistrar
 import org.springframework.beans.factory.annotation.AnnotatedBeanDefinition
 import org.springframework.beans.factory.config.BeanDefinition
 import org.springframework.beans.factory.config.ConfigurableBeanFactory
+import org.springframework.beans.factory.config.ConfigurableListableBeanFactory
 import org.springframework.beans.factory.config.ConstructorArgumentValues
 import org.springframework.beans.factory.support.BeanDefinitionRegistry
+import org.springframework.beans.factory.support.BeanDefinitionRegistryPostProcessor
 import org.springframework.beans.factory.support.BeanRegistryAdapter
 import org.springframework.beans.factory.support.DefaultListableBeanFactory
 import org.springframework.beans.factory.support.RootBeanDefinition
@@ -61,6 +63,7 @@ import org.apache.grails.core.plugins.DefaultPluginDiscovery
 import org.apache.grails.core.plugins.PluginInfo
 import org.apache.grails.core.plugins.filters.IncludingPluginFilter
 import org.apache.grails.core.plugins.PluginDiscovery
+import org.grails.spring.DefaultRuntimeSpringConfiguration
 import org.grails.spring.context.support.GrailsPlaceholderConfigurer
 import org.grails.spring.context.support.MapBasedSmartPropertyOverrideConfigurer
 import org.grails.transaction.TransactionManagerPostProcessor
@@ -91,6 +94,9 @@ class GrailsApplicationBuilder {
 
     GrailsApplication grailsApplication
     Object servletContext
+
+    /** What the included plugins registered, which the harness's own defaults give way to. */
+    private Map<String, BeanDefinition> pluginBeanDefinitions = [:]
 
     GrailsApplicationBuilder build() {
 
@@ -196,6 +202,9 @@ class GrailsApplicationBuilder {
         }
 
         prepareContext(context, beanFactory)
+        // Added by hand, so it runs before the configuration classes are read, as an application's
+        // early phase does
+        context.addBeanFactoryPostProcessor(new IncludedPluginBeansPostProcessor(this, context))
         context.refresh()
         context.registerShutdownHook()
         return context
@@ -266,7 +275,17 @@ class GrailsApplicationBuilder {
     @CompileDynamic
     void registerBeans(GrailsApplication grailsApplication) {
         BeanDefinitionRegistry registry = (BeanDefinitionRegistry) grailsApplication.mainContext
-        Map<String, BeanDefinition> declaredByTest = beanDefinitionsDeclaredBy(configurationClasses, registry)
+        // These stand in for framework beans that give way to an application's own configuration (an
+        // auto-configuration's @ConditionalOnMissingBean backs off from it) and to a plugin's beans,
+        // so what the test's configuration and the included plugins registered under one of their
+        // names is kept.
+        Map<String, BeanDefinition> keep = [:]
+        pluginBeanDefinitions.each { String name, BeanDefinition definition ->
+            if (registry.containsBeanDefinition(name) && registry.getBeanDefinition(name).is(definition)) {
+                keep[name] = definition
+            }
+        }
+        keep.putAll(beanDefinitionsDeclaredBy(configurationClasses, registry))
 
         defineBeans(grailsApplication) { ->
 
@@ -286,10 +305,7 @@ class GrailsApplicationBuilder {
             }
         }
 
-        // These stand in for framework beans that an application's own configuration replaces (an
-        // auto-configuration's @ConditionalOnMissingBean backs off from it), so the test's own
-        // configuration keeps what it declared under one of their names.
-        declaredByTest.each { String name, BeanDefinition definition ->
+        keep.each { String name, BeanDefinition definition ->
             if (!registry.getBeanDefinition(name).is(definition)) {
                 registry.registerBeanDefinition(name, definition)
             }
@@ -354,16 +370,75 @@ class GrailsApplicationBuilder {
         (beanFactory as BeanDefinitionRegistry).registerBeanDefinition('grailsApplicationPostProcessor', beanDef)
     }
 
+    /**
+     * Registers the included plugins' {@code doWithSpring} and {@code beanRegistrar} beans before the
+     * configuration classes are read, where an application's early phase registers them, so a
+     * {@code @ConditionalOnMissingBean} bean - the framework's, a plugin's own or the test's - backs
+     * off from them. The plugins are those the test's {@link TestRuntimeGrailsApplicationPostProcessor}
+     * loads, with the test's {@code doWithConfig} already applied.
+     */
+    @CompileStatic
+    static class IncludedPluginBeansPostProcessor implements BeanDefinitionRegistryPostProcessor {
+
+        private final GrailsApplicationBuilder builder
+        private final ConfigurableApplicationContext context
+
+        IncludedPluginBeansPostProcessor(GrailsApplicationBuilder builder, ConfigurableApplicationContext context) {
+            this.builder = builder
+            this.context = context
+        }
+
+        @Override
+        void postProcessBeanDefinitionRegistry(BeanDefinitionRegistry registry) throws BeansException {
+            def processor = context.beanFactory.getBean('grailsApplicationPostProcessor', TestRuntimeGrailsApplicationPostProcessor)
+            Map<String, BeanDefinition> before = [:]
+            for (String name : registry.beanDefinitionNames) {
+                before[name] = registry.getBeanDefinition(name)
+            }
+            processor.registerPluginBeans(registry)
+            for (String name : registry.beanDefinitionNames) {
+                BeanDefinition definition = registry.getBeanDefinition(name)
+                if (!before[name].is(definition)) {
+                    builder.pluginBeanDefinitions[name] = definition
+                }
+            }
+        }
+
+        @Override
+        void postProcessBeanFactory(ConfigurableListableBeanFactory beanFactory) throws BeansException {
+        }
+    }
+
     static class TestRuntimeGrailsApplicationPostProcessor extends GrailsApplicationPostProcessor {
 
         Closure customizeGrailsApplicationClosure
         boolean localOverride = false
         BeanRegistrar beanRegistrar
+        private boolean pluginBeansRegistered
 
         TestRuntimeGrailsApplicationPostProcessor(Closure doWithSpringClosure, PluginDiscovery pluginDiscovery) {
             super([doWithSpring: { -> doWithSpringClosure }] as GrailsApplicationLifeCycle, null, pluginDiscovery)
             loadExternalBeans = false
             reloadingEnabled = false
+        }
+
+        /**
+         * The plugins' {@code doWithSpring} and {@code beanRegistrar} beans, as
+         * {@link #postProcessBeanDefinitionRegistry} would have registered them after the
+         * configuration classes; see {@link IncludedPluginBeansPostProcessor}.
+         */
+        void registerPluginBeans(BeanDefinitionRegistry registry) {
+            Holders.setGrailsApplication(grailsApplication)
+            def springConfig = new DefaultRuntimeSpringConfiguration()
+            pluginManager.doRuntimeConfiguration(springConfig)
+            springConfig.registerBeansWithRegistry(registry)
+            applyPluginBeanRegistrars(registry)
+            pluginBeansRegistered = true
+        }
+
+        @Override
+        protected boolean isPluginBeanRegistrationDone() {
+            pluginBeansRegistered || super.isPluginBeanRegistrationDone()
         }
 
         @Override

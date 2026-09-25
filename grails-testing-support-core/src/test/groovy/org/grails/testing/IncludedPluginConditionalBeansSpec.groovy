@@ -22,10 +22,10 @@ import spock.lang.Specification
 import testing.included.RegisteredGreeting
 
 /**
- * Where a unit test differs from an application. The test registers an included plugin's
- * {@code doWithSpring} and {@code beanRegistrar} beans after its configuration classes are read,
- * where an application's early phase registers them first, so a {@code @ConditionalOnMissingBean}
- * bean does not back off from them.
+ * An included plugin's {@code doWithSpring} and {@code beanRegistrar} beans are registered before the
+ * configuration classes are read, as an application's early phase registers them, so a
+ * {@code @ConditionalOnMissingBean} bean backs off from them in a unit test as it does in an
+ * application.
  */
 class IncludedPluginConditionalBeansSpec extends Specification implements GrailsUnitTest {
 
@@ -33,9 +33,18 @@ class IncludedPluginConditionalBeansSpec extends Specification implements Grails
         GrailsApplicationBuilder.DEFAULT_INCLUDED_PLUGINS + ['includedBeans'] as Set<String>
     }
 
-    void "a plugin's conditional bean does not back off from the plugin's own registered bean, as it would in an application"() {
-        expect: 'an application would have registeredGreeting alone'
-        applicationContext.getBeansOfType(RegisteredGreeting).keySet() == ['registeredGreeting', 'fallbackGreeting'] as Set
+    Closure doWithConfig() {
+        { config -> config.'included.greeting' = 'configured by the test' }
+    }
+
+    void "a plugin's conditional bean backs off from the plugin's own registered bean, as in an application"() {
+        expect:
+        applicationContext.getBeansOfType(RegisteredGreeting).keySet() == ['registeredGreeting'] as Set
+    }
+
+    void "the test's doWithConfig is applied before the plugin registers its beans"() {
+        expect:
+        applicationContext.getBean('configuredGreeting') == 'configured by the test'
     }
 }
 
@@ -51,8 +60,8 @@ class TestConditionalBeanOverIncludedPluginSpec extends Specification implements
         }
     }
 
-    void "a test's conditional bean does not back off from an included plugin's registered bean, as it would in an application"() {
-        expect: "an application would have registeredGreeting alone; the plugin's fallback backs off from the test's bean, as there"
-        applicationContext.getBeansOfType(RegisteredGreeting).keySet() == ['registeredGreeting', 'testGreeting'] as Set
+    void "a test's conditional bean backs off from an included plugin's registered bean, as an application's does"() {
+        expect:
+        applicationContext.getBeansOfType(RegisteredGreeting).keySet() == ['registeredGreeting'] as Set
     }
 }
