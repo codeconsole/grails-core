@@ -182,6 +182,9 @@ class OpenApiDocumentFunctionalSpec extends Specification implements HttpClientS
         then:
         group.paths['/books'].get['x-group'] == 'book-reads'
         group.paths['/books'].get['x-action'] == 'BookController.index'
+
+        and: 'and its own document customizers'
+        group['x-audience'] == 'readers'
     }
 
     void 'a group selects the operations that consume the media types it asks for'() {

@@ -52,6 +52,7 @@ class BuildTimeDocumentFunctionalSpec extends Specification implements HttpClien
         expect:
         operations(generated) == operations(served)
         extensions(generated) == extensions(served)
+        documentExtensions(generated) == documentExtensions(served)
         generated.components.schemas.keySet() == served.components.schemas.keySet()
         generated.info == served.info
     }
@@ -64,6 +65,7 @@ class BuildTimeDocumentFunctionalSpec extends Specification implements HttpClien
         expect:
         operations(generated) == operations(served)
         extensions(generated) == extensions(served)
+        documentExtensions(generated) == documentExtensions(served)
 
         where:
         group << ['catalogue', 'authors', 'author-changes', 'book-reads']
@@ -71,6 +73,13 @@ class BuildTimeDocumentFunctionalSpec extends Specification implements HttpClien
 
     private static Map<String, Set<String>> operations(Map document) {
         document.paths.collectEntries { String path, Map item -> [(path): item.keySet()] }
+    }
+
+    /**
+     * What the customizers added to the document.
+     */
+    private static Map documentExtensions(Map document) {
+        document.findAll { String key, value -> key.startsWith('x-') }
     }
 
     /**

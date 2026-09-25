@@ -20,7 +20,11 @@ package org.grails.openapi.springdoc
 
 import groovy.transform.CompileStatic
 
+import io.swagger.v3.oas.models.OpenAPI
+import org.slf4j.Logger
+import org.slf4j.LoggerFactory
 import org.springdoc.api.AbstractMultipleOpenApiResource
+import org.springdoc.core.customizers.GlobalOpenApiCustomizer
 import org.springdoc.core.customizers.OpenApiCustomizer
 import org.springdoc.core.customizers.SpringDocCustomizers
 import org.springdoc.core.models.GroupedOpenApi
@@ -48,6 +52,8 @@ import grails.openapi.OpenApiSelection
  */
 @CompileStatic
 class GroupedOpenApiContributor implements BeanPostProcessor, BeanFactoryAware {
+
+    private static final Logger LOG = LoggerFactory.getLogger(GroupedOpenApiContributor)
 
     private ListableBeanFactory beanFactory
 
@@ -107,6 +113,48 @@ class GroupedOpenApiContributor implements BeanPostProcessor, BeanFactoryAware {
     static List<OpenApiSelection> declaredGroups(ApplicationContext applicationContext) {
         applicationContext.getBeansOfType(GroupedOpenApi).values().collect { GroupedOpenApi group ->
             SpringdocSelections.groupSelection(group, SpringdocSelections.customizers(applicationContext))
+        }
+    }
+
+    /**
+     * Applies to a document generated without serving it the customizers springdoc applies to the
+     * document it serves: the default document's, or a group's own and the global ones. The one
+     * contributing the Grails description is left out, since the document already has it. A
+     * customizer that cannot customize a document outside a request is skipped, and logged.
+     *
+     * @param group the group, or {@code null} for the default document
+     */
+    static void customize(ApplicationContext applicationContext, String group, OpenAPI openApi) {
+        SpringDocCustomizers customizers = SpringdocSelections.customizers(applicationContext)
+        Set<OpenApiCustomizer> applied = new LinkedHashSet<>()
+        if (group == null) {
+            Set<OpenApiCustomizer> declared = customizers?.openApiCustomizers?.orElse(null)
+            if (declared) {
+                applied.addAll(declared)
+            }
+        }
+        else {
+            Set<GlobalOpenApiCustomizer> globals = customizers?.globalOpenApiCustomizers?.orElse(null)
+            if (globals) {
+                applied.addAll(globals)
+            }
+            GroupedOpenApi declared = applicationContext.getBeansOfType(GroupedOpenApi).values()
+                    .find { GroupedOpenApi it -> it.group == group }
+            if (declared?.openApiCustomizers) {
+                applied.addAll(declared.openApiCustomizers)
+            }
+        }
+        for (OpenApiCustomizer customizer : applied) {
+            if (customizer instanceof GrailsOpenApiCustomizer) {
+                continue
+            }
+            try {
+                customizer.customise(openApi)
+            }
+            catch (RuntimeException e) {
+                LOG.warn('Skipping the OpenAPI customizer [{}] outside a request: {}', customizer.getClass().name, e.message)
+                LOG.debug('Could not apply the OpenAPI customizer [{}]', customizer.getClass().name, e)
+            }
         }
     }
 

@@ -20,6 +20,10 @@ package org.apache.grails.openapi.cli
 
 import io.swagger.v3.core.util.Json31
 import io.swagger.v3.core.util.Yaml31
+import io.swagger.v3.oas.models.OpenAPI
+import org.springdoc.core.customizers.GlobalOpenApiCustomizer
+import org.springdoc.core.customizers.OpenApiCustomizer
+import org.springdoc.core.customizers.SpringDocCustomizers
 import org.springdoc.core.models.GroupedOpenApi
 import org.springframework.context.support.GenericApplicationContext
 import org.springframework.core.env.MapPropertySource
@@ -65,6 +69,37 @@ class GenerateOpenApiCommandSpec extends Specification {
         read('openapi.yaml').paths.keySet() == ['/reports', '/ledgers'] as Set
         read('openapi-reports.yaml').paths.keySet() == ['/reports'] as Set
         read('openapi-ledgers.yaml').paths.keySet() == ['/ledgers'] as Set
+    }
+
+    void 'applies the customizers springdoc applies to each document it serves'() {
+        given:
+        applicationContext.beanFactory.registerSingleton('springDocCustomizers', new SpringDocCustomizers(
+                Optional.of([{ OpenAPI openApi -> openApi.addExtension('x-default', true) } as OpenApiCustomizer,
+                             { OpenAPI openApi -> throw new IllegalStateException('No current request') } as OpenApiCustomizer]
+                        as LinkedHashSet<OpenApiCustomizer>),
+                Optional.of([] as LinkedHashSet), Optional.empty(), Optional.empty(), Optional.of([] as LinkedHashSet),
+                Optional.of([{ OpenAPI openApi -> openApi.addExtension('x-global', true) } as GlobalOpenApiCustomizer]
+                        as LinkedHashSet<GlobalOpenApiCustomizer>),
+                Optional.of([] as LinkedHashSet), Optional.of([] as LinkedHashSet), Optional.empty(), Optional.empty()))
+        applicationContext.beanFactory.registerSingleton('ledgers', GroupedOpenApi.builder().group('ledgers')
+                .pathsToMatch('/ledgers/**').addOpenApiCustomizer { OpenAPI openApi -> openApi.addExtension('x-ledgers', true) }
+                .build())
+        def command = command([:])
+
+        when:
+        boolean handled = command.handle(context("--output-directory=${directory.absolutePath}"))
+
+        then: 'the default document with the customizers of the default document'
+        handled
+        read('openapi.yaml')['x-default'] == true
+
+        and: 'a group with its own and the global ones'
+        read('openapi-ledgers.yaml')['x-ledgers'] == true
+        read('openapi-ledgers.yaml')['x-global'] == true
+        !read('openapi-ledgers.yaml').containsKey('x-default')
+
+        and: 'a customizer that needs a request is skipped rather than failing the document'
+        read('openapi.yaml').paths.containsKey('/ledgers')
     }
 
     void 'writes JSON when asked to'() {

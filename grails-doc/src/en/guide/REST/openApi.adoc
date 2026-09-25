@@ -73,6 +73,11 @@ The `--output-directory` and `--format` options, or the `grails.openapi.output-d
 Because the command starts the application, it needs whatever the application needs to start in
 the environment it runs in, such as a datasource.
 
+Where springdoc is configured, the command applies the method filters, operation customizers and
+OpenAPI customizers springdoc applies to the documents it serves, so each file describes what
+springdoc serves. A customizer that cannot customize a document outside a request is skipped, and
+logged.
+
 To package the description and serve it as a static file, include it in the application's
 static resources when the application is assembled:
 

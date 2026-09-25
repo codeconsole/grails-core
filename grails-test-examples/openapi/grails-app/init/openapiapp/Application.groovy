@@ -82,6 +82,7 @@ class Application extends GrailsAutoConfiguration {
                     operation.addExtension('x-group', 'book-reads')
                     operation
                 }
+                .addOpenApiCustomizer { OpenAPI openApi -> openApi.addExtension('x-audience', 'readers') }
                 .build()
     }
 }

@@ -38,7 +38,8 @@ import org.grails.openapi.springdoc.GroupedOpenApiContributor
  *
  * <p>The default document is written to {@code openapi.yaml}, and each group - configured under
  * {@code grails.openapi.groups}, or declared to springdoc as a {@code GroupedOpenApi} - to
- * {@code openapi-<group>.yaml}. The directory and format come
+ * {@code openapi-<group>.yaml}. Where springdoc is configured, its method filters and customizers
+ * are applied as they are to the documents it serves. The directory and format come
  * from {@code grails.openapi.output-directory} and {@code grails.openapi.output-format}, and can be
  * overridden with the {@code --output-directory} and {@code --format} options.</p>
  */
@@ -66,9 +67,9 @@ class GenerateOpenApiCommand implements ApplicationCommand {
             return false
         }
 
-        write(generator.generate(defaultSelection(settings)), new File(directory, "openapi.${format}"), format)
+        write(customized(generator.generate(defaultSelection(settings)), null), new File(directory, "openapi.${format}"), format)
         for (OpenApiSelection group : groups(settings)) {
-            write(generator.generate(group), new File(directory, "openapi-${group.group}.${format}"), format)
+            write(customized(generator.generate(group), group.group), new File(directory, "openapi-${group.group}.${format}"), format)
         }
         true
     }
@@ -96,6 +97,17 @@ class GenerateOpenApiCommand implements ApplicationCommand {
         }
         settings.groups.each { OpenApiSelection group -> byName.putIfAbsent(group.group, group) }
         byName.values()
+    }
+
+    /**
+     * The document with the customizers springdoc applies to the one it serves, where springdoc is
+     * configured.
+     */
+    private OpenAPI customized(OpenAPI openApi, String group) {
+        if (springdocPresent()) {
+            GroupedOpenApiContributor.customize(applicationContext, group, openApi)
+        }
+        openApi
     }
 
     private static boolean springdocPresent() {
