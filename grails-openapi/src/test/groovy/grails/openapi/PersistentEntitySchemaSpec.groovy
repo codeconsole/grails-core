@@ -113,6 +113,19 @@ class PersistentEntitySchemaSpec extends Specification {
         }
     }
 
+    void 'describes each of two properties where one is renamed to the name the other is rendered by'() {
+        when:
+        def openApi = OpenApiFixture.document([CatalogCardController], [CatalogCard]) {
+            '/cards'(resources: 'catalogCard')
+        }
+        def properties = openApi.components.schemas['CatalogCard'].properties
+
+        then: 'the rename holds the name, and the other keeps the one Jackson gives it'
+        properties.ISBN.maxLength == 20
+        properties.isbn.maxLength == 13
+        properties.keySet().containsAll(['id', 'ISBN', 'isbn'])
+    }
+
     void 'describes an identifier named otherwise as Grails renders it'() {
         when:
         def openApi = OpenApiFixture.document([VolumeController, LoanController], [Volume, Loan]) {
@@ -587,6 +600,24 @@ class Widget {
 class Crate {
     String label
     static hasMany = [widgets: Widget]
+}
+
+@Entity
+class CatalogCard {
+    String ISBN
+
+    @JsonProperty('ISBN')
+    String legacyCode
+
+    static constraints = {
+        ISBN maxSize: 13
+        legacyCode maxSize: 20
+    }
+}
+
+@Artefact('Controller')
+class CatalogCardController extends RestfulController<CatalogCard> {
+    CatalogCardController() { super(CatalogCard) }
 }
 
 @Entity

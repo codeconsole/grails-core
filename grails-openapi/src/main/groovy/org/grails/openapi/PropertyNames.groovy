@@ -105,11 +105,21 @@ class PropertyNames {
         if (!properties) {
             return described
         }
+        // A name kept as it is - renamed on purpose, or no property's - holds its place, and a
+        // property takes the name Grails uses only where nothing else is described by it.
+        Set<String> taken = properties.keySet().findAll { String key ->
+            String name = nameOf(key)
+            name == null || name in renamed || name == key
+        }.toSet()
         Map<String, Schema> named = new LinkedHashMap<>()
         List<String> required = model.required != null ? new ArrayList<String>(model.required) : null
         properties.each { String key, Schema property ->
             String name = nameOf(key)
-            String describedAs = name != null && !(name in renamed) && !named.containsKey(name) ? name : key
+            String describedAs = key
+            if (name != null && !(name in renamed) && name != key && !(name in taken)) {
+                describedAs = name
+                taken << name
+            }
             named[describedAs] = property
             if (name != null) {
                 described[name] = describedAs
