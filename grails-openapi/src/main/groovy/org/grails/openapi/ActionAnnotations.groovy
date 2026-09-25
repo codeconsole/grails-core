@@ -41,8 +41,10 @@ import io.swagger.v3.oas.annotations.tags.Tag as TagAnnotation
 import io.swagger.v3.oas.models.Components
 import io.swagger.v3.oas.models.ExternalDocumentation
 import io.swagger.v3.oas.models.Operation
+import io.swagger.v3.oas.models.SpecVersion
 import io.swagger.v3.oas.models.headers.Header
 import io.swagger.v3.oas.models.media.Content
+import io.swagger.v3.oas.models.media.MediaType
 import io.swagger.v3.oas.models.media.Schema
 import io.swagger.v3.oas.models.parameters.Parameter as ParameterModel
 import io.swagger.v3.oas.models.parameters.RequestBody
@@ -144,6 +146,44 @@ class ActionAnnotations {
             }
             applyRequestBody(operation, method.getAnnotation(RequestBodyAnnotation), components, openapi31)
             applySecurity(operation, repeatable(method, SecurityRequirementAnnotation))
+        }
+        if (openapi31) {
+            declareTypes(operation)
+        }
+    }
+
+    /**
+     * swagger-core reads the type an annotation declares into the type of a 3.1 schema, which a 3.1
+     * document is written from the types of, so without them the type is not written at all.
+     */
+    private static void declareTypes(Operation operation) {
+        operation.responses?.values()?.each { ApiResponse response ->
+            declareTypes(response.content)
+            response.headers?.values()?.each { Header header -> declareTypes(header.schema) }
+        }
+        declareTypes(operation.requestBody?.content)
+        operation.parameters?.each { ParameterModel parameter ->
+            declareTypes(parameter.schema)
+            declareTypes(parameter.content)
+        }
+    }
+
+    private static void declareTypes(Content content) {
+        content?.values()?.each { MediaType mediaType -> declareTypes(mediaType.schema) }
+    }
+
+    private static void declareTypes(Schema schema) {
+        if (schema == null) {
+            return
+        }
+        if (schema.specVersion == SpecVersion.V31 && schema.type && !schema.types) {
+            schema.setTypes([schema.type] as Set<String>)
+        }
+        declareTypes(schema.items)
+        ((Map<String, Schema>) schema.properties)?.values()?.each { Schema property -> declareTypes(property) }
+        [schema.allOf, schema.anyOf, schema.oneOf].each { List<Schema> schemas -> schemas?.each { declareTypes(it) } }
+        if (schema.additionalProperties instanceof Schema) {
+            declareTypes((Schema) schema.additionalProperties)
         }
     }
 

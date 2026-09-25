@@ -18,6 +18,8 @@
  */
 package grails.openapi
 
+import groovy.json.JsonSlurper
+
 import io.swagger.v3.oas.annotations.ExternalDocumentation
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.Parameter
@@ -96,6 +98,11 @@ class ControllerAnnotationSpec extends Specification {
         content.keySet() == ['application/pdf'] as Set
         OpenApiFixture.typeOf(content['application/pdf'].schema) == 'string'
         content['application/pdf'].schema.format == 'binary'
+
+        and: 'written with its type, which a 3.1 document is written from the types of'
+        Map written = (Map) new JsonSlurper().parseText(GrailsOpenApiGenerator.serialize(openApi, 'json'))
+        written.paths['/consignments/{number}/letter'].get.responses['200'].content['application/pdf'].schema ==
+                [type: 'string', format: 'binary']
     }
 
     void 'a collection response is described as declared'() {
