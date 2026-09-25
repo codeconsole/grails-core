@@ -142,6 +142,16 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
     @Input
     abstract Property<String> getPageEncoding()
 
+    /**
+     * The separator the pages were expanded under. A template that mentions {@code packagePath}
+     * expands differently on Windows, so pages built on one platform are not taken from the build
+     * cache for another.
+     */
+    @Input
+    String getFileSeparator() {
+        File.separator
+    }
+
     /** The Java the pages are expanded with; the build's own when not set. */
     @Nested
     @Optional
