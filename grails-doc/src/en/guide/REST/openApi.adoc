@@ -139,6 +139,7 @@ an entry in `grails.plugin.springsecurity.controllerAnnotations.staticRules`.
 
 | `grails.openapi.enabled` | `true` | Whether the description is generated at all
 | `grails.openapi.base-document` | | A YAML or JSON document the description starts from, see <<openApiBaseDocument,The Base Document>>
+| `grails.openapi.display-name` | `info.app.name` | The title of the default document
 | `grails.openapi.annotated-only` | `false` | Whether only annotated actions are described, see <<openApiSelecting,Choosing What Is Described>>
 | `grails.openapi.include-form-actions` | `false` | Whether the `create` and `edit` actions of a `RestfulController` are described
 | `grails.openapi.paths-to-match`, `grails.openapi.paths-to-exclude` | | Ant patterns of the paths the default document describes, or leaves out
