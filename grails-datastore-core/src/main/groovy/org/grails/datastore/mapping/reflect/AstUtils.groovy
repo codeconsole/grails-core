@@ -820,11 +820,15 @@ class AstUtils {
             if (anInterface.getName().equals(interfaceName)) {
                 return anInterface
             }
+            // Every interface is searched. Returning the first one's super-interfaces' answer missed
+            // an interface listed after one that has super-interfaces of its own.
             ClassNode[] childInterfaces = anInterface.getInterfaces()
             if (childInterfaces != null && childInterfaces.length > 0) {
-                return implementsInterfaceInternal(childInterfaces, interfaceName)
+                ClassNode found = implementsInterfaceInternal(childInterfaces, interfaceName)
+                if (found != null) {
+                    return found
+                }
             }
-
         }
         return null
     }

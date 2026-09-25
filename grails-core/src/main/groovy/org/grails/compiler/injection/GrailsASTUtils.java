@@ -774,11 +774,13 @@ public class GrailsASTUtils {
             if (anInterface.getName().equals(interfaceName)) {
                 return true;
             }
+            // Every interface is searched. Returning the first one's super-interfaces' answer missed
+            // an interface listed after one that has super-interfaces of its own.
             ClassNode[] childInterfaces = anInterface.getInterfaces();
-            if (childInterfaces != null && childInterfaces.length > 0) {
-                return implementsInterfaceInternal(childInterfaces, interfaceName);
+            if (childInterfaces != null && childInterfaces.length > 0 &&
+                    implementsInterfaceInternal(childInterfaces, interfaceName)) {
+                return true;
             }
-
         }
         return false;
     }
