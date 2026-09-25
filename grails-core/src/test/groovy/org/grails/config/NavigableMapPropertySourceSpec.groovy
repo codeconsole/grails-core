@@ -77,4 +77,25 @@ class NavigableMapPropertySourceSpec extends Specification {
         ps.getProperty('app.names') == ['p', 'q']
         ps.containsProperty('app.names')
     }
+
+    def "Ensure a list holding lists of objects is presented element by element"() {
+        given:
+        def map = new NavigableMap()
+        map.merge([app: [rows: [[[a: 1]], [[b: 2], 'plain']], grid: [[1, 2], [3]]]], false)
+
+        when:
+        def ps = new NavigableMapPropertySource("test", map)
+
+        then: "Each object is presented under the indexed names Spring Boot binds"
+        ps.getProperty('app.rows[0][0].a') == 1
+        ps.getProperty('app.rows[1][0].b') == 2
+        ps.getProperty('app.rows[1][1]') == 'plain'
+
+        and: "The list itself is not"
+        ps.getProperty('app.rows') == null
+        !ps.containsProperty('app.rows')
+
+        and: "A list holding lists of plain values is presented as it is"
+        ps.getProperty('app.grid') == [[1, 2], [3]]
+    }
 }

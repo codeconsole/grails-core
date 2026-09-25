@@ -4123,6 +4123,9 @@ Previously the whole list was also presented under its own name, so Spring Boot 
 maps, and code reading the declared type failed with a `ClassCastException`. springdoc failed that
 way on `springdoc.group-configs` before the application could start.
 
-`Environment.getProperty('springdoc.group-configs')` now returns `null`, as it does in a Spring Boot
-application. Read such a list through `grailsApplication.config`, which is unchanged, or bind it. A
-list of plain values, such as `names: [a, b]`, is presented as before.
+`Environment.getProperty('springdoc.group-configs')` now returns `null` and
+`Environment.containsProperty` returns `false`, as they do in a Spring Boot application, so a
+`@Value('${springdoc.group-configs}')` without a default fails to resolve. Read such a list through
+`grailsApplication.config`, which is unchanged, or bind it. The same applies to a list holding lists
+of objects, such as `rows: [[{a: 1}], [{b: 2}]]`, whose objects are presented under names such as
+`rows[0][0].a`. A list of plain values, such as `names: [a, b]`, is presented as before.
