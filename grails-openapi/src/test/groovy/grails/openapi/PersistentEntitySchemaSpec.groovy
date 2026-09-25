@@ -460,10 +460,14 @@ class PersistentEntitySchemaSpec extends Specification {
         }
         def schema = openApi.components.schemas['RenamedBook']
 
-        then: 'a Jackson rename is described under the name it gives'
+        then: 'a property whose description is renamed is described under the name it gives'
         schema.properties.book_title.maxLength == 50
         schema.required.contains('book_title')
         !schema.properties.containsKey('title')
+
+        and: 'a Jackson rename, which Grails renders and binds the property without, is not'
+        schema.properties.containsKey('customerName')
+        !schema.properties.containsKey('customer_name')
 
         and: 'a property whose name Jackson writes another way is described by the name Grails renders it by'
         schema.properties.containsKey('ISBN')
@@ -607,7 +611,7 @@ class Crate {
 class CatalogCard {
     String ISBN
 
-    @JsonProperty('ISBN')
+    @SchemaAnnotation(name = 'ISBN')
     String legacyCode
 
     static constraints = {
@@ -700,8 +704,11 @@ class ManifestController extends RestfulController<Manifest> {
 @Entity
 class RenamedBook {
 
-    @JsonProperty('book_title')
+    @SchemaAnnotation(name = 'book_title')
     String title
+
+    @JsonProperty('customer_name')
+    String customerName
 
     String ISBN
 

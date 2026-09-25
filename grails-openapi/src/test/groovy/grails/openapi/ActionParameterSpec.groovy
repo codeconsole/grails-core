@@ -18,7 +18,7 @@
  */
 package grails.openapi
 
-import com.fasterxml.jackson.annotation.JsonProperty
+import io.swagger.v3.oas.annotations.media.Schema
 import io.swagger.v3.oas.models.OpenAPI
 
 import grails.artefact.Artefact
@@ -133,7 +133,7 @@ class LockerSearch implements Validateable {
     List<String> tags
     LockerAddress address
 
-    @JsonProperty('code_name')
+    @Schema(name = 'code_name')
     String codeName
 
     String SKU

@@ -36,9 +36,10 @@ import org.springframework.beans.BeanUtils
  * The names the properties of a type Grails renders and binds are described under.
  *
  * <p>swagger-core names a property as Jackson does, which is not always the name Grails renders and
- * binds it by: Jackson describes {@code getISBN()} as {@code isbn}, where Grails uses {@code ISBN}.
- * A property is described by the name Grails uses, unless it is renamed on purpose, with
- * {@code @JsonProperty} or {@code @Schema(name)}.</p>
+ * binds it by: Jackson describes {@code getISBN()} as {@code isbn}, where Grails uses {@code ISBN},
+ * and {@code @JsonProperty} renames a property Grails' converters, JSON views and data binding still
+ * render and bind by its own name. A property is described by the name Grails uses, unless its
+ * description is renamed on purpose, with {@code @Schema(name)}.</p>
  */
 @CompileStatic
 class PropertyNames {
@@ -49,7 +50,7 @@ class PropertyNames {
     private final Map<String, String> swaggerNames
 
     /**
-     * The properties renamed on purpose.
+     * The properties whose description is renamed on purpose.
      */
     private final Set<String> renamed
 
@@ -80,7 +81,7 @@ class PropertyNames {
                 if (name) {
                     String declared = schemaName(property)
                     swaggerNames[name] = declared ?: property.name
-                    if (declared || property.explicitlyNamed) {
+                    if (declared) {
                         renamed << name
                     }
                 }
