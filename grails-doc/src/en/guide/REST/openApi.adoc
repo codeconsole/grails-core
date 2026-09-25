@@ -788,9 +788,14 @@ bodies, and the paging of its listing.
   the document. An operation that referred to it is described without a shape rather than with a
   reference that does not resolve. A class whose constraints cannot be evaluated is described
   without them, and logged.
-* A `RestfulController` is known to be read only from the controller the application serves
-  requests with, which is not created to be described, so one in a scope other than singleton is
-  described with its write actions.
+* A `RestfulController` is known to be read only, and the resource it serves where it declares no
+  type argument, from the controller the application serves requests with, which is not created to
+  be described. So one in a scope other than singleton is described with its write actions, and one
+  that also passes its resource only to the constructor, as `extends RestfulController` with
+  `super(Book)` does, is described without a schema for its requests and responses. This applies to
+  every controller where `grails.controllers.defaultScope` is `prototype`, rather than only to one
+  declaring its own scope. Declaring the type argument, as `extends RestfulController<Book>`,
+  describes the resource in any scope.
 * A resource is described as Grails renders a domain class or an object by default. A JSON view,
   other than the errors view, or a custom renderer that renders another shape is described with
   `@ApiResponse`.

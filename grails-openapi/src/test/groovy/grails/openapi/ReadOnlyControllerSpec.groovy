@@ -19,6 +19,9 @@
 package grails.openapi
 
 import io.swagger.v3.oas.models.OpenAPI
+import org.springframework.beans.factory.config.BeanDefinition
+import org.springframework.beans.factory.support.RootBeanDefinition
+import org.springframework.context.support.GenericApplicationContext
 
 import grails.artefact.Artefact
 import grails.gorm.annotation.Entity
@@ -110,6 +113,38 @@ class ReadOnlyControllerSpec extends Specification {
         openApi.paths['/archives/{id}'].delete
     }
 
+    void 'a controller the application creates for each request is described with what its class declares'() {
+        given: 'read-only controllers the application context creates for each request, as defaultScope prototype does'
+        def context = new GenericApplicationContext()
+        [ArchiveController, AlmanacController].each { Class<?> type ->
+            def definition = new RootBeanDefinition(type)
+            definition.scope = BeanDefinition.SCOPE_PROTOTYPE
+            context.registerBeanDefinition(type.name, definition)
+        }
+        context.refresh()
+        def application = OpenApiFixture.application([ArchiveController, AlmanacController]).tap { it.mainContext = context }
+
+        when:
+        def openApi = OpenApiFixture.generator(OpenApiFixture.holder {
+            '/archives'(resources: 'archive')
+            '/almanacs'(resources: 'almanac')
+        }, application, OpenApiFixture.context([Archive])).generate()
+
+        then: 'with the write actions, since only a controller it serves requests with says it is read only'
+        openApi.paths['/archives'].post
+        openApi.paths['/archives/{id}'].delete
+
+        and: 'with the resource its type argument declares'
+        openApi.paths['/archives/{id}'].get.responses['200'].content['application/json'].schema.$ref ==
+                '#/components/schemas/Archive'
+
+        and: 'without a schema where it passes its resource only to the constructor'
+        openApi.paths['/almanacs/{id}'].get.responses['200'].content?.get('application/json')?.schema == null
+
+        cleanup:
+        context?.close()
+    }
+
     private static OpenAPI document(List<Object> controllers, Map<String, Object> config = [:], Closure mappings) {
         List<Class<?>> types = controllers*.getClass()
         OpenApiFixture.generator(OpenApiFixture.holder(mappings), OpenApiFixture.application(types, controllers),
@@ -130,6 +165,11 @@ class ArchiveController extends RestfulController<Archive> {
 
 @Artefact('Controller')
 class AuditedArchiveController extends ArchiveController {
+}
+
+@Artefact('Controller')
+class AlmanacController extends RestfulController {
+    AlmanacController() { super(Archive, true) }
 }
 
 @Artefact('Controller')
