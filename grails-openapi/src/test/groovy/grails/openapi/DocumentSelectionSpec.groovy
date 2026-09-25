@@ -18,22 +18,16 @@
  */
 package grails.openapi
 
-import java.lang.reflect.Method
-
 import io.swagger.v3.oas.annotations.Operation as OperationAnnotation
 import io.swagger.v3.oas.annotations.tags.Tag
-import io.swagger.v3.oas.models.Components
-import io.swagger.v3.oas.models.Operation
 import io.swagger.v3.oas.models.OpenAPI
 import io.swagger.v3.oas.models.PathItem
 
 import grails.artefact.Artefact
-import grails.core.GrailsControllerClass
 import grails.gorm.annotation.Entity
 import grails.openapi.namespaced.v1.GateController as V1GateController
 import grails.openapi.namespaced.v2.GateController as V2GateController
 import grails.rest.RestfulController
-import org.grails.openapi.ActionHooks
 
 import spock.lang.Specification
 
@@ -125,72 +119,6 @@ class DocumentSelectionSpec extends Specification {
 
         expect:
         generator.generate('xml').paths.keySet() == ['/tickets', '/tickets/{id}'] as Set
-    }
-
-    void 'selects the actions a selection includes, by the method each is declared as'() {
-        given:
-        List<Method> filtered = []
-        def selection = new HookedSelection(selects: { Method action ->
-            filtered << action
-            action.name != 'delete'
-        })
-
-        when:
-        def openApi = OpenApiFixture.generator(OpenApiFixture.holder(MAPPINGS),
-                OpenApiFixture.application([CrateStackController, PalletController, V1GateController, V2GateController]),
-                OpenApiFixture.context([CrateStack, Pallet])).generate(selection)
-
-        then:
-        openApi.paths['/api/v1/crates/{id}'].get
-        openApi.paths['/api/v1/crates/{id}'].delete == null
-        openApi.paths['/api/v1/pallets/{id}'].delete == null
-
-        and: 'an action taking parameters is decided by the method it is declared as, not the one Grails adds'
-        filtered.findAll { it.name == 'index' && it.declaringClass == CrateStackController }*.parameterTypes ==
-                [[Integer] as Class[]]
-    }
-
-    void 'customizes each operation with the controller and the action serving it'() {
-        given:
-        def selection = new HookedSelection(customizes: { Operation operation, GrailsControllerClass controller, Method action ->
-            action.name == 'delete'
-                    ? null
-                    : operation.summary("${controller.clazz.simpleName}.${action.name}(${action.parameterCount})".toString())
-        })
-        def application = OpenApiFixture.application([CrateStackController, PalletController],
-                [new CrateStackController(), new PalletController()])
-
-        when:
-        def openApi = OpenApiFixture.generator(OpenApiFixture.holder {
-            '/crates'(resources: 'crateStack')
-            '/pallets'(resources: 'pallet')
-        }, application, OpenApiFixture.context([CrateStack, Pallet])).generate(selection)
-
-        then: 'after the annotations, with the method each action is declared as'
-        openApi.paths['/crates'].get.summary == 'CrateStackController.index(1)'
-        openApi.paths['/pallets/{id}'].get.summary == 'PalletController.show(0)'
-
-        and: 'a customizer that returns nothing leaves the operation out'
-        openApi.paths['/crates/{id}'].delete == null
-        openApi.paths['/crates/{id}'].get
-    }
-
-    void 'leaves out only the operation of an action that cannot be described'() {
-        given: 'an action whose method refers to a class that is not on the classpath'
-        def selection = new HookedSelection(customizes: { Operation operation, GrailsControllerClass controller, Method action ->
-            if (action?.name == 'delete') {
-                throw new NoClassDefFoundError('com/example/Missing')
-            }
-            operation
-        })
-
-        when:
-        def openApi = OpenApiFixture.generator(OpenApiFixture.holder { '/crates'(resources: 'crateStack') },
-                OpenApiFixture.application([CrateStackController]), OpenApiFixture.context([CrateStack])).generate(selection)
-
-        then:
-        openApi.paths['/crates/{id}'].get
-        openApi.paths['/crates/{id}'].delete == null
     }
 
     void 'describes only what is annotated when asked to'() {
@@ -292,23 +220,4 @@ class CrateStackController extends RestfulController<CrateStack> {
 @Artefact('Controller')
 class PalletController extends RestfulController<Pallet> {
     PalletController() { super(Pallet) }
-}
-
-/**
- * A selection deciding by the action and customizing each operation, as springdoc's is.
- */
-class HookedSelection extends OpenApiSelection implements ActionHooks {
-
-    Closure<Boolean> selects = { Method action -> true }
-    Closure<Operation> customizes = { Operation operation, GrailsControllerClass controller, Method action -> operation }
-
-    @Override
-    boolean selectsAction(Method action) {
-        selects.call(action)
-    }
-
-    @Override
-    Operation customize(Operation operation, Components components, GrailsControllerClass controller, Method action) {
-        customizes.call(operation, controller, action)
-    }
 }

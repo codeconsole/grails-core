@@ -178,6 +178,47 @@ class GroupedOpenApiContributorSpec extends Specification {
         !openApi.paths['/widgets/{id}']?.get
     }
 
+    void 'gives a method filter an action taking parameters as the controller declares it, not the one Grails adds'() {
+        given:
+        List<Method> filtered = []
+        def customizers = customizers(methodFilters: [{ Method action ->
+            filtered << action
+            true
+        } as OpenApiMethodFilter])
+        def generator = OpenApiFixture.generator(OpenApiFixture.holder { '/widgets'(resources: 'listedWidget') },
+                OpenApiFixture.application([ListedWidgetController]), OpenApiFixture.context([Widget, Crate]))
+
+        when:
+        generator.generate(SpringdocSelection.defaultSelection(new OpenApiSelection(), customizers))
+
+        then:
+        filtered.findAll { it.name == 'index' && it.declaringClass == ListedWidgetController }*.parameterTypes ==
+                [[Integer] as Class[]]
+    }
+
+    void 'customizes an operation after its annotations, and leaves out one a customizer returns nothing for'() {
+        given:
+        def customizers = customizers(operationCustomizers: [{ Operation operation, HandlerMethod handlerMethod ->
+            Method action = handlerMethod.method
+            action.name == 'delete'
+                    ? null
+                    : operation.summary("${handlerMethod.beanType.simpleName}.${action.name}(${action.parameterCount})".toString())
+        } as OperationCustomizer])
+        def generator = OpenApiFixture.generator(OpenApiFixture.holder { '/widgets'(resources: 'listedWidget') },
+                OpenApiFixture.application([ListedWidgetController], [new ListedWidgetController()]),
+                OpenApiFixture.context([Widget, Crate]))
+
+        when:
+        def openApi = generator.generate(SpringdocSelection.defaultSelection(new OpenApiSelection(), customizers))
+
+        then: 'with the method each action is declared as'
+        openApi.paths['/widgets'].get.summary == 'ListedWidgetController.index(1)'
+        openApi.paths['/widgets/{id}'].get.summary == 'ListedWidgetController.show(0)'
+
+        and:
+        openApi.paths['/widgets/{id}'].delete == null
+    }
+
     void 'describes a controller that is not a singleton without creating it'() {
         given: 'a controller in the prototype scope, and a customizer reading the handler of each operation'
         CountedWidgetController.created = 0
@@ -425,6 +466,20 @@ class AnnotatedWidgetController extends RestfulController<Widget> {
     @Override
     Object index() {
         super.index(10)
+    }
+}
+
+@Artefact('Controller')
+class ListedWidgetController extends RestfulController<Widget> {
+
+    ListedWidgetController() {
+        super(Widget)
+    }
+
+    @OperationAnnotation(summary = 'List the widgets')
+    @Override
+    Object index(Integer max) {
+        null
     }
 }
 
