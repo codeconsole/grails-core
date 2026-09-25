@@ -18,10 +18,13 @@
  */
 package org.grails.plugins.openapi
 
+import io.swagger.v3.core.converter.ModelConverter
 import io.swagger.v3.core.converter.ModelConverters
 import io.swagger.v3.oas.models.OpenAPI
+import org.springdoc.core.converters.ModelConverterRegistrar
 import org.springdoc.core.customizers.OpenApiCustomizer
 import org.springdoc.core.models.GroupedOpenApi
+import org.springdoc.core.properties.SpringDocConfigProperties
 import org.springframework.beans.factory.support.BeanRegistryAdapter
 import org.springframework.beans.factory.support.DefaultListableBeanFactory
 import org.springframework.core.env.MapPropertySource
@@ -31,6 +34,7 @@ import grails.artefact.Artefact
 import grails.core.DefaultGrailsApplication
 import grails.core.GrailsApplication
 import grails.openapi.GrailsOpenApiGenerator
+import grails.validation.Validateable
 import grails.web.mapping.UrlMappingsHolder
 import org.grails.openapi.GrailsModelConverter
 import org.grails.support.MockApplicationContext
@@ -81,17 +85,35 @@ class OpenApiGrailsPluginSpec extends Specification {
         group.headersToMatch == ['X-Api-Version=1']
     }
 
-    void 'teaches swagger-core the Grails types as the application starts, before springdoc resolves any'() {
+    void 'springdoc registers the Grails converter with its own as the application starts'() {
         given: 'swagger-core as a new JVM has it'
-        [false, true].each { boolean openapi31 -> ModelConverters.getInstance(openapi31).removeConverter(GrailsModelConverter.INSTANCE) }
+        def properties = new SpringDocConfigProperties()
+        def converters = ModelConverters.getInstance(properties.openapi31)
+        converters.removeConverter(GrailsModelConverter.INSTANCE)
 
-        when:
-        register()
+        when: 'the plugin registers its beans'
+        def beanFactory = register()
+
+        then: 'swagger-core is left as it is, since an application processed ahead of time registers no beans as it starts'
+        !converters.converters.contains(GrailsModelConverter.INSTANCE)
+
+        when: 'springdoc registers the converters the application declares, before it resolves any type'
+        new ModelConverterRegistrar(beanFactory.getBeansOfType(ModelConverter).values().toList(), properties)
 
         then:
-        [false, true].every { boolean openapi31 ->
-            ModelConverters.getInstance(openapi31).converters.any { it instanceof GrailsModelConverter }
-        }
+        converters.converters.contains(GrailsModelConverter.INSTANCE)
+    }
+
+    void 'a type springdoc resolves for its own endpoints is described where what Grails declares of it cannot be read'() {
+        given:
+        def properties = new SpringDocConfigProperties()
+        new ModelConverterRegistrar(register().getBeansOfType(ModelConverter).values().toList(), properties)
+
+        when: 'its constraints fail to evaluate'
+        def schemas = ModelConverters.getInstance(properties.openapi31).readAll(UnreadableConstraintsCommand)
+
+        then: 'it is described as swagger-core resolves it'
+        schemas['UnreadableConstraintsCommand'].properties.keySet() == ['name'] as Set
     }
 
     void 'registers nothing when the document is disabled'() {
@@ -101,6 +123,7 @@ class OpenApiGrailsPluginSpec extends Specification {
         then:
         !beanFactory.containsBean(OpenApiGrailsPlugin.GENERATOR_BEAN_NAME)
         !beanFactory.containsBean('grailsOpenApiCustomizer')
+        beanFactory.getBeansOfType(ModelConverter).isEmpty()
     }
 
     void 'declares a dependency on the URL mappings plugin'() {
@@ -134,4 +157,12 @@ class OpenApiGrailsPluginSpec extends Specification {
 class BookController {
     def index() { }
     def show() { }
+}
+
+class UnreadableConstraintsCommand implements Validateable {
+    String name
+
+    static Map getConstraintsMap() {
+        throw new IllegalStateException('the constraints cannot be evaluated')
+    }
 }

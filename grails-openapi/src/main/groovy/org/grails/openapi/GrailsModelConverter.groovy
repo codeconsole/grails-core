@@ -44,6 +44,8 @@ import io.swagger.v3.oas.models.media.ObjectSchema
 import io.swagger.v3.oas.models.media.Schema
 import io.swagger.v3.oas.models.media.StringSchema
 import org.codehaus.groovy.runtime.InvokerHelper
+import org.slf4j.Logger
+import org.slf4j.LoggerFactory
 import org.springframework.beans.BeanUtils
 import org.springframework.util.ClassUtils
 import org.springframework.validation.Errors
@@ -78,12 +80,15 @@ import org.grails.datastore.mapping.model.types.ToMany
  *
  * <p>The converter is registered with swagger-core once and applies to every type it resolves.
  * The GORM metadata it uses is supplied by whatever is resolving at the time, through
- * {@link #withMappingContexts}.</p>
+ * {@link #withMappingContexts}. A type whose Grails declarations cannot be read, such as
+ * constraints that fail to evaluate, is described as swagger-core resolves it, and logged.</p>
  */
 @CompileStatic
 class GrailsModelConverter implements ModelConverter {
 
     static final GrailsModelConverter INSTANCE = new GrailsModelConverter()
+
+    private static final Logger LOG = LoggerFactory.getLogger(GrailsModelConverter)
 
     private static final String EMAIL_FORMAT = 'email'
     private static final String URI_FORMAT = 'uri'
@@ -232,7 +237,14 @@ class GrailsModelConverter implements ModelConverter {
 
         Schema model = modelOf(resolved, context)
         if (model?.properties != null) {
-            describe(type, model)
+            try {
+                describe(type, model)
+            }
+            catch (RuntimeException | LinkageError e) {
+                // The schema swagger-core resolved stands without what Grails declares of the
+                // type, rather than failing a document springdoc serves for its own endpoints.
+                LOG.warn("Could not describe what Grails declares of [${type.name}], such as its constraints", e)
+            }
         }
         resolved
     }

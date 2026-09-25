@@ -28,6 +28,7 @@ import org.springframework.beans.factory.BeanRegistry
 import grails.openapi.GrailsOpenApiGenerator
 import grails.openapi.OpenApiSelection
 import grails.openapi.OpenApiSettings
+import org.grails.openapi.GrailsModelConverter
 
 /**
  * Registers what contributes the Grails description to the documents springdoc serves.
@@ -36,6 +37,12 @@ import grails.openapi.OpenApiSettings
 class SpringdocRegistrations {
 
     static void register(BeanRegistry registry, OpenApiSettings settings, String generatorBeanName) {
+        // springdoc registers the converters the application declares with swagger-core as it
+        // starts, before it resolves the types of its own endpoints, so they are described the
+        // same way in the first document as in the next.
+        registry.registerBean('grailsModelConverter', GrailsModelConverter) {
+            it.supplier { GrailsModelConverter.INSTANCE }
+        }
         // A plain customizer is applied to springdoc's default document only; each group is given
         // its own by the contributor.
         registry.registerBean('grailsOpenApiCustomizer', GrailsOpenApiCustomizer) {

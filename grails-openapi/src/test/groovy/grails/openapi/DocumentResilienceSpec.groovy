@@ -41,23 +41,38 @@ class DocumentResilienceSpec extends Specification {
         given:
         def openApi = new OpenAPI()
 
-        when: 'one command object throws while its constraints are read'
+        when: 'swagger-core cannot introspect one command object'
         customizer().contribute(openApi, null)
 
         then: 'the document is still served'
         noExceptionThrown()
 
         and: 'the operations are still described'
-        openApi.paths['/exploding'].post
+        openApi.paths['/undescribable'].post
         openApi.paths['/sound'].post
 
         and: 'and the class that could be described still is'
         openApi.components.schemas.containsKey('SoundCommand')
+        !openApi.components.schemas.containsKey('UndescribableCommand')
 
         and: 'the operation that referred to the undescribable class refers to nothing instead'
-        openApi.paths['/exploding'].post.requestBody == null ||
-                openApi.paths['/exploding'].post.requestBody
+        openApi.paths['/undescribable'].post.requestBody == null ||
+                openApi.paths['/undescribable'].post.requestBody
                         .content['application/json'].schema == null
+    }
+
+    void 'a class whose constraints cannot be read is described without them'() {
+        given:
+        def openApi = new OpenAPI()
+
+        when: 'one command object throws while its constraints are read'
+        customizer().contribute(openApi, null)
+
+        then:
+        openApi.paths['/exploding'].post.requestBody.content['application/json'].schema.$ref ==
+                '#/components/schemas/ExplodingCommand'
+        openApi.components.schemas['ExplodingCommand'].properties.keySet() == ['ok'] as Set
+        !openApi.components.schemas['ExplodingCommand'].required
     }
 
     void 'no reference anywhere in the document is left unresolved'() {
@@ -92,12 +107,14 @@ class DocumentResilienceSpec extends Specification {
     }
 
     private static GrailsOpenApiGenerator customizer() {
-        def application = new DefaultGrailsApplication(ExplodingController, SoundController).tap { it.initialise() }
+        def application = new DefaultGrailsApplication(ExplodingController, SoundController, UndescribableController)
+                .tap { it.initialise() }
         def ctx = new MockApplicationContext()
         ctx.registerMockBean(GrailsApplication.APPLICATION_ID, application)
         def holder = new DefaultUrlMappingsHolder(new DefaultUrlMappingEvaluator(ctx).evaluateMappings {
             post '/exploding'(controller: 'exploding', action: 'submit')
             post '/sound'(controller: 'sound', action: 'submit')
+            post '/undescribable'(controller: 'undescribable', action: 'submit')
         })
         OpenApiFixture.generator(holder, application)
     }
@@ -116,8 +133,26 @@ class ExplodingCommand implements Validateable {
     String ok
 
     static Map getConstraintsMap() {
-        throw new IllegalStateException('this class cannot be introspected')
+        throw new IllegalStateException('the constraints cannot be evaluated')
     }
+}
+
+/**
+ * A class Jackson, and so swagger-core, refuses: it cannot choose between the setters of amount.
+ */
+class UndescribableCommand {
+    private Object amount
+
+    Integer getAmount() { (Integer) amount }
+
+    void setAmount(Integer amount) { this.amount = amount }
+
+    void setAmount(Long amount) { this.amount = amount }
+}
+
+@Artefact('Controller')
+class UndescribableController {
+    def submit(UndescribableCommand cmd) { }
 }
 
 @Artefact('Controller')

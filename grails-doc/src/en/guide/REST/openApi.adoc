@@ -723,7 +723,8 @@ bodies, and the paging of its listing.
 * A mapping declared for an HTTP method OpenAPI has no operation for is skipped, and logged.
 * A class that cannot be introspected is left out of the document and logged, rather than failing
   the document. An operation that referred to it is described without a shape rather than with a
-  reference that does not resolve.
+  reference that does not resolve. A class whose constraints cannot be evaluated is described
+  without them, and logged.
 * A resource is described as Grails renders a domain class or an object by default. A JSON view,
   other than the errors view, or a custom renderer that renders another shape is described with
   `@ApiResponse`.
