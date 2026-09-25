@@ -126,6 +126,16 @@ class GenerateOpenApiCommandSpec extends Specification {
         new File(configured, 'openapi.json').file
     }
 
+    void 'writes nothing, and says why, where the description is disabled'() {
+        given: 'the plugin registers no generator where grails.openapi.enabled is false'
+        applicationContext.refresh()
+        def command = new GenerateOpenApiCommand().tap { it.applicationContext = this.applicationContext }
+
+        expect:
+        !command.handle(context("--output-directory=${directory.absolutePath}"))
+        !directory.list()
+    }
+
     void 'refuses a format it cannot write'() {
         given:
         def command = command([:])

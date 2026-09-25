@@ -53,7 +53,11 @@ class GenerateOpenApiCommand implements ApplicationCommand {
 
     @Override
     boolean handle(ExecutionContext executionContext) {
-        GrailsOpenApiGenerator generator = applicationContext.getBean(GrailsOpenApiGenerator)
+        GrailsOpenApiGenerator generator = applicationContext.getBeanProvider(GrailsOpenApiGenerator).getIfAvailable()
+        if (generator == null) {
+            log.error('Wrote no OpenAPI description: grails.openapi.enabled is false')
+            return false
+        }
         OpenApiSettings settings = generator.settings
 
         String format = (option(executionContext, 'format') ?: settings.outputFormat).toLowerCase(Locale.ENGLISH)
