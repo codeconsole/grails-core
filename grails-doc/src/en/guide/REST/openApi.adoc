@@ -399,12 +399,15 @@ A type is described in `components/schemas` through swagger-core, so a `@Schema`
 annotation on the class or on one of its properties is honored. The `metaClass` every Groovy object
 has and the `errors` a validateable object has are not part of it.
 
-A property of a domain class or a command object is described by the name Grails' converters, JSON
-views and data binding render and bind it by: its own. So neither a `@JsonProperty` rename, which
-Grails ignores, nor the name Jackson would otherwise write, such as `isbn` for `ISBN`, changes it,
-and a command object's request parameters are described by the names Grails binds them by. Where
-the description should name a property otherwise, `@Schema(name)` renames it, and its constraints,
-and whether it is required or read only, follow the rename.
+A property of a class the Grails operations are described with - a domain class, a command object,
+or any other class, such as one an `@ApiResponse` names - is described by the name Grails'
+converters, JSON views and data binding render and bind it by: its own. So neither a
+`@JsonProperty` rename, which Grails ignores, nor the name Jackson would otherwise write, such as
+`isbn` for `ISBN`, changes it, and a command object's request parameters are described by the names
+Grails binds them by. Where the description should name a property otherwise, `@Schema(name)`
+renames it, and its constraints, and whether it is required or read only, follow the rename. A
+class only springdoc's own Spring MVC endpoints use keeps the names Jackson writes, since Jackson
+renders it there.
 
 A schema is named after its class, or after the name a `@Schema` annotation on the class declares.
 Classes sharing a name in different packages are each named by their package as well, such as

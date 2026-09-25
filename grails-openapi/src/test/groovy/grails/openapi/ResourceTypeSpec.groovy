@@ -19,7 +19,9 @@
 package grails.openapi
 
 import com.fasterxml.jackson.annotation.JsonProperty
+import io.swagger.v3.oas.annotations.media.Content
 import io.swagger.v3.oas.annotations.media.Schema as SchemaAnnotation
+import io.swagger.v3.oas.annotations.responses.ApiResponse
 
 import grails.artefact.Artefact
 import grails.gorm.annotation.Entity
@@ -68,6 +70,19 @@ class ResourceTypeSpec extends Specification {
         openApi.components.schemas['ShipmentView'].properties.label.readOnly
     }
 
+    void 'describes a class that is neither a domain class nor a command object by the names Grails renders it by'() {
+        when: 'a class an action names as its response, which Grails renders'
+        def openApi = OpenApiFixture.document([WaybillController], []) {
+            '/waybills/latest'(controller: 'waybill', action: 'latest')
+        }
+
+        then: 'a rename of the description is kept, and a Jackson rename, which the converters ignore, is not'
+        with(openApi.components.schemas['WaybillSummary'].properties) {
+            keySet() == ['waybill_number', 'carrier'] as Set
+            waybill_number.description == 'Renamed through the schema'
+        }
+    }
+
     void 'describes no response type for a controller that declares none'() {
         when: 'a controller that is not a RestfulController shares its name with a domain class'
         def openApi = OpenApiFixture.document([ShipmentPhotoController], [ShipmentPhoto]) {
@@ -104,6 +119,22 @@ class ResourceTypeSpec extends Specification {
         then:
         openApi.paths['/gate'].get.summary == 'v2 gate'
     }
+}
+
+class WaybillSummary {
+
+    @SchemaAnnotation(name = 'waybill_number', description = 'Renamed through the schema')
+    String number
+
+    @JsonProperty('carrier_name')
+    String carrier
+}
+
+@Artefact('Controller')
+class WaybillController {
+
+    @ApiResponse(responseCode = '200', content = @Content(schema = @SchemaAnnotation(implementation = WaybillSummary)))
+    def latest() { }
 }
 
 @Entity

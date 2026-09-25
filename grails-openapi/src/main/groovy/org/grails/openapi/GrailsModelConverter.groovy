@@ -404,14 +404,15 @@ class GrailsModelConverter implements ModelConverter {
     private static void describe(Class<?> type, Schema model) {
         PersistentEntity entity = entityFor(type)
         boolean validateable = Validateable.isAssignableFrom(type)
+        PropertyNames propertyNames = PropertyNames.of(type)
         if (entity == null && !validateable && !declaresBindableProperties(type)) {
-            // Grails neither renders nor binds it by its own rules, so it is described as it is.
+            // Grails renders it by the names of its properties, and declares nothing else of it.
+            declareReferenceSiblings(model, propertyNames.applyTo(model), propertyNames)
             return
         }
 
         // What Grails declares of the type is read before the schema is changed, each declaration
         // on its own, so one that cannot be read is left out without leaving the schema half changed.
-        PropertyNames propertyNames = PropertyNames.of(type)
         Map<String, Constrained> constraints = read("the constraints of [${type.name}]") {
             entity != null ? entityConstraints(entity) : (validateable ? validateableConstraints(type) : null)
         } ?: Collections.<String, Constrained> emptyMap()
