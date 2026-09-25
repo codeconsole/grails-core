@@ -79,6 +79,7 @@ class GrailsModelConverter implements ModelConverter {
     private static final String EMAIL_FORMAT = 'email'
     private static final String URI_FORMAT = 'uri'
     private static final String INT64_FORMAT = 'int64'
+    private static final String NULL_TYPE = 'null'
     private static final String REFERENCE_PREFIX = '#/components/schemas/'
 
     private static final ThreadLocal<Collection<MappingContext>> MAPPING_CONTEXTS = new ThreadLocal<>()
@@ -422,11 +423,50 @@ class GrailsModelConverter implements ModelConverter {
         else if (type != null && (Number.isAssignableFrom(type) || type.primitive)) {
             applyNumericConstraints(schema, constrained)
         }
+        else if (type != null && (Collection.isAssignableFrom(type) || type.array)) {
+            applyCollectionConstraints(schema, constrained)
+        }
+
+        if (constrained.nullable && !schema.$ref) {
+            allowNull(schema)
+        }
+    }
+
+    /**
+     * A nullable property is rendered as null where it has no value, and bound from null. OpenAPI
+     * 3.0 says so with {@code nullable}, and 3.1 with a {@code null} type; each version ignores the
+     * other's, so both are set. A value a list constrains must be listed to be valid, null included.
+     */
+    private static void allowNull(Schema schema) {
+        schema.setNullable(true)
+        Set<String> types = schema.types ? new LinkedHashSet<String>(schema.types)
+                : (schema.type ? new LinkedHashSet<String>([schema.type]) : null)
+        if (types != null) {
+            types << NULL_TYPE
+            schema.setTypes(types)
+        }
+        if (schema.enum && !schema.enum.contains(null)) {
+            ((Schema<Object>) schema).addEnumItemObject(null)
+        }
+    }
+
+    private static void applyCollectionConstraints(Schema schema, Constrained constrained) {
+        Integer maxSize = constrained.maxSize != null ? constrained.maxSize
+                : (constrained.size != null ? (Integer) constrained.size.to : null)
+        Integer minSize = constrained.minSize != null ? constrained.minSize
+                : (constrained.size != null ? (Integer) constrained.size.from : null)
+        if (maxSize != null) {
+            schema.setMaxItems(maxSize)
+        }
+        if (minSize != null) {
+            schema.setMinItems(minSize)
+        }
     }
 
     private static void applyStringConstraints(Schema schema, Constrained constrained) {
+        // Grails requires the whole value to match, where a schema pattern matches any part of it.
         if (constrained.matches) {
-            schema.setPattern(constrained.matches)
+            schema.setPattern("^(?:${constrained.matches})\$".toString())
         }
         if (constrained.email) {
             schema.setFormat(EMAIL_FORMAT)
@@ -446,6 +486,10 @@ class GrailsModelConverter implements ModelConverter {
         }
         if (minSize != null) {
             schema.setMinLength(minSize)
+        }
+        // A blank value is rejected, and the shortest value that is not blank is one character.
+        if (!constrained.blank && (schema.minLength == null || schema.minLength < 1)) {
+            schema.setMinLength(1)
         }
     }
 

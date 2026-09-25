@@ -234,7 +234,8 @@ class OpenApiDocumentFunctionalSpec extends Specification implements HttpClientS
 
         expect:
         properties.title.maxLength == 120
-        properties.genre.enum == ['scifi', 'history']
+        properties.genre.enum == ['scifi', 'history', null]
+        properties.title.minLength == 1
         book.required as Set == ['title', 'dateCreated', 'lastUpdated'] as Set
 
         and: 'with the properties the server assigns marked read only'

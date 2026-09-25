@@ -152,9 +152,49 @@ class PersistentEntitySchemaSpec extends Specification {
         then:
         with(openApi.components.schemas['Widget'].properties) {
             name.maxLength == 40
-            color.enum == ['red', 'green']
-            code.pattern == '[A-Z]{3}'
+            color.enum == ['red', 'green', null]
             contact.format == 'email'
+
+            and: 'a pattern the whole value must match, as Grails matches it'
+            code.pattern == '^(?:[A-Z]{3})$'
+
+            and: 'a value that must not be blank is at least one character'
+            name.minLength == 1
+        }
+    }
+
+    void 'allows null where a property is nullable, in the way each OpenAPI version says so'() {
+        when:
+        def openApi = OpenApiFixture.generator(holder(), application(), context(),
+                ['springdoc.api-docs.version': version]).generate()
+        def properties = openApi.components.schemas['Widget'].properties
+
+        then: 'OpenAPI 3.0 reads nullable, and 3.1 a null type; each ignores the other'
+        properties.weight.nullable
+        properties.weight.types == ['number', 'null'] as Set
+        properties.crate.nullable
+
+        and: 'a value a list constrains lists null too'
+        properties.color.enum.contains(null)
+
+        and: 'a property that must have a value does not'
+        !properties.name.nullable
+        !properties.name.types?.contains('null')
+
+        where:
+        version << ['openapi_3_0', 'openapi_3_1']
+    }
+
+    void 'carries the size of a collection across as its number of items'() {
+        when:
+        def openApi = OpenApiFixture.document([ManifestController], [Manifest]) {
+            '/manifests'(resources: 'manifest')
+        }
+
+        then:
+        with(openApi.components.schemas['Manifest'].properties.lines) {
+            minItems == 1
+            maxItems == 5
         }
     }
 
@@ -354,7 +394,7 @@ class PersistentEntitySchemaSpec extends Specification {
         customizer.contribute(second, null)
 
         then: 'the constraints are applied once, not accumulated on a shared schema object'
-        second.components.schemas['Widget'].properties.color.enum.toList() == ['red', 'green']
+        second.components.schemas['Widget'].properties.color.enum.toList() == ['red', 'green', null]
         second.components.schemas['Widget'].required.count { it == 'name' } == 1
 
         and: 'the two documents agree'
@@ -490,4 +530,18 @@ class LedgerLine {
 @Artefact('Controller')
 class LedgerLineController extends RestfulController<LedgerLine> {
     LedgerLineController() { super(LedgerLine) }
+}
+
+@Entity
+class Manifest {
+    List<String> lines
+
+    static constraints = {
+        lines size: 1..5
+    }
+}
+
+@Artefact('Controller')
+class ManifestController extends RestfulController<Manifest> {
+    ManifestController() { super(Manifest) }
 }

@@ -385,10 +385,13 @@ The constraints are carried across as follows:
 | Constraint | OpenAPI
 
 | `nullable: false` | listed in `required`
-| `maxSize` / `size` | `maxLength` and `minLength`
+| `nullable: true` | `nullable` in OpenAPI 3.0, a `null` type in 3.1, and `null` in any `enum`
+| `blank: false` | `minLength` of 1
+| `maxSize` / `minSize` / `size` of a string | `maxLength` and `minLength`
+| `maxSize` / `minSize` / `size` of a collection | `maxItems` and `minItems`
 | `min` / `max` / `range` | `minimum` and `maximum`
 | `inList` | `enum`
-| `matches` | `pattern`
+| `matches` | `pattern`, anchored, since Grails matches the whole value
 | `email` / `url` | `format`
 |===
 
