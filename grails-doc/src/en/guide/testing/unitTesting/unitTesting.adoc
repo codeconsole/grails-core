@@ -49,7 +49,9 @@ class ReportServiceSpec extends Specification implements ServiceUnitTest<ReportS
 
 The block is compiled into a static nested configuration class, `BeansConfiguration`, which the test's context registers as it does any nested configuration class (see below). No annotation is needed. A `beans` block in a base test applies to the tests that extend it.
 
-A bean body cannot use the test's own fields or methods: the beans are created before any instance of the test exists. Declare what a bean depends on as a closure parameter instead, as `reportCache` does above.
+A bean body cannot use the test's own fields or methods: the beans are created before any instance of the test exists. Declare what a bean depends on as a closure parameter instead, as `reportCache` does above. For the same reason the block cannot be `@Shared`, and would gain nothing from it: the beans are created once for the test class.
+
+A bean the block declares replaces one the test's context provides under the same name, such as `messageSource`, as an application's configuration replaces a framework default. A bean registered by an included plugin (see <<Spring configuration from plugins>> below) is the exception: it wins over a `beans` block bean of the same name, as a plugin's bean wins over an application's `@Bean` at boot. To replace one, use `beanRegistrar`, which is applied last.
 
 ==== beanRegistrar
 

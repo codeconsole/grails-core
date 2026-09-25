@@ -452,6 +452,33 @@ class GlobalGrailsClassInjectorTransformationSpec extends Specification {
                     'META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports').exists()
     }
 
+    void "the implicit beans convention reports a unit test's @Shared beans block rather than dropping it"() {
+        given: "Spock renames a shared field and removes its property before this transform runs"
+            def testSources = new File(tempDir, 'src/test/groovy')
+            def trait = new File(testSources, 'org/grails/testing/GrailsUnitTest.groovy')
+            trait.parentFile.mkdirs()
+            trait.text = 'package org.grails.testing\ninterface GrailsUnitTest { }\n'
+            def spec = new File(testSources, 'SharedBeansSpec.groovy')
+            spec.text = '''
+                class SharedBeansSpec extends spock.lang.Specification implements org.grails.testing.GrailsUnitTest {
+                    @spock.lang.Shared
+                    def beans = {
+                        bean('greeting', String) { 'hello' }
+                    }
+                }
+            '''
+
+        when:
+            def cu = new CompilationUnit(new CompilerConfiguration(targetDirectory: new File(tempDir, 'build/classes/groovy/test')))
+            cu.addSource(trait)
+            cu.addSource(spec)
+            cu.compile(Phases.CANONICALIZATION)
+
+        then:
+            MultipleCompilationErrorsException e = thrown(MultipleCompilationErrorsException)
+            e.message.contains("A unit test's 'beans' block cannot be @Shared")
+    }
+
     void "a generated class missing from a hand-authored imports file is reported"() {
         given: "a hand-authored file listing something else, and a descriptor whose sibling is not in it"
             def targetDir = new File(tempDir, 'build/classes/groovy/main')

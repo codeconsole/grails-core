@@ -53,7 +53,8 @@ class IncludedPluginBackOffSpec extends Specification implements GrailsUnitTest 
 
     void "the test's configuration is registered first, so an included plugin's conditional bean backs off"() {
         expect:
-        applicationContext.getBeansOfType(IncludedGreeting).keySet() == ['customGreeting'] as Set
+        applicationContext.getBean('customGreeting', IncludedGreeting).text == 'hello from the test'
+        !applicationContext.containsBean('includedGreeting')
     }
 }
 

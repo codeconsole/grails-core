@@ -2738,6 +2738,34 @@ class GrailsBeansASTTransformationSpec extends Specification {
         instance.other == 'kept'
     }
 
+    def "a Spock specification's @Shared beans block is reported, not dropped"() {
+        given: "Spock renames a shared field and removes its property before this transformation runs"
+        GroovyClassLoader loader = new GroovyClassLoader(getClass().classLoader)
+        loader.parseClass(UNIT_TEST_TRAIT_STUB)
+        String source = '''
+            import grails.compiler.beans.GrailsBeans
+            import spock.lang.Shared
+
+            @GrailsBeans
+            class SharedFixtureSpec extends spock.lang.Specification implements org.grails.testing.GrailsUnitTest {
+                @Shared
+                def beans = {
+                    bean('greeting', String) {
+                        'hello'
+                    }
+                }
+            }
+        '''
+
+        when:
+        loader.parseClass(source)
+
+        then:
+        MultipleCompilationErrorsException e = thrown(MultipleCompilationErrorsException)
+        e.message.contains("A unit test's 'beans' block cannot be @Shared")
+        !e.message.contains("requires a 'beans' property")
+    }
+
     def "a unit test that already declares a BeansConfiguration class is reported"() {
         given:
         GroovyClassLoader loader = new GroovyClassLoader(getClass().classLoader)

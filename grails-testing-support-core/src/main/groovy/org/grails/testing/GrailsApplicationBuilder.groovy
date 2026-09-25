@@ -27,6 +27,7 @@ import jakarta.servlet.ServletContext
 import org.springframework.beans.BeansException
 import org.springframework.beans.MutablePropertyValues
 import org.springframework.beans.factory.BeanRegistrar
+import org.springframework.beans.factory.annotation.AnnotatedBeanDefinition
 import org.springframework.beans.factory.config.BeanDefinition
 import org.springframework.beans.factory.config.ConfigurableBeanFactory
 import org.springframework.beans.factory.config.ConstructorArgumentValues
@@ -264,6 +265,8 @@ class GrailsApplicationBuilder {
 
     @CompileDynamic
     void registerBeans(GrailsApplication grailsApplication) {
+        BeanDefinitionRegistry registry = (BeanDefinitionRegistry) grailsApplication.mainContext
+        Map<String, BeanDefinition> declaredByTest = beanDefinitionsDeclaredBy(configurationClasses, registry)
 
         defineBeans(grailsApplication) { ->
 
@@ -282,6 +285,39 @@ class GrailsApplicationBuilder {
                 setGrailsApplication(grailsApplication)
             }
         }
+
+        // These stand in for framework beans that an application's own configuration replaces (an
+        // auto-configuration's @ConditionalOnMissingBean backs off from it), so the test's own
+        // configuration keeps what it declared under one of their names.
+        declaredByTest.each { String name, BeanDefinition definition ->
+            if (!registry.getBeanDefinition(name).is(definition)) {
+                registry.registerBeanDefinition(name, definition)
+            }
+        }
+    }
+
+    /**
+     * The bean definitions the test's configuration classes declared, a {@code group(...)} nested in
+     * one included, read off the {@code @Bean} method each came from.
+     */
+    protected static Map<String, BeanDefinition> beanDefinitionsDeclaredBy(Collection<Class<?>> configurationClasses,
+                                                                         BeanDefinitionRegistry registry) {
+        Map<String, BeanDefinition> declared = [:]
+        if (!configurationClasses) {
+            return declared
+        }
+        Set<String> owners = configurationClasses*.name as Set<String>
+        for (String name : registry.beanDefinitionNames) {
+            BeanDefinition definition = registry.getBeanDefinition(name)
+            if (!(definition instanceof AnnotatedBeanDefinition)) {
+                continue
+            }
+            String declaringClass = ((AnnotatedBeanDefinition) definition).factoryMethodMetadata?.declaringClassName
+            if (declaringClass && owners.any { String owner -> declaringClass == owner || declaringClass.startsWith(owner + '$') }) {
+                declared[name] = definition
+            }
+        }
+        declared
     }
 
     protected void registerGrailsAppPostProcessorBean(ConfigurableBeanFactory beanFactory, PluginDiscovery pluginDiscovery) {

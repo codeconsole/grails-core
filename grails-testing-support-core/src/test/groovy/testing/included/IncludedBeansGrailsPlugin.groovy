@@ -18,15 +18,19 @@
  */
 package testing.included
 
+import org.springframework.beans.factory.BeanRegistrar
+import org.springframework.beans.factory.BeanRegistry
 import org.springframework.boot.autoconfigure.AutoConfiguration
+import org.springframework.core.env.Environment
 
 import grails.compiler.beans.GrailsBeans
 import grails.plugins.Plugin
 
 /**
- * A plugin whose beans are declared only in a {@code beans} block, so they reach a unit test through
- * its generated {@code IncludedBeansAutoConfiguration} or not at all. Deliberately outside
- * {@code org.grails}, whose auto-configurations the test harness registers regardless.
+ * A plugin whose {@code beans} block reaches a unit test through its generated
+ * {@code IncludedBeansAutoConfiguration} or not at all, and whose {@code beanRegistrar()} bean is
+ * applied as a loaded plugin's is. Deliberately outside {@code org.grails}, whose auto-configurations
+ * the test harness registers regardless.
  */
 @GrailsBeans
 @AutoConfiguration
@@ -36,5 +40,14 @@ class IncludedBeansGrailsPlugin extends Plugin {
 
     def beans = {
         bean(IncludedGreeting).conditionalOnMissingBean()
+    }
+
+    @Override
+    BeanRegistrar beanRegistrar() {
+        return { BeanRegistry registry, Environment environment ->
+            registry.registerBean('registeredGreeting', IncludedGreeting) { BeanRegistry.Spec<IncludedGreeting> spec ->
+                spec.supplier { new IncludedGreeting(text: 'from the plugin') }
+            }
+        } as BeanRegistrar
     }
 }

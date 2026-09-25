@@ -388,7 +388,11 @@ class GlobalGrailsClassInjectorTransformation implements ASTTransformation, Comp
      */
     private void compileBeansDsl(ClassNode classNode, SourceUnit source) {
         PropertyNode beansProperty = classNode.getProperty(BEANS_PROPERTY)
-        if (beansProperty == null || !classNode.getAnnotations(GRAILS_BEANS_ANNOTATION).isEmpty()) {
+        if (!classNode.getAnnotations(GRAILS_BEANS_ANNOTATION).isEmpty()) {
+            return
+        }
+        if (beansProperty == null) {
+            GrailsBeansASTTransformation.reportSharedBeans(classNode, source)
             return
         }
         // A Spock specification's field initializer has been moved into a method by now

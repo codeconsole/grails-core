@@ -88,6 +88,7 @@ import org.codehaus.groovy.control.CompilePhase;
 import org.codehaus.groovy.control.CompilerConfiguration;
 import org.codehaus.groovy.control.Phases;
 import org.codehaus.groovy.control.SourceUnit;
+import org.codehaus.groovy.control.messages.SyntaxErrorMessage;
 import org.codehaus.groovy.runtime.DefaultGroovyMethods;
 import org.codehaus.groovy.syntax.SyntaxException;
 import org.codehaus.groovy.syntax.Types;
@@ -257,6 +258,8 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
     static final String UNIT_TEST_TRAIT_NAME = "org.grails.testing.GrailsUnitTest";
     /** The nested class a unit test's beans compile onto; the Configuration suffix as a group's has. */
     static final String UNIT_TEST_CONFIGURATION_NAME = "BeansConfiguration";
+    /** What Spock renames a {@code @Shared beans} field to (its InternalIdentifiers.getSharedFieldName). */
+    static final String SPOCK_SHARED_BEANS_FIELD = "$spock_sharedField_" + BEANS_PROPERTY;
     private static final String DUMP_DIR_PROPERTY = "grails.beans.dsl.dumpdir";
 
     private CompilationUnit compilationUnit;
@@ -272,7 +275,9 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
         ClassNode classNode = (ClassNode) nodes[1];
         PropertyNode beansProperty = classNode.getProperty(BEANS_PROPERTY);
         if (beansProperty == null) {
-            addError(classNode, source, "@GrailsBeans requires a 'beans' property initialised to a closure");
+            if (!reportSharedBeans(classNode, source)) {
+                addError(classNode, source, "@GrailsBeans requires a 'beans' property initialised to a closure");
+            }
             return;
         }
         reclaimMovedInitializer(classNode, beansProperty);
@@ -411,6 +416,26 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
             }
         }
         return false;
+    }
+
+    /**
+     * Reports a Spock specification's {@code @Shared beans} block, which would otherwise be dropped
+     * without a word: Spock renames a shared field and takes its property away before this runs, so
+     * there is no {@code beans} property left to find.
+     *
+     * @return whether there was one to report
+     */
+    public static boolean reportSharedBeans(ClassNode classNode, SourceUnit source) {
+        FieldNode shared = classNode.getDeclaredField(SPOCK_SHARED_BEANS_FIELD);
+        if (shared == null) {
+            return false;
+        }
+        source.getErrorCollector().addErrorAndContinue(new SyntaxErrorMessage(new SyntaxException(
+                "A unit test's 'beans' block cannot be @Shared - Spock moves a shared field where the beans " +
+                        "DSL cannot follow it. Remove @Shared: the beans are created once for the test class " +
+                        "whether or not it is there.",
+                shared.getLineNumber(), shared.getColumnNumber()), source));
+        return true;
     }
 
     /**
