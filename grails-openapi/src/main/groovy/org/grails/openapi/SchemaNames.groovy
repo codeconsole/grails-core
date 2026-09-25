@@ -79,21 +79,50 @@ class SchemaNames {
      * {@code @Schema(enumAsRef = true)} or swagger-core's configuration.
      */
     static boolean isNamed(AnnotatedType annotatedType, JavaType type) {
-        if (type.containerType || type.primitive || type.javaLangObject || ReflectionUtils.isSystemType(type)) {
-            return false
-        }
         if (type.enumType) {
             return isEnumNamed(annotatedType, type)
         }
-        PrimitiveType.fromType(type) == null
+        !type.containerType && !type.primitive && !type.javaLangObject && !ReflectionUtils.isSystemType(type)
+                && PrimitiveType.fromType(type) == null
+    }
+
+    /**
+     * Whether swagger-core describes the type as itself, rather than another in its place: the
+     * implementation or the primitive type a {@code @Schema} annotation names, or the value a
+     * {@code @JsonValue} accessor returns, which is resolved under the name the type was given.
+     */
+    static boolean isDescribedAsItself(AnnotatedType annotatedType, JavaType type) {
+        if (annotatedType.skipOverride) {
+            return true
+        }
+        SchemaAnnotation declared = schemaAnnotation(annotatedType, type)
+        if (declared != null && (declared.implementation() != Void || isPrimitiveOverride(declared, type))) {
+            return false
+        }
+        try {
+            return Json.mapper().serializationConfig.introspect(type).findJsonValueAccessor() == null
+        }
+        catch (RuntimeException ignored) {
+            return true
+        }
+    }
+
+    private static boolean isPrimitiveOverride(SchemaAnnotation declared, JavaType type) {
+        String declaredType = declared.type()
+        declaredType && declaredType != 'object' && (PrimitiveType.fromTypeAndFormat(declaredType, declared.format()) != null
+                || PrimitiveType.fromType(type) != null || PrimitiveType.fromName(declaredType) != null)
+    }
+
+    private static SchemaAnnotation schemaAnnotation(AnnotatedType annotatedType, JavaType type) {
+        Annotation merged = AnnotationsUtils.mergeSchemaAnnotations(annotatedType.ctxAnnotations, type)
+        merged instanceof ArraySchema ? ((ArraySchema) merged).schema() : (SchemaAnnotation) merged
     }
 
     private static boolean isEnumNamed(AnnotatedType annotatedType, JavaType type) {
         if (ModelResolver.enumsAsRef || annotatedType.resolveEnumAsRef) {
             return true
         }
-        Annotation merged = AnnotationsUtils.mergeSchemaAnnotations(annotatedType.ctxAnnotations, type)
-        SchemaAnnotation declared = merged instanceof ArraySchema ? ((ArraySchema) merged).schema() : (SchemaAnnotation) merged
+        SchemaAnnotation declared = schemaAnnotation(annotatedType, type)
         declared != null && declared.enumAsRef()
     }
 

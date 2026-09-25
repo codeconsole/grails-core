@@ -18,6 +18,7 @@
  */
 package grails.openapi
 
+import io.swagger.v3.oas.annotations.media.Schema as SchemaAnnotation
 import io.swagger.v3.oas.models.Components
 import io.swagger.v3.oas.models.OpenAPI
 import io.swagger.v3.oas.models.SpecVersion
@@ -27,6 +28,7 @@ import io.swagger.v3.oas.models.media.StringSchema
 import grails.artefact.Artefact
 import grails.openapi.names.ValidationErrors as NamedValidationErrors
 import grails.openapi.names.inline.Label as InlineLabel
+import grails.openapi.names.value.Label as ValueLabel
 import grails.openapi.names.v1.Label as V1Label
 import grails.openapi.names.v1.LabelPatch as V1LabelPatch
 import grails.openapi.names.v2.Label as V2Label
@@ -267,6 +269,29 @@ class SchemaNameSpec extends Specification {
         !openApi.components.schemas.keySet().any { it.startsWith('grails.') }
     }
 
+    void 'a type described in the place of another takes no name, and is not described as the other'() {
+        when:
+        def openApi = OpenApiFixture.document([PrintedLabelController, StampController], []) {
+            '/printed'(resources: 'printedLabel')
+            '/stamps'(resources: 'stamp')
+        }
+        def stamp = openApi.components.schemas['Stamp'].properties
+
+        then: 'the implementation a @Schema annotation names is described under its own name'
+        stamp.label.$ref == '#/components/schemas/LabelSummary'
+        openApi.components.schemas['LabelSummary'].properties.keySet() == ['code', 'summary'] as Set
+
+        and: 'without the constraints of the type it stands in for'
+        !openApi.components.schemas['LabelSummary'].required
+
+        and: 'a type serialized as its value is described as the value'
+        OpenApiFixture.typeOf(stamp.tag) == 'string'
+
+        and: 'neither shares a name with the class described as itself'
+        responseReference(openApi, '/printed/{id}') == '#/components/schemas/Label'
+        !openApi.components.schemas.keySet().any { it.startsWith('grails.') }
+    }
+
     void 'every reference resolves once the names are moved'() {
         when:
         def openApi = OpenApiFixture.document([PrintedLabelController, ShippingLabelController, LabelSheetController], []) {
@@ -309,6 +334,23 @@ class ParcelTagController extends RestfulController<ParcelTag> {
 @Artefact('Controller')
 class LabelSearchController {
     def search(V2Label criteria) { }
+}
+
+class LabelSummary {
+    String code
+    String summary
+}
+
+class Stamp {
+    @SchemaAnnotation(implementation = LabelSummary)
+    V2Label label
+
+    ValueLabel tag
+}
+
+@Artefact('Controller')
+class StampController extends RestfulController<Stamp> {
+    StampController() { super(Stamp) }
 }
 
 class Dispatch {

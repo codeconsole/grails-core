@@ -215,7 +215,9 @@ class GrailsModelConverter implements ModelConverter {
         if (!chain.hasNext()) {
             return null
         }
-        if (type == null) {
+        JavaType javaType = javaType(annotatedType.type)
+        if (type == null || javaType == null || !SchemaNames.isDescribedAsItself(annotatedType, javaType)) {
+            // Another type is described in its place, and named and described as itself.
             return chain.next().resolve(annotatedType, context, chain)
         }
         nameApart(annotatedType)
