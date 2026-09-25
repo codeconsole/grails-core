@@ -89,7 +89,9 @@ class SchemaNames {
     /**
      * Whether swagger-core describes the type as itself, rather than another in its place: the
      * implementation or the primitive type a {@code @Schema} annotation names, or the value a
-     * {@code @JsonValue} accessor returns, which is resolved under the name the type was given.
+     * {@code @JsonValue} accessor returns, which is resolved under the name the type was given. An
+     * enum is described as itself whatever it is serialized as, its values read from its
+     * {@code @JsonValue} accessor where it has one.
      */
     static boolean isDescribedAsItself(AnnotatedType annotatedType, JavaType type) {
         if (annotatedType.skipOverride) {
@@ -98,6 +100,9 @@ class SchemaNames {
         SchemaAnnotation declared = schemaAnnotation(annotatedType, type)
         if (declared != null && (declared.implementation() != Void || isPrimitiveOverride(declared, type))) {
             return false
+        }
+        if (type.enumType) {
+            return true
         }
         try {
             return Json.mapper().serializationConfig.introspect(type).findJsonValueAccessor() == null

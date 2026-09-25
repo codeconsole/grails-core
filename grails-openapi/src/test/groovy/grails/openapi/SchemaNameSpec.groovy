@@ -33,7 +33,9 @@ import grails.openapi.names.v1.Label as V1Label
 import grails.openapi.names.v1.LabelPatch as V1LabelPatch
 import grails.openapi.names.v2.Label as V2Label
 import grails.openapi.names.v2.LabelPatch as V2LabelPatch
+import grails.openapi.names.v1.Grade as V1Grade
 import grails.openapi.names.v1.Status as V1Status
+import grails.openapi.names.v2.Grade as V2Grade
 import grails.openapi.names.v2.Status as V2Status
 import grails.rest.RestfulController
 
@@ -292,6 +294,20 @@ class SchemaNameSpec extends Specification {
         !openApi.components.schemas.keySet().any { it.startsWith('grails.') }
     }
 
+    void 'names apart enums sharing a name that are serialized as a value of their own'() {
+        when:
+        def openApi = OpenApiFixture.document([ReportCardController], []) {
+            '/cards'(resources: 'reportCard')
+        }
+        def properties = openApi.components.schemas['ReportCard'].properties
+
+        then: 'each is described as itself, with the values it is serialized as'
+        properties.midterm.$ref == '#/components/schemas/grails.openapi.names.v1.Grade'
+        properties.closing.$ref == '#/components/schemas/grails.openapi.names.v2.Grade'
+        openApi.components.schemas['grails.openapi.names.v1.Grade'].enum == ['l', 'h']
+        openApi.components.schemas['grails.openapi.names.v2.Grade'].enum == ['f', 'g']
+    }
+
     void 'every reference resolves once the names are moved'() {
         when:
         def openApi = OpenApiFixture.document([PrintedLabelController, ShippingLabelController, LabelSheetController], []) {
@@ -351,6 +367,16 @@ class Stamp {
 @Artefact('Controller')
 class StampController extends RestfulController<Stamp> {
     StampController() { super(Stamp) }
+}
+
+class ReportCard {
+    V1Grade midterm
+    V2Grade closing
+}
+
+@Artefact('Controller')
+class ReportCardController extends RestfulController<ReportCard> {
+    ReportCardController() { super(ReportCard) }
 }
 
 class Dispatch {
