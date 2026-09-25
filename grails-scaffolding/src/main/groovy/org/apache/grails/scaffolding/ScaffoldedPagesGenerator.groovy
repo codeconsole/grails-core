@@ -58,7 +58,7 @@ class ScaffoldedPagesGenerator implements ModelBuilder {
     /**
      * Writes the page for every template in every directory, for every domain class, under
      * {@code outputDir}, where the resolver looks for it. A template that cannot be expanded for a
-     * domain class is reported and left to be expanded when it is first rendered.
+     * domain class is reported and left out.
      *
      * @return how many pages were written
      */
@@ -84,8 +84,8 @@ class ScaffoldedPagesGenerator implements ModelBuilder {
                     page = ScaffoldedPages.expand(template.value, model)
                 }
                 catch (Exception e) {
-                    System.err.println("Could not expand the scaffolding template ${template.key} for ${domain}, so it is " +
-                            "expanded when it is first rendered instead, which a native image cannot do: ${e.cause ?: e}")
+                    System.err.println("Could not expand the scaffolding template ${template.key} for ${domain}, so no page " +
+                            "is compiled for it; if it is rendered it fails the same way: ${e.cause ?: e}")
                     continue
                 }
                 File target = new File(outputDir, ScaffoldedPages.uri(template.key, model, template.value).substring(1))
