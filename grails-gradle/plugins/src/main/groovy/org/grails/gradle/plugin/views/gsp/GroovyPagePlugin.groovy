@@ -18,6 +18,8 @@
  */
 package org.grails.gradle.plugin.views.gsp
 
+import java.util.regex.Pattern
+
 import groovy.transform.CompileStatic
 
 import org.gradle.api.Plugin
@@ -550,9 +552,12 @@ class GroovyPagePlugin implements Plugin<Project> {
 
         }
 
+        /** The annotation, imported or written out in full. */
+        private static final Pattern SCAFFOLD = ~/@(grails\.plugin\.scaffolding\.annotation\.)?Scaffold\b/
+
         @Override
         Boolean obtain() {
-            parameters.controllers.files.any { File controller -> controller.text.contains('@Scaffold') }
+            parameters.controllers.files.any { File controller -> SCAFFOLD.matcher(controller.text).find() }
         }
 
     }
