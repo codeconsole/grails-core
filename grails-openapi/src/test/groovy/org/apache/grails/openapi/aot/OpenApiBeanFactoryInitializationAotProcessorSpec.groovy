@@ -36,6 +36,10 @@ import org.springframework.core.env.MapPropertySource
 import org.springframework.core.env.StandardEnvironment
 import org.springframework.core.io.support.SpringFactoriesLoader
 import org.springframework.javapoet.ClassName
+import org.codehaus.groovy.control.CompilationUnit
+import org.codehaus.groovy.control.CompilerConfiguration
+import org.codehaus.groovy.control.Phases
+import org.codehaus.groovy.tools.GroovyClass
 import org.springframework.web.multipart.MultipartFile
 
 import grails.artefact.Artefact
@@ -82,6 +86,57 @@ class OpenApiBeanFactoryInitializationAotProcessorSpec extends Specification {
                 .test(hints)
     }
 
+    void 'keeps the classes a kept type extends, whose members Jackson reads too'() {
+        when:
+        RuntimeHints hints = process(beanFactory())
+
+        then:
+        kept(hints, NoticeBase)
+    }
+
+    void 'reads nothing Grails declares of a type while the build runs'() {
+        given:
+        CountedCommand.constraintsReads = 0
+
+        when: 'the application is processed ahead of time, when it is not running'
+        RuntimeHints hints = process(beanFactory())
+
+        then: 'the command object is kept, without its constraints being evaluated'
+        kept(hints, CountedCommand)
+        CountedCommand.constraintsReads == 0
+    }
+
+    void 'keeps what the other controllers are described from where one names a class the application does not have'() {
+        given: 'a controller whose OpenAPI annotation names a class that is only compiled against'
+        Class<?> lost = compiledWithout('MissingReceipt', '''
+            package grails.openapi.aot.fixture
+
+            class MissingReceipt {
+                String reference
+            }
+            ''', '''
+            package grails.openapi.aot.fixture
+
+            import grails.artefact.Artefact
+            import io.swagger.v3.oas.annotations.media.Content
+            import io.swagger.v3.oas.annotations.media.Schema
+            import io.swagger.v3.oas.annotations.responses.ApiResponse
+
+            @Artefact('Controller')
+            @ApiResponse(responseCode = '200', content = @Content(schema = @Schema(implementation = MissingReceipt)))
+            class LostController {
+            }
+            ''')
+
+        when:
+        RuntimeHints hints = process(beanFactory([:], [lost, ShelfController, NoticeController, Shelf]))
+
+        then:
+        kept(hints, lost)
+        kept(hints, Shelf)
+        kept(hints, NoticeCommand)
+    }
+
     void 'keeps only what swagger-core resolves, not every type reachable from a property'() {
         when:
         RuntimeHints hints = process(beanFactory())
@@ -120,6 +175,20 @@ class OpenApiBeanFactoryInitializationAotProcessorSpec extends Specification {
         RuntimeHintsPredicates.reflection().onType(MultipartFile).test(hints)
     }
 
+    /**
+     * A class compiled against another, and loaded where that other cannot be, as a class compiled
+     * against a dependency the application does not ship is.
+     */
+    private static Class<?> compiledWithout(String missing, String missingSource, String source) {
+        def unit = new CompilationUnit(new CompilerConfiguration(), null,
+                new GroovyClassLoader(OpenApiBeanFactoryInitializationAotProcessorSpec.classLoader))
+        unit.addSource("${missing}.groovy", missingSource)
+        unit.addSource('Compiled.groovy', source)
+        unit.compile(Phases.CLASS_GENERATION)
+        GroovyClass compiled = unit.classes.find { GroovyClass it -> !it.name.endsWith(missing) }
+        new GroovyClassLoader(OpenApiBeanFactoryInitializationAotProcessorSpec.classLoader).defineClass(compiled.name, compiled.bytes)
+    }
+
     private static boolean kept(RuntimeHints hints, Class<?> type) {
         RuntimeHintsPredicates.reflection().onType(type).test(hints)
     }
@@ -136,8 +205,9 @@ class OpenApiBeanFactoryInitializationAotProcessorSpec extends Specification {
      * The bean factory an application's context is processed with: its Grails application, and
      * the beans the plugin registers from its configuration.
      */
-    private static DefaultListableBeanFactory beanFactory(Map<String, Object> config = [:]) {
-        def application = new DefaultGrailsApplication(ShelfController, NoticeController, Shelf).tap { it.initialise() }
+    private static DefaultListableBeanFactory beanFactory(Map<String, Object> config = [:],
+                                                          List<Class<?>> artefacts = [ShelfController, NoticeController, Shelf]) {
+        def application = new DefaultGrailsApplication(artefacts as Class[]).tap { it.initialise() }
         def beanFactory = new DefaultListableBeanFactory()
         beanFactory.registerSingleton(GrailsApplication.APPLICATION_ID, application)
         def environment = new StandardEnvironment()
@@ -163,7 +233,11 @@ class ShelfController extends RestfulController<Shelf> {
     ShelfController() { super(Shelf) }
 }
 
-class NoticeCommand implements Validateable {
+class NoticeBase {
+    String origin
+}
+
+class NoticeCommand extends NoticeBase implements Validateable {
     String message
 
     static constraints = {
@@ -175,9 +249,21 @@ class NoticeReceipt {
     String reference
 }
 
+class CountedCommand implements Validateable {
+    static int constraintsReads
+    String note
+
+    static Map getConstraintsMap() {
+        constraintsReads++
+        [:]
+    }
+}
+
 @Artefact('Controller')
 class NoticeController {
 
     @ApiResponse(responseCode = '200', content = @Content(schema = @Schema(implementation = NoticeReceipt)))
     def post(NoticeCommand notice) { }
+
+    def count(CountedCommand command) { }
 }

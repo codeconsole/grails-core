@@ -29,6 +29,7 @@ import groovy.transform.CompileStatic
 import io.swagger.v3.core.converter.AnnotatedType
 import io.swagger.v3.core.converter.ModelConverter
 import io.swagger.v3.core.converter.ModelConverterContext
+import io.swagger.v3.core.converter.ModelConverterContextImpl
 import io.swagger.v3.core.converter.ModelConverters
 import io.swagger.v3.core.util.Json
 import io.swagger.v3.oas.models.media.Schema
@@ -62,9 +63,13 @@ import org.grails.plugins.openapi.OpenApiGrailsPlugin
  * keeps only the members something asks for, so without these hints those classes are described
  * as having nothing.</p>
  *
- * <p>The types are found the way swagger-core finds them at runtime: each type the controllers
- * serve or bind is resolved through swagger-core with the Grails converter, and every type the
- * resolution reaches is kept, rather than every type reachable from their properties.</p>
+ * <p>The types are found the way swagger-core finds them at runtime: each domain class, and each
+ * type the controllers serve or bind or the OpenAPI annotations on them name, is resolved through
+ * swagger-core with the Grails converter, in one context, and every type the resolution reaches is
+ * kept, with the classes it extends, rather than every type reachable from their properties. What
+ * Grails declares of a type, such as its constraints, is not read, since the application is not
+ * running. A controller or an annotation that cannot be read is skipped, and logged, as the
+ * description skips it at runtime.</p>
  *
  * @since 8.0
  */
@@ -124,36 +129,49 @@ class OpenApiBeanFactoryInitializationAotProcessor implements BeanFactoryInitial
      * Every type swagger-core reaches from the types the application's controllers serve and bind,
      * the OpenAPI annotations on them name, and its domain classes.
      */
-    static Set<Class<?>> describedTypes(GrailsApplication grailsApplication) {
+    private static Set<Class<?>> describedTypes(GrailsApplication grailsApplication) {
         Set<Class<?>> roots = new LinkedHashSet<>(artefactClasses(grailsApplication, DomainClassArtefactHandler.TYPE))
         for (GrailsClass artefact : grailsApplication.getArtefacts(ControllerArtefactHandler.TYPE)) {
-            GrailsControllerClass controller = (GrailsControllerClass) artefact
-            Class<?> type = controller.clazz
-            if (RestfulController.isAssignableFrom(type)) {
-                Class<?> resource = GenericTypeResolver.resolveTypeArgument(type, RestfulController)
-                if (resource != null && resource != Object) {
-                    roots << resource
-                }
+            if (!(artefact instanceof GrailsControllerClass)) {
+                continue
             }
-            collectNamedClasses(type, roots)
-            for (String actionName : controller.actions) {
-                Class<?> command = ActionAnnotations.commandObjectType(type, actionName)
-                if (command != null) {
-                    roots << command
-                }
-                Method action = ActionAnnotations.actionMethod(type, actionName)
-                if (action != null) {
-                    collectNamedClasses(action, roots)
-                    action.parameters.each { collectNamedClasses(it, roots) }
-                }
+            try {
+                collectRoots((GrailsControllerClass) artefact, roots)
+            }
+            catch (Exception | LinkageError e) {
+                // Described without what it cannot be read for at runtime too.
+                LOG.warn('Could not read [{}] to keep what it is described from: {}', artefact.clazz.name, e.message)
+                LOG.debug("Could not read [${artefact.clazz.name}]", e)
             }
         }
         reached(roots)
     }
 
+    private static void collectRoots(GrailsControllerClass controller, Set<Class<?>> roots) {
+        Class<?> type = controller.clazz
+        if (RestfulController.isAssignableFrom(type)) {
+            Class<?> resource = GenericTypeResolver.resolveTypeArgument(type, RestfulController)
+            if (resource != null && resource != Object) {
+                roots << resource
+            }
+        }
+        collectNamedClasses(type, roots)
+        for (String actionName : controller.actions) {
+            Class<?> command = ActionAnnotations.commandObjectType(type, actionName)
+            if (command != null) {
+                roots << command
+            }
+            Method action = ActionAnnotations.actionMethod(type, actionName)
+            if (action != null) {
+                collectNamedClasses(action, roots)
+                action.parameters.each { collectNamedClasses(it, roots) }
+            }
+        }
+    }
+
     /**
      * The types swagger-core resolves to describe the roots, through the converter the
-     * description uses.
+     * description uses, with the classes they extend, whose members Jackson reads too.
      */
     private static Set<Class<?>> reached(Set<Class<?>> roots) {
         Recorder recorder = new Recorder()
@@ -162,22 +180,30 @@ class OpenApiBeanFactoryInitializationAotProcessor implements BeanFactoryInitial
         // metaClass of a Groovy object, so only what swagger-core introspects is recorded
         converters.addConverter(recorder)
         converters.addConverter(GrailsModelConverter.INSTANCE)
-        for (Class<?> root : roots) {
-            try {
-                converters.readAllAsResolvedSchema(new AnnotatedType(root).resolveAsRef(true))
-            }
-            catch (RuntimeException | LinkageError e) {
-                // Described without it at runtime too.
-                LOG.debug("Could not resolve [${root.name}] to keep what it is described from", e)
+        // One context for every root, as a document has one, so a type many reach is resolved once.
+        ModelConverterContextImpl context = new ModelConverterContextImpl(converters.converters)
+        GrailsModelConverter.withTypesOnly {
+            for (Class<?> root : roots) {
+                try {
+                    context.resolve(new AnnotatedType(root).resolveAsRef(true))
+                }
+                catch (RuntimeException | LinkageError e) {
+                    // Described without it at runtime too.
+                    LOG.debug("Could not resolve [${root.name}] to keep what it is described from", e)
+                }
             }
         }
-        Set<Class<?>> kept = new LinkedHashSet<>(roots)
-        kept.addAll(recorder.reached)
-        kept.findAll { Class<?> type -> isApplicationType(type) }.toSet()
+        Set<Class<?>> kept = new LinkedHashSet<>()
+        for (Class<?> type : roots + recorder.reached) {
+            for (Class<?> current = type; current != null && isApplicationType(current); current = current.superclass) {
+                kept << current
+            }
+        }
+        kept
     }
 
     private static boolean isApplicationType(Class<?> type) {
-        !type.primitive && !type.array && !type.name.startsWith('java.') && !type.name.startsWith('javax.')
+        type != Object && !type.primitive && !type.array && !type.name.startsWith('java.') && !type.name.startsWith('javax.')
     }
 
     private static List<Class<?>> artefactClasses(GrailsApplication grailsApplication, String artefactType) {
@@ -200,8 +226,16 @@ class OpenApiBeanFactoryInitializationAotProcessor implements BeanFactoryInitial
             return
         }
         for (Method attribute : annotationType.declaredMethods) {
-            if (attribute.parameterCount == 0) {
+            if (attribute.parameterCount != 0) {
+                continue
+            }
+            try {
                 collectValue(attribute.invoke(annotation), into)
+            }
+            catch (Exception | LinkageError e) {
+                // A class the application does not have, such as one only compiled against, which
+                // the description cannot read at runtime either.
+                LOG.warn('Could not read {} of {}: {}', attribute.name, annotationType.simpleName, e.cause?.message ?: e.message)
             }
         }
     }

@@ -111,6 +111,8 @@ class GrailsModelConverter implements ModelConverter {
 
     private static final ThreadLocal<SchemaNames> SCHEMA_NAMES = new ThreadLocal<>()
 
+    private static final ThreadLocal<Boolean> TYPES_ONLY = ThreadLocal.withInitial { false }
+
     private static final ThreadLocal<Deque<Class<?>>> RESOLVING = ThreadLocal.<Deque<Class<?>>> withInitial {
         (Deque<Class<?>>) new ArrayDeque<Class<?>>()
     }
@@ -165,6 +167,21 @@ class GrailsModelConverter implements ModelConverter {
         }
         finally {
             SCHEMA_NAMES.set(previous)
+        }
+    }
+
+    /**
+     * Resolves the types a description reaches without reading what Grails declares of them, as a
+     * build processing the application ahead of time does, while the application is not running.
+     */
+    static <T> T withTypesOnly(Closure<T> work) {
+        Boolean previous = TYPES_ONLY.get()
+        TYPES_ONLY.set(true)
+        try {
+            return work.call()
+        }
+        finally {
+            TYPES_ONLY.set(previous)
         }
     }
 
@@ -240,7 +257,7 @@ class GrailsModelConverter implements ModelConverter {
         }
 
         Schema model = modelOf(resolved, context)
-        if (model?.properties != null) {
+        if (model?.properties != null && !TYPES_ONLY.get()) {
             try {
                 describe(type, model)
             }
