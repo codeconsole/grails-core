@@ -337,12 +337,14 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
     }
 
     /**
-     * Whether a controller declares a namespace, itself or through a superclass, read from its
-     * declarations without running any of its code.
+     * Whether a controller declares a namespace, itself or through a superclass or an interface,
+     * read from its declarations without running any of its code.
      *
-     * <p>Groovy traits rename their namespace fields but emit a static {@code getNamespace()}
-     * accessor on the implementing class. Checking that accessor covers trait-supplied namespaces
-     * without walking interfaces; only superclass declarations require an ancestor walk.</p>
+     * <p>The runtime reads the namespace through the controller's metaclass, which sees a static
+     * field or accessor on the class and its superclasses, and a constant on any interface it
+     * implements. Groovy traits rename their namespace fields but emit a static
+     * {@code getNamespace()} accessor on the implementing class, so they are covered by the
+     * accessor.</p>
      *
      * <p>A declaration is all this can see, not its value, so {@code static namespace = null}
      * still counts even though the runtime, which tests the value, gives that controller no
@@ -369,21 +371,27 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
                 null
             }
         }, ClassReader.SKIP_CODE | ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES)
-        if (declared || reader.superName == null || reader.superName == 'java/lang/Object') {
-            return declared
+        if (declared) {
+            return true
         }
-        String superName = reader.superName
-        Boolean known = ancestors.get(superName)
-        if (known != null) {
-            return known
+        List<String> supertypes = ([reader.superName] + (reader.interfaces as List<String>)).findAll { String type ->
+            type != null && type != 'java/lang/Object'
         }
-        boolean inherited = ancestorHasNamespace(superName, resources, ancestors)
-        ancestors.put(superName, inherited)
-        inherited
+        for (String supertype : supertypes) {
+            Boolean inherited = ancestors.get(supertype)
+            if (inherited == null) {
+                inherited = ancestorHasNamespace(supertype, resources, ancestors)
+                ancestors.put(supertype, inherited)
+            }
+            if (inherited) {
+                return true
+            }
+        }
+        false
     }
 
     /**
-     * Superclasses can come from dependencies, whose class files may be newer than the bundled ASM
+     * Supertypes can come from dependencies, whose class files may be newer than the bundled ASM
      * reads, or whose bytecode may be damaged or unreadable. One that cannot be read is taken to
      * declare no namespace, with a warning, rather than failing the build.
      */

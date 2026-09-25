@@ -149,6 +149,27 @@ class GenerateScaffoldedViewsTaskSpec extends Specification {
         scaffolded(name, domainInternalName, 'java/lang/Object', extra)
     }
 
+    /** {@code interface AdminArea { String namespace = 'admin' }}, as Groovy compiles it. */
+    private static byte[] adminAreaInterface() {
+        ClassWriter writer = new ClassWriter(0)
+        writer.visit(Opcodes.V21, Opcodes.ACC_PUBLIC | Opcodes.ACC_INTERFACE | Opcodes.ACC_ABSTRACT, 'com/example/AdminArea', null,
+                'java/lang/Object', null)
+        writer.visitField(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC | Opcodes.ACC_FINAL, 'namespace', 'Ljava/lang/String;', null, 'admin').visitEnd()
+        writer.visitEnd()
+        writer.toByteArray()
+    }
+
+    /** A scaffolded class implementing an interface and declaring nothing else. */
+    private static byte[] implementing(String name, String domainInternalName, String interfaceName) {
+        ClassWriter writer = new ClassWriter(0)
+        writer.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, name, null, 'java/lang/Object', [interfaceName] as String[])
+        AnnotationVisitor annotation = writer.visitAnnotation('Lgrails/plugin/scaffolding/annotation/Scaffold;', true)
+        annotation.visit('domain', Type.getObjectType(domainInternalName))
+        annotation.visitEnd()
+        writer.visitEnd()
+        writer.toByteArray()
+    }
+
     private static byte[] plain(String name, String superName, Closure extra) {
         ClassWriter writer = new ClassWriter(0)
         writer.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, name, null, superName, null)
@@ -346,14 +367,17 @@ class GenerateScaffoldedViewsTaskSpec extends Specification {
             writeClass(classesDir, 'com/example/TraitController', scaffolded('com/example/TraitController', 'com/example/FromTrait') { ClassWriter writer ->
                 writer.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, 'getNamespace', '()Ljava/lang/String;', null, null).visitEnd()
             })
+            writeClass(classesDir, 'com/example/AdminArea', adminAreaInterface())
+            writeClass(classesDir, 'com/example/InterfaceController', implementing('com/example/InterfaceController', 'com/example/FromInterface',
+                    'com/example/AdminArea'))
             def task = task()
 
         when:
             task.generate()
 
-        then: 'declared by a superclass, or by a trait, which leaves a static accessor on the class'
+        then: 'declared by a superclass, by a trait, which leaves a static accessor on the class, or as an interface constant'
             handed(task).keySet().findAll { it.endsWith('admin/show') } ==
-                    ['com.example.FromTrait/admin/show', 'com.example.Inherited/admin/show'] as Set
+                    ['com.example.FromInterface/admin/show', 'com.example.FromTrait/admin/show', 'com.example.Inherited/admin/show'] as Set
     }
 
     void 'a controller that cannot be read is left out, and the others are still expanded'() {
