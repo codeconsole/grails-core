@@ -187,10 +187,17 @@ class OperationParameters {
      * A value a request parameter can carry: not an object, nor a list of objects.
      */
     private static boolean isParameterValue(Schema<?> schema) {
-        if (schema.$ref || typeOf(schema) == 'object') {
+        if (isObject(schema) || [schema.allOf, schema.oneOf, schema.anyOf].any { List<Schema> composed ->
+            composed?.any { Schema member -> isObject(member) }
+        }) {
+            // An object, or one of an object and something else, such as a nullable reference.
             return false
         }
         typeOf(schema) != 'array' || (schema.items != null && !schema.items.$ref && typeOf(schema.items) != 'object')
+    }
+
+    private static boolean isObject(Schema<?> schema) {
+        schema.$ref || typeOf(schema) == 'object'
     }
 
     private static String typeOf(Schema<?> schema) {
