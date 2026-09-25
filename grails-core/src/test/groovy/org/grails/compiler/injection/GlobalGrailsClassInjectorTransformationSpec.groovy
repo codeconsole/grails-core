@@ -479,6 +479,58 @@ class GlobalGrailsClassInjectorTransformationSpec extends Specification {
             e.message.contains("A unit test's 'beans' block cannot be @Shared")
     }
 
+    void "a unit test's unrelated @Shared beans field is left alone"() {
+        given: "a shared beans field that is not the DSL"
+            def testSources = new File(tempDir, 'src/test/groovy')
+            def spec = new File(testSources, 'SharedMapSpec.groovy')
+            spec.parentFile.mkdirs()
+            spec.text = '''
+                class SharedMapSpec extends spock.lang.Specification implements org.grails.testing.GrailsUnitTest {
+                    @spock.lang.Shared
+                    def beans = [someKey: 'someValue']
+                }
+            '''
+
+        when: "it compiles"
+            def cu = unitTestCompilation(spec)
+            cu.compile(Phases.CANONICALIZATION)
+
+        then: "nothing is reported or generated"
+            cu.AST.getClass('SharedMapSpec$BeansConfiguration') == null
+    }
+
+    void "a unit test's unrelated beans closure stays where Spock put it"() {
+        given: "a beans closure that declares nothing, which Spock moves into its initializer method"
+            def testSources = new File(tempDir, 'src/test/groovy')
+            def spec = new File(testSources, 'UnrelatedClosureSpec.groovy')
+            spec.parentFile.mkdirs()
+            spec.text = '''
+                class UnrelatedClosureSpec extends spock.lang.Specification implements org.grails.testing.GrailsUnitTest {
+                    def beans = { 'not the DSL' }
+                }
+            '''
+
+        when:
+            def cu = unitTestCompilation(spec)
+            cu.compile(Phases.CANONICALIZATION)
+            ClassNode unrelatedSpec = cu.AST.getClass('UnrelatedClosureSpec')
+
+        then: "it is not moved back onto the field, and nothing is generated"
+            unrelatedSpec.getProperty('beans').field.initialExpression == null
+            cu.AST.getClass('UnrelatedClosureSpec$BeansConfiguration') == null
+    }
+
+    /** A compilation of a test source alongside a stand-in for the testing support's trait. */
+    private CompilationUnit unitTestCompilation(File spec) {
+        def trait = new File(tempDir, 'src/test/groovy/org/grails/testing/GrailsUnitTest.groovy')
+        trait.parentFile.mkdirs()
+        trait.text = 'package org.grails.testing\ninterface GrailsUnitTest { }\n'
+        def cu = new CompilationUnit(new CompilerConfiguration(targetDirectory: new File(tempDir, 'build/classes/groovy/test')))
+        cu.addSource(trait)
+        cu.addSource(spec)
+        cu
+    }
+
     void "a generated class missing from a hand-authored imports file is reported"() {
         given: "a hand-authored file listing something else, and a descriptor whose sibling is not in it"
             def targetDir = new File(tempDir, 'build/classes/groovy/main')

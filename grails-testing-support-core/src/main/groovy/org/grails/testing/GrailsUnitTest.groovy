@@ -40,6 +40,7 @@ import grails.core.GrailsApplication
 import grails.spring.BeanBuilder
 import grails.util.Holders
 import grails.validation.DeferredBindingActions
+import org.grails.compiler.beans.GrailsBeansASTTransformation
 import org.grails.core.lifecycle.ShutdownOperations
 
 @CompileStatic
@@ -241,7 +242,9 @@ trait GrailsUnitTest {
 
     /**
      * Outermost test class first, so a nested class in a subclass is registered later and wins a
-     * bean name the two share.
+     * bean name the two share. Within one class the one its {@code beans} block compiles to comes
+     * last, so the block wins a name it shares with a hand-written nested class; the order of the
+     * hand-written ones is {@code getDeclaredClasses()}'s, which Java does not specify.
      */
     private Set<Class<?>> nestedConfigurationClasses(Class<?> testClass) {
         List<Class<?>> hierarchy = []
@@ -250,13 +253,15 @@ trait GrailsUnitTest {
         }
         Set<Class<?>> found = new LinkedHashSet<>()
         for (Class<?> type : hierarchy) {
-            for (Class<?> nested : type.declaredClasses) {
+            List<Class<?>> declared = type.declaredClasses.findAll { Class<?> nested ->
                 int modifiers = nested.modifiers
-                if (Modifier.isStatic(modifiers) && !Modifier.isPrivate(modifiers) && !Modifier.isFinal(modifiers)
-                        && AnnotatedElementUtils.hasAnnotation(nested, Configuration)) {
-                    found << nested
-                }
+                Modifier.isStatic(modifiers) && !Modifier.isPrivate(modifiers) && !Modifier.isFinal(modifiers) &&
+                        AnnotatedElementUtils.hasAnnotation(nested, Configuration)
             }
+            // stable, so only the generated class moves
+            found.addAll(declared.sort(false) { Class<?> nested ->
+                nested.simpleName == GrailsBeansASTTransformation.UNIT_TEST_CONFIGURATION_NAME ? 1 : 0
+            })
         }
         found
     }

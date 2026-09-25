@@ -395,9 +395,7 @@ class GlobalGrailsClassInjectorTransformation implements ASTTransformation, Comp
             GrailsBeansASTTransformation.reportSharedBeans(classNode, source)
             return
         }
-        // A Spock specification's field initializer has been moved into a method by now
-        GrailsBeansASTTransformation.reclaimMovedInitializer(classNode, beansProperty)
-        List<Statement> statements = beansDslStatements(beansProperty)
+        List<Statement> statements = beansDslStatements(classNode, beansProperty)
         if (statements == null) {
             return
         }
@@ -406,6 +404,9 @@ class GlobalGrailsClassInjectorTransformation implements ASTTransformation, Comp
             reportStrayBeansStatement(statements, stray, source)
             return
         }
+        // Claimed: a Spock specification's closure is moved back onto the field only now, so an
+        // unrelated beans property is left exactly as Spock compiled it
+        GrailsBeansASTTransformation.reclaimMovedInitializer(classNode, beansProperty)
 
         // Referenced directly, as the registering below already does. grails-core declares
         // grails-beans-dsl api (see grails-core/build.gradle), so it reaches every project that has
@@ -422,8 +423,10 @@ class GlobalGrailsClassInjectorTransformation implements ASTTransformation, Comp
      * an empty list rather than null: it is a no-op either way, and claiming it keeps the implicit
      * and explicit spellings agreeing.
      */
-    private static List<Statement> beansDslStatements(PropertyNode beansProperty) {
-        Expression initial = beansProperty.field?.initialExpression
+    private static List<Statement> beansDslStatements(ClassNode classNode, PropertyNode beansProperty) {
+        // A Spock specification's field initializer has been moved into a method by now
+        Expression initial = beansProperty.field?.initialExpression ?:
+                GrailsBeansASTTransformation.movedInitializer(classNode, beansProperty.field)
         if (!(initial instanceof ClosureExpression)) {
             return null
         }

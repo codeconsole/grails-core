@@ -51,7 +51,7 @@ The block is compiled into a static nested configuration class, `BeansConfigurat
 
 A bean body cannot use the test's own fields or methods: the beans are created before any instance of the test exists. Declare what a bean depends on as a closure parameter instead, as `reportCache` does above. For the same reason the block cannot be `@Shared`, and would gain nothing from it: the beans are created once for the test class.
 
-A bean the block declares replaces one the test's context provides under the same name, such as `messageSource`, as an application's configuration replaces a framework default. A bean registered by an included plugin (see <<Spring configuration from plugins>> below) is the exception: it wins over a `beans` block bean of the same name, as a plugin's bean wins over an application's `@Bean` at boot. To replace one, use `beanRegistrar`, which is applied last.
+A bean the block declares replaces a bean of the same name that would give way to an application's: the context's own stand-ins for framework beans, such as `messageSource`, and framework beans declared `@ConditionalOnMissingBean`. It does not replace a framework configuration's unconditional bean, such as `codecLookup`, or a bean an included plugin registers (see <<Spring configuration from plugins>> below). Those win, as they win over an application's `@Bean`. To replace one of them, use `beanRegistrar`, which is applied last.
 
 ==== beanRegistrar
 
@@ -105,6 +105,12 @@ Set<Class<?>> getConfigurationClasses() {
     [ReportingConfiguration] as Set<Class<?>>
 }
 ----
+
+==== Using more than one
+
+A test may use more than one of these. For a name declared by more than one, the one applied last wins: `beanRegistrar`, then `doWithSpring`, then the `beans` block, then a hand-written nested configuration class.
+
+A condition on one of the test's beans, such as `.conditionalOnMissingBean()` in the block or `@ConditionalOnMissingBean` on a nested class's method, is evaluated while the test's configuration is read, before anything else is registered. It sees only the beans of the test's own configuration classes read before it, and never those `doWithSpring`, `beanRegistrar`, an included plugin or the framework register.
 
 ==== doWithSpring
 

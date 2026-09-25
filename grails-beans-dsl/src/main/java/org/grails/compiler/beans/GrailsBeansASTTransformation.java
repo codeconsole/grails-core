@@ -257,7 +257,7 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
     /** Named, not referenced: this module does not depend on the testing support. */
     static final String UNIT_TEST_TRAIT_NAME = "org.grails.testing.GrailsUnitTest";
     /** The nested class a unit test's beans compile onto; the Configuration suffix as a group's has. */
-    static final String UNIT_TEST_CONFIGURATION_NAME = "BeansConfiguration";
+    public static final String UNIT_TEST_CONFIGURATION_NAME = "BeansConfiguration";
     /** What Spock renames a {@code @Shared beans} field to (its InternalIdentifiers.getSharedFieldName). */
     static final String SPOCK_SHARED_BEANS_FIELD = "$spock_sharedField_" + BEANS_PROPERTY;
     private static final String DUMP_DIR_PROPERTY = "grails.beans.dsl.dumpdir";
@@ -386,20 +386,41 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
         if (field == null || field.getInitialExpression() != null) {
             return;
         }
-        for (MethodNode method : classNode.getMethods()) {
-            if (method.getCode() instanceof BlockStatement &&
-                    reclaimFrom((BlockStatement) method.getCode(), field)) {
-                return;
-            }
+        MovedInitializer moved = findMovedInitializer(classNode, field);
+        if (moved != null) {
+            moved.block.getStatements().remove(moved.statement);
+            field.setInitialValueExpression(moved.closure);
         }
     }
 
-    private static boolean reclaimFrom(BlockStatement block, FieldNode field) {
-        List<Statement> statements = block.getStatements();
-        for (int i = 0; i < statements.size(); i++) {
-            Statement statement = statements.get(i);
-            if (statement instanceof BlockStatement && reclaimFrom((BlockStatement) statement, field)) {
-                return true;
+    /**
+     * The closure Spock moved off {@code field} into one of its generated methods, left where it is;
+     * {@code null} when there is none. For deciding whether a block is the DSL before claiming it.
+     */
+    public static ClosureExpression movedInitializer(ClassNode classNode, FieldNode field) {
+        MovedInitializer moved = field == null ? null : findMovedInitializer(classNode, field);
+        return moved == null ? null : moved.closure;
+    }
+
+    private static MovedInitializer findMovedInitializer(ClassNode classNode, FieldNode field) {
+        for (MethodNode method : classNode.getMethods()) {
+            if (method.getCode() instanceof BlockStatement) {
+                MovedInitializer moved = findMovedInitializer((BlockStatement) method.getCode(), field);
+                if (moved != null) {
+                    return moved;
+                }
+            }
+        }
+        return null;
+    }
+
+    private static MovedInitializer findMovedInitializer(BlockStatement block, FieldNode field) {
+        for (Statement statement : block.getStatements()) {
+            if (statement instanceof BlockStatement) {
+                MovedInitializer nested = findMovedInitializer((BlockStatement) statement, field);
+                if (nested != null) {
+                    return nested;
+                }
             }
             if (!(statement instanceof ExpressionStatement) ||
                     !(((ExpressionStatement) statement).getExpression() instanceof BinaryExpression)) {
@@ -410,9 +431,43 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
                     assignment.getLeftExpression() instanceof FieldExpression &&
                     ((FieldExpression) assignment.getLeftExpression()).getField() == field &&
                     assignment.getRightExpression() instanceof ClosureExpression) {
-                statements.remove(i);
-                field.setInitialValueExpression(assignment.getRightExpression());
-                return true;
+                return new MovedInitializer(block, statement, (ClosureExpression) assignment.getRightExpression());
+            }
+        }
+        return null;
+    }
+
+    private static final class MovedInitializer {
+        private final BlockStatement block;
+        private final Statement statement;
+        private final ClosureExpression closure;
+
+        private MovedInitializer(BlockStatement block, Statement statement, ClosureExpression closure) {
+            this.block = block;
+            this.statement = statement;
+            this.closure = closure;
+        }
+    }
+
+    /**
+     * Whether a closure declares anything with the DSL: a top-level {@code bean}, {@code field},
+     * {@code method} or {@code group} call, looking through chained qualifiers to the root call.
+     */
+    private static boolean declaresBeans(ClosureExpression closure) {
+        Statement code = closure.getCode();
+        List<Statement> statements = code instanceof BlockStatement ?
+                ((BlockStatement) code).getStatements() : Collections.singletonList(code);
+        for (Statement statement : statements) {
+            if (!(statement instanceof ExpressionStatement)) {
+                continue;
+            }
+            Expression expression = ((ExpressionStatement) statement).getExpression();
+            while (expression instanceof MethodCallExpression) {
+                MethodCallExpression call = (MethodCallExpression) expression;
+                if (ROOT_STATEMENT_CALL_NAMES.contains(call.getMethodAsString())) {
+                    return true;
+                }
+                expression = call.getObjectExpression();
             }
         }
         return false;
@@ -421,13 +476,17 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
     /**
      * Reports a Spock specification's {@code @Shared beans} block, which would otherwise be dropped
      * without a word: Spock renames a shared field and takes its property away before this runs, so
-     * there is no {@code beans} property left to find.
+     * there is no {@code beans} property left to find. Only a closure that declares beans is
+     * reported; an unrelated shared {@code beans} field is not the DSL and is left alone.
      *
      * @return whether there was one to report
      */
     public static boolean reportSharedBeans(ClassNode classNode, SourceUnit source) {
         FieldNode shared = classNode.getDeclaredField(SPOCK_SHARED_BEANS_FIELD);
-        if (shared == null) {
+        ClosureExpression closure = movedInitializer(classNode, shared);
+        // A @Shared beans field holding something other than the DSL is left alone, as an
+        // instance one is
+        if (closure == null || !declaresBeans(closure)) {
             return false;
         }
         source.getErrorCollector().addErrorAndContinue(new SyntaxErrorMessage(new SyntaxException(

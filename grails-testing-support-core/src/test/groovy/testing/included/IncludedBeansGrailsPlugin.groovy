@@ -32,6 +32,8 @@ import grails.plugins.Plugin
  * applied as a loaded plugin's is. Deliberately outside {@code org.grails}, whose auto-configurations
  * the test harness registers regardless.
  */
+// @AutoConfiguration is required, not decoration: a Plugin using @GrailsBeans must carry it, and the
+// transform moves it onto the generated IncludedBeansAutoConfiguration
 @GrailsBeans
 @AutoConfiguration
 class IncludedBeansGrailsPlugin extends Plugin {

@@ -83,7 +83,7 @@ class GrailsApplicationBuilder {
 
     Closure doWithSpring
     BeanRegistrar beanRegistrar
-    Collection<Class<?>> configurationClasses
+    Set<Class<?>> configurationClasses
     Closure doWithConfig
     Set<String> includePlugins
     boolean loadExternalBeans
