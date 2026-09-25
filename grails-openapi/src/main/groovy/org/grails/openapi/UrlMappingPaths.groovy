@@ -123,6 +123,16 @@ class UrlMappingPaths {
     }
 
     /**
+     * Whether a variable of the mapping may be left out of a request, as {@code $action?} may.
+     */
+    static boolean isOptional(UrlMapping mapping, String name) {
+        Constrained declared = mapping.constraints?.find { Constrained constrained ->
+            constrained instanceof ConstrainedProperty && ((ConstrainedProperty) constrained).propertyName == name
+        }
+        declared != null && declared.nullable
+    }
+
+    /**
      * The names of the variables a mapping binds, in the order its pattern declares them.
      */
     static List<String> variableNames(UrlMapping mapping) {

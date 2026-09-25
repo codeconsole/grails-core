@@ -615,6 +615,11 @@ second produces `GET /book/index`, `POST /book/save` and `GET /book/show/{id}`. 
 mappings name every controller gets neither, because expansion follows the mappings rather than the
 controllers.
 
+A mapping that captures the namespace, such as `"/$namespace/$controller/$action?/$id?"`, reaches
+each controller at its own namespace, and does not reach a controller without one. A mapping that
+leaves the namespace out reaches the controller Grails resolves for the name alone, so of two
+controllers sharing a name only a namespaced mapping reaches either.
+
 A controller a `resources` mapping names and a mapping that does not name it are described at both,
 because both answer. Where that gives two operations the same identifier the second is qualified by
 the path it is reached at, so no two operations in the document share one. An application wanting

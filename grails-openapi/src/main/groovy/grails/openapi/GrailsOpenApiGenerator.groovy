@@ -103,6 +103,7 @@ class GrailsOpenApiGenerator {
     private static final String UNPROCESSABLE_RESPONSE_CODE = '422'
     private static final String CONTROLLER_TOKEN = 'controller'
     private static final String ACTION_TOKEN = 'action'
+    private static final String NAMESPACE_TOKEN = 'namespace'
     private static final String ID_TOKEN = 'id'
     private static final String PATCH_SUFFIX = 'Patch'
     private static final String RESPONSE_FORMATS = 'responseFormats'
@@ -398,7 +399,13 @@ class GrailsOpenApiGenerator {
                     continue
                 }
 
+                boolean capturesNamespace = names.contains(NAMESPACE_TOKEN)
                 for (GrailsControllerClass controller : controllers) {
+                    // A mapping that leaves the namespace out reaches the controller Grails resolves for
+                    // the name alone; one that captures it reaches each controller at its own.
+                    if (!capturesNamespace && !controllerFor(controller.logicalPropertyName, null).is(controller)) {
+                        continue
+                    }
                     Collection<String> actions = expandsAction ? controller.actions : [mappedAction]
                     for (String actionName : actions) {
                         describe("action [${controller.logicalPropertyName}.${actionName}]".toString()) {
@@ -421,6 +428,18 @@ class GrailsOpenApiGenerator {
             String controllerName = controller.logicalPropertyName
             Map<String, String> substitutions = [(CONTROLLER_TOKEN): controllerName]
             Set<String> omitted = [] as Set
+            if (UrlMappingPaths.variableNames(mapping).contains(NAMESPACE_TOKEN)) {
+                if (controller.namespace) {
+                    substitutions[NAMESPACE_TOKEN] = controller.namespace
+                }
+                else if (UrlMappingPaths.isOptional(mapping, NAMESPACE_TOKEN)) {
+                    omitted << NAMESPACE_TOKEN
+                }
+                else {
+                    // A namespace the controller does not have does not reach it.
+                    return
+                }
+            }
             if (expandsAction) {
                 substitutions[ACTION_TOKEN] = actionName
                 if (!RestfulControllerActions.takesId(actionName)) {
