@@ -85,6 +85,13 @@ class RestfulControllerActions {
     }
 
     /**
+     * Whether the action answers with where the resource it created is. Save does.
+     */
+    static boolean locates(String actionName) {
+        actionName == 'save'
+    }
+
+    /**
      * Whether the successful response carries the resource. Delete renders no content.
      */
     static boolean hasResponseBody(String actionName) {

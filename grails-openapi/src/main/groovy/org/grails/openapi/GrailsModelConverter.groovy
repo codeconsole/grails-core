@@ -18,6 +18,7 @@
  */
 package org.grails.openapi
 
+import java.beans.PropertyDescriptor
 import java.lang.reflect.Method
 import java.lang.reflect.Type
 
@@ -37,6 +38,7 @@ import io.swagger.v3.oas.models.media.Schema
 import io.swagger.v3.oas.models.media.StringSchema
 import org.codehaus.groovy.runtime.InvokerHelper
 import org.springframework.beans.BeanUtils
+import org.springframework.util.ClassUtils
 import org.springframework.validation.Errors
 import org.springframework.validation.Validator
 
@@ -87,6 +89,11 @@ class GrailsModelConverter implements ModelConverter {
     private static final ThreadLocal<Boolean> INCLUDE_VERSION = new ThreadLocal<>()
 
     private static final String DATABINDING_WHITELIST = '$defaultDatabindingWhiteList'
+
+    private static final List<Class<?>> FILE_TYPES = ['org.springframework.web.multipart.MultipartFile',
+                                                      'jakarta.servlet.http.Part'].findAll { String name ->
+        ClassUtils.isPresent(name, GrailsModelConverter.classLoader)
+    }.collect { String name -> ClassUtils.resolveClassName(name, GrailsModelConverter.classLoader) }.asImmutable()
 
     private static final ThreadLocal<SchemaNames> SCHEMA_NAMES = new ThreadLocal<>()
 
@@ -163,9 +170,30 @@ class GrailsModelConverter implements ModelConverter {
         null
     }
 
+    /**
+     * Whether a type has a property a file is bound to, so it is bound from a multipart request.
+     */
+    static boolean hasFileProperty(Class<?> type) {
+        if (type == null) {
+            return false
+        }
+        BeanUtils.getPropertyDescriptors(type).any { PropertyDescriptor property -> isFile(property.propertyType) }
+    }
+
+    /**
+     * An uploaded file: a {@code MultipartFile} or a servlet {@code Part}.
+     */
+    private static boolean isFile(Class<?> type) {
+        type != null && FILE_TYPES.any { Class<?> fileType -> fileType.isAssignableFrom(type) }
+    }
+
     @Override
     Schema resolve(AnnotatedType annotatedType, ModelConverterContext context, Iterator<ModelConverter> chain) {
         Class<?> type = rawClass(annotatedType.type)
+        if (isFile(type)) {
+            // A file is sent as the binary part of a multipart request.
+            return new StringSchema().format('binary')
+        }
 
         if (annotatedType.propertyName != null) {
             if (type != null && (MetaClass.isAssignableFrom(type) || Errors.isAssignableFrom(type))) {

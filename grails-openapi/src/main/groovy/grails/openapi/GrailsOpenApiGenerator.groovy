@@ -36,6 +36,7 @@ import io.swagger.v3.oas.models.OpenAPI
 import io.swagger.v3.oas.models.Operation
 import io.swagger.v3.oas.models.PathItem
 import io.swagger.v3.oas.models.Paths
+import io.swagger.v3.oas.models.headers.Header
 import io.swagger.v3.oas.models.SpecVersion
 import io.swagger.v3.oas.models.info.Info
 import io.swagger.v3.oas.models.media.ArraySchema
@@ -111,6 +112,9 @@ class GrailsOpenApiGenerator {
     private static final String PATCH_SUFFIX = 'Patch'
     private static final String RESPONSE_FORMATS = 'responseFormats'
     private static final String ALLOWED_METHODS = 'allowedMethods'
+    private static final String LOCATION_HEADER = 'Location'
+    private static final String MULTIPART_MEDIA_TYPE = 'multipart/form-data'
+    private static final Set<String> DATA_FORMATS = ['json', 'xml'].toSet().asImmutable()
     private static final VersionComparator VERSION_COMPARATOR = new VersionComparator()
     private static final String REFERENCE_PREFIX = '#/components/schemas/'
 
@@ -595,13 +599,15 @@ class GrailsOpenApiGenerator {
             if (pathItem.readOperationsMap().containsKey(method)) {
                 return
             }
-            List<String> mediaTypes = mediaTypes(controller, actionName)
-            List<String> consumes = bindsBody(method, controller, controllerType, actionName) ? mediaTypes : []
+            List<String> produces = responseMediaTypes(controller, actionName).keySet().toList()
+            List<String> consumes = bindsBody(method, controller, controllerType, actionName)
+                    ? bodyMediaTypes(controller, controllerType, actionName)
+                    : Collections.<String> emptyList()
             String version = versionOf(mapping)
             List<String> headers = version != null
                     ? ["${HttpHeaders.ACCEPT_VERSION}=${version}".toString()]
                     : Collections.<String> emptyList()
-            if (!selection.selectsConditions(mediaTypes, consumes, headers)) {
+            if (!selection.selectsConditions(produces, consumes, headers)) {
                 return
             }
 
@@ -648,9 +654,10 @@ class GrailsOpenApiGenerator {
                 addCommandParameters(operation, controllerType, actionName, pathNames)
             }
 
-            List<String> mediaTypes = mediaTypes(controller, actionName)
+            Map<String, Boolean> mediaTypes = responseMediaTypes(controller, actionName)
             if (restful && actionName) {
-                operation.setResponses(restfulResponses(resourceType, actionName, !pathNames.isEmpty(), mediaTypes))
+                boolean locates = controllerType != null && RestfulController.isAssignableFrom(controllerType)
+                operation.setResponses(restfulResponses(resourceType, actionName, !pathNames.isEmpty(), mediaTypes, locates))
             }
             else {
                 ApiResponses responses = new ApiResponses()
@@ -664,7 +671,9 @@ class GrailsOpenApiGenerator {
             if (method.name() in BODY_METHODS && !ActionAnnotations.declaresRequestBody(controllerType, actionName)) {
                 Schema<?> body = requestBodySchema(controllerType, actionName, resourceType, method)
                 if (body != null) {
-                    operation.setRequestBody(new RequestBody().content(content(body, mediaTypes)))
+                    Map<String, Boolean> bodyTypes = bodyMediaTypes(controller, controllerType, actionName)
+                            .collectEntries { String mediaType -> [(mediaType): true] } as Map<String, Boolean>
+                    operation.setRequestBody(new RequestBody().content(content(body, bodyTypes)))
                 }
             }
             operation
@@ -922,7 +931,7 @@ class GrailsOpenApiGenerator {
          * that validates what it binds can answer with the validation errors.
          */
         private ApiResponses restfulResponses(Class<?> resourceType, String actionName, boolean takesId,
-                                              List<String> mediaTypes) {
+                                              Map<String, Boolean> mediaTypes, boolean locates) {
             ApiResponses responses = new ApiResponses()
 
             ApiResponse success = new ApiResponse().description('Success')
@@ -934,6 +943,12 @@ class GrailsOpenApiGenerator {
                             : resource
                     success.setContent(content(schema, mediaTypes))
                 }
+            }
+            if (locates && RestfulControllerActions.locates(actionName)) {
+                // RestfulController answers a save with where the created resource is.
+                success.addHeaderObject(LOCATION_HEADER, new Header()
+                        .description('The URL of the created resource')
+                        .schema(new StringSchema().format('uri')))
             }
             responses.addApiResponse(RestfulControllerActions.successCode(actionName), success)
 
@@ -949,23 +964,39 @@ class GrailsOpenApiGenerator {
         }
 
         /**
-         * The media types an action responds in and binds a body from: those of the formats its
-         * controller declares in {@code responseFormats}, for the action or for every action, or
-         * JSON where it declares none.
+         * The media types an action responds in: those of the formats its controller declares in
+         * {@code responseFormats}, for the action or for every action, or JSON where it declares
+         * none. Each says whether it carries the shape the document describes, which a data format,
+         * JSON or XML, does and a view, a form or a HAL document does not.
          */
-        private List<String> mediaTypes(GrailsControllerClass controller, String actionName) {
+        private Map<String, Boolean> responseMediaTypes(GrailsControllerClass controller, String actionName) {
             Object declared = controller?.getPropertyValue(RESPONSE_FORMATS)
             Object formats = declared instanceof Map ? ((Map) declared).get(actionName) : declared
-            List<String> mediaTypes = []
+            Map<String, Boolean> mediaTypes = [:]
             if (formats instanceof Collection) {
                 for (Object format : (Collection) formats) {
                     String mediaType = format != null ? formatMediaTypes()[format.toString()] : null
-                    if (mediaType != null && !mediaTypes.contains(mediaType)) {
-                        mediaTypes << mediaType
+                    if (mediaType != null && !mediaTypes.containsKey(mediaType)) {
+                        mediaTypes[mediaType] = format.toString() in DATA_FORMATS
                     }
                 }
             }
-            mediaTypes ?: [DEFAULT_MEDIA_TYPE]
+            mediaTypes ?: [(DEFAULT_MEDIA_TYPE): true] as Map<String, Boolean>
+        }
+
+        /**
+         * The media types an action binds a body from: {@code multipart/form-data} where what it
+         * binds has a file, and otherwise those of the data formats it responds in, or JSON.
+         */
+        private List<String> bodyMediaTypes(GrailsControllerClass controller, Class<?> controllerType, String actionName) {
+            Class<?> bound = ActionAnnotations.commandObjectType(controllerType, actionName)
+                    ?: (isResourceController(controller) ? resourceType(controller) : null)
+            if (GrailsModelConverter.hasFileProperty(bound)) {
+                return [MULTIPART_MEDIA_TYPE]
+            }
+            List<String> data = responseMediaTypes(controller, actionName).findAll { String type, Boolean shaped -> shaped }
+                    .keySet().toList()
+            data ?: [DEFAULT_MEDIA_TYPE]
         }
 
         /**
@@ -996,10 +1027,10 @@ class GrailsOpenApiGenerator {
             MimeType.createDefaults()
         }
 
-        private Content content(Schema<?> schema, List<String> mediaTypes) {
+        private Content content(Schema<?> schema, Map<String, Boolean> mediaTypes) {
             Content content = new Content()
-            for (String mediaType : mediaTypes) {
-                content.addMediaType(mediaType, new MediaType().schema(schema))
+            mediaTypes.each { String mediaType, Boolean shaped ->
+                content.addMediaType(mediaType, shaped ? new MediaType().schema(schema) : new MediaType())
             }
             content
         }

@@ -470,7 +470,9 @@ class OrdersController {
 
 Where an action takes no command object, as on a `RestfulController`, the body is the resource the
 controller serves. A `patch` binds only what it is sent, so its body is a copy of the resource's
-schema, named for it with a `Patch` suffix, that requires nothing. An action that binds something
+schema, named for it with a `Patch` suffix, that requires nothing. A body with a property a file is
+bound to, a `MultipartFile` or a `Part`, is described as `multipart/form-data`, with the file as a
+binary string. An action that binds something
 else declares it with `@RequestBody`, which replaces what is derived.
 
 ==== Responses
@@ -508,7 +510,12 @@ class BookController extends RestfulController<Book> {
 ----
 
 describes each body as `application/json` and as `text/xml`, the first media type Grails configures
-for `xml` by default.
+for `xml` by default. Only a data format, `json` or `xml`, carries the shape described; a format that
+renders a view, a form or a HAL document, such as `html` or `hal`, is listed without one. A request
+body is described in the data formats alone.
+
+A `RestfulController` answers a `save` with a `Location` header naming the created resource, which
+the `201` response describes.
 
 ==== Parameters
 

@@ -19,10 +19,12 @@
 package grails.openapi
 
 import io.swagger.v3.oas.models.OpenAPI
+import org.springframework.web.multipart.MultipartFile
 
 import grails.artefact.Artefact
 import grails.gorm.annotation.Entity
 import grails.rest.RestfulController
+import grails.validation.Validateable
 import grails.web.mime.MimeType
 import org.grails.support.MockApplicationContext
 
@@ -70,6 +72,53 @@ class MediaTypeSpec extends Specification {
 
         then:
         openApi.paths['/stubs/{id}'].get.responses['200'].content.keySet() as List == ['application/json']
+    }
+
+    void 'describes a format that renders a view or a HAL document without the shape of the resource'() {
+        when:
+        def openApi = OpenApiFixture.document([PosterController], [Ticket]) {
+            '/posters'(resources: 'poster')
+        }
+        def content = openApi.paths['/posters/{id}'].get.responses['200'].content
+
+        then: 'every format it responds in'
+        content.keySet() as List == ['application/json', 'text/html', 'application/hal+json']
+
+        and: 'the shape only in the data format'
+        content['application/json'].schema.$ref == '#/components/schemas/Ticket'
+        content['text/html'].schema == null
+        content['application/hal+json'].schema == null
+
+        and: 'a body bound only from the data format'
+        openApi.paths['/posters'].post.requestBody.content.keySet() as List == ['application/json']
+    }
+
+    void 'describes a body with a file as multipart form data'() {
+        when:
+        def openApi = OpenApiFixture.document([UploadDeskController], []) {
+            post '/uploads'(controller: 'uploadDesk', action: 'upload')
+        }
+        def content = openApi.paths['/uploads'].post.requestBody.content
+
+        then:
+        content.keySet() as List == ['multipart/form-data']
+        with(openApi.components.schemas['TicketScan'].properties.scan) {
+            OpenApiFixture.typeOf(it) == 'string'
+            format == 'binary'
+        }
+    }
+
+    void 'describes where a RestfulController says the resource it created is'() {
+        when:
+        def openApi = OpenApiFixture.document([TicketController], [Ticket]) {
+            '/tickets'(resources: 'ticket')
+        }
+
+        then:
+        with(openApi.paths['/tickets'].post.responses['201'].headers['Location']) {
+            description == 'The URL of the created resource'
+            schema.format == 'uri'
+        }
     }
 
     void 'maps a format to the first media type the application configures for it'() {
@@ -122,4 +171,21 @@ class VoucherController extends RestfulController<Voucher> {
     static responseFormats = [index: ['xml'], show: ['json', 'mystery']]
 
     VoucherController() { super(Voucher) }
+}
+
+@Artefact('Controller')
+class PosterController extends RestfulController<Ticket> {
+    static responseFormats = ['json', 'html', 'hal']
+
+    PosterController() { super(Ticket) }
+}
+
+class TicketScan implements Validateable {
+    String caption
+    MultipartFile scan
+}
+
+@Artefact('Controller')
+class UploadDeskController {
+    def upload(TicketScan ticketScan) { }
 }
