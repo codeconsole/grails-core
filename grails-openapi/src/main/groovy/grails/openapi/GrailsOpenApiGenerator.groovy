@@ -316,10 +316,35 @@ class GrailsOpenApiGenerator {
                         addExpandedOperation(mapping, controller, action, true)
                     }
                 }
+                if (UrlMappingPaths.isOptional(mapping, ACTION_TOKEN)) {
+                    DocumentParts.describe("action [${controllerName}.${controller.defaultAction}]".toString()) {
+                        addDefaultActionOperation(mapping, controller, controllerName)
+                    }
+                }
                 return
             }
             // A mapping that names only the controller dispatches to its default action.
             addMappedOperation(mapping, controller, controllerName, actionName ?: controller?.defaultAction, mapping.httpMethod)
+        }
+
+        /**
+         * A mapping whose action is optional reaches the controller's default action where the path
+         * leaves the action out, and every variable after it, which Grails would take for the action.
+         */
+        private void addDefaultActionOperation(UrlMapping mapping, GrailsControllerClass controller, String controllerName) {
+            String actionName = controller.defaultAction
+            if (!actionName || !controller.actions.contains(actionName) || !isDescribed(controller, controller.clazz, actionName)) {
+                return
+            }
+            List<String> names = UrlMappingPaths.variableNames(mapping)
+            Set<String> omitted = names.subList(names.indexOf(ACTION_TOKEN), names.size()).toSet()
+            List<String> described = UrlMappingPaths.paths(mapping, [:], omitted).take(1)
+            for (PathItem.HttpMethod method : httpMethods(mapping.httpMethod, controller, actionName)) {
+                for (String path : described) {
+                    addOperation(mapping, path, method, controller, controller.clazz, controllerName, actionName,
+                            operationId(controller, controllerName, actionName, method))
+                }
+            }
         }
 
         private void addMappedOperation(UrlMapping mapping, GrailsControllerClass controller, String controllerName,

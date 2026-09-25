@@ -129,6 +129,26 @@ class ExpandedMappingSpec extends Specification {
         operations(openApi) == ['POST /topics/latest', 'POST /topics/archive/{id}', 'POST /topics/purge/{id}'] as Set
     }
 
+    void 'describes the default action where a mapping of a named controller leaves the action optional'() {
+        when:
+        def openApi = OpenApiFixture.document([DashboardController], []) {
+            "/admin/$action?/$id?"(controller: 'dashboard')
+        }
+
+        then: 'each action at its own path, and the default action at the path without one'
+        operations(openApi) == ['GET /admin/index', 'GET /admin/purge', 'GET /admin'] as Set
+    }
+
+    void 'describes no default action where the controller declares none'() {
+        when:
+        def openApi = OpenApiFixture.document([TopicController], []) {
+            "/topics/$action?"(controller: 'topic')
+        }
+
+        then:
+        !openApi.paths.containsKey('/topics')
+    }
+
     void 'describes an action chosen by the method of the request as an operation for each'() {
         when:
         def openApi = OpenApiFixture.document([TopicController], []) {
@@ -237,6 +257,12 @@ class CabinetController extends RestfulController<Drawer> {
     static allowedMethods = [save: 'POST', update: 'PUT', patch: 'PATCH', delete: 'DELETE']
 
     CabinetController() { super(Drawer) }
+}
+
+@Artefact('Controller')
+class DashboardController {
+    def index() { }
+    def purge() { }
 }
 
 @Artefact('Controller')

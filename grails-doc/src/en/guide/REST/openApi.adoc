@@ -331,7 +331,9 @@ required, so a mapping with an optional variable, such as `"/photos/$id?"`, is d
 
 A mapping that names a controller but no action is documented as the controller's default action.
 One that takes the action from the path, such as `"/topics/$action"(controller: 'topic')`, is
-documented for each action the controller declares, and one that chooses the action by the method
+documented for each action the controller declares, and, where the action is optional, as
+`"/topics/$action?"` makes it, at the path without it as the controller's default action. One that
+chooses the action by the method
 of the request, such as `action: [GET: 'show', DELETE: 'delete']`, for each method. A mapping whose
 action is decided by a closure as each request is made is skipped, and logged.
 
