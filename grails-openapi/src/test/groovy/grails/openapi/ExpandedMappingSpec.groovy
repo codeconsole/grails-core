@@ -59,6 +59,97 @@ class ExpandedMappingSpec extends Specification {
         !openApi.paths.containsKey('/parcel/index')
     }
 
+    void 'describes a mapping that accepts any method as the methods the controller allows its action'() {
+        when:
+        def openApi = OpenApiFixture.document([DrawerController, OrderDeskController], [Drawer]) {
+            "/api/drawers"(controller: 'drawer', action: 'save')
+            "/orders/submit"(controller: 'orderDesk', action: 'submit')
+        }
+
+        then: 'the method RestfulController answers save with, and the one allowedMethods declares'
+        operations(openApi) == ['POST /api/drawers', 'POST /orders/submit'] as Set
+
+        and: 'so the body the action binds is described'
+        openApi.paths['/orders/submit'].post.requestBody.content['application/json'].schema.$ref ==
+                '#/components/schemas/OrderSlip'
+    }
+
+    void 'leaves out a method the controller refuses for the action'() {
+        when: 'resources maps POST to update, which the controller allows only PUT'
+        def openApi = OpenApiFixture.document([CabinetController], [Drawer]) {
+            '/cabinets'(resources: 'cabinet')
+        }
+
+        then:
+        openApi.paths['/cabinets/{id}'].put
+        openApi.paths['/cabinets/{id}'].post == null
+    }
+
+    void 'describes an action for each method it allows'() {
+        when:
+        def openApi = OpenApiFixture.document([DrawerController], [Drawer]) {
+            "/$controller/$action?/$id?(.$format)?" {}
+        }
+
+        then: 'RestfulController allows update both PUT and POST'
+        openApi.paths['/drawer/update/{id}'].put
+        openApi.paths['/drawer/update/{id}'].post
+    }
+
+    void 'describes each action a mapping takes from the path of a controller it names'() {
+        when:
+        def openApi = OpenApiFixture.document([TopicController], []) {
+            "/topics/$action/$id?"(controller: 'topic')
+        }
+
+        then: 'each action, with the identifier where it declares one'
+        operations(openApi) == ['GET /topics/latest', 'GET /topics/archive/{id}', 'GET /topics/purge/{id}'] as Set
+    }
+
+    void 'describes an action chosen by the method of the request as an operation for each'() {
+        when:
+        def openApi = OpenApiFixture.document([TopicController], []) {
+            "/notes/$id"(controller: 'topic', action: [GET: 'archive', DELETE: 'purge'])
+        }
+
+        then:
+        openApi.paths['/notes/{id}'].get.operationId == 'topic_archive_get'
+        openApi.paths['/notes/{id}'].delete.operationId == 'topic_purge_delete'
+    }
+
+    void 'skips a mapping whose action is decided as each request is made'() {
+        when:
+        def openApi = OpenApiFixture.document([TopicController], []) {
+            "/decided"(controller: 'topic', action: { 'latest' })
+            "/latest"(controller: 'topic', action: 'latest')
+        }
+
+        then:
+        operations(openApi) == ['GET /latest'] as Set
+    }
+
+    void 'describes a REST controller that is not a RestfulController the way it serves its resource'() {
+        when: 'mapped the way a generated REST application maps its controllers'
+        def openApi = OpenApiFixture.document([BinController, LibraryPageController], [Bin]) {
+            delete "/$controller/$id(.$format)?"(action: 'delete')
+            get "/$controller(.$format)?"(action: 'index')
+            get "/$controller/$id(.$format)?"(action: 'show')
+            post "/$controller(.$format)?"(action: 'save')
+            put "/$controller/$id(.$format)?"(action: 'update')
+        }
+
+        then: 'the controller that binds a domain class in save and update serves it'
+        openApi.paths['/bin'].get.responses['200'].content['application/json'].schema.items.$ref == '#/components/schemas/Bin'
+        openApi.paths['/bin'].get.parameters*.name.containsAll(['max', 'offset', 'sort', 'order'])
+        openApi.paths['/bin/{id}'].get.responses['200'].content['application/json'].schema.$ref == '#/components/schemas/Bin'
+        openApi.paths['/bin'].post.responses.keySet() == ['201', '422'] as Set
+        openApi.paths['/bin/{id}'].delete.responses['204']
+        openApi.paths['/bin/{id}'].get.parameters.find { it.name == 'id' }.schema.format == 'int64'
+
+        and: 'a controller rendering views for a browser is not described'
+        !openApi.paths.keySet().any { it.startsWith('/libraryPage') }
+    }
+
     private static Set<String> operations(OpenAPI openApi) {
         (openApi.paths ?: [:]).collectMany { String path, PathItem item ->
             item.readOperationsMap().keySet().collect { "${it} ${path}".toString() }
@@ -79,4 +170,58 @@ class Drawer {
 @Artefact('Controller')
 class DrawerController extends RestfulController<Drawer> {
     DrawerController() { super(Drawer) }
+}
+
+class OrderSlip {
+    String reference
+}
+
+@Artefact('Controller')
+class OrderDeskController {
+
+    static allowedMethods = [submit: 'POST']
+
+    def submit(OrderSlip slip) { }
+}
+
+@Artefact('Controller')
+class CabinetController extends RestfulController<Drawer> {
+
+    static allowedMethods = [save: 'POST', update: 'PUT', patch: 'PATCH', delete: 'DELETE']
+
+    CabinetController() { super(Drawer) }
+}
+
+@Artefact('Controller')
+class TopicController {
+    def latest() { }
+    def archive(Long id) { }
+    def purge(Long id) { }
+}
+
+@Entity
+class Bin {
+    String label
+}
+
+/**
+ * The shape of a controller the rest-api profile generates.
+ */
+@Artefact('Controller')
+class BinController {
+
+    static responseFormats = ['json', 'xml']
+    static allowedMethods = [save: 'POST', update: 'PUT', delete: 'DELETE']
+
+    def index(Integer max) { }
+    def show(Serializable id) { }
+    def save(Bin bin) { }
+    def update(Bin bin) { }
+    def delete(Serializable id) { }
+}
+
+@Artefact('Controller')
+class LibraryPageController {
+    def index() { }
+    def show(Long id) { }
 }

@@ -151,20 +151,27 @@ class RestfulControllerActions {
     }
 
     /**
-     * @param actionName the action to describe
+     * @param actionName the action
      * @param allowedMethods the controller's declared {@code allowedMethods}, if any
-     * @return the HTTP method the action answers, defaulting to GET
+     * @return the methods {@code allowedMethods} lets the action answer, or {@code null} where it
+     * declares none for the action, which then answers any
      */
-    static String httpMethod(String actionName, Object allowedMethods) {
+    static List<String> allowedMethods(String actionName, Object allowedMethods) {
         Object declared = (allowedMethods instanceof Map) ? ((Map) allowedMethods).get(actionName) : null
         if (declared instanceof CharSequence) {
-            return declared.toString().toUpperCase(Locale.ENGLISH)
+            return [declared.toString().toUpperCase(Locale.ENGLISH)]
         }
         if (declared instanceof Collection && declared) {
-            // A single OpenAPI operation cannot describe several methods, so the first declared
-            // method is documented: RestfulController lists the RESTful one first.
-            return ((Collection) declared).first().toString().toUpperCase(Locale.ENGLISH)
+            return ((Collection) declared).collect { Object method -> method.toString().toUpperCase(Locale.ENGLISH) }
         }
-        DEFAULT_METHODS.getOrDefault(actionName, 'GET')
+        null
+    }
+
+    /**
+     * The method an action a mapping does not restrict is described as answering: for a resource
+     * controller the one RestfulController's action answers, and otherwise GET.
+     */
+    static String defaultMethod(String actionName, boolean resourceController) {
+        resourceController ? DEFAULT_METHODS.getOrDefault(actionName, 'GET') : 'GET'
     }
 }

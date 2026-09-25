@@ -107,6 +107,7 @@ class GrailsOpenApiGenerator {
     private static final String ID_TOKEN = 'id'
     private static final String PATCH_SUFFIX = 'Patch'
     private static final String RESPONSE_FORMATS = 'responseFormats'
+    private static final String ALLOWED_METHODS = 'allowedMethods'
     private static final String REFERENCE_PREFIX = '#/components/schemas/'
 
     private static final List<String> BODY_METHODS = ['POST', 'PUT', 'PATCH'].asImmutable()
@@ -218,6 +219,7 @@ class GrailsOpenApiGenerator {
         private final Set<String> addedSchemas = [] as Set
         private final Map<String, String> patchSchemas = [:]
         private Map<String, String> formatMediaTypes
+        private final Map<Class<?>, Class<?>> boundResources = [:]
 
         Contribution(OpenAPI openApi, OpenApiSelection selection) {
             this.openApi = openApi
@@ -354,18 +356,66 @@ class GrailsOpenApiGenerator {
                 return
             }
             GrailsControllerClass controller = controllerFor(controllerName, asStaticName(mapping.namespace))
-            Class<?> controllerType = controller?.clazz
-            // A mapping that names only the controller dispatches to its default action.
-            String actionName = asStaticName(mapping.actionName) ?: controller?.defaultAction
-            PathItem.HttpMethod method = toHttpMethod(mapping.httpMethod)
-            if (method == null || !isDescribed(controller, controllerType, actionName)) {
+            Object declaredAction = mapping.actionName
+            if (declaredAction instanceof Map) {
+                // The action is chosen by the method of the request, so there is an operation for each.
+                ((Map<Object, Object>) declaredAction).each { Object method, Object action ->
+                    addMappedOperation(mapping, controller, controllerName, asStaticName(action), method?.toString())
+                }
                 return
             }
-
-            for (String path : UrlMappingPaths.paths(mapping)) {
-                addOperation(path, method, controller, controllerType, controllerName, actionName,
-                        operationId(controller, controllerName, actionName, method))
+            if (declaredAction != null && !(declaredAction instanceof CharSequence)) {
+                LOG.warn('Skipping the URL mapping [{}]: its action is decided as each request is made',
+                        mapping.urlData?.urlPattern)
+                return
             }
+            String actionName = asStaticName(declaredAction)
+            if (actionName == null && controller != null && UrlMappingPaths.variableNames(mapping).contains(ACTION_TOKEN)) {
+                // The action is taken from the path, so every action the controller declares is reached.
+                for (String action : controller.actions) {
+                    describe("action [${controllerName}.${action}]".toString()) {
+                        addExpandedOperation(mapping, controller, action, true)
+                    }
+                }
+                return
+            }
+            // A mapping that names only the controller dispatches to its default action.
+            addMappedOperation(mapping, controller, controllerName, actionName ?: controller?.defaultAction, mapping.httpMethod)
+        }
+
+        private void addMappedOperation(UrlMapping mapping, GrailsControllerClass controller, String controllerName,
+                                        String actionName, String mappedMethod) {
+            Class<?> controllerType = controller?.clazz
+            if (!isDescribed(controller, controllerType, actionName)) {
+                return
+            }
+            for (PathItem.HttpMethod method : httpMethods(mappedMethod, controller, actionName)) {
+                for (String path : UrlMappingPaths.paths(mapping)) {
+                    addOperation(path, method, controller, controllerType, controllerName, actionName,
+                            operationId(controller, controllerName, actionName, method))
+                }
+            }
+        }
+
+        /**
+         * The methods an action is described as answering: the one the mapping declares, unless the
+         * controller's {@code allowedMethods} refuses it for the action, which Grails answers with
+         * 405; or, where the mapping accepts any method, those {@code allowedMethods} declares for the
+         * action, or the one its kind of action answers.
+         */
+        private List<PathItem.HttpMethod> httpMethods(String mappedMethod, GrailsControllerClass controller,
+                                                      String actionName) {
+            List<String> allowed = RestfulControllerActions.allowedMethods(actionName,
+                    controller?.getPropertyValue(ALLOWED_METHODS))
+            List<String> methods
+            if (mappedMethod && mappedMethod != UrlMapping.ANY_HTTP_METHOD) {
+                String declared = mappedMethod.toUpperCase(Locale.ENGLISH)
+                methods = allowed == null || declared in allowed ? [declared] : []
+            }
+            else {
+                methods = allowed ?: [RestfulControllerActions.defaultMethod(actionName, isResourceController(controller))]
+            }
+            methods.collect { String method -> toHttpMethod(method) }.findAll().unique()
         }
 
         /**
@@ -379,7 +429,7 @@ class GrailsOpenApiGenerator {
          */
         private void addExpandedMappings() {
             List<GrailsControllerClass> controllers = controllersByKey.values().findAll { GrailsControllerClass it ->
-                RestfulController.isAssignableFrom(it.clazz) && !ActionAnnotations.isHidden(it.clazz)
+                isRestController(it) && !ActionAnnotations.isHidden(it.clazz)
             }.toList()
             if (!controllers) {
                 return
@@ -440,30 +490,67 @@ class GrailsOpenApiGenerator {
                     return
                 }
             }
+            boolean takesId = takesId(controller, actionName)
             if (expandsAction) {
                 substitutions[ACTION_TOKEN] = actionName
-                if (!RestfulControllerActions.takesId(actionName)) {
+                if (!takesId) {
                     omitted << ID_TOKEN
                 }
             }
 
-            PathItem.HttpMethod method = expandsAction
-                    ? toHttpMethod(RestfulControllerActions.httpMethod(actionName, controller.getPropertyValue('allowedMethods')))
-                    : toHttpMethod(mapping.httpMethod)
-            if (method == null) {
-                return
-            }
-
-            String operationId = operationId(controller, controllerName, actionName, method)
-            if (expandsAction) {
-                operationId += '_byAction'
-            }
             List<String> described = UrlMappingPaths.paths(mapping, substitutions, omitted)
-            // Only the form that addresses a resource is described where the action takes one;
-            // the shorter forms an optional identifier allows do not reach it.
-            for (String path : (expandsAction && RestfulControllerActions.takesId(actionName) ? described.take(1) : described)) {
-                addOperation(path, method, controller, controller.clazz, controllerName, actionName, operationId)
+            for (PathItem.HttpMethod method : httpMethods(expandsAction ? null : mapping.httpMethod, controller, actionName)) {
+                String operationId = operationId(controller, controllerName, actionName, method)
+                if (expandsAction) {
+                    operationId += '_byAction'
+                }
+                // Only the form that addresses a resource is described where the action takes one;
+                // the shorter forms an optional identifier allows do not reach it.
+                for (String path : (expandsAction && takesId ? described.take(1) : described)) {
+                    addOperation(path, method, controller, controller.clazz, controllerName, actionName, operationId)
+                }
             }
+        }
+
+        /**
+         * Whether an action addresses one resource, and so takes the identifier a mapping may leave
+         * optional: the actions of a resource controller that address one, or an action declaring an
+         * {@code id} parameter.
+         */
+        private boolean takesId(GrailsControllerClass controller, String actionName) {
+            if (isResourceController(controller)) {
+                return RestfulControllerActions.takesId(actionName)
+            }
+            ReflectedMethod action = ActionAnnotations.actionMethod(controller.clazz, actionName)
+            action != null && action.parameters.any { ReflectedParameter parameter -> parameter.name == ID_TOKEN }
+        }
+
+        /**
+         * A controller a mapping reaching controllers by name describes: a RestfulController, or one
+         * declaring the formats it responds in, as a REST controller does, rather than one rendering
+         * views for a browser.
+         */
+        private boolean isRestController(GrailsControllerClass controller) {
+            RestfulController.isAssignableFrom(controller.clazz) || controller.getPropertyValue(RESPONSE_FORMATS) != null
+        }
+
+        /**
+         * Whether a controller serves a resource the way a RestfulController does: it is one, or its
+         * save and update actions bind the same domain class, as the controllers the rest-api
+         * profile generates do.
+         */
+        private boolean isResourceController(GrailsControllerClass controller) {
+            controller != null && (RestfulController.isAssignableFrom(controller.clazz) || boundResource(controller) != null)
+        }
+
+        private Class<?> boundResource(GrailsControllerClass controller) {
+            if (!boundResources.containsKey(controller.clazz)) {
+                Class<?> saved = ActionAnnotations.commandObjectType(controller.clazz, 'save')
+                Class<?> updated = ActionAnnotations.commandObjectType(controller.clazz, 'update')
+                boundResources[controller.clazz] = saved != null && saved == updated && GrailsModelConverter.entityFor(saved) != null
+                        ? saved : null
+            }
+            boundResources[controller.clazz]
         }
 
         private boolean isDescribed(GrailsControllerClass controller, Class<?> controllerType, String actionName) {
@@ -472,7 +559,7 @@ class GrailsOpenApiGenerator {
                 return false
             }
             boolean restful = controllerType != null && RestfulController.isAssignableFrom(controllerType)
-            if (restful && !settings.includeFormActions && RestfulControllerActions.isFormAction(actionName)) {
+            if (isResourceController(controller) && !settings.includeFormActions && RestfulControllerActions.isFormAction(actionName)) {
                 return false
             }
             if (restful && RestfulControllerActions.refusedWhenReadOnly(controllerType, actionName)
@@ -523,7 +610,7 @@ class GrailsOpenApiGenerator {
         private Operation buildOperation(String path, PathItem.HttpMethod method, GrailsControllerClass controller,
                                          Class<?> controllerType, String controllerName, String actionName,
                                          String operationId) {
-            boolean restful = controllerType != null && RestfulController.isAssignableFrom(controllerType)
+            boolean restful = isResourceController(controller)
             Class<?> resourceType = restful ? resourceType(controller) : null
             List<String> pathNames = UrlMappingPaths.templateVariables(path)
 
@@ -580,7 +667,7 @@ class GrailsOpenApiGenerator {
                     || ActionAnnotations.commandObjectType(controllerType, actionName) != null) {
                 return true
             }
-            controller != null && RestfulController.isAssignableFrom(controller.clazz) && resourceType(controller) != null
+            isResourceController(controller) && resourceType(controller) != null
         }
 
         /**
@@ -588,6 +675,9 @@ class GrailsOpenApiGenerator {
          * was constructed with.
          */
         private Class<?> resourceType(GrailsControllerClass controller) {
+            if (!RestfulController.isAssignableFrom(controller.clazz)) {
+                return boundResource(controller)
+            }
             Class<?> declared = GenericTypeResolver.resolveTypeArgument(controller.clazz, RestfulController)
             if (declared != null && declared != Object) {
                 return declared
