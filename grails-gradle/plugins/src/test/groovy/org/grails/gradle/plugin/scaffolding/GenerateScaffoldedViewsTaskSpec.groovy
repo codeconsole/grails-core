@@ -163,6 +163,19 @@ class GenerateScaffoldedViewsTaskSpec extends Specification {
         target.bytes = bytes
     }
 
+    /** A jar of the given entries, a plugin's when one of them is its descriptor. */
+    private static void writeJar(File jar, Map<String, byte[]> entries) {
+        new JarOutputStream(jar.newOutputStream()).withCloseable { JarOutputStream out ->
+            entries.each { String name, byte[] bytes ->
+                out.putNextEntry(new JarEntry(name))
+                out.write(bytes)
+                out.closeEntry()
+            }
+        }
+    }
+
+    private static final String PLUGIN_DESCRIPTOR = 'META-INF/grails-plugin.xml'
+
     private GenerateScaffoldedViewsTask task(Object overrides = []) {
         Project project = ProjectBuilder.builder().withProjectDir(projectDir).build()
         project.tasks.register('generateScaffoldedViews', GenerateScaffoldedViewsTask) {
@@ -406,6 +419,52 @@ class GenerateScaffoldedViewsTaskSpec extends Specification {
 
         then:
             handed(task) == ['com.example.User/show': ['show']]
+    }
+
+    void "a scaffolded controller a plugin provides is expanded with the plugin's own templates"() {
+        given: 'a plugin carrying a scaffolded controller and its own show template'
+            File plugin = new File(projectDir, 'plugin.jar')
+            writeJar(plugin, [(PLUGIN_DESCRIPTOR): '<plugin/>'.bytes,
+                              'com/plugin/WidgetController.class': scaffolded('com/plugin/WidgetController', 'com/plugin/Widget'),
+                              'META-INF/templates/scaffolding/show.gsp': 'plugin show'.bytes])
+            def task = task()
+            task.runtimeClasspath.from(plugin)
+
+        when:
+            task.generate()
+
+        then: 'the template beside the controller wins where there is one; elsewhere any copy may be chosen'
+            handed(task)['com.plugin.Widget/show'] == ['plugin show']
+            handed(task)['com.plugin.Widget/index'] == ['list of ${propertyName} for ${className}']
+    }
+
+    void "a scaffolded controller in a plugin's classes directory is found as in its jar"() {
+        given:
+            File plugin = new File(projectDir, 'plugin-classes')
+            writeClass(plugin, 'com/plugin/WidgetController', scaffolded('com/plugin/WidgetController', 'com/plugin/Widget'))
+            new File(plugin, PLUGIN_DESCRIPTOR).with { parentFile.mkdirs(); text = '<plugin/>' }
+            def task = task()
+            task.runtimeClasspath.from(plugin)
+
+        when:
+            task.generate()
+
+        then:
+            handed(task)['com.plugin.Widget/show'] == ['show ${className}']
+    }
+
+    void 'a scaffolded class in a jar that is not a plugin is not a controller of the application'() {
+        given:
+            File library = new File(projectDir, 'library.jar')
+            writeJar(library, ['com/library/WidgetController.class': scaffolded('com/library/WidgetController', 'com/library/Widget')])
+            def task = task()
+            task.runtimeClasspath.from(library)
+
+        when:
+            task.generate()
+
+        then:
+            handed(task).isEmpty()
     }
 
     void 'a stale page from a previous run does not survive'() {

@@ -513,8 +513,12 @@ class GroovyPagePlugin implements Plugin<Project> {
      *
      * <p>The match is deliberately loose. {@link GenerateScaffoldedViewsTask} reads the real
      * annotation from the compiled class, so a false positive here costs a staging copy and a
-     * generation task that writes nothing -- while a false negative costs a view that is missing
-     * from the artifact, found by whoever opens that page.</p>
+     * generation task that writes nothing -- while a false negative leaves the pages to be expanded
+     * when they are first rendered, which a native image cannot do.</p>
+     *
+     * <p>Only this project's controllers are read; the plugins' would have to be resolved to be
+     * seen. Once the task runs it covers the scaffolded controllers of the plugins too, but a project
+     * that scaffolds nothing itself has theirs expanded when rendered.</p>
      */
     protected Provider<Boolean> scaffoldsAnyController(Project project) {
         project.providers.of(ScaffoldedControllers) { ValueSourceSpec<ScaffoldedControllers.Parameters> spec ->

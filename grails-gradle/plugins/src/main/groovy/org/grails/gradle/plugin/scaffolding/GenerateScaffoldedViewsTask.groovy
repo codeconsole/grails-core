@@ -66,12 +66,14 @@ import org.gradle.process.JavaExecSpec
  * from the same template and model. So a page cannot shadow a declared view, and a template this
  * task did not expand finds nothing and is expanded at runtime as before.</p>
  *
- * <p>For each scaffolded controller this expands for its domain class the templates the resolver can
- * choose for it, and no others:</p>
+ * <p>For each scaffolded controller - the application's own, and those plugins on the runtime
+ * classpath provide - this expands for its domain class the templates the resolver can choose for
+ * it, and no others:</p>
  * <ul>
- *   <li>The resolver looks for a template beside the controller's class first, which for the
- *   application's controllers is the application's own template, from
- *   {@code src/main/templates/scaffolding}. It so replaces every dependency's copy of it.</li>
+ *   <li>The resolver looks for a template beside the controller's class first. For an application
+ *   controller that is the application's own template, from {@code src/main/templates/scaffolding},
+ *   which so replaces every dependency's copy of it; for a plugin's controller it is the plugin's
+ *   own.</li>
  *   <li>Beyond that it depends on what the build cannot see - a plugin that overrides the templates,
  *   the order of the classpath the application runs with - so every distinct copy is expanded, and
  *   whichever the resolver chooses has its page.</li>
@@ -95,6 +97,9 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
 
     /** Path within an artifact holding the scaffolding templates. */
     private static final String TEMPLATE_PATH = 'META-INF/templates/scaffolding/'
+
+    /** What marks an artifact as a Grails plugin, whose controllers are artefacts of the application. */
+    private static final String PLUGIN_DESCRIPTOR = 'META-INF/grails-plugin.xml'
 
     /**
      * The directory, under the views, the pages are written to and the resolver looks in, as
@@ -122,9 +127,9 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
     abstract ConfigurableFileCollection getTemplateOverrides()
 
     /**
-     * The application's runtime classpath. The templates are read from it, as the running
-     * application reads them, and the pages are expanded on it, by the scaffolding library and the
-     * Groovy the application runs with.
+     * The application's runtime classpath. The templates and the plugins' controllers are read from
+     * it, as the running application reads them, and the pages are expanded on it, by the
+     * scaffolding library and the Groovy the application runs with.
      */
     @Classpath
     abstract ConfigurableFileCollection getRuntimeClasspath()
@@ -238,7 +243,10 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
         templates
     }
 
-    /** Every scaffolded controller, with the domain class it scaffolds and whether it has a namespace. */
+    /**
+     * Every scaffolded controller: the application's own, and each a plugin on the runtime classpath
+     * provides, with the domain class it scaffolds and whether it has a namespace.
+     */
     private List<Controller> findScaffoldedControllers() {
         List<Controller> controllers = []
         Map<String, Boolean> ancestors = [:]
@@ -248,7 +256,35 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
                 if (dir.isDirectory()) {
                     dir.eachFileRecurse { File f ->
                         if (f.name.endsWith('Controller.class')) {
-                            Controller controller = readController(f.bytes, resources, ancestors)
+                            Controller controller = readController(f.bytes, null, resources, ancestors)
+                            if (controller != null) {
+                                controllers.add(controller)
+                            }
+                        }
+                    }
+                }
+            }
+            for (File entry : runtimeClasspath.files) {
+                if (entry.name.endsWith('.jar') && entry.isFile()) {
+                    new JarFile(entry).withCloseable { JarFile jar ->
+                        if (jar.getJarEntry(PLUGIN_DESCRIPTOR) == null) {
+                            return
+                        }
+                        for (JarEntry e : jar.entries()) {
+                            if (!e.directory && e.name.endsWith('Controller.class')) {
+                                byte[] bytes = jar.getInputStream(e).withCloseable { InputStream input -> input.bytes }
+                                Controller controller = readController(bytes, entry, resources, ancestors)
+                                if (controller != null) {
+                                    controllers.add(controller)
+                                }
+                            }
+                        }
+                    }
+                }
+                else if (entry.isDirectory() && new File(entry, PLUGIN_DESCRIPTOR).isFile()) {
+                    entry.eachFileRecurse { File f ->
+                        if (f.name.endsWith('Controller.class')) {
+                            Controller controller = readController(f.bytes, entry, resources, ancestors)
                             if (controller != null) {
                                 controllers.add(controller)
                             }
@@ -260,10 +296,17 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
         controllers
     }
 
-    private Controller readController(byte[] bytes, ClassLoader resources, Map<String, Boolean> ancestors) {
-        ClassReader reader = new ClassReader(bytes)
+    private Controller readController(byte[] bytes, File source, ClassLoader resources, Map<String, Boolean> ancestors) {
+        ClassReader reader
+        try {
+            reader = new ClassReader(bytes)
+        }
+        catch (IllegalArgumentException | IndexOutOfBoundsException e) {
+            logger.info('Could not read a controller from {}: {}', source ?: 'the application', e.message)
+            return null
+        }
         String domain = readScaffoldDomain(reader)
-        domain == null ? null : new Controller(domain, hasNamespace(reader, resources, ancestors), null)
+        domain == null ? null : new Controller(domain, hasNamespace(reader, resources, ancestors), source)
     }
 
     /**
