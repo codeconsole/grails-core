@@ -87,6 +87,7 @@ class GroovyPageForkedCompiler {
         if (encoding) {
             compiler.encoding = encoding
         }
+        compiler.generatedViewsDirs = generatedViewDirectories()
         String optionalPages = System.getProperty(BuildSettings.OPTIONAL_GSP_PAGES)
         if (optionalPages) {
             for (String list : optionalPages.split(File.pathSeparator)) {
@@ -97,6 +98,14 @@ class GroovyPageForkedCompiler {
             }
         }
         return compiler
+    }
+
+    /** The directories of generated pages the build asks to be compiled with the source, those that exist. */
+    static List<File> generatedViewDirectories() {
+        String dirs = System.getProperty(BuildSettings.GENERATED_GSP_VIEW_DIRECTORIES)
+        (dirs ? dirs.split(File.pathSeparator).toList() : [])
+                .collect { String dir -> new File(dir) }
+                .findAll { File dir -> dir.isDirectory() }
     }
 
     private String[] extractValidConfigPaths(String[] configs) {
@@ -158,9 +167,13 @@ Usage: java -cp CLASSPATH GroovyPageForkedCompiler [srcDir] [destDir] [tmpDir] [
         }
 
         List<File> allFiles = []
-        srcDir.eachFileRecurse(FileType.FILES) { File f ->
-            if (f.name.endsWith(fileExtension)) {
-                allFiles.add(f)
+        ([srcDir] + generatedViewDirectories()).each { File dir ->
+            if (dir.isDirectory()) {
+                dir.eachFileRecurse(FileType.FILES) { File f ->
+                    if (f.name.endsWith(fileExtension)) {
+                        allFiles.add(f)
+                    }
+                }
             }
         }
         compiler.compile(allFiles)

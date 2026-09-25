@@ -228,6 +228,15 @@ class BuildSettings {
     public static final String OPTIONAL_GSP_PAGES = 'grails.views.gsp.optionalPages'
 
     /**
+     * A property name whose value lists, separated by the platform's path separator, directories of
+     * pages the build generated, to be compiled in the same page compilation as the directory being
+     * compiled: each page is named by its path under the directory holding it, as though it were in
+     * the directory being compiled, where a page at the same path takes precedence. A compiler that
+     * does not know it compiles no generated page, which is then produced when it is first rendered.
+     */
+    public static final String GENERATED_GSP_VIEW_DIRECTORIES = 'grails.views.gsp.generatedViewDirectories'
+
+    /**
      * A property name that selects the type of the {@code id} GORM injects into an entity that
      * declares none of its own.
      *

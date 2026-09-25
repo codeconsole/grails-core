@@ -65,14 +65,22 @@ class GroovyPageCompiler {
 
     List<File> srcFiles = []
     File viewsDir
+    /**
+     * Directories of pages the build generated, compiled with those under {@link #viewsDir} in the
+     * same compilation: a page among {@link #srcFiles} under one of them is compiled, registered and
+     * named by its path under that directory, as though it were under {@code viewsDir}. A page
+     * under {@code viewsDir} at the same path takes precedence, and the generated one is left out.
+     */
+    List<File> generatedViewsDirs = []
     String viewPrefix = '/'
     String packagePrefix = 'default'
     String encoding = 'UTF-8'
     String expressionCodec = OutputEncodingSettings.getDefaultValue(OutputEncodingSettings.EXPRESSION_CODEC_NAME)
     String[] configs = []
     /**
-     * Pages under {@link #viewsDir}, as relative paths, that may be left out: one of these that does
-     * not compile is left out with a warning instead of failing the compilation.
+     * Pages, by their paths under {@link #viewsDir} or the generated directory holding them, that
+     * may be left out: one of these that does not compile is left out with a warning instead of
+     * failing the compilation.
      */
     Set<String> optionalPages = [] as Set<String>
     /** The optional pages left out because they did not compile, each with the reason. */
@@ -132,10 +140,15 @@ class GroovyPageCompiler {
                         def results = [:]
                         for (int gspIndex = 0; gspIndex < gspFiles.size(); gspIndex++) {
                             File gsp = gspFiles[gspIndex]
+                            File root = rootOf(gsp)
+                            if (root != viewsDir && new File(viewsDir, relativePath(root, gsp)).isFile()) {
+                                LOG.info("Leaving out the generated page ${relativePath(root, gsp)}, as a page of the views has its path")
+                                continue
+                            }
                             try {
-                                compileGSP(viewsDir, gsp, viewPrefix, packagePrefix, results)
+                                compileGSP(root, gsp, viewPrefix, packagePrefix, results)
                             } catch (Exception ex) {
-                                String page = relativePath(viewsDir, gsp)
+                                String page = relativePath(root, gsp)
                                 if (optionalPages.contains(page)) {
                                     LOG.warn("Leaving out the optional page ${page}, which does not compile: ${ex.message}")
                                     leftOut.put(page, String.valueOf(ex.message))
@@ -245,6 +258,16 @@ class GroovyPageCompiler {
             return null
         }
         stale.contains(name) || current.contains(name) ? name : null
+    }
+
+    /** The directory a page is named under: the generated directory holding it, or else the views. */
+    private File rootOf(File gsp) {
+        for (File dir = gsp.parentFile; dir != null; dir = dir.parentFile) {
+            if (generatedViewsDirs.contains(dir)) {
+                return dir
+            }
+        }
+        viewsDir
     }
 
     /**

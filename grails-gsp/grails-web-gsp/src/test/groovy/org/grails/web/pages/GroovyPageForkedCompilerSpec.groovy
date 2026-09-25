@@ -81,6 +81,35 @@ class GroovyPageForkedCompilerSpec extends Specification {
                 System.setProperty(BuildSettings.OPTIONAL_GSP_PAGES, previous)
     }
 
+    void 'the directories of generated pages reach the page compiler from the build, and their pages are compiled'() {
+        given:
+        File views = new File(dir, 'views')
+        File generated = new File(dir, 'generated')
+        File classes = new File(dir, 'classes')
+        File work = new File(dir, 'work')
+        [views, classes, work]*.mkdirs()
+        new File(views, 'index.gsp').text = '<p>index</p>'
+        new File(generated, 'grails-scaffolded').mkdirs()
+        new File(generated, 'grails-scaffolded/show.gsp').text = '<p>show</p>'
+        String previous = System.getProperty(BuildSettings.GENERATED_GSP_VIEW_DIRECTORIES)
+        System.setProperty(BuildSettings.GENERATED_GSP_VIEW_DIRECTORIES,
+                [generated, new File(dir, 'missing')]*.path.join(File.pathSeparator))
+
+        when:
+        def compiler = new GroovyPageForkedCompiler(views, classes, work).createPageCompiler()
+        GroovyPageForkedCompiler.run([views.path, classes.path, work.path, '21', 'probe', '/', '', 'UTF-8'] as String[])
+        Properties registry = new Properties()
+        new File(classes, 'gsp/views.properties').withInputStream { registry.load(it) }
+
+        then:
+        compiler.generatedViewsDirs == [generated]
+        registry.keySet() == ['/index.gsp', '/grails-scaffolded/show.gsp'] as Set
+
+        cleanup:
+        previous == null ? System.clearProperty(BuildSettings.GENERATED_GSP_VIEW_DIRECTORIES) :
+                System.setProperty(BuildSettings.GENERATED_GSP_VIEW_DIRECTORIES, previous)
+    }
+
     void 'without the setting no page is optional'() {
         given:
         String previous = System.getProperty(BuildSettings.OPTIONAL_GSP_PAGES)

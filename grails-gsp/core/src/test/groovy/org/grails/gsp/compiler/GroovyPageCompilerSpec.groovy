@@ -108,6 +108,48 @@ class GroovyPageCompilerSpec extends Specification {
         registry().values().every { String pageClass -> new File(targetDir, "${pageClass}.class").isFile() }
     }
 
+    void 'a generated page is compiled with the views, named by its path under its own directory'() {
+        given:
+        File generated = new File(tempDir, 'generated-views')
+        writeView('index.gsp')
+        writeView('grails-scaffolded/com.example.Book/show-0123.gsp', null, generated)
+
+        when:
+        compile('/', [], [generated])
+
+        then: 'one compilation and one registry, which is what the application reads'
+        registry().keySet() == ['/index.gsp', '/grails-scaffolded/com.example.Book/show-0123.gsp'] as Set
+        registry().values().every { String pageClass -> new File(targetDir, "${pageClass}.class").isFile() }
+    }
+
+    void 'a page of the views takes precedence over a generated page at its path'() {
+        given:
+        File generated = new File(tempDir, 'generated-views')
+        writeView('shared/page.gsp', '<p>written</p>')
+        writeView('shared/page.gsp', '<p>generated</p>', generated)
+
+        when:
+        compile('/', [], [generated])
+
+        then:
+        registry().keySet() == ['/shared/page.gsp'] as Set
+        targetDir.listFiles().find { it.name.endsWith('_html.data') }.bytes.with { new String(it, 'UTF-8') }.contains('written')
+    }
+
+    void 'a generated page is optional by its path under its own directory'() {
+        given:
+        File generated = new File(tempDir, 'generated-views')
+        writeView('index.gsp')
+        writeView('grails-scaffolded/broken.gsp', '<% def x = ; %>', generated)
+
+        when:
+        compile('/', ['grails-scaffolded/broken.gsp'], [generated])
+
+        then:
+        registry().keySet() == ['/index.gsp'] as Set
+        lastCompiler.leftOut.keySet() == ['grails-scaffolded/broken.gsp'] as Set
+    }
+
     void 'a page recompiled under a different prefix is registered only under the new one'() {
         given: 'a registry written under the prefix a Grails application looks views up by'
         writeView('index.gsp')
@@ -152,8 +194,8 @@ class GroovyPageCompilerSpec extends Specification {
         page << ['index.gsp', 'generated/own.gsp']
     }
 
-    private File writeView(String path, String content = null) {
-        File view = new File(viewsDir, path)
+    private File writeView(String path, String content = null, File root = viewsDir) {
+        File view = new File(root, path)
         view.parentFile.mkdirs()
         view.text = content ?: "<html><body>${path}</body></html>"
         view
@@ -161,19 +203,22 @@ class GroovyPageCompilerSpec extends Specification {
 
     private GroovyPageCompiler lastCompiler
 
-    private void compile(String viewPrefix = '/', List<String> optional = []) {
+    private void compile(String viewPrefix = '/', List<String> optional = [], List<File> generated = []) {
         GroovyPageCompiler compiler = new GroovyPageCompiler()
         lastCompiler = compiler
         compiler.optionalPages = optional as Set<String>
+        compiler.generatedViewsDirs = generated
         compiler.viewsDir = viewsDir
         compiler.targetDir = targetDir
         compiler.generatedGroovyPagesDirectory = generatedDir
         compiler.viewPrefix = viewPrefix
         compiler.packagePrefix = 'probe'
         compiler.srcFiles = []
-        viewsDir.eachFileRecurse { File file ->
-            if (file.name.endsWith('.gsp')) {
-                compiler.srcFiles << file
+        ([viewsDir] + generated).each { File root ->
+            root.eachFileRecurse { File file ->
+                if (file.name.endsWith('.gsp')) {
+                    compiler.srcFiles << file
+                }
             }
         }
         compiler.compile()
