@@ -377,6 +377,26 @@ class GenerateScaffoldedViewsTaskSpec extends Specification {
             handed(task).isEmpty()
     }
 
+    void 'a generator packaged in a jar is found, as grails-scaffolding ships it'() {
+        given:
+            String entry = 'org/apache/grails/scaffolding/ScaffoldedPagesGenerator.class'
+            File library = new File(projectDir, 'grails-scaffolding.jar')
+            new JarOutputStream(library.newOutputStream()).withCloseable { JarOutputStream out ->
+                out.putNextEntry(new JarEntry(entry))
+                out.write(getClass().classLoader.getResource(entry).bytes)
+                out.closeEntry()
+            }
+            writeController('UserController', 'User')
+            def task = task()
+            task.runtimeClasspath.setFrom(templateJar, library)
+
+        when:
+            task.generate()
+
+        then:
+            handed(task)['com.example.User/show'] == ['show ${className}']
+    }
+
     void 'with no templates on the classpath nothing is written'() {
         given:
             writeController('UserController', 'User')

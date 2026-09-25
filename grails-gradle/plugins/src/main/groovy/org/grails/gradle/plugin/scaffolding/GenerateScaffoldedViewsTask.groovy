@@ -132,7 +132,8 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
         outputDir.deleteDir()
         outputDir.mkdirs()
 
-        Map<String, List<byte[]>> templates = loadTemplates()
+        ClasspathScan scan = scanClasspath()
+        Map<String, List<byte[]>> templates = scan.templates
         if (templates.isEmpty()) {
             logger.info('No scaffolding templates on the classpath; nothing to generate')
             return
@@ -142,7 +143,7 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
             logger.info('No scaffolded controllers; nothing to generate')
             return
         }
-        if (!generatorAvailable()) {
+        if (!scan.generator) {
             logger.warn('The scaffolding library on the runtime classpath does not provide {}, so no scaffolded page is ' +
                     'compiled and each is expanded when it is first rendered, which a native image cannot do. ' +
                     'Use a grails-scaffolding matching this Gradle plugin.', GENERATOR)
@@ -178,56 +179,58 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
         }).assertNormalExitValue()
     }
 
-    /** Whether the generator is on its classpath; a scaffolding library older than this plugin lacks it. */
-    private boolean generatorAvailable() {
-        String entry = GENERATOR.replace('.', '/') + '.class'
-        runtimeClasspath.files.any { File file ->
-            if (file.isDirectory()) {
-                return new File(file, entry).isFile()
-            }
-            if (file.isFile() && file.name.endsWith('.jar')) {
-                return new JarFile(file).withCloseable { JarFile jar -> jar.getJarEntry(entry) != null }
-            }
-            false
-        }
-    }
-
     /**
-     * Maps a template's path, without its extension, to every distinct copy of it: the
-     * application's own, then each dependency's in classpath order. A copy identical to one already
-     * found is left out, as it would expand to the same page.
+     * Reads the templates and the generator from the application's template overrides and runtime
+     * classpath, in one pass over the classpath.
+     *
+     * <p>Every distinct copy of every template is kept: the application's own, then each
+     * dependency's in classpath order. A copy identical to one already found is left out, as it
+     * would expand to the same page. A scaffolding library older than this plugin has no
+     * generator.</p>
      */
-    private Map<String, List<byte[]>> loadTemplates() {
-        Map<String, List<byte[]>> templates = new TreeMap<>()
+    private ClasspathScan scanClasspath() {
+        ClasspathScan scan = new ClasspathScan()
         templateOverrides.asFileTree.visit { FileVisitDetails details ->
             if (!details.directory && details.name.endsWith('.gsp')) {
-                addCopy(templates, baseName(details.relativePath.pathString), details.file.bytes)
+                addCopy(scan.templates, baseName(details.relativePath.pathString), details.file.bytes)
             }
         }
+        String generator = GENERATOR.replace('.', '/') + '.class'
         for (File entry : runtimeClasspath.files) {
             if (entry.isDirectory()) {
+                scan.generator = scan.generator || new File(entry, generator).isFile()
                 File dir = new File(entry, TEMPLATE_PATH)
                 if (dir.isDirectory()) {
                     dir.eachFileRecurse { File f ->
                         if (f.isFile() && f.name.endsWith('.gsp')) {
                             String path = dir.toPath().relativize(f.toPath()).toString().replace(File.separatorChar, '/' as char)
-                            addCopy(templates, baseName(path), f.bytes)
+                            addCopy(scan.templates, baseName(path), f.bytes)
                         }
                     }
                 }
             }
             else if (entry.name.endsWith('.jar') && entry.isFile()) {
                 new JarFile(entry).withCloseable { JarFile jar ->
+                    scan.generator = scan.generator || jar.getJarEntry(generator) != null
                     for (JarEntry e : jar.entries()) {
                         if (!e.directory && e.name.startsWith(TEMPLATE_PATH) && e.name.endsWith('.gsp')) {
-                            addCopy(templates, baseName(e.name.substring(TEMPLATE_PATH.length())),
+                            addCopy(scan.templates, baseName(e.name.substring(TEMPLATE_PATH.length())),
                                     jar.getInputStream(e).withCloseable { InputStream input -> input.bytes })
                         }
                     }
                 }
             }
         }
-        templates
+        scan
+    }
+
+    /** What the classpath carries: each template path's distinct copies, and whether the generator. */
+    private static final class ClasspathScan {
+
+        final Map<String, List<byte[]>> templates = new TreeMap<>()
+
+        boolean generator
+
     }
 
     private static void addCopy(Map<String, List<byte[]>> templates, String path, byte[] content) {
