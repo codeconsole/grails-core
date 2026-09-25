@@ -25,6 +25,7 @@ import groovyjarjarasm.asm.AnnotationVisitor
 import groovyjarjarasm.asm.ClassWriter
 import groovyjarjarasm.asm.Opcodes
 import groovyjarjarasm.asm.Type
+import org.gradle.testkit.runner.TaskOutcome
 
 import org.grails.gradle.plugin.core.GradleSpecification
 
@@ -298,20 +299,24 @@ class GroovyPagePluginFunctionalSpec extends GradleSpecification {
                                         'index.gsp': 'extra index ${className}', 'create.gsp': 'generated create ${className}']
     }
 
-    def "a plugin's scaffolded controllers have their pages generated in an application that scaffolds none of its own"() {
-        given: 'no controller of the application is scaffolded, so nothing it wrote says it scaffolds'
+    def "a plugin's scaffolded controllers have their pages generated and compiled in an application that scaffolds none of its own"() {
+        given: 'no controller of the application is scaffolded, so nothing it wrote says it scaffolds, and it has no views'
         def runner = setupTestResourceProject('gsp-compile-classpath')
         File projectDir = runner.projectDir
         new File(projectDir, 'build.gradle').append("""
             dependencies {
+                implementation files('compiler')
                 runtimeOnly files('generator')
                 runtimeOnly files('widget-plugin.jar')
             }
         """)
-        String generator = 'org/apache/grails/scaffolding/ScaffoldedPagesGenerator.class'
-        File generatorClass = new File(projectDir, "generator/${generator}")
-        generatorClass.parentFile.mkdirs()
-        generatorClass.bytes = getClass().classLoader.getResource(generator).bytes
+        ['generator': 'org/apache/grails/scaffolding/ScaffoldedPagesGenerator.class',
+         'compiler' : 'org/grails/web/pages/GroovyPageForkedCompiler.class'].each { String dir, String standIn ->
+            File standInClass = new File(projectDir, "${dir}/${standIn}")
+            standInClass.parentFile.mkdirs()
+            standInClass.bytes = getClass().classLoader.getResource(standIn).bytes
+        }
+        assert !new File(projectDir, 'grails-app/views').exists()
         ClassWriter controller = new ClassWriter(0)
         controller.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, 'com/plugin/WidgetController', null, 'java/lang/Object', null)
         AnnotationVisitor scaffold = controller.visitAnnotation('Lgrails/plugin/scaffolding/annotation/Scaffold;', true)
@@ -336,6 +341,16 @@ class GroovyPagePluginFunctionalSpec extends GradleSpecification {
         File pages = new File(projectDir, 'build/generated/scaffolded-views/grails-scaffolded/java.lang.Long')
         pages.isDirectory()
         pages.listFiles()*.listFiles().flatten()*.text == ['widget show ${className}']
+
+        when: 'the pages are compiled, with no views of the application beside them'
+        def compilation = executeTask('compileGroovyPages')
+
+        then: 'the plugin\'s page is compiled, as optional since the application does not own its template'
+        assertTaskSuccess('compileGroovyPages', compilation)
+        Map<String, String> recorded = new File(projectDir, 'build/gsp-classes/main/compiler.txt').readLines('UTF-8')
+                .collectEntries { String line -> line.split('=', 2) as List }
+        new File(recorded.generatedViews).canonicalFile == new File(projectDir, 'build/generated/scaffolded-views').canonicalFile
+        recorded.optionalPages.tokenize(',').size() == 1
     }
 
     def "a project that scaffolds nothing generates nothing"() {
@@ -348,5 +363,11 @@ class GroovyPagePluginFunctionalSpec extends GradleSpecification {
         then:
         assertTaskSuccess('generateScaffoldedViews', result)
         !new File(runner.projectDir, 'build/generated/scaffolded-views/grails-scaffolded').exists()
+
+        when: 'and with no views of its own either'
+        def compilation = executeTask('compileGroovyPages')
+
+        then: 'there is nothing to compile, as there was before any page was generated'
+        compilation.task(':compileGroovyPages').outcome == TaskOutcome.NO_SOURCE
     }
 }

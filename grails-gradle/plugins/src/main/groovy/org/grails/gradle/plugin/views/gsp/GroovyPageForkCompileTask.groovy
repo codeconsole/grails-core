@@ -35,7 +35,6 @@ import org.gradle.api.file.FileTree
 import org.gradle.api.model.ObjectFactory
 import org.gradle.api.provider.Property
 import org.gradle.api.tasks.Input
-import org.gradle.api.tasks.InputDirectory
 import org.gradle.api.tasks.InputFiles
 import org.gradle.api.tasks.Internal
 import org.gradle.api.tasks.LocalState
@@ -88,8 +87,13 @@ abstract class GroovyPageForkCompileTask extends AbstractCompile {
     @PathSensitive(PathSensitivity.RELATIVE)
     final ConfigurableFileCollection grailsConfigurationPaths
 
-    @InputDirectory
-    @PathSensitive(PathSensitivity.RELATIVE)
+    /**
+     * The directory of the pages, which the compiler names them under. Internal rather than an input
+     * directory: its pages are fingerprinted as part of {@link #getSource()}, and it need not exist -
+     * a project whose only pages are generated, a plugin that scaffolds controllers and has no views
+     * of its own, has none, and an input directory that does not exist fails validation.
+     */
+    @Internal
     final DirectoryProperty srcDir
 
     @Nested
