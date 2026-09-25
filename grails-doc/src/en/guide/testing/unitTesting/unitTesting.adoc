@@ -25,9 +25,71 @@ The following functionality is available to all tests
 
 Any modifications to the context will be specific to that test class. A new context is created for each test class. Artifacts under test are subjected to dependency injection just like they are in the running application. The unit testing environment does not spin up the entire Spring application context with all of the beans that would normally be configured in the running application. Unit tests may register any beans necessary to carry out the test in a number of different ways.
 
+==== beanRegistrar
+
+To provide or replace beans in the context, override the `beanRegistrar` method and return a Spring Framework link:{springapi}org/springframework/beans/factory/BeanRegistrar.html[BeanRegistrar] — the same hook plugins and applications use to register beans. `BeanRegistrar` is a functional interface, so a closure coerced with `as BeanRegistrar` is all that is required.
+
+[source,groovy]
+----
+import org.springframework.beans.factory.BeanRegistrar
+import org.springframework.beans.factory.BeanRegistry
+import org.springframework.core.env.Environment
+
+BeanRegistrar beanRegistrar() {
+    return { BeanRegistry registry, Environment environment ->
+        registry.registerBean('someService', SomeService)
+        registry.registerBean('reportCache', ReportCache) { spec ->
+            spec.supplier { context -> new ReportCache(context.bean('someService', SomeService)) }
+        }
+    } as BeanRegistrar
+}
+----
+
+The registrar is applied at the point an application's is at boot: after the deprecated `doWithSpring` below, so a registrar bean wins a name conflict with it.
+
+==== Configuration classes
+
+A test's static nested classes annotated `@Configuration` are registered in its context, as are those of any test it extends — the convention Spring's own test support follows. They are registered ahead of the framework's auto-configurations, as an application's own configuration is, so an auto-configuration guarded by `@ConditionalOnMissingBean` backs off from the beans they declare.
+
+That is also how a test declares beans with the <<springdslAdditional,`beans` DSL>>: annotate the nested class `@GrailsBeans` as well.
+
+[source,groovy]
+----
+import grails.compiler.beans.GrailsBeans
+import org.springframework.context.annotation.Configuration
+
+class ReportServiceSpec extends Specification implements ServiceUnitTest<ReportService> {
+
+    @GrailsBeans
+    @Configuration
+    static class Beans {
+        def beans = {
+            bean(SomeHelper)
+
+            bean('reportCache', ReportCache) { SomeHelper someHelper ->
+            }
+        }
+    }
+
+    void "the report uses the cache"() {
+        expect:
+        service.reportCache.helper instanceof SomeHelper
+    }
+}
+----
+
+To register classes other than the nested ones, override `getConfigurationClasses` and return them; the nested classes are then not registered unless the returned set includes them.
+
+[source,groovy]
+----
+Set<Class<?>> getConfigurationClasses() {
+    [ReportingConfiguration] as Set<Class<?>>
+}
+----
+
 ==== doWithSpring
 
-To provide or replace beans in the context, you can override the `doWithSpring` method in your test.
+WARNING: `doWithSpring` is deprecated in Grails {grailsMajorVersion}, as it is on plugins and applications. It keeps working, but the bean builder DSL receives no fixes for new issues — prefer `beanRegistrar` or a configuration class.
 
 [source,groovy]
 ----
@@ -51,7 +113,7 @@ boolean loadExternalBeans() {
 
 ==== Spring configuration from plugins
 
-If you would like the `doWithSpring` configuration of any loaded plugins to be invoked for your tests, override the `getIncludePlugins` method and return a list of strings representing the plugin names.
+If you would like the beans of any loaded plugins to be registered for your tests, override the `getIncludePlugins` method and return a list of strings representing the plugin names. An included plugin contributes its `doWithSpring` and `beanRegistrar` beans and the beans its `beans` block declares.
 
 [source,groovy]
 ----
@@ -62,16 +124,18 @@ Set<String> getIncludePlugins() {
 
 WARNING: If you override this method, the default plugins will not be included. The default plugins are `core` and `eventBus`. If you want to add a plugin in addition to the defaults, add the defaults to your list.
 
+NOTE: A plugin's `beans` block is found by the name `@GrailsBeans` gives the class it compiles to by default. A plugin that names that class itself, with `@GrailsBeans(autoConfigurationName = ...)`, is not matched; register the class through `getConfigurationClasses` instead. The framework's own auto-configurations are registered whichever plugins are included.
+
 ==== Other Spring configuration
 
-At any time during your tests, you can also directly call the `defineBeans` method. The `defineBeans` method can either take a closure, or an instance of a plugin.
+At any time during your tests, you can also directly call the `defineBeans` method. The `defineBeans` method can take a closure, a `BeanRegistrar`, or an instance of a plugin.
 
 [source,groovy]
 ----
 include::{functionalSourceDir}/demo33/src/test/groovy/demo/DefineBeansSpec.groovy[tags=test_declaration,indent=0]
 ----
 
-If you pass a plugin instance to the method, the `doWithSpring` will be executed.
+If you pass a plugin instance to the method, its `doWithSpring` and `beanRegistrar` are applied. Its `beans` block is not: that compiles to an auto-configuration, which is registered before the context starts, so include the plugin through `getIncludePlugins` for those beans.
 
 [source,groovy]
 ----
@@ -80,7 +144,7 @@ void testSomething() {
     defineBeans(new MyCustomPlugin())
 
     expect:
-    applicationContext.containsBean('someBeanAddedByDoWithSpring')
+    applicationContext.containsBean('someBeanAddedByBeanRegistrar')
 }
 ----
 

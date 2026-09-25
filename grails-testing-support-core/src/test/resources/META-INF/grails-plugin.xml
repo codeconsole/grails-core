@@ -1,0 +1,3 @@
+<plugin name='includedBeans' version='1.0'>
+  <type>testing.included.IncludedBeansGrailsPlugin</type>
+</plugin>

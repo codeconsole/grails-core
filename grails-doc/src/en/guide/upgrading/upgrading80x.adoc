@@ -1695,6 +1695,10 @@ class MyGrailsPlugin extends Plugin {
 
 Both hooks may be used on the same plugin during migration; when a registrar and the DSL register a bean under the same name, the registrar's definition wins.
 
+**Unit tests follow.** `doWithSpring()` on the `GrailsUnitTest` trait — and so on every testing trait — is deprecated too. A test now overrides `beanRegistrar()`, applied where an application's is, or declares a static nested `@Configuration` class, which its context registers ahead of the framework's auto-configurations; annotating that class `@GrailsBeans` as well lets it use the `beans` DSL. A test that includes a plugin through `getIncludePlugins()` also gets the beans the plugin's `beans` block declares, which `defineBeans(plugin)` cannot apply. See <<unitTesting,Unit Testing>>.
+
+A test that already has a static nested `@Configuration` class meant for something other than its own context — one built for an `ApplicationContextRunner`, say — now has it registered there as well; override `getConfigurationClasses()` to leave it out.
+
 **Bean-definition overriding edge case.** Grails defaults `spring.main.allow-bean-definition-overriding` to `true`, and under that default nothing changes: an application bean (from the application class, `resources.groovy` or `resources.xml`) that uses the same name as a plugin bean still replaces the plugin's bean. However, because plugin beans now register earlier and application beans register in a separate, later step, an application that explicitly sets `spring.main.allow-bean-definition-overriding` to `false` will see a `BeanDefinitionOverrideException` for an application bean that shadows a plugin bean — in previous releases the two definitions were merged before a single registry write, so the shadowing was silent even with overriding disabled.
 
 [[resources-groovy-configuration-classes]]

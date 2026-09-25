@@ -19,6 +19,7 @@
 package org.grails.testing
 
 import java.lang.reflect.Method
+import java.lang.reflect.Modifier
 
 import groovy.transform.CompileDynamic
 import groovy.transform.CompileStatic
@@ -29,6 +30,8 @@ import org.springframework.beans.factory.support.BeanRegistryAdapter
 import org.springframework.context.ApplicationContext
 import org.springframework.context.ConfigurableApplicationContext
 import org.springframework.context.MessageSource
+import org.springframework.context.annotation.Configuration
+import org.springframework.core.annotation.AnnotatedElementUtils
 import org.springframework.util.ClassUtils
 
 import grails.config.Config
@@ -72,6 +75,8 @@ trait GrailsUnitTest {
         if (_grailsApplication == null) {
             def builder = new GrailsApplicationBuilder(
                     doWithSpring: doWithSpring(),
+                    beanRegistrar: beanRegistrar(),
+                    configurationClasses: getConfigurationClasses(),
                     doWithConfig: doWithConfig(),
                     includePlugins: getIncludePlugins(),
                     loadExternalBeans: loadExternalBeans(),
@@ -120,6 +125,12 @@ trait GrailsUnitTest {
         context.beanFactory.preInstantiateSingletons()
     }
 
+    /**
+     * Applies a plugin's {@code doWithSpring()} and {@code beanRegistrar()} to the test application
+     * context. A plugin's {@code beans} block is not among them: it compiles to an auto-configuration,
+     * which is registered before the context refreshes - include the plugin through
+     * {@link #getIncludePlugins()} for that.
+     */
     void defineBeans(Object plugin) {
         Class clazz = plugin.getClass()
         // Mirror the boot order: the doWithSpring() DSL is applied first and the beanRegistrar()
@@ -147,8 +158,45 @@ trait GrailsUnitTest {
         } catch (NoSuchMethodException ignored) {}
     }
 
+    /**
+     * Beans for the test application context in the bean builder DSL.
+     *
+     * @deprecated since 8.0, as {@code doWithSpring()} is on plugins and applications, in favour of
+     * {@link #beanRegistrar()} or a configuration class (see {@link #getConfigurationClasses()}).
+     * The DSL keeps working but receives no fixes for new issues.
+     */
+    @Deprecated(since = '8.0')
     Closure doWithSpring() {
         null
+    }
+
+    /**
+     * Registers beans in the test application context, the way an application's or a plugin's
+     * {@code beanRegistrar()} does at boot and at the same point: after {@link #doWithSpring()}, so a
+     * registrar bean wins a name conflict with the deprecated DSL.
+     *
+     * @return the registrar, or {@code null} (the default) to register nothing
+     * @since 8.0
+     */
+    BeanRegistrar beanRegistrar() {
+        null
+    }
+
+    /**
+     * Configuration classes for the test application context. They are registered ahead of the
+     * framework's auto-configurations, as an application's own configuration is, so an
+     * auto-configuration's {@code @ConditionalOnMissingBean} backs off from the beans they declare.
+     *
+     * <p>By default, the static nested classes of the test, and of any test it extends, annotated
+     * {@code @Configuration} directly or through another annotation such as {@code @AutoConfiguration}
+     * - the convention Spring's own test support follows. A nested {@code @GrailsBeans @Configuration}
+     * class is how a test declares beans with the {@code beans} DSL. Override to register other
+     * classes instead.</p>
+     *
+     * @since 8.0
+     */
+    Set<Class<?>> getConfigurationClasses() {
+        nestedConfigurationClasses(getClass())
     }
 
     Closure doWithConfig() {
@@ -190,6 +238,28 @@ trait GrailsUnitTest {
             cleanupPromiseFactory()
             Holders.clear()
         }
+    }
+
+    /**
+     * Outermost test class first, so a nested class in a subclass is registered later and wins a
+     * bean name the two share.
+     */
+    private Set<Class<?>> nestedConfigurationClasses(Class<?> testClass) {
+        List<Class<?>> hierarchy = []
+        for (Class<?> type = testClass; type != null && type != Object; type = type.superclass) {
+            hierarchy.add(0, type)
+        }
+        Set<Class<?>> found = new LinkedHashSet<>()
+        for (Class<?> type : hierarchy) {
+            for (Class<?> nested : type.declaredClasses) {
+                int modifiers = nested.modifiers
+                if (Modifier.isStatic(modifiers) && !Modifier.isPrivate(modifiers) && !Modifier.isFinal(modifiers)
+                        && AnnotatedElementUtils.hasAnnotation(nested, Configuration)) {
+                    found << nested
+                }
+            }
+        }
+        found
     }
 
     @CompileDynamic

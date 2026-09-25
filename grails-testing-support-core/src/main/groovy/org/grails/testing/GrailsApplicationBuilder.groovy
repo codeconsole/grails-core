@@ -26,10 +26,12 @@ import jakarta.servlet.ServletContext
 
 import org.springframework.beans.BeansException
 import org.springframework.beans.MutablePropertyValues
+import org.springframework.beans.factory.BeanRegistrar
 import org.springframework.beans.factory.config.BeanDefinition
 import org.springframework.beans.factory.config.ConfigurableBeanFactory
 import org.springframework.beans.factory.config.ConstructorArgumentValues
 import org.springframework.beans.factory.support.BeanDefinitionRegistry
+import org.springframework.beans.factory.support.BeanRegistryAdapter
 import org.springframework.beans.factory.support.DefaultListableBeanFactory
 import org.springframework.beans.factory.support.RootBeanDefinition
 import org.springframework.boot.autoconfigure.AutoConfiguration
@@ -55,6 +57,7 @@ import grails.spring.BeanBuilder
 import grails.util.Holders
 import org.grails.core.support.GrailsApplicationDiscoveryStrategy
 import org.apache.grails.core.plugins.DefaultPluginDiscovery
+import org.apache.grails.core.plugins.PluginInfo
 import org.apache.grails.core.plugins.filters.IncludingPluginFilter
 import org.apache.grails.core.plugins.PluginDiscovery
 import org.grails.spring.context.support.GrailsPlaceholderConfigurer
@@ -74,7 +77,12 @@ class GrailsApplicationBuilder {
 
     static final Set DEFAULT_INCLUDED_PLUGINS = ['core', 'eventBus'] as Set
 
+    static final String GRAILS_PLUGIN_SUFFIX = 'GrailsPlugin'
+    static final String AUTO_CONFIGURATION_SUFFIX = 'AutoConfiguration'
+
     Closure doWithSpring
+    BeanRegistrar beanRegistrar
+    Collection<Class<?>> configurationClasses
     Closure doWithConfig
     Set<String> includePlugins
     boolean loadExternalBeans
@@ -170,9 +178,18 @@ class GrailsApplicationBuilder {
         beanFactory.allowCircularReferences = environment.getProperty(Settings.SPRING_MAIN_ALLOW_CIRCULAR_REFERENCES, Boolean, Boolean.TRUE)
 
         def classLoader = this.class.classLoader
+        // The test's own configuration first, as an application's comes before auto-configuration:
+        // parsed ahead of them, its beans are what an auto-configuration's @ConditionalOnMissingBean sees.
+        configurationClasses?.each { Class<?> configurationClass ->
+            ((AnnotationConfigRegistry) context).register(configurationClass)
+        }
+
+        Set<String> includedPluginAutoConfigurations = generatedAutoConfigurationNames(
+                registerPluginDiscoveryBean(context, beanFactory))
         ImportCandidates.load(AutoConfiguration, classLoader).asList().findAll {
-            it.startsWith('org.grails')
-            && !it.contains('UrlMappingsAutoConfiguration') // this currently is causing an issue with tests
+            (it.startsWith('org.grails')
+                    && !it.contains('UrlMappingsAutoConfiguration')) // this currently is causing an issue with tests
+            || includedPluginAutoConfigurations.contains(it)
         }.each {
             ((AnnotationConfigRegistry) context).register(ClassUtils.forName(it, classLoader))
         }
@@ -190,12 +207,41 @@ class GrailsApplicationBuilder {
     }
 
     protected PluginDiscovery registerPluginDiscoveryBean(ConfigurableApplicationContext applicationContext, ConfigurableBeanFactory beanFactory) {
+        // Registered while the auto-configurations are chosen, which is before prepareContext asks
+        if (beanFactory.containsSingleton(PluginDiscovery.BEAN_NAME)) {
+            return (PluginDiscovery) beanFactory.getSingleton(PluginDiscovery.BEAN_NAME)
+        }
         def discovery = new DefaultPluginDiscovery()
         // we must load the classpath since the plugin manager needs to find the default plugins
         discovery.pluginFilter = new IncludingPluginFilter(includePlugins ?: DEFAULT_INCLUDED_PLUGINS)
         discovery.init(applicationContext.getEnvironment())
         beanFactory.registerSingleton(PluginDiscovery.BEAN_NAME, discovery)
         discovery
+    }
+
+    /**
+     * The class each included plugin's {@code beans} block compiles to, named as {@code @GrailsBeans}
+     * names it by default: {@code FooGrailsPlugin} gives {@code FooAutoConfiguration}, and any other
+     * name has {@code AutoConfiguration} appended, in the plugin's package. Only classes the build
+     * listed as auto-configurations are registered, so a name that merely matches is never picked up.
+     * The framework's own are registered regardless, with every {@code org.grails} auto-configuration.
+     */
+    protected static Set<String> generatedAutoConfigurationNames(PluginDiscovery discovery) {
+        Set<String> names = new LinkedHashSet<>()
+        for (PluginInfo plugin : discovery.pluginsInLoadOrder) {
+            Class<?> pluginClass = plugin.pluginClass
+            if (pluginClass == null) {
+                continue
+            }
+            String simpleName = pluginClass.simpleName
+            String base = simpleName.endsWith(GRAILS_PLUGIN_SUFFIX) && simpleName.length() > GRAILS_PLUGIN_SUFFIX.length()
+                    ? simpleName.substring(0, simpleName.length() - GRAILS_PLUGIN_SUFFIX.length())
+                    : simpleName
+            String simpleAutoConfigurationName = base + AUTO_CONFIGURATION_SUFFIX
+            String packageName = pluginClass.packageName
+            names << (packageName ? packageName + '.' + simpleAutoConfigurationName : simpleAutoConfigurationName)
+        }
+        names
     }
 
     void executeDoWithSpringCallback(GrailsApplication grailsApplication) {
@@ -263,6 +309,7 @@ class GrailsApplicationBuilder {
 
         def values = new MutablePropertyValues()
         values.add('localOverride', localOverride)
+        values.add('beanRegistrar', beanRegistrar)
         values.add('loadExternalBeans', loadExternalBeans)
         values.add('customizeGrailsApplicationClosure', customizeGrailsApplicationClosure)
 
@@ -275,6 +322,7 @@ class GrailsApplicationBuilder {
 
         Closure customizeGrailsApplicationClosure
         boolean localOverride = false
+        BeanRegistrar beanRegistrar
 
         TestRuntimeGrailsApplicationPostProcessor(Closure doWithSpringClosure, PluginDiscovery pluginDiscovery) {
             super([doWithSpring: { -> doWithSpringClosure }] as GrailsApplicationLifeCycle, null, pluginDiscovery)
@@ -290,6 +338,11 @@ class GrailsApplicationBuilder {
         @Override
         void postProcessBeanDefinitionRegistry(BeanDefinitionRegistry registry) throws BeansException {
             super.postProcessBeanDefinitionRegistry(registry)
+            // Where an application's registrar drains: after the DSL, so it wins a name conflict with doWithSpring
+            if (beanRegistrar != null) {
+                new BeanRegistryAdapter(registry, applicationContext, applicationContext.environment, beanRegistrar.getClass())
+                        .register(beanRegistrar)
+            }
             PropertySourcesPlaceholderConfigurer propertySourcePlaceholderConfigurer  = (PropertySourcesPlaceholderConfigurer) grailsApplication.mainContext.getBean('grailsPlaceholderConfigurer')
             propertySourcePlaceholderConfigurer.order = Ordered.HIGHEST_PRECEDENCE
             propertySourcePlaceholderConfigurer.localOverride = localOverride
