@@ -33,6 +33,7 @@ import groovyjarjarasm.asm.Type
 
 import org.gradle.api.Action
 import org.gradle.api.DefaultTask
+import org.gradle.api.GradleException
 import org.gradle.api.file.ConfigurableFileCollection
 import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.file.FileVisitDetails
@@ -226,6 +227,8 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
         originsFile.setText(templates.copies.collect { TemplateCopy copy ->
             "${copy.directory.absolutePath}\t${copy.origin}"
         }.join('\n'), 'UTF-8')
+        File reportFile = new File(work, 'report.txt')
+        reportFile.delete()
 
         execOperations.javaexec(new Action<JavaExecSpec>() {
             @Override
@@ -235,9 +238,43 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
                 }
                 spec.classpath = runtimeClasspath
                 spec.mainClass.set(GENERATOR)
-                spec.args(planFile.absolutePath, originsFile.absolutePath, outputDir.absolutePath, pageEncoding.get())
+                spec.args(planFile.absolutePath, originsFile.absolutePath, outputDir.absolutePath, pageEncoding.get(),
+                        reportFile.absolutePath)
             }
         }).assertNormalExitValue()
+        report(templates, reportFile)
+    }
+
+    /**
+     * Reports each template that could not be expanded for a domain class. One a dependency
+     * supplies is a warning: it may never be the copy the resolver chooses - a stock template the
+     * application has replaced, say - and where it is, it is expanded when rendered, as it was before
+     * any page was compiled. One of the application's own is its code as much as a view is, and a
+     * view that does not compile fails the build, so this does too, after reporting every one.
+     */
+    private void report(Templates templates, File reportFile) {
+        Map<String, TemplateCopy> byDirectory = templates.copies.collectEntries { TemplateCopy copy ->
+            [copy.directory.absolutePath, copy]
+        }
+        List<String> applicationFailures = []
+        (reportFile.isFile() ? reportFile.readLines('UTF-8') : []).each { String line ->
+            List<String> fields = line.split('\t', 4).toList()
+            if (fields.size() < 4 || fields[0] != 'failed') {
+                return
+            }
+            TemplateCopy copy = byDirectory.get(new File(fields[1]).absolutePath)
+            String failure = "the scaffolding template ${copy?.path}, from ${copy?.origin}, for ${fields[2]}: ${fields[3]}"
+            if (copy?.application) {
+                applicationFailures.add(failure)
+            }
+            else {
+                logger.warn('Could not expand {}. No page is compiled for it; if it is rendered it fails the same way.', failure)
+            }
+        }
+        if (applicationFailures) {
+            throw new GradleException('Could not expand ' + applicationFailures.join('\nCould not expand ') +
+                    '\nA template of the application\'s own fails the build, as a view that does not compile does.')
+        }
     }
 
     /**
@@ -250,14 +287,14 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
         templateOverrides.asFileTree.visit { FileVisitDetails details ->
             if (!details.directory && details.name.endsWith('.gsp')) {
                 templates.add(baseName(details.relativePath.pathString), details.file.bytes,
-                        "the application's ${details.relativePath.pathString}")
+                        "the application's ${details.relativePath.pathString}", true)
             }
         }
         packagedTemplates.asFileTree.visit { FileVisitDetails details ->
             String path = details.relativePath.pathString
             if (!details.directory && path.startsWith(TEMPLATE_PATH) && path.endsWith('.gsp')) {
                 String templatePath = path.substring(TEMPLATE_PATH.length())
-                templates.add(baseName(templatePath), details.file.bytes, "the application's ${templatePath}")
+                templates.add(baseName(templatePath), details.file.bytes, "the application's ${templatePath}", true)
             }
         }
         String generator = GENERATOR.replace('.', '/') + '.class'
@@ -269,7 +306,7 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
                     dir.eachFileRecurse { File f ->
                         if (f.isFile() && f.name.endsWith('.gsp')) {
                             String path = dir.toPath().relativize(f.toPath()).toString().replace(File.separatorChar, '/' as char)
-                            templates.add(baseName(path), f.bytes, "${entry.name}/${TEMPLATE_PATH}${path}")
+                            templates.add(baseName(path), f.bytes, "${entry.name}/${TEMPLATE_PATH}${path}", false)
                         }
                     }
                 }
@@ -280,7 +317,7 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
                     for (JarEntry e : jar.entries()) {
                         if (!e.directory && e.name.startsWith(TEMPLATE_PATH) && e.name.endsWith('.gsp')) {
                             templates.add(baseName(e.name.substring(TEMPLATE_PATH.length())),
-                                    jar.getInputStream(e).withCloseable { InputStream input -> input.bytes }, "${entry.name}!/${e.name}")
+                                    jar.getInputStream(e).withCloseable { InputStream input -> input.bytes }, "${entry.name}!/${e.name}", false)
                         }
                     }
                 }
@@ -530,6 +567,9 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
 
         final String origin
 
+        /** Whether the application has this copy of its own, so that it is the application's code. */
+        boolean application
+
         File directory
 
         TemplateCopy(String path, byte[] content, String origin) {
@@ -547,10 +587,13 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
 
         boolean generator
 
-        void add(String path, byte[] content, String origin) {
-            if (!copies.any { TemplateCopy c -> c.path == path && Arrays.equals(c.content, content) }) {
-                copies.add(new TemplateCopy(path, content, origin))
+        void add(String path, byte[] content, String origin, boolean application) {
+            TemplateCopy copy = copies.find { TemplateCopy c -> c.path == path && Arrays.equals(c.content, content) }
+            if (copy == null) {
+                copy = new TemplateCopy(path, content, origin)
+                copies.add(copy)
             }
+            copy.application = copy.application || application
         }
 
         /**

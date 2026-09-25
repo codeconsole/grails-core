@@ -22,6 +22,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -32,7 +33,8 @@ import java.util.stream.Stream;
  * every template in each planned directory is copied to
  * {@code grails-scaffolded/<domain class>/<directory>/<template path>} under the output directory,
  * where each directory came from to {@code origins/<directory>}, and the page encoding to
- * {@code encoding.txt}. How the real generator expands and names a page is tested in
+ * {@code encoding.txt}. A template whose text contains {@code FAIL} is reported as one that could
+ * not be expanded instead. How the real generator expands and names a page is tested in
  * grails-scaffolding.
  */
 public final class ScaffoldedPagesGenerator {
@@ -42,6 +44,7 @@ public final class ScaffoldedPagesGenerator {
 
     public static void main(String[] args) throws IOException {
         Path output = Paths.get(args[2]);
+        List<String> report = new ArrayList<>();
         Files.createDirectories(output.resolve("origins"));
         Files.write(output.resolve("encoding.txt"), args[3].getBytes(StandardCharsets.UTF_8));
         for (String line : Files.readAllLines(Paths.get(args[1]), StandardCharsets.UTF_8)) {
@@ -58,11 +61,16 @@ public final class ScaffoldedPagesGenerator {
                 }
                 for (Path file : files) {
                     String path = templates.relativize(file).toString().replace(File.separatorChar, '/');
+                    if (new String(Files.readAllBytes(file), StandardCharsets.UTF_8).contains("FAIL")) {
+                        report.add("failed\t" + templates + "\t" + fields[0] + "\tthe template says FAIL");
+                        continue;
+                    }
                     Path target = output.resolve("grails-scaffolded/" + fields[0] + "/" + templates.getFileName() + "/" + path);
                     Files.createDirectories(target.getParent());
                     Files.write(target, Files.readAllBytes(file));
                 }
             }
         }
+        Files.write(Paths.get(args[4]), report, StandardCharsets.UTF_8);
     }
 }

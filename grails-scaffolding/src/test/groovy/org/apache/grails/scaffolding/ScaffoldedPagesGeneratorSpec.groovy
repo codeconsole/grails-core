@@ -57,7 +57,7 @@ class ScaffoldedPagesGeneratorSpec extends Specification {
 
     void 'every template is expanded for every domain class, where the resolver looks for it'() {
         when:
-        int written = new ScaffoldedPagesGenerator().generate(['com.example.Book': [templates], 'com.example.Author': [templates]], output)
+        int written = new ScaffoldedPagesGenerator().generate(['com.example.Book': [templates], 'com.example.Author': [templates]], output).written
 
         then:
         written == 4
@@ -73,7 +73,7 @@ class ScaffoldedPagesGeneratorSpec extends Specification {
         new File(plain, 'show.gsp').with { parentFile.mkdirs(); setText('show ${className}', 'UTF-8') }
 
         when:
-        int written = new ScaffoldedPagesGenerator().generate(['com.example.Book': [templates], 'com.example.Author': [plain]], output)
+        int written = new ScaffoldedPagesGenerator().generate(['com.example.Book': [templates], 'com.example.Author': [plain]], output).written
 
         then:
         written == 3
@@ -87,7 +87,7 @@ class ScaffoldedPagesGeneratorSpec extends Specification {
         template('broken', 'broken ${noSuchName}')
 
         when:
-        int written = new ScaffoldedPagesGenerator().generate(['com.example.Book': [templates]], output)
+        int written = new ScaffoldedPagesGenerator().generate(['com.example.Book': [templates]], output).written
 
         then:
         written == 2
@@ -101,7 +101,7 @@ class ScaffoldedPagesGeneratorSpec extends Specification {
         new File(other, 'show.gsp').with { parentFile.mkdirs(); setText('other show ${className}', 'UTF-8') }
 
         when:
-        int written = new ScaffoldedPagesGenerator().generate(['com.example.Book': [templates, other]], output)
+        int written = new ScaffoldedPagesGenerator().generate(['com.example.Book': [templates, other]], output).written
 
         then:
         written == 3
@@ -132,22 +132,25 @@ class ScaffoldedPagesGeneratorSpec extends Specification {
                 "show Book%{-- expanded from ${origin} for com.example.Book --}%".toString()
     }
 
-    void 'a template that cannot be expanded is reported with where it came from'() {
+    void 'a template that cannot be expanded is returned with where it came from and why'() {
         given:
         File broken = new File(dir, 'broken')
         new File(broken, 'show.gsp').with { parentFile.mkdirs(); setText('broken ${noSuchName}', 'UTF-8') }
-        ByteArrayOutputStream err = new ByteArrayOutputStream()
-        PrintStream original = System.err
-        System.err = new PrintStream(err, true, 'UTF-8')
 
         when:
-        new ScaffoldedPagesGenerator().generate(['com.example.Book': [broken]], output, 'UTF-8', [(broken): 'theme.jar!/show.gsp'])
+        ScaffoldedPagesGenerator.Result result = new ScaffoldedPagesGenerator()
+                .generate(['com.example.Book': [broken]], output, 'UTF-8', [(broken): 'theme.jar!/show.gsp'])
 
-        then:
-        err.toString('UTF-8').contains('Could not expand the scaffolding template show, from theme.jar!/show.gsp, for com.example.Book')
-
-        cleanup:
-        System.err = original
+        then: 'whether it fails the build is for the build to say, which knows whose template it is'
+        result.written == 0
+        result.failures.size() == 1
+        with(result.failures[0]) {
+            templatesDir == broken
+            templatePath == 'show'
+            origin == 'theme.jar!/show.gsp'
+            domain == 'com.example.Book'
+            reason.contains('noSuchName')
+        }
     }
 
     void 'a domain class named by the build is modelled as the resolver models the class itself'() {
@@ -168,7 +171,11 @@ class ScaffoldedPagesGeneratorSpec extends Specification {
         when:
         File origins = new File(dir, 'origins.txt')
         origins.setText("${plain.path}\tthe application's index.gsp\n", 'UTF-8')
-        ScaffoldedPagesGenerator.main(plan.path, origins.path, output.path, 'UTF-8')
+        File broken = new File(dir, 'broken')
+        new File(broken, 'show.gsp').with { parentFile.mkdirs(); setText('broken ${noSuchName}', 'UTF-8') }
+        plan.append("com.example.Broken\t${broken.path}\n", 'UTF-8')
+        File report = new File(dir, 'report.txt')
+        ScaffoldedPagesGenerator.main(plan.path, origins.path, output.path, 'UTF-8', report.path)
 
         then:
         page('show', 'com.example.Book', 'show ${className}').exists()
@@ -177,5 +184,9 @@ class ScaffoldedPagesGeneratorSpec extends Specification {
         !page('show', 'com.example.Author', 'show ${className}').exists()
         page('index', 'com.example.Author', 'index ${className}').getText('UTF-8').endsWith(
                 "%{-- expanded from the application's index.gsp for com.example.Author --}%")
+
+        and: 'a template that could not be expanded is reported on one line'
+        report.readLines('UTF-8').size() == 1
+        report.readLines('UTF-8')[0].split('\t').toList().take(3) == ['failed', broken.path, 'com.example.Broken']
     }
 }

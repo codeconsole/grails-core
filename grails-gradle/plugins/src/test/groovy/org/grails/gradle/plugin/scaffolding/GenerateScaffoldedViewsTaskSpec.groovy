@@ -26,6 +26,7 @@ import groovyjarjarasm.asm.Type
 import spock.lang.Specification
 import spock.lang.TempDir
 
+import org.gradle.api.GradleException
 import org.gradle.api.Project
 import org.gradle.testfixtures.ProjectBuilder
 
@@ -596,6 +597,37 @@ class GenerateScaffoldedViewsTaskSpec extends Specification {
 
         then:
             new File(task.outputDirectory.get().asFile, 'encoding.txt').text == 'ISO-8859-1'
+    }
+
+    void 'a template a dependency supplies that cannot be expanded is left out, and the others are expanded'() {
+        given:
+            writeTemplateJar(templateJar, [show: 'show FAIL', index: 'index ${className}'])
+            writeController('UserController', 'User')
+            def task = task()
+
+        when:
+            task.generate()
+
+        then: 'it may be a copy the resolver never chooses, and where it is, it is expanded when rendered'
+            noExceptionThrown()
+            handed(task) == ['com.example.User/index': ['index ${className}']]
+    }
+
+    void "a template of the application's own that cannot be expanded fails the build, naming each"() {
+        given:
+            writeController('UserController', 'User')
+            writeController('BookController', 'Book')
+            File overrides = new File(projectDir, 'templates')
+            new File(overrides, 'show.gsp').with { parentFile.mkdirs(); text = 'custom show FAIL' }
+            def task = task(ProjectBuilder.builder().build().fileTree(overrides))
+
+        when:
+            task.generate()
+
+        then: 'it is the application\'s code, as a view is'
+            GradleException e = thrown()
+            e.message.contains("Could not expand the scaffolding template show, from the application's show.gsp, for com.example.Book")
+            e.message.contains("Could not expand the scaffolding template show, from the application's show.gsp, for com.example.User")
     }
 
     void 'a stale page from a previous run does not survive'() {

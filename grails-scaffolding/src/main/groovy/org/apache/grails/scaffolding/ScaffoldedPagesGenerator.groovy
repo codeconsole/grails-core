@@ -31,14 +31,17 @@ import grails.codegen.model.ModelBuilder
  * exactly as the resolver models, expands and names it when the view is asked for.</p>
  *
  * <pre>
- * ScaffoldedPagesGenerator &lt;plan&gt; &lt;origins&gt; &lt;output directory&gt; &lt;page encoding&gt;
+ * ScaffoldedPagesGenerator &lt;plan&gt; &lt;origins&gt; &lt;output directory&gt; &lt;page encoding&gt; &lt;report&gt;
  * </pre>
  *
  * <p>Each line of the plan names a domain class and, tab separated, the templates directories to
  * expand for it. A templates directory holds a file per template path, such as {@code show.gsp} or
  * {@code admin/show.gsp}. Each line of the origins names a templates directory and, after a tab,
  * where its template came from. The pages are written in the encoding they will be compiled
- * with.</p>
+ * with. What the build has to decide about is written to the report: a line for each template that
+ * could not be expanded for a domain class, {@code failed}, its templates directory, the domain
+ * class and why, tab separated. Whether that fails the build depends on whose template it is,
+ * which the build knows and this does not.</p>
  *
  * @since 8.0
  */
@@ -46,8 +49,8 @@ import grails.codegen.model.ModelBuilder
 class ScaffoldedPagesGenerator implements ModelBuilder {
 
     static void main(String[] args) {
-        if (args.length != 4) {
-            System.err.println('Usage: ScaffoldedPagesGenerator <plan> <origins> <output directory> <page encoding>')
+        if (args.length != 5) {
+            System.err.println('Usage: ScaffoldedPagesGenerator <plan> <origins> <output directory> <page encoding> <report>')
             System.exit(2)
         }
         Map<String, List<File>> plan = [:]
@@ -64,13 +67,16 @@ class ScaffoldedPagesGenerator implements ModelBuilder {
                 origins.put(new File(line.substring(0, tab)), line.substring(tab + 1))
             }
         }
-        new ScaffoldedPagesGenerator().generate(plan, new File(args[2]), args[3], origins)
+        Result result = new ScaffoldedPagesGenerator().generate(plan, new File(args[2]), args[3], origins)
+        new File(args[4]).setText(result.failures.collect { Failure failure ->
+            ['failed', failure.templatesDir.path, failure.domain, failure.reason.replaceAll(/\s+/, ' ')].join('\t')
+        }.join('\n'), 'UTF-8')
     }
 
     /**
      * Writes, under {@code outputDir} where the resolver looks for it, the page for each domain
      * class and each template in the directories planned for it. A template that cannot be
-     * expanded for a domain class is reported and left out.
+     * expanded for a domain class is left out, and returned with why.
      *
      * <p>A page ends with a comment naming the template it was expanded from, which renders as
      * nothing, so that a page the build reports can be traced to the template to fix.</p>
@@ -78,10 +84,10 @@ class ScaffoldedPagesGenerator implements ModelBuilder {
      * @param plan each domain class, with the templates directories to expand for it
      * @param origins where the template in each templates directory came from; the template's own
      *     file for a directory not named
-     * @return how many pages were written
+     * @return how many pages were written, and each template that could not be expanded
      */
-    int generate(Map<String, List<File>> plan, File outputDir, String encoding = 'UTF-8', Map<File, String> origins = [:]) {
-        int written = 0
+    Result generate(Map<String, List<File>> plan, File outputDir, String encoding = 'UTF-8', Map<File, String> origins = [:]) {
+        Result result = new Result()
         plan.each { String domain, List<File> templateDirs ->
             Map<String, Object> model = model(domain).asMap()
             for (Template template : read(templateDirs, origins)) {
@@ -90,17 +96,51 @@ class ScaffoldedPagesGenerator implements ModelBuilder {
                     page = ScaffoldedPages.expand(template.content, model)
                 }
                 catch (Exception e) {
-                    System.err.println("Could not expand the scaffolding template ${template.path}, from ${template.origin}, " +
-                            "for ${domain}, so no page is compiled for it; if it is rendered it fails the same way: ${e.cause ?: e}")
+                    result.failures.add(new Failure(template.directory, template.path, template.origin, domain,
+                            String.valueOf(e.cause ?: e)))
                     continue
                 }
                 File target = new File(outputDir, ScaffoldedPages.uri(template.path, model, template.content).substring(1))
                 target.parentFile.mkdirs()
                 target.setText("${page}%{-- expanded from ${template.origin} for ${domain} --}%", encoding)
-                written++
+                result.written++
             }
         }
-        written
+        result
+    }
+
+    /** What a generation did. */
+    static final class Result {
+
+        /** How many pages were written. */
+        int written
+
+        /** Each template that could not be expanded for a domain class. */
+        final List<Failure> failures = []
+
+    }
+
+    /** A template that could not be expanded for a domain class, and why. */
+    static final class Failure {
+
+        final File templatesDir
+
+        final String templatePath
+
+        final String origin
+
+        final String domain
+
+        final String reason
+
+        Failure(File templatesDir, String templatePath, String origin, String domain, String reason) {
+            this.templatesDir = templatesDir
+            this.templatePath = templatePath
+            this.origin = origin
+            this.domain = domain
+            this.reason = reason
+        }
+
     }
 
     private static List<Template> read(List<File> templateDirs, Map<File, String> origins) {
@@ -112,7 +152,7 @@ class ScaffoldedPagesGenerator implements ModelBuilder {
             templatesDir.eachFileRecurse { File file ->
                 if (file.isFile() && file.name.endsWith('.gsp')) {
                     String path = templatesDir.toPath().relativize(file.toPath()).toString().replace(File.separatorChar, '/' as char)
-                    templates.add(new Template(path.substring(0, path.length() - '.gsp'.length()), file.bytes,
+                    templates.add(new Template(templatesDir, path.substring(0, path.length() - '.gsp'.length()), file.bytes,
                             origins.get(templatesDir) ?: file.path))
                 }
             }
@@ -120,8 +160,10 @@ class ScaffoldedPagesGenerator implements ModelBuilder {
         templates
     }
 
-    /** A template, by its path, and where it came from. */
+    /** A template, by its directory and path, and where it came from. */
     private static final class Template {
+
+        final File directory
 
         final String path
 
@@ -129,7 +171,8 @@ class ScaffoldedPagesGenerator implements ModelBuilder {
 
         final String origin
 
-        Template(String path, byte[] content, String origin) {
+        Template(File directory, String path, byte[] content, String origin) {
+            this.directory = directory
             this.path = path
             this.content = content
             this.origin = origin
