@@ -24,6 +24,7 @@ import ch.qos.logback.classic.Level
 import ch.qos.logback.classic.spi.ILoggingEvent
 
 import grails.core.GrailsControllerClass
+import grails.util.BuildSettings
 import grails.plugin.scaffolding.annotation.Scaffold
 import org.apache.grails.core.testing.support.LogCapture
 import org.apache.grails.scaffolding.ScaffoldedPages
@@ -33,6 +34,7 @@ import org.grails.gsp.io.GroovyPageScriptSource
 import org.grails.web.gsp.io.GrailsConventionGroovyPageLocator
 import org.grails.web.servlet.mvc.GrailsWebRequest
 import org.grails.web.servlet.view.GroovyPageView
+import org.springframework.aot.AotDetector
 import org.springframework.core.io.ByteArrayResource
 import org.springframework.core.io.Resource
 import org.springframework.core.io.ResourceLoader
@@ -423,6 +425,37 @@ class ScaffoldingViewResolverSpec extends Specification {
         then:
         1 * mockPageLocator.findPage(pageFor('list', LIST_TEMPLATE)) >> Stub(GroovyPageScriptSource)
         second.is(first)
+    }
+
+    void "during development a template is read from the project, unless the application runs from ahead-of-time artifacts"() {
+        given: 'this module keeps the stock templates in src/main/templates, as a project keeps its own'
+        File project = new File(BuildSettings.BASE_DIR, 'src/main/templates/scaffolding/show.gsp')
+        resolver = new ScaffoldingViewResolver() {
+            @Override
+            protected boolean isDevelopmentMode() {
+                true
+            }
+        }
+        resolver.groovyPageLocator = mockPageLocator
+        resolver.templateEngine = mockTemplateEngine
+        resolver.applicationContext = context
+        setupScaffoldController(TestScaffoldController, TestDomain)
+        mockPageLocator.resolveViewFormat(_ as String) >> { String name -> name }
+        resolver.resourceLoader = templates(show: 'packaged show ${className}')
+        String previous = System.setProperty(AotDetector.AOT_ENABLED, String.valueOf(aot))
+
+        when:
+        resolver.tryGenerateScaffoldedView('/event/show', mockControllerClass)
+
+        then:
+        project.isFile()
+        1 * mockPageLocator.findPage(pageFor('show', aot ? 'packaged show ${className}' : project.getText('UTF-8'))) >> Stub(GroovyPageScriptSource)
+
+        cleanup:
+        previous == null ? System.clearProperty(AotDetector.AOT_ENABLED) : System.setProperty(AotDetector.AOT_ENABLED, previous)
+
+        where:
+        aot << [false, true]
     }
 
     /** Expands the list template for two views of the same domain class, with no compiled page for it. */

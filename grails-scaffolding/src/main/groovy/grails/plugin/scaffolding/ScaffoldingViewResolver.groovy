@@ -25,6 +25,7 @@ import groovy.transform.CompileStatic
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 
+import org.springframework.aot.AotDetector
 import org.springframework.context.ResourceLoaderAware
 import org.springframework.core.NativeDetector
 import org.springframework.core.io.ByteArrayResource
@@ -118,7 +119,7 @@ class ScaffoldingViewResolver extends GroovyPageViewResolver implements Resource
 
     private Resource resolveResource(Class controllerClass, shortViewName) {
         Resource resource
-        if (Environment.isDevelopmentMode()) {
+        if (readsTemplatesFromProject()) {
             resource = new FileSystemResource(new File(BuildSettings.BASE_DIR, "src/main/templates/scaffolding/${shortViewName}.gsp"))
             if (resource.exists()) {
                 return resource
@@ -139,6 +140,25 @@ class ScaffoldingViewResolver extends GroovyPageViewResolver implements Resource
             }
         }
         resourceLoader.getResource("classpath:META-INF/templates/scaffolding/${shortViewName}.gsp")
+    }
+
+    /**
+     * Whether templates are read from the project's {@code src/main/templates}, so that an edit to
+     * one shows without a rebuild. That is so during development, unless the application runs from
+     * ahead-of-time artifacts: there the pages compiled at build time are used whatever the
+     * surroundings suggest, and a page is found by the template it was compiled from, which is the
+     * packaged one.
+     */
+    protected boolean readsTemplatesFromProject() {
+        return isDevelopmentMode() && !AotDetector.useGeneratedArtifacts()
+    }
+
+    /**
+     * Whether the application is being developed. Overridable because that is derived from the
+     * working directory when the class is loaded, and so cannot be varied any other way.
+     */
+    protected boolean isDevelopmentMode() {
+        return Environment.isDevelopmentMode()
     }
 
     @Override
