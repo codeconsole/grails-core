@@ -150,6 +150,17 @@ class ExpandedMappingSpec extends Specification {
         !openApi.paths.keySet().any { it.startsWith('/libraryPage') }
     }
 
+    void 'does not describe a mapping to a controller the application does not have'() {
+        when:
+        def openApi = OpenApiFixture.document([TopicController], []) {
+            "/missing"(controller: 'nowhere', action: 'index')
+            "/latest"(controller: 'topic', action: 'latest')
+        }
+
+        then:
+        operations(openApi) == ['GET /latest'] as Set
+    }
+
     private static Set<String> operations(OpenAPI openApi) {
         (openApi.paths ?: [:]).collectMany { String path, PathItem item ->
             item.readOperationsMap().keySet().collect { "${it} ${path}".toString() }

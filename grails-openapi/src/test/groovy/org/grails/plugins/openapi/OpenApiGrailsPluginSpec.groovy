@@ -26,6 +26,7 @@ import org.springframework.beans.factory.support.DefaultListableBeanFactory
 import org.springframework.core.env.MapPropertySource
 import org.springframework.core.env.StandardEnvironment
 
+import grails.artefact.Artefact
 import grails.core.DefaultGrailsApplication
 import grails.core.GrailsApplication
 import grails.openapi.GrailsOpenApiGenerator
@@ -93,7 +94,7 @@ class OpenApiGrailsPluginSpec extends Specification {
     }
 
     private static DefaultListableBeanFactory register(Map<String, Object> config = [:]) {
-        def application = new DefaultGrailsApplication()
+        def application = new DefaultGrailsApplication(BookController).tap { it.initialise() }
         def beanFactory = new DefaultListableBeanFactory()
         beanFactory.registerSingleton(GrailsApplication.APPLICATION_ID, application)
         beanFactory.registerSingleton('grailsUrlMappingsHolder', urlMappingsHolder(application))
@@ -112,4 +113,10 @@ class OpenApiGrailsPluginSpec extends Specification {
             '/books'(controller: 'book', action: 'index', method: 'GET')
         })
     }
+}
+
+@Artefact('Controller')
+class BookController {
+    def index() { }
+    def show() { }
 }

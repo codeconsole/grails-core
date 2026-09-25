@@ -366,6 +366,12 @@ class GrailsOpenApiGenerator {
                 return
             }
             GrailsControllerClass controller = controllerFor(controllerName, asStaticName(mapping.namespace))
+            if (controller == null && grailsApplication != null) {
+                // A controller the application does not have answers nothing but 404.
+                LOG.debug('Skipping the URL mapping [{}]: the application has no controller [{}]',
+                        mapping.urlData?.urlPattern, controllerName)
+                return
+            }
             Object declaredAction = mapping.actionName
             if (declaredAction instanceof Map) {
                 // The action is chosen by the method of the request, so there is an operation for each.
