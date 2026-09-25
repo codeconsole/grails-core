@@ -22,6 +22,7 @@ import java.lang.annotation.Annotation
 import java.lang.reflect.AnnotatedElement
 import java.lang.reflect.Array
 import java.lang.reflect.Method
+import java.lang.reflect.Modifier
 import java.lang.reflect.Parameter
 
 import groovy.transform.CompileStatic
@@ -48,6 +49,8 @@ import io.swagger.v3.oas.models.parameters.RequestBody
 import io.swagger.v3.oas.models.responses.ApiResponse
 import io.swagger.v3.oas.models.responses.ApiResponses
 import io.swagger.v3.oas.models.security.SecurityRequirement
+
+import grails.web.RequestParameter
 
 /**
  * Reads the OpenAPI annotations an application declares on a controller and its actions, so that
@@ -147,21 +150,15 @@ class ActionAnnotations {
     /**
      * The command object an action binds, if it takes one.
      *
-     * <p>Mirrors the rule the controller transform applies: a parameter is data bound as a command
-     * object unless its declared type is a primitive, a primitive wrapper, {@code String},
-     * {@code Serializable} - the type a domain identifier is declared as - or {@code Object}.</p>
+     * <p>Follows the rule the controller transform applies: a parameter of a simple type is bound
+     * from the request parameters, an {@code Object}, an interface or an abstract class is not bound
+     * at all, and any other type is bound as a command object.</p>
      *
      * @return the command object type, or {@code null} when the action takes none
      */
     static Class<?> commandObjectType(Class<?> controllerClass, String actionName) {
-        for (Method method : actionMethods(controllerClass, actionName)) {
-            for (Class<?> parameterType : method.parameterTypes) {
-                if (isCommandObject(parameterType)) {
-                    return parameterType
-                }
-            }
-        }
-        null
+        Method action = actionMethod(controllerClass, actionName)
+        action?.parameterTypes?.find { Class<?> type -> isCommandObject(type) }
     }
 
     /**
@@ -169,23 +166,34 @@ class ActionAnnotations {
      * are only known where the application is compiled to keep them.
      */
     static List<Parameter> requestParameters(Class<?> controllerClass, String actionName) {
-        Map<String, Parameter> byName = [:]
-        for (Method method : actionMethods(controllerClass, actionName)) {
-            for (Parameter parameter : method.parameters) {
-                if (parameter.namePresent && !isCommandObject(parameter.type) && !byName.containsKey(parameter.name)) {
-                    byName[parameter.name] = parameter
-                }
-            }
-        }
-        byName.values().toList()
+        Method action = actionMethod(controllerClass, actionName)
+        (action?.parameters ?: new Parameter[0]).findAll { Parameter parameter ->
+            (parameter.namePresent || parameter.getAnnotation(RequestParameter) != null) && isSimple(parameter.type)
+        }.toList()
+    }
+
+    /**
+     * The name of the request parameter an action parameter is bound from: the one
+     * {@code @RequestParameter} names, or its own.
+     */
+    static String requestParameterName(Parameter parameter) {
+        parameter.getAnnotation(RequestParameter)?.value() ?: parameter.name
+    }
+
+    /**
+     * Whether the controller transform binds a parameter of the type from the request parameters by
+     * name: a primitive, a primitive wrapper, {@code String}, or {@code Serializable} - the type a
+     * domain identifier is declared as.
+     */
+    private static boolean isSimple(Class<?> type) {
+        type.primitive || type in [Integer, Float, Long, Double, Short, Boolean, Byte, Character, String, Serializable]
     }
 
     private static boolean isCommandObject(Class<?> type) {
-        if (type == null || type.primitive || type.array) {
+        if (type == null || type.array || isSimple(type) || type == Object) {
             return false
         }
-        !(type in [Integer, Float, Long, Double, Short, Boolean, Byte, Character,
-                   String, Serializable, Object])
+        !type.interface && !Modifier.isAbstract(type.modifiers)
     }
 
     private static boolean hasRequestBody(OperationAnnotation declared) {
@@ -269,7 +277,7 @@ class ActionAnnotations {
      */
     private static void applyParameter(Operation operation, ParameterAnnotation declared, Parameter reflected,
                                        Components components, boolean openapi31) {
-        String name = declared.name() ?: reflected?.name
+        String name = declared.name() ?: (reflected != null ? requestParameterName(reflected) : null)
         if (!name) {
             return
         }

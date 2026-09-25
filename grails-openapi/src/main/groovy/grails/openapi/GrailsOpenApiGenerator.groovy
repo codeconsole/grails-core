@@ -107,6 +107,7 @@ class GrailsOpenApiGenerator {
     private static final String ACTION_TOKEN = 'action'
     private static final String NAMESPACE_TOKEN = 'namespace'
     private static final String ID_TOKEN = 'id'
+    private static final String ID_SUFFIX = 'Id'
     private static final String PATCH_SUFFIX = 'Patch'
     private static final String RESPONSE_FORMATS = 'responseFormats'
     private static final String ALLOWED_METHODS = 'allowedMethods'
@@ -604,7 +605,7 @@ class GrailsOpenApiGenerator {
                 return
             }
 
-            Operation operation = buildOperation(path, method, controller, controllerType, controllerName,
+            Operation operation = buildOperation(mapping, path, method, controller, controllerType, controllerName,
                     actionName, operationId)
             if (version != null) {
                 addVersionParameter(operation, version, !isLatestVersion(mapping, version))
@@ -619,9 +620,9 @@ class GrailsOpenApiGenerator {
             paths.addPathItem(path, pathItem)
         }
 
-        private Operation buildOperation(String path, PathItem.HttpMethod method, GrailsControllerClass controller,
-                                         Class<?> controllerType, String controllerName, String actionName,
-                                         String operationId) {
+        private Operation buildOperation(UrlMapping mapping, String path, PathItem.HttpMethod method,
+                                         GrailsControllerClass controller, Class<?> controllerType,
+                                         String controllerName, String actionName, String operationId) {
             boolean restful = isResourceController(controller)
             Class<?> resourceType = restful ? resourceType(controller) : null
             List<String> pathNames = UrlMappingPaths.templateVariables(path)
@@ -637,12 +638,15 @@ class GrailsOpenApiGenerator {
                         .name(name)
                         .in('path')
                         .required(true)
-                        .schema(pathParameterSchema(name, resourceType)))
+                        .schema(pathParameterSchema(mapping, name, controllerType, actionName, resourceType)))
             }
             if (restful && actionName && RestfulControllerActions.paginates(actionName)) {
                 addPagingParameters(operation)
             }
             addRequestParameters(operation, controllerType, actionName, pathNames)
+            if (!(method.name() in BODY_METHODS)) {
+                addCommandParameters(operation, controllerType, actionName, pathNames)
+            }
 
             List<String> mediaTypes = mediaTypes(controller, actionName)
             if (restful && actionName) {
@@ -776,12 +780,88 @@ class GrailsOpenApiGenerator {
         }
 
         /**
-         * The identifier of the resource an operation addresses has the type its entity declares
-         * for it; any other path variable is a string.
+         * A path variable has the type of the identifier it names - the identifier of the resource
+         * an operation addresses, or that of another resource a nested mapping names it by, such as
+         * {@code bookId} - or else of the action parameter bound from it, and the pattern and values
+         * the mapping constrains it to.
          */
-        private Schema<?> pathParameterSchema(String name, Class<?> resourceType) {
-            PersistentEntity entity = name == ID_TOKEN ? GrailsModelConverter.entityFor(resourceType) : null
-            entity != null ? GrailsModelConverter.identifierSchema(entity) : new StringSchema()
+        private Schema<?> pathParameterSchema(UrlMapping mapping, String name, Class<?> controllerType,
+                                              String actionName, Class<?> resourceType) {
+            Schema<?> schema = identifierSchema(name, resourceType)
+            if (schema == null) {
+                ReflectedParameter declared = ActionAnnotations.requestParameters(controllerType, actionName)
+                        .find { ReflectedParameter it -> ActionAnnotations.requestParameterName(it) == name }
+                schema = declared != null ? PrimitiveType.createProperty(declared.type) : null
+            }
+            schema = schema ?: new StringSchema()
+            UrlMappingPaths.constrain(schema, mapping, name)
+            schema
+        }
+
+        private Schema<?> identifierSchema(String name, Class<?> resourceType) {
+            PersistentEntity entity = null
+            if (name == ID_TOKEN) {
+                entity = GrailsModelConverter.entityFor(resourceType)
+            }
+            else if (name.endsWith(ID_SUFFIX) && name.length() > ID_SUFFIX.length()) {
+                entity = entityNamed(name.substring(0, name.length() - ID_SUFFIX.length()))
+            }
+            entity != null ? GrailsModelConverter.identifierSchema(entity) : null
+        }
+
+        private PersistentEntity entityNamed(String propertyName) {
+            for (MappingContext context : mappingContexts) {
+                PersistentEntity entity = context.persistentEntities.find { PersistentEntity it ->
+                    it.decapitalizedName == propertyName
+                }
+                if (entity != null) {
+                    return entity
+                }
+            }
+            null
+        }
+
+        /**
+         * A command object an action binds on a request without a body is bound from the request
+         * parameters, so each property it binds is a query parameter.
+         */
+        private void addCommandParameters(Operation operation, Class<?> controllerType, String actionName,
+                                          List<String> pathNames) {
+            Class<?> commandType = ActionAnnotations.commandObjectType(controllerType, actionName)
+            Schema<?> command = commandType != null ? inlineSchema(commandType) : null
+            ((Map<String, Schema>) command?.properties)?.each { String name, Schema property ->
+                if (name in pathNames || property.readOnly || !isParameterValue(property)) {
+                    return
+                }
+                Parameter parameter = queryParameter(name, property.description, property)
+                if (name in (command.required ?: [])) {
+                    parameter.setRequired(true)
+                }
+                addParameterIfAbsent(operation, parameter)
+            }
+        }
+
+        private Schema<?> inlineSchema(Class<?> type) {
+            ResolvedSchema resolved = null
+            describe("type [${type.name}]".toString()) {
+                resolved = ModelConverters.getInstance(openapi31)
+                        .resolveAsResolvedSchema(new AnnotatedType(type).resolveAsRef(false))
+            }
+            resolved?.schema
+        }
+
+        /**
+         * A value a request parameter can carry: not an object, nor a list of objects.
+         */
+        private boolean isParameterValue(Schema<?> schema) {
+            if (schema.$ref || typeOf(schema) == 'object') {
+                return false
+            }
+            typeOf(schema) != 'array' || (schema.items != null && !schema.items.$ref && typeOf(schema.items) != 'object')
+        }
+
+        private String typeOf(Schema<?> schema) {
+            schema.type ?: schema.types?.find { String type -> type != 'null' }
         }
 
         /**
@@ -790,11 +870,12 @@ class GrailsOpenApiGenerator {
         private void addRequestParameters(Operation operation, Class<?> controllerType, String actionName,
                                           List<String> pathNames) {
             for (ReflectedParameter reflected : ActionAnnotations.requestParameters(controllerType, actionName)) {
-                if (reflected.name in pathNames) {
+                String name = ActionAnnotations.requestParameterName(reflected)
+                if (name in pathNames) {
                     continue
                 }
                 Schema<?> schema = PrimitiveType.createProperty(reflected.type) ?: new StringSchema()
-                addParameterIfAbsent(operation, queryParameter(reflected.name, null, schema))
+                addParameterIfAbsent(operation, queryParameter(name, null, schema))
             }
         }
 

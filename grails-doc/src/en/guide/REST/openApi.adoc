@@ -550,8 +550,33 @@ def lookup(String query, Integer limit) { }
 ----
 
 This needs the parameter names, which Grails keeps by default through the `preserveParameterNames`
-setting of the Grails Gradle plugin. A parameter an action reads from `params` rather than declaring
-is described with `@Parameter`.
+setting of the Grails Gradle plugin. A parameter renamed with `@RequestParameter` is described by the
+name a request sends. A parameter an action reads from `params` rather than declaring is described
+with `@Parameter`. A parameter Grails does not bind - one declared as `Object`, an interface or an
+abstract class - is not described.
+
+A command object an action binds on a request without a body, such as a `GET`, is bound from the
+request parameters, so each property it binds that a request parameter can carry is described as a
+query parameter, with its constraints:
+
+[source,groovy]
+----
+def search(BookSearch search) { }
+----
+
+A path variable is described with the type of what it is bound to: the identifier of the resource
+an operation addresses, the identifier of the resource a nested mapping names it by, such as
+`bookId` in `/books/{bookId}/chapters`, or else the action parameter of the same name. A pattern or
+a list of values the mapping constrains it to is described too:
+
+[source,groovy]
+----
+"/isbn/$code"(controller: 'book', action: 'byIsbn') {
+    constraints {
+        code(matches: /\d{13}/)
+    }
+}
+----
 
 ==== Correcting What Is Derived
 

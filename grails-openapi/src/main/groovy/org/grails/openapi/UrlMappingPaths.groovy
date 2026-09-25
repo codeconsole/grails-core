@@ -23,6 +23,8 @@ import java.util.regex.Pattern
 
 import groovy.transform.CompileStatic
 
+import io.swagger.v3.oas.models.media.Schema
+
 import grails.gorm.validation.Constrained
 import grails.gorm.validation.ConstrainedProperty
 import grails.web.mapping.UrlMapping
@@ -120,6 +122,27 @@ class UrlMappingPaths {
             names << matcher.group(1)
         }
         names
+    }
+
+    /**
+     * Applies what the mapping constrains a variable to: the pattern it must match, where the
+     * variable is described as a string, and the values it must be one of.
+     */
+    static void constrain(Schema<?> schema, UrlMapping mapping, String name) {
+        ConstrainedProperty declared = (ConstrainedProperty) mapping?.constraints?.find { Constrained constrained ->
+            constrained instanceof ConstrainedProperty && ((ConstrainedProperty) constrained).propertyName == name
+        }
+        if (declared == null || !CharSequence.isAssignableFrom(declared.propertyType)) {
+            return
+        }
+        String type = schema.type ?: schema.types?.find()
+        if (declared.matches && type == 'string') {
+            // Grails requires the whole segment to match.
+            schema.setPattern("^(?:${declared.matches})\$".toString())
+        }
+        if (declared.inList && !schema.enum) {
+            declared.inList.each { Object value -> ((Schema<Object>) schema).addEnumItemObject(value) }
+        }
     }
 
     /**
