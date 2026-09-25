@@ -38,8 +38,8 @@ enum ErrorsRendering {
     ERRORS_VIEW,
 
     /**
-     * A view whose shape only the application knows: a controller's own errors view, or the view
-     * JSON views fall back to for any object.
+     * The view JSON views falls back to for any object, which renders them as it renders anything
+     * else, and answers with success rather than 422.
      */
-    OTHER_VIEW
+    OBJECT_VIEW
 }

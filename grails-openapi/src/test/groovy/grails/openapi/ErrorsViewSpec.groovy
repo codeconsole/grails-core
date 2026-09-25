@@ -47,7 +47,23 @@ class ErrorsViewSpec extends Specification {
         openApi.components.schemas['ValidationErrors'].properties.keySet() == ['errors'] as Set
     }
 
-    void 'describes the errors the errors view renders in JSON, and those the converters render in XML without a shape'() {
+    void 'describes the errors the converters render in XML as they render them'() {
+        when:
+        def schema = document().components.schemas['ValidationErrors']
+        def error = schema.properties.errors.items
+
+        then: 'an errors element holding an error element for each, not wrapped again'
+        schema.xml.name == 'errors'
+        !schema.properties.errors.xml.wrapped
+        error.xml.name == 'error'
+
+        and: 'naming the object and the field in its attributes'
+        error.properties.object.xml.attribute
+        error.properties.field.xml.attribute
+        !error.properties.message.xml
+    }
+
+    void 'describes the errors the errors view renders in JSON, and those the converters render in XML'() {
         given: 'an application generated with JSON views'
         view('object/_object.gson', OBJECT_VIEW)
         view('errors/_errors.gson', ERRORS_VIEW)
@@ -55,23 +71,26 @@ class ErrorsViewSpec extends Specification {
         when:
         def openApi = document()
 
-        then: 'the errors view renders only JSON'
+        then: 'the errors view renders the JSON'
         errors(openApi, '/kettles')['application/json'].schema.$ref == ERRORS
-        errors(openApi, '/kettles')['text/xml'].schema == null
-
-        and: 'as one error, or several embedded'
         openApi.components.schemas['ValidationErrors'].oneOf.size() == 2
+
+        and: 'the converters the XML, which the schema of the view does not describe'
+        with(errors(openApi, '/kettles')['text/xml'].schema) {
+            !$ref
+            xml.name == 'errors'
+        }
     }
 
-    void 'describes the errors the converters render where JSON views fall back to the object view'() {
+    void 'describes no JSON errors where JSON views fall back to the object view, which answers with success'() {
         given: 'JSON views without an errors view, which render the errors with the view for any object'
         view('object/_object.gson', OBJECT_VIEW)
 
         when:
         def openApi = document()
 
-        then: 'the JSON the object view renders is not the errors view'
-        errors(openApi, '/kettles')['application/json'].schema == null
+        then: 'the JSON is not a 422'
+        !errors(openApi, '/kettles').containsKey('application/json')
 
         and: 'the converters render the XML'
         errors(openApi, '/kettles')['text/xml'].schema.$ref == ERRORS
@@ -90,13 +109,45 @@ class ErrorsViewSpec extends Specification {
 
         then: 'a controller with its own errors view'
         errors(openApi, '/kettles')['application/json'].schema == null
-        errors(openApi, '/kettles')['text/xml'].schema == null
+        errors(openApi, '/kettles')['text/xml'].schema.xml.name == 'errors'
 
         and: 'a namespaced controller with its own errors view'
         errors(openApi, '/admin/gizmos')['application/json'].schema == null
 
         and: 'a controller rendering with the errors view'
         errors(openApi, '/sprockets')['application/json'].schema.$ref == ERRORS
+    }
+
+    void 'describes the errors with the schema the base document declares for them, in every media type'() {
+        given: 'an application rendering its errors another way'
+        view('object/_object.gson', OBJECT_VIEW)
+        view('kettle/_errors.gson', ERRORS_VIEW)
+        File base = new File(views, 'base.yml')
+        base.text = """\
+            openapi: 3.1.0
+            info:
+              title: Kettles
+              version: 1.0.0
+            components:
+              schemas:
+                ValidationErrors:
+                  type: object
+                  properties:
+                    problems:
+                      type: array
+                      items:
+                        type: string
+            """.stripIndent()
+
+        when:
+        def openApi = document('grails.openapi.base-document': base.toURI().toString())
+
+        then:
+        ['/kettles', '/sprockets'].every { String path ->
+            errors(openApi, path).values()*.schema*.$ref.every { it == ERRORS }
+        }
+        errors(openApi, '/kettles').keySet() == ['application/json', 'text/xml'] as Set
+        openApi.components.schemas['ValidationErrors'].properties.keySet() == ['problems'] as Set
     }
 
     private static final String OBJECT_VIEW = '''\
@@ -123,14 +174,14 @@ class ErrorsViewSpec extends Specification {
         file.text = template
     }
 
-    private OpenAPI document() {
+    private OpenAPI document(Map<String, Object> config = [:]) {
         def resolver = new JsonViewResolver(new JsonViewConfiguration(templatePath: views.path))
         def controllers = [KettleController, GizmoController, SprocketController]
         OpenApiFixture.generator(OpenApiFixture.holder {
             '/kettles'(resources: 'kettle')
             '/admin/gizmos'(resources: 'gizmo', namespace: 'admin')
             '/sprockets'(resources: 'sprocket')
-        }, OpenApiFixture.application(controllers, [resolver]), OpenApiFixture.context([Kettle])).generate()
+        }, OpenApiFixture.application(controllers, [resolver]), OpenApiFixture.context([Kettle]), config).generate()
     }
 
     private static Content errors(OpenAPI openApi, String path) {

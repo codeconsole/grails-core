@@ -503,14 +503,20 @@ it answers with rather than a uniform `200`:
 |===
 
 A `422` answers with the validation errors Grails renders for a request that cannot be bound,
-described once as the `ValidationErrors` schema. Where a JSON view renders them, as the errors view
-of an application generated with JSON views does, they are described as that view renders them: one
-error with its message, path and link, or several embedded with their total. The errors view renders
-only JSON, so the errors the converters render in XML are then listed without a shape, as are those
-of a controller with an errors view of its own, such as `grails-app/views/book/_errors.gson`, and
-those JSON views render with the view for any object where there is no errors view. An application
-rendering its errors another way declares `ValidationErrors` in the base document, which is used in
-place of the one derived, or describes an action's errors with `@ApiResponse`.
+described once as the `ValidationErrors` schema. The converters render them, in JSON as an object
+listing them and in XML as an `errors` element holding an `error` element for each. Where a JSON
+view renders them, as the errors view of an application generated with JSON views does, they are
+described in JSON as that view renders them: one error with its message, path and link, or several
+embedded with their total. The status is the one the view sets, which is `422` for the errors view
+an application is generated with. So:
+
+* A controller with an errors view of its own, such as `grails-app/views/book/_errors.gson`, is
+  described answering in JSON without a shape, since only the application knows it.
+* An application with JSON views but no errors view renders the errors with the view for any
+  object, which answers with success rather than `422`, so its `422` is described in XML alone.
+* An application rendering its errors another way declares `ValidationErrors` in the base document,
+  which then describes them in every media type, or describes an action's errors with
+  `@ApiResponse`.
 
 A response and a request body are described in the media types of the formats the controller
 declares in `responseFormats`, for the action or for every action, and in `application/json` where
@@ -529,6 +535,11 @@ describes each body as `application/json` and as `text/xml`, the first media typ
 for `xml` by default. Only a data format, `json` or `xml`, carries the shape described; a format that
 renders a view, a form or a HAL document, such as `html` or `hal`, is listed without one. A request
 body is described in the data formats alone.
+
+The XML is described as the converters render it, with the OpenAPI `xml` object: a domain class or a
+command object as an element named for its class, such as `book`, its identifier and version as
+attributes, an association as an element carrying the associated identifier as an attribute, and a
+listing as a `list` element holding one for each.
 
 A `RestfulController` answers a `save` with a `Location` header naming the created resource, which
 the `201` response describes.

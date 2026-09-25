@@ -215,8 +215,8 @@ class GrailsOpenApiGenerator {
         private final ComponentSchemas schemas
         private final MediaTypes mediaTypes
         private final OperationParameters parameters
-        private final OperationResponses responses
         private final MappingVersions versions
+        private OperationResponses responses
 
         Contribution(OpenAPI openApi, OpenApiSelection selection) {
             this.openApi = openApi
@@ -228,8 +228,6 @@ class GrailsOpenApiGenerator {
             this.schemas = new ComponentSchemas(components, openapi31)
             this.mediaTypes = new MediaTypes(grailsApplication?.mainContext, controllers)
             this.parameters = new OperationParameters(mappingContexts, schemas)
-            this.responses = new OperationResponses(schemas, new ValidationErrorsContent(components,
-                    ErrorsViews.of(grailsApplication?.mainContext), VALIDATION_ERRORS_SCHEMA))
             this.versions = new MappingVersions(urlMappingsHolder)
         }
 
@@ -239,6 +237,10 @@ class GrailsOpenApiGenerator {
                 BaseDocument.merge(base, openApi, paths, components) { String path -> selection.selectsPath(path) }
             }
             describeApplication()
+            // Validation errors the base document declares describe them in place of those derived.
+            responses = new OperationResponses(schemas, new ValidationErrorsContent(components,
+                    ErrorsViews.of(grailsApplication?.mainContext), VALIDATION_ERRORS_SCHEMA,
+                    base?.components?.schemas?.containsKey(VALIDATION_ERRORS_SCHEMA) ?: false))
 
             // A name the document already has, from the base document or springdoc, or that it
             // derives rather than resolves, is not taken by a class of the same name.

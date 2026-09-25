@@ -29,12 +29,19 @@ import io.swagger.v3.oas.models.media.MediaType
 import io.swagger.v3.oas.models.media.ObjectSchema
 import io.swagger.v3.oas.models.media.Schema
 import io.swagger.v3.oas.models.media.StringSchema
+import io.swagger.v3.oas.models.media.XML
 
 import grails.core.GrailsControllerClass
 
 /**
  * The validation errors a request that cannot be bound is answered with, described once as a
  * schema of the document's own.
+ *
+ * <p>The converters render the errors, in JSON and XML, and answer with 422. Where the application
+ * renders with JSON views, a view renders them in JSON instead: the errors view an application is
+ * generated with, which answers with 422, a controller's own errors view, which answers as it sets,
+ * or, without either, the view for any object, which answers with success. A schema the base
+ * document declares under the name describes the errors in every media type, in place of these.</p>
  */
 @CompileStatic
 class ValidationErrorsContent {
@@ -42,35 +49,55 @@ class ValidationErrorsContent {
     private final Components components
     private final ErrorsViews views
     private final String schemaName
+    private final boolean declared
 
     /**
      * @param views the views that render the errors in JSON
      * @param schemaName the name the errors are described under
+     * @param declared whether the base document declares the errors, under that name
      */
-    ValidationErrorsContent(Components components, ErrorsViews views, String schemaName) {
+    ValidationErrorsContent(Components components, ErrorsViews views, String schemaName, boolean declared) {
         this.components = components
         this.views = views
         this.schemaName = schemaName
+        this.declared = declared
     }
 
     /**
-     * The errors a failed validation answers with, in each media type. JSON views render them in
-     * JSON, as the controller's own errors view does where it has one, and the converters render
-     * them in any other format; those a view other than the errors view renders are listed without
-     * a shape, as are those the converters render where the errors view renders the JSON, since the
-     * schema describes the view.
+     * The errors a failed validation answers with, in each media type it answers with 422 in.
+     *
+     * @return the content, or {@code null} where the errors are answered with 422 in none of them
      */
     Content content(GrailsControllerClass controller, Map<String, Boolean> mediaTypes) {
-        ErrorsRendering json = controller != null && views.hasOwnView(controller)
-                ? ErrorsRendering.OTHER_VIEW : views.rendering()
         Content content = new Content()
         mediaTypes.each { String mediaType, Boolean shaped ->
-            boolean described = shaped && (mediaType in MediaTypes.JSON_MEDIA_TYPES
-                    ? json != ErrorsRendering.OTHER_VIEW
-                    : views.rendering() != ErrorsRendering.ERRORS_VIEW)
-            content.addMediaType(mediaType, described ? new MediaType().schema(reference()) : new MediaType())
+            if (!shaped) {
+                content.addMediaType(mediaType, new MediaType())
+            }
+            else if (declared) {
+                content.addMediaType(mediaType, new MediaType().schema(ComponentSchemas.referenceTo(schemaName)))
+            }
+            else if (mediaType in MediaTypes.JSON_MEDIA_TYPES) {
+                addJson(content, mediaType, controller)
+            }
+            else {
+                // The converters render the errors in any other format, which the schema describes
+                // unless it describes the errors view.
+                content.addMediaType(mediaType, new MediaType().schema(views.rendering() == ErrorsRendering.ERRORS_VIEW
+                        ? converterErrors() : reference()))
+            }
         }
-        content
+        content.isEmpty() ? null : content
+    }
+
+    private void addJson(Content content, String mediaType, GrailsControllerClass controller) {
+        if (controller != null && views.hasOwnView(controller)) {
+            // Only the application knows the shape of the controller's own view.
+            content.addMediaType(mediaType, new MediaType())
+        }
+        else if (views.rendering() != ErrorsRendering.OBJECT_VIEW) {
+            content.addMediaType(mediaType, new MediaType().schema(reference()))
+        }
     }
 
     private Schema<?> reference() {
@@ -82,19 +109,25 @@ class ValidationErrorsContent {
     }
 
     /**
-     * The errors the JSON converters render.
+     * The errors the converters render: in JSON an object listing them, and in XML an
+     * {@code errors} element holding an {@code error} element for each, naming the object and the
+     * field in its attributes.
      */
     private static Schema<?> converterErrors() {
         Schema<?> error = new ObjectSchema()
-                .addProperty('object', new StringSchema().description('The name of the object that failed validation'))
-                .addProperty('field', new StringSchema().description('The property that failed validation'))
+                .addProperty('object', new StringSchema().description('The name of the object that failed validation')
+                        .xml(new XML().attribute(true)))
+                .addProperty('field', new StringSchema().description('The property that failed validation')
+                        .xml(new XML().attribute(true)))
                 .addProperty('rejected-value', new Schema<>().description('The value that was rejected'))
                 .addProperty('message', new StringSchema().description('Why the value was rejected'))
         error.setRequired(['object', 'message'])
+        error.setXml(new XML().name('error'))
         Schema<?> errors = new ObjectSchema()
                 .description('The validation errors of a request that could not be bound')
-                .addProperty('errors', new ArraySchema().items(error))
+                .addProperty('errors', new ArraySchema().items(error).xml(new XML().wrapped(false)))
         errors.setRequired(['errors'])
+        errors.setXml(new XML().name('errors'))
         errors
     }
 

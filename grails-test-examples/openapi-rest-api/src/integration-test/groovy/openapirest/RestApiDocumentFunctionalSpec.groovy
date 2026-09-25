@@ -18,6 +18,8 @@
  */
 package openapirest
 
+import groovy.xml.XmlSlurper
+
 import io.swagger.v3.core.util.Yaml31
 import org.springframework.util.ClassUtils
 import spock.lang.Shared
@@ -110,14 +112,39 @@ class RestApiDocumentFunctionalSpec extends Specification implements HttpClientS
         ((List<Map>) ((Map) multiple._embedded).errors).every { Map error -> conforms(error, one) }
     }
 
-    void 'a failed validation in XML answers with the errors the converters render, described without a shape'() {
+    void 'a failed validation in XML answers with the errors the converters render, as described'() {
         when:
         def response = httpPostJson([Accept: 'text/xml'], '/book', '{"title":"Dawn"}')
+        def errors = new XmlSlurper().parseText(response.body())
+        Map schema = (Map) ((Map) described('post', '/book').responses['422'].content['text/xml']).schema
+        Map error = (Map) ((Map) ((Map) schema.get('properties')).errors).items
 
-        then: 'the errors view renders only JSON'
+        then: 'the errors view renders only JSON, so the converters render the XML'
         response.assertStatus(422)
-        response.body().contains('<errors>')
-        described('post', '/book').responses['422'].content['text/xml'] == [:]
+        errors.name() == schema.xml.name
+        errors.children().every { it.name() == error.xml.name }
+
+        and: 'naming the object and the field in its attributes'
+        errors.error[0].@object.text()
+        errors.error[0].@field.text() == 'isbn'
+        ((Map) ((Map) error.get('properties')).field).xml.attribute
+    }
+
+    void 'a book answers in XML as described'() {
+        given:
+        Map created = httpPostJson('/book', '{"title":"Fledgling","isbn":"9780446696166"}').assertStatus(201).json()
+
+        when:
+        def book = new XmlSlurper().parseText(http([Accept: 'text/xml'], "/book/${created.id}").body())
+        Map schema = schema('Book')
+
+        then: 'an element named for the class, with the identifier as an attribute'
+        book.name() == schema.xml.name
+        book.@id.text() == created.id.toString()
+        ((Map) ((Map) schema.get('properties')).id).xml.attribute
+
+        and: 'its properties as elements'
+        book.title.text() == 'Fledgling'
     }
 
     private Map described(String method, String path) {

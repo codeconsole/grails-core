@@ -22,8 +22,10 @@ import groovy.transform.CompileStatic
 
 import io.swagger.v3.oas.models.headers.Header
 import io.swagger.v3.oas.models.media.ArraySchema
+import io.swagger.v3.oas.models.media.Content
 import io.swagger.v3.oas.models.media.Schema
 import io.swagger.v3.oas.models.media.StringSchema
+import io.swagger.v3.oas.models.media.XML
 import io.swagger.v3.oas.models.responses.ApiResponse
 import io.swagger.v3.oas.models.responses.ApiResponses
 
@@ -65,8 +67,9 @@ class OperationResponses {
         if (RestfulControllerActions.hasResponseBody(actionName)) {
             Schema<?> resource = schemas.reference(resourceType)
             if (resource != null) {
+                // A list is rendered in XML as a list element holding an element for each.
                 Schema<?> schema = RestfulControllerActions.isCollection(actionName)
-                        ? new ArraySchema().items(resource)
+                        ? new ArraySchema().items(resource).xml(new XML().name('list').wrapped(true))
                         : resource
                 success.setContent(MediaTypes.content(schema, mediaTypes))
             }
@@ -81,10 +84,11 @@ class OperationResponses {
         if (takesId) {
             responses.addApiResponse(NOT_FOUND_RESPONSE_CODE, new ApiResponse().description('Not Found'))
         }
-        if (RestfulControllerActions.validates(actionName)) {
+        Content errors = RestfulControllerActions.validates(actionName) ? validationErrors.content(controller, mediaTypes) : null
+        if (errors != null) {
             responses.addApiResponse(UNPROCESSABLE_RESPONSE_CODE, new ApiResponse()
                     .description('Validation failed')
-                    .content(validationErrors.content(controller, mediaTypes)))
+                    .content(errors))
         }
         responses
     }

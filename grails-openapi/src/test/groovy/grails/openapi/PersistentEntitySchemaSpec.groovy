@@ -81,6 +81,38 @@ class PersistentEntitySchemaSpec extends Specification {
         }
     }
 
+    void 'describes an entity in XML as Grails renders it'() {
+        given:
+        def openApi = new OpenAPI()
+
+        when:
+        customizer().contribute(openApi, null)
+        def widget = openApi.components.schemas['Widget']
+
+        then: 'an element named for the class, with its identifier as an attribute'
+        widget.xml.name == 'widget'
+        widget.properties.id.xml.attribute
+        !widget.properties.name.xml
+
+        and: 'a to-one association as an element with the identifier as an attribute'
+        !widget.properties.crate.xml
+        widget.properties.crate.properties.id.xml.attribute
+
+        and: 'a to-many association as an element holding one named for the associated class for each'
+        with(openApi.components.schemas['Crate'].properties.widgets) {
+            xml.wrapped
+            items.xml.name == 'widget'
+            items.properties.id.xml.attribute
+        }
+
+        and: 'a listing as a list element holding one for each'
+        with(openApi.paths['/widgets'].get.responses['200'].content['application/json'].schema) {
+            xml.name == 'list'
+            xml.wrapped
+            items.$ref == '#/components/schemas/Widget'
+        }
+    }
+
     void 'does not describe an entity reached only through an association'() {
         given:
         def openApi = new OpenAPI()

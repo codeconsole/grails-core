@@ -64,14 +64,15 @@ class JsonErrorsViews extends ErrorsViews {
     @Override
     ErrorsRendering rendering() {
         if (rendering == null) {
-            rendering = ErrorsRendering.CONVERTERS
+            ErrorsRendering found = ErrorsRendering.CONVERTERS
             for (JsonViewResolver resolver : resolvers) {
                 View view = resolve(Errors.name) { resolver.resolveView(Errors, Locale.ENGLISH) }
                 if (view != null) {
-                    rendering = view.is(resolver.objectView) ? ErrorsRendering.OTHER_VIEW : ErrorsRendering.ERRORS_VIEW
+                    found = view.is(resolver.objectView) ? ErrorsRendering.OBJECT_VIEW : ErrorsRendering.ERRORS_VIEW
                     break
                 }
             }
+            rendering = found
         }
         rendering
     }

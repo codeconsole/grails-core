@@ -36,6 +36,7 @@ import io.swagger.v3.oas.models.media.IntegerSchema
 import io.swagger.v3.oas.models.media.ObjectSchema
 import io.swagger.v3.oas.models.media.Schema
 import io.swagger.v3.oas.models.media.StringSchema
+import io.swagger.v3.oas.models.media.XML
 import org.codehaus.groovy.runtime.InvokerHelper
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
@@ -45,6 +46,7 @@ import org.springframework.validation.Errors
 import org.springframework.validation.Validator
 
 import grails.gorm.validation.Constrained
+import grails.util.GrailsNameUtils
 import grails.gorm.validation.ConstrainedEntity
 import grails.gorm.validation.ConstrainedProperty
 import grails.validation.Validateable
@@ -282,14 +284,18 @@ class GrailsModelConverter implements ModelConverter {
             return null
         }
 
+        // Grails renders the identifier in XML as an attribute of the association's element, and a
+        // to-many association as an element holding one for each, named for the associated class.
         Schema reference = new ObjectSchema()
-                .addProperty(associated.identity?.name ?: 'id', identifierSchema(associated))
+                .addProperty(associated.identity?.name ?: 'id', identifierSchema(associated).xml(new XML().attribute(true)))
                 .description("The identifier of the associated ${associated.javaClass.simpleName}".toString())
         reference.addRequiredItem(associated.identity?.name ?: 'id')
 
-        association instanceof ToMany
-                ? new ArraySchema().items(reference)
-                : reference
+        if (association instanceof ToMany) {
+            reference.setXml(new XML().name(GrailsNameUtils.getPropertyName(associated.javaClass)))
+            return new ArraySchema().items(reference).xml(new XML().wrapped(true))
+        }
+        reference
     }
 
     /**
@@ -333,6 +339,10 @@ class GrailsModelConverter implements ModelConverter {
         Set<String> beanProperties = BeanUtils.getPropertyDescriptors(type)*.name.toSet()
 
         Map<String, String> names = propertyNames.applyTo(model)
+        if (model.xml == null) {
+            // Grails renders a type in XML as an element named for its class.
+            model.setXml(new XML().name(GrailsNameUtils.getPropertyName(type)))
+        }
         String versionName = null
         if (entity != null) {
             versionName = entity.versioned ? entity.version?.name : null
@@ -442,7 +452,8 @@ class GrailsModelConverter implements ModelConverter {
 
     /**
      * GORM adds the version through a transform swagger-core does not see, so a property the
-     * server assigns is added where it is missing rather than only flagged.
+     * server assigns is added where it is missing rather than only flagged. Grails renders it in XML
+     * as an attribute.
      */
     private static void markReadOnly(Schema model, String propertyName) {
         if (!propertyName) {
@@ -454,6 +465,7 @@ class GrailsModelConverter implements ModelConverter {
             model.addProperty(propertyName, property)
         }
         property.setReadOnly(true)
+        property.setXml(new XML().attribute(true))
     }
 
     private static Map<String, Constrained> entityConstraints(PersistentEntity entity) {
