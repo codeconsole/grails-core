@@ -714,7 +714,7 @@ or by leaving both, as the default mapping does:
 
 Either way the REST controllers those mappings reach are described, at the URLs the mapping serves:
 `RestfulController` subclasses, and controllers declaring the formats they respond in with
-`responseFormats`. The first form above produces `GET /book`, `POST /book` and `GET /book/{id}`; the
+`responseFormats`, none of them `html`. The first form above produces `GET /book`, `POST /book` and `GET /book/{id}`; the
 second produces `GET /book/index`, `POST /book/save` and `GET /book/show/{id}`. An application whose
 mappings name every controller gets neither, because expansion follows the mappings rather than the
 controllers.
@@ -729,7 +729,8 @@ because both answer. Where that gives two operations the same identifier the sec
 the path it is reached at, so no two operations in the document share one. An application wanting
 only the first form removes the default mapping from its `UrlMappings`.
 
-A controller rendering views for a browser declares no `responseFormats`, so it does not appear in the
+A controller rendering views for a browser declares no `responseFormats`, or declares `html` among
+them, such as a login controller responding in `html` and `json`, so it does not appear in the
 document. Controllers `@Scaffold` generates extend `RestfulController`, and those `generate-controller`
 generates for a REST application declare `responseFormats`, so both are described; those it
 generates for a web application render views and are not.

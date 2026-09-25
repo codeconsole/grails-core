@@ -173,6 +173,19 @@ class ExpandedMappingSpec extends Specification {
         !openApi.paths.keySet().any { it.startsWith('/libraryPage') }
     }
 
+    void 'does not describe a controller rendering HTML that a mapping reaches without naming it'() {
+        when:
+        def openApi = OpenApiFixture.document([SignInController, BinController], [Bin]) {
+            "/$controller/$action?/$id?(.$format)?" {}
+        }
+
+        then: 'a controller responding in HTML too renders views for a browser'
+        !openApi.paths.keySet().any { it.startsWith('/signIn') }
+
+        and: 'one responding in data formats alone is a REST controller'
+        openApi.paths.keySet().any { it.startsWith('/bin') }
+    }
+
     void 'does not describe a mapping to a controller the application does not have'() {
         when:
         def openApi = OpenApiFixture.document([TopicController], []) {
@@ -224,6 +237,15 @@ class CabinetController extends RestfulController<Drawer> {
     static allowedMethods = [save: 'POST', update: 'PUT', patch: 'PATCH', delete: 'DELETE']
 
     CabinetController() { super(Drawer) }
+}
+
+@Artefact('Controller')
+class SignInController {
+    static responseFormats = ['html', 'json']
+
+    def index() { }
+    def auth() { }
+    def denied() { }
 }
 
 @Artefact('Controller')

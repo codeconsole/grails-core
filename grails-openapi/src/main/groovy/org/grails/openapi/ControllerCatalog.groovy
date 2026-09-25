@@ -41,6 +41,7 @@ class ControllerCatalog {
 
     private static final String RESPONSE_FORMATS = 'responseFormats'
     private static final String ALLOWED_METHODS = 'allowedMethods'
+    private static final String HTML_FORMAT = 'html'
     private static final String ID = 'id'
 
     private final GrailsApplication grailsApplication
@@ -100,11 +101,18 @@ class ControllerCatalog {
 
     /**
      * A controller a mapping reaching controllers by name describes: a RestfulController, or one
-     * declaring the formats it responds in, as a REST controller does, rather than one rendering
-     * views for a browser.
+     * declaring the formats it responds in, as a REST controller does, none of them HTML, rather than
+     * one rendering views for a browser.
      */
     boolean isRestController(GrailsControllerClass controller) {
-        RestfulController.isAssignableFrom(controller.clazz) || responseFormats(controller) != null
+        if (RestfulController.isAssignableFrom(controller.clazz)) {
+            return true
+        }
+        Object declared = responseFormats(controller)
+        Collection<Object> formats = declared instanceof Map
+                ? ((Map) declared).values().collectMany { it instanceof Collection ? (Collection) it : [it] }
+                : (declared instanceof Collection ? (Collection<Object>) declared : [])
+        formats && !formats.any { Object format -> format?.toString() == HTML_FORMAT }
     }
 
     /**
