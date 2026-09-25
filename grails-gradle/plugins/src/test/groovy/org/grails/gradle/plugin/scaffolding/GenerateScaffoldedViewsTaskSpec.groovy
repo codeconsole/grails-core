@@ -301,7 +301,7 @@ class GenerateScaffoldedViewsTaskSpec extends Specification {
             handed(task)['com.example.Event/show'] == ['show ${className}']
     }
 
-    void "an application template replaces every other copy for the application's controllers"() {
+    void 'an application template is expanded along with every copy it overrides'() {
         given:
             writeController('UserController', 'User')
             File overrides = new File(projectDir, 'templates')
@@ -312,8 +312,8 @@ class GenerateScaffoldedViewsTaskSpec extends Specification {
         when:
             task.generate()
 
-        then: 'packaged, it is found beside the controller, ahead of any dependency, so no other copy is chosen'
-            handed(task)['com.example.User/index'] == ['custom ${className}']
+        then: 'which one the resolver finds depends on the classpath the application runs from, so both are ready'
+            handed(task)['com.example.User/index'] == ['custom ${className}', 'list of ${propertyName} for ${className}']
             handed(task)['com.example.User/show'] == ['show ${className}']
     }
 
@@ -421,7 +421,7 @@ class GenerateScaffoldedViewsTaskSpec extends Specification {
             handed(task) == ['com.example.User/show': ['show']]
     }
 
-    void "a scaffolded controller a plugin provides is expanded with the plugin's own templates"() {
+    void 'a scaffolded controller a plugin provides has its pages expanded, from every copy of a template'() {
         given: 'a plugin carrying a scaffolded controller and its own show template'
             File plugin = new File(projectDir, 'plugin.jar')
             writeJar(plugin, [(PLUGIN_DESCRIPTOR): '<plugin/>'.bytes,
@@ -433,8 +433,8 @@ class GenerateScaffoldedViewsTaskSpec extends Specification {
         when:
             task.generate()
 
-        then: 'the template beside the controller wins where there is one; elsewhere any copy may be chosen'
-            handed(task)['com.plugin.Widget/show'] == ['plugin show']
+        then: 'a native image keeps no class files, so the copy beside the controller is not the one it is sure to find'
+            handed(task)['com.plugin.Widget/show'] == ['plugin show', 'show ${className}']
             handed(task)['com.plugin.Widget/index'] == ['list of ${propertyName} for ${className}']
     }
 

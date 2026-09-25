@@ -370,8 +370,8 @@ class GroovyPagePlugin implements Plugin<Project> {
                 // page's name agrees with the one the resolver looks for
                 it.runtimeClasspath.from(project.configurations.named('runtimeClasspath'))
                 it.javaLauncher.convention(launcher)
-                // the application's own templates, wherever it keeps them: packaged, both are found
-                // beside its controllers, ahead of any dependency's
+                // the application's own templates, wherever it keeps them, which its runtime
+                // classpath does not carry
                 it.templateOverrides.from(
                         project.fileTree(project.layout.projectDirectory.dir('src/main/templates/scaffolding'))
                                 .matching { PatternFilterable p -> p.include('**/*.gsp') })

@@ -175,8 +175,10 @@ class GroovyPagePluginFunctionalSpec extends GradleSpecification {
             'src/main/templates/scaffolding/admin/show.gsp': 'admin show ${className}',
             // a template the application keeps with its resources, which are packaged the same way
             'src/main/resources/META-INF/templates/scaffolding/edit.gsp': 'resources edit ${className}',
-            // a template from a dependency the application only has at runtime
+            // templates from a dependency the application only has at runtime, one of them a copy of
+            // a template the application has too
             'theme/META-INF/templates/scaffolding/list.gsp': 'theme list ${className}',
+            'theme/META-INF/templates/scaffolding/show.gsp': 'theme show ${className}',
             'grails-app/views/book/index.gsp': 'handwritten index'
         ]
         sources.each { String path, String content ->
@@ -185,19 +187,18 @@ class GroovyPagePluginFunctionalSpec extends GradleSpecification {
             file.text = content.stripIndent()
         }
         File staged = new File(projectDir, 'build/generated/views')
-        Closure<Map<String, String>> pagesOf = { String domain ->
+        Closure<Map<String, Object>> pagesOf = { String domain ->
             File dir = new File(staged, "grails-scaffolded/${domain}")
-            Map<String, String> pages = [:]
+            Map<String, List<String>> pages = [:]
             dir.eachFileRecurse { File f ->
                 if (f.isFile()) {
-                    // <copy>/<template path>, as the stand-in writes it; each template here has one copy
+                    // <copy>/<template path>, as the stand-in writes it
                     List<String> parts = dir.toPath().relativize(f.toPath()).toString().replace(File.separatorChar, '/' as char).tokenize('/')
-                    String path = parts.drop(1).join('/')
-                    assert !pages.containsKey(path)
-                    pages[path] = f.text
+                    pages.computeIfAbsent(parts.drop(1).join('/')) { [] } << f.text
                 }
             }
-            pages
+            // a template with one copy by its text, one with several by all of them
+            pages.collectEntries { String path, List<String> copies -> [path, copies.size() == 1 ? copies[0] : copies.sort()] }
         }
 
         when:
@@ -211,13 +212,14 @@ class GroovyPagePluginFunctionalSpec extends GradleSpecification {
         !new File(staged, 'book/show.gsp').exists()
         !new File(staged, 'event').exists()
 
-        and: 'every template the application runs with is expanded for every scaffolded domain class'
-        pagesOf('java.lang.String') == ['show.gsp': 'show ${className}', 'admin/show.gsp': 'admin show ${className}',
+        and: 'every copy of every template the application runs with is expanded for every scaffolded domain class'
+        pagesOf('java.lang.String') == ['show.gsp': ['show ${className}', 'theme show ${className}'],
+                                        'admin/show.gsp': 'admin show ${className}',
                                         'edit.gsp': 'resources edit ${className}', 'list.gsp': 'theme list ${className}']
 
         and: 'a namespace-specific one only for a domain class a namespaced controller scaffolds'
-        pagesOf('java.lang.Integer') == ['show.gsp': 'show ${className}', 'edit.gsp': 'resources edit ${className}',
-                                         'list.gsp': 'theme list ${className}']
+        pagesOf('java.lang.Integer') == ['show.gsp': ['show ${className}', 'theme show ${className}'],
+                                         'edit.gsp': 'resources edit ${className}', 'list.gsp': 'theme list ${className}']
 
         when:
         def inspection = executeTask('inspectGeneratedPages')
@@ -231,7 +233,8 @@ class GroovyPagePluginFunctionalSpec extends GradleSpecification {
 
         then: 'the pages expanded from it are replaced, not added to'
         assertTaskSuccess('stageGroovyPages', rebuild)
-        pagesOf('java.lang.String') == ['show.gsp': 'edited show ${className}', 'admin/show.gsp': 'admin show ${className}',
+        pagesOf('java.lang.String') == ['show.gsp': ['edited show ${className}', 'theme show ${className}'],
+                                        'admin/show.gsp': 'admin show ${className}',
                                         'edit.gsp': 'resources edit ${className}', 'list.gsp': 'theme list ${className}']
     }
 }

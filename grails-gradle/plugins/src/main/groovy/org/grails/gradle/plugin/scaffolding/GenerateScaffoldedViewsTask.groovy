@@ -68,16 +68,15 @@ import org.gradle.process.JavaExecSpec
  * task did not expand finds nothing and is expanded at runtime as before.</p>
  *
  * <p>For each scaffolded controller - the application's own, and those plugins on the runtime
- * classpath provide - this expands for its domain class the templates the resolver can choose for
- * it, and no others:</p>
+ * classpath provide - this expands for its domain class every copy of each template the resolver
+ * could choose for it:</p>
  * <ul>
- *   <li>The resolver looks for a template beside the controller's class first. For an application
- *   controller that is the application's own template, from {@code src/main/templates/scaffolding}
- *   or its resources, which so replaces every dependency's copy of it; for a plugin's controller it
- *   is the plugin's own.</li>
- *   <li>Beyond that it depends on what the build cannot see - a plugin that overrides the templates,
- *   the order of the classpath the application runs with - so every distinct copy is expanded, and
- *   whichever the resolver chooses has its page.</li>
+ *   <li>Which copy the resolver finds is not something the build can know. On the JVM it looks
+ *   beside the controller's class first, then at a plugin that overrides the templates, then along
+ *   the classpath; a native image keeps no class files to look beside, and goes by the order of the
+ *   classpath it was built from. So every distinct copy is expanded - the application's own, from
+ *   {@code src/main/templates/scaffolding} or its resources, and each on the runtime classpath -
+ *   and whichever the resolver chooses has its page.</li>
  *   <li>A namespace-specific template such as {@code admin/show.gsp} can only be chosen for a
  *   controller with a namespace, so it is expanded only for the domain classes such controllers
  *   scaffold.</li>
@@ -226,14 +225,14 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
 
     /**
      * Reads the templates: the application's own, then every distinct copy the runtime classpath
-     * carries, noting which artifact each came from; and whether the classpath carries the
-     * generator, which a scaffolding library older than this plugin does not.
+     * carries; and whether the classpath carries the generator, which a scaffolding library older
+     * than this plugin does not.
      */
     private Templates findTemplates() {
         Templates templates = new Templates()
         templateOverrides.asFileTree.visit { FileVisitDetails details ->
             if (!details.directory && details.name.endsWith('.gsp')) {
-                templates.add(baseName(details.relativePath.pathString), details.file.bytes, null)
+                templates.add(baseName(details.relativePath.pathString), details.file.bytes)
             }
         }
         String generator = GENERATOR.replace('.', '/') + '.class'
@@ -245,7 +244,7 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
                     dir.eachFileRecurse { File f ->
                         if (f.isFile() && f.name.endsWith('.gsp')) {
                             String path = dir.toPath().relativize(f.toPath()).toString().replace(File.separatorChar, '/' as char)
-                            templates.add(baseName(path), f.bytes, entry)
+                            templates.add(baseName(path), f.bytes)
                         }
                     }
                 }
@@ -256,7 +255,7 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
                     for (JarEntry e : jar.entries()) {
                         if (!e.directory && e.name.startsWith(TEMPLATE_PATH) && e.name.endsWith('.gsp')) {
                             templates.add(baseName(e.name.substring(TEMPLATE_PATH.length())),
-                                    jar.getInputStream(e).withCloseable { InputStream input -> input.bytes }, entry)
+                                    jar.getInputStream(e).withCloseable { InputStream input -> input.bytes })
                         }
                     }
                 }
@@ -328,7 +327,7 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
             return null
         }
         String domain = readScaffoldDomain(reader)
-        domain == null ? null : new Controller(domain, hasNamespace(reader, resources, ancestors), source)
+        domain == null ? null : new Controller(domain, hasNamespace(reader, resources, ancestors))
     }
 
     /**
@@ -450,31 +449,26 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
         fileName.endsWith('.gsp') ? fileName[0..<fileName.length() - 4] : fileName
     }
 
-    /** A scaffolded controller, and the artifact it comes from: {@code null} for the application. */
+    /** A scaffolded controller: the domain class it scaffolds, and whether it has a namespace. */
     private static final class Controller {
 
         final String domain
 
         final boolean namespaced
 
-        final File source
-
-        Controller(String domain, boolean namespaced, File source) {
+        Controller(String domain, boolean namespaced) {
             this.domain = domain
             this.namespaced = namespaced
-            this.source = source
         }
 
     }
 
-    /** One copy of a template, and every artifact that carries it: {@code null} for the application. */
+    /** One copy of a template. */
     private static final class TemplateCopy {
 
         final String path
 
         final byte[] content
-
-        final Set<File> sources = new LinkedHashSet<>()
 
         File directory
 
@@ -492,31 +486,18 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
 
         boolean generator
 
-        void add(String path, byte[] content, File source) {
-            TemplateCopy copy = copies.find { TemplateCopy c -> c.path == path && Arrays.equals(c.content, content) }
-            if (copy == null) {
-                copy = new TemplateCopy(path, content)
-                copies.add(copy)
+        void add(String path, byte[] content) {
+            if (!copies.any { TemplateCopy c -> c.path == path && Arrays.equals(c.content, content) }) {
+                copies.add(new TemplateCopy(path, content))
             }
-            copy.sources.add(source)
         }
 
         /**
-         * The copies the resolver can choose for a controller: for each template path, the copy
-         * beside the controller's class when there is one, and otherwise every copy. A
-         * namespace-specific template only for a controller with a namespace.
+         * The copies the resolver could choose for a controller: every copy of every template, but a
+         * namespace-specific one only for a controller with a namespace.
          */
         List<TemplateCopy> choosableBy(Controller controller) {
-            Map<String, List<TemplateCopy>> byPath = copies.groupBy { TemplateCopy c -> c.path }
-            List<TemplateCopy> choosable = []
-            byPath.each { String path, List<TemplateCopy> candidates ->
-                if (path.contains('/') && !controller.namespaced) {
-                    return
-                }
-                List<TemplateCopy> beside = candidates.findAll { TemplateCopy c -> controller.source in c.sources }
-                choosable.addAll(beside ?: candidates)
-            }
-            choosable
+            controller.namespaced ? copies : copies.findAll { TemplateCopy c -> !c.path.contains('/') }
         }
 
     }
