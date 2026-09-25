@@ -378,7 +378,9 @@ type, so its responses are described without a body unless an annotation declare
 A type is described in `components/schemas` through swagger-core, so a `@Schema` or Jackson
 annotation on the class or on one of its properties is honored, including one that renames the
 property. The `metaClass` every Groovy object has and the `errors` a validateable object has are
-not part of it.
+not part of it. The constraints, and whether it is required or read only, follow a
+renamed property. Grails' converters, JSON views and data binding use the property's own name, so a
+Jackson rename describes a type the application renders and binds with Jackson.
 
 A schema is named after its class, or after the name a `@Schema` annotation on the class declares.
 Classes sharing a name in different packages are each named by their package as well, such as

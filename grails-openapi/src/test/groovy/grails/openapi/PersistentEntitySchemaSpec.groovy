@@ -18,6 +18,7 @@
  */
 package grails.openapi
 
+import com.fasterxml.jackson.annotation.JsonProperty
 import io.swagger.v3.oas.models.OpenAPI
 import io.swagger.v3.oas.models.SpecVersion
 import io.swagger.v3.oas.annotations.media.Schema as SchemaAnnotation
@@ -370,6 +371,22 @@ class PersistentEntitySchemaSpec extends Specification {
         openApi.components.schemas['LedgerLine'].properties.keySet() == ['id', 'amount', 'memo'] as Set
     }
 
+    void 'describes a renamed property under its name, with its constraints'() {
+        when:
+        def openApi = OpenApiFixture.document([RenamedBookController], [RenamedBook]) {
+            '/renamed'(resources: 'renamedBook')
+        }
+        def schema = openApi.components.schemas['RenamedBook']
+
+        then: 'a Jackson rename is described under the name it gives'
+        schema.properties.book_title.maxLength == 50
+        schema.required.contains('book_title')
+        !schema.properties.containsKey('title')
+
+        and: 'a property whose name Jackson writes another way is kept'
+        schema.properties.keySet().any { it.equalsIgnoreCase('isbn') }
+    }
+
     void 'marks what data binding does not bind as read only'() {
         when:
         def openApi = OpenApiFixture.document([LedgerLineController], [LedgerLine]) {
@@ -544,4 +561,23 @@ class Manifest {
 @Artefact('Controller')
 class ManifestController extends RestfulController<Manifest> {
     ManifestController() { super(Manifest) }
+}
+
+@Entity
+class RenamedBook {
+
+    @JsonProperty('book_title')
+    String title
+
+    String ISBN
+
+    static constraints = {
+        title nullable: false, maxSize: 50
+        ISBN nullable: true
+    }
+}
+
+@Artefact('Controller')
+class RenamedBookController extends RestfulController<RenamedBook> {
+    RenamedBookController() { super(RenamedBook) }
 }
