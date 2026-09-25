@@ -399,6 +399,9 @@ class GroovyPagePlugin implements Plugin<Project> {
             it.compileStaticStrict.set(false)
             if (scaffolds) {
                 it.dependsOn(tasks.named('stageGroovyPages'))
+                // a scaffolded page that does not compile is left to be produced when it is rendered,
+                // as it was before any was compiled, rather than failing the build
+                it.generatedDirectories.add(GenerateScaffoldedViewsTask.PAGES_DIRECTORY)
             }
         }
 

@@ -70,6 +70,13 @@ class GroovyPageCompiler {
     String encoding = 'UTF-8'
     String expressionCodec = OutputEncodingSettings.getDefaultValue(OutputEncodingSettings.EXPRESSION_CODEC_NAME)
     String[] configs = []
+    /**
+     * Directories under {@link #viewsDir}, as relative paths, whose pages were generated. One of
+     * those that does not compile is left out with a warning instead of failing the compilation.
+     */
+    List<String> generatedDirectories = []
+    /** The generated pages left out because they did not compile, each with the reason. */
+    final Map<String, String> leftOut = Collections.synchronizedMap(new TreeMap<String, String>())
     ConfigMap configMap
     ExecutorService threadPool
 
@@ -128,6 +135,12 @@ class GroovyPageCompiler {
                             try {
                                 compileGSP(viewsDir, gsp, viewPrefix, packagePrefix, results)
                             } catch (Exception ex) {
+                                String page = relativePath(viewsDir, gsp)
+                                if (isGenerated(page)) {
+                                    LOG.warn("Leaving out the generated page ${page}, which does not compile: ${ex.message}")
+                                    leftOut.put(page, String.valueOf(ex.message))
+                                    continue
+                                }
                                 LOG.error("Error Compiling GSP File: ${gsp.name} - ${ex.message}")
                                 throw ex
                             }
@@ -175,6 +188,10 @@ class GroovyPageCompiler {
             }
         }
         return compileGSPRegistry
+    }
+
+    private boolean isGenerated(String page) {
+        generatedDirectories.any { String dir -> page.startsWith(dir.endsWith('/') ? dir : dir + '/') }
     }
 
     /**
@@ -237,6 +254,14 @@ class GroovyPageCompiler {
             StringWriter gsptarget = new StringWriter()
             gpp.generateGsp(gsptarget)
             gsptarget.flush()
+
+            CompilationUnit unit = new CompilationUnit(compilerConfig, null, classLoader)
+            unit.addPhaseOperation(operation, Phases.CANONICALIZATION)
+            unit.addSource(gspgroovyfile.name, gsptarget.toString())
+            unit.compile()
+
+            // the data files and the registry entry follow the class, so a page that does not compile
+            // leaves nothing behind that names it
             // write static html parts to data file (read from classpath at runtime)
             File htmlDataFile = new File(new File(targetDir, packageDir), className + GroovyPageMetaInfo.HTML_DATA_POSTFIX)
             htmlDataFile.parentFile.mkdirs()
@@ -247,11 +272,6 @@ class GroovyPageCompiler {
 
             // register viewuri -> classname mapping
             compileGSPResults[viewuri] = fullClassName
-
-            CompilationUnit unit = new CompilationUnit(compilerConfig, null, classLoader)
-            unit.addPhaseOperation(operation, Phases.CANONICALIZATION)
-            unit.addSource(gspgroovyfile.name, gsptarget.toString())
-            unit.compile()
         } else {
             compileGSPResults[viewuri] = fullClassName
         }

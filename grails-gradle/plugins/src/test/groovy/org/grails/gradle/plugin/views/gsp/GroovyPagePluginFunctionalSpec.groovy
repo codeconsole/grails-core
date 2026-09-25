@@ -140,6 +140,10 @@ class GroovyPagePluginFunctionalSpec extends GradleSpecification {
                 runtimeOnly files('theme')
             }
             sourceSets.main.groovy.srcDir('grails-app/controllers')
+            tasks.register('inspectGeneratedPages') {
+                def compile = tasks.named('compileGroovyPages')
+                doLast { println "GENERATED_DIRECTORIES=\${compile.get().generatedDirectories.get()}" }
+            }
         """)
         // The generator the task runs comes from grails-scaffolding, which this build cannot depend
         // on; the tests' stand-in records what it is handed instead.
@@ -210,6 +214,12 @@ class GroovyPagePluginFunctionalSpec extends GradleSpecification {
                                         'list.gsp': 'theme list ${className}']
         pagesOf('java.lang.Integer') == ['show.gsp': 'show ${className}', 'admin/show.gsp': 'admin show ${className}',
                                          'list.gsp': 'theme list ${className}']
+
+        when:
+        def inspection = executeTask('inspectGeneratedPages')
+
+        then: 'a scaffolded page that does not compile is left to runtime rather than failing the build'
+        inspection.output.contains('GENERATED_DIRECTORIES=[grails-scaffolded]')
 
         when: 'a template override is edited'
         new File(projectDir, 'src/main/templates/scaffolding/show.gsp').text = 'edited show ${className}'

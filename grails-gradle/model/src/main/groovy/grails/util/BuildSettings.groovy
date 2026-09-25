@@ -217,6 +217,15 @@ class BuildSettings {
     public static final String COMPILE_STATIC_GSP_STRICT = 'grails.views.gsp.compileStaticConfig.strict'
 
     /**
+     * A property name whose value lists, comma separated, the directories of a page compilation
+     * whose pages are generated rather than written, as paths relative to the directory being
+     * compiled. A generated page that does not compile is left out, with a warning, rather than
+     * failing the compilation: it is an optimisation, and without it the page is produced when it is
+     * first rendered, as it would be had nothing been generated.
+     */
+    public static final String GENERATED_GSP_DIRECTORIES = 'grails.views.gsp.generatedDirectories'
+
+    /**
      * A property name that selects the type of the {@code id} GORM injects into an entity that
      * declares none of its own.
      *

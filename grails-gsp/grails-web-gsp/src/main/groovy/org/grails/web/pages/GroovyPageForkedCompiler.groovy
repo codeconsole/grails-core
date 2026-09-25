@@ -22,6 +22,8 @@ import groovy.io.FileType
 import groovy.transform.CompileStatic
 import org.codehaus.groovy.control.CompilerConfiguration
 
+import grails.util.BuildSettings
+
 import org.grails.gsp.compiler.GroovyPageCompiler
 
 /**
@@ -85,6 +87,10 @@ class GroovyPageForkedCompiler {
         if (encoding) {
             compiler.encoding = encoding
         }
+        String generated = System.getProperty(BuildSettings.GENERATED_GSP_DIRECTORIES)
+        if (generated) {
+            compiler.generatedDirectories = generated.tokenize(',')*.trim()
+        }
         return compiler
     }
 
@@ -100,6 +106,11 @@ class GroovyPageForkedCompiler {
         GroovyPageCompiler compiler = createPageCompiler()
         compiler.srcFiles = sources
         compiler.compile()
+        // the build shows what this process prints, not what it logs
+        compiler.leftOut.each { String page, String reason ->
+            System.err.println("Left out the generated page ${page}, which does not compile; if it is rendered it " +
+                    "is produced then instead, and fails the same way: ${reason}")
+        }
     }
 
     static void main(String[] args) {

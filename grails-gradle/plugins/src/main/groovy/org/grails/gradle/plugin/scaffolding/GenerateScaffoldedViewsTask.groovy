@@ -88,6 +88,12 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
     /** Path within an artifact holding the scaffolding templates. */
     private static final String TEMPLATE_PATH = 'META-INF/templates/scaffolding/'
 
+    /**
+     * The directory, under the views, the pages are written to and the resolver looks in, as
+     * {@code org.apache.grails.scaffolding.ScaffoldedPages} names it.
+     */
+    static final String PAGES_DIRECTORY = 'grails-scaffolded'
+
     /** The class that expands and names the pages, from the application's scaffolding library. */
     static final String GENERATOR = 'org.apache.grails.scaffolding.ScaffoldedPagesGenerator'
 

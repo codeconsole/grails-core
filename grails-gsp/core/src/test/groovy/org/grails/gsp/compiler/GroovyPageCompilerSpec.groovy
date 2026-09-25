@@ -84,15 +84,47 @@ class GroovyPageCompilerSpec extends Specification {
         registry().keySet() == ['/index.gsp'] as Set
     }
 
-    private File writeView(String path) {
+    void 'a generated page that does not compile is left out, and the others compiled'() {
+        given:
+        writeView('index.gsp')
+        writeView('generated/good.gsp')
+        writeView('generated/broken.gsp', '<% def x = ; %>')
+
+        when:
+        compile('/', ['generated'])
+
+        then: 'nothing names the page that did not compile, so it is produced when it is rendered'
+        registry().keySet() == ['/index.gsp', '/generated/good.gsp'] as Set
+        !targetDir.listFiles().any { it.name.contains('broken') }
+
+        and: 'the page is reported'
+        lastCompiler.leftOut.keySet() == ['generated/broken.gsp'] as Set
+    }
+
+    void 'a written page that does not compile fails the compilation'() {
+        given:
+        writeView('index.gsp', '<% def x = ; %>')
+
+        when:
+        compile('/', ['generated'])
+
+        then:
+        thrown(Exception)
+    }
+
+    private File writeView(String path, String content = null) {
         File view = new File(viewsDir, path)
         view.parentFile.mkdirs()
-        view.text = "<html><body>${path}</body></html>"
+        view.text = content ?: "<html><body>${path}</body></html>"
         view
     }
 
-    private void compile(String viewPrefix = '/') {
+    private GroovyPageCompiler lastCompiler
+
+    private void compile(String viewPrefix = '/', List<String> generated = []) {
         GroovyPageCompiler compiler = new GroovyPageCompiler()
+        lastCompiler = compiler
+        compiler.generatedDirectories = generated
         compiler.viewsDir = viewsDir
         compiler.targetDir = targetDir
         compiler.generatedGroovyPagesDirectory = generatedDir

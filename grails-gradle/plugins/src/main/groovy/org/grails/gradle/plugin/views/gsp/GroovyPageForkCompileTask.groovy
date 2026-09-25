@@ -33,6 +33,7 @@ import org.gradle.api.file.Directory
 import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.file.FileTree
 import org.gradle.api.model.ObjectFactory
+import org.gradle.api.provider.ListProperty
 import org.gradle.api.provider.Property
 import org.gradle.api.tasks.Input
 import org.gradle.api.tasks.InputDirectory
@@ -115,6 +116,14 @@ abstract class GroovyPageForkCompileTask extends AbstractCompile {
     @Input
     final Property<Boolean> compileStaticStrict
 
+    /**
+     * Directories of the source, as relative paths, whose pages were generated. A generated page
+     * that does not compile is left out with a warning rather than failing the build: it is an
+     * optimisation, and without it the page is produced when it is first rendered.
+     */
+    @Input
+    final ListProperty<String> generatedDirectories
+
     private ExecOperations execOperations
 
     /**
@@ -144,6 +153,7 @@ abstract class GroovyPageForkCompileTask extends AbstractCompile {
         serverpath = objectFactory.property(String)
         compileStatic = objectFactory.property(Boolean).convention(false)
         compileStaticStrict = objectFactory.property(Boolean).convention(false)
+        generatedDirectories = objectFactory.listProperty(String).convention([])
         grailsConfigurationPaths = objectFactory.fileCollection()
         grailsConfigurationPaths.from(
                 project.layout.projectDirectory.file('grails-app/conf/application.yml'),
@@ -200,6 +210,9 @@ abstract class GroovyPageForkCompileTask extends AbstractCompile {
                         javaExecSpec.setMaxHeapSize(compileOptions.forkOptions.memoryMaximumSize)
                         javaExecSpec.setMinHeapSize(compileOptions.forkOptions.memoryInitialSize)
 
+                        if (!generatedDirectories.get().isEmpty()) {
+                            javaExecSpec.systemProperty(BuildSettings.GENERATED_GSP_DIRECTORIES, generatedDirectories.get().join(','))
+                        }
                         if (compileStatic.get()) {
                             javaExecSpec.systemProperty(BuildSettings.COMPILE_STATIC_GSP, 'true')
                             if (compileStaticStrict.get()) {
