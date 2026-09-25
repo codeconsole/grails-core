@@ -18,6 +18,10 @@
  */
 package grails.openapi
 
+import groovy.json.JsonSlurper
+
+import io.swagger.v3.oas.annotations.media.Schema
+
 import grails.artefact.Artefact
 import grails.gorm.annotation.Entity
 import grails.rest.RestfulController
@@ -55,6 +59,37 @@ class EmbeddedAssociationSpec extends Specification {
         'openapi_3_1' | { it.oneOf*.$ref == ['#/components/schemas/DepotAddress', null] && it.oneOf[1].types == ['null'] as Set }
         'openapi_3_0' | { it.allOf*.$ref == ['#/components/schemas/DepotAddress'] && it.nullable }
     }
+
+    void 'describes what is said of a property described by a reference beside it in 3.1, and on all of it in 3.0'() {
+        when:
+        def openApi = OpenApiFixture.document(['springdoc.api-docs.version': version], [WharfController], [Wharf]) {
+            '/wharves'(resources: 'wharf')
+        }
+        Map written = new JsonSlurper().parseText(GrailsOpenApiGenerator.serialize(openApi, 'json')) as Map
+        Map schema = written.components.schemas.Wharf as Map
+        Map properties = schema.get('properties') as Map
+
+        then: 'the description of a nullable one'
+        properties.address.description == 'Where letters go'
+        properties.address.nullable == (version == 'openapi_3_0' ? true : null)
+
+        and: 'the description of one that cannot be null'
+        properties.site.description == 'Where it stands'
+        properties.site.'$ref' == (version == 'openapi_3_1' ? '#/components/schemas/WharfAddress' : null)
+
+        and: 'one data binding does not bind is read only, so a client is not asked to send it'
+        properties.origin.readOnly == true
+        'origin' in schema.required
+
+        and: 'each still refers to the associated schema'
+        ['address', 'site', 'origin'].every { String name ->
+            Map property = properties[name] as Map
+            (property.'$ref' ?: (property.allOf ?: property.oneOf)*.'$ref'.find()) == '#/components/schemas/WharfAddress'
+        }
+
+        where:
+        version << ['openapi_3_0', 'openapi_3_1']
+    }
 }
 
 @Entity
@@ -79,4 +114,37 @@ class DepotAddress {
 @Artefact('Controller')
 class DepotController extends RestfulController<Depot> {
     DepotController() { super(Depot) }
+}
+
+@Entity
+class Wharf {
+    // What the databinding transform generates for a domain class compiled in an application.
+    public static final List $legacyDatabindingWhiteList = ['code', 'address', 'site']
+
+    String code
+
+    @Schema(description = 'Where letters go')
+    WharfAddress address
+
+    @Schema(description = 'Where it stands')
+    WharfAddress site
+
+    WharfAddress origin
+
+    static embedded = ['address', 'site', 'origin']
+
+    static constraints = {
+        address nullable: true
+        site nullable: false
+        origin nullable: false, bindable: false
+    }
+}
+
+class WharfAddress {
+    String street
+}
+
+@Artefact('Controller')
+class WharfController extends RestfulController<Wharf> {
+    WharfController() { super(Wharf) }
 }

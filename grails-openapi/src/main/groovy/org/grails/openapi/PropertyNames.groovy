@@ -54,9 +54,15 @@ class PropertyNames {
      */
     private final Set<String> renamed
 
-    private PropertyNames(Map<String, String> swaggerNames, Set<String> renamed) {
+    /**
+     * The {@code @Schema} each property declares, by the name Grails uses.
+     */
+    private final Map<String, SchemaAnnotation> declared
+
+    private PropertyNames(Map<String, String> swaggerNames, Set<String> renamed, Map<String, SchemaAnnotation> declared) {
         this.swaggerNames = swaggerNames
         this.renamed = renamed
+        this.declared = declared
     }
 
     /**
@@ -66,6 +72,7 @@ class PropertyNames {
     static PropertyNames of(Class<?> type) {
         Map<String, String> swaggerNames = [:]
         Set<String> renamed = [] as Set
+        Map<String, SchemaAnnotation> declared = [:]
         List<BeanPropertyDefinition> properties
         try {
             SerializationConfig config = Json.mapper().serializationConfig
@@ -73,16 +80,20 @@ class PropertyNames {
             properties = description.findProperties()
         }
         catch (RuntimeException | LinkageError ignored) {
-            return new PropertyNames(swaggerNames, renamed)
+            return new PropertyNames(swaggerNames, renamed, declared)
         }
         for (BeanPropertyDefinition property : properties) {
             try {
                 String name = beanName(property)
                 if (name) {
-                    String declared = schemaName(property)
-                    swaggerNames[name] = declared ?: property.name
-                    if (declared) {
+                    String schemaName = schemaName(property)
+                    swaggerNames[name] = schemaName ?: property.name
+                    if (schemaName) {
                         renamed << name
+                    }
+                    SchemaAnnotation schema = schemaAnnotation(property)
+                    if (schema != null) {
+                        declared[name] = schema
                     }
                 }
             }
@@ -90,7 +101,7 @@ class PropertyNames {
                 // Jackson refuses a property with conflicting accessors, such as Groovy's metaClass.
             }
         }
-        new PropertyNames(swaggerNames, renamed)
+        new PropertyNames(swaggerNames, renamed, declared)
     }
 
     /**
@@ -154,11 +165,33 @@ class PropertyNames {
         descriptor?.name ?: property.internalName
     }
 
+    /**
+     * @return the {@code @Schema} a property declares, by the name Grails uses for it, or
+     * {@code null} where it declares none
+     */
+    SchemaAnnotation declaredSchema(String name) {
+        declared[name]
+    }
+
     private static String schemaName(BeanPropertyDefinition property) {
         for (AnnotatedMember member : [property.getter, property.field, property.setter]) {
             String name = member?.getAnnotation(SchemaAnnotation)?.name()
             if (name) {
                 return name
+            }
+        }
+        null
+    }
+
+    /**
+     * The {@code @Schema} of a property: the getter's, the field's, where Groovy puts the
+     * annotation of a property, or the setter's.
+     */
+    private static SchemaAnnotation schemaAnnotation(BeanPropertyDefinition property) {
+        for (AnnotatedMember member : [property.getter, property.field, property.setter]) {
+            SchemaAnnotation schema = member?.getAnnotation(SchemaAnnotation)
+            if (schema != null) {
+                return schema
             }
         }
         null

@@ -34,6 +34,8 @@ import io.swagger.v3.core.converter.ModelConverter
 import io.swagger.v3.core.converter.ModelConverterContext
 import io.swagger.v3.core.converter.ModelConverters
 import io.swagger.v3.core.util.PrimitiveType
+import io.swagger.v3.oas.annotations.media.Schema as SchemaAnnotation
+import io.swagger.v3.oas.annotations.media.Schema.AccessMode
 import io.swagger.v3.oas.models.SpecVersion
 import io.swagger.v3.oas.models.media.ArraySchema
 import io.swagger.v3.oas.models.media.ComposedSchema
@@ -441,6 +443,7 @@ class GrailsModelConverter implements ModelConverter {
         Set<String> beanProperties = BeanUtils.getPropertyDescriptors(type)*.name.toSet()
 
         Map<String, String> names = propertyNames.applyTo(model)
+        declareReferenceSiblings(model, names, propertyNames)
         if (model.xml == null) {
             // Grails renders a type in XML as an element named for its class.
             model.setXml(new XML().name(GrailsNameUtils.getPropertyName(type)))
@@ -450,7 +453,7 @@ class GrailsModelConverter implements ModelConverter {
             versionName = entity.versioned ? entity.version?.name : null
             describeEntity(entity, model, names, versionName)
         }
-        readOnly.each { String name -> property(model, names, name)?.setReadOnly(true) }
+        readOnly.each { String name -> describable(model, names[name] ?: name)?.setReadOnly(true) }
         describeCollectionsInXml(type, model, names, entity)
         applyConstraints(model, constraints.findAll { String name, Constrained constrained -> !(name in readOnly) },
                 versionName, names)
@@ -527,10 +530,63 @@ class GrailsModelConverter implements ModelConverter {
      */
     private static void markUnbound(Schema model, Map<String, String> names, List<String> bindable,
                                     Set<String> beanProperties) {
-        ((Map<String, Schema>) model.properties)?.each { String described, Schema property ->
+        if (!model.properties) {
+            return
+        }
+        new ArrayList<String>(((Map<String, Schema>) model.properties).keySet()).each { String described ->
             String name = propertyNamed(names, described)
             if (!(name in bindable) && name in beanProperties) {
+                describable(model, described).setReadOnly(true)
+            }
+        }
+    }
+
+    /**
+     * The schema a property is described by: its own, or, where it is a reference in an OpenAPI
+     * 3.0 document, which ignores anything beside a {@code $ref}, one holding all of the reference,
+     * which describes the property from then on.
+     */
+    private static Schema describable(Schema model, String described) {
+        Schema property = (Schema) model.properties?.get(described)
+        if (property?.$ref && model.specVersion != SpecVersion.V31) {
+            ComposedSchema reference = new ComposedSchema()
+            reference.setAllOf([property])
+            model.properties[described] = reference
+            return reference
+        }
+        property
+    }
+
+    /**
+     * OpenAPI 3.0 ignores anything beside a {@code $ref}, so swagger-core leaves out of a property
+     * described by one what its {@code @Schema} says of the property. It is said of all of the
+     * reference instead.
+     */
+    private static void declareReferenceSiblings(Schema model, Map<String, String> names, PropertyNames propertyNames) {
+        if (model.specVersion == SpecVersion.V31 || !model.properties) {
+            return
+        }
+        new ArrayList<String>(((Map<String, Schema>) model.properties).keySet()).each { String described ->
+            SchemaAnnotation declared = ((Schema) model.properties[described]).$ref
+                    ? propertyNames.declaredSchema(propertyNamed(names, described)) : null
+            AccessMode access = declared?.accessMode()
+            boolean readOnly = access == AccessMode.READ_ONLY
+            boolean writeOnly = access == AccessMode.WRITE_ONLY
+            if (declared == null || !(declared.description() || declared.deprecated() || readOnly || writeOnly)) {
+                return
+            }
+            Schema property = describable(model, described)
+            if (declared.description()) {
+                property.setDescription(declared.description())
+            }
+            if (declared.deprecated()) {
+                property.setDeprecated(true)
+            }
+            if (readOnly) {
                 property.setReadOnly(true)
+            }
+            if (writeOnly) {
+                property.setWriteOnly(true)
             }
         }
     }
@@ -629,7 +685,12 @@ class GrailsModelConverter implements ModelConverter {
             applyConstraints(property, constrained)
             String described = names[name] ?: name
             if (constrained.nullable && property.$ref) {
-                model.properties[described] = nullableReference(property, model.specVersion)
+                if (model.specVersion == SpecVersion.V31) {
+                    model.properties[described] = nullableReference(property)
+                }
+                else {
+                    describable(model, described).setNullable(true)
+                }
             }
             if (!constrained.nullable && name != versionName && !model.required?.contains(described)) {
                 model.addRequiredItem(described)
@@ -639,22 +700,20 @@ class GrailsModelConverter implements ModelConverter {
 
     /**
      * A reference is never null in itself, so a nullable property described by one is the
-     * referenced schema or null: in OpenAPI 3.1 one of the reference and a null type, and in 3.0 all
-     * of the reference, nullable.
+     * referenced schema or null: in OpenAPI 3.1 one of the reference and a null type. In 3.0 it is
+     * all of the reference, nullable.
      */
-    private static Schema nullableReference(Schema reference, SpecVersion specVersion) {
-        Schema nullable
-        if (specVersion == SpecVersion.V31) {
-            nullable = new JsonSchema()
-            nullable.setOneOf([reference, new JsonSchema().types([NULL_TYPE] as Set<String>)])
-        }
-        else {
-            nullable = new ComposedSchema()
-            nullable.setAllOf([reference])
-            nullable.setNullable(true)
-        }
+    private static Schema nullableReference(Schema reference) {
+        Schema nullable = new JsonSchema()
+        nullable.setOneOf([reference, new JsonSchema().types([NULL_TYPE] as Set<String>)])
         nullable.setDescription(reference.description)
+        nullable.setReadOnly(reference.readOnly)
+        nullable.setWriteOnly(reference.writeOnly)
+        nullable.setDeprecated(reference.deprecated)
         reference.setDescription(null)
+        reference.setReadOnly(null)
+        reference.setWriteOnly(null)
+        reference.setDeprecated(null)
         nullable
     }
 

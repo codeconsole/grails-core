@@ -470,6 +470,12 @@ server assigns, `dateCreated` and `lastUpdated`, a property constrained `bindabl
 property a command object can only read. Tools that understand OpenAPI leave a read-only property
 out of a request body, so one schema describes both directions.
 
+A property described by a reference to another schema, such as an embedded class, keeps what is said
+of it, being nullable or read only, or the description, deprecation or access mode `@Schema` gives
+it. OpenAPI 3.1 says so beside the `$ref`, and a nullable one is `oneOf` the reference and a `null`
+type. OpenAPI 3.0 ignores anything beside a `$ref`, so there the property is `allOf` the reference,
+and says it on that.
+
 An association to another domain class is described by the associated identifier, which is what
 Grails renders for it and what it binds it from:
 
