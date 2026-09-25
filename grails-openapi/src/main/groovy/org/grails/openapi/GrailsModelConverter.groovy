@@ -319,7 +319,7 @@ class GrailsModelConverter implements ModelConverter {
             }
             catch (RuntimeException | LinkageError e) {
                 // The schema swagger-core resolved stands without what Grails declares of the
-                // type, rather than failing a document springdoc serves for its own endpoints.
+                // type, rather than failing the document.
                 LOG.warn("Could not describe what Grails declares of [${type.name}], such as its constraints", e)
             }
         }
