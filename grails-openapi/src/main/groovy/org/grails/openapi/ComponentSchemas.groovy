@@ -64,6 +64,14 @@ class ComponentSchemas {
     }
 
     /**
+     * Keeps a name the document already has, for the class its schema was resolved from where that
+     * is known, so the class is described by the schema rather than apart from it.
+     */
+    void reserve(String name, Class<?> resolvedFrom) {
+        names.reserve(name, resolvedFrom)
+    }
+
+    /**
      * Resolves a type into the components through swagger-core and refers to it.
      *
      * @return the reference, or {@code null} where the type cannot be described

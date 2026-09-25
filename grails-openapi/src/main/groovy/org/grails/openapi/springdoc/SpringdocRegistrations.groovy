@@ -18,6 +18,8 @@
  */
 package org.grails.openapi.springdoc
 
+import java.util.function.Supplier
+
 import groovy.transform.CompileStatic
 
 import org.springdoc.core.customizers.SpringDocCustomizers
@@ -29,6 +31,7 @@ import org.springframework.core.Ordered
 import grails.openapi.GrailsOpenApiGenerator
 import grails.openapi.OpenApiSelection
 import grails.openapi.OpenApiSettings
+import org.grails.datastore.mapping.model.MappingContext
 import org.grails.openapi.GrailsModelConverter
 
 /**
@@ -46,7 +49,13 @@ class SpringdocRegistrations {
         // described. A fallback, it does not stand in the way of a converter the application
         // injects on its own.
         registry.registerBean('grailsModelConverter', GrailsModelConverter) {
-            it.order(Ordered.HIGHEST_PRECEDENCE).fallback().supplier { GrailsModelConverter.INSTANCE }
+            it.order(Ordered.HIGHEST_PRECEDENCE).fallback().supplier { context ->
+                // Aware of the application's entities, so a domain class springdoc's own endpoint
+                // returns is described as Grails renders it, and the Grails endpoints refer to it.
+                ObjectProvider<MappingContext> mappingContexts = context.beanProvider(MappingContext)
+                new GrailsModelConverter({ -> mappingContexts.orderedStream().toList() } as Supplier<Collection<MappingContext>>,
+                        settings.includeVersion)
+            }
         }
         // A plain customizer is applied to springdoc's default document only; each group is given
         // its own by the contributor.

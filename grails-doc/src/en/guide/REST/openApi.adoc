@@ -111,6 +111,9 @@ The Grails operations are added to each document before any other springdoc cust
 `OpenApiCustomizer` bean, a `GlobalOpenApiCustomizer` bean, or a customizer a `GroupedOpenApi` adds
 sees them and can change them.
 
+A domain class a Spring MVC endpoint of the application returns is described as Grails renders it
+there too, and once: the Grails endpoints refer to the schema springdoc described for it.
+
 An application whose URL mappings include a catch-all that resolves to a view or a controller - a
 single page application forwarding unmatched paths to an index view, or an API answering unmatched
 paths with a `404` of its own - does need to let the springdoc paths through:

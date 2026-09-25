@@ -22,6 +22,9 @@ import java.beans.PropertyDescriptor
 import java.lang.reflect.Method
 import java.lang.reflect.Type
 
+import java.util.concurrent.ConcurrentHashMap
+import java.util.function.Supplier
+
 import groovy.transform.CompileStatic
 
 import com.fasterxml.jackson.databind.JavaType
@@ -218,8 +221,74 @@ class GrailsModelConverter implements ModelConverter {
         type != null && FILE_TYPES.any { Class<?> fileType -> fileType.isAssignableFrom(type) }
     }
 
+    /**
+     * The GORM mapping contexts of the application, where the converter describes its entities
+     * wherever swagger-core resolves them, not only where a Grails document is described.
+     */
+    private final Supplier<Collection<MappingContext>> applicationMappingContexts
+
+    private final boolean applicationIncludeVersion
+
+    /**
+     * The class resolved under each name where no Grails document was being described, as springdoc
+     * resolves the types of its own endpoints.
+     */
+    private final Map<String, Class<?>> namedOutsideDocuments = new ConcurrentHashMap<>()
+
+    GrailsModelConverter() {
+        this(null, false)
+    }
+
+    /**
+     * A converter describing an application's entities wherever swagger-core resolves them, as
+     * springdoc does for its own endpoints, so a domain class one of them returns is described as
+     * Grails renders it, and the Grails endpoints refer to the same schema.
+     *
+     * @param applicationMappingContexts the GORM mapping contexts of the application
+     * @param includeVersion whether Grails renders the version of an entity
+     */
+    GrailsModelConverter(Supplier<Collection<MappingContext>> applicationMappingContexts, boolean includeVersion) {
+        this.applicationMappingContexts = applicationMappingContexts
+        this.applicationIncludeVersion = includeVersion
+    }
+
+    /**
+     * The class an application's converter resolved under a name where no Grails document was being
+     * described, as springdoc does for its own endpoints.
+     *
+     * @return the class, or {@code null} where none was resolved under the name
+     */
+    static Class<?> classNamed(boolean openapi31, String name) {
+        for (ModelConverter converter : ModelConverters.getInstance(openapi31).converters) {
+            if (converter instanceof GrailsModelConverter && ((GrailsModelConverter) converter).applicationMappingContexts != null) {
+                return ((GrailsModelConverter) converter).namedOutsideDocuments[name]
+            }
+        }
+        null
+    }
+
     @Override
     Schema resolve(AnnotatedType annotatedType, ModelConverterContext context, Iterator<ModelConverter> chain) {
+        if (applicationMappingContexts != null && MAPPING_CONTEXTS.get() == null) {
+            // Resolved where no Grails document is being described, as springdoc resolves its own.
+            return withMappingContexts(applicationMappingContexts(), applicationIncludeVersion) {
+                resolveDescribed(annotatedType, context, chain)
+            }
+        }
+        resolveDescribed(annotatedType, context, chain)
+    }
+
+    private Collection<MappingContext> applicationMappingContexts() {
+        try {
+            return applicationMappingContexts.get() ?: Collections.<MappingContext> emptyList()
+        }
+        catch (RuntimeException e) {
+            LOG.debug('Could not look up the GORM mapping contexts', e)
+            return Collections.<MappingContext> emptyList()
+        }
+    }
+
+    private Schema resolveDescribed(AnnotatedType annotatedType, ModelConverterContext context, Iterator<ModelConverter> chain) {
         Class<?> type = rawClass(annotatedType.type)
         if (isFile(type)) {
             // A file is sent as the binary part of a multipart request.
@@ -245,6 +314,9 @@ class GrailsModelConverter implements ModelConverter {
             return chain.next().resolve(annotatedType, context, chain)
         }
         nameApart(annotatedType)
+        if (applicationMappingContexts != null && SCHEMA_NAMES.get() == null && SchemaNames.isNamed(annotatedType, javaType)) {
+            namedOutsideDocuments.putIfAbsent(annotatedType.name ?: SchemaNames.naturalName(annotatedType, javaType), type)
+        }
 
         Deque<Class<?>> resolving = RESOLVING.get()
         resolving.push(type)

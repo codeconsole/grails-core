@@ -25,6 +25,7 @@ import groovy.transform.CompileStatic
 import com.fasterxml.jackson.databind.JavaType
 import com.fasterxml.jackson.databind.PropertyName
 import com.fasterxml.jackson.databind.SerializationConfig
+import com.fasterxml.jackson.databind.type.TypeFactory
 import io.swagger.v3.core.converter.AnnotatedType
 import io.swagger.v3.core.jackson.ModelResolver
 import io.swagger.v3.core.jackson.TypeNameResolver
@@ -187,6 +188,17 @@ class SchemaNames {
         }
         shared << name
         displaced.computeIfAbsent(name) { String taken -> unclaimed(taken + '_', marker) }
+    }
+
+    /**
+     * Keeps a name the document already has for the class its schema was resolved from, as springdoc
+     * resolves a class one of its endpoints returns, so the class is described by that schema,
+     * under its name, rather than apart from it.
+     *
+     * @param resolvedFrom the class, or {@code null} where it is not known
+     */
+    String reserve(String name, Class<?> resolvedFrom) {
+        resolvedFrom != null ? claim(TypeFactory.defaultInstance().constructType(resolvedFrom), name) : reserve(name)
     }
 
     /**

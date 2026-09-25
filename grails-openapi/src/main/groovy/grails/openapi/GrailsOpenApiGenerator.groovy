@@ -247,8 +247,12 @@ class GrailsOpenApiGenerator {
                     base?.components?.schemas?.containsKey(VALIDATION_ERRORS_SCHEMA) ?: false))
 
             // A name the document already has, from the base document or springdoc, or that it
-            // derives rather than resolves, is not taken by a class of the same name.
-            components.schemas?.keySet()?.each { String name -> schemas.reserve(name) }
+            // derives rather than resolves, is not taken by a class of the same name; one springdoc
+            // resolved from a class is that class's, which the document refers to rather than
+            // describing it again.
+            components.schemas?.keySet()?.each { String name ->
+                schemas.reserve(name, GrailsModelConverter.classNamed(openapi31, name))
+            }
             schemas.reserve(VALIDATION_ERRORS_SCHEMA)
             GrailsModelConverter.withSchemaNames(schemas.names) {
                 for (UrlMapping mapping : urlMappingsHolder.urlMappings) {
