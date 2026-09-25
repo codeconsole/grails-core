@@ -40,6 +40,7 @@ import io.swagger.v3.oas.models.headers.Header
 import io.swagger.v3.oas.models.SpecVersion
 import io.swagger.v3.oas.models.info.Info
 import io.swagger.v3.oas.models.media.ArraySchema
+import io.swagger.v3.oas.models.media.ComposedSchema
 import io.swagger.v3.oas.models.media.Content
 import io.swagger.v3.oas.models.media.IntegerSchema
 import io.swagger.v3.oas.models.media.MediaType
@@ -52,6 +53,7 @@ import io.swagger.v3.oas.models.responses.ApiResponse
 import io.swagger.v3.oas.models.responses.ApiResponses
 import io.swagger.v3.oas.models.tags.Tag
 import io.swagger.v3.oas.annotations.tags.Tag as TagAnnotation
+import org.codehaus.groovy.runtime.InvokerHelper
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import org.springframework.context.ApplicationContext
@@ -59,6 +61,8 @@ import org.springframework.core.GenericTypeResolver
 import org.springframework.core.io.DefaultResourceLoader
 import org.springframework.core.io.Resource
 import org.springframework.core.io.ResourceLoader
+import org.springframework.util.ClassUtils
+import org.springframework.validation.Errors
 
 import grails.core.GrailsApplication
 import grails.core.GrailsClass
@@ -115,6 +119,7 @@ class GrailsOpenApiGenerator {
     private static final String LOCATION_HEADER = 'Location'
     private static final String MULTIPART_MEDIA_TYPE = 'multipart/form-data'
     private static final Set<String> DATA_FORMATS = ['json', 'xml'].toSet().asImmutable()
+    private static final String JSON_VIEW_RESOLVER = 'grails.plugin.json.view.mvc.JsonViewResolver'
     private static final VersionComparator VERSION_COMPARATOR = new VersionComparator()
     private static final String REFERENCE_PREFIX = '#/components/schemas/'
 
@@ -229,6 +234,7 @@ class GrailsOpenApiGenerator {
         private Map<String, String> formatMediaTypes
         private final Map<Class<?>, Class<?>> boundResources = [:]
         private Map<String, String> latestVersions
+        private Boolean errorsView
 
         Contribution(OpenAPI openApi, OpenApiSelection selection) {
             this.openApi = openApi
@@ -1115,19 +1121,77 @@ class GrailsOpenApiGenerator {
          */
         private Schema<?> validationErrorsReference() {
             if (!components.schemas?.containsKey(VALIDATION_ERRORS_SCHEMA)) {
-                Schema<?> error = new ObjectSchema()
-                        .addProperty('object', new StringSchema().description('The name of the object that failed validation'))
-                        .addProperty('field', new StringSchema().description('The property that failed validation'))
-                        .addProperty('rejected-value', new Schema<>().description('The value that was rejected'))
-                        .addProperty('message', new StringSchema().description('Why the value was rejected'))
-                error.setRequired(['object', 'message'])
-                Schema<?> errors = new ObjectSchema()
-                        .description('The validation errors of a request that could not be bound')
-                        .addProperty('errors', new ArraySchema().items(error))
-                errors.setRequired(['errors'])
-                components.addSchemas(VALIDATION_ERRORS_SCHEMA, errors)
+                components.addSchemas(VALIDATION_ERRORS_SCHEMA, errorsRenderedByView() ? viewValidationErrors() : validationErrors())
             }
             new Schema<>().$ref(REFERENCE_PREFIX + VALIDATION_ERRORS_SCHEMA)
+        }
+
+        /**
+         * The errors the JSON converters render.
+         */
+        private Schema<?> validationErrors() {
+            Schema<?> error = new ObjectSchema()
+                    .addProperty('object', new StringSchema().description('The name of the object that failed validation'))
+                    .addProperty('field', new StringSchema().description('The property that failed validation'))
+                    .addProperty('rejected-value', new Schema<>().description('The value that was rejected'))
+                    .addProperty('message', new StringSchema().description('Why the value was rejected'))
+            error.setRequired(['object', 'message'])
+            Schema<?> errors = new ObjectSchema()
+                    .description('The validation errors of a request that could not be bound')
+                    .addProperty('errors', new ArraySchema().items(error))
+            errors.setRequired(['errors'])
+            errors
+        }
+
+        /**
+         * The errors the errors view of an application with JSON views renders, as the view an
+         * application is generated with renders them: one error on its own, or several embedded.
+         */
+        private Schema<?> viewValidationErrors() {
+            Schema<?> self = new ObjectSchema()
+                    .addProperty('href', new StringSchema().format('uri').description('The URL the request was made to'))
+            Schema<?> error = new ObjectSchema()
+                    .addProperty('message', new StringSchema().description('Why the request could not be bound'))
+                    .addProperty('path', new StringSchema().description('The path the request was made to'))
+                    .addProperty('_links', new ObjectSchema().addProperty('self', self))
+            error.setRequired(['message'])
+            Schema<?> several = new ObjectSchema()
+                    .addProperty('total', new IntegerSchema().description('The number of errors'))
+                    .addProperty('_embedded', new ObjectSchema().addProperty('errors', new ArraySchema().items(error)))
+            several.setRequired(['total', '_embedded'])
+            Schema<?> errors = new ComposedSchema()
+            errors.setDescription('The validation errors of a request that could not be bound')
+            errors.setOneOf([error, several])
+            errors
+        }
+
+        /**
+         * Whether a JSON view renders the validation errors, as the errors view an application
+         * generated with JSON views has does. A view for {@code Errors} is looked up the way the
+         * JSON views renderer looks it up.
+         */
+        private boolean errorsRenderedByView() {
+            if (errorsView == null) {
+                errorsView = lookUpErrorsView()
+            }
+            errorsView
+        }
+
+        private boolean lookUpErrorsView() {
+            ApplicationContext context = grailsApplication?.mainContext
+            if (context == null || !ClassUtils.isPresent(JSON_VIEW_RESOLVER, GrailsOpenApiGenerator.classLoader)) {
+                return false
+            }
+            try {
+                Class<?> resolverType = ClassUtils.forName(JSON_VIEW_RESOLVER, GrailsOpenApiGenerator.classLoader)
+                return context.getBeansOfType(resolverType).values().any { Object resolver ->
+                    InvokerHelper.invokeMethod(resolver, 'resolveView', [Errors, Locale.ENGLISH] as Object[]) != null
+                }
+            }
+            catch (Exception | LinkageError e) {
+                LOG.debug('Could not look up a JSON view for the validation errors', e)
+                return false
+            }
         }
 
         /**

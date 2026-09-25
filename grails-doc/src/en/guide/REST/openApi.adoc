@@ -493,8 +493,11 @@ it answers with rather than a uniform `200`:
 |===
 
 A `422` answers with the validation errors Grails renders for a request that cannot be bound,
-described once as the `ValidationErrors` schema. An application rendering its errors differently
-describes them with `@ApiResponse`.
+described once as the `ValidationErrors` schema. Where a JSON view renders them, as the errors view
+of an application generated with JSON views does, they are described as that view renders them: one
+error with its message, path and link, or several embedded with their total. An application
+rendering its errors another way declares `ValidationErrors` in the base document, which is used in
+place of the one derived, or describes an action's errors with `@ApiResponse`.
 
 A response and a request body are described in the media types of the formats the controller
 declares in `responseFormats`, for the action or for every action, and in `application/json` where
