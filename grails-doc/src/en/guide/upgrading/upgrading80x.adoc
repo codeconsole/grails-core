@@ -4175,3 +4175,27 @@ What reads the names the configuration presents sees the change too:
 * GORM used outside a Grails application, given a `ConfigurableEnvironment` it copies the property
   names of, no longer finds the list under its own name. In a Grails application a datastore is
   given `grailsApplication.config`, and sees the list as before.
+
+==== 76. A Date With an Offset Is Bound to the Instant It Names
+
+Data binding reads a date and time written as ISO 8601 and RFC 3339 write it, which is how Grails
+renders a date in JSON, before the formats `grails.databinding.dateFormats` lists. Previously:
+
+* `2024-05-01T10:00:00Z`, which Grails renders for a `Date` or a `Calendar` whose milliseconds are
+  zero, was read by the `yyyy-MM-dd'T'HH:mm:ss'Z'` format as a time in the zone of the server, so a
+  date Grails rendered was bound back off by the offset of that zone.
+* `2024-05-01T10:00:00+02:00` was read by `yyyy-MM-dd'T'HH:mm:ss`, which left the offset unread,
+  and was bound as a time in the zone of the server.
+* A fraction of a second of fewer than three digits, such as the `.5` of `10:00:00.5Z`, was read as
+  milliseconds, so as 5 rather than 500.
+* An `OffsetDateTime` or a `ZonedDateTime` could not be bound from `2024-05-01T10:00:00Z` or
+  `2024-05-01T10:00:00+02:00`, which is how Grails renders them, and a `LocalDateTime` or a
+  `LocalTime` could not be bound from a value with a fraction of a second.
+
+Each is now bound to what it names. A server running in UTC saw the first two bound correctly
+before, and sees no change.
+
+A format in `grails.databinding.dateFormats` now binds a value only where it reads all of it. A
+value that a format read only the start of, such as `2024-05-01 10:00`, which `yyyy-MM-dd` read as
+midnight, losing the time, is now a binding error for the property. Add a format that reads the
+whole value, such as `yyyy-MM-dd HH:mm`, where such values are expected.

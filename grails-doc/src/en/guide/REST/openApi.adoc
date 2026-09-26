@@ -802,8 +802,5 @@ bodies, and the paging of its listing.
 * A resource is described as Grails renders a domain class or an object by default. A JSON view,
   other than the errors view, or a custom renderer that renders another shape is described with
   `@ApiResponse`.
-* A date is described as a `date-time`. Grails binds the formats `grails.databinding.dateFormats`
-  lists, which by default take a time in UTC, such as `2024-05-01T10:00:00Z`, but an offset only
-  with milliseconds, such as `2024-05-01T10:00:00.000+02:00`.
 * A variable capturing several segments, such as `$path**`, is described as a path parameter, which
   OpenAPI allows only one segment; a client must not encode the `/` it holds.
