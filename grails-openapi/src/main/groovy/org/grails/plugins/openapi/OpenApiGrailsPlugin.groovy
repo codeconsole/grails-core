@@ -47,6 +47,7 @@ class OpenApiGrailsPlugin extends Plugin {
 
     def version = GrailsUtil.grailsVersion
     def dependsOn = [urlMappings: version]
+    def providedArtefacts = [OpenApiUrlMappings]
 
     @Override
     BeanRegistrar beanRegistrar() {

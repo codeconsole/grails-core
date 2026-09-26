@@ -25,6 +25,7 @@ import org.springdoc.core.customizers.OpenApiCustomizer
 import org.springdoc.core.models.GroupedOpenApi
 import org.springframework.beans.factory.support.BeanRegistryAdapter
 import org.springframework.beans.factory.support.DefaultListableBeanFactory
+import org.springframework.context.support.GenericApplicationContext
 import org.springframework.core.env.MapPropertySource
 import org.springframework.core.env.StandardEnvironment
 
@@ -32,10 +33,16 @@ import grails.artefact.Artefact
 import grails.core.DefaultGrailsApplication
 import grails.core.GrailsApplication
 import grails.openapi.GrailsOpenApiGenerator
+import grails.plugins.DefaultGrailsPluginManager
+import grails.plugins.GrailsPluginManager
+import grails.util.Holders
 import grails.web.mapping.UrlMappingsHolder
+import org.apache.grails.core.plugins.DefaultPluginDiscovery
+import org.grails.config.PropertySourcesConfig
 import org.grails.support.MockApplicationContext
 import org.grails.web.mapping.DefaultUrlMappingEvaluator
 import org.grails.web.mapping.DefaultUrlMappingsHolder
+import org.grails.web.mapping.UrlMappingsHolderFactoryBean
 
 import spock.lang.Specification
 
@@ -101,6 +108,45 @@ class OpenApiGrailsPluginSpec extends Specification {
         beanFactory.getBeansOfType(OpenApiBuilderCustomizer).isEmpty()
     }
 
+    void 'leaves the paths springdoc serves to it, past a catch-all mapping of the application'() {
+        given:
+        GrailsApplication previous = Holders.findApplication()
+
+        when:
+        UrlMappingsHolder holder = urlMappingsWith(config)
+
+        then: 'springdoc answers the paths it is configured to serve'
+        served.every { String path -> holder.matchAll(path).length == 0 }
+
+        and: 'the catch-all answers every other'
+        mapped.every { String path -> holder.matchAll(path).length > 0 }
+
+        cleanup:
+        Holders.setGrailsApplication(previous)
+
+        where:
+        config                                     | served                                                  | mapped
+        [:]                                        | ['/v3/api-docs', '/v3/api-docs/catalog',
+                                                      '/v3/api-docs.yaml', '/v3/api-docs/swagger-config']    | ['/v3/other']
+        ['springdoc.api-docs.path': '/api/spec/']  | ['/api/spec', '/api/spec/catalog', '/api/spec.yaml']   | ['/v3/api-docs']
+        ['springdoc.api-docs.enabled': false]      | []                                                      | ['/v3/api-docs']
+    }
+
+    void 'leaves Swagger UI to the application where it is not on the classpath'() {
+        given:
+        GrailsApplication previous = Holders.findApplication()
+
+        when:
+        UrlMappingsHolder holder = urlMappingsWith([:])
+
+        then:
+        holder.matchAll('/swagger-ui.html').length > 0
+        holder.matchAll('/swagger-ui/index.html').length > 0
+
+        cleanup:
+        Holders.setGrailsApplication(previous)
+    }
+
     void 'declares a dependency on the URL mappings plugin'() {
         expect:
         new OpenApiGrailsPlugin().dependsOn.containsKey('urlMappings')
@@ -120,10 +166,34 @@ class OpenApiGrailsPluginSpec extends Specification {
         beanFactory
     }
 
+    private static UrlMappingsHolder urlMappingsWith(Map<String, Object> config) {
+        def context = new GenericApplicationContext()
+        context.refresh()
+        def application = new DefaultGrailsApplication(([CatchAllUrlMappings] + new OpenApiGrailsPlugin().providedArtefacts) as Class[])
+        application.config = new PropertySourcesConfig(config)
+        application.initialise()
+        Holders.setGrailsApplication(application)
+        def discovery = new DefaultPluginDiscovery()
+        discovery.init(context.environment)
+        context.beanFactory.registerSingleton(GrailsApplication.APPLICATION_ID, application)
+        context.beanFactory.registerSingleton(GrailsPluginManager.BEAN_NAME, new DefaultGrailsPluginManager(application, discovery))
+        def factoryBean = new UrlMappingsHolderFactoryBean()
+        factoryBean.applicationContext = context
+        factoryBean.afterPropertiesSet()
+        (UrlMappingsHolder) factoryBean.object
+    }
+
     private static UrlMappingsHolder urlMappingsHolder(GrailsApplication application, Closure mappings) {
         def ctx = new MockApplicationContext()
         ctx.registerMockBean(GrailsApplication.APPLICATION_ID, application)
         new DefaultUrlMappingsHolder(new DefaultUrlMappingEvaluator(ctx).evaluateMappings(mappings))
+    }
+}
+
+class CatchAllUrlMappings {
+
+    static mappings = {
+        '/**'(controller: 'book', action: 'index')
     }
 }
 

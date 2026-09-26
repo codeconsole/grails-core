@@ -51,6 +51,18 @@ class OpenApiDocumentFunctionalSpec extends Specification implements HttpClientS
         http('/swagger-ui/index.html').assertStatus(200)
     }
 
+    void 'the springdoc paths are served past a catch-all mapping without the application excluding them'() {
+        expect: 'the catch-all answers any other path'
+        http('/anything/else').assertEquals(200, 'fallback')
+
+        and: 'springdoc answers its own'
+        http('/v3/api-docs').json().openapi == '3.1.0'
+        http('/v3/api-docs/catalog').json().openapi == '3.1.0'
+        http('/v3/api-docs.yaml').assertContains(200, 'openapi: 3.1.0')
+        http('/swagger-ui.html').assertContains(200, 'swagger-ui')
+        http('/swagger-ui/index.html').assertContains(200, 'swagger-ui')
+    }
+
     void 'the resource mapping is described'() {
         expect:
         document.paths.containsKey('/books')

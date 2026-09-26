@@ -18,20 +18,12 @@
  */
 package openapiapp
 
-class UrlMappings {
+/**
+ * Answers every path no other mapping reaches, as a single page application's index does.
+ */
+class FallbackController {
 
-    static mappings = {
-        '/books'(resources: 'book')
-        '/authors'(resources: 'author')
-        '/publishers'(resources: 'publisher')
-        post '/notes/review'(controller: 'note', action: 'review')
-        post '/notes/draft'(controller: 'note', action: 'draft')
-        get '/notes/audit'(controller: 'note', action: 'audit')
-        "/$controller/$action?/$id?(.$format)?" {}
-        // A catch-all, which the springdoc paths are excluded from without the application saying so.
-        '/**'(controller: 'fallback', action: 'index')
-        '/'(view: '/index')
-        '500'(view: '/error')
-        '404'(view: '/notFound')
+    def index() {
+        render(text: 'fallback', contentType: 'text/plain')
     }
 }

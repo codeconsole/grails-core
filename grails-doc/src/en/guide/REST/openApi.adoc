@@ -130,14 +130,9 @@ from it, as below, in each document on its own.
 
 An application whose URL mappings include a catch-all that resolves to a view or a controller - a
 single page application forwarding unmatched paths to an index view, or an API answering unmatched
-paths with a `404` of its own - does need to let the springdoc paths through:
-
-[source,groovy]
-----
-class UrlMappings {
-    static excludes = ['/swagger-ui/**', '/v3/api-docs/**']
-}
-----
+paths with a `404` of its own - needs nothing more either: the paths springdoc serves are excluded
+from the URL mappings, at `springdoc.api-docs.path` and `springdoc.swagger-ui.path` where they are
+configured, while springdoc serves them.
 
 WARNING: The runtime description is served to anyone who can reach the application, and describes
 every endpoint, resource and constraint it documents. Secure `/v3/api-docs/**` and
