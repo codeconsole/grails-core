@@ -83,7 +83,7 @@ ext {
             // Boot and must be upgraded in lockstep with graphql-java. Keeping this pin makes
             // the dependency validator flag any Spring Boot graphql-java bump so we re-check
             // extended-scalars compatibility. See https://github.com/apache/grails-core/issues/15674
-            'graphql-java.version'          : '25.0',
+            'graphql-java.version'          : '26.1',
             'graphql-java-extended-scalars.version': '24.0',
             'groovy.version'                : '6.0.0-RC-3',
             'guava.version'                 : '33.7.1-jre',
