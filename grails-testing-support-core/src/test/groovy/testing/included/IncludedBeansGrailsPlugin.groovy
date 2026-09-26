@@ -64,6 +64,8 @@ class IncludedBeansGrailsPlugin extends Plugin {
             registry.registerBean('registeredGreeting', RegisteredGreeting) { BeanRegistry.Spec<RegisteredGreeting> spec ->
                 spec.supplier { new RegisteredGreeting(text: 'from the plugin') }
             }
+            // A name the harness has a default for, which the plugin's bean wins over (ReplacingBeansSpec)
+            registry.registerBean('messageSource', IncludedMessageSource)
         } as BeanRegistrar
     }
 }

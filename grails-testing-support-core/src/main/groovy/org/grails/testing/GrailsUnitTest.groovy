@@ -34,13 +34,13 @@ import org.springframework.context.annotation.Configuration
 import org.springframework.core.annotation.AnnotatedElementUtils
 import org.springframework.util.ClassUtils
 
+import grails.compiler.beans.GrailsBeans
 import grails.config.Config
 import grails.core.DefaultGrailsApplication
 import grails.core.GrailsApplication
 import grails.spring.BeanBuilder
 import grails.util.Holders
 import grails.validation.DeferredBindingActions
-import org.grails.compiler.beans.GrailsBeansASTTransformation
 import org.grails.core.lifecycle.ShutdownOperations
 
 @CompileStatic
@@ -260,7 +260,7 @@ trait GrailsUnitTest {
             }
             // stable, so only the generated class moves
             found.addAll(declared.sort(false) { Class<?> nested ->
-                nested.simpleName == GrailsBeansASTTransformation.UNIT_TEST_CONFIGURATION_NAME ? 1 : 0
+                nested.simpleName == GrailsBeans.UNIT_TEST_CONFIGURATION_NAME ? 1 : 0
             })
         }
         found

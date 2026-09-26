@@ -51,6 +51,8 @@ import org.springframework.context.support.ConversionServiceFactoryBean
 import org.springframework.context.support.PropertySourcesPlaceholderConfigurer
 import org.springframework.context.support.StaticMessageSource
 import org.springframework.core.Ordered
+import org.springframework.core.env.ConfigurableEnvironment
+import org.springframework.core.env.MapPropertySource
 import org.springframework.util.ClassUtils
 import org.springframework.web.context.ConfigurableWebApplicationContext
 
@@ -85,6 +87,9 @@ class GrailsApplicationBuilder {
 
     static final Set DEFAULT_INCLUDED_PLUGINS = ['core', 'eventBus'] as Set
 
+    static final String POST_PROCESSOR_BEAN_NAME = 'grailsApplicationPostProcessor'
+    /** The property source {@link #publishToEnvironment} adds. */
+    static final String DO_WITH_CONFIG_PROPERTY_SOURCE = 'doWithConfig'
     static final String GRAILS_PLUGIN_SUFFIX = 'GrailsPlugin'
     static final String AUTO_CONFIGURATION_SUFFIX = 'AutoConfiguration'
     private static final String GRAILS_BEANS_DESCRIPTOR = 'Lgrails/compiler/beans/GrailsBeans;'
@@ -390,6 +395,30 @@ class GrailsApplicationBuilder {
         declared
     }
 
+    /**
+     * Puts what the test's {@code doWithConfig} changed into the Spring {@code Environment} too, ahead
+     * of every other property source. {@code grailsApplication.config} alone reaches placeholders but
+     * not conditions: {@code @ConditionalOnProperty} and a {@code beans} block's
+     * {@code .conditionalOnProperty(...)} read the environment. This runs before the configuration
+     * classes are read, so their conditions see it.
+     */
+    protected static void publishToEnvironment(Properties before, GrailsApplication grailsApplication) {
+        def environment = grailsApplication.mainContext?.environment
+        if (!(environment instanceof ConfigurableEnvironment)) {
+            return
+        }
+        Map<String, Object> changed = [:]
+        grailsApplication.config.toProperties().each { Object key, Object value ->
+            if (before.get(key) != value) {
+                changed[key as String] = value
+            }
+        }
+        if (changed) {
+            ((ConfigurableEnvironment) environment).propertySources
+                    .addFirst(new MapPropertySource(DO_WITH_CONFIG_PROPERTY_SOURCE, changed))
+        }
+    }
+
     protected void registerGrailsAppPostProcessorBean(ConfigurableBeanFactory beanFactory, PluginDiscovery pluginDiscovery) {
 
         GrailsApplication grailsApp
@@ -402,9 +431,11 @@ class GrailsApplicationBuilder {
         Closure customizeGrailsApplicationClosure = { GrailsApplication grailsApplication ->
             grailsApp = grailsApplication
             if (doWithConfig) {
+                Properties before = grailsApplication.config.toProperties()
                 doWithConfig.call(grailsApplication.config)
                 // reset flatConfig
                 grailsApplication.configChanged()
+                publishToEnvironment(before, grailsApplication)
             }
             Holders.config = grailsApplication.config
         }
@@ -421,7 +452,7 @@ class GrailsApplicationBuilder {
 
         def beanDef = new RootBeanDefinition(TestRuntimeGrailsApplicationPostProcessor, constructorArgumentValues, values)
         beanDef.role = BeanDefinition.ROLE_INFRASTRUCTURE
-        (beanFactory as BeanDefinitionRegistry).registerBeanDefinition('grailsApplicationPostProcessor', beanDef)
+        (beanFactory as BeanDefinitionRegistry).registerBeanDefinition(POST_PROCESSOR_BEAN_NAME, beanDef)
     }
 
     /**
@@ -444,7 +475,14 @@ class GrailsApplicationBuilder {
 
         @Override
         void postProcessBeanDefinitionRegistry(BeanDefinitionRegistry registry) throws BeansException {
-            def processor = context.beanFactory.getBean('grailsApplicationPostProcessor', TestRuntimeGrailsApplicationPostProcessor)
+            // A subclass whose registerGrailsAppPostProcessorBean registers another post-processor, or
+            // none, is left to register plugin beans the way that post-processor does
+            ConfigurableListableBeanFactory beanFactory = context.beanFactory
+            if (!beanFactory.containsBean(POST_PROCESSOR_BEAN_NAME) ||
+                    !beanFactory.isTypeMatch(POST_PROCESSOR_BEAN_NAME, TestRuntimeGrailsApplicationPostProcessor)) {
+                return
+            }
+            def processor = beanFactory.getBean(POST_PROCESSOR_BEAN_NAME, TestRuntimeGrailsApplicationPostProcessor)
             Map<String, BeanDefinition> before = [:]
             for (String name : registry.beanDefinitionNames) {
                 before[name] = registry.getBeanDefinition(name)

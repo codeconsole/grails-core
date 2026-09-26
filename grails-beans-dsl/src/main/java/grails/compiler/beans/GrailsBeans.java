@@ -314,9 +314,9 @@ import org.codehaus.groovy.transform.GroovyASTTransformationClass;
  * testing trait does - is not a configuration source either: Spring would construct an instance of
  * its own to call the methods, outside Spock, where the test's field initializers cannot run. Its
  * beans compile onto a static nested {@code @Configuration(proxyBeanMethods = false)} class named
- * {@code BeansConfiguration}, which the testing support registers with the test's application
- * context. As on a plugin descriptor, a {@code beans} property on a unit test is compiled without the
- * annotation.
+ * {@code BeansConfiguration} ({@link #UNIT_TEST_CONFIGURATION_NAME}), which the testing support
+ * registers with the test's application context. As on a plugin descriptor, a {@code beans} property
+ * on a unit test is compiled without the annotation.
  *
  * <p>A bean body cannot reach the test's own fields or methods, there being no instance of the test
  * behind the beans.</p>
@@ -332,6 +332,12 @@ import org.codehaus.groovy.transform.GroovyASTTransformationClass;
 @Target(ElementType.TYPE)
 @GroovyASTTransformationClass("org.grails.compiler.beans.GrailsBeansASTTransformation")
 public @interface GrailsBeans {
+
+    /**
+     * The simple name of the static nested class a unit test's {@code beans} block compiles onto (see
+     * <i>Unit tests</i> above), which the testing support looks for among a test's nested classes.
+     */
+    String UNIT_TEST_CONFIGURATION_NAME = "BeansConfiguration";
 
     /**
      * The name of the generated sibling class, for a {@code grails.plugins.Plugin} subclass. The

@@ -123,6 +123,7 @@ import org.springframework.context.annotation.PropertySources;
 import org.springframework.context.annotation.Scope;
 
 import grails.compiler.beans.ConditionalOnGrailsEnv;
+import grails.compiler.beans.GrailsBeans;
 
 /**
  * Rewrites the {@code beans} closure DSL on a {@link grails.compiler.beans.GrailsBeans}-annotated
@@ -256,8 +257,6 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
     private static final String PROXY_BEAN_METHODS_MEMBER = "proxyBeanMethods";
     /** Named, not referenced: this module does not depend on the testing support. */
     static final String UNIT_TEST_TRAIT_NAME = "org.grails.testing.GrailsUnitTest";
-    /** The nested class a unit test's beans compile onto; the Configuration suffix as a group's has. */
-    public static final String UNIT_TEST_CONFIGURATION_NAME = "BeansConfiguration";
     /** What Spock renames a {@code @Shared beans} field to (its InternalIdentifiers.getSharedFieldName). */
     static final String SPOCK_SHARED_BEANS_FIELD = "$spock_sharedField_" + BEANS_PROPERTY;
     private static final String DUMP_DIR_PROPERTY = "grails.beans.dsl.dumpdir";
@@ -516,11 +515,11 @@ public class GrailsBeansASTTransformation implements ASTTransformation, Compilat
      * @return the class, or {@code null} after reporting that the test already declares one of that name
      */
     private ClassNode createUnitTestConfiguration(ClassNode testClass, PropertyNode beansProperty, SourceUnit source) {
-        String name = testClass.getName() + "$" + UNIT_TEST_CONFIGURATION_NAME;
+        String name = testClass.getName() + "$" + GrailsBeans.UNIT_TEST_CONFIGURATION_NAME;
         for (ClassNode existing : source.getAST().getClasses()) {
             if (existing.getName().equals(name)) {
                 addError(beansProperty, source, testClass.getNameWithoutPackage() + " already declares a nested " +
-                        "class named " + UNIT_TEST_CONFIGURATION_NAME + " - a unit test's beans compile onto a " +
+                        "class named " + GrailsBeans.UNIT_TEST_CONFIGURATION_NAME + " - a unit test's beans compile onto a " +
                         "nested class of that name, so rename the existing one");
                 return null;
             }

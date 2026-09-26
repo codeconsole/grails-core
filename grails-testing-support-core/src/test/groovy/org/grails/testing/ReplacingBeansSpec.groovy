@@ -23,21 +23,58 @@ import org.springframework.beans.factory.BeanRegistry
 import org.springframework.context.support.StaticMessageSource
 import org.springframework.core.env.Environment
 
+import grails.core.support.proxy.DefaultProxyHandler
 import spock.lang.Specification
+import testing.included.IncludedMessageSource
 import testing.included.RegisteredGreeting
 
 class TestMessageSource extends StaticMessageSource {
+}
+
+class TestProxyHandler extends DefaultProxyHandler {
 }
 
 class ReplacingHarnessDefaultsSpec extends Specification implements GrailsUnitTest {
 
     def beans = {
         bean('messageSource', TestMessageSource)
+        bean('proxyHandler', TestProxyHandler)
     }
 
     void "a beans block replaces a bean the harness provides, as an application's replaces a framework default"() {
         expect:
         applicationContext.getBean('messageSource') instanceof TestMessageSource
+    }
+
+    void "a beans block does not replace one an included plugin registers too, as core does proxyHandler"() {
+        expect:
+        applicationContext.getBean('proxyHandler').getClass() == DefaultProxyHandler
+    }
+}
+
+class BeanRegistrarOverPluginStandInSpec extends Specification implements GrailsUnitTest {
+
+    BeanRegistrar beanRegistrar() {
+        return { BeanRegistry registry, Environment environment ->
+            registry.registerBean('proxyHandler', TestProxyHandler)
+        } as BeanRegistrar
+    }
+
+    void "the test's beanRegistrar() replaces a harness default an included plugin registers too"() {
+        expect:
+        applicationContext.getBean('proxyHandler') instanceof TestProxyHandler
+    }
+}
+
+class IncludedPluginBeanOverHarnessDefaultSpec extends Specification implements GrailsUnitTest {
+
+    Set<String> getIncludePlugins() {
+        GrailsApplicationBuilder.DEFAULT_INCLUDED_PLUGINS + ['includedBeans'] as Set<String>
+    }
+
+    void "an included plugin's bean wins over the harness default of the same name, as over a framework default at boot"() {
+        expect:
+        applicationContext.getBean('messageSource') instanceof IncludedMessageSource
     }
 }
 
