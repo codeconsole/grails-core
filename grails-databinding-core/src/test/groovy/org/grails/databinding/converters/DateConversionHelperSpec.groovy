@@ -21,6 +21,7 @@ package org.grails.databinding.converters
 import spock.lang.Issue
 
 import java.text.ParseException
+import java.text.SimpleDateFormat
 import java.time.Instant
 
 import spock.lang.Specification
@@ -157,6 +158,23 @@ class DateConversionHelperSpec extends Specification {
         '2024-05-01T10:00:00.5Z'                    | '2024-05-01T10:00:00.500Z'
         '2024-05-01T10:00:00.000+02:00'             | '2024-05-01T08:00:00Z'
         '2024-05-01T10:00:00+02:00[Europe/Paris]'   | '2024-05-01T08:00:00Z'
+    }
+
+    void 'converts #value in the calendar a Date is written in, which is Julian before 1582'() {
+        given:
+        DateConversionHelper helper = new DateConversionHelper(formatStrings: [])
+        SimpleDateFormat written = new SimpleDateFormat("G yyyy-MM-dd'T'HH:mm:ss.SSSXXX")
+        written.timeZone = TimeZone.getTimeZone('UTC')
+
+        expect:
+        written.format((Date) helper.convert(value)) == readAs
+
+        where:
+        value                        | readAs
+        '1500-01-01T00:00:00.000Z'   | 'AD 1500-01-01T00:00:00.000Z'
+        '0044-03-15T12:00:00.000Z'   | 'AD 0044-03-15T12:00:00.000Z'
+        '-0043-03-15T00:00:00.000Z'  | 'BC 0044-03-15T00:00:00.000Z'
+        '1600-01-01T10:00:00+02:00'  | 'AD 1600-01-01T08:00:00.000Z'
     }
 
     void 'does not convert a value that a format reads only the start of'() {

@@ -84,13 +84,30 @@ class DateConversionHelper implements ValueConverter {
         Date
     }
 
+    /**
+     * Reads the date and time written in the calendar a {@link Date} is read and written in, which
+     * is Julian before 1582, as Grails and Jackson render a date, rather than in the proleptic
+     * Gregorian calendar of {@code java.time}, which would move such a date by days.
+     */
     private static Date offsetDateTime(String value) {
+        ZonedDateTime written
         try {
-            return Date.from(ZonedDateTime.parse(value).toInstant())
+            written = ZonedDateTime.parse(value)
         }
         catch (DateTimeParseException ignored) {
             return null
         }
+        Calendar calendar = new GregorianCalendar(TimeZone.getTimeZone(written.offset))
+        calendar.clear()
+        calendar.set(Calendar.ERA, written.year > 0 ? GregorianCalendar.AD : GregorianCalendar.BC)
+        calendar.set(Calendar.YEAR, written.year > 0 ? written.year : 1 - written.year)
+        calendar.set(Calendar.MONTH, written.monthValue - 1)
+        calendar.set(Calendar.DAY_OF_MONTH, written.dayOfMonth)
+        calendar.set(Calendar.HOUR_OF_DAY, written.hour)
+        calendar.set(Calendar.MINUTE, written.minute)
+        calendar.set(Calendar.SECOND, written.second)
+        calendar.set(Calendar.MILLISECOND, Math.floorDiv(written.nano, 1_000_000))
+        calendar.time
     }
 
     /**
