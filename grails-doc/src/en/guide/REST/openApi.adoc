@@ -497,6 +497,11 @@ Grails renders for it and what it binds it from:
 A to-many association is an array of those references, and an embedded association is described in
 full.
 
+A class that cannot be introspected is left out of the document and logged, rather than failing the
+document, and an operation that referred to it is described without a shape rather than with a
+reference that does not resolve. A class whose constraints cannot be evaluated is described without
+them, and logged.
+
 ==== Request Bodies
 
 An operation that accepts a body describes the type the action binds. Where the action takes a
@@ -782,10 +787,6 @@ bodies, and the paging of its listing.
 * A mapping that accepts any HTTP method for an action `allowedMethods` does not restrict is
   documented as `GET`, because OpenAPI requires a concrete operation.
 * A mapping declared for an HTTP method OpenAPI has no operation for is skipped, and logged.
-* A class that cannot be introspected is left out of the document and logged, rather than failing
-  the document. An operation that referred to it is described without a shape rather than with a
-  reference that does not resolve. A class whose constraints cannot be evaluated is described
-  without them, and logged.
 * A `RestfulController` is known to be read only, and the resource it serves where it declares no
   type argument, from the controller the application serves requests with, which is not created to
   be described. So one in a scope other than singleton is described with its write actions, and one
