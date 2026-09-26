@@ -16,7 +16,7 @@
  *  specific language governing permissions and limitations
  *  under the License.
  */
-package org.grails.web.converters.jackson
+package org.grails.web.json
 
 import spock.lang.Specification
 

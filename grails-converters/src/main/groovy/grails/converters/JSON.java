@@ -37,7 +37,6 @@ import jakarta.servlet.http.HttpServletResponse;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-import tools.jackson.core.JsonGenerator;
 
 import grails.io.IOUtils;
 import grails.util.GrailsWebUtil;
@@ -50,8 +49,6 @@ import org.grails.web.converters.configuration.ConverterConfiguration;
 import org.grails.web.converters.configuration.ConvertersConfigurationHolder;
 import org.grails.web.converters.configuration.DefaultConverterConfiguration;
 import org.grails.web.converters.exceptions.ConverterException;
-import org.grails.web.converters.jackson.JacksonJSONWriter;
-import org.grails.web.converters.jackson.JsonMapperSupport;
 import org.grails.web.converters.marshaller.ClosureObjectMarshaller;
 import org.grails.web.converters.marshaller.ObjectMarshaller;
 import org.grails.web.json.JSONElement;
@@ -59,6 +56,7 @@ import org.grails.web.json.JSONException;
 import org.grails.web.json.JSONObject;
 import org.grails.web.json.JSONTokener;
 import org.grails.web.json.JSONWriter;
+import org.grails.web.json.JsonMapperSupport;
 import org.grails.web.json.PathCapturingJSONWriterWrapper;
 
 /**
@@ -79,7 +77,7 @@ public class JSON extends AbstractConverter<JSONWriter> implements IncludeExclud
     protected JSONWriter writer;
     protected Stack<Object> referenceStack;
     protected JsonMapperSupport jsonMapper;
-    private JsonGenerator generator;
+    private JSONWriter jsonWriter;
 
     protected ConverterConfiguration<JSON> initConfig() {
         return ConvertersConfigurationHolder.getConverterConfiguration(JSON.class);
@@ -112,8 +110,8 @@ public class JSON extends AbstractConverter<JSONWriter> implements IncludeExclud
 
     private void prepareRender(Writer out) {
         jsonMapper = ConvertersConfigurationHolder.getJsonMapper();
-        generator = jsonMapper.createGenerator(out, prettyPrint);
-        writer = new JacksonJSONWriter(generator, jsonMapper);
+        jsonWriter = new JSONWriter(out, jsonMapper, prettyPrint);
+        writer = jsonWriter;
         if (circularReferenceBehaviour == CircularReferenceBehaviour.PATH) {
             if (log.isInfoEnabled()) {
                 log.info(String.format("Using experimental CircularReferenceBehaviour.PATH for %s", getClass().getName()));
@@ -125,7 +123,7 @@ public class JSON extends AbstractConverter<JSONWriter> implements IncludeExclud
 
     private void finalizeRender(Writer out) {
         try {
-            generator.flush();
+            jsonWriter.flush();
             out.flush();
             out.close();
         }

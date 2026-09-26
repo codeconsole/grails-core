@@ -20,6 +20,8 @@ package org.grails.web.json;
 
 import java.util.Stack;
 
+import groovy.lang.Writable;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -50,6 +52,21 @@ public class PathCapturingJSONWriterWrapper extends JSONWriter {
         }
         delegate.append(s);
         return this;
+    }
+
+    @Override
+    protected JSONWriter append(Writable writableValue) {
+        if (log.isDebugEnabled()) {
+            if (debugCurrentStack) log.debug("{} > >> {}", delegate.mode.name(), getCurrentStrackReference());
+            log.debug("{} > append({})", delegate.mode.name(), writableValue);
+        }
+        delegate.append(writableValue);
+        return this;
+    }
+
+    @Override
+    public void flush() {
+        delegate.flush();
     }
 
     @Override

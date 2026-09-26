@@ -16,7 +16,7 @@
  *  specific language governing permissions and limitations
  *  under the License.
  */
-package org.grails.web.converters.jackson;
+package org.grails.web.json;
 
 import java.io.Writer;
 import java.util.Enumeration;
@@ -28,6 +28,7 @@ import java.util.stream.BaseStream;
 import tools.jackson.core.JsonGenerator;
 import tools.jackson.core.JsonParser;
 import tools.jackson.core.JsonToken;
+import tools.jackson.core.StreamWriteFeature;
 import tools.jackson.databind.ObjectWriter;
 import tools.jackson.databind.ValueSerializer;
 import tools.jackson.databind.json.JsonMapper;
@@ -53,6 +54,11 @@ import tools.jackson.databind.util.TokenBuffer;
  * @since 9.0
  */
 public final class JsonMapperSupport {
+
+    /**
+     * A default {@code JsonMapper}, for JSON written outside an application that provides one, such as in a unit test.
+     */
+    public static final JsonMapperSupport DEFAULT = new JsonMapperSupport(JsonMapper.builder().build());
 
     private final JsonMapper mapper;
 
@@ -90,12 +96,17 @@ public final class JsonMapperSupport {
     }
 
     /**
+     * Creates a generator that writes JSON to {@code out}, escaped for an HTML {@code <script>} element. The generator
+     * never flushes or closes {@code out}: whoever owns it does.
+     *
      * @param out the writer to write JSON to
      * @param prettyPrint whether to indent the JSON with the mapper's default pretty printer
      * @return a generator writing to {@code out}
      */
     public JsonGenerator createGenerator(Writer out, boolean prettyPrint) {
-        ObjectWriter writer = prettyPrint ? mapper.writerWithDefaultPrettyPrinter() : mapper.writer();
+        ObjectWriter writer = (prettyPrint ? mapper.writerWithDefaultPrettyPrinter() : mapper.writer())
+                .without(StreamWriteFeature.AUTO_CLOSE_TARGET)
+                .without(StreamWriteFeature.FLUSH_PASSED_TO_STREAM);
         return writer.createGenerator(new HtmlSafeJsonWriter(out));
     }
 

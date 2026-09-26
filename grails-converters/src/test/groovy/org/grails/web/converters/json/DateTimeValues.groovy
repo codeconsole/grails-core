@@ -16,7 +16,7 @@
  *  specific language governing permissions and limitations
  *  under the License.
  */
-package org.grails.web.converters.jackson
+package org.grails.web.converters.json
 
 import java.sql.Time
 import java.sql.Timestamp

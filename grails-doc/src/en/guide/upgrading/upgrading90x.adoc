@@ -113,12 +113,29 @@ The following values render differently than in Grails 8:
 | the JSON value, `"HEAD"`
 |===
 
-The JSON marshallers that rendered values by default are no longer registered: `DateMarshaller`, `CalendarMarshaller`,
-`ToStringBeanMarshaller` and `ByteArrayMarshaller` remain, for an application to register. `InstantMarshaller`,
-`LocalDateMarshaller`, `LocalDateTimeMarshaller`, `OffsetDateTimeMarshaller` and `ZonedDateTimeMarshaller` are removed.
-The default JSON marshallers have implicit priorities that follow their order (-1, -2, and so on), and that order has
-changed, so a marshaller registered with an explicit negative priority may now come before or after different
-defaults.
+The JSON marshallers that rendered these values are removed, from the `org.grails.web.converters.marshaller.json`
+package: `DateMarshaller`, `CalendarMarshaller`, `ToStringBeanMarshaller`, `ByteArrayMarshaller`, `InstantMarshaller`,
+`LocalDateMarshaller`, `LocalDateTimeMarshaller`, `OffsetDateTimeMarshaller` and `ZonedDateTimeMarshaller`. To render one
+of these types differently, register a marshaller for it, or configure the `JsonMapper`. The XML marshallers of the same
+names are not changed. The default JSON marshallers have implicit priorities that follow their order (-1, -2, and so on),
+and that order has changed, so a marshaller registered with an explicit negative priority may now come before or after
+different defaults.
+
+`org.grails.web.json.JSONWriter`, which the converter and its marshallers write to, now writes through a Jackson
+`JsonGenerator`, and `new JSONWriter(writer)` writes with a default `JsonMapper`:
+
+* It keeps its public methods, rejects the same misplaced calls, and writes the same JSON, except as listed above. It
+also accepts a single value outside any object or array, where it threw a `JSONException`.
+* The generator buffers the text. It reaches the `Writer` as the buffer fills, once the JSON text is complete, and when
+`flush()` is called, rather than as each value is written. The `Writer` itself is not flushed or closed.
+* `array()`, `object()`, `key()` and the `value` methods no longer go through the protected `append` and `comma`
+methods. A subclass that overrides those to change the output, or writes to the `writer` field directly, must use the
+public methods instead.
+* `PrettyPrintJSONWriter` is removed. Use `new JSONWriter(writer, new JsonMapperSupport(jsonMapper), true)`, which
+indents with the mapper's default pretty printer.
+
+The unused JavaCC JSON parser in `org.grails.web.json.parser` (`JSONParser` and its generated classes) is removed.
+`JSON.parse`, `request.JSON` and `new JSONObject(String)` parse with `JSONTokener`, as before.
 
 With the `PATH` circular reference behaviour (`grails.converters.json.circular.reference.behaviour`), an object with a
 `null` property, or a single value, now renders instead of failing, and a reference that follows a number property now

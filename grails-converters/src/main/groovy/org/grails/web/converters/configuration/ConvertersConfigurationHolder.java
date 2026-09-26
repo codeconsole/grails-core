@@ -32,8 +32,8 @@ import tools.jackson.databind.json.JsonMapper;
 import org.grails.core.lifecycle.ShutdownOperations;
 import org.grails.web.converters.Converter;
 import org.grails.web.converters.exceptions.ConverterException;
-import org.grails.web.converters.jackson.JsonMapperSupport;
 import org.grails.web.converters.marshaller.ObjectMarshaller;
+import org.grails.web.json.JsonMapperSupport;
 
 /**
  * Singleton which holds all default and named configurations for the Converter classes.
@@ -48,9 +48,7 @@ public class ConvertersConfigurationHolder {
 
     private static volatile ObservationRegistry observationRegistry = ObservationRegistry.NOOP;
 
-    private static final JsonMapperSupport DEFAULT_JSON_MAPPER = new JsonMapperSupport(JsonMapper.builder().build());
-
-    private static volatile JsonMapperSupport jsonMapper = DEFAULT_JSON_MAPPER;
+    private static volatile JsonMapperSupport jsonMapper = JsonMapperSupport.DEFAULT;
 
     @FunctionalInterface
     public interface ConverterAction {
@@ -89,7 +87,7 @@ public class ConvertersConfigurationHolder {
         configurationHolder.namedConfigurations.clear();
         configurationHolder.threadLocalConfiguration = createThreadLocalConfiguration();
         observationRegistry = ObservationRegistry.NOOP;
-        jsonMapper = DEFAULT_JSON_MAPPER;
+        jsonMapper = JsonMapperSupport.DEFAULT;
     }
 
     /**
@@ -100,7 +98,7 @@ public class ConvertersConfigurationHolder {
      * @since 9.0
      */
     public static void setJsonMapper(JsonMapper mapper) {
-        jsonMapper = mapper != null ? new JsonMapperSupport(mapper) : DEFAULT_JSON_MAPPER;
+        jsonMapper = mapper != null ? new JsonMapperSupport(mapper) : JsonMapperSupport.DEFAULT;
     }
 
     /**

@@ -16,17 +16,15 @@
  *  specific language governing permissions and limitations
  *  under the License.
  */
-package org.grails.web.converters.jackson;
+package org.grails.web.json;
 
 import java.io.IOException;
 import java.io.Writer;
 
-import org.grails.web.json.JSONElement;
-
 /**
- * A value for a {@link org.grails.web.json.JSONWriter} to write with a {@link JsonMapperSupport}'s mapper.
- * A {@link JacksonJSONWriter} streams it to its generator. Any other {@code JSONWriter} writes it as it writes any
- * {@link JSONElement}: the JSON text the mapper writes for the value.
+ * A value for a {@link JSONWriter} to write with a {@link JsonMapperSupport}'s mapper. A {@code JSONWriter} with the
+ * same mapper streams it to its generator. Anywhere else, it is written as any {@link JSONElement} is: the JSON text
+ * the mapper writes for the value.
  *
  * @since 9.0
  */
@@ -50,6 +48,10 @@ public final class JsonMapperValue implements JSONElement {
      */
     public Object getValue() {
         return value;
+    }
+
+    JsonMapperSupport getJsonMapper() {
+        return jsonMapper;
     }
 
     @Override

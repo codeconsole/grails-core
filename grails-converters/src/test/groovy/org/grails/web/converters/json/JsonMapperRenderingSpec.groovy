@@ -16,7 +16,7 @@
  *  specific language governing permissions and limitations
  *  under the License.
  */
-package org.grails.web.converters.jackson
+package org.grails.web.converters.json
 
 import java.math.RoundingMode
 import java.sql.Time
@@ -44,6 +44,7 @@ import org.grails.web.converters.configuration.ObjectMarshallerRegisterer
 import org.grails.web.converters.exceptions.ConverterException
 import org.grails.web.converters.marshaller.ClosureObjectMarshaller
 import org.grails.web.converters.marshaller.ObjectMarshaller
+import org.grails.web.json.JSONWriter
 
 /**
  * {@code grails.converters.JSON} writes JSON with the application's Jackson {@code JsonMapper}: a value renders as the
@@ -208,14 +209,12 @@ class JsonMapperRenderingSpec extends Specification {
         given:
         def json = new JSON()
         def out = new StringWriter()
-        json.writer = new JacksonJSONWriter(ConvertersConfigurationHolder.getJsonMapper().createGenerator(out, false),
-                ConvertersConfigurationHolder.getJsonMapper())
+        json.writer = new JSONWriter(out)
 
         when:
         json.build {
             keyed([(new Date(1759909726407L)): 'date', name: 'string'])
         }
-        json.writer.generator.flush()
 
         then:
         out.toString() == '{"keyed":{"2025-10-08T07:48:46.407Z":"date","name":"string"}}'
