@@ -4181,9 +4181,9 @@ What reads the names the configuration presents sees the change too:
 Data binding reads a date and time written as ISO 8601 and RFC 3339 write it, which is how Grails
 renders a date in JSON, before the formats `grails.databinding.dateFormats` lists. Previously:
 
-* `2024-05-01T10:00:00Z`, which Grails renders for a `Date` or a `Calendar` whose milliseconds are
-  zero, was read by the `yyyy-MM-dd'T'HH:mm:ss'Z'` format as a time in the zone of the server, so a
-  date Grails rendered was bound back off by the offset of that zone.
+* `2024-05-01T10:00:00Z`, which 8.0.0-RC1 renders for a `Date` or a `Calendar` whose milliseconds are
+  zero, and which a client may send for any date, was read by the `yyyy-MM-dd'T'HH:mm:ss'Z'` format
+  as a time in the zone of the server, so it was bound off by the offset of that zone.
 * `2024-05-01T10:00:00+02:00` was read by `yyyy-MM-dd'T'HH:mm:ss`, which left the offset unread,
   and was bound as a time in the zone of the server.
 * A fraction of a second of fewer than three digits, such as the `.5` of `10:00:00.5Z`, was read as
