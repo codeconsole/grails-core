@@ -355,6 +355,12 @@ class GroovyPagePlugin implements Plugin<Project> {
             // by its own scaffolding library and Groovy, as the resolver expands them, so a
             // page's name agrees with the one the resolver looks for
             it.runtimeClasspath.from(project.configurations.named('runtimeClasspath'))
+            // and are compiled against compileGroovyPages' classpath, which a plugin the project has
+            // only at runtime is not on, so its controllers are left to its own build. Read from the
+            // task, not assembled again, so a build that adds to that classpath is followed.
+            it.pageClasspath.from(project.files {
+                tasks.named('compileGroovyPages', GroovyPageForkCompileTask).get().classpath
+            })
             it.javaLauncher.convention(launcher)
             // the application's own templates, which its runtime classpath does not carry: as
             // they are edited, and as the resources that are packaged beside its controllers.

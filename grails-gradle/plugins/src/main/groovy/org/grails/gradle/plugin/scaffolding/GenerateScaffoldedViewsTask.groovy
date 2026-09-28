@@ -41,6 +41,7 @@ import org.gradle.api.file.RegularFileProperty
 import org.gradle.api.provider.Property
 import org.gradle.api.tasks.CacheableTask
 import org.gradle.api.tasks.Classpath
+import org.gradle.api.tasks.CompileClasspath
 import org.gradle.api.tasks.Input
 import org.gradle.api.tasks.InputFiles
 import org.gradle.api.tasks.Nested
@@ -72,8 +73,8 @@ import org.gradle.process.JavaExecSpec
  * task did not expand finds nothing and is expanded at runtime as before.</p>
  *
  * <p>For each scaffolded controller - the application's own, and those plugins on the runtime
- * classpath provide - this expands for its domain class every copy of each template the resolver
- * could choose for it:</p>
+ * classpath provide whose domain classes the pages can be compiled against - this expands for its
+ * domain class every copy of each template the resolver could choose for it:</p>
  * <ul>
  *   <li>Which copy the resolver finds is not something the build can know. On the JVM it looks
  *   beside the controller's class first, then at a plugin that overrides the templates, then along
@@ -151,6 +152,14 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
      */
     @Classpath
     abstract ConfigurableFileCollection getRuntimeClasspath()
+
+    /**
+     * The classpath the pages are compiled against: normally {@code compileGroovyPages}'. A page
+     * names the type of its model, so a plugin's controller has its pages expanded only where the
+     * domain class it scaffolds is on it. Left empty, no plugin's domain class is checked.
+     */
+    @CompileClasspath
+    abstract ConfigurableFileCollection getPageClasspath()
 
     /**
      * The encoding the pages are written in, which must be the one they are compiled with, so that
@@ -377,6 +386,10 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
         List<Controller> controllers = []
         Map<String, Boolean> ancestors = [:]
         URL[] classpath = (classesDirs.files + runtimeClasspath.files).collect { it.toURI().toURL() } as URL[]
+        // The project's classes are added although the plugin's wiring already puts them on
+        // pageClasspath: a task registered by hand may not.
+        URL[] pageTypes = (classesDirs.files + pageClasspath.files).collect { it.toURI().toURL() } as URL[]
+        boolean checksPageTypes = !pageClasspath.empty
         new URLClassLoader(classpath, (ClassLoader) null).withCloseable { URLClassLoader resources ->
             for (File dir : classesDirs.files) {
                 if (dir.isDirectory()) {
@@ -390,16 +403,34 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
                     }
                 }
             }
-            for (File entry : runtimeClasspath.files) {
-                if (entry.isFile()) {
-                    openArchive(entry)?.withCloseable { JarFile jar ->
-                        if (jar.getJarEntry(PLUGIN_DESCRIPTOR) == null) {
-                            return
+            // with the platform's modules as the parent, as the page compiler has them, so a domain
+            // type from java.sql resolves as java.lang's do
+            new URLClassLoader(pageTypes, ClassLoader.platformClassLoader).withCloseable { URLClassLoader pageLoader ->
+                // none where a task registered by hand leaves pageClasspath empty, as one written
+                // before it existed does: every plugin controller is then expanded, as it was
+                ClassLoader compilable = checksPageTypes ? pageLoader : null
+                for (File entry : runtimeClasspath.files) {
+                    if (entry.isFile()) {
+                        openArchive(entry)?.withCloseable { JarFile jar ->
+                            if (jar.getJarEntry(PLUGIN_DESCRIPTOR) == null) {
+                                return
+                            }
+                            for (JarEntry e : jar.entries()) {
+                                if (!e.directory && e.name.endsWith('Controller.class')) {
+                                    byte[] bytes = jar.getInputStream(e).withCloseable { InputStream input -> input.bytes }
+                                    Controller controller = readPluginController(bytes, "${entry.name}!/${e.name}", resources,
+                                            compilable, ancestors)
+                                    if (controller != null) {
+                                        controllers.add(controller)
+                                    }
+                                }
+                            }
                         }
-                        for (JarEntry e : jar.entries()) {
-                            if (!e.directory && e.name.endsWith('Controller.class')) {
-                                byte[] bytes = jar.getInputStream(e).withCloseable { InputStream input -> input.bytes }
-                                Controller controller = readController(bytes, "${entry.name}!/${e.name}", resources, ancestors)
+                    }
+                    else if (entry.isDirectory() && new File(entry, PLUGIN_DESCRIPTOR).isFile()) {
+                        entry.eachFileRecurse { File f ->
+                            if (f.name.endsWith('Controller.class')) {
+                                Controller controller = readPluginController(f.bytes, f.path, resources, compilable, ancestors)
                                 if (controller != null) {
                                     controllers.add(controller)
                                 }
@@ -407,19 +438,39 @@ abstract class GenerateScaffoldedViewsTask extends DefaultTask {
                         }
                     }
                 }
-                else if (entry.isDirectory() && new File(entry, PLUGIN_DESCRIPTOR).isFile()) {
-                    entry.eachFileRecurse { File f ->
-                        if (f.name.endsWith('Controller.class')) {
-                            Controller controller = readController(f.bytes, f.path, resources, ancestors)
-                            if (controller != null) {
-                                controllers.add(controller)
-                            }
-                        }
-                    }
-                }
             }
         }
         controllers
+    }
+
+    /**
+     * Reads a plugin's controller as {@link #readController} does, but leaves it out when the domain
+     * class it scaffolds is not on the classpath the pages are compiled against, since a page naming
+     * that type could not be compiled.
+     *
+     * <p>That happens to a plugin that reaches this project only at runtime - through an
+     * {@code implementation} dependency of a project this one depends on - which puts its controllers
+     * on the runtime classpath and its classes nowhere the compiler looks. Leaving it out loses no page
+     * that could have been compiled here - its own build, which has its domain classes, expands its
+     * pages - and expanding it would only add pages the compiler has to leave out, each with a
+     * warning, in every project the plugin reaches. An application's own controllers need no such
+     * check: they were compiled against their domain classes.</p>
+     *
+     * <p>The check is necessary, not sufficient. A page can still name another type the compiler
+     * cannot resolve, such as an association's, and that page is left out with a warning as
+     * before.</p>
+     *
+     * @param compilable the types the pages are compiled against, or {@code null} to check nothing
+     */
+    private Controller readPluginController(byte[] bytes, String origin, ClassLoader resources, ClassLoader compilable,
+                                            Map<String, Boolean> ancestors) {
+        Controller controller = readController(bytes, origin, resources, ancestors)
+        if (controller != null && compilable != null && compilable.getResource("${controller.domain.replace('.', '/')}.class") == null) {
+            logger.info('No page is expanded for {}: the domain class it scaffolds, {}, is not on the classpath the pages ' +
+                    'are compiled against, as happens to a plugin this project has only at runtime', origin, controller.domain)
+            return null
+        }
+        controller
     }
 
     /**
