@@ -199,6 +199,8 @@ Person.withTransaction {
 }
 ----
 
+A transaction started inside another joins it, so the writes of both commit or roll back together; `PROPAGATION_REQUIRES_NEW` runs in a server-side transaction of its own. A read-only transaction reads without one. See <<nestedTransactions,Nested Transactions>> and <<readOnlyTransactions,Read-Only Transactions>>.
+
 NOTE: Multi-document transactions require a replica set or a sharded cluster; they are not supported on a standalone `mongod`. If `transactional` is enabled but a standalone topology is detected, GORM logs a warning once and falls back to the default client-side flush behavior. Identifier generation for native (`Long`) identity uses an independent counter and is intentionally not enrolled in the transaction, mirroring the non-transactional semantics of database sequences.
 
 WARNING: A per-transaction timeout is not supported for MongoDB server-side transactions. The session and transaction are started before the transaction manager applies a timeout, so a timeout on the `withTransaction` or `@Transactional` definition cannot be honored. Rather than silently ignore it, GORM throws a `TransactionUsageException` when a non-default timeout is requested. The server enforces its own maximum transaction duration via `transactionLifetimeLimitSeconds` (60 seconds by default).

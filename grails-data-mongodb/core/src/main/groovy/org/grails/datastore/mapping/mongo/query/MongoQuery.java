@@ -464,8 +464,12 @@ public class MongoQuery extends BsonQuery implements QueryArgumentsAware {
 
     @Override
     protected void flushBeforeQuery() {
-        // with Mongo we only flush the session if a transaction is not active to allow for session-managed transactions
-        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+        // Within a transaction the session is not flushed ahead of a query, so that a rollback can still
+        // discard what is queued: without a server-side transaction, a flushed write cannot be taken
+        // back. Inside one it is aborted with the transaction, so the query sees the transaction's own
+        // writes, as on Hibernate.
+        if (!TransactionSynchronizationManager.isSynchronizationActive() ||
+                (mongoSession != null && mongoSession.hasActiveTransaction())) {
             super.flushBeforeQuery();
         }
     }
