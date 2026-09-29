@@ -1,6 +1,6 @@
 ---
 name: grails-8-upgrade
-description: Guide for upgrading Grails applications from Grails 7.x to Grails 8, covering Java 21, Spring Boot 4.1, Spring Framework 7, dependency management, Micronaut, Jackson 3, Hibernate 7, TagLibs, testing, content negotiation, and validation behavior changes
+description: Guide for upgrading Grails applications from Grails 7.x to Grails 8, covering Java 21, Spring Boot 4.1, Spring Framework 7, dependency management, Micronaut, Jackson 3, Hibernate 7, TagLibs, testing, content negotiation, asset pipeline wildcard paths, and validation behavior changes
 license: Apache-2.0
 ---
 
@@ -74,6 +74,15 @@ Grails 8 no longer applies the `io.spring.dependency-management` plugin by defau
 - Grails now uses Gradle native `platform()` dependency management with the Grails BOM.
 - The Grails Gradle Plugin auto-applies the selected Grails BOM to declarable configurations.
 - Existing version overrides in `gradle.properties` and `ext['property.version']` still work through the bundled `org.apache.grails.gradle.bom-property-overrides` plugin.
+- Grails BOMs now follow the upstream BOM property names: an override of a version Spring Boot also manages uses Spring Boot's property name, and for a module Spring Boot manages through an imported BOM, the property Spring Boot imports that BOM with. Rename Grails-specific overrides, because a property no BOM declares is silently ignored:
+
+| Grails 7 or earlier Grails 8 property | Grails 8 property |
+|---------------------------------------|-------------------|
+| `jackson.version`, `jackson2.version` | `jackson-2-bom.version` (Jackson 2, `com.fasterxml.jackson.*`) |
+| `jackson3.version` | `jackson-bom.version` (Jackson 3, `tools.jackson.*`, the default) |
+| `jackson-bom.version` set to a 2.x version (Spring Boot 3's name for Jackson 2) | `jackson-2-bom.version`; in Grails 8 `jackson-bom.version` sets Jackson 3, so a 2.x value makes dependency resolution fail |
+| `neo4j-driver.version` (`grails-neo4j-bom`) | `neo4j-java-driver.version` |
+
 - Replace `grails { springDependencyManagement = false }` with `grails { bom = null }` for new builds that intentionally opt out.
 - If Spring DM was used to pin arbitrary dependencies, replace it with direct dependencies or Gradle `resolutionStrategy.force` where a transitive version must be forced.
 - If strict BOM behavior is required, explicitly use `enforcedPlatform("org.apache.grails:grails-bom:$grailsVersion")`.
@@ -248,6 +257,17 @@ The HTTP `Accept` header is honored for all clients by default, including browse
 - `respond` actions without an HTML view may now error for browser requests because browsers negotiate HTML. Add a GSP view, use `render`, or scope formats with `responseFormats` or `respond(..., formats: ...)`.
 - To restore the old browser-ignore behavior, set `grails.mime.disable.accept.header.userAgents` explicitly.
 
+## Asset Pipeline Wildcard Paths
+
+Grails 8 uses asset-pipeline 5.2, where a `%` or `*` component of an asset path, in a `require` directive, an `<asset:...>` tag, or a Sass import, stands for exactly one directory wherever the asset is found.
+
+- Grails 7 let one `%` stand for several directories when the asset came from a jar, as every webjar does, or from the manifest of a packaged application. A path such as `webjars/%/dist/jquery.js` resolved in Grails 7 and resolves to nothing in Grails 8.
+- Search the application's asset manifests, GSPs, and Sass imports for `%` and `*` in asset paths. Write one `%` per directory, as `create-app` generates (`webjars/jquery/%/dist/jquery.js`), or `%%` (or `**`) for zero or more directories (`webjars/%%/dist/jquery.js`).
+- In a CSS `*= require` block, use `%` and `%%`, never `*` or `**`, because `*/` ends the comment.
+- When several versions match, the highest wins, including for paths with one `%` per directory. Hidden directories never match, and a wildcard inside a file name, such as `jquery-%.js`, does not resolve.
+- A path that no longer resolves does not fail the build: `assetCompile` logs `Unable to Locate Asset: <path>` and leaves the file out, and an `<asset:...>` tag renders the path unchanged, so the browser cannot load it. Check the `assetCompile` output for that warning after upgrading.
+- The `includes` and `excludes` patterns of the `assets` block in `build.gradle` are not affected.
+
 ## TagLibs and Tests
 
 Grails 8 recommends method-based TagLib handlers while keeping closure-based tags supported.
@@ -337,4 +357,5 @@ class BookServiceSpec extends Specification {
 - Do not keep an old full `grails.mime.types` block if the intent is to extend the new defaults. Use `grails.mime.mergeDefaults`.
 - Do not keep `purgeTagLibMetaClass` in tests. It is removed.
 - Do not use `javax.*` imports. Grails 8 continues the Jakarta baseline.
+- Do not override a managed version under a Grails-specific property name. Use the upstream (Spring Boot) property name; an override no BOM declares changes nothing and reports nothing.
 - Do not ignore plugin compatibility. Spring Boot 4 and Spring Framework 7 removals often surface first through plugins.

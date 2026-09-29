@@ -92,6 +92,8 @@ jobs:
           RELEASE_SCRIPT_PATH: '.github/scripts/setReleasedGrailsVersion.sh'
       - name: "🔍 Validate dependency versions"
         run: ./gradlew validateDependencyVersions
+      - name: "🔍 Validate BOM properties"
+        run: ./gradlew validateBomProperties
       - name: "🧩 Run grails-core assemble"
         run: ./gradlew assemble -PgithubBranch=${TARGET_BRANCH}
       - name: "🧩 Run grails-forge assemble"

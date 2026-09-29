@@ -44,6 +44,8 @@ dependencies {
     // GenerateAutoConfigurationImportsTask reads @AutoConfiguration out of class files rather than
     // loading them, so a class it cannot resolve can never be silently dropped from the imports file
     implementation gradleBomDependencies['asm']
+    // validateBomProperties reads BOM POMs with Maven's own model, as ExtractDependenciesTask in docs-core does
+    implementation "org.apache.maven:maven-model:${gradleBomDependencyVersions['maven-model.version']}"
 
     testImplementation "org.spockframework:spock-core:${gradleBomDependencyVersions['gradle-spock.version']}"
     testImplementation gradleTestKit()
@@ -121,6 +123,10 @@ gradlePlugin {
         register('grailsDependencyValidator') {
             id = 'org.apache.grails.buildsrc.dependency-validator'
             implementationClass = 'org.apache.grails.buildsrc.GrailsDependencyValidatorPlugin'
+        }
+        register('grailsBomPropertyValidator') {
+            id = 'org.apache.grails.buildsrc.bom-property-validator'
+            implementationClass = 'org.apache.grails.buildsrc.GrailsBomPropertyValidatorPlugin'
         }
         register('vulnerabilityScanPlugin') {
             id = 'org.apache.grails.buildsrc.vulnerability-scan'

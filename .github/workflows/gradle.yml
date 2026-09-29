@@ -68,6 +68,44 @@ jobs:
           ./gradlew validateDependencyVersions
           --continue
           --stacktrace
+  validateBomProperties:
+    name: 'Validate BOM Properties'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: "📥 Checkout repository"
+        uses: actions/checkout@v7.0.1
+      - name: "☕️ Setup JDK"
+        uses: actions/setup-java@v6.0.1
+        with:
+          distribution: liberica
+          java-version: 21
+      - name: "🗄️ Restore dependency jar cache"
+        uses: actions/cache@v6.1.0
+        with:
+          # Cache only downloaded dependency jars and wrapper distributions, never Grails build outputs.
+          # Keyed by branch version so each release branch maintains its own warm cache.
+          path: |
+            ~/.gradle/caches/modules-2
+            ~/.gradle/wrapper
+          key: gradle-deps-${{ runner.os }}-${{ github.base_ref || github.ref_name }}-${{ hashFiles('**/dependencies.gradle', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            gradle-deps-${{ runner.os }}-${{ github.base_ref || github.ref_name }}-
+      - name: "🐘 Setup Gradle"
+        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
+        with:
+          cache-provider: basic # 'basic' uses the MIT-licensed, open-source cache provider; the default 'enhanced' provider (v6+) is proprietary (Gradle commercial Terms of Use)
+          develocity-access-key: ${{ secrets.DEVELOCITY_ACCESS_KEY  }}
+      - name: "🔍 Validate grails-core BOM properties"
+        run: >
+          ./gradlew validateBomProperties
+          --continue
+          --stacktrace
+      - name: "🔍 Validate grails-gradle BOM properties"
+        working-directory: 'grails-gradle'
+        run: >
+          ./gradlew validateBomProperties
+          --continue
+          --stacktrace
   buildGradle:
     name: 'Build Gradle Plugins'
     strategy:
