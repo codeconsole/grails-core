@@ -45,11 +45,11 @@ class GrailsVersionSpec extends Specification {
         "3.3.0-SNAPSHOT" | 3            | 3            | true
         "3.3.0-SNAPSHOT" | 3            | 4            | false
         "3.3.0-SNAPSHOT" | 3            | 2            | true
-        "3.3.0-SNAPSHOT" | 3            | 2            | true
+        "3.3.0-SNAPSHOT" | 2            | 9            | true
     }
 
     @Unroll
-    void "test isAtLeast(#version, #requiredVersion) => expected"(String version,
+    void "test isAtLeast(#version, #requiredVersion) => #expected"(String version,
                                                                   String requiredVersion,
                                                                   boolean expected) {
         expect:

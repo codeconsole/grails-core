@@ -19,6 +19,7 @@
 package org.grails.datastore.gorm.plugin.support
 
 import org.grails.config.PropertySourcesConfig
+import org.springframework.context.ConfigurableApplicationContext
 import org.springframework.context.support.StaticApplicationContext
 import org.springframework.core.env.PropertyResolver
 import spock.lang.Specification
@@ -44,7 +45,7 @@ class ConfigSupportSpec extends Specification {
     void "prepareConfig does nothing when the config is not a PropertySourcesConfig"() {
         given:
         def config = Mock(PropertyResolver)
-        def applicationContext = Mock(org.springframework.context.ConfigurableApplicationContext)
+        def applicationContext = Mock(ConfigurableApplicationContext)
 
         when:
         ConfigSupport.prepareConfig(config, applicationContext)

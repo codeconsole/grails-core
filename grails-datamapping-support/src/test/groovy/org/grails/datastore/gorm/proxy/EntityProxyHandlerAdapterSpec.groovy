@@ -121,7 +121,7 @@ class EntityProxyHandlerAdapterSpec extends Specification {
 
     void "createProxy with a session, association query executor and key is not supported"() {
         when:
-        adapter.createProxy(null, (AssociationQueryExecutor) null, "id")
+        adapter.createProxy(null, Mock(AssociationQueryExecutor), "id")
 
         then:
         thrown(UnsupportedOperationException)
