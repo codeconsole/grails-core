@@ -19,22 +19,28 @@
 package org.grails.datastore.gorm.query.criteria
 
 import grails.gorm.DetachedCriteria
+import grails.gorm.annotation.Entity
 
 import jakarta.persistence.FetchType
 import jakarta.persistence.criteria.JoinType
 
-import org.grails.datastore.gorm.finders.FinderMethod
-import org.grails.datastore.mapping.model.PersistentEntity
-import org.grails.datastore.mapping.model.PersistentProperty
-import org.grails.datastore.mapping.model.types.Association
 import org.grails.datastore.mapping.query.Query
 import org.grails.datastore.mapping.query.api.QueryableCriteria
+import org.grails.datastore.mapping.simple.SimpleMapDatastore
+import spock.lang.AutoCleanup
 import spock.lang.Specification
 
 /**
  * Exercises {@link AbstractDetachedCriteria} through its concrete subclass {@link DetachedCriteria}.
+ *
+ * Criterion, projection, order and derivation methods only need a target class, so those features use the
+ * plain {@link TestEntity}. Features that resolve properties or associations, or that execute the criteria,
+ * run against real GORM entities registered with a {@link SimpleMapDatastore}.
  */
 class AbstractDetachedCriteriaSpec extends Specification {
+
+    @AutoCleanup
+    SimpleMapDatastore datastore = new SimpleMapDatastore(['secondary'], DetachedCriteriaAuthor, DetachedCriteriaBook)
 
     void "eq adds an Equals criterion"() {
         given:
@@ -692,6 +698,12 @@ class AbstractDetachedCriteriaSpec extends Specification {
 
         then:
         thrown(UnsupportedOperationException)
+
+        when:
+        criteria.getJoinTypes()['other'] = JoinType.LEFT
+
+        then:
+        thrown(UnsupportedOperationException)
     }
 
     void "cache and readOnly are no-ops that return this"() {
@@ -742,7 +754,7 @@ class AbstractDetachedCriteriaSpec extends Specification {
         derived.criteria.size() == 2
     }
 
-    void "buildLazy stashes the closure for later application"() {
+    void "buildLazy defers the closure until the criteria is next modified and applies it only once"() {
         given:
         def criteria = new DetachedCriteria(TestEntity)
 
@@ -751,14 +763,18 @@ class AbstractDetachedCriteriaSpec extends Specification {
 
         then:
         derived.criteria.isEmpty()
-        derived.@lazyQuery != null
 
-        when: "a criterion is added, triggering applyLazyCriteria"
+        when: "a criterion is added, triggering the deferred closure"
         derived.eq('name', 'Bob')
 
         then:
         derived.criteria.size() == 2
-        derived.@lazyQuery == null
+
+        when: "another criterion is added"
+        derived.eq('name', 'Alice')
+
+        then: "the deferred closure is not applied a second time"
+        derived.criteria.size() == 3
     }
 
     void "whereLazy applies the closure eagerly like where"() {
@@ -772,16 +788,18 @@ class AbstractDetachedCriteriaSpec extends Specification {
         derived.criteria.size() == 1
     }
 
-    void "withConnection derives a new instance with the given connection name"() {
+    void "withConnection derives a new instance that executes against the named connection"() {
         given:
-        def criteria = new DetachedCriteria(TestEntity)
+        new DetachedCriteriaAuthor(name: 'Default Only').save(flush: true)
+        def criteria = new DetachedCriteria(DetachedCriteriaAuthor)
 
         when:
         def derived = criteria.withConnection('secondary')
 
         then:
         !derived.is(criteria)
-        derived.@connectionName == 'secondary'
+        criteria.count() == 1
+        derived.count() == 0
     }
 
     void "max(int)/offset(int) derive a new instance without mutating the original"() {
@@ -868,34 +886,18 @@ class AbstractDetachedCriteriaSpec extends Specification {
         e.message.contains('is not a domain class')
     }
 
-    void "getPersistentClass returns the java class of the persistent entity"() {
+    void "getPersistentClass and getPersistentEntity resolve the registered GORM entity"() {
         given:
-        def criteria = new DetachedCriteria(TestEntity)
-        def entity = Mock(PersistentEntity) {
-            getJavaClass() >> TestEntity
-        }
-        criteria.@persistentEntity = entity
-        criteria.@dynamicFinders = []
+        def criteria = new DetachedCriteria(DetachedCriteriaBook)
 
         expect:
-        criteria.getPersistentClass() == TestEntity
-        criteria.getPersistentEntity().is(entity)
+        criteria.getPersistentClass() == DetachedCriteriaBook
+        criteria.getPersistentEntity().javaClass == DetachedCriteriaBook
     }
 
     void "createAlias creates a DetachedAssociationCriteria for a top-level association"() {
         given:
-        def criteria = new DetachedCriteria(TestEntity)
-        def associatedEntity = Mock(PersistentEntity) {
-            getJavaClass() >> TestEntity
-        }
-        def association = Mock(Association) {
-            getAssociatedEntity() >> associatedEntity
-        }
-        def entity = Mock(PersistentEntity) {
-            getPropertyByName('books') >> association
-        }
-        criteria.@persistentEntity = entity
-        criteria.@dynamicFinders = []
+        def criteria = new DetachedCriteria(DetachedCriteriaAuthor)
 
         when:
         def result = criteria.createAlias('books', 'b')
@@ -903,24 +905,15 @@ class AbstractDetachedCriteriaSpec extends Specification {
         then:
         result instanceof DetachedAssociationCriteria
         result.alias == 'b'
-        criteria.criteria.contains(result)
-        criteria.@associationCriteriaMap['books'].is(result)
+        result.associationPath == 'books'
+        result.association.name == 'books'
+        result.persistentClass == DetachedCriteriaBook
+        criteria.criteria == [result]
     }
 
     void "createAlias reuses an existing association criteria and updates its alias"() {
         given:
-        def criteria = new DetachedCriteria(TestEntity)
-        def associatedEntity = Mock(PersistentEntity) {
-            getJavaClass() >> TestEntity
-        }
-        def association = Mock(Association) {
-            getAssociatedEntity() >> associatedEntity
-        }
-        def entity = Mock(PersistentEntity) {
-            getPropertyByName('books') >> association
-        }
-        criteria.@persistentEntity = entity
-        criteria.@dynamicFinders = []
+        def criteria = new DetachedCriteria(DetachedCriteriaAuthor)
 
         when:
         def first = criteria.createAlias('books', 'b1')
@@ -934,24 +927,7 @@ class AbstractDetachedCriteriaSpec extends Specification {
 
     void "createAlias resolves a dotted association path"() {
         given:
-        def criteria = new DetachedCriteria(TestEntity)
-        def leafEntity = Mock(PersistentEntity) {
-            getJavaClass() >> TestEntity
-        }
-        def leafAssociation = Mock(Association) {
-            getAssociatedEntity() >> leafEntity
-        }
-        def midEntity = Mock(PersistentEntity) {
-            getPropertyByName('author') >> leafAssociation
-        }
-        def rootAssociation = Mock(Association) {
-            getAssociatedEntity() >> midEntity
-        }
-        def rootEntity = Mock(PersistentEntity) {
-            getPropertyByName('books') >> rootAssociation
-        }
-        criteria.@persistentEntity = rootEntity
-        criteria.@dynamicFinders = []
+        def criteria = new DetachedCriteria(DetachedCriteriaAuthor)
 
         when:
         def result = criteria.createAlias('books.author', 'a')
@@ -959,99 +935,84 @@ class AbstractDetachedCriteriaSpec extends Specification {
         then:
         result instanceof DetachedAssociationCriteria
         result.alias == 'a'
+        result.associationPath == 'books.author'
+        result.association.name == 'author'
+        result.persistentClass == DetachedCriteriaAuthor
     }
 
     void "createAlias throws IllegalArgumentException when the property is not an association"() {
         given:
-        def criteria = new DetachedCriteria(TestEntity)
-        def property = Mock(PersistentProperty)
-        def entity = Mock(PersistentEntity) {
-            getPropertyByName('name') >> property
-        }
-        criteria.@persistentEntity = entity
-        criteria.@dynamicFinders = []
+        def criteria = new DetachedCriteria(DetachedCriteriaAuthor)
 
         when:
         criteria.createAlias('name', 'n')
 
         then:
-        thrown(IllegalArgumentException)
+        IllegalArgumentException e = thrown()
+        e.message == 'Argument [name] is not an association'
     }
 
     void "createAlias throws IllegalArgumentException for a dotted path segment that is not an association"() {
         given:
-        def criteria = new DetachedCriteria(TestEntity)
-        def property = Mock(PersistentProperty)
-        def entity = Mock(PersistentEntity) {
-            getPropertyByName('name') >> property
-        }
-        criteria.@persistentEntity = entity
-        criteria.@dynamicFinders = []
+        def criteria = new DetachedCriteria(DetachedCriteriaAuthor)
 
         when:
-        criteria.createAlias('name.other', 'n')
+        criteria.createAlias(path, 'n')
 
         then:
-        thrown(IllegalArgumentException)
+        IllegalArgumentException e = thrown()
+        e.message == "Argument [$path] is not an association"
+
+        where:
+        path << ['name.other', 'books.title']
     }
 
-    void "propertyMissing returns a property projection for a known property"() {
+    void "reading an unknown property that maps to a persistent property returns a property projection"() {
         given:
-        def criteria = new DetachedCriteria(TestEntity)
-        def property = Mock(PersistentProperty)
-        def entity = Mock(PersistentEntity) {
-            getPropertyByName('name') >> property
-        }
-        criteria.@persistentEntity = entity
-        criteria.@dynamicFinders = []
+        def criteria = new DetachedCriteria(DetachedCriteriaBook)
 
         when:
-        def result = criteria.propertyMissing('name')
+        def result = criteria.title
 
         then:
         result instanceof DetachedCriteria
+        !result.is(criteria)
         result.projections.size() == 1
+        result.projections[0] instanceof Query.PropertyProjection
+        (result.projections[0] as Query.PropertyProjection).propertyName == 'title'
+        criteria.projections.isEmpty()
     }
 
-    void "propertyMissing throws MissingPropertyException for an unknown property"() {
+    void "reading an unknown property that is not a persistent property throws MissingPropertyException"() {
         given:
-        def criteria = new DetachedCriteria(TestEntity)
-        def entity = Mock(PersistentEntity) {
-            getPropertyByName('nope') >> null
-        }
-        criteria.@persistentEntity = entity
-        criteria.@dynamicFinders = []
+        def criteria = new DetachedCriteria(DetachedCriteriaBook)
 
         when:
-        criteria.propertyMissing('nope')
+        criteria.nope
 
         then:
         thrown(MissingPropertyException)
     }
 
-    void "methodMissing delegates to a matching dynamic finder"() {
+    void "a dynamic finder called on the criteria is combined with the detached criteria"() {
         given:
-        def criteria = new DetachedCriteria(TestEntity)
-        def finder = Mock(FinderMethod) {
-            isMethodMatch('findByName') >> true
-        }
-        criteria.@dynamicFinders = [finder]
+        new DetachedCriteriaBook(title: 'Groovy', pages: 100).save(flush: true)
+        new DetachedCriteriaBook(title: 'Groovy', pages: 300).save(flush: true)
+        new DetachedCriteriaBook(title: 'Grails', pages: 100).save(flush: true)
+        def criteria = new DetachedCriteria(DetachedCriteriaBook).build { eq('pages', 100) }
 
         when:
-        def result = criteria.findByName('Bob')
+        List<DetachedCriteriaBook> found = criteria.findAllByTitle('Groovy')
 
         then:
-        1 * finder.invoke(TestEntity, 'findByName', criteria, ['Bob'] as Object[]) >> 'found'
-        result == 'found'
+        found*.title == ['Groovy']
+        found*.pages == [100]
+        criteria.countByTitle('Groovy') == 1
     }
 
-    void "methodMissing throws MissingMethodException when no finder matches and no args are given"() {
+    void "an unknown method with no arguments throws MissingMethodException"() {
         given:
-        def criteria = new DetachedCriteria(TestEntity)
-        def finder = Mock(FinderMethod) {
-            isMethodMatch(_) >> false
-        }
-        criteria.@dynamicFinders = [finder]
+        def criteria = new DetachedCriteria(DetachedCriteriaBook)
 
         when:
         criteria.notAMethod()
@@ -1060,69 +1021,35 @@ class AbstractDetachedCriteriaSpec extends Specification {
         thrown(MissingMethodException)
     }
 
-    void "methodMissing throws MissingMethodException when the property is not an association"() {
+    void "an unknown method named after a non-association property throws MissingMethodException"() {
         given:
-        def criteria = new DetachedCriteria(TestEntity)
-        def finder = Mock(FinderMethod) {
-            isMethodMatch(_) >> false
-        }
-        def property = Mock(PersistentProperty)
-        def entity = Mock(PersistentEntity) {
-            getPropertyByName('name') >> property
-        }
-        criteria.@persistentEntity = entity
-        criteria.@dynamicFinders = [finder]
+        def criteria = new DetachedCriteria(DetachedCriteriaBook)
 
         when:
-        criteria.name('Bob')
+        criteria.title('Groovy')
 
         then:
         thrown(MissingMethodException)
     }
 
-    void "methodMissing adds an association criteria without a closure argument"() {
+    void "an association method call without a closure adds an aliased association criteria"() {
         given:
-        def criteria = new DetachedCriteria(TestEntity)
-        def finder = Mock(FinderMethod) {
-            isMethodMatch(_) >> false
-        }
-        def associatedEntity = Mock(PersistentEntity) {
-            getJavaClass() >> TestEntity
-        }
-        def association = Mock(Association) {
-            getAssociatedEntity() >> associatedEntity
-        }
-        def entity = Mock(PersistentEntity) {
-            getPropertyByName('books') >> association
-        }
-        criteria.@persistentEntity = entity
-        criteria.@dynamicFinders = [finder]
+        def criteria = new DetachedCriteria(DetachedCriteriaAuthor)
 
         when:
         criteria.books('b')
 
         then:
         criteria.criteria.size() == 1
-        (criteria.criteria[0] as DetachedAssociationCriteria).alias == 'b'
+        DetachedAssociationCriteria association = criteria.criteria[0]
+        association.alias == 'b'
+        association.associationPath == 'books'
+        association.persistentClass == DetachedCriteriaBook
     }
 
-    void "methodMissing reuses the existing association's alias when none is given"() {
+    void "a repeated association method call reuses the existing alias when none is given"() {
         given:
-        def criteria = new DetachedCriteria(TestEntity)
-        def finder = Mock(FinderMethod) {
-            isMethodMatch(_) >> false
-        }
-        def associatedEntity = Mock(PersistentEntity) {
-            getJavaClass() >> TestEntity
-        }
-        def association = Mock(Association) {
-            getAssociatedEntity() >> associatedEntity
-        }
-        def entity = Mock(PersistentEntity) {
-            getPropertyByName('books') >> association
-        }
-        criteria.@persistentEntity = entity
-        criteria.@dynamicFinders = [finder]
+        def criteria = new DetachedCriteria(DetachedCriteriaAuthor)
 
         when:
         criteria.books('b1') { eq('title', 'first') }
@@ -1130,26 +1057,13 @@ class AbstractDetachedCriteriaSpec extends Specification {
 
         then:
         criteria.criteria.size() == 2
-        (criteria.criteria[1] as DetachedAssociationCriteria).alias == 'b1'
+        criteria.criteria.every { it instanceof DetachedAssociationCriteria }
+        criteria.criteria*.alias == ['b1', 'b1']
     }
 
-    void "methodMissing builds an association criteria and delegates the closure to it"() {
+    void "an association method call builds an association criteria and delegates the closure to it"() {
         given:
-        def criteria = new DetachedCriteria(TestEntity)
-        def finder = Mock(FinderMethod) {
-            isMethodMatch(_) >> false
-        }
-        def associatedEntity = Mock(PersistentEntity) {
-            getJavaClass() >> TestEntity
-        }
-        def association = Mock(Association) {
-            getAssociatedEntity() >> associatedEntity
-        }
-        def entity = Mock(PersistentEntity) {
-            getPropertyByName('books') >> association
-        }
-        criteria.@persistentEntity = entity
-        criteria.@dynamicFinders = [finder]
+        def criteria = new DetachedCriteria(DetachedCriteriaAuthor)
         boolean delegateWasAssociationCriteria = false
 
         when:
@@ -1163,5 +1077,59 @@ class AbstractDetachedCriteriaSpec extends Specification {
         criteria.criteria[0] instanceof DetachedAssociationCriteria
         delegateWasAssociationCriteria
         (criteria.criteria[0] as DetachedAssociationCriteria).criteria.size() == 1
+    }
+
+    void "an association method call restores the closure's previous delegate"() {
+        given:
+        def criteria = new DetachedCriteria(DetachedCriteriaAuthor)
+        def previousDelegate = new Object()
+        def closure = { eq('title', 'Groovy in Action') }
+        closure.delegate = previousDelegate
+
+        when:
+        criteria.books(closure)
+
+        then:
+        closure.delegate.is(previousDelegate)
+    }
+
+    void "association criteria added through a nested closure filter the executed query"() {
+        given:
+        def groovyBook = new DetachedCriteriaBook(title: 'Groovy', pages: 100).save(flush: true)
+        def grailsBook = new DetachedCriteriaBook(title: 'Grails', pages: 200).save(flush: true)
+        new DetachedCriteriaAuthor(name: 'Groovy Author').addToBooks(groovyBook).save(flush: true)
+        new DetachedCriteriaAuthor(name: 'Grails Author').addToBooks(grailsBook).save(flush: true)
+        def criteria = new DetachedCriteria(DetachedCriteriaAuthor).build {
+            books {
+                eq('title', 'Groovy')
+            }
+        }
+
+        expect:
+        criteria.list()*.name == ['Groovy Author']
+    }
+}
+
+@Entity
+class DetachedCriteriaAuthor {
+
+    Long id
+    String name
+
+    static hasMany = [books: DetachedCriteriaBook]
+}
+
+@Entity
+class DetachedCriteriaBook {
+
+    Long id
+    String title
+    Integer pages
+    DetachedCriteriaAuthor author
+
+    static belongsTo = [author: DetachedCriteriaAuthor]
+
+    static constraints = {
+        author nullable: true
     }
 }
