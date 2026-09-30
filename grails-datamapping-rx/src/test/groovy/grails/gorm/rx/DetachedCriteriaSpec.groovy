@@ -19,6 +19,8 @@
 
 package grails.gorm.rx
 
+import groovy.transform.CompileStatic
+
 import org.grails.datastore.mapping.core.connections.ConnectionSource
 import org.grails.datastore.mapping.core.connections.ConnectionSourceSettings
 import org.grails.datastore.mapping.core.connections.ConnectionSources
@@ -529,6 +531,24 @@ class DetachedCriteriaSpec extends Specification {
         thrown(UnsupportedOperationException)
     }
 
+    void "a closure subquery nested in a statically compiled findAll closure holds its own restriction"() {
+        given:
+        List<Query.Criterion> added = []
+
+        when:
+        CompileStaticCriteria.findAllWithInListSubquery(newCriteria())
+
+        then:
+        1 * query.add(_) >> { List arguments -> added << (Query.Criterion) arguments[0] }
+        1 * query.findAll(_) >> Observable.empty()
+
+        and: 'the query receives only the in criterion, and the subquery keeps the restriction'
+        added.size() == 1
+        Query.In inCriterion = (Query.In) added[0]
+        inCriterion.subquery.criteria.size() == 1
+        ((Query.Equals) inCriterion.subquery.criteria[0]).value == 'A'
+    }
+
     void "the base class DSL overrides forward to the base implementation and preserve the DetachedCriteria type"() {
         given:
         DetachedCriteria<Volume> criteria = newCriteria()
@@ -615,4 +635,16 @@ class Volume {
     Serializable id
     String title
     BigDecimal price
+}
+
+@CompileStatic
+class CompileStaticCriteria {
+
+    static Observable<Volume> findAllWithInListSubquery(DetachedCriteria<Volume> criteria) {
+        criteria.findAll([:]) {
+            inList('title') {
+                eq 'title', 'A'
+            }
+        }
+    }
 }
