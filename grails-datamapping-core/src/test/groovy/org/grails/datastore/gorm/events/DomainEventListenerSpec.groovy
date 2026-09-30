@@ -519,6 +519,89 @@ class DomainEventListenerSpec extends Specification {
         0 * ea.refresh()
     }
 
+    @Unroll
+    void "onApplicationEvent still reaches a subclass that overrides the deprecated 3-arg #methodName overload, passing it the #eventType.simpleName"() {
+        given:
+        RecordingDomain domain = new RecordingDomain()
+        PersistentEntity entity = entityFor(RecordingDomain)
+        Datastore datastore = plainDatastore(Stub(MappingContext) { getPersistentEntities() >> [] })
+        ThreeArgOverridingListener listener = new ThreeArgOverridingListener(datastore)
+        listener.persistentEntityAdded(entity)
+        EntityAccess ea = Stub(EntityAccess) { getEntity() >> domain }
+        ApplicationEvent event = eventType.newInstance(datastore, entity, ea)
+
+        when:
+        listener.onApplicationEvent(event)
+
+        then: 'the override saw the call and the event that triggered it'
+        listener.intercepted == [methodName]
+        listener.events == [event]
+
+        and: 'the override\'s super call still ran the domain hook'
+        domain.invoked == [methodName]
+
+        where:
+        eventType        | methodName
+        PreInsertEvent    | 'beforeInsert'
+        PostInsertEvent   | 'afterInsert'
+        PreUpdateEvent    | 'beforeUpdate'
+        PostUpdateEvent   | 'afterUpdate'
+        PreDeleteEvent    | 'beforeDelete'
+        PostDeleteEvent   | 'afterDelete'
+        PreLoadEvent      | 'beforeLoad'
+        PostLoadEvent     | 'afterLoad'
+    }
+
+    @Unroll
+    void "onApplicationEvent still reaches a subclass that overrides the 2-arg #methodName overload"() {
+        given:
+        RecordingDomain domain = new RecordingDomain()
+        PersistentEntity entity = entityFor(RecordingDomain)
+        Datastore datastore = plainDatastore(Stub(MappingContext) { getPersistentEntities() >> [] })
+        TwoArgOverridingListener listener = new TwoArgOverridingListener(datastore)
+        listener.persistentEntityAdded(entity)
+        EntityAccess ea = Stub(EntityAccess) { getEntity() >> domain }
+
+        when:
+        listener.onApplicationEvent(eventType.newInstance(datastore, entity, ea))
+
+        then:
+        listener.intercepted == [methodName]
+        domain.invoked == [methodName]
+
+        where:
+        eventType        | methodName
+        PreInsertEvent    | 'beforeInsert'
+        PostInsertEvent   | 'afterInsert'
+        PreUpdateEvent    | 'beforeUpdate'
+        PostUpdateEvent   | 'afterUpdate'
+        PreDeleteEvent    | 'beforeDelete'
+        PostDeleteEvent   | 'afterDelete'
+        PreLoadEvent      | 'beforeLoad'
+        PostLoadEvent     | 'afterLoad'
+    }
+
+    @Unroll
+    void "a subclass vetoing from its deprecated 3-arg before-hook override still cancels the #eventType.simpleName"() {
+        given:
+        RecordingDomain domain = new RecordingDomain()
+        PersistentEntity entity = entityFor(RecordingDomain)
+        Datastore datastore = plainDatastore(Stub(MappingContext) { getPersistentEntities() >> [] })
+        ThreeArgOverridingListener listener = new ThreeArgOverridingListener(datastore, false)
+        listener.persistentEntityAdded(entity)
+        EntityAccess ea = Stub(EntityAccess) { getEntity() >> domain }
+        ApplicationEvent event = eventType.newInstance(datastore, entity, ea)
+
+        when:
+        listener.onApplicationEvent(event)
+
+        then:
+        event.cancelled
+
+        where:
+        eventType << [PreInsertEvent, PreUpdateEvent, PreDeleteEvent]
+    }
+
     private PersistentEntity entityFor(Class<?> javaClass, boolean versioned = false, Class<?> versionType = null,
                                         boolean mappedAutowire = false) {
         PersistentProperty version = versioned ? Stub(PersistentProperty) { getType() >> versionType } : null
@@ -592,4 +675,133 @@ class NoHooksDomain {
 
 class DirtyCheckableDomain implements DirtyCheckable {
 
+}
+
+/**
+ * Overrides the deprecated three-argument hooks, the way a subclass written against 8.0 would.
+ */
+@SuppressWarnings('deprecation')
+class ThreeArgOverridingListener extends DomainEventListener {
+
+    final List<String> intercepted = []
+    final List<ApplicationEvent> events = []
+    private final boolean allow
+
+    ThreeArgOverridingListener(Datastore datastore, boolean allow = true) {
+        super(datastore)
+        this.allow = allow
+    }
+
+    @Override
+    boolean beforeInsert(PersistentEntity entity, EntityAccess ea, PreInsertEvent event) {
+        record('beforeInsert', event)
+        super.beforeInsert(entity, ea, event) && allow
+    }
+
+    @Override
+    boolean beforeUpdate(PersistentEntity entity, EntityAccess ea, PreUpdateEvent event) {
+        record('beforeUpdate', event)
+        super.beforeUpdate(entity, ea, event) && allow
+    }
+
+    @Override
+    boolean beforeDelete(PersistentEntity entity, EntityAccess ea, PreDeleteEvent event) {
+        record('beforeDelete', event)
+        super.beforeDelete(entity, ea, event) && allow
+    }
+
+    @Override
+    void beforeLoad(PersistentEntity entity, EntityAccess ea, PreLoadEvent event) {
+        record('beforeLoad', event)
+        super.beforeLoad(entity, ea, event)
+    }
+
+    @Override
+    void afterInsert(PersistentEntity entity, EntityAccess ea, PostInsertEvent event) {
+        record('afterInsert', event)
+        super.afterInsert(entity, ea, event)
+    }
+
+    @Override
+    void afterUpdate(PersistentEntity entity, EntityAccess ea, PostUpdateEvent event) {
+        record('afterUpdate', event)
+        super.afterUpdate(entity, ea, event)
+    }
+
+    @Override
+    void afterDelete(PersistentEntity entity, EntityAccess ea, PostDeleteEvent event) {
+        record('afterDelete', event)
+        super.afterDelete(entity, ea, event)
+    }
+
+    @Override
+    void afterLoad(PersistentEntity entity, EntityAccess ea, PostLoadEvent event) {
+        record('afterLoad', event)
+        super.afterLoad(entity, ea, event)
+    }
+
+    private void record(String hook, ApplicationEvent event) {
+        intercepted << hook
+        events << event
+    }
+}
+
+/**
+ * Overrides the two-argument hooks that are now canonical.
+ */
+class TwoArgOverridingListener extends DomainEventListener {
+
+    final List<String> intercepted = []
+
+    TwoArgOverridingListener(Datastore datastore) {
+        super(datastore)
+    }
+
+    @Override
+    boolean beforeInsert(PersistentEntity entity, EntityAccess ea) {
+        intercepted << 'beforeInsert'
+        super.beforeInsert(entity, ea)
+    }
+
+    @Override
+    boolean beforeUpdate(PersistentEntity entity, EntityAccess ea) {
+        intercepted << 'beforeUpdate'
+        super.beforeUpdate(entity, ea)
+    }
+
+    @Override
+    boolean beforeDelete(PersistentEntity entity, EntityAccess ea) {
+        intercepted << 'beforeDelete'
+        super.beforeDelete(entity, ea)
+    }
+
+    @Override
+    void beforeLoad(PersistentEntity entity, EntityAccess ea) {
+        intercepted << 'beforeLoad'
+        super.beforeLoad(entity, ea)
+    }
+
+    @Override
+    void afterInsert(PersistentEntity entity, EntityAccess ea) {
+        intercepted << 'afterInsert'
+        super.afterInsert(entity, ea)
+    }
+
+    @Override
+    void afterUpdate(PersistentEntity entity, EntityAccess ea) {
+        intercepted << 'afterUpdate'
+        super.afterUpdate(entity, ea)
+    }
+
+    @Override
+    void afterDelete(PersistentEntity entity, EntityAccess ea) {
+        intercepted << 'afterDelete'
+        super.afterDelete(entity, ea)
+    }
+
+    @Override
+    void afterLoad(PersistentEntity entity, EntityAccess ea) {
+        intercepted << 'afterLoad'
+        super.afterLoad(entity, ea)
+    }
 }

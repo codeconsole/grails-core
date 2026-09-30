@@ -62,6 +62,13 @@ public class DomainEventListener extends AbstractPersistenceEventListener
 
     private final Map<PersistentEntity, Map<String, Method>> entityEvents = new ConcurrentHashMap<>();
 
+    /**
+     * @deprecated no longer used by this listener; kept so that existing references keep linking.
+     */
+    @Deprecated(since = "8.1", forRemoval = true)
+    @SuppressWarnings("rawtypes")
+    public static final Class[] ZERO_PARAMS = {};
+
     public static final String EVENT_BEFORE_INSERT = "beforeInsert";
     private static final String EVENT_BEFORE_UPDATE = "beforeUpdate";
     private static final String EVENT_BEFORE_DELETE = "beforeDelete";
@@ -102,38 +109,44 @@ public class DomainEventListener extends AbstractPersistenceEventListener
         mappingContext.addMappingContextListener(this);
     }
 
+    /**
+     * Dispatches through the deprecated three-argument overloads on purpose: until they are removed,
+     * a subclass may have overridden either arity, and each three-argument overload forwards to its
+     * two-argument counterpart, so both kinds of override keep intercepting events.
+     */
     @Override
+    @SuppressWarnings("deprecation")
     protected void onPersistenceEvent(final AbstractPersistenceEvent event) {
         switch (event.getEventType()) {
             case PreInsert:
-                if (!beforeInsert(event.getEntity(), event.getEntityAccess())) {
+                if (!beforeInsert(event.getEntity(), event.getEntityAccess(), (PreInsertEvent) event)) {
                     event.cancel();
                 }
                 break;
             case PostInsert:
-                afterInsert(event.getEntity(), event.getEntityAccess());
+                afterInsert(event.getEntity(), event.getEntityAccess(), (PostInsertEvent) event);
                 break;
             case PreUpdate:
-                if (!beforeUpdate(event.getEntity(), event.getEntityAccess())) {
+                if (!beforeUpdate(event.getEntity(), event.getEntityAccess(), (PreUpdateEvent) event)) {
                     event.cancel();
                 }
                 break;
             case PostUpdate:
-                afterUpdate(event.getEntity(), event.getEntityAccess());
+                afterUpdate(event.getEntity(), event.getEntityAccess(), (PostUpdateEvent) event);
                 break;
             case PreDelete:
-                if (!beforeDelete(event.getEntity(), event.getEntityAccess())) {
+                if (!beforeDelete(event.getEntity(), event.getEntityAccess(), (PreDeleteEvent) event)) {
                     event.cancel();
                 }
                 break;
             case PostDelete:
-                afterDelete(event.getEntity(), event.getEntityAccess());
+                afterDelete(event.getEntity(), event.getEntityAccess(), (PostDeleteEvent) event);
                 break;
             case PreLoad:
-                beforeLoad(event.getEntity(), event.getEntityAccess());
+                beforeLoad(event.getEntity(), event.getEntityAccess(), (PreLoadEvent) event);
                 break;
             case PostLoad:
-                afterLoad(event.getEntity(), event.getEntityAccess());
+                afterLoad(event.getEntity(), event.getEntityAccess(), (PostLoadEvent) event);
                 break;
             default:
                 break;
@@ -154,9 +167,9 @@ public class DomainEventListener extends AbstractPersistenceEventListener
     }
 
     /**
-     * @deprecated the {@code event} parameter is unused; use {@link #beforeInsert(PersistentEntity, EntityAccess)} instead. Scheduled for removal in 9.0.
+     * @deprecated the {@code event} parameter is unused; use {@link #beforeInsert(PersistentEntity, EntityAccess)} instead.
      */
-    @Deprecated
+    @Deprecated(since = "8.1", forRemoval = true)
     public boolean beforeInsert(final PersistentEntity entity, final EntityAccess ea, @SuppressWarnings("unused") PreInsertEvent event) {
         return beforeInsert(entity, ea);
     }
@@ -179,9 +192,9 @@ public class DomainEventListener extends AbstractPersistenceEventListener
     }
 
     /**
-     * @deprecated the {@code event} parameter is unused; use {@link #beforeUpdate(PersistentEntity, EntityAccess)} instead. Scheduled for removal in 9.0.
+     * @deprecated the {@code event} parameter is unused; use {@link #beforeUpdate(PersistentEntity, EntityAccess)} instead.
      */
-    @Deprecated
+    @Deprecated(since = "8.1", forRemoval = true)
     public boolean beforeUpdate(final PersistentEntity entity, final EntityAccess ea, @SuppressWarnings("unused") PreUpdateEvent event) {
         return beforeUpdate(entity, ea);
     }
@@ -191,9 +204,9 @@ public class DomainEventListener extends AbstractPersistenceEventListener
     }
 
     /**
-     * @deprecated the {@code event} parameter is unused; use {@link #beforeDelete(PersistentEntity, EntityAccess)} instead. Scheduled for removal in 9.0.
+     * @deprecated the {@code event} parameter is unused; use {@link #beforeDelete(PersistentEntity, EntityAccess)} instead.
      */
-    @Deprecated
+    @Deprecated(since = "8.1", forRemoval = true)
     public boolean beforeDelete(final PersistentEntity entity, final EntityAccess ea, @SuppressWarnings("unused") PreDeleteEvent event) {
         return beforeDelete(entity, ea);
     }
@@ -203,9 +216,9 @@ public class DomainEventListener extends AbstractPersistenceEventListener
     }
 
     /**
-     * @deprecated the {@code event} parameter is unused; use {@link #beforeLoad(PersistentEntity, EntityAccess)} instead. Scheduled for removal in 9.0.
+     * @deprecated the {@code event} parameter is unused; use {@link #beforeLoad(PersistentEntity, EntityAccess)} instead.
      */
-    @Deprecated
+    @Deprecated(since = "8.1", forRemoval = true)
     public void beforeLoad(final PersistentEntity entity, final EntityAccess ea, @SuppressWarnings("unused") PreLoadEvent event) {
         beforeLoad(entity, ea);
     }
@@ -215,9 +228,9 @@ public class DomainEventListener extends AbstractPersistenceEventListener
     }
 
     /**
-     * @deprecated the {@code event} parameter is unused; use {@link #afterDelete(PersistentEntity, EntityAccess)} instead. Scheduled for removal in 9.0.
+     * @deprecated the {@code event} parameter is unused; use {@link #afterDelete(PersistentEntity, EntityAccess)} instead.
      */
-    @Deprecated
+    @Deprecated(since = "8.1", forRemoval = true)
     public void afterDelete(final PersistentEntity entity, final EntityAccess ea, @SuppressWarnings("unused") PostDeleteEvent event) {
         afterDelete(entity, ea);
     }
@@ -228,9 +241,9 @@ public class DomainEventListener extends AbstractPersistenceEventListener
     }
 
     /**
-     * @deprecated the {@code event} parameter is unused; use {@link #afterInsert(PersistentEntity, EntityAccess)} instead. Scheduled for removal in 9.0.
+     * @deprecated the {@code event} parameter is unused; use {@link #afterInsert(PersistentEntity, EntityAccess)} instead.
      */
-    @Deprecated
+    @Deprecated(since = "8.1", forRemoval = true)
     public void afterInsert(final PersistentEntity entity, final EntityAccess ea, @SuppressWarnings("unused") PostInsertEvent event) {
         afterInsert(entity, ea);
     }
@@ -248,9 +261,9 @@ public class DomainEventListener extends AbstractPersistenceEventListener
     }
 
     /**
-     * @deprecated the {@code event} parameter is unused; use {@link #afterUpdate(PersistentEntity, EntityAccess)} instead. Scheduled for removal in 9.0.
+     * @deprecated the {@code event} parameter is unused; use {@link #afterUpdate(PersistentEntity, EntityAccess)} instead.
      */
-    @Deprecated
+    @Deprecated(since = "8.1", forRemoval = true)
     public void afterUpdate(final PersistentEntity entity, final EntityAccess ea, @SuppressWarnings("unused") PostUpdateEvent event) {
         afterUpdate(entity, ea);
     }
@@ -264,9 +277,9 @@ public class DomainEventListener extends AbstractPersistenceEventListener
     }
 
     /**
-     * @deprecated the {@code event} parameter is unused; use {@link #afterLoad(PersistentEntity, EntityAccess)} instead. Scheduled for removal in 9.0.
+     * @deprecated the {@code event} parameter is unused; use {@link #afterLoad(PersistentEntity, EntityAccess)} instead.
      */
-    @Deprecated
+    @Deprecated(since = "8.1", forRemoval = true)
     public void afterLoad(final PersistentEntity entity, final EntityAccess ea, @SuppressWarnings("unused") PostLoadEvent event) {
         afterLoad(entity, ea);
     }
