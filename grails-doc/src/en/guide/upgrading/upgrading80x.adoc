@@ -562,6 +562,27 @@ If you require Spring DM's "BOM wins always" behaviour for the default managed v
 An *explicit* property override (`ext['…']` or `gradle.properties`) is applied as a strict constraint and always wins - including when it downgrades a version - so overrides behave as they did under Spring DM.
 Overriding a property that selects an imported BOM's version (for example `spring-boot.version`) re-imports that BOM at the overridden version and applies its updated managed set.
 
+**Grails BOMs now follow the upstream BOM property names.**
+Where a Grails BOM overrides a version that an upstream BOM also manages - `spring-boot-dependencies`, or a BOM Spring Boot imports - it declares the override under the upstream BOM's own property name.
+One property therefore sets the version in both BOMs, and the property names in the Spring Boot documentation work unchanged in a Grails build.
+For a module Spring Boot manages through an imported BOM, that is the property Spring Boot imports the BOM with: `jackson-bom.version` moves every Jackson 3 module, whether `grails-bom` pins it or not.
+
+An override under a property name no BOM declares is silently ignored, so rename any Grails-specific property your build sets in `gradle.properties` or `ext['…']`, along with a Jackson 2 version set under Spring Boot 3's property name:
+
+[cols="1,2", options="header"]
+|===
+| Grails 7 property
+| Grails 8 property
+
+| `jackson.version`
+| `jackson-2-bom.version` for Jackson 2 (`com.fasterxml.jackson.*`). Jackson 3 (`tools.jackson.*`), the new default, is set by `jackson-bom.version`.
+
+| `jackson-bom.version` (Spring Boot 3's name for Jackson 2)
+| `jackson-2-bom.version`. In Grails 8, `jackson-bom.version` sets Jackson 3, so a Jackson 2 version there makes dependency resolution fail.
+|===
+
+Builds that adopted a Grails 8 milestone or release candidate should rename `jackson2.version` to `jackson-2-bom.version`, `jackson3.version` to `jackson-bom.version`, and, with `grails-neo4j-bom`, `neo4j-driver.version` to `neo4j-java-driver.version`.
+
 **Selecting or opting out of the auto-applied BOM.**
 The Grails Gradle plugin applies a single Grails BOM automatically, selected by the `grails.bom` property. Its value is the BOM artifact name within the `org.apache.grails` group, which the plugin resolves as `org.apache.grails:$bom:$grailsVersion`.
 It defaults to `grails-bom`, which preserves the Grails 7 behaviour and is the right choice for the vast majority of applications.
@@ -808,7 +829,10 @@ Spring Framework 7 deprecated `org.springframework.lang.Nullable` and `org.sprin
 The Spring annotations still work, so this is non-blocking, but new code should prefer the JSpecify equivalents.
 
 * **Namespaced link generation is namespace-aware.**
-When a link, form action, pagination link, sortable column link, redirect, chain, or include targets a controller without an explicit `namespace`, Grails now resolves the namespace automatically. In the normal case, where only one controller has the target name, `controller` and `action` generate the correct namespaced or non-namespaced URL. Ambiguity only occurs when multiple controllers share the same name. In that case, specify `namespace` to choose the target explicitly. Pass `namespace: null` from Groovy code or `namespace=""` in a GSP tag to target the non-namespaced controller explicitly.
+When a link, form action, pagination link, sortable column link, redirect, chain, or include targets a controller without an explicit `namespace`, Grails now resolves the namespace automatically. The name is resolved nearest scope first: the current request's namespace if it defines a controller with that name, then the non-namespaced controller, then the namespace of the only controller with that name. `controller` and `action` therefore generate the correct namespaced or non-namespaced URL, and a link rendered from a namespace stays in it when that namespace defines the target. A name defined only in namespaces other than the default and the current one is ambiguous: Grails logs a warning and the link must specify `namespace` to choose the target explicitly. A name no registered controller has stays in the namespace the link is made from, where a link previously dropped the namespace; a redirect to such a name has always stayed in it. A page rendered by a controller in the `admin` namespace that links with `controller: 'other', action: 'list'` now generates `/admin/other/list` when no `OtherController` is registered, and so does a unit test that sets `webRequest.controllerNamespace` itself; a `ControllerUnitTest`, which leaves the request namespace unset, still generates `/other/list`. Pass `namespace` to target another namespace. A redirect naming no namespace is resolved exactly as a link is, from the namespace of the controller issuing it; previously it was forced into that namespace, so a redirect to a controller defined only in another namespace produced a URL for a controller that does not exist. Pass `namespace: null` from Groovy code or `namespace=""` in a GSP tag to target the non-namespaced controller explicitly.
+
+* **A resource link targets the most specific controller serving its domain class.**
+A link, form or redirect built from a domain instance, such as `<g:link resource="${book}">`, `redirect book`, or the `self` link of a HAL, Atom or JSON:API response, previously always targeted the controller named after the domain class, even when that controller did not exist. It now targets the nearest controller serving the domain class, a controller serving it when it is named after it or extends `RestfulController` parameterised on it, such as `PeopleController extends RestfulController<Person>` or a controller scaffolded with `@Scaffold(Person)`, and defines the action the link targets: the controller handling the request when it serves it, then the one serving it in the request's namespace, then in the default namespace, then in any namespace, the one named after the domain class settling a tie within a namespace. An application with one controller per domain class is unaffected. Where two controllers serve the same domain class, a link to it rendered by one of them now stays in that controller rather than moving to the one named after the domain class. Pass the `controller` attribute where a link should leave the current controller. See link:theWebLayer.html#restfulMappings[Mapping to REST resources]. Controllers generated by `generate-controller` and `generate-async-controller` now redirect a form save or update with `redirect action: "show", id: book.id` rather than `redirect book`, so a generated controller that is renamed still redirects to itself; a controller generated earlier and since renamed can be changed the same way.
 
 * **A read-only transaction no longer flushes the session.**
 A read-only transaction (`@ReadOnly`, `@Transactional(readOnly = true)`) commits without flushing the session on every GORM datastore. Hibernate, Neo4j and the simple map datastore already behaved this way; GORM for MongoDB flushed the session when a read-only transaction committed, and no longer does.
@@ -1500,7 +1524,8 @@ Two methods changed as a result:
 |===
 
 The same change applies to the `attrs` map passed to a GSP tag, whose internal implementation renames `isGspTagSyntaxCall()` to `gspTagSyntaxCall()`.
-Its setter is retained, so assigning `attrs.gspTagSyntaxCall` still invokes that setter rather than storing an attribute - as in Grails 7. Store an attribute of that name with `attrs.put('gspTagSyntaxCall', value)`.
+Its setter is retained, so assigning `attrs.gspTagSyntaxCall` still invokes that setter rather than storing an attribute - as in Grails 7.
+Subscript assignment, `attrs['gspTagSyntaxCall'] = value`, now stores an attribute of that name, as `attrs.put('gspTagSyntaxCall', value)` does; in Grails 7 it invoked the setter.
 
 NOTE: When adding a class that extends `grails.util.TypeConvertingMap`, do not declare a no-argument `getX()` or `isX()` method on it, or the entry `x` becomes unreachable for the same reason. Statically compiled callers bind directly to the accessor, so the collision cannot be corrected at runtime.
 
@@ -4434,3 +4459,102 @@ is still bound as midnight by `yyyy-MM-dd`, losing the time. Add a format that r
 such as `yyyy-MM-dd HH:mm`, to keep the time.
 
 The date scalars of GraphQL, which read `grails.databinding.dateFormats` too, are not changed.
+
+==== 79. Asset Pipeline Wildcards Stand for One Directory
+
+Grails 8 uses asset-pipeline 5.2, which resolves a `%` or `*` component of an asset path, in a `require`
+directive, an `<asset:...>` tag or a Sass import, the same way wherever the asset is found: as exactly one
+directory.
+
+In Grails 7, which used asset-pipeline 5.0, a `%` could stand for any number of directories when the asset
+was in a jar, as the files of every webjar are, and in the manifest that a packaged application serves its
+assets from. `webjars/%/dist/jquery.js` found `webjars/jquery/3.7.1/dist/jquery.js`, and now finds nothing,
+since one `%` cannot stand for both `jquery` and `3.7.1`.
+
+Write a `%` in place of each directory, as applications generated by `create-app` do for the version
+directory of each webjar, or use the new `%%` (or `**`), which stands for zero or more directories:
+
+[source,javascript]
+.grails-app/assets/javascripts/application.js
+----
+//= require webjars/jquery/%/dist/jquery.js
+//= require webjars/%%/dist/js/bootstrap.bundle.js
+----
+
+In a CSS `require` block, write `%` and `%%` rather than `+*+` and `+**+`, because `*/` ends the comment the
+block is written in. A path with one `%` for each directory, including every path `create-app` has
+generated, resolves as before, unless more than one directory matches (see below).
+
+When several directories match, the highest version is used: `5.1.2` over `4.3.0`, `10.0.0` over `9.0.0`,
+and a release over its own pre-releases. Before, the first match found was used, in the order of the file
+system, the jars on the classpath or the manifest. Where `%%` can match at more than one depth, the match with
+the fewest directories wins, so a copy of a library that another webjar bundles further down is not picked
+up. Hidden directories, whose names start with `.`, are never matched, and a wildcard inside a file name,
+such as `jquery-%.js`, no longer resolves in a packaged application, as it never resolved in development.
+
+A path that no longer resolves does not fail the build: `assetCompile` logs `Unable to Locate Asset: <path>`
+and leaves the file out, and an `<asset:...>` tag renders the path unchanged, which the browser then fails to
+load. Check the `assetCompile` output for that warning after upgrading.
+
+NOTE: The `includes` and `excludes` patterns of the `assets` block in `build.gradle`, which select the files
+`assetCompile` processes, are not changed.
+
+==== 80. Stricter Closure Typing for GORM Criteria Closures
+
+GORM's criteria closure methods (`where`, `whereLazy`, `build`, `buildLazy`, `projections`,
+`and`, `or`, `not`, `find`, `get`, `list`, `count`, `asBoolean` and the closure subquery forms
+of `in`, `inList`, `notIn`, `eqAll`, `gtAll`, `ltAll`, `geAll`, `leAll`, `gtSome`, `geSome`,
+`ltSome` and `leSome`) now declare
+`strategy = Closure.DELEGATE_FIRST` in their `@DelegatesTo` annotations. This matches the
+resolve strategy GORM already applies at runtime and fixes a `@CompileStatic` bug where the
+restrictions of a criteria closure nested inside another criteria closure were added to the
+enclosing criteria instead of the new one. Projection blocks resolved against the enclosing
+criteria for the same reason, silently dropping their projections. See
+https://github.com/apache/grails-core/issues/16425[Issue #16425].
+
+Statically compiled applications can be affected in two ways.
+
+**Forwarding a `Closure` parameter to one of these methods no longer compiles.** A method
+`Closure` parameter with the default `OWNER_FIRST` strategy cannot be passed to a
+`DELEGATE_FIRST` parameter:
+
+[source,groovy]
+----
+@CompileStatic
+static DetachedCriteria<Book> withExtra(Closure extra) {
+    new DetachedCriteria<Book>(Book).where(extra)
+    // [Static type checking] - Closure parameter with resolve strategy OWNER_FIRST
+    // passed to method with resolve strategy DELEGATE_FIRST
+}
+----
+
+Declare the same strategy on your parameter, or cast the argument:
+
+[source,groovy]
+----
+static DetachedCriteria<Book> withExtra(
+        @DelegatesTo(value = DetachedCriteria, strategy = Closure.DELEGATE_FIRST) Closure extra) {
+    new DetachedCriteria<Book>(Book).where(extra)
+}
+
+// or
+new DetachedCriteria<Book>(Book).where((Closure) extra)
+----
+
+**Name resolution inside a criteria closure now prefers the criteria delegate**, which is
+what dynamic code already did. A property or method that exists both on the enclosing class
+and on the criteria now resolves to the criteria:
+
+[source,groovy]
+----
+@CompileStatic
+class BookQueries {
+    List<Order> getOrders() { ... }
+
+    DetachedCriteria<Book> query() {
+        new DetachedCriteria<Book>(Book).where {
+            inList 'name', orders    // now reads the criteria's orders, not getOrders()
+        }
+    }
+}
+----

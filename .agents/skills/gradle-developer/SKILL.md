@@ -342,9 +342,22 @@ Also:
 - Same coordinate managed in multiple BOM maps must use the **same** version everywhere or `enforcedPlatform` resolution explodes.
 - Do **not** silence validation with exclusions as a shortcut to avoid a BOM bump.
 
+### `validateBomProperties` (parent BOM property rules)
+
+Registered by its own plugin, `org.apache.grails.buildsrc.bom-property-validator`, which every BOM applies (on `java-platform` projects only). Like `validateDependencyVersions` it is not attached to `check` or `build`; CI runs it by name in its own `Validate BOM Properties` job (root BOMs and `grails-gradle-bom`). It has its own opt-out, `skipBomPropertyValidation`, which works like `skipDependencyValidation` (`-PskipBomPropertyValidation`, `-PskipBomPropertyValidation=true`, or `ext.skipBomPropertyValidation = true`); each property skips only its own task. It reads the POM a BOM publishes (`generatePomFileForMavenPublication`). Every version property the BOM owns (`ext.bomVersionProperties`: `gradleBomDependencyVersions` for `grails-gradle-bom`, `bomDependencyVersions` for `grails-base-bom`, `customBomVersions` for each variant) must be used by some published entry. It also compares the POM with the parent BOMs named by `ext.parentBoms` (`spring-boot-dependencies`, set in `dependencies.gradle`), including the BOMs they import, and for every module both manage it fails when:
+
+| Rule | Example failure | Fix |
+|------|-----------------|-----|
+| (any owned property) No published entry uses the version key | `liquibase-hibernate5.version = 4.27.0` | Delete the key, or add the dependency that should use it |
+| The pin uses a different property than the parent controls the module with | `${jackson3.version} should be ${jackson-bom.version}` | Rename the version key, and the dependency keys that prefix it (map naming contract) |
+| The pin overrides a version the parent writes literally (all of Spring Boot's own `org.springframework.boot:*` entries) | `${foo.version}, where only ${spring-boot.version} moves the parent's version` | Drop the pin, or add a documented exemption - renaming it to the parent's import property would only repeat the parent's version |
+| The pin repeats the parent's version | `graphql-java.version = 25.0` | Drop the pin and inherit the parent's version |
+
+A module the parent manages through an imported BOM belongs to the property the parent imports that BOM with (`jackson-bom.version` for all of `tools.jackson:jackson-bom`), because that is the property a consumer sets to move the family. Coordinates and versions are resolved from each parent POM's properties, its own parents' and the Maven built-ins (`${project.groupId}`, as the Kotlin and Brave BOMs write their group, `${project.version}`, `${project.parent.version}`); an entry that cannot be resolved fails the task with `Cannot resolve <entry>, managed by <bom>` instead of going unchecked, so teach `PomVersions.properties` the missing built-in. Deliberate exceptions go in `bomUnusedVersionExemptions` / `bomPropertyNameExemptions` / `bomRedundantVersionExemptions` in `dependencies.gradle`, each with its reason.
+
 ### Adding or bumping a dependency
 
-1. Decide if Spring Boot already manages it - if same version, omit pin.
+1. Decide if Spring Boot already manages it - if same version, omit pin; if a different version, name the version key after Spring Boot's property (`validateBomProperties` enforces both).
 2. If Grails must manage it, add/bump in the correct map in `dependencies.gradle`.
 3. Use the unversioned coordinate in module `dependencies {}`.
 4. Run `./gradlew :that-module:validateDependencyVersions` (and affected consumers).
@@ -374,6 +387,7 @@ Plugin IDs (implementation under `build-logic/plugins/…/buildsrc/`):
 | `org.apache.grails.buildsrc.properties` | Load root/`local.properties` into `ext` |
 | `org.apache.grails.buildsrc.compile` | Java 21 `--release`, UTF-8, fork memory, parameters, sources/javadoc jars, reproducible archives, Groovy config script, isolated build, per-project `base.dir` |
 | `org.apache.grails.buildsrc.dependency-validator` | `validateDependencyVersions` |
+| `org.apache.grails.buildsrc.bom-property-validator` | `validateBomProperties` (BOM projects only) |
 | `org.apache.grails.buildsrc.publish` | Publishing conventions (grails-publish integration) |
 | `org.apache.grails.buildsrc.sbom` | CycloneDX / SBOM reproducibility |
 | `org.apache.grails.buildsrc.vulnerability-scan` | OSS Index style scanning hooks |
