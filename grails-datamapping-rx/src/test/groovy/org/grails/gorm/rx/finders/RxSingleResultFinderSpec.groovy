@@ -175,13 +175,14 @@ class RxSingleResultFinderSpec extends Specification {
         entity.getJavaClass() >> Book
 
         when:
-        finder.invoke(Book, 'findByTitle', { -> }, ['Shogun'] as Object[])
+        Observable observable = finder.invoke(Book, 'findByTitle', { -> }, ['Shogun'] as Object[]) as Observable
+        Book result = observable.toBlocking().first() as Book
 
         then:
         1 * datastoreClient.createQuery(Book) >> query
         1 * query.getSession() >> session
-        1 * query.singleResult()
-        noExceptionThrown()
+        1 * query.singleResult() >> Observable.just(new Book(title: 'Shogun'))
+        result.title == 'Shogun'
     }
 
     void "findBy applies query arguments to the query when present"() {
@@ -189,12 +190,14 @@ class RxSingleResultFinderSpec extends Specification {
         def finder = RxSingleResultFinder.findBy(datastoreClient)
 
         when:
-        finder.invoke(Book, 'findByTitle', ['Shogun', [max: 5]] as Object[])
+        Observable observable = finder.invoke(Book, 'findByTitle', ['Shogun', [max: 5]] as Object[]) as Observable
+        Book result = observable.toBlocking().first() as Book
 
         then:
         1 * datastoreClient.createQuery(Book) >> query
         1 * query.max(5)
-        1 * query.singleResult()
+        1 * query.singleResult() >> Observable.just(new Book(title: 'Shogun'))
+        result.title == 'Shogun'
     }
 
     void "findByBoolean isMethodMatch matches boolean style method names"() {
