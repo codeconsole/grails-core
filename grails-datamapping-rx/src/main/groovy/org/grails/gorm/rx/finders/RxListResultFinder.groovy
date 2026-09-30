@@ -34,11 +34,6 @@ import org.grails.datastore.rx.query.RxQuery
 /**
  * Implements {@code findAllBy*} and the {@code findAll<booleanProperty>By*} boolean-clause form
  * for RxGORM - the rx-module mirror of {@link org.grails.datastore.gorm.finders.ListResultFinder}.
- *
- * <p>Preserved exactly as it existed in the previous per-type rx finder classes: unlike the
- * synchronous {@code ListResultFinder}, this does NOT apply a {@code distinct()} projection - that
- * was already a pre-existing difference between the sync and rx implementations, not something
- * introduced or fixed by this refactor.
  */
 @CompileStatic
 class RxListResultFinder implements FinderMethod {

@@ -90,13 +90,11 @@ class ListResultFinderSpec extends Specification {
         !finder.isMethodMatch('findAllByName')
     }
 
-    void "findAllBy runs the full round trip, applies distinct and returns the full list"() {
+    void "findAllBy runs the full round trip without a distinct projection and returns the full list"() {
         given:
         List<FinderTestEntity> expected = [new FinderTestEntity(name: 'Bob')]
-        Query.ProjectionList projectionList = Mock(Query.ProjectionList)
         Query query = Mock(Query) {
             getEntity() >> persistentEntity
-            projections() >> projectionList
         }
         Session session = Stub(Session) {
             createQuery(FinderTestEntity) >> query
@@ -109,7 +107,7 @@ class ListResultFinderSpec extends Specification {
 
         then:
         result.is(expected)
-        1 * projectionList.distinct()
+        0 * query.projections()
         1 * query.list() >> expected
         0 * query.singleResult()
     }
@@ -119,10 +117,8 @@ class ListResultFinderSpec extends Specification {
         // Called reflectively (dynamic Groovy dispatch, not part of FinderMethod) by
         // AbstractDetachedCriteria#methodMissing.
         List<FinderTestEntity> expected = [new FinderTestEntity(name: 'Bob')]
-        Query.ProjectionList projectionList = Mock(Query.ProjectionList)
         Query query = Mock(Query) {
             getEntity() >> persistentEntity
-            projections() >> projectionList
         }
         Session session = Stub(Session) {
             createQuery(FinderTestEntity) >> query
@@ -142,17 +138,15 @@ class ListResultFinderSpec extends Specification {
         then:
         result.is(expected)
         1 * query.add({ it instanceof Query.PropertyCriterion })
-        1 * projectionList.distinct()
+        0 * query.projections()
         1 * query.list() >> expected
     }
 
     void "invoke(Class, methodName, DetachedCriteria, Object[]) with a null detachedCriteria never merges anything onto the built query"() {
         given:
         List<FinderTestEntity> expected = [new FinderTestEntity(name: 'Bob')]
-        Query.ProjectionList projectionList = Mock(Query.ProjectionList)
         Query query = Mock(Query) {
             getEntity() >> persistentEntity
-            projections() >> projectionList
         }
         Session session = Stub(Session) {
             createQuery(FinderTestEntity) >> query
@@ -166,7 +160,7 @@ class ListResultFinderSpec extends Specification {
         then:
         result.is(expected)
         0 * query.add({ it instanceof Query.PropertyCriterion })
-        1 * projectionList.distinct()
+        0 * query.projections()
         1 * query.list() >> expected
     }
 

@@ -123,7 +123,6 @@ public class ListResultFinder implements FinderMethod, QueryBuildingFinder {
     private Object doInvoke(final DynamicFinderInvocation invocation) {
         return FinderSupport.execute(datastoreResolver, (SessionCallback<Object>) session -> {
             Query query = buildQuery(invocation, session);
-            query.projections().distinct();
             return query.list();
         });
     }
