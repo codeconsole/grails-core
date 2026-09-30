@@ -16,6 +16,7 @@
  *  specific language governing permissions and limitations
  *  under the License.
  */
+
 package org.grails.datastore.gorm.transform;
 
 import java.lang.annotation.ElementType;
@@ -23,15 +24,18 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
+import org.codehaus.groovy.transform.GroovyASTTransformationClass;
+
 /**
- * Marker meta-annotation that points a GORM annotation (e.g. {@code @Transactional}, {@code @Rollback},
- * {@code @Tenant}) at the {@link org.codehaus.groovy.transform.ASTTransformation} class that implements it.
- *
- * @author Graeme Rocher
- * @since 6.1
+ * Local marker annotation used only for testing {@link OrderedGormTransformation}'s error path in
+ * {@code collectAndOrderGormTransformations} when the transform class loads but its no-arg
+ * constructor throws: it resolves, via {@link GormASTTransformationClass}, to
+ * {@link ThrowingConstructorTestTransformation}, so the reported compile error must carry the
+ * constructor's own message rather than the reflective wrapper's.
  */
 @Retention(RetentionPolicy.RUNTIME)
-@Target(ElementType.ANNOTATION_TYPE)
-public @interface GormASTTransformationClass {
-    String value();
+@Target({ElementType.TYPE})
+@GroovyASTTransformationClass("org.grails.datastore.gorm.transform.OrderedGormTransformation")
+@GormASTTransformationClass("org.grails.datastore.gorm.transform.ThrowingConstructorTestTransformation")
+public @interface ApplyThrowingConstructorGormTransform {
 }
