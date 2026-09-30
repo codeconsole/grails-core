@@ -23,6 +23,7 @@ import java.util.regex.Pattern;
 import groovy.lang.Closure;
 
 import grails.gorm.DetachedCriteria;
+import org.grails.datastore.gorm.DatastoreResolver;
 import org.grails.datastore.mapping.core.Datastore;
 import org.grails.datastore.mapping.core.Session;
 import org.grails.datastore.mapping.model.MappingContext;
@@ -43,20 +44,24 @@ public class CountFinder implements FinderMethod, QueryBuildingFinder {
     private static final String[] OPERATORS = {"And", "Or"};
     private static final String OPERATOR_OR = "Or";
 
-    private final Datastore datastore;
+    private final DatastoreResolver datastoreResolver;
     private final DynamicFinder grammar;
 
-    private CountFinder(Datastore datastore, DynamicFinder grammar) {
-        this.datastore = datastore;
+    private CountFinder(DatastoreResolver datastoreResolver, DynamicFinder grammar) {
+        this.datastoreResolver = datastoreResolver;
         this.grammar = grammar;
     }
 
     public static CountFinder countBy(Datastore datastore) {
-        return new CountFinder(datastore, new DynamicFinder(METHOD_PATTERN, OPERATORS, datastore.getMappingContext(), false));
+        return countBy(FinderSupport.resolverFor(datastore), datastore.getMappingContext());
+    }
+
+    public static CountFinder countBy(DatastoreResolver datastoreResolver, MappingContext mappingContext) {
+        return new CountFinder(datastoreResolver, new DynamicFinder(METHOD_PATTERN, OPERATORS, mappingContext, false));
     }
 
     public static CountFinder countBy(MappingContext mappingContext) {
-        return new CountFinder(null, new DynamicFinder(METHOD_PATTERN, OPERATORS, mappingContext, false));
+        return countBy(null, mappingContext);
     }
 
     @Override
@@ -103,7 +108,7 @@ public class CountFinder implements FinderMethod, QueryBuildingFinder {
     }
 
     private Object doInvoke(final DynamicFinderInvocation invocation) {
-        return FinderSupport.execute(datastore, session -> {
+        return FinderSupport.execute(datastoreResolver, session -> {
             Query query = buildQuery(invocation, session);
             return query.singleResult();
         });

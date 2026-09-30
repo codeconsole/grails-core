@@ -19,6 +19,7 @@
 package org.grails.datastore.gorm.finders
 
 import groovy.lang.MissingMethodException
+import org.grails.datastore.gorm.DatastoreResolver
 import org.grails.datastore.mapping.core.Datastore
 import org.grails.datastore.mapping.core.Session
 import org.grails.datastore.mapping.core.exceptions.ConfigurationException
@@ -367,5 +368,45 @@ class SingleResultFinderSpec extends Specification {
 
         then:
         thrown(MissingMethodException)
+    }
+    void "findBy resolves its datastore through the DatastoreResolver on every invocation, not at construction"() {
+        given:
+        Query query = Mock(Query) {
+            getEntity() >> persistentEntity
+            projections() >> Mock(Query.ProjectionList)
+        }
+        Session session = Stub(Session) {
+            createQuery(FinderTestEntity) >> query
+        }
+        Datastore lateBoundDatastore = Stub(Datastore) {
+            hasCurrentSession() >> true
+            getCurrentSession() >> session
+        }
+        DatastoreResolver resolver = Mock(DatastoreResolver)
+
+        when:
+        def finder = SingleResultFinder.findBy(resolver, mappingContext)
+
+        then:
+        0 * resolver.resolve()
+
+        when:
+        finder.invoke(FinderTestEntity, 'findByName', ['Bob'] as Object[])
+
+        then:
+        1 * resolver.resolve() >> lateBoundDatastore
+        1 * query.singleResult()
+    }
+
+    void "findBy throws IllegalStateException when the DatastoreResolver resolves no datastore"() {
+        given:
+        DatastoreResolver resolver = Mock(DatastoreResolver)
+
+        when:
+        SingleResultFinder.findBy(resolver, mappingContext).invoke(FinderTestEntity, 'findByName', ['Bob'] as Object[])
+
+        then:
+        IllegalStateException e = thrown()
+        e.message == 'Cannot execute session query with null datastore'
     }
 }

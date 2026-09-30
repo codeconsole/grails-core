@@ -33,6 +33,7 @@ import groovy.lang.MissingMethodException;
 import org.springframework.core.convert.ConversionException;
 
 import grails.gorm.DetachedCriteria;
+import org.grails.datastore.gorm.DatastoreResolver;
 import org.grails.datastore.mapping.core.Datastore;
 import org.grails.datastore.mapping.core.Session;
 import org.grails.datastore.mapping.core.exceptions.ConfigurationException;
@@ -54,54 +55,70 @@ public class SingleResultFinder implements FinderMethod, QueryBuildingFinder {
     private static final String[] OPERATORS = {"And", "Or"};
     private static final String OPERATOR_OR = "Or";
 
-    private final Datastore datastore;
+    private final DatastoreResolver datastoreResolver;
     private final DynamicFinder grammar;
     private final Consumer<DynamicFinderInvocation> validate;
     private final Function<DynamicFinderInvocation, Object> onNullResult;
 
-    private SingleResultFinder(Datastore datastore, DynamicFinder grammar,
+    private SingleResultFinder(DatastoreResolver datastoreResolver, DynamicFinder grammar,
             Consumer<DynamicFinderInvocation> validate, Function<DynamicFinderInvocation, Object> onNullResult) {
-        this.datastore = datastore;
+        this.datastoreResolver = datastoreResolver;
         this.grammar = grammar;
         this.validate = validate;
         this.onNullResult = onNullResult;
     }
 
     public static SingleResultFinder findBy(Datastore datastore) {
-        return new SingleResultFinder(datastore, grammar(FIND_BY_PATTERN, datastore.getMappingContext(), false), null, null);
+        return findBy(FinderSupport.resolverFor(datastore), datastore.getMappingContext());
+    }
+
+    public static SingleResultFinder findBy(DatastoreResolver datastoreResolver, MappingContext mappingContext) {
+        return new SingleResultFinder(datastoreResolver, grammar(FIND_BY_PATTERN, mappingContext, false), null, null);
     }
 
     public static SingleResultFinder findBy(MappingContext mappingContext) {
-        return new SingleResultFinder(null, grammar(FIND_BY_PATTERN, mappingContext, false), null, null);
+        return findBy(null, mappingContext);
     }
 
     public static SingleResultFinder findByBoolean(Datastore datastore) {
-        return new SingleResultFinder(datastore, grammar(FIND_BY_BOOLEAN_PATTERN, datastore.getMappingContext(), true), null, null);
+        return findByBoolean(FinderSupport.resolverFor(datastore), datastore.getMappingContext());
+    }
+
+    public static SingleResultFinder findByBoolean(DatastoreResolver datastoreResolver, MappingContext mappingContext) {
+        return new SingleResultFinder(datastoreResolver, grammar(FIND_BY_BOOLEAN_PATTERN, mappingContext, true), null, null);
     }
 
     public static SingleResultFinder findByBoolean(MappingContext mappingContext) {
-        return new SingleResultFinder(null, grammar(FIND_BY_BOOLEAN_PATTERN, mappingContext, true), null, null);
+        return findByBoolean(null, mappingContext);
     }
 
     public static SingleResultFinder findOrCreateBy(Datastore datastore) {
-        return findOrCreateOrSave(datastore, datastore.getMappingContext(), false);
+        return findOrCreateBy(FinderSupport.resolverFor(datastore), datastore.getMappingContext());
+    }
+
+    public static SingleResultFinder findOrCreateBy(DatastoreResolver datastoreResolver, MappingContext mappingContext) {
+        return findOrCreateOrSave(datastoreResolver, mappingContext, false);
     }
 
     public static SingleResultFinder findOrCreateBy(MappingContext mappingContext) {
-        return findOrCreateOrSave(null, mappingContext, false);
+        return findOrCreateBy(null, mappingContext);
     }
 
     public static SingleResultFinder findOrSaveBy(Datastore datastore) {
-        return findOrCreateOrSave(datastore, datastore.getMappingContext(), true);
+        return findOrSaveBy(FinderSupport.resolverFor(datastore), datastore.getMappingContext());
+    }
+
+    public static SingleResultFinder findOrSaveBy(DatastoreResolver datastoreResolver, MappingContext mappingContext) {
+        return findOrCreateOrSave(datastoreResolver, mappingContext, true);
     }
 
     public static SingleResultFinder findOrSaveBy(MappingContext mappingContext) {
-        return findOrCreateOrSave(null, mappingContext, true);
+        return findOrSaveBy(null, mappingContext);
     }
 
-    private static SingleResultFinder findOrCreateOrSave(Datastore datastore, MappingContext mappingContext, boolean save) {
+    private static SingleResultFinder findOrCreateOrSave(DatastoreResolver datastoreResolver, MappingContext mappingContext, boolean save) {
         String pattern = save ? FIND_OR_SAVE_BY_PATTERN : FIND_OR_CREATE_BY_PATTERN;
-        return new SingleResultFinder(datastore, grammar(pattern, mappingContext, false),
+        return new SingleResultFinder(datastoreResolver, grammar(pattern, mappingContext, false),
                 SingleResultFinder::rejectOrAndComparisonOperators,
                 invocation -> constructFromEqualExpressions(invocation, save));
     }
@@ -202,7 +219,7 @@ public class SingleResultFinder implements FinderMethod, QueryBuildingFinder {
         if (validate != null) {
             validate.accept(invocation);
         }
-        return FinderSupport.execute(datastore, session -> {
+        return FinderSupport.execute(datastoreResolver, session -> {
             Object result;
             if (onNullResult != null) {
                 try {

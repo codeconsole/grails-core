@@ -21,6 +21,7 @@ plugins {
     id 'java-platform'
     id 'org.apache.grails.buildsrc.properties'
     id 'org.apache.grails.buildsrc.dependency-validator'
+    id 'org.apache.grails.buildsrc.bom-property-validator'
     id 'org.apache.grails.buildsrc.publish'
     id 'org.apache.grails.buildsrc.sbom'
 }
@@ -35,12 +36,11 @@ javaPlatform {
 ext {
     isReleaseBuild = System.getenv('GRAILS_PUBLISH_RELEASE') == 'true'
     isPublishedExternal = System.getenv().containsKey('NEXUS_PUBLISH_STAGING_PROFILE_ID')
+    // This BOM publishes the build tooling versions; validateBomProperties fails for any of them no entry uses
+    bomVersionProperties = gradleBomDependencyVersions
 }
 
 dependencies {
-    // Import Log4j ahead of Spring Boot so Maven consumers resolve the full Log4j family to the
-    // BOM-managed 2.25.5 (CVE-2026-49844) instead of Spring Boot's older managed Log4j version.
-    api platform(gradleBomPlatformDependencies['log4j2-bom'])
     api platform(gradleBomPlatformDependencies['spring-boot-bom']), {
         exclude group: 'org.apache.groovy'
         exclude group: 'org.spockframework'

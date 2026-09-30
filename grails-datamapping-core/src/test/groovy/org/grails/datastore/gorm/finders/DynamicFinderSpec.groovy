@@ -638,15 +638,8 @@ class DynamicFinderSpec extends Specification {
         1 * criteria.select('tags')
     }
 
-    void "populateArgumentsForCriteria(BuildableCriteria) applies a multi-field sort Map, but ignores each entry's own direction"() {
+    void "populateArgumentsForCriteria(BuildableCriteria) applies a multi-field sort Map, honouring each entry's own direction"() {
         given:
-        // Real, surprising inconsistency between the two populateArgumentsForCriteria overloads:
-        // the Query-overload's multi-field sort (applySortForMap, tested above) reads EACH entry's
-        // own value ('asc'/'desc') to pick that field's direction. This BuildableCriteria-overload
-        // has its own separate inline loop that does NOT do that - it reads sortMap.get(key) into
-        // `value` but never uses it, applying a single direction (from the top-level "order" arg,
-        // defaulting to ascending) uniformly to every entry in the map instead. A per-field 'desc'
-        // here is silently ignored.
         BuildableCriteria criteria = Mock(BuildableCriteria)
 
         when:
@@ -654,10 +647,10 @@ class DynamicFinderSpec extends Specification {
 
         then:
         1 * criteria.order({ Query.Order order -> order.property == 'name' && order.direction == Query.Order.Direction.ASC })
-        1 * criteria.order({ Query.Order order -> order.property == 'age' && order.direction == Query.Order.Direction.ASC })
+        1 * criteria.order({ Query.Order order -> order.property == 'age' && order.direction == Query.Order.Direction.DESC })
     }
 
-    void "populateArgumentsForCriteria(BuildableCriteria) applies the top-level order argument uniformly to every sort Map entry"() {
+    void "populateArgumentsForCriteria(BuildableCriteria) ignores the top-level order argument for a sort Map, as the Query overload does"() {
         given:
         BuildableCriteria criteria = Mock(BuildableCriteria)
 
@@ -665,8 +658,51 @@ class DynamicFinderSpec extends Specification {
         DynamicFinder.populateArgumentsForCriteria(criteria, [sort: [name: 'asc', age: 'desc'], order: 'desc'])
 
         then:
-        1 * criteria.order({ Query.Order order -> order.property == 'name' && order.direction == Query.Order.Direction.DESC })
+        1 * criteria.order({ Query.Order order -> order.property == 'name' && order.direction == Query.Order.Direction.ASC })
         1 * criteria.order({ Query.Order order -> order.property == 'age' && order.direction == Query.Order.Direction.DESC })
+    }
+
+    void "populateArgumentsForCriteria(BuildableCriteria) defaults a null sort Map entry direction to ascending"() {
+        given:
+        BuildableCriteria criteria = Mock(BuildableCriteria)
+
+        when:
+        DynamicFinder.populateArgumentsForCriteria(criteria, [sort: [name: null]])
+
+        then:
+        1 * criteria.order({ Query.Order order -> order.property == 'name' && order.direction == Query.Order.Direction.ASC })
+    }
+
+    @Unroll
+    void "populateArgumentsForCriteria(BuildableCriteria) rejects a sort key #description without echoing it"() {
+        given:
+        BuildableCriteria criteria = Mock(BuildableCriteria)
+
+        when:
+        DynamicFinder.populateArgumentsForCriteria(criteria, [sort: sort])
+
+        then:
+        IllegalArgumentException e = thrown()
+        e.message == 'Invalid sort property'
+        0 * criteria.order(_)
+
+        where:
+        sort        | description
+        'name desc' | 'carrying a direction'
+        'name, age' | 'carrying a second expression'
+    }
+
+    void "populateArgumentsForCriteria(BuildableCriteria) rejects an order direction that is neither asc nor desc"() {
+        given:
+        BuildableCriteria criteria = Mock(BuildableCriteria)
+
+        when:
+        DynamicFinder.populateArgumentsForCriteria(criteria, [sort: 'name', order: 'sideways'])
+
+        then:
+        IllegalArgumentException e = thrown()
+        e.message == 'Invalid sort direction'
+        0 * criteria.order(_)
     }
 
     void "populateArgumentsForCriteria(BuildableCriteria) passes the raw argument map to a QueryArgumentsAware criteria"() {

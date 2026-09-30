@@ -23,6 +23,7 @@ import java.util.regex.Pattern;
 import groovy.lang.Closure;
 
 import grails.gorm.DetachedCriteria;
+import org.grails.datastore.gorm.DatastoreResolver;
 import org.grails.datastore.mapping.core.Datastore;
 import org.grails.datastore.mapping.core.Session;
 import org.grails.datastore.mapping.core.SessionCallback;
@@ -40,28 +41,36 @@ public class ListResultFinder implements FinderMethod, QueryBuildingFinder {
     private static final String FIND_ALL_BY_BOOLEAN_PATTERN = "(findAll)((\\w+)(By)([A-Z]\\w*)|(\\w+))";
     private static final String[] OPERATORS = {"And", "Or"};
 
-    private final Datastore datastore;
+    private final DatastoreResolver datastoreResolver;
     private final DynamicFinder grammar;
 
-    private ListResultFinder(Datastore datastore, DynamicFinder grammar) {
-        this.datastore = datastore;
+    private ListResultFinder(DatastoreResolver datastoreResolver, DynamicFinder grammar) {
+        this.datastoreResolver = datastoreResolver;
         this.grammar = grammar;
     }
 
     public static ListResultFinder findAllBy(Datastore datastore) {
-        return new ListResultFinder(datastore, grammar(FIND_ALL_BY_PATTERN, datastore.getMappingContext(), false));
+        return findAllBy(FinderSupport.resolverFor(datastore), datastore.getMappingContext());
+    }
+
+    public static ListResultFinder findAllBy(DatastoreResolver datastoreResolver, MappingContext mappingContext) {
+        return new ListResultFinder(datastoreResolver, grammar(FIND_ALL_BY_PATTERN, mappingContext, false));
     }
 
     public static ListResultFinder findAllBy(MappingContext mappingContext) {
-        return new ListResultFinder(null, grammar(FIND_ALL_BY_PATTERN, mappingContext, false));
+        return findAllBy(null, mappingContext);
     }
 
     public static ListResultFinder findAllByBoolean(Datastore datastore) {
-        return new ListResultFinder(datastore, grammar(FIND_ALL_BY_BOOLEAN_PATTERN, datastore.getMappingContext(), true));
+        return findAllByBoolean(FinderSupport.resolverFor(datastore), datastore.getMappingContext());
+    }
+
+    public static ListResultFinder findAllByBoolean(DatastoreResolver datastoreResolver, MappingContext mappingContext) {
+        return new ListResultFinder(datastoreResolver, grammar(FIND_ALL_BY_BOOLEAN_PATTERN, mappingContext, true));
     }
 
     public static ListResultFinder findAllByBoolean(MappingContext mappingContext) {
-        return new ListResultFinder(null, grammar(FIND_ALL_BY_BOOLEAN_PATTERN, mappingContext, true));
+        return findAllByBoolean(null, mappingContext);
     }
 
     private static DynamicFinder grammar(String pattern, MappingContext mappingContext, boolean booleanClause) {
@@ -112,7 +121,7 @@ public class ListResultFinder implements FinderMethod, QueryBuildingFinder {
     }
 
     private Object doInvoke(final DynamicFinderInvocation invocation) {
-        return FinderSupport.execute(datastore, (SessionCallback<Object>) session -> {
+        return FinderSupport.execute(datastoreResolver, (SessionCallback<Object>) session -> {
             Query query = buildQuery(invocation, session);
             query.projections().distinct();
             return query.list();

@@ -18,6 +18,7 @@
  */
 package org.grails.datastore.gorm.finders
 
+import org.grails.datastore.gorm.DatastoreResolver
 import org.grails.datastore.mapping.core.Datastore
 import org.grails.datastore.mapping.core.Session
 import org.grails.datastore.mapping.model.MappingContext
@@ -216,5 +217,45 @@ class CountFinderSpec extends Specification {
 
         then:
         thrown(IllegalStateException)
+    }
+    void "countBy resolves its datastore through the DatastoreResolver on every invocation, not at construction"() {
+        given:
+        Query query = Mock(Query) {
+            getEntity() >> persistentEntity
+            projections() >> Mock(Query.ProjectionList)
+        }
+        Session session = Stub(Session) {
+            createQuery(FinderTestEntity) >> query
+        }
+        Datastore lateBoundDatastore = Stub(Datastore) {
+            hasCurrentSession() >> true
+            getCurrentSession() >> session
+        }
+        DatastoreResolver resolver = Mock(DatastoreResolver)
+
+        when:
+        def finder = CountFinder.countBy(resolver, mappingContext)
+
+        then:
+        0 * resolver.resolve()
+
+        when:
+        finder.invoke(FinderTestEntity, 'countByName', ['Bob'] as Object[])
+
+        then:
+        1 * resolver.resolve() >> lateBoundDatastore
+        1 * query.singleResult() >> 0L
+    }
+
+    void "countBy throws IllegalStateException when the DatastoreResolver resolves no datastore"() {
+        given:
+        DatastoreResolver resolver = Mock(DatastoreResolver)
+
+        when:
+        CountFinder.countBy(resolver, mappingContext).invoke(FinderTestEntity, 'countByName', ['Bob'] as Object[])
+
+        then:
+        IllegalStateException e = thrown()
+        e.message == 'Cannot execute session query with null datastore'
     }
 }
