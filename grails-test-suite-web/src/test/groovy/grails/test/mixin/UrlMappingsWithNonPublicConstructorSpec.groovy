@@ -16,41 +16,37 @@
  *  specific language governing permissions and limitations
  *  under the License.
  */
-package demo
+package grails.test.mixin
 
-import grails.testing.web.interceptor.InterceptorUnitTest
 import spock.lang.Specification
 
-class TestInterceptorSpec extends Specification implements InterceptorUnitTest<TestInterceptor> {
+import grails.artefact.Artefact
+import grails.testing.web.UrlMappingsUnitTest
 
-    // tag::with_request[]
-    void "Test test interceptor matching"() {
-        when:
-        withRequest(controller: "test")
+class UrlMappingsWithNonPublicConstructorSpec extends Specification implements UrlMappingsUnitTest<PrivateConstructorUrlMappings> {
 
-        then:
-        interceptor.doesMatch()
-
-        when:
-        withRequest(controller: "person")
-
-        then:
-        !interceptor.doesMatch()
+    Class[] getControllersToMock() {
+        [PrivateConstructorController]
     }
-    // end::with_request[]
 
-    // tag::with_interceptors[]
-    void "Test controller execution with interceptors"() {
-        given:
-        def controller = mockController(TestController)
-
-        when:
-        withInterceptors([controller: "test"]) {
-            controller.renderAttribute()
-        }
-
-        then:
-        response.text == "Foo is Bar"
+    void 'url mappings with a non-public constructor can be tested'() {
+        expect:
+        urlMappingsHolder
+        assertForwardUrlMapping('/privateConstructor/show', controller: 'privateConstructor', action: 'show')
     }
-    // end::with_interceptors[]
+}
+
+@Artefact('Controller')
+class PrivateConstructorController {
+
+    def show() {}
+}
+
+class PrivateConstructorUrlMappings {
+
+    static mappings = {
+        '/privateConstructor/show'(controller: 'privateConstructor', action: 'show')
+    }
+
+    private PrivateConstructorUrlMappings() {}
 }
