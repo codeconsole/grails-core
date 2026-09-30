@@ -85,7 +85,7 @@ class GraphQLEntityHelper {
         }
 
         GraphQLMapping mapping = toGraphQLMapping(graphql)
-        if (!(mapping instanceof GraphQLMapping)) {
+        if (mapping == null) {
             throw new IllegalMappingException("The static graphql property on ${entity.name} is not a Boolean, Closure, or GraphQLMapping")
         }
         verifyMapping(mapping, entity)
@@ -106,7 +106,7 @@ class GraphQLEntityHelper {
             return new GraphQLMapping()
         }
         if (graphql instanceof Closure) {
-            return new GraphQLMapping().build((Closure) graphql)
+            return GraphQLMapping.build((Closure) graphql)
         }
         if (graphql instanceof LazyGraphQLMapping) {
             return ((LazyGraphQLMapping) graphql).initialize()
