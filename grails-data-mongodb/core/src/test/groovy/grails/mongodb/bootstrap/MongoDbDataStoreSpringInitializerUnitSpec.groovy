@@ -129,6 +129,22 @@ class MongoDbDataStoreSpringInitializerUnitSpec extends Specification {
         !initializer.configuration.containsProperty(MongoSettings.SETTING_DATABASE_NAME)
     }
 
+    void 'applyDatabaseNameFallback treats a null or blank database name as not customized'() {
+        given:
+        def initializer = new MongoDbDataStoreSpringInitializer()
+        removeSystemPropertySources(initializer)
+        initializer.setDatabaseName(name)
+
+        when:
+        initializer.applyDatabaseNameFallback()
+
+        then:
+        !initializer.configuration.containsProperty(MongoSettings.SETTING_DATABASE_NAME)
+
+        where:
+        name << [null, '', '   ']
+    }
+
     void 'applyDatabaseNameFallback injects the customized database name into a ConfigurableEnvironment when not already set'() {
         given:
         def initializer = new MongoDbDataStoreSpringInitializer()

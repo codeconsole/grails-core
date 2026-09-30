@@ -437,7 +437,8 @@ abstract class AbstractDatastoreInitializer implements ResourceLoaderAware {
     }
 
     @CompileDynamic
-    protected static boolean containsRegisteredBean(Object builder, BeanDefinitionRegistry registry, String beanName) {
+    @SuppressWarnings('GrMethodMayBeStatic')
+    protected boolean containsRegisteredBean(Object builder, BeanDefinitionRegistry registry, String beanName) {
         registry.containsBeanDefinition(beanName) || (builder.hasProperty('springConfig') && builder.springConfig.containsBean(beanName))
     }
 
@@ -493,7 +494,8 @@ abstract class AbstractDatastoreInitializer implements ResourceLoaderAware {
     }
 
     @CompileStatic
-    protected static Class getGrailsValidatorClass() {
+    @SuppressWarnings('GrMethodMayBeStatic')
+    protected Class getGrailsValidatorClass() {
         throw new UnsupportedOperationException('Method getGrailsValidatorClass no longer supported')
     }
 

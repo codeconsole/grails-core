@@ -85,10 +85,12 @@ class MongoDbDataStoreSpringInitializer extends AbstractDatastoreInitializer {
     /**
      * Applies {@link #databaseName} as a {@code grails.mongodb.databaseName} fallback on
      * {@link #configuration} when it was customized via {@link #setDatabaseName(String)} and the
-     * configuration does not already specify a database name explicitly.
+     * configuration does not already specify a database name explicitly. A null or blank name is
+     * treated as not customized so that it can never displace the configured default.
      */
     protected void applyDatabaseNameFallback() {
-        if (databaseName == DEFAULT_DATABASE_NAME || configuration.containsProperty(MongoSettings.SETTING_DATABASE_NAME)) {
+        if (!databaseName?.trim() || databaseName == DEFAULT_DATABASE_NAME ||
+                configuration.containsProperty(MongoSettings.SETTING_DATABASE_NAME)) {
             return
         }
         if (configuration instanceof ConfigurableEnvironment) {
