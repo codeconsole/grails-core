@@ -50,4 +50,16 @@ class ModelInterceptorIntSpec extends Specification implements HttpClientSupport
                 'return'
         ]
     }
+
+    @spock.lang.Issue('https://github.com/apache/grails-core/issues/12081')
+    void "interceptor after() can read model set by render(template:..., model:...) via TEMPLATE_MODEL fallback"() {
+        given: "a controller that calls render(template: 'snippet', model: [title: 'x'])"
+        def response = http('/renderTemplate')
+
+        expect: "the HTTP response succeeds"
+        response.assertStatus(200)
+
+        and: "the interceptor's after() received the exact model passed to render(template:..., model:...)"
+        modelInterceptor.latestModel == [title: 'x']
+    }
 }

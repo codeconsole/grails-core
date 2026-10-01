@@ -19,20 +19,16 @@
 
 package functional.tests
 
-class ModelInterceptor {
+/**
+ * Controller whose index action uses {@code render(template:..., model:...)} so that the
+ * model is stored in {@code GrailsApplicationAttributes.TEMPLATE_MODEL} rather than in a
+ * {@code ModelAndView}.  This exercises the fallback branch of
+ * {@link grails.artefact.Interceptor#getModel()} that was not covered by the existing
+ * modelAndView / respond / return controller tests.
+ */
+class RenderTemplateController {
 
-    Object latestModel
-
-    ModelInterceptor() {
-        match(controller: 'modelAndView|respond|return|renderTemplate')
-    }
-
-    boolean before() {
-        true
-    }
-
-    boolean after() {
-        latestModel = model
-        true
+    def index() {
+        render(template: 'snippet', model: [title: 'x'])
     }
 }

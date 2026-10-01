@@ -140,12 +140,18 @@ trait Interceptor implements ResponseRenderer, ResponseRedirector, RequestForwar
     }
 
     /**
-     * @return The current model
+     * @return `null` when neither `MODEL_AND_VIEW` nor `TEMPLATE_MODEL` is set;
+     *         `TEMPLATE_MODEL` map when no `ModelAndView` is present;
+     *         `modelAndView.modelMap` when a `ModelAndView` is present (existing behavior, verify it still works).
      */
     @Generated
     Map<String, Object> getModel() {
         def modelAndView = (ModelAndView) currentRequestAttributes().getAttribute(GrailsApplicationAttributes.MODEL_AND_VIEW, 0)
-        return modelAndView?.modelMap
+        if (modelAndView != null) {
+            return modelAndView.modelMap
+        }
+        // Fallback: when render template: ..., model: ... is used, the model is stored in TEMPLATE_MODEL
+        return (Map<String, Object>) currentRequestAttributes().getAttribute(GrailsApplicationAttributes.TEMPLATE_MODEL, 0)
     }
 
     /**
