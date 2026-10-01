@@ -32,8 +32,8 @@ import groovy.transform.CompileStatic
 @CompileStatic
 class DirtyCheckingList extends DirtyCheckingCollection implements List {
 
-    // reversed() is excluded: on Groovy 6 the generated version replaced the tracking
-    // override below, so the reverse-ordered view came back untracked.
+    // reversed() is excluded so the tracking override below is always the one called. Groovy 6
+    // generates a delegated reversed() over it, and the reverse-ordered view would be untracked.
     @Delegate(excludes = 'reversed') List target
 
     DirtyCheckingList(List target, DirtyCheckable parent, String property) {

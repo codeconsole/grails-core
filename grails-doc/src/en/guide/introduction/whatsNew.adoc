@@ -44,6 +44,16 @@ This brings the Spring Boot 4 modular artifact layout, Spring Framework 7 API re
 The Grails 8 upgrade guide calls out the major application-impacting changes and links to the Spring Boot 4.0 migration guide, Spring Boot 4.1 release notes and Spring Framework 7.0 release notes.
 For the changes since Spring Boot 4.1, see the https://github.com/spring-projects/spring-boot/wiki/Spring-Boot-4.2-Release-Notes[Spring Boot 4.2 Release Notes] and the https://github.com/spring-projects/spring-framework/wiki/Spring-Framework-7.1-Release-Notes[Spring Framework 7.1 Release Notes].
 
+==== JSON Dates and Times Render as Spring Boot Renders Them
+
+`render ... as JSON`, `respond` and JSON views now write `Date`, `Calendar`, `TimeZone`, the `java.sql` date types,
+the `java.time` date, time, duration and zone types and `XMLGregorianCalendar` the same way as Spring Boot's default
+Jackson `JsonMapper`, so a Grails application and a Spring Boot application return the same JSON for the same values:
+`java.sql.Time` as `"01:48:46"`, `LocalTime` as `"01:48:46.407254"`, `Duration` as `"PT1H30M"`, `Year` as a number,
+`ZoneId` and `TimeZone` as their IDs, and `Date`, `Calendar` and `ZonedDateTime` map keys as their values
+render. See the Date and Time Rendering sections of the REST and JSON Views guides, and the upgrade guide for the
+types that render differently than in Grails 7.
+
 ==== Hibernate 7 Application Generation
 
 Grails Forge can now generate applications configured for Grails Data with Hibernate 7.
@@ -98,6 +108,9 @@ class MyGrailsPlugin extends Plugin {
 `beanRegistrar()` replaces the `doWithSpring` bean builder DSL, which is deprecated in Grails {grailsMajorVersion}.
 The DSL continues to work for now, but you are strongly urged to migrate.
 See the xref:upgrading#upgrading80x[upgrade guide] for details.
+
+Unit tests get the same hooks: a test declares its beans in a `beans` block, as an application or plugin does, or overrides `beanRegistrar()`, or declares a static nested `@Configuration` class — and `doWithSpring()` on the testing traits is deprecated to match.
+See <<unitTesting,Unit Testing>>.
 
 ==== CLI Commands Move to Companion `-cli` Artifacts
 
@@ -383,6 +396,28 @@ WARNING: Reloading discards unflushed changes to the instance, exactly as `refre
 GORM for Hibernate 7 now starts tracking changes to an entity when it is persisted or merged, not only once its row has been inserted. Previously an entity whose identifier is generated before the insert, such as one mapped with `id generator: 'increment'` or any member of a `tablePerConcreteClass` hierarchy, was written with an `INSERT` immediately followed by an `UPDATE` of the same row and started at `version` 1. It now starts at `version` 0 with a single statement, as on Hibernate 5.
 
 As part of this change, persistence event listeners on Hibernate 7 receive a `PersistEvent` (`eventType` `Persist`) for every explicit or flush-time cascaded persist and a `MergeEvent` (`eventType` `Merge`) for every merge. Neither event can be cancelled. Hibernate 5 continues to publish `SaveOrUpdateEvent` when an entity is saved, and publishes no event for a merge. A listener that switches over `event.eventType` with a default branch that throws should handle the new values. See the Events and Auto Timestamping section of the GORM for link:{hibernate7Guide}index.html#eventsAutoTimestamping[Hibernate 7] guide.
+
+==== Default Security Response Headers
+
+Servlet web applications now send a baseline set of browser hardening headers on every response:
+`X-Content-Type-Options: nosniff`, `X-Frame-Options: SAMEORIGIN`, `Referrer-Policy: strict-origin-when-cross-origin`
+and `X-XSS-Protection: 0`. HSTS and Content Security Policy can be turned on alongside them but are off by default,
+because their right values depend on the deployment. Behind a TLS-terminating proxy, HSTS honors the scheme the proxy
+forwards in `X-Forwarded-Proto` or `Forwarded`.
+
+The headers are written when the response commits, and only if nothing else has set them, so a controller, an
+interceptor, another filter or Spring Security's own header writers at Spring Boot's default filter order win.
+Redirects, error pages, streamed bodies and responses served by other Grails filters, such as asset-pipeline assets,
+are covered too.
+
+Everything is configurable under `grails.security.headers.*`: the whole filter, each header, and its value. A
+deployment whose reverse proxy already sends these headers can set `grails.security.headers.defaults: auto` to send
+only explicitly configured headers on proxied requests. See the xref:security[Security] section of the user guide and
+the xref:upgrading#upgrading80x[upgrade guide] for details.
+
+==== Agent Skills Published with Grails
+
+Grails now publishes its app-facing https://agentskills.io[Agent Skills] with every release: `org.apache.grails.skills:grails-developer`, for building Grails applications, and `org.apache.grails.skills:grails-8-upgrade`, for upgrading an application from Grails 7. The jars use the https://www.skillsjars.com[SkillsJars] layout and the Grails BOM manages them, so an application applies the SkillsJars Gradle plugin, declares the skills without a version, and runs `./gradlew extractSkillsJars` to write the skills for its Grails version to the directory its AI coding agent reads. See xref:gettingStarted#agentSkills[Agent Skills].
 
 ==== Test HTTP Client Form Requests
 

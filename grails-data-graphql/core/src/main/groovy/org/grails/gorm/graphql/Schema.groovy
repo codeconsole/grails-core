@@ -501,11 +501,11 @@ class Schema {
                 }
 
                 for (CustomOperation operation : mapping.customQueryOperations) {
-                    queryFields.add(operation.createField(entity, serviceManager, mappingContext, listArguments))
+                    queryFields.add(operation.createField(entity, serviceManager, mappingContext, listArguments, queryTypeName))
                 }
 
                 for (CustomOperation operation : mapping.customMutationOperations) {
-                    mutationFields.add(operation.createField(entity, serviceManager, mappingContext, Collections.emptyMap()))
+                    mutationFields.add(operation.createField(entity, serviceManager, mappingContext, Collections.emptyMap(), mutationTypeName))
                 }
 
                 for (GraphQLSchemaInterceptor schemaInterceptor : interceptorManager.interceptors) {
@@ -553,6 +553,7 @@ class Schema {
             schema.query(query)
             return schema.build()
         }
+        null
     }
 
 }
