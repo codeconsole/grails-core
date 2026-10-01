@@ -134,6 +134,23 @@ Other common Spring changes:
 - Add `spring-boot-tomcat` explicitly if application code directly references Tomcat classes.
 - Prefer JSpecify nullability annotations for new Spring-facing code.
 
+## Mail Plugin: `overrideAddress` Split Into Separate To and From Overrides
+
+The `grails.mail.overrideAddress` configuration property continues to work as before. Two new properties give finer-grained control:
+
+- `grails.mail.overrideToAddress` — overrides only the recipient addresses (to, cc, bcc). Takes precedence over `overrideAddress` for recipients.
+- `grails.mail.overrideFromAddress` — overrides only the sender address, including when `from` is set explicitly in the `sendMail` closure. Takes precedence over `overrideAddress` for the sender.
+
+**No action is required.** `overrideAddress` still redirects both sender and all recipients, exactly as before. Use the new properties when you need to redirect recipients and sender independently:
+
+```yaml
+# application-development.yml
+grails:
+    mail:
+        overrideToAddress: test-inbox@example.com   # redirect recipients only
+        # overrideFromAddress: noreply@example.com  # fix the sender only
+```
+
 ## Configuration Changes
 
 Review application configuration after booting with the Spring Boot properties migrator.

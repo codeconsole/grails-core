@@ -4499,7 +4499,36 @@ load. Check the `assetCompile` output for that warning after upgrading.
 NOTE: The `includes` and `excludes` patterns of the `assets` block in `build.gradle`, which select the files
 `assetCompile` processes, are not changed.
 
-==== 80. Stricter Closure Typing for GORM Criteria Closures
+==== 80. Mail Plugin: `overrideAddress` Split Into Separate To and From Overrides
+
+The `grails.mail.overrideAddress` configuration property continues to work as before, but two new properties give finer-grained control over address overriding:
+
+* `grails.mail.overrideToAddress` — overrides only the recipient addresses (to, cc, bcc).
+* `grails.mail.overrideFromAddress` — overrides only the sender address, including when the `from` address is set explicitly in the `sendMail` closure.
+
+When both `overrideAddress` and one of the specific properties are set, the specific property takes precedence for its direction.
+
+**No action is required for existing applications.** `overrideAddress` still redirects both the sender and all recipients to the configured address, exactly as before.
+
+If you previously worked around the lack of independent control — for example by registering a custom `MailMessageBuilder` or post-processing the message — you can now use the built-in properties instead:
+
+[source,yaml]
+.application-development.yml
+----
+grails:
+    mail:
+        overrideToAddress: test-inbox@example.com   # redirect recipients only
+----
+
+[source,yaml]
+.application-development.yml
+----
+grails:
+    mail:
+        overrideFromAddress: noreply@example.com    # fix the sender only
+----
+
+==== 81. Stricter Closure Typing for GORM Criteria Closures
 
 GORM's criteria closure methods (`where`, `whereLazy`, `build`, `buildLazy`, `projections`,
 `and`, `or`, `not`, `find`, `get`, `list`, `count`, `asBoolean` and the closure subquery forms
