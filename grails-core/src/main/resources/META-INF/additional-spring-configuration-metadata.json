@@ -255,32 +255,29 @@
         {
             "name": "dataSource.driverClassName",
             "type": "java.lang.String",
-            "description": "The JDBC driver class name.",
-            "defaultValue": "org.h2.Driver"
+            "description": "The JDBC driver class name. When not set, the connection pool derives the driver from the JDBC URL."
         },
         {
             "name": "dataSource.username",
             "type": "java.lang.String",
-            "description": "The database username.",
-            "defaultValue": "sa"
+            "description": "The database username. When not set, connections are opened without a username. H2 applications usually set sa."
         },
         {
             "name": "dataSource.password",
             "type": "java.lang.String",
-            "description": "The database password.",
-            "defaultValue": ""
+            "description": "The database password. When not set, connections are opened without a password. H2 applications usually set an empty password."
         },
         {
             "name": "dataSource.url",
             "type": "java.lang.String",
             "description": "The JDBC connection URL.",
-            "defaultValue": "jdbc:h2:mem:devDb"
+            "defaultValue": "jdbc:h2:mem:grailsDB;LOCK_TIMEOUT=10000"
         },
         {
             "name": "dataSource.dbCreate",
             "type": "java.lang.String",
-            "description": "The schema generation strategy: create-drop, create, update, validate, or none, use none in production with a migration tool.",
-            "defaultValue": "create-drop (dev), none (prod)"
+            "description": "The schema generation strategy: create-drop, create, update, validate, or none, use none in production with a migration tool. The default applies in every environment; generated applications set it per environment in application.yml.",
+            "defaultValue": "none"
         },
         {
             "name": "dataSource.pooled",
@@ -327,8 +324,8 @@
         {
             "name": "dataSource.jmxExport",
             "type": "java.lang.Boolean",
-            "description": "Whether to register JMX MBeans for the DataSource.",
-            "defaultValue": true
+            "description": "Whether to register JMX MBeans for Tomcat JDBC pool DataSources that set jmxEnabled in their properties.",
+            "defaultValue": false
         },
         {
             "name": "dataSource.type",

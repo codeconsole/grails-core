@@ -108,6 +108,9 @@ dependencies {
         // impl: ValidationException
     }
     testImplementation project(':grails-data-simple')
+    testImplementation 'org.apache.groovy:groovy-json', {
+        // impl: JsonSlurper
+    }
     testImplementation 'org.junit.jupiter:junit-jupiter-api'
     testImplementation 'org.spockframework:spock-core'
 
