@@ -50,7 +50,7 @@ jobs:
       - name: "🐘 Setup Gradle"
         uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
         with:
-          cache-provider: basic # 'basic' uses the MIT-licensed, open-source cache provider; the default 'enhanced' provider (v6+) is proprietary (Gradle commercial Terms of Use)
+          cache-disabled: true # dependency jars are cached by the explicit branch-keyed step above
           develocity-access-key: ${{ secrets.DEVELOCITY_ACCESS_KEY  }}
       - name: "🔍 Validate grails-core dependency versions"
         run: >
@@ -93,7 +93,7 @@ jobs:
       - name: "🐘 Setup Gradle"
         uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
         with:
-          cache-provider: basic # 'basic' uses the MIT-licensed, open-source cache provider; the default 'enhanced' provider (v6+) is proprietary (Gradle commercial Terms of Use)
+          cache-disabled: true # dependency jars are cached by the explicit branch-keyed step above
           develocity-access-key: ${{ secrets.DEVELOCITY_ACCESS_KEY  }}
       - name: "🔍 Validate grails-core BOM properties"
         run: >
@@ -140,7 +140,7 @@ jobs:
           cache-disabled: true # dependency jars are cached by the explicit branch-keyed step above
           develocity-access-key: ${{ secrets.DEVELOCITY_ACCESS_KEY  }}
       - name: "🔍 Setup TestLens"
-        uses: testlens-app/setup-testlens@3f82d2dc6cd5c03f02ce5f7885a21195d85f8d14 # v1.9.3
+        uses: testlens-app/setup-testlens@d29a2be31512b3aeda3adcef09fbe0d55af90c51 # v1.9.4
       - name: "🔨 Build project without tests"
         if: ${{ contains(github.event.head_commit.message, '[skip tests]') }}
         working-directory: 'grails-gradle'
@@ -237,7 +237,7 @@ jobs:
           cache-disabled: true # dependency jars are cached by the explicit branch-keyed step above
           develocity-access-key: ${{ secrets.DEVELOCITY_ACCESS_KEY  }}
       - name: "🔍 Setup TestLens"
-        uses: testlens-app/setup-testlens@3f82d2dc6cd5c03f02ce5f7885a21195d85f8d14 # v1.9.3
+        uses: testlens-app/setup-testlens@d29a2be31512b3aeda3adcef09fbe0d55af90c51 # v1.9.4
       - name: "🔨 Build project"
         run: >
           ./gradlew ${{ matrix.gradle_task }}
@@ -315,7 +315,7 @@ jobs:
           cache-disabled: true # dependency jars are cached by the explicit branch-keyed step above
           develocity-access-key: ${{ secrets.DEVELOCITY_ACCESS_KEY  }}
       - name: "🔍 Setup TestLens"
-        uses: testlens-app/setup-testlens@3f82d2dc6cd5c03f02ce5f7885a21195d85f8d14 # v1.9.3
+        uses: testlens-app/setup-testlens@d29a2be31512b3aeda3adcef09fbe0d55af90c51 # v1.9.4
       - name: "🔨 Build project"
         run: >
           ./gradlew ${{ matrix.gradle_task }}
@@ -371,7 +371,7 @@ jobs:
           cache-disabled: true # dependency jars are cached by the explicit branch-keyed step above
           develocity-access-key: ${{ secrets.DEVELOCITY_ACCESS_KEY  }}
       - name: "🔍 Setup TestLens"
-        uses: testlens-app/setup-testlens@3f82d2dc6cd5c03f02ce5f7885a21195d85f8d14 # v1.9.3
+        uses: testlens-app/setup-testlens@d29a2be31512b3aeda3adcef09fbe0d55af90c51 # v1.9.4
       - name: "🔨 Build project without tests"
         if: ${{ contains(github.event.head_commit.message, '[skip tests]') }}
         working-directory: 'grails-forge'
@@ -490,7 +490,7 @@ jobs:
           cache-disabled: true # dependency jars are cached by the explicit branch-keyed step above
           develocity-access-key: ${{ secrets.DEVELOCITY_ACCESS_KEY  }}
       - name: "🔍 Setup TestLens"
-        uses: testlens-app/setup-testlens@3f82d2dc6cd5c03f02ce5f7885a21195d85f8d14 # v1.9.3
+        uses: testlens-app/setup-testlens@d29a2be31512b3aeda3adcef09fbe0d55af90c51 # v1.9.4
       - name: "🏃 Run Functional Tests"
         run: >
           ./gradlew ${{ matrix.gradle_task }}
@@ -552,13 +552,24 @@ jobs:
         with:
           distribution: liberica
           java-version: ${{ matrix.java }}
+      - name: "🗄️ Restore dependency jar cache"
+        uses: actions/cache@v6.1.0
+        with:
+          # Cache only downloaded dependency jars and wrapper distributions, never Grails build outputs.
+          # Keyed by branch version so each release branch maintains its own warm cache.
+          path: |
+            ~/.gradle/caches/modules-2
+            ~/.gradle/wrapper
+          key: gradle-deps-${{ runner.os }}-${{ github.base_ref || github.ref_name }}-${{ hashFiles('**/dependencies.gradle', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            gradle-deps-${{ runner.os }}-${{ github.base_ref || github.ref_name }}-
       - name: "🐘 Setup Gradle"
         uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
         with:
-          cache-provider: basic # 'basic' uses the MIT-licensed, open-source cache provider; the default 'enhanced' provider (v6+) is proprietary (Gradle commercial Terms of Use)
+          cache-disabled: true # dependency jars are cached by the explicit branch-keyed step above
           develocity-access-key: ${{ secrets.DEVELOCITY_ACCESS_KEY  }}
       - name: "🔍 Setup TestLens"
-        uses: testlens-app/setup-testlens@3f82d2dc6cd5c03f02ce5f7885a21195d85f8d14 # v1.9.3
+        uses: testlens-app/setup-testlens@d29a2be31512b3aeda3adcef09fbe0d55af90c51 # v1.9.4
       - name: "🏃 Run Functional Tests"
         run: >
           ./gradlew ${{ matrix.gradle_task }}
@@ -592,13 +603,24 @@ jobs:
         with:
           distribution: liberica
           java-version: 21
+      - name: "🗄️ Restore dependency jar cache"
+        uses: actions/cache@v6.1.0
+        with:
+          # Cache only downloaded dependency jars and wrapper distributions, never Grails build outputs.
+          # Keyed by branch version so each release branch maintains its own warm cache.
+          path: |
+            ~/.gradle/caches/modules-2
+            ~/.gradle/wrapper
+          key: gradle-deps-${{ runner.os }}-${{ github.base_ref || github.ref_name }}-${{ hashFiles('**/dependencies.gradle', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            gradle-deps-${{ runner.os }}-${{ github.base_ref || github.ref_name }}-
       - name: "🐘 Setup Gradle"
         uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
         with:
-          cache-provider: basic # 'basic' uses the MIT-licensed, open-source cache provider; the default 'enhanced' provider (v6+) is proprietary (Gradle commercial Terms of Use)
+          cache-disabled: true # dependency jars are cached by the explicit branch-keyed step above
           develocity-access-key: ${{ secrets.DEVELOCITY_ACCESS_KEY  }}
       - name: "🔍 Setup TestLens"
-        uses: testlens-app/setup-testlens@3f82d2dc6cd5c03f02ce5f7885a21195d85f8d14 # v1.9.3
+        uses: testlens-app/setup-testlens@d29a2be31512b3aeda3adcef09fbe0d55af90c51 # v1.9.4
       - name: "🏃 Run Spring Security Functional Tests (TESTCONFIG=${{ matrix.test-config }})"
         run: >
           ./gradlew
@@ -634,13 +656,24 @@ jobs:
         with:
           distribution: liberica
           java-version: 21
+      - name: "🗄️ Restore dependency jar cache"
+        uses: actions/cache@v6.1.0
+        with:
+          # Cache only downloaded dependency jars and wrapper distributions, never Grails build outputs.
+          # Keyed by branch version so each release branch maintains its own warm cache.
+          path: |
+            ~/.gradle/caches/modules-2
+            ~/.gradle/wrapper
+          key: gradle-deps-${{ runner.os }}-${{ github.base_ref || github.ref_name }}-${{ hashFiles('**/dependencies.gradle', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            gradle-deps-${{ runner.os }}-${{ github.base_ref || github.ref_name }}-
       - name: "🐘 Setup Gradle"
         uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
         with:
-          cache-provider: basic # 'basic' uses the MIT-licensed, open-source cache provider; the default 'enhanced' provider (v6+) is proprietary (Gradle commercial Terms of Use)
+          cache-disabled: true # dependency jars are cached by the explicit branch-keyed step above
           develocity-access-key: ${{ secrets.DEVELOCITY_ACCESS_KEY  }}
       - name: "🔍 Setup TestLens"
-        uses: testlens-app/setup-testlens@3f82d2dc6cd5c03f02ce5f7885a21195d85f8d14 # v1.9.3
+        uses: testlens-app/setup-testlens@d29a2be31512b3aeda3adcef09fbe0d55af90c51 # v1.9.4
       - name: "🏃 Run Spring Security CAS Functional Tests (TESTCONFIG=${{ matrix.test-config }})"
         run: >
           ./gradlew
@@ -670,13 +703,24 @@ jobs:
         with:
           distribution: liberica
           java-version: ${{ matrix.java }}
+      - name: "🗄️ Restore dependency jar cache"
+        uses: actions/cache@v6.1.0
+        with:
+          # Cache only downloaded dependency jars and wrapper distributions, never Grails build outputs.
+          # Keyed by branch version so each release branch maintains its own warm cache.
+          path: |
+            ~/.gradle/caches/modules-2
+            ~/.gradle/wrapper
+          key: gradle-deps-${{ runner.os }}-${{ github.base_ref || github.ref_name }}-${{ hashFiles('**/dependencies.gradle', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            gradle-deps-${{ runner.os }}-${{ github.base_ref || github.ref_name }}-
       - name: "🐘 Setup Gradle"
         uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
         with:
-          cache-provider: basic # 'basic' uses the MIT-licensed, open-source cache provider; the default 'enhanced' provider (v6+) is proprietary (Gradle commercial Terms of Use)
+          cache-disabled: true # dependency jars are cached by the explicit branch-keyed step above
           develocity-access-key: ${{ secrets.DEVELOCITY_ACCESS_KEY  }}
       - name: "🔍 Setup TestLens"
-        uses: testlens-app/setup-testlens@3f82d2dc6cd5c03f02ce5f7885a21195d85f8d14 # v1.9.3
+        uses: testlens-app/setup-testlens@d29a2be31512b3aeda3adcef09fbe0d55af90c51 # v1.9.4
       - name: "🏃 Run Redis Tests"
         run: >
           ./gradlew bootJar check
@@ -854,10 +898,21 @@ jobs:
         with:
           distribution: liberica
           java-version: ${{ matrix.java }}
+      - name: "🗄️ Restore dependency jar cache"
+        uses: actions/cache@v6.1.0
+        with:
+          # Cache only downloaded dependency jars and wrapper distributions, never Grails build outputs.
+          # Keyed by branch version so each release branch maintains its own warm cache.
+          path: |
+            ~/.gradle/caches/modules-2
+            ~/.gradle/wrapper
+          key: gradle-deps-${{ runner.os }}-${{ github.base_ref || github.ref_name }}-${{ hashFiles('**/dependencies.gradle', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            gradle-deps-${{ runner.os }}-${{ github.base_ref || github.ref_name }}-
       - name: "🐘 Setup Gradle"
         uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
         with:
-          cache-provider: basic # 'basic' uses the MIT-licensed, open-source cache provider; the default 'enhanced' provider (v6+) is proprietary (Gradle commercial Terms of Use)
+          cache-disabled: true # dependency jars are cached by the explicit branch-keyed step above
           develocity-access-key: ${{ secrets.DEVELOCITY_ACCESS_KEY }}
       - name: "🏃 Run Functional Tests"
         env:
@@ -894,10 +949,21 @@ jobs:
         with:
           distribution: liberica
           java-version: ${{ matrix.java }}
+      - name: "🗄️ Restore dependency jar cache"
+        uses: actions/cache@v6.1.0
+        with:
+          # Cache only downloaded dependency jars and wrapper distributions, never Grails build outputs.
+          # Keyed by branch version so each release branch maintains its own warm cache.
+          path: |
+            ~/.gradle/caches/modules-2
+            ~/.gradle/wrapper
+          key: gradle-deps-${{ runner.os }}-${{ github.base_ref || github.ref_name }}-${{ hashFiles('**/dependencies.gradle', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            gradle-deps-${{ runner.os }}-${{ github.base_ref || github.ref_name }}-
       - name: "🐘 Setup Gradle"
         uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
         with:
-          cache-provider: basic # 'basic' uses the MIT-licensed, open-source cache provider; the default 'enhanced' provider (v6+) is proprietary (Gradle commercial Terms of Use)
+          cache-disabled: true # dependency jars are cached by the explicit branch-keyed step above
           develocity-access-key: ${{ secrets.DEVELOCITY_ACCESS_KEY }}
       - name: "🏃 Run Functional Tests"
         env:
@@ -941,7 +1007,7 @@ jobs:
           cache-disabled: true # dependency jars are cached by the explicit branch-keyed step above
           develocity-access-key: ${{ secrets.DEVELOCITY_ACCESS_KEY  }}
       - name: "🔍 Setup TestLens"
-        uses: testlens-app/setup-testlens@3f82d2dc6cd5c03f02ce5f7885a21195d85f8d14 # v1.9.3
+        uses: testlens-app/setup-testlens@d29a2be31512b3aeda3adcef09fbe0d55af90c51 # v1.9.4
       - name: "📤 Publish Gradle Snapshot Artifacts"
         env:
           GRAILS_PUBLISH_RELEASE: 'false'
@@ -1008,7 +1074,7 @@ jobs:
           cache-disabled: true # dependency jars are cached by the explicit branch-keyed step above
           develocity-access-key: ${{ secrets.DEVELOCITY_ACCESS_KEY  }}
       - name: "🔍 Setup TestLens"
-        uses: testlens-app/setup-testlens@3f82d2dc6cd5c03f02ce5f7885a21195d85f8d14 # v1.9.3
+        uses: testlens-app/setup-testlens@d29a2be31512b3aeda3adcef09fbe0d55af90c51 # v1.9.4
       - name: "📤 Publish Grails-Core Snapshot Artifacts"
         uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60 # v4.0.0
         env:
@@ -1074,7 +1140,7 @@ jobs:
           cache-disabled: true # dependency jars are cached by the explicit branch-keyed step above
           develocity-access-key: ${{ secrets.DEVELOCITY_ACCESS_KEY  }}
       - name: "🔍 Setup TestLens"
-        uses: testlens-app/setup-testlens@3f82d2dc6cd5c03f02ce5f7885a21195d85f8d14 # v1.9.3
+        uses: testlens-app/setup-testlens@d29a2be31512b3aeda3adcef09fbe0d55af90c51 # v1.9.4
       - name: "📤 Publish Gradle Snapshot Artifacts"
         env:
           GRAILS_PUBLISH_RELEASE: 'false'
