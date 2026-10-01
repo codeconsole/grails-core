@@ -68,6 +68,8 @@ dependencies {
     // above; tests run on a plain JVM and need them for real.
     testRuntimeOnly "org.apache.groovy:groovy-ant:${GroovySystem.version}"
     testRuntimeOnly "org.apache.groovy:groovy-templates:${GroovySystem.version}"
+    // PropertyNameCalculator's signatures name Gradle types, which Groovy loads when it introspects the class
+    testRuntimeOnly gradleApi()
 
     // DocPublisher looks grails-doc-files.jar up as a resource on its own classpath. The
     // published jar carries it inside; tests run against class directories, so they need the

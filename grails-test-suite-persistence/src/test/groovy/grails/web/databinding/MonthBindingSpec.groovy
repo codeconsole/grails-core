@@ -27,7 +27,8 @@ import grails.testing.gorm.DataTest
 import grails.validation.Validateable
 
 /**
- * A {@link Month} binds from the number that {@code grails.converters.JSON}, JSON views and Spring Boot render it as.
+ * A {@link Month} binds from the number that {@code grails.converters.JSON} and Spring Boot render it as,
+ * and from the name that JSON views render it as.
  */
 class MonthBindingSpec extends Specification implements DataTest {
 
@@ -47,17 +48,20 @@ class MonthBindingSpec extends Specification implements DataTest {
         value << [9, '9', 'SEPTEMBER']
     }
 
-    void "a month number out of range is a binding error"() {
+    void "#value is a binding error, as a month number must be a whole number from 1 to 12"() {
         given:
         def binder = grailsApplication.mainContext.getBean(DataBindingUtils.DATA_BINDER_BEAN_NAME) as GrailsWebDataBinder
         def command = new MonthCommand()
 
         when:
-        binder.bind(command, new SimpleMapDataBindingSource([month: 13]))
+        binder.bind(command, new SimpleMapDataBindingSource([month: value]))
 
         then:
         command.errors.getFieldError('month')
         command.month == null
+
+        where:
+        value << [13, 9.7]
     }
 }
 

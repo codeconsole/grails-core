@@ -64,6 +64,8 @@ public class MongoTransaction implements Transaction<ClientSession> {
 
     private final AbstractMongoSession session;
     private final ClientSession clientSession;
+    // GORM itself no longer begins a read-only MongoTransaction (a read-only transaction reads without a
+    // server-side one); the flag is kept for code that constructs one directly
     private final boolean readOnly;
     private boolean active = true;
 
@@ -142,10 +144,16 @@ public class MongoTransaction implements Transaction<ClientSession> {
 
     @Override
     public void setTimeout(int timeout) {
+        refuseTimeout(timeout);
+    }
+
+    /**
+     * The server-side transaction is started before the manager applies a timeout, so a
+     * per-transaction timeout cannot be honored; the server's transactionLifetimeLimitSeconds governs
+     * the maximum transaction duration. Fail rather than silently ignore the request.
+     */
+    static void refuseTimeout(int timeout) {
         if (timeout != TransactionDefinition.TIMEOUT_DEFAULT) {
-            // The server-side transaction is started before the manager applies a timeout, so a
-            // per-transaction timeout cannot be honored here; the server's transactionLifetimeLimitSeconds
-            // governs the maximum transaction duration. Fail rather than silently ignore the request.
             throw new TransactionUsageException("A per-transaction timeout (" + timeout + "s) is not supported by " +
                     "GORM for MongoDB transactions; the server's transactionLifetimeLimitSeconds governs transaction " +
                     "duration. Remove the timeout from the transaction definition.");

@@ -207,7 +207,7 @@ class TransactionalTransform extends AbstractDatastoreMethodDecoratingTransforma
 
     @Override
     protected void enhanceClassNode(SourceUnit source, AnnotationNode annotationNode, ClassNode declaringClassNode) {
-        weaveTransactionManagerAware(source, annotationNode, declaringClassNode)
+        weaveTransactionManagerAware(annotationNode, declaringClassNode)
         super.enhanceClassNode(source, annotationNode, declaringClassNode)
     }
 
@@ -233,8 +233,8 @@ class TransactionalTransform extends AbstractDatastoreMethodDecoratingTransforma
         }
     }
 
-    protected void weaveTransactionManagerAware(SourceUnit source, AnnotationNode annotationNode, ClassNode declaringClassNode) {
-        if (declaringClassNode.getNodeMetaData(APPLIED_MARKER) == APPLIED_MARKER) {
+    protected void weaveTransactionManagerAware(AnnotationNode annotationNode, ClassNode declaringClassNode) {
+        if (isAlreadyApplied(declaringClassNode)) {
             return
         }
         if (declaringClassNode.getMethod(GET_TRANSACTION_MANAGER_METHOD, Parameter.EMPTY_ARRAY) != null) {
@@ -420,7 +420,7 @@ class TransactionalTransform extends AbstractDatastoreMethodDecoratingTransforma
         final ClassNode rollbackRuleAttributeClassNode = make(RollbackRuleAttribute)
         final ClassNode noRollbackRuleAttributeClassNode = make(NoRollbackRuleAttribute)
         final Map<String, Expression> members = annotationNode.getMembers()
-        if (READ_ONLY_TYPE.equals(annotationNode.classNode)) {
+        if (READ_ONLY_TYPE == annotationNode.classNode) {
             methodBody.addStatement(
                 assignS(propX(transactionAttributeVar, 'readOnly'), ConstantExpression.TRUE)
             )
@@ -483,6 +483,19 @@ class TransactionalTransform extends AbstractDatastoreMethodDecoratingTransforma
     @Override
     protected boolean hasLocalAnnotation(MethodNode amd, AnnotationNode classAnnotation) {
         return findAnnotation(amd, Transactional) != null || findAnnotation(amd, ReadOnly) != null || findAnnotation(amd, Rollback) != null
+    }
+
+    /**
+     * A method annotated with {@link NotTransactional} opts out of the transaction that a class-level
+     * {@link Transactional}, {@link ReadOnly} or {@link Rollback} annotation would otherwise weave
+     * around it, so it must not be decorated.
+     *
+     * @param md The method node
+     * @return True if the method should be left undecorated
+     */
+    @Override
+    protected boolean hasExcludedAnnotation(MethodNode md) {
+        return super.hasExcludedAnnotation(md) || findAnnotation(md, NotTransactional) != null
     }
 
     @Override

@@ -51,30 +51,13 @@ The following values render differently than in Grails 8:
 | Grails 8
 | Grails 9
 
-| A `Date`, `Calendar`, `java.sql.Date` or `java.sql.Timestamp` on a whole second
-| `"2026-09-25T03:00:00Z"`
-| `"2026-09-25T03:00:00.000Z"`, always with millisecond precision
+| `OffsetTime`
+| `"03:00:00-03:00"`, `"03:00:00.5+05:30"`
+| `"03:00-03:00"`, `"03:00:00.500+05:30"`, from `OffsetTime#toString()`
 
-| A `java.sql.Timestamp` with sub-millisecond nanoseconds
-| `"2025-10-08T07:48:46.407254Z"`
-| `"2025-10-08T07:48:46.407Z"`
-
-| `java.sql.Date`, `java.sql.Time`
-| a failure to render it
-| `"2025-10-08T07:48:46.407Z"`, the UTC instant, and `"01:48:46"`, from `Time#toString()`
-
-| `LocalTime`, `OffsetTime`, `YearMonth`, `MonthDay`, `Duration`, `Period`, `ZoneId`, `ZoneOffset`, `TimeZone`,
-`XMLGregorianCalendar`, `javax.xml.datatype.Duration`
-| an object of their properties, or a failure to render them
-| their ISO-8601 or ID strings, such as `"01:48:46.407254"`, `"PT1H30M"` or `"America/Sao_Paulo"`
-
-| `Year`, `Month`
-| an object of its properties, and `"SEPTEMBER"`
-| `2026` and `9`, JSON numbers. A `Month` binds back from its number.
-
-| A `Date`, `Calendar` or `ZonedDateTime` map key
-| the key's `toString()`, such as `"Wed Oct 08 01:48:46 MDT 2025"`
-| the key as the mapper writes it, such as `"2025-10-08T07:48:46.407Z"`
+| `Month`
+| `"SEPTEMBER"`
+| `9`, a JSON number. A `Month` binds back from its number.
 
 | `java.util.Locale`
 | `"zh_TW_#Hant"`, from `Locale#toString()`
@@ -112,6 +95,11 @@ The following values render differently than in Grails 8:
 | a `ConverterException`
 | the JSON value, `"HEAD"`
 |===
+
+The other default date and time formats are unchanged from Grails 8.0.0, which already renders `Date`, `Calendar`,
+`java.sql.Date` and `java.sql.Timestamp` with millisecond precision and supports the additional date and time types.
+Map keys now use the mapper's key serializers, including its configured date format and time zone, instead of Grails'
+fixed date formats or the key's `toString()`.
 
 The JSON marshallers that rendered these values are removed, from the `org.grails.web.converters.marshaller.json`
 package: `DateMarshaller`, `CalendarMarshaller`, `ToStringBeanMarshaller`, `ByteArrayMarshaller`, `InstantMarshaller`,

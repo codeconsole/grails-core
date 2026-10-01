@@ -120,6 +120,11 @@ and value hints. The Grails configuration report command and the
 link:../ref/Configuration/Application%20Properties.html[Application Properties reference] use its property and group
 entries.
 
+The configuration report includes the properties of the Grails namespaces, `grails.`, `dataSource.` and `hibernate.`,
+from all metadata on the classpath. A Grails plugin can publish metadata for its own namespace in its JAR in the same
+way, and the report includes all of the properties a plugin documents, each group in its own section. The metadata of
+other libraries, such as Spring Boot, is left out of the report.
+
 For configuration classes written in Groovy, Grails collects metadata with a compiler AST transformation. The
 transformation writes the metadata of each `@ConfigurationProperties` class to its own build-time file next to the
 compiled classes, and the build merges those files after compilation. Nothing is added to the compiled classes, and

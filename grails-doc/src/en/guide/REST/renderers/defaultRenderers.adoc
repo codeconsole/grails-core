@@ -103,3 +103,44 @@ JSON.registerObjectMarshaller(Date) { Date date ->
 
 Setting `grails.converters.json.date` to `javascript` renders `java.util.Date` values as JavaScript `new Date(...)`
 constructors instead.
+
+
+==== Date and Time Rendering
+
+With the default mapper configuration, dates and times render as follows:
+
+[cols="2,3", options="header"]
+|===
+| Type
+| Rendered as
+
+| `java.util.Date`, `java.sql.Date`, `java.sql.Timestamp`, `Calendar`, `XMLGregorianCalendar`
+| a UTC instant with millisecond precision, such as `"2025-10-08T07:48:46.407Z"`
+
+| `java.sql.Time`
+| its wall-clock time in the JVM default time zone, such as `"01:48:46"`
+
+| `Instant`
+| ISO-8601, such as `"2025-10-08T07:48:46.407254Z"`
+
+| `LocalDate`, `LocalTime`, `LocalDateTime`
+| ISO-8601 without a time zone, such as `"2025-10-08"`, `"01:48:46.407254"`, `"2025-10-08T01:48:46.407254"`
+
+| `OffsetDateTime`, `ZonedDateTime`, `OffsetTime`
+| ISO-8601 with the offset and without a zone ID, such as `"2025-10-08T01:48:46.407254-06:00"`, `"03:00-03:00"`
+
+| `YearMonth`, `MonthDay`, `Duration`, `Period`, `javax.xml.datatype.Duration`
+| ISO-8601, such as `"2026-09"`, `"--09-25"`, `"PT1H30M"`, `"P1Y2M3D"`, `"P1DT2H"`
+
+| `Year`, `Month`
+| a number, such as `2026` or `9`
+
+| `ZoneId`, `ZoneOffset`, `TimeZone`
+| the ID, such as `"America/Sao_Paulo"` or `"-03:00"`
+|===
+
+An `OffsetTime` uses its `toString()` form, which omits zero seconds and writes fractional seconds in groups of three
+digits. A `Month` renders as its number; data binding accepts both the number and the enum name. JSON views keep their
+existing formats, including the enum name for `Month` and ISO-8601 formatting for `OffsetTime`.
+
+Map keys use the mapper's key serializers, so its date format and time zone settings apply to date keys as well.
