@@ -24,19 +24,19 @@
         {
             "name": "grails.views.json.generator.dateFormat",
             "type": "java.lang.String",
-            "description": "The date format pattern for JSON serialization.",
-            "defaultValue": "yyyy-MM-dd'T'HH:mm:ss.SSSX"
+            "description": "The SimpleDateFormat pattern for java.util.Date and Calendar values and map keys in JSON views.",
+            "defaultValue": "yyyy-MM-dd'T'HH:mm:ss.SSSXXX"
         },
         {
             "name": "grails.views.json.generator.timeZone",
             "type": "java.lang.String",
-            "description": "The time zone for JSON date serialization.",
+            "description": "The time zone that the grails.views.json.generator.dateFormat pattern writes java.util.Date and Calendar values in.",
             "defaultValue": "GMT"
         },
         {
             "name": "grails.views.json.generator.locale",
             "type": "java.lang.String",
-            "description": "The locale for JSON output formatting.",
+            "description": "The locale for the grails.views.json.generator.dateFormat pattern.",
             "defaultValue": "en/US"
         },
         {

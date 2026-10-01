@@ -24,6 +24,8 @@ import grails.persistence.Entity
 import grails.testing.gorm.DomainUnitTest
 import org.springframework.boot.jackson.autoconfigure.JsonMapperBuilderCustomizer
 import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.context.annotation.Bean
+import org.springframework.context.annotation.Configuration
 import org.grails.web.converters.jackson.GrailsJsonMapperCustomizer
 import tools.jackson.databind.PropertyNamingStrategies
 import tools.jackson.databind.json.JsonMapper
@@ -57,11 +59,16 @@ class ControllerJsonSerializationSpec extends Specification implements Controlle
         { config -> config['grails.web.rendering.json.spring'] = true }
     }
 
-    Closure doWithSpring() {
-        return { -> jsonNamingCustomizer(JsonNamingCustomizer) }
+    @Configuration
+    static class JsonConfiguration {
+
+        @Bean
+        JsonNamingCustomizer jsonNamingCustomizer() {
+            new JsonNamingCustomizer()
+        }
     }
 
-    void 'test mapper honors application customizers'() {
+    void 'test mapper honors customizers from nested configuration classes'() {
         given:
         response.format = 'json'
 

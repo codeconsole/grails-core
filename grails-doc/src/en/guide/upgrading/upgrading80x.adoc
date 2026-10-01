@@ -38,13 +38,27 @@ Boot the application once; the migrator logs warnings for every deprecated prope
 Remove the dependency once your configuration is clean.
 ====
 
+[TIP]
+====
+**Let your coding agent work through this guide.**
+Grails publishes the `grails-8-upgrade` agent skill, which turns this guide into a migration checklist for an AI coding agent.
+Extract it with the SkillsJars Gradle plugin, as xref:gettingStarted#agentSkills[Agent Skills] describes.
+While the application is still on Grails 7, declare the skill with its version, since the Grails 7 BOM does not manage it:
+
+[source,groovy,subs="attributes"]
+.build.gradle
+----
+skill 'org.apache.grails.skills:grails-8-upgrade:{version}'
+----
+====
+
 ==== 1. Java 21 Minimum Requirement
 
 Grails 8 requires a minimum of Java 21 to both build and run Grails applications.
 This is an increase from Grails 7, which required Java 17.
 Update your project's toolchain, CI pipelines, and deployment environments to use JDK 21 or later.
 
-==== 1.1 Gradle 9.7 Minimum Requirement
+===== 1.1 Gradle 9.7 Minimum Requirement
 
 The Grails 8 Gradle plugins require Gradle 9.7 or later.
 Grails 7 applications were generated with a Gradle 8.14.x wrapper, and a wrapper carried over from Grails 7 does not work with Grails 8.
@@ -283,6 +297,7 @@ import org.springframework.http.HttpStatus
 response.status = HttpStatus.FOUND.value()
 ----
 
+[[micronaut-integration]]
 ==== 7. Micronaut Integration
 
 The Grails Micronaut plugin and its BOMs are now maintained and released from the https://github.com/apache/grails-micronaut[Apache Grails Micronaut repository].
@@ -500,7 +515,10 @@ Longer term, consider migrating to the fluent `HttpSecurity` API for filter chai
 ==== 14. Spring Dependency Management Plugin Replaced by Gradle Platforms
 
 Grails 8 standardizes on Gradle's native `platform()` dependency management and **no longer applies the `io.spring.dependency-management` plugin**.
-The Grails Gradle Plugin now adds `grails-bom` as a Gradle `platform()` on every declarable project configuration, and a new bundled plugin (`org.apache.grails.gradle.bom-property-overrides`, applied automatically by the Grails Gradle Plugin) preserves the property-based version-override workflow that Spring DM provided.
+The Grails Gradle Plugin now contributes `grails-bom` as a Gradle `platform()` to eligible declarable project configurations, and a new bundled plugin (`org.apache.grails.gradle.bom-property-overrides`, applied automatically by the Grails Gradle Plugin) preserves the property-based version-override workflow that Spring DM provided.
+The platform is contributed lazily, when a configuration's dependencies are observed (through resolution, publication, or `incoming.dependencies`), so configurations populated on demand through `defaultDependencies`, such as the Grails `profile` configuration, keep their defaults.
+Dedicated tool and annotation-processor classpaths, including the `jacoco` plugin's `jacocoAgent` and `jacocoAnt` configurations, are excluded from automatic platform application so the application BOM does not change their transitive dependency versions.
+Until dependencies are observed, the auto-applied platform is not visible in a configuration's declared `dependencies` or `allDependencies`; build logic that looks for it should inspect `incoming.dependencies` or the resolution result instead.
 
 **No action is required for most applications.**
 The standard `gradle.properties` and `ext['…']` override forms continue to work exactly as before:
@@ -543,6 +561,27 @@ If you require Spring DM's "BOM wins always" behaviour for the default managed v
 
 An *explicit* property override (`ext['…']` or `gradle.properties`) is applied as a strict constraint and always wins - including when it downgrades a version - so overrides behave as they did under Spring DM.
 Overriding a property that selects an imported BOM's version (for example `spring-boot.version`) re-imports that BOM at the overridden version and applies its updated managed set.
+
+**Grails BOMs now follow the upstream BOM property names.**
+Where a Grails BOM overrides a version that an upstream BOM also manages - `spring-boot-dependencies`, or a BOM Spring Boot imports - it declares the override under the upstream BOM's own property name.
+One property therefore sets the version in both BOMs, and the property names in the Spring Boot documentation work unchanged in a Grails build.
+For a module Spring Boot manages through an imported BOM, that is the property Spring Boot imports the BOM with: `jackson-bom.version` moves every Jackson 3 module, whether `grails-bom` pins it or not.
+
+An override under a property name no BOM declares is silently ignored, so rename any Grails-specific property your build sets in `gradle.properties` or `ext['…']`, along with a Jackson 2 version set under Spring Boot 3's property name:
+
+[cols="1,2", options="header"]
+|===
+| Grails 7 property
+| Grails 8 property
+
+| `jackson.version`
+| `jackson-2-bom.version` for Jackson 2 (`com.fasterxml.jackson.*`). Jackson 3 (`tools.jackson.*`), the new default, is set by `jackson-bom.version`.
+
+| `jackson-bom.version` (Spring Boot 3's name for Jackson 2)
+| `jackson-2-bom.version`. In Grails 8, `jackson-bom.version` sets Jackson 3, so a Jackson 2 version there makes dependency resolution fail.
+|===
+
+Builds that adopted a Grails 8 milestone or release candidate should rename `jackson2.version` to `jackson-2-bom.version`, `jackson3.version` to `jackson-bom.version`, and, with `grails-neo4j-bom`, `neo4j-driver.version` to `neo4j-java-driver.version`.
 
 **Selecting or opting out of the auto-applied BOM.**
 The Grails Gradle plugin applies a single Grails BOM automatically, selected by the `grails.bom` property. Its value is the BOM artifact name within the `org.apache.grails` group, which the plugin resolves as `org.apache.grails:$bom:$grailsVersion`.
@@ -685,7 +724,7 @@ If your test infrastructure registers it explicitly, remove the registration; Sp
 Update the import.
 A new `RestTestClient` and corresponding `@AutoConfigureRestTestClient` annotation are also available as a fluent alternative.
 
-==== 17.1 Test Helpers Moved to Test Fixtures
+===== 17.1 Test Helpers Moved to Test Fixtures
 
 Several legacy Grails test helpers are no longer included in the production classpath.
 They are published as Gradle test fixtures instead, so applications and plugins that use them directly must request the fixture variant explicitly.
@@ -790,14 +829,35 @@ Spring Framework 7 deprecated `org.springframework.lang.Nullable` and `org.sprin
 The Spring annotations still work, so this is non-blocking, but new code should prefer the JSpecify equivalents.
 
 * **Namespaced link generation is namespace-aware.**
-When a link, form action, pagination link, sortable column link, redirect, chain, or include targets a controller without an explicit `namespace`, Grails now resolves the namespace automatically. In the normal case, where only one controller has the target name, `controller` and `action` generate the correct namespaced or non-namespaced URL. Ambiguity only occurs when multiple controllers share the same name. In that case, specify `namespace` to choose the target explicitly. Pass `namespace: null` from Groovy code or `namespace=""` in a GSP tag to target the non-namespaced controller explicitly.
+When a link, form action, pagination link, sortable column link, redirect, chain, or include targets a controller without an explicit `namespace`, Grails now resolves the namespace automatically. The name is resolved nearest scope first: the current request's namespace if it defines a controller with that name, then the non-namespaced controller, then the namespace of the only controller with that name. `controller` and `action` therefore generate the correct namespaced or non-namespaced URL, and a link rendered from a namespace stays in it when that namespace defines the target. A name defined only in namespaces other than the default and the current one is ambiguous: Grails logs a warning and the link must specify `namespace` to choose the target explicitly. A name no registered controller has stays in the namespace the link is made from, where a link previously dropped the namespace; a redirect to such a name has always stayed in it. A page rendered by a controller in the `admin` namespace that links with `controller: 'other', action: 'list'` now generates `/admin/other/list` when no `OtherController` is registered, and so does a unit test that sets `webRequest.controllerNamespace` itself; a `ControllerUnitTest`, which leaves the request namespace unset, still generates `/other/list`. Pass `namespace` to target another namespace. A redirect naming no namespace is resolved exactly as a link is, from the namespace of the controller issuing it; previously it was forced into that namespace, so a redirect to a controller defined only in another namespace produced a URL for a controller that does not exist. Pass `namespace: null` from Groovy code or `namespace=""` in a GSP tag to target the non-namespaced controller explicitly.
+
+* **A resource link targets the most specific controller serving its domain class.**
+A link, form or redirect built from a domain instance, such as `<g:link resource="${book}">`, `redirect book`, or the `self` link of a HAL, Atom or JSON:API response, previously always targeted the controller named after the domain class, even when that controller did not exist. It now targets the nearest controller serving the domain class, a controller serving it when it is named after it or extends `RestfulController` parameterised on it, such as `PeopleController extends RestfulController<Person>` or a controller scaffolded with `@Scaffold(Person)`, and defines the action the link targets: the controller handling the request when it serves it, then the one serving it in the request's namespace, then in the default namespace, then in any namespace, the one named after the domain class settling a tie within a namespace. An application with one controller per domain class is unaffected. Where two controllers serve the same domain class, a link to it rendered by one of them now stays in that controller rather than moving to the one named after the domain class. Pass the `controller` attribute where a link should leave the current controller. See link:theWebLayer.html#restfulMappings[Mapping to REST resources]. Controllers generated by `generate-controller` and `generate-async-controller` now redirect a form save or update with `redirect action: "show", id: book.id` rather than `redirect book`, so a generated controller that is renamed still redirects to itself; a controller generated earlier and since renamed can be changed the same way.
 
 * **A read-only transaction no longer flushes the session.**
 A read-only transaction (`@ReadOnly`, `@Transactional(readOnly = true)`) commits without flushing the session on every GORM datastore. Hibernate, Neo4j and the simple map datastore already behaved this way; GORM for MongoDB flushed the session when a read-only transaction committed, and no longer does.
 +
-So on MongoDB, a write saved without `flush: true` before read-only code ran in the same session used to be persisted as a side effect of the read. It is now left queued in a session whose flush mode is `COMMIT`: later queries in that session do not see it, and it is discarded when the session closes. Flush such writes explicitly with `save(flush: true)`, or perform them in a read-write transaction. To make this discoverable, a read-only transaction that commits while its session holds pending inserts, updates or deletes now logs a warning from `org.grails.datastore.mapping.transactions.DatastoreTransactionManager` naming the session. See link:{mongodb5Guide}index.html#readOnlyTransactions[Read-Only Transactions] in the GORM for MongoDB guide.
+So on MongoDB, a write saved without `flush: true` before read-only code ran in the same session used to be persisted as a side effect of the read. It is now left queued: the read-only transaction does not write it, and it is written by whatever flushes the session next (a read-write commit, `save(flush: true)`, the flush at the end of the request), or discarded when the session closes if nothing does. Flush such writes explicitly with `save(flush: true)`, or perform them in a read-write transaction. To make this discoverable, a read-only transaction that commits while its session holds pending inserts, updates or deletes now logs a warning from `org.grails.datastore.mapping.transactions.DatastoreTransactionManager` naming the session. See link:{mongodb5Guide}index.html#readOnlyTransactions[Read-Only Transactions] in the GORM for MongoDB guide.
 +
 A GORM datastore implementation outside the Grails repository inherits this if it uses `SessionOnlyTransaction`; one that supplies its own `Transaction` can honour `readOnly` by overriding the new `AbstractSession.beginTransactionInternal(TransactionDefinition)`, which now receives the transaction definition instead of discarding it.
+
+* **A transaction started inside another joins it.**
+On GORM for MongoDB, a transactional service method called from another, or `withTransaction` inside `withTransaction`, began a second transaction on the same session instead of joining the first. The inner one committed on its own and the outer one's commit then did nothing: without a session bound for the request, the outer transaction's writes after the call were never saved, and with one they were saved when the request ended, outside any transaction (not at all if a read-only call had left the session in `COMMIT` flush mode). With multi-document transactions enabled, beginning the inner transaction also discarded the writes the outer one had flushed before the call. Now the inner transaction joins the outer one, everything commits once when the outer one does, and a joined transaction that fails rolls the whole transaction back. Hibernate and Neo4j already joined. On Neo4j, though, a joined transaction that failed rolled the transaction back on the spot, so writes the outer code made after catching the failure ran outside any transaction and were committed as they ran; the transaction is now only marked rollback-only, and those writes roll back with it. The simple map datastore, which `DataTest` unit tests run on, joins now too, so a nested transaction's writes are flushed at the outer commit instead of when it returns. Its sessions also share one identifier count now: an insert in one session could take the identifier of an insert another session had not yet flushed, or of an entry still present after a delete, and overwrite it. A write in `withNewSession` inside a transaction was lost that way.
++
+These follow from the surrounding transaction now being recognized, on MongoDB and the simple map datastore:
++
+** `PROPAGATION_REQUIRES_NEW` suspends the surrounding transaction and runs in a session of its own (on Neo4j too), where it used to begin on the surrounding transaction's session. The new session starts empty: an entity loaded in the surrounding transaction belongs to that session and should be loaded again inside, and settings made on the surrounding session, such as the database or collection chosen with `withDatabase` or `withCollection`, do not carry over.
+** `PROPAGATION_NOT_SUPPORTED` suspends the surrounding transaction, `PROPAGATION_MANDATORY` inside a transaction works where it always threw, and `PROPAGATION_NEVER` and `PROPAGATION_NESTED` inside a transaction throw.
+** A read-write transaction started inside a read-only one joins it and is read-only, as on Hibernate, where it used to commit on its own. A write it leaves queued is not saved by the read-only commit, which logs a warning naming the session. Call such a method from read-write code, or give it `PROPAGATION_REQUIRES_NEW`. A write it flushes explicitly with `save(flush: true)` is saved, but outside any transaction, so a later failure cannot roll it back.
+** Transactional code run from a transaction's `afterCommit` or `afterCompletion` callbacks, such as an `@TransactionalEventListener`, begins a transaction of its own.
+** A read-only transaction puts the session's flush mode back when it completes (on Neo4j too). It used to leave the session in `COMMIT` mode, so a session bound for the whole request was not flushed when the request ended.
+** Committing a transaction that is no longer active throws `IllegalTransactionStateException`, where the commit used to be skipped without a word.
++
+Without multi-document transactions, GORM for MongoDB does not flush before a query while a transaction is in progress, so a write a joined transaction leaves queued is not visible to a query later in the same transaction. It used to be, because the inner transaction flushed it when it returned. Use `save(flush: true)` where a later query in the transaction must see the write. This includes integration tests annotated with `@Rollback`, whose service calls now join the test's transaction. With multi-document transactions enabled, GORM for MongoDB flushes before a query inside the server-side transaction, as Hibernate does, so the query sees the write, and a rollback still takes it back.
++
+With multi-document transactions enabled on MongoDB, a read-only transaction no longer starts a server-side transaction, and beginning a transaction on a session whose server-side transaction is still active throws `IllegalTransactionStateException` instead of discarding it. See link:{mongodb5Guide}index.html#nestedTransactions[Nested Transactions] in the GORM for MongoDB guide.
++
+A GORM datastore implementation outside the Grails repository whose transaction manager replaces `doBegin` must handle a transaction object that holds no session: a `PROPAGATION_REQUIRES_NEW` transaction arrives that way once the surrounding one is suspended, and needs a session of its own.
 
 * **`bindData` can clear omitted included fields.**
 `bindData(target, source, [include: [...], clearMissing: true])` now clears included properties that are absent from the binding source. The behavior is opt-in, requires an `include` list, and does not apply globally. Existing `bindData` calls without `clearMissing: true` keep omitted fields unchanged.
@@ -1521,7 +1581,8 @@ Two methods changed as a result:
 |===
 
 The same change applies to the `attrs` map passed to a GSP tag, whose internal implementation renames `isGspTagSyntaxCall()` to `gspTagSyntaxCall()`.
-Its setter is retained, so assigning `attrs.gspTagSyntaxCall` still invokes that setter rather than storing an attribute - as in Grails 7. Store an attribute of that name with `attrs.put('gspTagSyntaxCall', value)`.
+Its setter is retained, so assigning `attrs.gspTagSyntaxCall` still invokes that setter rather than storing an attribute - as in Grails 7.
+Subscript assignment, `attrs['gspTagSyntaxCall'] = value`, now stores an attribute of that name, as `attrs.put('gspTagSyntaxCall', value)` does; in Grails 7 it invoked the setter.
 
 NOTE: When adding a class that extends `grails.util.TypeConvertingMap`, do not declare a no-argument `getX()` or `isX()` method on it, or the entry `x` becomes unreachable for the same reason. Statically compiled callers bind directly to the accessor, so the collision cannot be corrected at runtime.
 
@@ -1765,6 +1826,14 @@ class MyGrailsPlugin extends Plugin {
 ----
 
 Both hooks may be used on the same plugin during migration; when a registrar and the DSL register a bean under the same name, the registrar's definition wins.
+
+**Unit tests follow.** `doWithSpring()` on the `GrailsUnitTest` trait — and so on every testing trait — is deprecated too. A test now declares its beans in a `beans` block with the `beans` DSL, as an application or plugin does; overrides `beanRegistrar()`, applied where an application's is; or declares a static nested `@Configuration` class, which its context registers ahead of the framework's auto-configurations. A `beans` block compiles into one such class, named `BeansConfiguration`, so a test that already declares a nested class of that name must rename it. A test that includes a plugin through `getIncludePlugins()` also gets the beans the plugin's `beans` block declares, which `defineBeans(plugin)` cannot apply. See <<unitTesting,Unit Testing>>.
+
+A unit test now registers an included plugin's `doWithSpring` and `beanRegistrar` beans before its configuration is read, as an application's early phase does. So a `@ConditionalOnMissingBean` bean, including one in the framework's own auto-configurations, backs off from them in a test as it does in an application. A test's `doWithSpring` bean now replaces an included plugin's bean of the same name, where the plugin's used to win. What a test's `doWithConfig` sets now also reaches the Spring `Environment` before the context's configuration is read, so a property condition, the framework's `@ConditionalOnProperty` included, sees it; it used to reach only `grailsApplication.config` and `${}` placeholders.
+
+A test that already has a static nested `@Configuration` class meant for something other than its own context — one built for an `ApplicationContextRunner`, say — now has it registered there as well; override `getConfigurationClasses()` to leave it out.
+
+**A `beans` block names a nested type's bean by its simple name.** In 8.0.0-M6 and 8.0.0-RC1, `bean(Outer.Helper)` with no name given registered a bean named `outer$Helper`. It is now `helper`, the type's decapitalized simple name, as documented. Name it explicitly, `bean('outer$Helper', Outer.Helper)`, if anything looks it up by the old name.
 
 **Bean-definition overriding edge case.** Grails defaults `spring.main.allow-bean-definition-overriding` to `true`, and under that default nothing changes: an application bean (from the application class, `resources.groovy` or `resources.xml`) that uses the same name as a plugin bean still replaces the plugin's bean. However, because plugin beans now register earlier and application beans register in a separate, later step, an application that explicitly sets `spring.main.allow-bean-definition-overriding` to `false` will see a `BeanDefinitionOverrideException` for an application bean that shadows a plugin bean — in previous releases the two definitions were merged before a single registry write, so the shadowing was silent even with overriding disabled.
 
@@ -2093,7 +2162,7 @@ The renamed framework command packages are:
 |`org.apache.grails.security.cli.*` (grails-spring-security-cli)
 |===
 
-===== 35.1 Backwards Compatibility for Existing Command Plugins
+===== 37.1 Backwards Compatibility for Existing Command Plugins
 
 Grails 8 provides a deprecated, execution-only compatibility layer for already-published Grails 7 command
 plugins. Application commands created with `create-command` that implement
@@ -3139,7 +3208,7 @@ unqualified call from a controller to a method-declared tag changes.
 Three behaviors of the Quartz plugin changed in this release. All three concern what happens when
 something about a schedule is wrong; none of them require a change to a job class.
 
-===== 51.1 A trigger that can never fire no longer stops startup
+===== 52.1 A trigger that can never fire no longer stops startup
 
 A job whose trigger has no possible fire time — a cron expression whose last occurrence is in the past,
 or an end time that has already passed — used to make the application fail to start, because the
@@ -3162,7 +3231,7 @@ quartz:
     failOnNeverFiringTriggers: true
 ----
 
-===== 51.2 An application only removes the jobs it registered itself
+===== 52.2 An application only removes the jobs it registered itself
 
 When an application starts, the plugin removes the jobs in the job store which are no longer enabled job
 artefacts of the application. It used to consider *every* job in the store, which with a persistent job
@@ -3182,7 +3251,7 @@ with `quartz.jdbcStore` enabled the plugin warns about that at startup.
 removed automatically. A job class you deleted while running an older version leaves a row behind; remove
 it with `jobManagerService.removeJob(group, name)` or from the Quartz tables.
 
-===== 51.3 Scheduling methods report what is wrong instead of failing with a null pointer
+===== 52.3 Scheduling methods report what is wrong instead of failing with a null pointer
 
 The static scheduling methods every job class gets — `schedule`, `reschedule`, `unschedule`,
 `triggerNow`, `removeJob` — used to fail with a `NullPointerException` when called with a null argument,
@@ -4174,7 +4243,394 @@ Filters ordered ahead of `GrailsFilters.FIRST`, such as Spring Boot's forwarded-
 If a reverse proxy in front of the application already sends these headers (for example through nginx's `add_header`), set `grails.security.headers.defaults: auto` so requests that arrive through the proxy (detected from forwarded request headers, `server.forward-headers-strategy`, or an active cloud platform) receive only the headers you configure explicitly, or strip the application's copies at the proxy.
 To disable or customize the Grails defaults, configure `grails.security.headers.*`; see the Security guide's HTTP Security Headers section for the full list and the reverse-proxy guidance.
 
-==== 74. XML Web Support Is Optional
+==== 74. Scaffolded Views Are Compiled With the Application
+
+In Grails 7 a scaffolded view was expanded from its template and compiled on the first request that asked
+for it. In Grails 8, the pages of every controller annotated `@Scaffold`, the application's or a plugin's, are
+expanded at build time by the `generateScaffoldedViews` task, into `build/generated/scaffolded-views`, and
+compiled by `compileGroovyPages` in the same compilation as `grails-app/views`, under a `grails-scaffolded`
+directory that no controller's views resolve from. The resolver still chooses the
+template for a request exactly as before, and serves the page compiled from that template when there is one,
+so a request gets the same page it did. Which pages are compiled, and what happens to the others, is
+described in the link:scaffolding.html[Scaffolding] guide.
+
+`compileGroovyPages` takes the pages as its `generatedViews`, beside its `source`, so a build that sets the
+`source` itself still compiles them. In a project that scaffolds nothing, `generateScaffoldedViews` writes
+nothing.
+
+A scaffolding template of the application's own, in `src/main/templates/scaffolding` or packaged under
+`META-INF/templates/scaffolding`, is now compiled at build time, so one that cannot be expanded, or whose page
+does not compile, fails the build as a view that does not compile does - where in Grails 7 it failed on the
+first request for the view. A page expanded from a template a dependency supplies that cannot be compiled
+does not fail the build: it is left out, the build output names it, and it is expanded when it is first
+rendered, as in Grails 7.
+
+The `generateScaffoldedViews` task of 8.0.0-RC1 wrote pages into the controllers' view directories and had
+`templateClasspath` and `applicationViews` properties. Both are gone: the templates are read from the
+`runtimeClasspath` the pages are expanded on, and a view the application declares needs no exclusion, since
+it takes precedence over any scaffolded page when a request is resolved. A build that configures either
+property fails with an unknown property; remove the setting.
+
+8.0.0-RC1 also compiled a scaffolding project's views from a copy made by a `stageGroovyPages` task, which
+it registered only when a controller source mentioned `@Scaffold` - decided by
+`GroovyPagePlugin.scaffoldsAnyController`. Both are gone: nothing is copied, and every project generates the
+pages its scaffolded controllers need, a plugin's among them. A build that refers to `stageGroovyPages`
+fails with an unknown task; remove the reference.
+
+==== 75. File Renders Default to Attachment Disposition
+
+Grails 8 makes `render(file: ...)` safer by default. File responses now set
+`Content-Disposition: attachment` unless you opt out. If a `fileName` is supplied
+(or derived from a `File`), unsafe characters in that name are escaped before the
+header is written.
+
+Use `inline: true` when the file should stay inline, or set the
+`Content-Disposition` header yourself before calling `render` — Grails leaves an
+existing header alone.
+
+[source,groovy]
+----
+render(file: new File(absolutePath), fileName: 'report.pdf')
+render(file: new File(absolutePath), inline: true)
+----
+
+==== 76. A List of Objects in Configuration Binds to Its Declared Type
+
+A list of objects in `application.yml` or `application.groovy`, such as:
+
+[source,yaml]
+.application.yml
+----
+springdoc:
+    group-configs:
+        - group: sales
+          paths-to-match: /api/v1/**
+----
+
+is now presented to Spring element by element, under the indexed names Spring Boot binds a list from,
+such as `springdoc.group-configs[0].group`, the way Spring Boot's own YAML loader presents it. A
+`@ConfigurationProperties` class declaring a `List` of objects is bound with instances of that type.
+Previously the whole list was also presented under its own name, so Spring Boot bound it as a list of
+maps, and code reading the declared type failed with a `ClassCastException`. springdoc failed that
+way on `springdoc.group-configs` before the application could start.
+
+`Environment.getProperty('springdoc.group-configs')` now returns `null` and
+`Environment.containsProperty` returns `false`, as they do in a Spring Boot application, so a
+`@Value('${springdoc.group-configs}')` without a default fails to resolve, as does a `${...}`
+placeholder naming the list anywhere else. Read such a list through `grailsApplication.config`,
+which is unchanged, or bind it. The same applies to a list holding lists of objects, such as
+`rows: [[{a: 1}], [{b: 2}]]`, whose objects are presented under names such as `rows[0][0].a`, and to
+a list mixing plain values and objects, such as `mixed: [a, {b: 1}]`, presented as `mixed[0]` and
+`mixed[1].b`. Within such a list, an empty object, an empty list or a `null` value is presented as an
+empty string under its own name, such as `empty[0]` for `empty: [{}]`, as Spring Boot presents it. A
+list of plain values only, such as `names: [a, b]`, is presented as before.
+
+What reads the names the configuration presents sees the change too:
+
+* The `config-report` command lists such a list as a row for each value, such as
+  `springdoc.group-configs[0].group`, rather than one row for the list.
+* GORM used outside a Grails application, given a `ConfigurableEnvironment` it copies the property
+  names of, no longer finds the list under its own name. In a Grails application a datastore is
+  given `grailsApplication.config`, and sees the list as before.
+
+==== 77. JSON Rendering of Dates and Times Matches Spring Boot
+
+JSON rendered by `grails.converters.JSON` (`render ... as JSON`, and `respond` for a JSON request) and by JSON views,
+including `g.render`, writes date and time values the same way as Spring Boot's default Jackson `JsonMapper`. The
+exceptions are listed in the notes at the end of this section.
+
+===== 77.1 What 8.0.0 Restores From Grails 7
+
+8.0.0-RC1 changed how `grails.converters.JSON` and `grails.converters.XML` render some dates. 8.0.0 renders them as
+Grails 7 did, so an application upgrading from Grails 7 needs no change for these:
+
+[cols="2,2,2", options="header"]
+|===
+| Value
+| 8.0.0-RC1
+| Grails 7 and 8.0.0
+
+| A `Date`, `Calendar` or `java.sql.Timestamp` whose milliseconds are zero
+| `"2026-09-25T03:00:00Z"`
+| `"2026-09-25T03:00:00.000Z"`
+
+| A `java.sql.Timestamp` with nanoseconds
+| `"2025-10-08T07:48:46.407254Z"`
+| `"2025-10-08T07:48:46.407Z"`
+
+| A `java.sql.Date` with `grails.converters.JSON` or `grails.converters.XML`, and a `java.sql.Time` with
+`grails.converters.XML`
+| a failure to render it
+| rendered as a `Date` is
+|===
+
+See https://github.com/apache/grails-core/issues/16406[#16406].
+
+===== 77.2 Values That Render Differently Than in Grails 7
+
+Review these where an application or its clients read them:
+
+[cols="2,2,2", options="header"]
+|===
+| Value
+| Grails 7
+| Grails 8
+
+| `java.sql.Time`
+| `"2025-10-08T07:48:46.407Z"`, the UTC instant, which does not bind back to a `java.sql.Time`
+| `"01:48:46"`, from `Time#toString()` in the JVM default time zone, which binds back to the same time of day, to the
+second, as with Spring Boot
+
+| A `Date`, `Calendar`, `java.sql` date type or `ZonedDateTime` map key
+| the key's `toString()`, such as `"Wed Oct 08 01:48:46 MDT 2025"`
+| a `Date` (a `java.sql.Time` too) or `Calendar` key as a `Date` value is written, such as
+`"2025-10-08T07:48:46.407Z"`; a `ZonedDateTime` key as `"2026-09-25T00:00:00-03:00"`
+
+| A `Date` or `Calendar` before 1 AD or after 9999 (`grails.converters.JSON`)
+| `"12345-01-01T00:00:00.000Z"`, `"0044-03-15T00:00:00.000Z"` (44 BC)
+| `"+12345-01-01T00:00:00.000Z"`, `"-0043-03-15T00:00:00.000Z"`, ISO 8601 expanded years
+
+| A `Date` inside a collection that `g.render` writes element by element, such as a `List<Object>`
+| `"2025-10-08T07:48:46+0000"`
+| `"2025-10-08T07:48:46.407Z"`, as any other `Date` value
+
+| A `Date` or `Calendar` in JSON views with a configured `grails.views.json.generator.timeZone` other than `GMT`
+| the offset in hours only, such as `"2025-10-08T03:48:46.407-04"`, and `"2025-10-08T13:18:46.407+05"` for
+`Asia/Kolkata`, which names an instant 30 minutes off
+| the offset in hours and minutes, such as `"2025-10-08T03:48:46.407-04:00"` and `"2025-10-08T13:18:46.407+05:30"`, as
+Spring Boot writes them; the default date format is now `yyyy-MM-dd'T'HH:mm:ss.SSSXXX`
+
+| A `Date` rendered by `grails.converters.XML`
+| `2025-10-08 01:48:46.407 MDT`
+| `2025-10-08T01:48:46.407-06:00`, an ISO-8601 date and time with the offset of the JVM default time zone
+|===
+
+Data binding binds a `Month` from its number as well as its name, as Spring Boot reads it: `9`, `"9"` and `"SEPTEMBER"`
+bind to `SEPTEMBER`. Grails 7 bound a number through Spring's conversion service by ordinal, so `9` bound to `OCTOBER`.
+
+JSON views write `Date` and `Calendar` map keys with `grails.views.json.generator.dateFormat`, in the configured
+`timeZone` and `locale`, as they write those values. As with Spring Boot's `spring.jackson.date-format`, the date format
+no longer applies to `java.sql.Time` values, which are written as `"01:48:46"`.
+
+===== 77.3 Values Grails 7 Did Not Render as Values
+
+These rendered as an object of their properties, as `{}`, or not at all, and now render as values:
+
+[cols="2,2,2", options="header"]
+|===
+| Type
+| Grails 7
+| Grails 8
+
+| `java.time.LocalTime` (`grails.converters.JSON`)
+| `{"hour":1,"minute":48,"nano":407254000,"second":46}`
+| `"01:48:46.407254"`, as JSON views already rendered it
+
+| `java.time.OffsetTime` (`grails.converters.JSON`)
+| an object of its properties
+| `"03:00:00-03:00"`, as JSON views already rendered it
+
+| `java.time.Period` (`grails.converters.JSON`)
+| an object of its properties
+| `"P1Y2M3D"`, as JSON views already rendered it
+
+| `java.time.Year`
+| an object of its properties, or `{}`
+| `2026`, a JSON number
+
+| `java.time.YearMonth`, `java.time.MonthDay`
+| an object of their properties, or `{}`
+| `"2026-09"`, `"--09-25"`
+
+| `java.time.Duration`
+| an object of its properties, or `{}`
+| `"PT1H30M"`, from `Duration#toString()`
+
+| `java.time.ZoneId`, `java.time.ZoneOffset`
+| an object of their properties, including the zone rules, or `{}`
+| `"America/Sao_Paulo"`, `"-03:00"`
+
+| `java.util.TimeZone`
+| an object of its properties, or a failure to render it
+| `"America/Sao_Paulo"`, its ID
+
+| `javax.xml.datatype.XMLGregorianCalendar`
+| an object of its properties
+| as a `Calendar` is, such as `"2025-10-08T07:48:46.407Z"`
+
+| `javax.xml.datatype.Duration`
+| a failure to render it
+| `"P1DT2H"`, from `Duration#toString()`
+|===
+
+===== 77.4 Keeping the Grails 7 Rendering
+
+To keep the Grails 7 rendering of a type, register an object marshaller for it with `grails.converters.JSON`, for
+example in `BootStrap.init`, and a `groovy.json.JsonGenerator.Converter` for it in JSON views, as described in
+section 24, Custom JSON View Converters:
+
+[source,groovy]
+----
+DateTimeFormatter utc = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'").withZone(ZoneOffset.UTC)
+JSON.registerObjectMarshaller(java.sql.Time) { java.sql.Time time ->
+    utc.format(Instant.ofEpochMilli(time.time))
+}
+----
+
+A JSON views converter that returns `new Date(time.time)` for a `java.sql.Time` writes it with the configured
+`dateFormat`, as Grails 7 did. Map keys are not rendered by marshallers or converters: to keep the `toString()` of a date
+key, convert the keys to strings before rendering the map, for example with
+`map.collectEntries { key, value -> [(key.toString()): value] }`.
+
+The default JSON marshallers have implicit priorities that follow their order (-1, -2, and so on), and the marshallers
+added in 8.0 shift those, so a marshaller registered with an explicit negative priority may now come before or after
+different defaults. Marshallers registered with the default priority of 0, or higher, still take precedence over all
+of the defaults. A marshaller registered for `Date` or `Calendar`, like `grails.converters.json.date` set to
+`javascript`, changes how those values render with `grails.converters.JSON`, but not map keys of those types, which
+keep the form in the table above. JSON views format date map keys with `dateFormat`, as described above.
+
+NOTE: Enums render by `name()`, as described in section 8, Enum Serialization Default Changed, while Jackson 3 writes an
+enum's `toString()`, and a `java.time.Month` as its number. The two differ for `Month` (`"SEPTEMBER"` in Grails, `9` in
+Spring Boot) and for enums that override `toString()`, such as `java.time.temporal.ChronoUnit` (`"SECONDS"` in Grails,
+`"Seconds"` in Spring Boot). To render a `Month` as its number, register
+`JSON.registerObjectMarshaller(Month) { Month month -> month.value }` and a JSON views converter that returns
+`month.value`.
+
+NOTE: An `OffsetTime` keeps its seconds and writes a fraction of a second with only the digits it needs, such as
+`"03:00:00-03:00"`, as JSON views have written it since Grails 7, where Spring Boot writes `"03:00-03:00"`. JSON views
+write a year before 1 AD or after 9999 as Grails 7 did.
+
+NOTE: The HAL renderer, `grails.rest.render.hal.HalJsonRenderer` for `application/hal+json`, writes values with Groovy's
+default JSON generator and is not changed.
+
+==== 78. A Date With an Offset Is Bound to the Instant It Names
+
+When controllers, command objects and `bindData` bind a request, a date and time in its ISO 8601
+form, with a `T` between the date and the time, which is how Grails renders a date in JSON, is now
+read first, before the formats that `grails.databinding.dateFormats` lists are tried. Previously:
+
+* `2024-05-01T10:00:00Z`, which 8.0.0-RC1 renders for a `Date` or a `Calendar` whose milliseconds are
+  zero, and which a client may send for any date, was read by the `yyyy-MM-dd'T'HH:mm:ss'Z'` format
+  as a time in the zone of the server, so it was bound off by the offset of that zone.
+* `2024-05-01T10:00:00+02:00` was read by `yyyy-MM-dd'T'HH:mm:ss`, which left the offset unread,
+  and was bound as a time in the zone of the server.
+* A fraction of a second of fewer than three digits, such as the `.5` of `10:00:00.5Z`, was read as
+  milliseconds, so as 5 rather than 500.
+* An `OffsetDateTime` or a `ZonedDateTime` could not be bound from `2024-05-01T10:00:00Z` or
+  `2024-05-01T10:00:00+02:00`, which is how Grails renders them, and a `LocalDateTime` or a
+  `LocalTime` could not be bound from a value with a fraction of a second.
+
+Each is now bound to what it names. A server running in UTC saw the first two bound correctly
+before, and sees no change.
+
+The formats in `grails.databinding.dateFormats` are then tried in order, and a format that reads all
+of the value is now used before an earlier one that reads only the start of it. A value that no format
+reads all of is bound as before, by the first format that reads the start of it: `2024-05-01 10:00`
+is still bound as midnight by `yyyy-MM-dd`, losing the time. Add a format that reads the whole value,
+such as `yyyy-MM-dd HH:mm`, to keep the time.
+
+The date scalars of GraphQL, which read `grails.databinding.dateFormats` too, are not changed.
+
+==== 79. Asset Pipeline Wildcards Stand for One Directory
+
+Grails 8 uses asset-pipeline 5.2, which resolves a `%` or `*` component of an asset path, in a `require`
+directive, an `<asset:...>` tag or a Sass import, the same way wherever the asset is found: as exactly one
+directory.
+
+In Grails 7, which used asset-pipeline 5.0, a `%` could stand for any number of directories when the asset
+was in a jar, as the files of every webjar are, and in the manifest that a packaged application serves its
+assets from. `webjars/%/dist/jquery.js` found `webjars/jquery/3.7.1/dist/jquery.js`, and now finds nothing,
+since one `%` cannot stand for both `jquery` and `3.7.1`.
+
+Write a `%` in place of each directory, as applications generated by `create-app` do for the version
+directory of each webjar, or use the new `%%` (or `**`), which stands for zero or more directories:
+
+[source,javascript]
+.grails-app/assets/javascripts/application.js
+----
+//= require webjars/jquery/%/dist/jquery.js
+//= require webjars/%%/dist/js/bootstrap.bundle.js
+----
+
+In a CSS `require` block, write `%` and `%%` rather than `+*+` and `+**+`, because `*/` ends the comment the
+block is written in. A path with one `%` for each directory, including every path `create-app` has
+generated, resolves as before, unless more than one directory matches (see below).
+
+When several directories match, the highest version is used: `5.1.2` over `4.3.0`, `10.0.0` over `9.0.0`,
+and a release over its own pre-releases. Before, the first match found was used, in the order of the file
+system, the jars on the classpath or the manifest. Where `%%` can match at more than one depth, the match with
+the fewest directories wins, so a copy of a library that another webjar bundles further down is not picked
+up. Hidden directories, whose names start with `.`, are never matched, and a wildcard inside a file name,
+such as `jquery-%.js`, no longer resolves in a packaged application, as it never resolved in development.
+
+A path that no longer resolves does not fail the build: `assetCompile` logs `Unable to Locate Asset: <path>`
+and leaves the file out, and an `<asset:...>` tag renders the path unchanged, which the browser then fails to
+load. Check the `assetCompile` output for that warning after upgrading.
+
+NOTE: The `includes` and `excludes` patterns of the `assets` block in `build.gradle`, which select the files
+`assetCompile` processes, are not changed.
+
+==== 80. Stricter Closure Typing for GORM Criteria Closures
+
+GORM's criteria closure methods (`where`, `whereLazy`, `build`, `buildLazy`, `projections`,
+`and`, `or`, `not`, `find`, `get`, `list`, `count`, `asBoolean` and the closure subquery forms
+of `in`, `inList`, `notIn`, `eqAll`, `gtAll`, `ltAll`, `geAll`, `leAll`, `gtSome`, `geSome`,
+`ltSome` and `leSome`) now declare
+`strategy = Closure.DELEGATE_FIRST` in their `@DelegatesTo` annotations. This matches the
+resolve strategy GORM already applies at runtime and fixes a `@CompileStatic` bug where the
+restrictions of a criteria closure nested inside another criteria closure were added to the
+enclosing criteria instead of the new one. Projection blocks resolved against the enclosing
+criteria for the same reason, silently dropping their projections. See
+https://github.com/apache/grails-core/issues/16425[Issue #16425].
+
+Statically compiled applications can be affected in two ways.
+
+**Forwarding a `Closure` parameter to one of these methods no longer compiles.** A method
+`Closure` parameter with the default `OWNER_FIRST` strategy cannot be passed to a
+`DELEGATE_FIRST` parameter:
+
+[source,groovy]
+----
+@CompileStatic
+static DetachedCriteria<Book> withExtra(Closure extra) {
+    new DetachedCriteria<Book>(Book).where(extra)
+    // [Static type checking] - Closure parameter with resolve strategy OWNER_FIRST
+    // passed to method with resolve strategy DELEGATE_FIRST
+}
+----
+
+Declare the same strategy on your parameter, or cast the argument:
+
+[source,groovy]
+----
+static DetachedCriteria<Book> withExtra(
+        @DelegatesTo(value = DetachedCriteria, strategy = Closure.DELEGATE_FIRST) Closure extra) {
+    new DetachedCriteria<Book>(Book).where(extra)
+}
+
+// or
+new DetachedCriteria<Book>(Book).where((Closure) extra)
+----
+
+**Name resolution inside a criteria closure now prefers the criteria delegate**, which is
+what dynamic code already did. A property or method that exists both on the enclosing class
+and on the criteria now resolves to the criteria:
+
+[source,groovy]
+----
+@CompileStatic
+class BookQueries {
+    List<Order> getOrders() { ... }
+
+    DetachedCriteria<Book> query() {
+        new DetachedCriteria<Book>(Book).where {
+            inList 'name', orders    // now reads the criteria's orders, not getOrders()
+        }
+    }
+}
+----
+
+==== 81. XML Web Support Is Optional
 
 XML conversion, request-body binding, codecs, and REST renderers now live in the optional
 `grails-xml` module. Newly generated applications and the web starter no longer include that module by
@@ -4220,7 +4676,7 @@ APIs.
 This change does not affect Grails plugin descriptors. Plugin metadata continues to be generated and
 published in its existing descriptor format; `grails-xml` concerns application HTTP payloads only.
 
-==== 75. `respond()` Uses Spring JSON Conversion
+==== 82. `respond()` Uses Spring JSON Conversion
 
 Spring JSON rendering is opt-in on `8.0.x`: ordinary `respond()` calls continue to use the legacy
 Grails JSON converter unless `grails.web.rendering.json.spring` is `true`. Changing the default belongs
@@ -4281,7 +4737,7 @@ They do not automatically load the controllers, URL mappings or i18n plugins; li
 the curated unit-test setup. Plain `GrailsUnitTest` and `ServiceUnitTest` do not load XML or the web
 plugin graph simply because that module is on the classpath.
 
-==== 76. JSON Request Binding Uses the Boot `JsonMapper`
+==== 83. JSON Request Binding Uses the Boot `JsonMapper`
 
 JSON request bodies used for Grails data binding are now parsed by Spring Boot's configured Jackson 3
 `JsonMapper`. Mapper features installed through `JsonMapperBuilderCustomizer` therefore apply consistently
@@ -4296,7 +4752,7 @@ Untyped JSON numbers keep the types the previous parser produced. Values with a 
 as `BigDecimal` rather than `Double`, so binding a request value such as `1.15` to a `BigDecimal` property
 retains exactly the digits the request sent. Whole numbers continue to bind as `Integer` or `Long`.
 
-==== 77. REST Validation Errors Use RFC 9457 Problems
+==== 84. REST Validation Errors Use RFC 9457 Problems
 
 When Spring JSON rendering is enabled, `respond()` renders Spring `Errors` as
 `application/problem+json` by default. Grails uses the public `ValidationProblemDetailFactory` bean to
@@ -4331,7 +4787,7 @@ Rejected field values are excluded by default because they can contain passwords
 sensitive request data. Applications that deliberately need those values can define their own
 `new ValidationProblemDetailFactory(true)` bean after reviewing that exposure risk.
 
-==== 78. HAL Rendering
+==== 85. HAL Rendering
 
 Existing Grails HAL JSON renderers remain available through explicit renderer registration.
 Adding `spring-boot-starter-hateoas` alone does not register a Grails renderer for Spring HATEOAS

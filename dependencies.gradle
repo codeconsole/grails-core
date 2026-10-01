@@ -26,18 +26,17 @@ ext {
             'asciidoctor-gradle-jvm.version': '4.0.5',
             'asciidoctorj.version'          : '3.0.1',
             'asm.version'                   : '9.10.1',
-            'asset-pipeline-gradle.version' : '5.2.0-RC1',
+            'asset-pipeline-gradle.version' : '5.2.0-RC3',
             'commons-text.version'          : '1.15.0',
             'directory-watcher.version'     : '0.19.1',
             'gradle-groovy.version'         : '4.0.33',
             'gradle-spock.version'          : '2.4-groovy-4.0',
-            'grails-publish-plugin.version' : '1.0.0-RC1',
+            'grails-publish-plugin.version' : '1.0.0-RC2',
             'javaparser-core.version'       : '3.28.2',
             // Tracks the JLine version Groovy ships (groovy-groovysh), so the framework and groovysh
             // share one terminal stack - keep in step with groovy.version.
             'jline.version'                 : '3.30.16',
             'jna.version'                   : '5.19.1',
-            'jquery.version'                : '4.0.0',
             'maven-model.version'           : '3.9.16',
             'objenesis.version'             : '3.6',
             'spring-boot.version'           : '4.1.1',
@@ -71,7 +70,7 @@ ext {
     ]
 
     bomDependencyVersions = [
-            'asset-pipeline-bom.version'    : '5.2.0-RC1',
+            'asset-pipeline-bom.version'    : '5.2.0-RC3',
             'cas-client-core.version'       : '4.1.1',
             'bootstrap-icons.version'       : '1.13.1',
             'bootstrap.version'             : '5.3.8',
@@ -92,21 +91,18 @@ ext {
             // GregorianCalendar/Duration (CVE-2026-68497) and restricts the URI schemes
             // java.nio.file.Path deserialization accepts (CVE-2026-19032). Jackson 2 only releases
             // jackson-annotations on the minor, hence the separate 2.22 below.
-            'jackson2.version'              : '2.22.2',
+            'jackson-2-bom.version'         : '2.22.2',
             'jackson2-annotations.version'  : '2.22',
             // Security: overrides the Jackson 3 line Spring Boot 4.1 manages (3.1.5). 3.1.6 adds the
             // StreamReadConstraints length limit to GregorianCalendar/Duration (CVE-2026-68497) and
             // restricts the URI schemes java.nio.file.Path deserialization accepts (CVE-2026-19032).
             // Stays on Spring Boot's 3.1.x line so its Jackson 3 integration keeps a supported version.
-            'jackson3.version'              : '3.1.6',
+            'jackson-bom.version'           : '3.1.6',
             'jquery.version'                : '4.0.0',
-            'kotlin.version'                : '2.2.21',
-            'liquibase-hibernate5.version'  : '4.27.0',
             // Security: overrides the 1.5.38 Spring Boot 4.1 manages. 1.6.3 strips slashes from MDC
             // values before SiftingAppender uses them as discriminating keys (CVE-2026-19880). The
             // 1.6.x line keeps SLF4J 2.0.x and a JDK 11 baseline, so it is a drop-in replacement.
             'logback.version'               : '1.6.3',
-            'mockito.version'               : '5.23.0',
             // Security: overrides the 5.8.1 Spring Boot 4.1 manages. 5.9.2 stopped ProxySettings
             // .toString() writing the SOCKS5 proxy credentials into the application log
             // (CVE-2026-18710); 5.12.0 is the current release of that line.
@@ -125,8 +121,15 @@ ext {
             'sitemesh.version'              : '2.6.0',
             'scribejava.version'            : '8.3.3',
             'spock.version'                 : '2.4-groovy-5.0',
-            'starter-sitemesh.version'      : '3.3.0-RC1',
-            'spring-webmvc-sitemesh.version': '3.3.0-RC1',
+            // Not managed by spring-boot-dependencies. springdoc 3.x is the Spring Boot 4 /
+            // Spring Framework 7 line; the grails-openapi module compiles against its
+            // OpenApiCustomizer SPI and apps add the webmvc-ui starter for Swagger UI.
+            'springdoc-openapi.version'     : '3.1.0',
+            // Not managed by spring-boot-dependencies. Kept at the version springdoc-openapi
+            // resolves, which grails-openapi compiles against without requiring springdoc.
+            'swagger.version'               : '2.2.52',
+            'starter-sitemesh.version'      : '3.3.0-RC3',
+            'spring-webmvc-sitemesh.version': '3.3.0-RC3',
             // Spring Boot 4 no longer manages spring-retry; pin it here so the
             // grails-shell-cli SpringRetryCompilerAutoConfiguration's unversioned
             // reference resolves and consumer apps using @Retryable get a known version.
@@ -189,15 +192,15 @@ ext {
             'groovy-yaml'              : "org.apache.groovy:groovy-yaml:${bomDependencyVersions['groovy.version']}",
             'guava'                       : "com.google.guava:guava:${bomDependencyVersions['guava.version']}",
             // Security override of the 2.21.5 spring-boot-dependencies imports through
-            // com.fasterxml.jackson:jackson-bom - see jackson2.version
+            // com.fasterxml.jackson:jackson-bom - see jackson-2-bom.version
             'jackson2-annotations'     : "com.fasterxml.jackson.core:jackson-annotations:${bomDependencyVersions['jackson2-annotations.version']}",
-            'jackson2-core'            : "com.fasterxml.jackson.core:jackson-core:${bomDependencyVersions['jackson2.version']}",
-            'jackson2-databind'        : "com.fasterxml.jackson.core:jackson-databind:${bomDependencyVersions['jackson2.version']}",
-            'jackson2-datatype-jsr310' : "com.fasterxml.jackson.datatype:jackson-datatype-jsr310:${bomDependencyVersions['jackson2.version']}",
+            'jackson-2-bom-core'       : "com.fasterxml.jackson.core:jackson-core:${bomDependencyVersions['jackson-2-bom.version']}",
+            'jackson-2-bom-databind'   : "com.fasterxml.jackson.core:jackson-databind:${bomDependencyVersions['jackson-2-bom.version']}",
+            'jackson-2-bom-datatype-jsr310': "com.fasterxml.jackson.datatype:jackson-datatype-jsr310:${bomDependencyVersions['jackson-2-bom.version']}",
             // Security override of the 3.1.5 spring-boot-dependencies imports through
-            // tools.jackson:jackson-bom - see jackson3.version
-            'jackson3-core'            : "tools.jackson.core:jackson-core:${bomDependencyVersions['jackson3.version']}",
-            'jackson3-databind'        : "tools.jackson.core:jackson-databind:${bomDependencyVersions['jackson3.version']}",
+            // tools.jackson:jackson-bom - see jackson-bom.version
+            'jackson-bom-core'         : "tools.jackson.core:jackson-core:${bomDependencyVersions['jackson-bom.version']}",
+            'jackson-bom-databind'     : "tools.jackson.core:jackson-databind:${bomDependencyVersions['jackson-bom.version']}",
             'jquery'                   : "org.webjars.npm:jquery:${bomDependencyVersions['jquery.version']}",
             // Security override of the transitive 1.5.38 - see logback.version
             'logback-classic'          : "ch.qos.logback:logback-classic:${bomDependencyVersions['logback.version']}",
@@ -225,6 +228,14 @@ ext {
             'spock-core'               : "org.spockframework:spock-core:${bomDependencyVersions['spock.version']}",
             'spock-spring'             : "org.spockframework:spock-spring:${bomDependencyVersions['spock.version']}",
             'spring-retry'             : "org.springframework.retry:spring-retry:${bomDependencyVersions['spring-retry.version']}",
+            // Not managed by spring-boot-dependencies - see springdoc-openapi.version
+            'springdoc-openapi-starter-common': "org.springdoc:springdoc-openapi-starter-common:${bomDependencyVersions['springdoc-openapi.version']}",
+            'springdoc-openapi-starter-webmvc-api': "org.springdoc:springdoc-openapi-starter-webmvc-api:${bomDependencyVersions['springdoc-openapi.version']}",
+            'springdoc-openapi-starter-webmvc-ui': "org.springdoc:springdoc-openapi-starter-webmvc-ui:${bomDependencyVersions['springdoc-openapi.version']}",
+            // Not managed by spring-boot-dependencies - see swagger.version
+            'swagger-annotations-jakarta': "io.swagger.core.v3:swagger-annotations-jakarta:${bomDependencyVersions['swagger.version']}",
+            'swagger-core-jakarta'     : "io.swagger.core.v3:swagger-core-jakarta:${bomDependencyVersions['swagger.version']}",
+            'swagger-models-jakarta'   : "io.swagger.core.v3:swagger-models-jakarta:${bomDependencyVersions['swagger.version']}",
             'starter-sitemesh'         : "org.sitemesh:spring-boot-starter-sitemesh:${bomDependencyVersions['starter-sitemesh.version']}",
             'spring-webmvc-sitemesh'   : "org.sitemesh:spring-webmvc-sitemesh:${bomDependencyVersions['spring-webmvc-sitemesh.version']}",
             // Not managed by spring-boot-dependencies - see undertow.version
@@ -240,6 +251,30 @@ ext {
     ] + bomPlatformDependencies
     combinedDependencies = gradleBomDependencies + bomDependencies
     combinedVersions = gradleBomDependencyVersions + bomDependencyVersions
+
+    // The third-party BOM every Grails BOM inherits from. validateBomProperties checks each Grails BOM's
+    // published POM against it: a version the parent also manages must be declared under the parent's
+    // property name, and must differ from the parent's version.
+    parentBoms = [gradleBomPlatformDependencies['spring-boot-bom']]
+
+    // Deliberate exceptions to validateBomProperties; each one needs its reason here.
+    bomUnusedVersionExemptions = [
+            // Read directly by build-logic and grails-gradle-plugins, and kept out of the published
+            // BOMs on purpose - see grails-gradle/plugins/build.gradle.
+            'maven-model.version',
+    ]
+    bomPropertyNameExemptions = [
+            // jackson-annotations has had no patch releases since 2.20, so it cannot share
+            // jackson-2-bom.version with the rest of the Jackson 2 family it is pinned alongside.
+            'jackson2-annotations.version',
+            // The Gradle BOM tracks the Groovy 4 line Gradle embeds, while groovy.version is the
+            // application's Groovy 5 line; both live in combinedVersions, so they cannot share a name.
+            'gradle-groovy.version',
+    ]
+    bomRedundantVersionExemptions = [
+            // Kept equal to Spring Boot's on purpose - see graphql-java.version
+            'graphql-java.version',
+    ]
 
     // Defaults for per-BOM overrides; populated in the if/else blocks below
     customBomVersions = [:]
@@ -275,7 +310,7 @@ ext {
                 // platform already offers. Scoped to grails-neo4j-bom only (not the default
                 // grails-bom) so consumers who don't use grails-data-neo4j keep Spring Boot's
                 // managed driver version.
-                'neo4j-driver.version': '4.4.13',
+                'neo4j-java-driver.version': '4.4.13',
                 // The embedded test harness matching the driver/server version above. Consumed
                 // by grails-data-neo4j-core's published main sources (EmbeddedNeo4jServer,
                 // Neo4jEmbeddedConnectionSource, Neo4jConnectionSourceFactory), so it needs a
@@ -286,8 +321,8 @@ ext {
         ]
         combinedVersions += customBomVersions
         customBomDependencies = [
-                'neo4j-driver' : "org.neo4j.driver:neo4j-java-driver:${combinedVersions['neo4j-driver.version']}",
-                'neo4j-harness': "org.neo4j.test:neo4j-harness:${combinedVersions['neo4j-harness.version']}",
+                'neo4j-java-driver': "org.neo4j.driver:neo4j-java-driver:${combinedVersions['neo4j-java-driver.version']}",
+                'neo4j-harness'    : "org.neo4j.test:neo4j-harness:${combinedVersions['neo4j-harness.version']}",
         ]
         combinedDependencies += customBomDependencies
     } else if (project.name in ['grails-hibernate7-bom'] || project.name.startsWith('grails-data-hibernate7')) {
