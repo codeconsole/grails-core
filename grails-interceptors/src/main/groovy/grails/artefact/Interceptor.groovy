@@ -210,9 +210,9 @@ trait Interceptor implements ResponseRenderer, ResponseRedirector, RequestForwar
     }
 
     /**
-     * Obtains the exception thrown by an action execution
+     * Obtains the exception or error thrown while the request was processed
      *
-     * @param t The exception or null if none was thrown
+     * @return The {@link Exception} or {@link Error}, or null if none was thrown
      */
     @Generated
     Throwable getThrowable() {
