@@ -31,6 +31,9 @@ class DocPublisherSpec extends Specification {
     @Shared
     File guideDir
 
+    @Shared
+    File referenceDir
+
     void setupSpec() {
         File sourceDir = new File(workspace, 'src')
         File guideSourceDir = new File(sourceDir, 'guide')
@@ -54,10 +57,26 @@ class DocPublisherSpec extends Specification {
             [[sharedAnchor]]
             The first chapter defining this anchor.
             '''.stripIndent()
-        new File(guideSourceDir, 'second/secondChild.adoc').text = 'A sub-section.\n'
+        new File(guideSourceDir, 'second/secondChild.adoc').text = '''\
+            [[childAnchor]]
+            Links: <<customAnchor,an anchor in its chapter>>, <<third>>, <<childAnchor,an anchor on this page>>
+            and <<missingAnchor,a missing anchor>>.
+
+            Paths: link:../ref/Tags/example.html[a reference page], https://grails.apache.org[an external site]
+            and image:diagram.png[a diagram].
+            '''.stripIndent()
         new File(guideSourceDir, 'third.adoc').text = '''\
             [[sharedAnchor]]
             A later chapter defining the same anchor.
+            '''.stripIndent()
+
+        File referenceSourceDir = new File(sourceDir, 'ref/Tags')
+        referenceSourceDir.mkdirs()
+        new File(sourceDir, 'ref/Tags.adoc').text = 'See <<third>>.\n'
+        new File(referenceSourceDir, 'example.adoc').text = '''\
+            [[referenceAnchor]]
+            Links: <<customAnchor,an anchor>>, <<secondChild>>, <<referenceAnchor,an anchor on this page>>
+            and <<missingAnchor,a missing anchor>>.
             '''.stripIndent()
 
         File targetDir = new File(workspace, 'guide-output')
@@ -72,6 +91,7 @@ class DocPublisherSpec extends Specification {
         publisher.engineProperties = engineProperties
         publisher.publish()
         guideDir = new File(targetDir, 'guide')
+        referenceDir = new File(targetDir, 'ref')
     }
 
     void 'points a cross reference on a chapter page at the chapter page that defines its target'() {
@@ -90,6 +110,57 @@ class DocPublisherSpec extends Specification {
         and: 'references within the page, and to anchors no page defines, are left alone'
         first.contains('href="#localAnchor"')
         first.contains('href="#missingAnchor"')
+    }
+
+    void 'resolves the relative paths on a sub-section page from its own directory'() {
+        when:
+        String second = new File(guideDir, 'second.html').text
+        String secondChild = new File(guideDir, 'pages/secondChild.html').text
+
+        then: 'the chapter page holds the content with paths relative to the guide directory'
+        second.contains('href="../ref/Tags/example.html"')
+        second.contains('src="../img/diagram.png"')
+
+        and: 'the sub-section page, one directory deeper, holds the same content one more level up'
+        secondChild.contains('href="../../ref/Tags/example.html"')
+        secondChild.contains('src="../../img/diagram.png"')
+        !secondChild.contains('href="../ref/Tags/example.html"')
+
+        and: 'its stylesheets and scripts come from the same place as on the chapter page'
+        second.contains('href="../css/main.css"')
+        secondChild.contains('href="../../css/main.css"')
+        secondChild.contains('src="../../js/docs.js"')
+
+        and: 'URLs with a scheme are left alone'
+        secondChild.contains('href="https://grails.apache.org"')
+    }
+
+    void 'points a cross reference on a sub-section page at the chapter page that defines its target'() {
+        when:
+        String secondChild = new File(guideDir, 'pages/secondChild.html').text
+
+        then: 'references outside the sub-section lead to the chapter page, one directory up'
+        secondChild.contains('href="../second.html#customAnchor"')
+        secondChild.contains('href="../third.html#third"')
+
+        and: 'references within the page, and to anchors no page defines, are left alone'
+        secondChild.contains('href="#childAnchor"')
+        secondChild.contains('href="#missingAnchor"')
+    }
+
+    void 'points a cross reference on a reference page at the guide chapter page that defines its target'() {
+        when:
+        String example = new File(referenceDir, 'Tags/example.html').text
+        String usage = new File(referenceDir, 'Tags/Usage.html').text
+
+        then: 'references to the guide lead to its chapter pages'
+        example.contains('href="../../guide/second.html#customAnchor"')
+        example.contains('href="../../guide/second.html#secondChild"')
+        usage.contains('href="../../guide/third.html#third"')
+
+        and: 'references within the page, and to anchors no page defines, are left alone'
+        example.contains('href="#referenceAnchor"')
+        example.contains('href="#missingAnchor"')
     }
 
     void 'keeps cross references in the single-page guide on that page'() {
