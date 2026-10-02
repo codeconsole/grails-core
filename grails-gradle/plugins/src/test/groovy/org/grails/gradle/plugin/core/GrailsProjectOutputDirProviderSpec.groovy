@@ -79,6 +79,17 @@ class GrailsProjectOutputDirProviderSpec extends Specification {
                 .asArguments().toList() == []
     }
 
+    void 'the warning when #property cannot be passed says what its own fallback breaks'() {
+        expect:
+        GrailsProjectOutputDirProvider.withoutIt(property).contains(consequence)
+
+        where:
+        property                      | consequence
+        'grails.project.class.dir'    | 'the change is not reloaded'
+        'grails.project.resource.dir' | 'reads its resources from build/resources/main'
+        'grails.project.target.dir'   | 'restart marker (.grailspid) in build/'
+    }
+
     void 'a path is joined by / whatever the platform separator: #classesDir'() {
         expect:
         GrailsProjectOutputDirProvider.relativePath(Paths.get('/app'), Paths.get(classesDir)) == relative

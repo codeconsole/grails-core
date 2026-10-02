@@ -49,8 +49,8 @@ import grails.util.BuildSettings
  * <p>The path is relative because it is joined to a project directory, and its names are separated by {@code /} on
  * every platform, as the fallbacks are, because {@code IOUtils} compares the classes path with class locations
  * written as URLs. When the directory has no path relative to the project, such as one on another drive on Windows,
- * no property is passed, the application keeps the fallback, and a warning names both directories, since changes
- * will then go where the application does not load from.</p>
+ * no property is passed, the application keeps the fallback, and a warning names both directories and what that
+ * property's fallback means ({@link #withoutIt}).</p>
  *
  * <p>A build that sets the property on the task itself ({@code systemProperty 'grails.project.class.dir', ...}) keeps
  * its value: nothing is passed then. The task's system properties are read when the task runs, so a value set after
@@ -65,9 +65,11 @@ import grails.util.BuildSettings
  * or an {@code allprojects} block does. A plugin subproject whose build directory is laid out differently from the
  * application's has its changes compiled where it does not load classes from.</p>
  *
- * <p>All four values are {@link Internal}, as for {@link GrailsAppBaseDirProvider}: the directories are the task's
- * classpath, already tracked there, and the task's system properties are its inputs already. The directory is read
- * when the task runs, so a build directory changed after the plugin is applied is the one passed.</p>
+ * <p>All four values are {@link Internal}, as for {@link GrailsAppBaseDirProvider}: the classes and resources
+ * directories are the task's classpath, already tracked there; the build directory itself only says where the
+ * application writes its restart marker while it runs, which nothing the task produces depends on; and the task's
+ * system properties are its inputs already. The directory is read when the task runs, so a build directory changed
+ * after the plugin is applied is the one passed.</p>
  */
 @CompileStatic
 class GrailsProjectOutputDirProvider implements CommandLineArgumentProvider {
@@ -109,12 +111,31 @@ class GrailsProjectOutputDirProvider implements CommandLineArgumentProvider {
         File dir = directory.get().asFile
         String relative = relativePath(projectDir.toPath(), dir.toPath())
         if (relative == null) {
-            LOG.warn('{} is not passed: {} has no path relative to the project directory {}, so development reloading ' +
-                    'falls back to a directory under build/, which the application does not load from, and changes ' +
-                    'will not be reloaded.', systemProperty, dir, projectDir)
+            LOG.warn('{} is not passed: {} has no path relative to the project directory {}, so {}.',
+                    systemProperty, dir, projectDir, withoutIt(systemProperty))
             return []
         }
         relative ? ["-D${systemProperty}=${relative}".toString()] : []
+    }
+
+    /**
+     * What the application does without {@code systemProperty}, for the warning when it cannot be passed: each
+     * property falls back to a directory under {@code build/}, and what that breaks differs.
+     */
+    static String withoutIt(String systemProperty) {
+        switch (systemProperty) {
+            case BuildSettings.PROJECT_CLASSES_DIR:
+                return 'development reloading compiles a changed class into build/classes/groovy/main, which the ' +
+                        'application does not load classes from, and the change is not reloaded'
+            case BuildSettings.PROJECT_RESOURCES_DIR:
+                return 'the application reads its resources from build/resources/main, and development reloading ' +
+                        'copies a changed message bundle there, not into the build\'s own resources directory'
+            case BuildSettings.PROJECT_TARGET_DIR:
+                return 'development keeps its restart marker (.grailspid) in build/, and logs an error each time ' +
+                        'the application starts if there is no build/'
+            default:
+                return 'the application falls back to a directory under build/'
+        }
     }
 
     /**
