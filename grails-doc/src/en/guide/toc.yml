@@ -62,6 +62,7 @@ conf:
   applicationClass:
       title: The Application Class
       executing: Executing the Application Class
+      applicationBuilder: Building the Application
       customizing: Customizing the Application Class
       applicationLifeCycle: The Application LifeCycle
   environments: Environments
