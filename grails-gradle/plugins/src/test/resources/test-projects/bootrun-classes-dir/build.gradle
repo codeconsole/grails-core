@@ -1,0 +1,17 @@
+plugins {
+    id 'org.apache.grails.gradle.grails-app'
+}
+
+// A second instance of one checkout builds into a directory of its own (-PbuildDir)
+if (project.hasProperty('ownBuildDir')) {
+    layout.buildDirectory = layout.projectDirectory.dir(project.property('ownBuildDir').toString())
+}
+
+tasks.register('inspectBootRunClassesDir') {
+    doLast {
+        def task = tasks.named('bootRun').get()
+        def prefix = '-Dgrails.project.class.dir='
+        def arg = task.jvmArgumentProviders.collectMany { it.asArguments() as List }.find { it.startsWith(prefix) }
+        println "CLASSES_DIR=${arg ? arg.substring(prefix.length()) : ''}"
+    }
+}

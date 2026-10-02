@@ -57,6 +57,7 @@ import org.gradle.api.plugins.GroovyPlugin
 import org.gradle.api.plugins.JavaPluginExtension
 import org.gradle.api.provider.Provider
 import org.gradle.api.tasks.AbstractCopyTask
+import org.gradle.api.tasks.GroovySourceDirectorySet
 import org.gradle.api.tasks.JavaExec
 import org.gradle.api.tasks.SourceSet
 import org.gradle.api.tasks.SourceSetContainer
@@ -1029,6 +1030,12 @@ ${importStatements}
             // Use a CommandLineArgumentProvider so that the absolute project directory path
             // is normalized for build cache relocatability (PathSensitivity.RELATIVE).
             task.jvmArgumentProviders.add(new GrailsAppBaseDirProvider(project.projectDir))
+            // Where development reloading compiles a changed class: the build's own classes, wherever the build
+            // directory is, not the build/classes/groovy/main BuildSettings falls back to
+            Provider<Directory> classesDir = mainGroovyClassesDir(project)
+            if (classesDir != null) {
+                task.jvmArgumentProviders.add(new GrailsProjectClassesDirProvider(project.projectDir, classesDir))
+            }
             // The application compiles a page again when it changes, so the page opt-in has to reach
             // the JVM running it as well as the one the build compiles pages in.
             task.jvmArgumentProviders.add(new GrailsGspCompileStaticProvider(
@@ -1060,6 +1067,20 @@ ${importStatements}
         tasks.withType(JavaExec).configureEach(systemPropertyConfigurer.curry(grailsEnvSystemProperty ?: Environment.DEVELOPMENT.getName()))
 
         configureToolchainForForkTasks(project)
+    }
+
+    /**
+     * The main source set's Groovy classes directory, which the application's development reloading compiles a
+     * changed class into (see {@link GrailsProjectClassesDirProvider}); null for a project without one.
+     */
+    private static Provider<Directory> mainGroovyClassesDir(Project project) {
+        SourceSetContainer sourceSets = project.extensions.findByType(SourceSetContainer)
+        if (sourceSets?.findByName(SourceSet.MAIN_SOURCE_SET_NAME) == null) {
+            return null
+        }
+        sourceSets.named(SourceSet.MAIN_SOURCE_SET_NAME).flatMap { SourceSet main ->
+            main.extensions.getByType(GroovySourceDirectorySet).classesDirectory
+        }
     }
 
     /**

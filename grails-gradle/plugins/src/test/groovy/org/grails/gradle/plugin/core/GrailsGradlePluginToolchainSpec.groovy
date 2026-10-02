@@ -184,6 +184,28 @@ class GrailsGradlePluginToolchainSpec extends GradleSpecification {
         !result.output.contains(cliPidFile.absolutePath)
     }
 
+    def "bootRun tells development reloading where the build compiles its classes"() {
+        given:
+        setupTestResourceProject('bootrun-classes-dir')
+
+        when:
+        def result = executeTask('inspectBootRunClassesDir')
+
+        then:
+        result.output.contains("CLASSES_DIR=build${File.separator}classes${File.separator}groovy${File.separator}main")
+    }
+
+    def "bootRun with a build directory of its own compiles changes into that directory's classes"() {
+        given: 'a second instance of one checkout, built where the first one does not run from'
+        setupTestResourceProject('bootrun-classes-dir')
+
+        when:
+        def result = executeTask('inspectBootRunClassesDir', ['-PownBuildDir=build-parent/build-8070'])
+
+        then: 'relative to the project, as GrailsApp.recompile joins it to the application directory'
+        result.output.contains("CLASSES_DIR=build-parent${File.separator}build-8070${File.separator}classes${File.separator}groovy${File.separator}main")
+    }
+
     private static File pidFileFromOutput(String output) {
         String line = output.readLines().find { it.startsWith('PID_FILE=') }
         line ? new File(line.substring('PID_FILE='.length())) : null
