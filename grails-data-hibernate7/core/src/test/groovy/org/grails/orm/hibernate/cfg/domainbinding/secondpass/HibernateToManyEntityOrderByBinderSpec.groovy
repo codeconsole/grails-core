@@ -148,7 +148,7 @@ class HibernateToManyEntityOrderByBinderSpec extends HibernateGormDatastoreSpec 
 
         then:
         collection.getWhere() != null
-        collection.getWhere().contains("DTYPE in (")
+        collection.getWhere().contains("class in (")
         collection.getWhere().contains("COBSubItem")
     }
 }

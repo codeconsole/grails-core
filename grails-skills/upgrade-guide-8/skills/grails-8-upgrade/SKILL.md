@@ -257,6 +257,12 @@ The HTTP `Accept` header is honored for all clients by default, including browse
 - `respond` actions without an HTML view may now error for browser requests because browsers negotiate HTML. Add a GSP view, use `render`, or scope formats with `responseFormats` or `respond(..., formats: ...)`.
 - To restore the old browser-ignore behavior, set `grails.mime.disable.accept.header.userAgents` explicitly.
 
+The HTML codec uses XML-safe escaping when `grails.views.gsp.htmlcodec` is not set, as applications generated with `htmlcodec: xml` already did.
+
+- Applications that set `htmlcodec: xml` are unaffected; the setting can stay or be removed.
+- Without the setting, non-ASCII characters are no longer written as named entities (`é` instead of `&eacute;`), and `@`, the backslash and the backtick are escaped. Update tests that compare escaped markup exactly.
+- Set `grails.views.gsp.htmlcodec: html4` only where pages are served in a character set that relies on the named entities, such as ISO-8859-1.
+
 ## Asset Pipeline Wildcard Paths
 
 Grails 8 uses asset-pipeline 5.2, where a `%` or `*` component of an asset path, in a `require` directive, an `<asset:...>` tag, or a Sass import, stands for exactly one directory wherever the asset is found.
