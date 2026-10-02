@@ -100,6 +100,7 @@ Notable module changes:
 * Web MVC auto-configuration classes moved to `org.springframework.boot:spring-boot-webmvc`
 * Servlet auto-configuration classes moved to `org.springframework.boot:spring-boot-servlet`
 * MongoDB auto-configuration classes moved to `org.springframework.boot:spring-boot-mongodb`
+* Spring Integration auto-configuration moved to `org.springframework.boot:spring-boot-integration`. An application that depends on `spring-integration-core` alone no longer gets Spring Boot's `integrationGlobalProperties` bean or its `spring.integration.*` properties; add `spring-boot-starter-integration`, or `spring-boot-integration` alongside your Spring Integration modules, to keep them.
 
 For example, if your code imports `MongoAutoConfiguration`:
 
@@ -828,6 +829,10 @@ If your application contributed `HttpMessageConverter` beans through this class,
 Spring Framework 7 deprecated `org.springframework.lang.Nullable` and `org.springframework.lang.NonNull` in favor of the JSpecify annotations (`org.jspecify.annotations.Nullable`, `org.jspecify.annotations.NonNull`).
 The Spring annotations still work, so this is non-blocking, but new code should prefer the JSpecify equivalents.
 
+* **`Resource[]` values expand location patterns.**
+A `classpath*:` or other location pattern converted to `Resource[]` now resolves to every matching resource, or to an empty array when nothing matches, as it does in a plain Spring application. Previously Grails' conversion of a `String` to a `Resource` also handled `Resource[]` values one element at a time, so `classpath*:META-INF/spring.integration.properties` became a single resource with the pattern as its path, and loading it failed when it was opened. This applies to `Resource[]` properties of beans declared in `resources.groovy`, `doWithSpring`, XML, or by a library, whether the value is a single pattern, a comma-delimited String, or a list or array of locations, to `@Value` injection into a `Resource[]` field, and to `config.getProperty(name, Resource[])`, including list-valued configuration entries. Placeholders in the pattern are resolved from the environment. A `Resource` value still resolves a single location.
+A list or array of locations is also collected into a set, as Spring does: a list that names the same location twice now gives one resource instead of two, while a comma-delimited String keeps both. A `null` element in a list or array now fails the conversion instead of becoming a `null` entry, so a bean property given such a list fails at startup.
+
 * **Namespaced link generation is namespace-aware.**
 When a link, form action, pagination link, sortable column link, redirect, chain, or include targets a controller without an explicit `namespace`, Grails now resolves the namespace automatically. The name is resolved nearest scope first: the current request's namespace if it defines a controller with that name, then the non-namespaced controller, then the namespace of the only controller with that name. `controller` and `action` therefore generate the correct namespaced or non-namespaced URL, and a link rendered from a namespace stays in it when that namespace defines the target. A name defined only in namespaces other than the default and the current one is ambiguous: Grails logs a warning and the link must specify `namespace` to choose the target explicitly. A name no registered controller has stays in the namespace the link is made from, where a link previously dropped the namespace; a redirect to such a name has always stayed in it. A page rendered by a controller in the `admin` namespace that links with `controller: 'other', action: 'list'` now generates `/admin/other/list` when no `OtherController` is registered, and so does a unit test that sets `webRequest.controllerNamespace` itself; a `ControllerUnitTest`, which leaves the request namespace unset, still generates `/other/list`. Pass `namespace` to target another namespace. A redirect naming no namespace is resolved exactly as a link is, from the namespace of the controller issuing it; previously it was forced into that namespace, so a redirect to a controller defined only in another namespace produced a URL for a controller that does not exist. Pass `namespace: null` from Groovy code or `namespace=""` in a GSP tag to target the non-namespaced controller explicitly.
 
@@ -1149,64 +1154,6 @@ If you previously customized JSON view rendering with Grails-specific generator 
 This change applies to JSON views rendered by the `grails-views-gson` module.
 The `grails.converters.JSON.registerObjectMarshaller(...)` API is still used by the `grails-converters` module
 for `render ... as JSON` and related converter-based rendering.
-It is deprecated in Grails 8 but is not scheduled for removal. Existing registrations continue to work on the
-legacy converter path. For new code, customize Spring Boot's `JsonMapper` instead so the same serializer is used
-by `respond`, Spring MVC message conversion, and other Jackson-based integrations:
-
-[source,groovy]
-----
-import org.springframework.boot.jackson.autoconfigure.JsonMapperBuilderCustomizer
-import tools.jackson.databind.module.SimpleModule
-
-@Bean
-JsonMapperBuilderCustomizer bookJsonCustomizer() {
-    { builder ->
-        builder.addModule(new SimpleModule()
-                .addSerializer(Book, new BookValueSerializer()))
-    } as JsonMapperBuilderCustomizer
-}
-----
-
-`BookValueSerializer` is an application-provided Jackson `ValueSerializer<Book>`. Use a module when several
-serializers belong together, or register an individual serializer directly through the builder customizer.
-
-For different JSON shapes selected by name, replace `JSON.createNamedConfig(...)` with the injectable
-`NamedJsonConfigurationRegistry`. Each registration derives an isolated mapper from Spring Boot's configured
-`JsonMapper`, so it retains application-wide Jackson settings without changing the shared mapper:
-
-[source,groovy]
-----
-import grails.converters.json.NamedJsonConfigurationRegistry
-
-class BootStrap {
-    NamedJsonConfigurationRegistry namedJsonConfigurationRegistry
-
-    def init = { servletContext ->
-        namedJsonConfigurationRegistry.register('deep') {
-            it.serializer(Type, new TypeValueSerializer())
-            it.serializer(Category, new CategoryValueSerializer())
-        }
-    }
-}
-----
-
-Select the configuration per response with `respond`, or with the `json` render argument:
-
-[source,groovy]
-----
-respond book, jsonConfiguration: 'deep'
-render json: book, jsonConfiguration: 'deep'
-// Without a name, use the default Jackson configuration:
-render json: [ok: true]
-----
-
-Both accept `includes` and `excludes`, which apply on top of the named configuration.
-
-For direct serialization, inject the same registry and use
-`namedJsonConfigurationRegistry.writeValueAsString('deep', book)` or
-`namedJsonConfigurationRegistry.writeValue('deep', writer, book)`. These explicit operations replace the
-thread-local scope established by `JSON.use('deep')`. The legacy `JSON.createNamedConfig(...)` and `JSON.use(...)`
-APIs remain available for compatibility, but are deprecated in favor of the request-safe Jackson registry.
 
 To migrate your custom converters:
 
@@ -1217,16 +1164,17 @@ To migrate your custom converters:
 
 ==== 25. Rendering Enum values as JSON
 
-Rendering a single enum value with `render(Number.ONE as JSON)` now produces the JSON string `"ONE"`.
-The default enum marshaller uses the enum name, including when the value is nested in an object or array.
-It no longer produces the older object containing `enumType` and `name` properties.
+It is no longer possible to render a single enum value as JSON using the `render(Number.ONE as JSON)` syntax.
+Previously, rendering an enum value would produce a JSON string with the type and name of the enum value like:
+```json
+{
+  "enumType": "com.example.Number",
+  "name": "ONE"
+}
+```
 
-The legacy JSON converter now accepts scalar root values: strings (including GStrings), numbers,
-booleans, `null`, and enum names. Use `new JSON(value)` for scalar values, with or without
-`grails.converters.json.pretty.print=true`. Groovy's built-in casts for strings and numbers do not
-support `value as JSON`; construct the converter explicitly for those values.
-Non-null scalar `respond` responses use the same rendering behavior. Rendering a scalar converter
-no longer throws a `ConverterException` merely because the root is a scalar.
+Rendering an enum value as JSON will now instead throw a `ConverterException`.
+See https://github.com/apache/grails-core/pull/15212[PR 15212] for more details on this change.
 
 [[_hibernate_5_to_hibernate_7_migration]]
 ==== 26. Hibernate 5 to Hibernate 7 Migration
@@ -1461,6 +1409,33 @@ Declaring all three names prevents the naming strategy from changing the mapping
 
 Separately, the element column of a *basic (non-enum) collection* (e.g. `static hasMany = [items: String]`) is now resolved through the naming strategy's *column* naming rules instead of its *table* naming rules for the property-name prefix, producing a `<property>_<element-type identifier>` column name. An enum collection is unaffected: its element column has no property-name prefix and already used the column naming rules before this change. Most naming strategies apply the same transformation to both, so this only matters if your custom `PhysicalNamingStrategy` implements `toPhysicalColumnName` and `toPhysicalTableName` differently.
 
+===== 26.10 Table-per-Hierarchy Discriminator Defaults
+
+A table-per-hierarchy tree with no discriminator mapping uses the same defaults as Grails 7: a column named `class` that stores the fully qualified name of each class. Tables created by Grails 7 need no change.
+
+8.0.0-RC1 and 8.0.0-RC2 named the column `DTYPE` and stored the simple name of each subclass, for example `com.example.Vehicle`, `Car` and `SportsCar`. A table created by either release candidate now fails `dbCreate: 'validate'` with `missing column [class]`, and its subclass rows no longer match. To keep that layout without migrating the data, map the column on the root class and the simple name on each subclass:
+
+[source,groovy]
+----
+class Vehicle {
+    static mapping = {
+        discriminator column: 'DTYPE'    // the root value stays the fully qualified class name
+    }
+}
+
+class Car extends Vehicle {
+    static mapping = {
+        discriminator 'Car'
+    }
+}
+
+class SportsCar extends Car {
+    static mapping = {
+        discriminator 'SportsCar'
+    }
+}
+----
+
 ==== 27. GORM Properties Are Nullable by Default
 
 Grails 8 changes the validation default so that an *unconstrained persistent (domain) property is nullable by default* rather than required.
@@ -1506,6 +1481,21 @@ The existing `grails.gorm.default.constraints` wildcard form also works:
 ----
 grails.gorm.default.constraints = {
     '*'(nullable: false)
+}
+----
+
+Domains mocked with `DataTest` or `DomainUnitTest` use the same settings as the running application.
+They are read from `application.yml` or `application.groovy`.
+A specification can also set them in `doWithConfig`:
+
+[source,groovy]
+----
+class BookSpec extends Specification implements DomainUnitTest<Book> {
+
+    @Override
+    Closure doWithConfig() {{ config ->
+        config.grails.gorm.default.nullable = false
+    }}
 }
 ----
 
@@ -1647,20 +1637,6 @@ grails:
                         - Presto
                         - Trident
 ----
-
-Grails format resolution -- `withFormat`, `respond`, and `response.format` -- applies these rules.
-Spring MVC keeps its own content negotiation: an `@RestController`, an actuator endpoint or any other
-Spring handler continues to match `produces` against the `Accept` header exactly as in a plain Spring
-Boot application, and still answers `406 Not Acceptable` for a media type it cannot produce. The
-`spring.mvc.contentnegotiation.*` properties therefore continue to work.
-
-The extensions declared in `grails.mime.types` are additionally registered with Spring as format
-aliases, so enabling `spring.mvc.contentnegotiation.favor-parameter` resolves them without any further
-configuration.
-
-An unknown `format` parameter selects the first configured Grails MIME type (normally `*/*`).
-This also applies to `withFormat` and `response.mimeTypes`; they no longer ignore an unknown parameter
-and fall back to the `Accept` header.
 
 ==== 31. @EnableWebMvc No Longer Added to Grails Applications
 
@@ -1880,11 +1856,11 @@ def vulnerable() {
 
 This is flagged because passing the `GString` *directly* to `executeQuery` is safe — GORM binds the interpolated value as a query parameter — but assigning it to a `String`-typed local first causes Groovy to coerce it to a plain `String` at that point, silently discarding the safe binding; the interpolated value is then embedded as raw, unescaped query text. See <<sqlInjection,SQL injection>> for the full explanation and examples.
 
-If your application has this pattern, fix it by keeping the query a `GString` all the way to the call, or by using named/positional parameters instead. For a call site that has been reviewed and is genuinely safe, add `@SuppressWarnings("GormUnsafeQueryString")` to the enclosing method rather than restructuring the code.
+If the interpolated expressions are values, fix it by keeping the query a `GString` all the way to the call, or by using named/positional parameters instead. If they are HQL fragments — restrictions or an `order by` clause chosen at runtime — do *not* switch to a `GString`: GORM would bind the fragment as a parameter value and the query would no longer work. Interpolating or appending *constant* text (string literals, `static final` constants, ternaries over them, and locals that only ever hold such text) is recognized as safe and is not flagged, so the usual dynamic-restriction idioms, including `query += " and ..."`, compile unchanged. For a call site that has been reviewed and is genuinely safe, add `@SuppressWarnings("GormUnsafeQueryString")` to the declaration of the variable that holds the query text, or to the enclosing method, rather than restructuring the code. See <<sqlInjection,SQL injection>> for the details of what counts as constant text.
 
-This check runs automatically wherever `grails-datamapping-core` is on the compile classpath, with no opt-in configuration required. If it produces a false positive with no workaround, the whole check can be disabled by setting the `protectSqlInjectionAttacks` system property to `false` (it defaults to `true`) — this is a last-resort, build-wide kill switch, not a substitute for the per-call-site `@SuppressWarnings` above.
+This check runs automatically wherever `grails-datamapping-core` is on the compile classpath, with no opt-in configuration required. If it produces a false positive with no workaround, the whole check can be disabled by setting the `protectSqlInjectionAttacks` system property to `false` (it defaults to `true`) — this is a last-resort, build-wide kill switch, not a substitute for the per-declaration or per-method `@SuppressWarnings` above.
 
-The same check also emits (non-build-breaking) **compile-time warnings**, not errors, for two related but lower-confidence patterns: a `String`-typed field assigned an interpolated `GString` and later read through `this.field` in a query call, and query text built with `+` concatenation from a non-constant value with no `GString` involved. Neither of these fails the build, but both are worth reviewing — see <<sqlInjection,SQL injection>> for examples of both.
+The same check also emits (non-build-breaking) **compile-time warnings**, not errors, for two related but lower-confidence patterns: a `String`-typed field assigned an interpolated `GString` and later read through `this.field` in a query call, and query text built with `+` concatenation from a non-constant value (constant text is never flagged) with no `GString` involved. Neither of these fails the build, but both are worth reviewing — see <<sqlInjection,SQL injection>> for examples of both.
 
 **Most applications and plugins need no action.** Behavior only changes where a plugin bean and a conditional Boot bean competed for the same name or type — the plugin bean now wins, which is almost always the intended outcome.
 
@@ -4630,166 +4606,86 @@ class BookQueries {
 }
 ----
 
-==== 81. XML Web Support Is Optional
+==== 81. XML-Safe HTML Escaping Is the Default
 
-XML conversion, request-body binding, codecs, and REST renderers now live in the optional
-`grails-xml` module. Newly generated applications and the web starter no longer include that module by
-default. MIME type negotiation still recognizes `application/xml`, `text/xml`, Atom, and other XML media
-types; recognizing a media type does not install an XML serializer.
+When `grails.views.gsp.htmlcodec` is not set, the HTML codec, which GSP uses to escape `${}` expressions and
+which `encodeAsHTML()` applies, now uses the XML-safe escaping that applications generated by `create-app`
+and Grails Forge have selected with `htmlcodec: xml` since Grails 2.3. Before, it used HTML4 style escaping.
+New applications no longer have the setting, since it is now the default.
 
-New REST controllers, RESTful controllers, resources, and scaffolded controllers generated by the
-`rest-api` profile advertise JSON only. After adding `grails-xml`, add `xml` to the artefact's
-`responseFormats` or `formats` declaration when that endpoint should negotiate XML.
+Applications that set `htmlcodec: xml` are not affected, and can keep or remove the setting. Applications
+without the setting now get different escaped output:
 
-Applications that expose XML endpoints or use `grails.converters.XML`, XML object marshallers, XML data
-binding, or the XML and Atom renderers must add the module explicitly:
+* Non-ASCII characters are written as they are instead of as named entities: `Gösta` is no longer escaped
+as `G&ouml;sta`.
+* `@`, the backslash and the backtick are escaped as `&#64;`, `&#92;` and `&#96;`, the non breaking space and
+the line and paragraph separators as numeric character references, and control characters other than tab,
+line feed and carriage return are dropped.
 
-[source,groovy]
-.build.gradle
-----
-dependencies {
-    implementation 'org.apache.grails:grails-xml'
-}
-----
-
-The module preserves the established Grails XML APIs and compatibility marshalling for domain-shaped
-payloads, collections, maps, validation errors, named converter configurations, and include/exclude
-projections.
-
-Ordinary bean responses can also be written by Spring Framework's `JacksonXmlHttpMessageConverter`,
-backed by the Spring Boot-managed Jackson XML mapper. As in a plain Spring Boot application, that
-converter is registered only when Jackson's XML dataformat is on the classpath, so applications that
-want it add the dependency themselves:
-
-[source,groovy]
-.build.gradle
-----
-dependencies {
-    runtimeOnly 'tools.jackson.dataformat:jackson-dataformat-xml'
-}
-----
-
-Without it, `grails-xml` still renders XML through the Grails converter. Applications may also register
-their own Spring XML message converter or OXM/JAXB infrastructure through public Spring configuration
-APIs.
-
-This change does not affect Grails plugin descriptors. Plugin metadata continues to be generated and
-published in its existing descriptor format; `grails-xml` concerns application HTTP payloads only.
-
-==== 82. `respond()` Uses Spring JSON Conversion
-
-Spring JSON rendering is opt-in on `8.0.x`: ordinary `respond()` calls continue to use the legacy
-Grails JSON converter unless `grails.web.rendering.json.spring` is `true`. Changing the default belongs
-to a major release because Jackson can change date formats, bean properties, circular-reference
-handling, and validation error responses. Legacy `JSON.registerObjectMarshaller(...)` registrations
-apply only to the legacy converter, including explicit `render value as JSON` calls.
-
-When enabled, Grails selects the first configured MVC `HttpMessageConverter` that can write the
-response type and negotiated JSON media type and advertises a JSON media type for that class
-(`application/json`, `text/json`, or a `+json` subtype). Generic `*/*` string and byte-array converters
-are skipped, so strings remain JSON strings and byte arrays use Jackson's base64 JSON representation.
-The same media-family rule applies to XML conversion; a generic text converter cannot strip the XML
-string element.
-
-The standard Jackson converter uses an isolated mapper derived from Boot's configured `JsonMapper`
-for Grails domain compatibility. Persistent properties, identifiers, association identifiers, and
-per-response domain projections follow Grails metadata. On this domain path, Jackson property
-annotations (`@JsonIgnore`, `@JsonProperty`, `@JsonInclude`, `@JsonView`, `@JsonFormat`), property
-mixins, naming strategies, and transient getters do not define the representation. Register an
-explicit serializer or return a DTO when that property model is required. Ordinary non-domain beans
-retain Jackson's property rules. Application-provided converter subclasses and per-type mapper
-registrations keep their configured behavior and precedence.
-
-Boot's shared mapper is not given the Grails domain serializer, so plain Spring `@RestController`
-responses retain Jackson's normal domain property model. Both mappers serialize Groovy `GString`
-values as strings. Both also serialize Spring `Errors` as an `errors` array containing object, field,
-message, and codes, without rejected values; only Grails `respond errors` adapts that array into an
-RFC 9457 problem response.
-
-Grails retains the legacy converter path when a named converter configuration or per-response
-`includes`/`excludes` projection is requested, or when no configured MVC converter can write the
-selected type and media type. Explicit application and plugin `Renderer` beans continue to take
-precedence over the default renderer.
-
-To enable Spring JSON rendering for ordinary `respond()` payloads:
+Tests that compare escaped markup exactly may need to be updated. An application that serves pages in a
+character set that cannot represent every character, such as ISO-8859-1, and relies on the named entities,
+can restore HTML4 style escaping:
 
 [source,yaml]
 .application.yml
 ----
 grails:
-    web:
-        rendering:
-            json:
-                spring: true
+    views:
+        gsp:
+            htmlcodec: html4
 ----
 
-Keep the switch `false` (the default) while migrating legacy marshallers and verifying the JSON contract.
-Jackson conversion uses UTF-8 for intermediate bytes; the response writer applies
-`grails.converters.encoding`, so non-UTF response encodings do not corrupt the intermediate JSON.
+See link:security.html#codecs[Encoding and Decoding Objects].
 
-Controller unit tests use Boot's Jackson configuration and the same setting. A test's `doWithSpring`
-can supply a mapper or `JsonMapperBuilderCustomizer` just as an application can. Named JSON
-configurations work through `render` and `respond` in `ControllerUnitTest`. The optional `grails-xml`
-beans are contributed by web test traits when present, without loading the XML plugin's dependency
-graph. Web traits automatically include `restResponder`, even when a test overrides
-`getIncludePlugins()`, and provide JSON conversion beans and Boot's mapper configuration.
-They do not automatically load the controllers, URL mappings or i18n plugins; link generation retains
-the curated unit-test setup. Plain `GrailsUnitTest` and `ServiceUnitTest` do not load XML or the web
-plugin graph simply because that module is on the classpath.
+==== 82. Mail Plugin: `overrideAddress` Also Replaces an Explicit Sender
 
-==== 83. JSON Request Binding Uses the Boot `JsonMapper`
+`grails.mail.overrideAddress` now also replaces a `from` set in the `sendMail` closure. In Grails 7, it replaced every `to`, `cc` and `bcc` address and the default sender, and an explicit `from` was kept.
 
-JSON request bodies used for Grails data binding are now parsed by Spring Boot's configured Jackson 3
-`JsonMapper`. Mapper features installed through `JsonMapperBuilderCustomizer` therefore apply consistently
-to request parsing as well as response rendering. This includes registered Jackson modules and parser
-features such as support for an application-specific input format.
+To keep the sender your application sets, while still redirecting every recipient, use the new `grails.mail.overrideToAddress` in place of `overrideAddress`:
 
-Malformed request bodies continue to raise `InvalidRequestBodyException` through the public data-binding
-API. Code that directly replaced or configured the internal Groovy `JsonSlurper` should move that
-configuration to a `JsonMapperBuilderCustomizer`.
+[source,yaml]
+.application-development.yml
+----
+grails:
+    mail:
+        overrideToAddress: test-inbox@example.com   # redirect all recipients (to, cc, bcc) only
+----
 
-Untyped JSON numbers keep the types the previous parser produced. Values with a fractional part are read
-as `BigDecimal` rather than `Double`, so binding a request value such as `1.15` to a `BigDecimal` property
-retains exactly the digits the request sent. Whole numbers continue to bind as `Integer` or `Long`.
+To set a fixed sender without redirecting recipients, use the new `grails.mail.overrideFromAddress`. See link:mail.html#mailConfiguration[Mail Configuration] for how the three properties interact.
 
-==== 84. REST Validation Errors Use RFC 9457 Problems
+==== 83. GORM Dynamic Finder Classes Replaced
 
-When Spring JSON rendering is enabled, `respond()` renders Spring `Errors` as
-`application/problem+json` by default. Grails uses the public `ValidationProblemDetailFactory` bean to
-adapt the errors to Spring Framework's RFC 9457 `ProblemDetail` type. The resulting response has status
-422, the title `Validation failed`, and
-an `errors` extension containing stable maps with the object name, optional field name, message, and error
-codes:
+The dynamic finder implementations in the `org.grails.datastore.gorm.finders` package no longer form an inheritance hierarchy. The following public classes have been removed:
+
+* `AbstractFinder`
+* `AbstractFindByFinder`
+* `FindByFinder`
+* `FindByBooleanFinder`
+* `FindAllByFinder`
+* `FindAllByBooleanFinder`
+* `FindOrCreateByFinder`
+* `FindOrSaveByFinder`
+* `CountByFinder`
+
+The RxGORM equivalents in `org.grails.gorm.rx.finders` have been removed as well.
+
+`DynamicFinder` is now a concrete class that only parses a finder method name and builds its query criteria. It no longer implements `FinderMethod`, has no `invoke` or `doInvokeInternal` methods, and its constructor takes a method pattern, the junction operators, a `MappingContext` and a boolean-clause flag. Finder execution lives in three classes that compose a `DynamicFinder` instead of extending it and are created through static factory methods:
 
 [source,groovy]
 ----
-import grails.rest.render.errors.ValidationProblemDetailFactory
+import org.grails.datastore.gorm.finders.CountFinder
+import org.grails.datastore.gorm.finders.ListResultFinder
+import org.grails.datastore.gorm.finders.SingleResultFinder
 
-class BookController {
-    ValidationProblemDetailFactory validationProblemDetailFactory
-
-    def save(Book book) {
-        if (book.hasErrors()) {
-            respond validationProblemDetailFactory.create(book.errors)
-            return
-        }
-        // save the valid book
-    }
-}
+SingleResultFinder.findBy(datastoreResolver, mappingContext)          // findBy*
+SingleResultFinder.findByBoolean(datastoreResolver, mappingContext)   // find<Boolean>By*
+SingleResultFinder.findOrCreateBy(datastoreResolver, mappingContext)  // findOrCreateBy*
+SingleResultFinder.findOrSaveBy(datastoreResolver, mappingContext)    // findOrSaveBy*
+ListResultFinder.findAllBy(datastoreResolver, mappingContext)         // findAllBy*
+ListResultFinder.findAllByBoolean(datastoreResolver, mappingContext)  // findAll<Boolean>By*
+CountFinder.countBy(datastoreResolver, mappingContext)                // countBy*
 ----
 
-Each message is resolved through the application's `MessageSource` for the current locale, so
-`messages.properties` entries and Spring Boot's `spring.messages.*` settings apply to validation
-responses as they do elsewhere.
+Each factory also accepts a `Datastore`, or only a `MappingContext` for a finder that parses method names without executing queries. `ListOrderByFinder` keeps its constructors but no longer extends `AbstractFinder`, and the list of finders a `DetachedCriteria` consults is now typed as `List<FinderMethod>`.
 
-Applications can also inject the factory when they need to create or customize the problem explicitly.
-Rejected field values are excluded by default because they can contain passwords, tokens, or other
-sensitive request data. Applications that deliberately need those values can define their own
-`new ValidationProblemDetailFactory(true)` bean after reviewing that exposure risk.
-
-==== 85. HAL Rendering
-
-Existing Grails HAL JSON renderers remain available through explicit renderer registration.
-Adding `spring-boot-starter-hateoas` alone does not register a Grails renderer for Spring HATEOAS
-`EntityModel` values. Return those models from a Spring MVC controller or provide an explicit Grails
-renderer for the desired media type.
+Applications are unaffected: dynamic finders such as `Book.findByTitle('The Stand')` behave as before. A GORM datastore implementation or plugin outside the Grails repository that extends one of the removed classes, or that calls `new FindByFinder(...)` and its siblings when building its finder list, must switch to the factory methods above. Code that only holds finders as `FinderMethod` compiles unchanged.
