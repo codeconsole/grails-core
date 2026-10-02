@@ -1463,6 +1463,9 @@ schema migration or diff tools.
 
 Command objects are unaffected: Validateable command-object properties remain non-nullable by default, except for collections and maps, which remain nullable by default.
 
+The exception is a property that a command object imports with `importFrom` from a domain class that declares no `nullable` constraint for it.
+It gets the domain class's nullable default, so it is nullable unless you restore the required-by-default behaviour (below).
+
 To restore the legacy required-by-default behaviour for an entire application, set the new `grails.gorm.default.nullable` property to `false`:
 
 [source,yaml]
@@ -4637,7 +4640,58 @@ grails:
 
 See link:security.html#codecs[Encoding and Decoding Objects].
 
-==== 82. Interceptors Can Read the Model of a Template Render
+==== 82. Mail Plugin: `overrideAddress` Also Replaces an Explicit Sender
+
+`grails.mail.overrideAddress` now also replaces a `from` set in the `sendMail` closure. In Grails 7, it replaced every `to`, `cc` and `bcc` address and the default sender, and an explicit `from` was kept.
+
+To keep the sender your application sets, while still redirecting every recipient, use the new `grails.mail.overrideToAddress` in place of `overrideAddress`:
+
+[source,yaml]
+.application-development.yml
+----
+grails:
+    mail:
+        overrideToAddress: test-inbox@example.com   # redirect all recipients (to, cc, bcc) only
+----
+
+To set a fixed sender without redirecting recipients, use the new `grails.mail.overrideFromAddress`. See link:mail.html#mailConfiguration[Mail Configuration] for how the three properties interact.
+
+==== 83. GORM Dynamic Finder Classes Replaced
+
+The dynamic finder implementations in the `org.grails.datastore.gorm.finders` package no longer form an inheritance hierarchy. The following public classes have been removed:
+
+* `AbstractFinder`
+* `AbstractFindByFinder`
+* `FindByFinder`
+* `FindByBooleanFinder`
+* `FindAllByFinder`
+* `FindAllByBooleanFinder`
+* `FindOrCreateByFinder`
+* `FindOrSaveByFinder`
+* `CountByFinder`
+
+`DynamicFinder` is now a concrete class that only parses a finder method name and builds its query criteria. It no longer implements `FinderMethod`, has no `invoke` or `doInvokeInternal` methods, and its constructor takes a method pattern, the junction operators, a `MappingContext` and a boolean-clause flag. Finder execution lives in three classes that compose a `DynamicFinder` instead of extending it and are created through static factory methods:
+
+[source,groovy]
+----
+import org.grails.datastore.gorm.finders.CountFinder
+import org.grails.datastore.gorm.finders.ListResultFinder
+import org.grails.datastore.gorm.finders.SingleResultFinder
+
+SingleResultFinder.findBy(datastoreResolver, mappingContext)          // findBy*
+SingleResultFinder.findByBoolean(datastoreResolver, mappingContext)   // find<Boolean>By*
+SingleResultFinder.findOrCreateBy(datastoreResolver, mappingContext)  // findOrCreateBy*
+SingleResultFinder.findOrSaveBy(datastoreResolver, mappingContext)    // findOrSaveBy*
+ListResultFinder.findAllBy(datastoreResolver, mappingContext)         // findAllBy*
+ListResultFinder.findAllByBoolean(datastoreResolver, mappingContext)  // findAll<Boolean>By*
+CountFinder.countBy(datastoreResolver, mappingContext)                // countBy*
+----
+
+Each factory also accepts a `Datastore`, or only a `MappingContext` for a finder that parses method names without executing queries. `ListOrderByFinder` keeps its constructors but no longer extends `AbstractFinder`, and the list of finders a `DetachedCriteria` consults is now typed as `List<FinderMethod>`.
+
+Applications are unaffected: dynamic finders such as `Book.findByTitle('The Stand')` behave as before. A GORM datastore implementation or plugin outside the Grails repository that extends one of the removed classes, or that calls `new FindByFinder(...)` and its siblings when building its finder list, must switch to the factory methods above. Code that only holds finders as `FinderMethod` compiles unchanged.
+
+==== 84. Interceptors Can Read the Model of a Template Render
 
 The `model` property of an interceptor now returns the map that an action passed to
 `render(template: ..., model: ...)`. Before, it returned `null` for a template render, because a template render
