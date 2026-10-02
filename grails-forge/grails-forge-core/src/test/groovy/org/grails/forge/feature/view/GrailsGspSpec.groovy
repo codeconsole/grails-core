@@ -59,7 +59,7 @@ class GrailsGspSpec extends ApplicationContextSpec implements CommandOutputFixtu
 
         then:
         ctx.getConfiguration().containsKey("grails.views.gsp.encoding")
-        ctx.getConfiguration().containsKey("grails.views.gsp.htmlcodec")
+        !ctx.getConfiguration().containsKey("grails.views.gsp.htmlcodec")
         ctx.getConfiguration().containsKey("grails.views.gsp.codecs.scriptlet")
     }
 
