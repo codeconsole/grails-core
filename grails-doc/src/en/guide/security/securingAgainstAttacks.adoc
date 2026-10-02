@@ -93,9 +93,9 @@ def reviewedAndSafeToo() {
 }
 ----
 <1> The declaration-level form marks this one variable (or, on a field declaration, that field) as reviewed for the rest of the method, whatever it is later assigned, and leaves every other variable checked. Prefer it.
-<2> The method-level form silences the check for every query in the method.
+<2> The method-level form silences the check for every query in the method, including those in closures and anonymous inner classes inside it.
 
-This check runs automatically against every Grails application that has `grails-datamapping-core` on its compile classpath — no configuration is required, and it covers every GORM implementation whose query methods follow this convention (Hibernate and Neo4j today).
+This check runs automatically against every Grails application that has `grails-datamapping-core` on its compile classpath — no configuration is required, and it covers every GORM implementation whose query methods follow this convention (Hibernate and Neo4j today). It checks query methods called on a domain class, and those called on `this`, or with no receiver, anywhere inside a domain class, including the classes nested in it, since Groovy passes those calls on to the domain class.
 
 Because the check is intraprocedural, it cannot follow every possible way query text can be assembled. If a build hits a false positive with no reasonable per-call-site fix, disable the check for the whole compilation unit by setting the `protectSqlInjectionAttacks` system property to `false` (it defaults to `true`), for example via `gradle.properties`:
 
@@ -118,7 +118,7 @@ Book.executeQuery("from Book b where 1 = 1 ${restriction}", [title: params.title
 // runs as:  from Book b where 1 = 1 :p0   -- the fragment is bound as a value
 ----
 
-The check tells query text and values apart. An interpolation that is *constant text* cannot carry user input, so it is not flagged even when the `GString` is coerced to a `String`. Constant text is a string literal, a `static final` field initialized from constant text, a ternary or Elvis expression choosing between constant text, a `+` concatenation or `GString` made only of constant text, and a local variable that only ever held constant text on every path leading to the query, whichever `if`/`else`, `switch`, `try`/`catch`, loop or closure those paths run through. This is what lets restrictions be chosen at runtime while the values stay bound:
+The check tells query text and values apart. An interpolation that is *constant text* cannot carry user input, so it is not flagged even when the `GString` is coerced to a `String`. Constant text is a string literal, a `static final` field initialized from constant text, a ternary, Elvis or `switch` expression choosing between constant text, a `+` concatenation or `GString` made only of constant text, and a local variable that only ever held constant text on every path leading to the query, whichever `if`/`else`, `switch`, `try`/`catch` or loop those paths run through. A closure, or a method of an anonymous inner class, can run at any point after it is defined, and an assignment inside another expression — a ternary or Elvis branch, an `&&` or `||` operand, a method argument or a loop condition — or a multiple assignment may or may not run. So a local declared outside a closure or an anonymous inner class that its code reads or assigns, and a local assigned in one of those ways, is judged by every assignment to it in the method: it counts as constant text only if every assignment is constant text, and as a flattened query if any assignment flattens a `GString` into it. This is what lets restrictions be chosen at runtime while the values stay bound:
 
 [source,groovy]
 ----
@@ -149,7 +149,7 @@ if (params.title) {
 Book.executeQuery(query, queryParams)
 ----
 
-Query text assembled in a way the check cannot follow — fragments collected in a `List` and joined, or returned from a helper method — is reported as the lower-confidence concatenation warning described below, or as the build-breaking error when a `GString` is involved. After review, suppress such a call site on the declaration of the variable that holds the trusted text rather than on the whole method. The annotation may go on the assembled query or on the fragment it is built from; an annotated variable is treated as constant text wherever it is interpolated or concatenated:
+The check cannot follow query text assembled in other ways — fragments collected in a `List` and joined, built with a `StringBuilder`, or returned from a helper method — so it treats that text as data. Interpolated into a `GString` that is coerced to a `String`, it is the build-breaking error; concatenated with `+`, it is the lower-confidence warning described below. Assigned on its own and passed straight to a query method, it is not reported at all, so review such code by hand. After review, suppress a reported call site on the declaration of the variable that holds the trusted text rather than on the whole method. The annotation may go on the assembled query or on the fragment it is built from; an annotated variable is treated as constant text wherever it is interpolated or concatenated:
 
 [source,groovy]
 ----
